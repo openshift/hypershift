@@ -1,0 +1,1187 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedControlPlane labels validation"
+crdName: hostedcontrolplanes.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  - name: "When labels has a simple key it should pass"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "team": "platform"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: "When labels has a hyphenated prefix key it should pass"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "example-domain.io/name": "platform"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: "When labels has a multi-label prefix key it should pass"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "a-b.example-domain.io/name": "platform"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: "When a DNS prefix label is 63 characters it should pass"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/name": "platform"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: "When a DNS prefix is 253 characters it should pass"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/name": "platform"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: "When a name segment is 63 characters it should pass"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "example.com/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn": "platform"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: "When a whole label key is 317 characters it should pass"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn": "platform"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: "When a label value is empty it should pass"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "team": ""
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: "When a label value is 63 characters it should pass"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "team": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: "When labels are omitted it should pass"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: "When labels has 20 entries it should pass"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "label0": "value0"
+          "label1": "value1"
+          "label2": "value2"
+          "label3": "value3"
+          "label4": "value4"
+          "label5": "value5"
+          "label6": "value6"
+          "label7": "value7"
+          "label8": "value8"
+          "label9": "value9"
+          "label10": "value10"
+          "label11": "value11"
+          "label12": "value12"
+          "label13": "value13"
+          "label14": "value14"
+          "label15": "value15"
+          "label16": "value16"
+          "label17": "value17"
+          "label18": "value18"
+          "label19": "value19"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: "When a DNS prefix label is 64 characters it should fail"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/name": "platform"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "label key must be a valid Kubernetes label key"
+
+  - name: "When a DNS prefix is 254 characters it should fail"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/name": "platform"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "label key must be a valid Kubernetes label key"
+
+  - name: "When a name segment is 64 characters it should fail"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "example.com/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn": "platform"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "label key must be a valid Kubernetes label key"
+
+  - name: "When a whole label key is 318 characters it should fail"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn": "platform"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "label key must be a valid Kubernetes label key"
+
+  - name: "When a label value is 64 characters it should fail"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "team": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "63"
+
+  - name: "When a label value has invalid characters it should fail"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "team": "bad/value"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "label value"
+
+  - name: "When a label value starts with a non-alphanumeric character it should fail"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "team": "-value"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "label value"
+
+  - name: "When a label value ends with a non-alphanumeric character it should fail"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "team": "value-"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "label value"
+
+  - name: "When labels has 21 entries it should fail"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "label0": "value0"
+          "label1": "value1"
+          "label2": "value2"
+          "label3": "value3"
+          "label4": "value4"
+          "label5": "value5"
+          "label6": "value6"
+          "label7": "value7"
+          "label8": "value8"
+          "label9": "value9"
+          "label10": "value10"
+          "label11": "value11"
+          "label12": "value12"
+          "label13": "value13"
+          "label14": "value14"
+          "label15": "value15"
+          "label16": "value16"
+          "label17": "value17"
+          "label18": "value18"
+          "label19": "value19"
+          "label20": "value20"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "must have at most 20 items"
+
+  - name: "When labels is an empty map it should fail"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels: {}
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "at least 1 properties"
+
+  - name: "When a management KAS or other operator-owned label is supplied it should fail"
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "hypershift.openshift.io/need-management-kas-access": "true"
+          app: "attacker"
+          name: "attacker"
+          k8s-app: "attacker"
+          "olm.catalogSource": "attacker"
+          "infrastructure.openshift.io/cloud-controller-manager": "attacker"
+          "hypershift.openshift.io/need-metrics-server-access": "attacker"
+          "hypershift.openshift.io/control-plane-component": "attacker"
+          "hypershift.openshift.io/request-serving-component": "attacker"
+          "hypershift.openshift.io/hosted-control-plane": "attacker"
+          "hypershift.openshift.io/managed-by": "attacker"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "label key is reserved"
+
+  onUpdate:
+  - name: "When an existing stored empty labels map is updated without changing labels it should pass"
+    initialCRDPatches:
+    - op: remove
+      path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/labels/minProperties
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels: {}
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      metadata:
+        annotations:
+          test.hypershift.openshift.io/unrelated-update: "true"
+      spec:
+        labels: {}
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+
+  - name: "When an existing stored empty labels map is updated with an invalid key it should fail"
+    initialCRDPatches:
+    - op: remove
+      path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/labels/minProperties
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels: {}
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        labels:
+          "bad key": "value"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        infraID: infra-id
+        issuerURL: https://issuer.example.com
+        platform:
+          type: AWS
+        dns:
+          baseDomain: example.com
+        pullSecret:
+          name: secret
+        sshKey:
+          name: key
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "label key must be a valid Kubernetes label key"

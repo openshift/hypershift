@@ -64,6 +64,25 @@ const (
 	etcdNodeFailureTolerationSeconds int64 = 60
 )
 
+var operatorOwnedLabelKeys = sets.New(
+	"app",
+	"name",
+	"k8s-app",
+	"olm.catalogSource",
+	"infrastructure.openshift.io/cloud-controller-manager",
+	config.NeedManagementKASAccessLabel,
+	config.NeedMetricsServerAccessLabel,
+	hyperv1.ControlPlaneComponentLabel,
+	hyperv1.RequestServingComponentLabel,
+	colocationLabelKey,
+	ManagedByLabel,
+)
+
+// IsOperatorOwnedLabelKey reports whether a label key is reserved for control-plane selectors or policy.
+func IsOperatorOwnedLabelKey(key string) bool {
+	return operatorOwnedLabelKeys.Has(key)
+}
+
 // shortNodeFailureToleration returns a NoExecute toleration for the given
 // well-known node-failure taint key (node.kubernetes.io/not-ready or
 // node.kubernetes.io/unreachable) with the provided short TolerationSeconds.
@@ -260,15 +279,24 @@ func (c *controlPlaneWorkload[T]) setLabels(podTemplate *corev1.PodTemplateSpec,
 		podTemplate.Labels = map[string]string{}
 	}
 
+	for key, value := range hcp.Spec.Labels {
+		if IsOperatorOwnedLabelKey(key) {
+			continue
+		}
+		podTemplate.Labels[key] = string(value)
+	}
+
 	podTemplate.Labels[hyperv1.ControlPlaneComponentLabel] = c.Name()
 	if c.NeedsManagementKASAccess() {
 		podTemplate.Labels[config.NeedManagementKASAccessLabel] = "true"
+	} else {
+		delete(podTemplate.Labels, config.NeedManagementKASAccessLabel)
 	}
 	if c.IsRequestServing() {
 		podTemplate.Labels[hyperv1.RequestServingComponentLabel] = "true"
+	} else {
+		delete(podTemplate.Labels, hyperv1.RequestServingComponentLabel)
 	}
-	// set additional Labels
-	maps.Copy(podTemplate.Labels, hcp.Spec.Labels)
 }
 
 // setControlPlaneIsolation configures tolerations and NodeAffinity rules to prefer Nodes with controlPlaneNodeLabel and clusterNodeLabel.

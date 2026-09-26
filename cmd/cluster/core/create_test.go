@@ -1357,7 +1357,7 @@ func TestApplySchedulingConfig(t *testing.T) {
 		nodeSelector       map[string]string
 		podsLabels         map[string]string
 		expectNodeSelector map[string]string
-		expectLabels       map[string]string
+		expectLabels       map[string]hyperv1.LabelValue
 	}{
 		{
 			name:               "When node selector is provided, it should set NodeSelector on the cluster",
@@ -1367,7 +1367,7 @@ func TestApplySchedulingConfig(t *testing.T) {
 		{
 			name:         "When pods labels are provided, it should set Labels on the cluster",
 			podsLabels:   map[string]string{"team": "hypershift"},
-			expectLabels: map[string]string{"team": "hypershift"},
+			expectLabels: map[string]hyperv1.LabelValue{"team": "hypershift"},
 		},
 		{
 			name: "When neither is provided, it should not modify the cluster",

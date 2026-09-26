@@ -4439,7 +4439,7 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err...)
 	}
 
-	// TODO: remove when API CEL validation is enabled.
+	// API CEL validation is not retroactive, so retain controller-side validation for objects stored before it was enabled.
 	if err := validateLabels(hc); err != nil {
 		errs = append(errs, err...)
 	}
@@ -4454,11 +4454,15 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 func validateLabels(hc *hyperv1.HostedCluster) []error {
 	var errs []error
 	for key, value := range hc.Spec.Labels {
-		if validationErrs := validation.IsQualifiedName(key); len(errs) != 0 {
+		if controlplanecomponent.IsOperatorOwnedLabelKey(key) {
+			errs = append(errs, fmt.Errorf("label key %q is reserved for HyperShift control-plane use", key))
+		}
+
+		if validationErrs := validation.IsQualifiedName(key); len(validationErrs) != 0 {
 			errs = append(errs, errors.New(strings.Join(validationErrs, ", ")))
 		}
 
-		if validationErrs := validation.IsValidLabelValue(value); len(errs) != 0 {
+		if validationErrs := validation.IsValidLabelValue(string(value)); len(validationErrs) != 0 {
 			errs = append(errs, errors.New(strings.Join(validationErrs, ", ")))
 		}
 	}
