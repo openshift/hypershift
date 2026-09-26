@@ -65,16 +65,8 @@ type rolloutConfig struct {
 	additionalTrustBundleName string
 	// globalConfig represents input from hostedCluster.spec.config that requires a NodePool rollout.
 	globalConfig string
-	// rolloutGlobalConfig is the global config derived only from user-set spec fields
-	// (proxy spec, image spec) without reconciling platform-specific defaults like
-	// Status.NoProxy entries. Used only for rollout hash computation.
-	rolloutGlobalConfig string
 	// rawConfig is an mco consumable version of NodePool.spec.config, tuneConfig and any hypershift core machine config.
 	mcoRawConfig string
-	// rolloutMcoRawConfig is mcoRawConfig without management-side content (haproxy).
-	// Used only for rollout hash computation so that management-side image changes
-	// do not trigger node replacement.
-	rolloutMcoRawConfig string
 	// TODO(alberto): consider let haproxyRawConfig be an implementation detail of ConfigGenerator.
 	// For now, it's a required input to keep the haproxy business logic and files outside the scope of this initial refactor.
 	haproxyRawConfig string
@@ -100,12 +92,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		return nil, fmt.Errorf("release image can't be nil")
 	}
 
-	globalConfig, err := globalConfigString(hostedCluster, releaseImage, false)
-	if err != nil {
-		return nil, err
-	}
-
-	rolloutGlobalConfig, err := globalConfigString(hostedCluster, releaseImage, true)
+	globalConfig, err := globalConfigString(hostedCluster, releaseImage)
 	if err != nil {
 		return nil, err
 	}
@@ -140,12 +127,11 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		controlplaneNamespace:          controlPlaneNamespace,
 		resolvedRHELStreamForBootImage: resolvedRHELStream,
 		rolloutConfig: &rolloutConfig{
-			releaseImage:        releaseImage,
-			pullSecretName:      hostedCluster.Spec.PullSecret.Name,
-			globalConfig:        globalConfig,
-			rolloutGlobalConfig: rolloutGlobalConfig,
-			haproxyRawConfig:    haproxyRawConfig,
-			rhelStream:          rhelStream,
+			releaseImage:     releaseImage,
+			pullSecretName:   hostedCluster.Spec.PullSecret.Name,
+			globalConfig:     globalConfig,
+			haproxyRawConfig: haproxyRawConfig,
+			rhelStream:       rhelStream,
 		},
 	}
 
@@ -153,12 +139,11 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		cg.rolloutConfig.additionalTrustBundleName = hostedCluster.Spec.AdditionalTrustBundle.Name
 	}
 
-	mcoRawConfig, rolloutMcoRawConfig, err := cg.generateMCORawConfig(ctx, hostedCluster.Spec.Capabilities)
+	mcoRawConfig, err := cg.generateMCORawConfig(ctx, hostedCluster.Spec.Capabilities)
 	if err != nil {
 		return nil, err
 	}
 	cg.rolloutConfig.mcoRawConfig = mcoRawConfig
-	cg.rolloutConfig.rolloutMcoRawConfig = rolloutMcoRawConfig
 
 	return cg, nil
 }
@@ -189,39 +174,24 @@ func (cg *ConfigGenerator) HashWithoutVersion() string {
 	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName + cg.rhelStream)
 }
 
-// RolloutHash returns a hash derived only from spec-driven inputs that require node replacement.
-// Management-side changes (e.g. HAProxy image digest bumps, platform-computed proxy defaults)
-// are excluded, so they do not trigger Replace or InPlace rollouts.
-func (cg *ConfigGenerator) RolloutHash() string {
-	return supportutil.HashSimple(cg.rolloutMcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.rolloutGlobalConfig + cg.rhelStream)
-}
-
-// RolloutHashWithoutVersion is like RolloutHash but excludes the release version.
-// Used to detect config-only changes for the UpdatingConfig condition,
-// separate from version changes which have their own condition.
-func (cg *ConfigGenerator) RolloutHashWithoutVersion() string {
-	return supportutil.HashSimple(cg.rolloutMcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName + cg.rolloutGlobalConfig + cg.rhelStream)
-}
-
 func (cg *ConfigGenerator) Version() string {
 	return cg.releaseImage.Version()
 }
 
 // generateMCORawConfig generates a mco consumable artifact of the mco Config.
-// It returns two strings: the full config (including haproxy) and the rollout config (excluding haproxy).
-func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyperv1.Capabilities) (configsRaw, rolloutConfigsRaw string, err error) {
+func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyperv1.Capabilities) (configsRaw string, err error) {
 	var configs []corev1.ConfigMap
 
 	// Look for core ignition configs in the control plane namespace.
 	coreConfigs, err := cg.getCoreConfigs(ctx)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	configs = append(configs, coreConfigs...)
 
 	userConfig, err := cg.getUserConfigs(ctx)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	configs = append(configs, userConfig...)
 
@@ -229,22 +199,12 @@ func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyper
 		// Look for NTO generated MachineConfigs from the hosted control plane namespace
 		nodeTuningGeneratedConfigs, err := getNTOGeneratedConfig(ctx, cg)
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
 		configs = append(configs, nodeTuningGeneratedConfigs...)
 	}
 
-	fullConfig, err := cg.parse(configs)
-	if err != nil {
-		return "", "", err
-	}
-
-	rolloutConfig, err := cg.parseRolloutConfig(configs)
-	if err != nil {
-		return "", "", err
-	}
-
-	return fullConfig, rolloutConfig, nil
+	return cg.parse(configs)
 }
 
 // getUserConfigs returns a slice with all the configMaps in nodePool.Spec.Config.
@@ -310,25 +270,12 @@ func (e *MissingCoreConfigError) Error() string {
 }
 
 // parse loops over a slice of configMaps and returns a string with the concatenated content if they are MCO consumable APIs.
-// It includes all management-side content (e.g. haproxy config) in the output.
 func (cg *ConfigGenerator) parse(configs []corev1.ConfigMap) (string, error) {
-	return cg.doParse(configs, cg.haproxyRawConfig)
-}
-
-// parseRolloutConfig is like parse but excludes management-side content that
-// should not trigger node replacement (e.g. haproxy image digest changes,
-// global pull secret systemd units). Used to compute the rollout-only MCO
-// config hash.
-func (cg *ConfigGenerator) parseRolloutConfig(configs []corev1.ConfigMap) (string, error) {
-	return cg.doParse(configs, "")
-}
-
-func (cg *ConfigGenerator) doParse(configs []corev1.ConfigMap, managementSideConfig string) (string, error) {
 	var errors []error
 	var allConfigPlainText []string
 
-	if managementSideConfig != "" {
-		allConfigPlainText = append(allConfigPlainText, managementSideConfig)
+	if cg.haproxyRawConfig != "" {
+		allConfigPlainText = append(allConfigPlainText, cg.haproxyRawConfig)
 	}
 
 	for _, config := range configs {
@@ -421,26 +368,10 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 	return manifest, err
 }
 
-// globalConfigString computes a string representation of the global config
-// (proxy, image, and conditionally APIServer) for use in hash computation.
-//
-// When forRollout is false, it produces the full config: proxy is reconciled
-// with platform-derived status defaults (NoProxy CIDRs, metadata endpoints),
-// and the full APIServer spec is included for >= 4.23.0. This is used for
-// payload generation and the full config hash.
-//
-// When forRollout is true, it produces a rollout-only config: proxy uses only
-// user-set spec fields (no platform defaults), and only the TLSSecurityProfile
-// from the APIServer spec is included. This ensures that operator code changes
-// to computed defaults or non-TLS APIServer fields do not change the rollout
-// hash and trigger unintended rollouts.
-func globalConfigString(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, forRollout bool) (string, error) {
+func globalConfigString(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	// 1. - Reconcile conditions according to current state of the world.
 	proxy := globalconfig.ProxyConfig()
-	if forRollout {
-		globalconfig.ReconcileProxyConfig(proxy, hcluster.Spec.Configuration)
-	} else {
-		globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
-	}
+	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
 
 	// NOTE: The image global config is not injected via userdata or NodePool ignition config.
 	// It is included directly by the ignition server.  However, we need to detect the change
@@ -448,6 +379,7 @@ func globalConfigString(hcluster *hyperv1.HostedCluster, releaseImage *releasein
 	image := globalconfig.ImageConfig()
 	globalconfig.ReconcileImageConfigFromHostedCluster(image, hcluster)
 
+	// Serialize proxy and image into a single string to use in the token secret hash.
 	globalConfigBytes := bytes.NewBuffer(nil)
 
 	proxyBytes, err := api.CompatibleJSONEncode(proxy)
@@ -472,10 +404,10 @@ func globalConfigString(hcluster *hyperv1.HostedCluster, releaseImage *releasein
 	return backwardcompat.GetBackwardCompatibleConfigString(rawConfig), nil
 }
 
-// conditionallyAddToGlobalConfigString adds version-gated config sections to
-// the global config string. Only TLSSecurityProfile from the APIServer spec is
-// included — other fields (ServingCerts, ClientCA, CORS, Encryption) do not
-// affect worker node configuration.
+// conditionallyAddToGlobalConfigString exists so we can add things to the
+// global config string based on the release image version. Every time this
+// global config changes the node pool controller trigger a node pool
+// rollout, this allows us a more fine grained control over the process.
 func conditionallyAddToGlobalConfigString(
 	globalConfigBytes *bytes.Buffer,
 	hcluster *hyperv1.HostedCluster,
