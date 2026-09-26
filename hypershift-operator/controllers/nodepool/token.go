@@ -248,12 +248,9 @@ func (t *Token) Reconcile(ctx context.Context) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	if !t.isOutdated() {
-		// Rollout hash and version unchanged. Existing secrets are valid and
-		// the MachineDeployment continues to reference them. Skip secret
-		// creation and cleanup to prevent orphaned secrets on management-side
-		// config changes (e.g. HAProxy image bumps).
-		log.V(4).Info("Token secrets up to date, skipping reconciliation")
-		return nil
+		// Keep the referenced user data in sync with the rotating token without
+		// creating secrets or changing the MachineDeployment bootstrap reference.
+		return t.reconcileCurrentUserData(ctx)
 	}
 
 	if err := t.cleanupOutdated(ctx); err != nil {
@@ -284,6 +281,54 @@ func (t *Token) Reconcile(ctx context.Context) error {
 		log.Info("Reconciled user data Secret", "result", result)
 	}
 	return nil
+}
+
+func (t *Token) reconcileCurrentUserData(ctx context.Context) error {
+	if t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] == "" {
+		return fmt.Errorf("current NodePool config version is missing")
+	}
+
+	tokenSecret := t.outdatedTokenSecret()
+	if err := t.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
+		return fmt.Errorf("failed to get current token Secret: %w", err)
+	}
+	tokenBytes := tokenSecret.Data[TokenSecretTokenKey]
+	if len(tokenBytes) == 0 {
+		return fmt.Errorf("current token Secret has no active token")
+	}
+
+	userDataSecret := t.outdatedUserDataSecret()
+	if err := t.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret); err != nil {
+		return fmt.Errorf("failed to get current user data Secret: %w", err)
+	}
+	var config ignitionapi.Config
+	if err := json.Unmarshal(userDataSecret.Data["value"], &config); err != nil {
+		return fmt.Errorf("invalid current user data Ignition config")
+	}
+	if len(config.Ignition.Config.Merge) != 1 {
+		return fmt.Errorf("current user data Ignition config has no unique merge source")
+	}
+	for headerIndex := range config.Ignition.Config.Merge[0].HTTPHeaders {
+		header := &config.Ignition.Config.Merge[0].HTTPHeaders[headerIndex]
+		if header.Name != "Authorization" {
+			continue
+		}
+		value := "Bearer " + base64.StdEncoding.EncodeToString(tokenBytes)
+		if header.Value != nil && *header.Value == value {
+			return nil
+		}
+		header.Value = ptr.To(value)
+		updatedValue, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("failed to marshal current user data Ignition config: %w", err)
+		}
+		userDataSecret.Data["value"] = updatedValue
+		if err := t.Update(ctx, userDataSecret); err != nil {
+			return fmt.Errorf("failed to update current user data Secret: %w", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("current user data Ignition config has no Authorization header")
 }
 
 const UserDataSecrePrefix = "user-data"

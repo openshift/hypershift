@@ -21,6 +21,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo/fixtures"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
+	supportutil "github.com/openshift/hypershift/support/util"
 	fakeimagemetadataprovider "github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -39,6 +40,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
@@ -47,6 +49,34 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/vincent-petithory/dataurl"
 )
+
+func TestEnqueueParentNodePool(t *testing.T) {
+	t.Run("When an annotated token Secret rotates, it should enqueue its NodePool through the scoped Secret watch", func(t *testing.T) {
+		t.Setenv(k8sutil.EnableHostedClustersAnnotationScopingEnv, "true")
+		t.Setenv(k8sutil.HostedClustersScopeAnnotationEnv, "this-operator")
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: "clusters"},
+			Spec:       hyperv1.NodePoolSpec{ClusterName: "hosted"},
+		}
+		hostedCluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{
+			Name: "hosted", Namespace: "clusters",
+			Annotations: map[string]string{k8sutil.HostedClustersScopeAnnotation: "this-operator"},
+		}}
+		reader := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(nodePool, hostedCluster).Build()
+		filter := supportutil.PredicatesForHostedClusterAnnotationScoping(reader)
+		previous := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+			Name: "token-workers", Namespace: "control-plane",
+			Annotations: map[string]string{nodePoolAnnotation: "clusters/workers"},
+		}, Data: map[string][]byte{TokenSecretTokenKey: []byte("previous-token")}}
+		rotated := previous.DeepCopy()
+		rotated.Data[TokenSecretTokenKey] = []byte("current-token")
+		g := NewWithT(t)
+		g.Expect(filter.Update(event.UpdateEvent{ObjectOld: previous, ObjectNew: rotated})).To(BeTrue())
+		g.Expect(enqueueParentNodePool(t.Context(), rotated)).To(Equal([]reconcile.Request{
+			{NamespacedName: client.ObjectKeyFromObject(nodePool)},
+		}))
+	})
+}
 
 func TestIsUpdatingConfig(t *testing.T) {
 	t.Parallel()

@@ -11,6 +11,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/globalconfig"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -27,6 +28,7 @@ import (
 	testingclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -591,6 +593,92 @@ func TestSetExpirationTimestampOnToken(t *testing.T) {
 }
 
 func TestTokenReconcile(t *testing.T) {
+	t.Run("When the active token rotates without a rollout, it should refresh the referenced user data only", func(t *testing.T) {
+		g := NewWithT(t)
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: "clusters"},
+		}
+		config := &ConfigGenerator{
+			nodePool:              nodePool,
+			controlplaneNamespace: "control-plane",
+			rolloutConfig: &rolloutConfig{
+				mcoRawConfig:        "original-management-content",
+				rolloutMcoRawConfig: "unchanged-node-content",
+				releaseImage: &releaseinfo.ReleaseImage{ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+				}},
+			},
+		}
+		token := &Token{ConfigGenerator: config}
+		originalHash := token.Hash()
+		nodePool.Status.Version = token.Version()
+		nodePool.Annotations = map[string]string{
+			nodePoolAnnotationCurrentConfigVersion: originalHash,
+			nodePoolAnnotationCurrentRolloutConfig: config.RolloutHashWithoutVersion(),
+		}
+		originalTokenSecret := token.TokenSecret()
+		originalTokenSecret.Annotations = map[string]string{nodePoolAnnotation: crclient.ObjectKeyFromObject(nodePool).String()}
+		originalTokenSecret.Data = map[string][]byte{TokenSecretTokenKey: []byte("previous-token")}
+		originalUserDataSecret := token.UserDataSecret()
+		originalUserDataSecret.Annotations = map[string]string{nodePoolAnnotation: crclient.ObjectKeyFromObject(nodePool).String()}
+		originalIgnition := ignConfig("ca", base64.StdEncoding.EncodeToString([]byte("previous-token")),
+			"ignition.example.com", originalHash, &configv1.Proxy{}, nodePool)
+		originalValue, err := json.Marshal(originalIgnition)
+		g.Expect(err).ToNot(HaveOccurred())
+		originalUserDataSecret.Data = map[string][]byte{
+			"disableTemplating": []byte("dHJ1ZQ=="),
+			"value":             originalValue,
+		}
+		machineDeployment := &capiv1.MachineDeployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: "control-plane"},
+			Spec: capiv1.MachineDeploymentSpec{Template: capiv1.MachineTemplateSpec{
+				Spec: capiv1.MachineSpec{Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To(originalUserDataSecret.Name)}},
+			}},
+		}
+		machineSet := &capiv1.MachineSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: "control-plane"},
+			Spec: capiv1.MachineSetSpec{Template: capiv1.MachineTemplateSpec{
+				Spec: capiv1.MachineSpec{Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To(originalUserDataSecret.Name)}},
+			}},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+			originalTokenSecret, originalUserDataSecret, machineDeployment, machineSet,
+		).Build()
+		token.Client = fakeClient
+
+		rotatedSecret := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(originalTokenSecret), rotatedSecret)).To(Succeed())
+		rotatedSecret.Data[TokenSecretTokenKey] = []byte("current-token")
+		g.Expect(fakeClient.Update(t.Context(), rotatedSecret)).To(Succeed())
+		config.mcoRawConfig = "changed-management-content"
+		g.Expect(token.Hash()).NotTo(Equal(originalHash))
+		g.Expect(token.isOutdated()).To(BeFalse())
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed())
+		currentUserData := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(originalUserDataSecret), currentUserData)).To(Succeed())
+		g.Expect(currentUserData.Name).To(Equal(originalUserDataSecret.Name))
+		g.Expect(currentUserData.Data["disableTemplating"]).To(Equal(originalUserDataSecret.Data["disableTemplating"]))
+		var currentIgnition ignitionapi.Config
+		g.Expect(json.Unmarshal(currentUserData.Data["value"], &currentIgnition)).To(Succeed())
+		originalIgnition.Ignition.Config.Merge[0].HTTPHeaders[0].Value = ptr.To(
+			"Bearer " + base64.StdEncoding.EncodeToString(rotatedSecret.Data[TokenSecretTokenKey]))
+		g.Expect(currentIgnition).To(Equal(originalIgnition))
+		resourceVersion := currentUserData.ResourceVersion
+		g.Expect(token.Reconcile(t.Context())).To(Succeed())
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(originalUserDataSecret), currentUserData)).To(Succeed())
+		g.Expect(currentUserData.ResourceVersion).To(Equal(resourceVersion))
+
+		secrets := &corev1.SecretList{}
+		g.Expect(fakeClient.List(t.Context(), secrets, crclient.InNamespace("control-plane"))).To(Succeed())
+		g.Expect(secrets.Items).To(HaveLen(2))
+		for _, resource := range []crclient.Object{machineDeployment, machineSet} {
+			g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(resource), resource)).To(Succeed())
+		}
+		g.Expect(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(ptr.To(originalUserDataSecret.Name)))
+		g.Expect(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(ptr.To(originalUserDataSecret.Name)))
+	})
+
 	hcName := "test-hc"
 	hcNamespace := "namespace"
 	controlplaneNamespace := "controlplane-namespace"
@@ -891,6 +979,84 @@ func TestTokenReconcile(t *testing.T) {
 			g.Expect(gotIgnition).To(Equal(expectedIgnition))
 		})
 
+	}
+}
+
+func TestReconcileCurrentUserData(t *testing.T) {
+	testCases := []struct {
+		name            string
+		currentHash     string
+		includeToken    bool
+		includeUserData bool
+		tokenData       map[string][]byte
+		userDataValue   []byte
+	}{
+		{
+			name: "When the current config version is missing, it should not create a new Secret",
+		},
+		{
+			name:        "When the current token Secret is missing, it should report an error without creating one",
+			currentHash: "current-hash",
+		},
+		{
+			name:         "When the active token is empty, it should not update user data",
+			currentHash:  "current-hash",
+			includeToken: true,
+		},
+		{
+			name:         "When the current user data Secret is missing, it should not create a new Secret",
+			currentHash:  "current-hash",
+			includeToken: true,
+			tokenData:    map[string][]byte{TokenSecretTokenKey: []byte("current-token")},
+		},
+		{
+			name:            "When the user data is malformed, it should report an error without overwriting it",
+			currentHash:     "current-hash",
+			includeToken:    true,
+			includeUserData: true,
+			tokenData:       map[string][]byte{TokenSecretTokenKey: []byte("current-token")},
+			userDataValue:   []byte("not-json"),
+		},
+		{
+			name:            "When the Authorization header is missing, it should preserve the user data",
+			currentHash:     "current-hash",
+			includeToken:    true,
+			includeUserData: true,
+			tokenData:       map[string][]byte{TokenSecretTokenKey: []byte("current-token")},
+			userDataValue:   []byte(`{"ignition":{"config":{"merge":[{"source":"https://ignition.example.com/ignition"}]}}}`),
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewWithT(t)
+			nodePool := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{
+				Name: "workers", Namespace: "clusters",
+				Annotations: map[string]string{nodePoolAnnotationCurrentConfigVersion: testCase.currentHash},
+			}}
+			token := &Token{ConfigGenerator: &ConfigGenerator{nodePool: nodePool, controlplaneNamespace: "control-plane"}}
+			var objects []crclient.Object
+			if testCase.includeToken {
+				secret := token.outdatedTokenSecret()
+				secret.Data = testCase.tokenData
+				objects = append(objects, secret)
+			}
+			if testCase.includeUserData {
+				secret := token.outdatedUserDataSecret()
+				secret.Data = map[string][]byte{"value": testCase.userDataValue}
+				objects = append(objects, secret)
+			}
+			fakeClient := fake.NewClientBuilder().WithObjects(objects...).Build()
+			token.Client = fakeClient
+			g.Expect(token.reconcileCurrentUserData(t.Context())).ToNot(Succeed())
+			secrets := &corev1.SecretList{}
+			g.Expect(fakeClient.List(t.Context(), secrets)).To(Succeed())
+			g.Expect(secrets.Items).To(HaveLen(len(objects)))
+			if testCase.includeUserData {
+				secret := &corev1.Secret{}
+				g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(token.outdatedUserDataSecret()), secret)).To(Succeed())
+				g.Expect(secret.Data["value"]).To(Equal(testCase.userDataValue))
+			}
+		})
 	}
 }
 
