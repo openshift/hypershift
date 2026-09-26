@@ -11,32 +11,23 @@ linters:
   default: all
   disable:
     - cyclop
-    - depguard
-    - dupl
     - dupword
     - err113
     - exhaustruct
+    - exhaustruct_v5
     - forbidigo
     - funlen
     - gocognit
-    - gocyclo
+    - goconst
     - godot
-    - godox
+    - gomodguard
     - lll
-    - maintidx
     - mnd
-    - nakedret
-    - nestif
     - nlreturn
     - noinlineerr
-    - paralleltest
-    - prealloc
-    - rowserrcheck
     - tagliatelle
     - testpackage
-    - tparallel
     - varnamelen
-    - wastedassign
     - wsl
 
   settings:
