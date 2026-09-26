@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 4b649d082019c0791b1efcabd0c12deb85e2d3616b23d6f8b62b842bbffac353
+    hypershift.openshift.io/desired-state-hash: ac6d5749a2dc812da85000b5d942810855c956c902e8cd2d8b922d5341adcf80
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: metrics-proxy
@@ -24,7 +24,7 @@ spec:
   strategy:
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 1
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:

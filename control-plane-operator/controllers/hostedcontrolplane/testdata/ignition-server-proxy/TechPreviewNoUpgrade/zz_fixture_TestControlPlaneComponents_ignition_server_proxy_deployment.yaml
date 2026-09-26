@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 9c0d04f42908aae3760cfe4017402ca7b4bf0840cc543c22a705d44544d5fc2a
+    hypershift.openshift.io/desired-state-hash: 3ef8febfef42adc8cbf24d7861b6e3784551e202315d7bd742ee71e6b8715dfb
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ignition-server-proxy
@@ -24,7 +24,7 @@ spec:
   strategy:
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 1
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:

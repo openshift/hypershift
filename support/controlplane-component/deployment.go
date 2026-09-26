@@ -53,16 +53,19 @@ func (d *deploymentProvider) SetReplicasAndStrategy(object *appsv1.Deployment, r
 	object.Spec.Replicas = ptr.To(replicas)
 	object.Spec.RevisionHistoryLimit = ptr.To[int32](2)
 
-	// there are three standard cases currently with hypershift: HA mode where there are 3 replicas spread across
-	// zones, HA mode with 2 replicas, and then non ha with one replica. When only 3 zones are available you need
-	// to be able to set maxUnavailable in order to progress the rollout. However, you do not want to set that in
-	// the single replica case because it will result in downtime.
+	// There are three standard cases with hypershift:
+	//   1 replica  (non-HA):  no strategy override needed (downtime is expected).
+	//   2 replicas (HA):      maxSurge=1, maxUnavailable=0. A new pod must come up
+	//                         healthy before the old one is removed, keeping at least
+	//                         one pod available throughout the rollout. This is
+	//                         critical for request-serving components where a stuck
+	//                         replacement pod (e.g. from an Azure CNI DHCP timeout)
+	//                         would otherwise reduce available replicas to zero.
+	//   3+ replicas (HA):     maxSurge=0, maxUnavailable=1. With 3 zones you need
+	//                         maxUnavailable to progress the rollout.
 	if replicas > 1 {
 		maxSurge := intstr.FromInt(1)
 		maxUnavailable := intstr.FromInt(0)
-		if isRequestServing {
-			maxUnavailable = intstr.FromInt(1)
-		}
 		if replicas > 2 {
 			maxSurge = intstr.FromInt(0)
 			maxUnavailable = intstr.FromInt(1)
