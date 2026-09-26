@@ -408,15 +408,15 @@ func TestReconcileDefaultOpenshiftEC2NodeClass(t *testing.T) {
 		annotations        map[string]string
 		expectDefaultClass bool
 	}{
-		"When standalone adapter mode is enabled, it should reconcile the default OpenshiftEC2NodeClass and return early": {
+		"When standalone adapter mode is enabled, it should leave default OpenshiftEC2NodeClass reconciliation to the standalone operator": {
 			standaloneAdapter:  true,
-			expectDefaultClass: true,
+			expectDefaultClass: false,
 		},
 		"When embedded mode is enabled, it should reconcile the default OpenshiftEC2NodeClass": {
 			expectDefaultClass: true,
 		},
-		"When the Karpenter E2E override is set, it should skip the default OpenshiftEC2NodeClass": {
-			standaloneAdapter: true,
+		"When the Karpenter E2E override is set in embedded mode, it should skip the default OpenshiftEC2NodeClass": {
+			standaloneAdapter: false,
 			annotations: map[string]string{
 				hyperkarpenterv1.KarpenterCoreE2EOverrideAnnotation: "true",
 			},
