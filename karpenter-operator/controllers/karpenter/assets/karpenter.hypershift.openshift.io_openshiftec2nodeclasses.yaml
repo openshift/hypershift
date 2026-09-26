@@ -241,6 +241,22 @@ spec:
                     other fields in a capacity reservation selector term'
                   rule: '!self.all(x, has(x.id) && (has(x.tags) || has(x.ownerID)
                     || has(x.instanceMatchCriteria)))'
+              cpuOptions:
+                description: cpuOptions defines the CPU options for the instance.
+                minProperties: 1
+                properties:
+                  nestedVirtualization:
+                    description: |-
+                      nestedVirtualization enables or disables nested virtualization on the AWS instances.
+                      When set to "Enabled", Karpenter filters instance types to only those reporting "nested-virtualization".
+                    enum:
+                    - Enabled
+                    - Disabled
+                    type: string
+                    x-kubernetes-validations:
+                    - message: nestedVirtualization must be Enabled or Disabled
+                      rule: self in ['Enabled','Disabled']
+                type: object
               instanceStorePolicy:
                 description: instanceStorePolicy specifies how to handle instance-store
                   disks.

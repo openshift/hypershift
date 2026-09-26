@@ -154,6 +154,9 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 					HTTPPutResponseHopLimit: 1,
 					HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
 				},
+				CPUOptions: hyperkarpenterv1.CPUOptions{
+					NestedVirtualization: hyperkarpenterv1.NestedVirtualizationEnabled,
+				},
 			},
 			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
@@ -192,6 +195,9 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 					HTTPProtocolIPv6:        ptr.To("disabled"),
 					HTTPPutResponseHopLimit: ptr.To(int64(1)),
 					HTTPTokens:              ptr.To("required"),
+				},
+				CPUOptions: &awskarpenterv1.CPUOptions{
+					NestedVirtualization: ptr.To("enabled"),
 				},
 			},
 		},
