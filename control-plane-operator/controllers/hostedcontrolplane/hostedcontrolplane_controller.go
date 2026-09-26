@@ -1145,6 +1145,7 @@ func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx conte
 	}
 
 	if len(notAvailable) > 0 {
+		sort.Strings(notAvailable)
 		return fmt.Sprintf("Waiting for components to be available: %s", strings.Join(notAvailable, ", ")), nil
 	}
 
