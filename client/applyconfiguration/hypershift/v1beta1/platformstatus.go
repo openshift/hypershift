@@ -20,7 +20,8 @@ package v1beta1
 // PlatformStatusApplyConfiguration represents a declarative configuration of the PlatformStatus type for use
 // with apply.
 type PlatformStatusApplyConfiguration struct {
-	AWS *AWSPlatformStatusApplyConfiguration `json:"aws,omitempty"`
+	AWS   *AWSPlatformStatusApplyConfiguration   `json:"aws,omitempty"`
+	Azure *AzurePlatformStatusApplyConfiguration `json:"azure,omitempty"`
 }
 
 // PlatformStatusApplyConfiguration constructs a declarative configuration of the PlatformStatus type for use with
@@ -34,5 +35,13 @@ func PlatformStatus() *PlatformStatusApplyConfiguration {
 // If called multiple times, the AWS field is set to the value of the last call.
 func (b *PlatformStatusApplyConfiguration) WithAWS(value *AWSPlatformStatusApplyConfiguration) *PlatformStatusApplyConfiguration {
 	b.AWS = value
+	return b
+}
+
+// WithAzure sets the Azure field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Azure field is set to the value of the last call.
+func (b *PlatformStatusApplyConfiguration) WithAzure(value *AzurePlatformStatusApplyConfiguration) *PlatformStatusApplyConfiguration {
+	b.Azure = value
 	return b
 }

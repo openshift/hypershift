@@ -7254,6 +7254,174 @@ spec:
                         maxLength: 255
                         type: string
                     type: object
+                  azure:
+                    description: azure contains platform-specific status for Azure
+                    minProperties: 1
+                    properties:
+                      managedIdentities:
+                        description: |-
+                          managedIdentities reflects the credential secret names of the managed identities
+                          currently applied by the control plane operator to control plane and data plane
+                          components. Populated when the Azure authentication mode is ManagedIdentities.
+                        minProperties: 1
+                        properties:
+                          controlPlane:
+                            description: |-
+                              controlPlane contains the Key Vault credential secret names of the managed identities
+                              currently applied to control plane components.
+                            minProperties: 1
+                            properties:
+                              cloudProvider:
+                                description: |-
+                                  cloudProvider is the Key Vault secret name of the managed identity currently applied
+                                  to the Azure cloud provider (cloud controller manager).
+                                maxLength: 127
+                                minLength: 1
+                                type: string
+                              controlPlaneOperator:
+                                description: |-
+                                  controlPlaneOperator is the Key Vault secret name of the managed identity currently
+                                  applied to the control plane operator.
+                                maxLength: 127
+                                minLength: 1
+                                type: string
+                              disk:
+                                description: |-
+                                  disk is the Key Vault secret name of the managed identity currently
+                                  applied to the Azure disk CSI driver.
+                                maxLength: 127
+                                minLength: 1
+                                type: string
+                              file:
+                                description: |-
+                                  file is the Key Vault secret name of the managed identity currently
+                                  applied to the Azure file CSI driver.
+                                maxLength: 127
+                                minLength: 1
+                                type: string
+                              imageRegistry:
+                                description: |-
+                                  imageRegistry is the Key Vault secret name of the managed identity currently
+                                  applied to the image registry operator.
+                                maxLength: 127
+                                minLength: 1
+                                type: string
+                              ingress:
+                                description: |-
+                                  ingress is the Key Vault secret name of the managed identity currently
+                                  applied to the ingress operator.
+                                maxLength: 127
+                                minLength: 1
+                                type: string
+                              network:
+                                description: |-
+                                  network is the Key Vault secret name of the managed identity currently
+                                  applied to the network operator.
+                                maxLength: 127
+                                minLength: 1
+                                type: string
+                              nodePoolManagement:
+                                description: |-
+                                  nodePoolManagement is the Key Vault secret name of the managed identity currently
+                                  applied to the node pool management operator.
+                                maxLength: 127
+                                minLength: 1
+                                type: string
+                            type: object
+                          dataPlane:
+                            description: |-
+                              dataPlane contains the MSI client IDs of the managed identities currently applied
+                              to data plane components via the ignition configuration.
+                            minProperties: 1
+                            properties:
+                              diskClientID:
+                                description: |-
+                                  diskClientID is the MSI client ID currently applied to the CSI disk driver running
+                                  on the data plane.
+                                maxLength: 255
+                                minLength: 1
+                                type: string
+                              fileClientID:
+                                description: |-
+                                  fileClientID is the MSI client ID currently applied to the CSI file driver running
+                                  on the data plane.
+                                maxLength: 255
+                                minLength: 1
+                                type: string
+                              imageRegistryClientID:
+                                description: |-
+                                  imageRegistryClientID is the MSI client ID currently applied to the image registry
+                                  controller running on the data plane.
+                                maxLength: 255
+                                minLength: 1
+                                type: string
+                            type: object
+                        type: object
+                      workloadIdentities:
+                        description: |-
+                          workloadIdentities reflects the client IDs of the federated workload identities
+                          currently applied by the control plane operator. Populated when the Azure
+                          authentication mode is WorkloadIdentities.
+                        minProperties: 1
+                        properties:
+                          cloudProvider:
+                            description: |-
+                              cloudProvider is the client ID of the workload identity currently applied to the
+                              Azure cloud provider (cloud controller manager).
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          controlPlaneOperator:
+                            description: |-
+                              controlPlaneOperator is the client ID of the workload identity currently applied to
+                              the control plane operator.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          disk:
+                            description: |-
+                              disk is the client ID of the workload identity currently applied to the Azure disk
+                              CSI driver.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          file:
+                            description: |-
+                              file is the client ID of the workload identity currently applied to the Azure file
+                              CSI driver.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          imageRegistry:
+                            description: |-
+                              imageRegistry is the client ID of the workload identity currently applied to the
+                              image registry operator.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          ingress:
+                            description: |-
+                              ingress is the client ID of the workload identity currently applied to the ingress
+                              operator.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          network:
+                            description: |-
+                              network is the client ID of the workload identity currently applied to the network
+                              operator.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                          nodePoolManagement:
+                            description: |-
+                              nodePoolManagement is the client ID of the workload identity currently applied to
+                              the node pool management operator.
+                            maxLength: 255
+                            minLength: 1
+                            type: string
+                        type: object
+                    type: object
                 type: object
               ready:
                 default: false
