@@ -17,15 +17,16 @@ limitations under the License.
 package genall
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 
 	"golang.org/x/tools/go/packages"
-	rawyaml "gopkg.in/yaml.v2"
 	"sigs.k8s.io/controller-tools/pkg/loader"
 	"sigs.k8s.io/controller-tools/pkg/markers"
+	"sigs.k8s.io/yaml"
 )
 
 // Generators are a list of Generators.
@@ -121,19 +122,22 @@ type GenerationContext struct {
 
 // WriteYAMLOptions implements the Options Pattern for WriteYAML.
 type WriteYAMLOptions struct {
-	transform func(obj map[string]interface{}) error
+	transform func(obj map[string]any) error
 }
 
 // WithTransform applies a transformation to objects just before writing them.
-func WithTransform(transform func(obj map[string]interface{}) error) *WriteYAMLOptions {
+func WithTransform(transform func(obj map[string]any) error) *WriteYAMLOptions {
 	return &WriteYAMLOptions{
 		transform: transform,
 	}
 }
 
 // TransformRemoveCreationTimestamp ensures we do not write the metadata.creationTimestamp field.
-func TransformRemoveCreationTimestamp(obj map[string]interface{}) error {
-	metadata := obj["metadata"].(map[interface{}]interface{})
+func TransformRemoveCreationTimestamp(obj map[string]any) error {
+	metadata, ok := obj["metadata"].(map[string]any)
+	if !ok {
+		return nil
+	}
 	delete(metadata, "creationTimestamp")
 	return nil
 }
@@ -141,7 +145,7 @@ func TransformRemoveCreationTimestamp(obj map[string]interface{}) error {
 // WriteYAML writes the given objects out, serialized as YAML, using the
 // context's OutputRule.  Objects are written as separate documents, separated
 // from each other by `---` (as per the YAML spec).
-func (g GenerationContext) WriteYAML(itemPath, headerText string, objs []interface{}, options ...*WriteYAMLOptions) error {
+func (g GenerationContext) WriteYAML(itemPath, headerText string, objs []any, options ...*WriteYAMLOptions) error {
 	out, err := g.Open(nil, itemPath)
 	if err != nil {
 		return err
@@ -171,7 +175,7 @@ func (g GenerationContext) WriteYAML(itemPath, headerText string, objs []interfa
 }
 
 // yamlMarshal is based on sigs.k8s.io/yaml.Marshal, but allows for transforming the final data before writing.
-func yamlMarshal(o interface{}, options ...*WriteYAMLOptions) ([]byte, error) {
+func yamlMarshal(o any, options ...*WriteYAMLOptions) ([]byte, error) {
 	j, err := json.Marshal(o)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling into JSON: %w", err)
@@ -181,15 +185,16 @@ func yamlMarshal(o interface{}, options ...*WriteYAMLOptions) ([]byte, error) {
 }
 
 // yamlJSONToYAMLWithFilter is based on sigs.k8s.io/yaml.JSONToYAML, but allows for transforming the final data before writing.
+//
+// It does not call JSONToYAML directly because transforms need a map[string]any, and the YAML
+// decoder returns map[any]any for nested maps. Marshalling is still done by sigs.k8s.io/yaml.
 func yamlJSONToYAMLWithFilter(j []byte, options ...*WriteYAMLOptions) ([]byte, error) {
-	// Convert the JSON to an object.
-	var jsonObj map[string]interface{}
-	// We are using yaml.Unmarshal here (instead of json.Unmarshal) because the
-	// Go JSON library doesn't try to pick the right number type (int, float,
-	// etc.) when unmarshalling to interface{}, it just picks float64
-	// universally. go-yaml does go through the effort of picking the right
-	// number type, so we can preserve number type throughout this process.
-	if err := rawyaml.Unmarshal(j, &jsonObj); err != nil {
+	var jsonObj map[string]any
+	// UseNumber keeps integers exact. Without it every number becomes a float64,
+	// so values above 2^53 lose precision.
+	decoder := json.NewDecoder(bytes.NewReader(j))
+	decoder.UseNumber()
+	if err := decoder.Decode(&jsonObj); err != nil {
 		return nil, err
 	}
 
@@ -201,8 +206,7 @@ func yamlJSONToYAMLWithFilter(j []byte, options ...*WriteYAMLOptions) ([]byte, e
 		}
 	}
 
-	// Marshal this object into YAML.
-	return rawyaml.Marshal(jsonObj)
+	return yaml.Marshal(jsonObj)
 }
 
 // ReadFile reads the given boilerplate artifact using the context's InputRule.
@@ -218,7 +222,11 @@ func (g GenerationContext) ReadFile(path string) ([]byte, error) {
 // ForRoots produces a Runtime to run the given generators against the
 // given packages.  It outputs to /dev/null by default.
 func (g Generators) ForRoots(rootPaths ...string) (*Runtime, error) {
-	roots, err := loader.LoadRoots(rootPaths...)
+	return g.ForRootsWithConfig(&packages.Config{}, rootPaths...)
+}
+
+func (g Generators) ForRootsWithConfig(cfg *packages.Config, rootPaths ...string) (*Runtime, error) {
+	roots, err := loader.LoadRootsWithConfig(cfg, rootPaths...)
 	if err != nil {
 		return nil, err
 	}
