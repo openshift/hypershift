@@ -1,4 +1,4 @@
-package util
+package reconcilerpolicy
 
 import (
 	"fmt"
@@ -23,31 +23,31 @@ func TestProcessPausedUntilField(t *testing.T) {
 		expectedError    bool
 	}{
 		{
-			name:             "if the pausedUntil field does not exist then reconciliation is not paused",
+			name:             "When pausedUntil is absent, it should report reconciliation as active",
 			inputPausedField: nil,
 			expectedPaused:   false,
 			expectedDuration: time.Duration(0),
 		},
 		{
-			name:             "if pausedUntil field is later than time.Now then reconciliation is paused",
+			name:             "When pausedUntil is in the future, it should report reconciliation as paused for the remaining duration",
 			inputPausedField: ptr.To(now.Add(4 * time.Hour).Format(time.RFC3339Nano)),
 			expectedPaused:   true,
 			expectedDuration: 4 * time.Hour,
 		},
 		{
-			name:             "if pausedUntil field is before time.Now then reconciliation is not paused",
+			name:             "When pausedUntil is in the past, it should report reconciliation as active",
 			inputPausedField: ptr.To(now.Add(-4 * time.Hour).Format(time.RFC3339Nano)),
 			expectedPaused:   false,
 			expectedDuration: -(4 * time.Hour),
 		},
 		{
-			name:             "if pausedUntil field is true then reconciliation is paused",
+			name:             "When pausedUntil is true, it should report reconciliation as paused without a duration",
 			inputPausedField: ptr.To("true"),
 			expectedPaused:   true,
 			expectedDuration: time.Duration(0),
 		},
 		{
-			name:             "if pausedUntil field has an improper value then reconciliation is not paused",
+			name:             "When pausedUntil is invalid, it should report reconciliation as active with an error",
 			inputPausedField: ptr.To("badValue"),
 			expectedPaused:   false,
 			expectedDuration: time.Duration(0),
@@ -65,7 +65,7 @@ func TestProcessPausedUntilField(t *testing.T) {
 	}
 }
 
-func TestGenerateReconciliationPausedCondition(t *testing.T) {
+func TestGenerateReconciliationActiveCondition(t *testing.T) {
 	fakeInputGeneration := int64(5)
 	fakeFutureDate := ptr.To(time.Now().Add(4 * time.Hour).Format(time.RFC3339))
 	fakePastDate := ptr.To(time.Now().Add(-4 * time.Hour).Format(time.RFC3339))
@@ -75,7 +75,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 		expectedCondition metav1.Condition
 	}{
 		{
-			name:             "if the pausedUntil field does not exist then ReconciliationActive condition is true",
+			name:             "When pausedUntil is absent, it should generate an active condition",
 			inputPausedField: nil,
 			expectedCondition: metav1.Condition{
 				Type:               string(hyperv1.ReconciliationActive),
@@ -86,7 +86,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			},
 		},
 		{
-			name:             "if pausedUntil field is later than time.Now ReconciliationActive condition is false",
+			name:             "When pausedUntil is in the future, it should generate a paused condition",
 			inputPausedField: fakeFutureDate,
 			expectedCondition: metav1.Condition{
 				Type:               string(hyperv1.ReconciliationActive),
@@ -97,7 +97,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			},
 		},
 		{
-			name:             "if pausedUntil field is before time.Now then ReconciliationActive condition is true",
+			name:             "When pausedUntil is in the past, it should generate an active condition",
 			inputPausedField: fakePastDate,
 			expectedCondition: metav1.Condition{
 				Type:               string(hyperv1.ReconciliationActive),
@@ -108,7 +108,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			},
 		},
 		{
-			name:             "if pausedUntil field is true then ReconciliationActive condition is false",
+			name:             "When pausedUntil is true, it should generate a paused condition without an end time",
 			inputPausedField: ptr.To("true"),
 			expectedCondition: metav1.Condition{
 				Type:               string(hyperv1.ReconciliationActive),
@@ -119,7 +119,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			},
 		},
 		{
-			name:             "if pausedUntil field has an improper value then ReconciliationActive condition is true with a reason indicating invalid value provided",
+			name:             "When pausedUntil is invalid, it should generate an active condition with the invalid-value reason",
 			inputPausedField: ptr.To("badValue"),
 			expectedCondition: metav1.Condition{
 				Type:               string(hyperv1.ReconciliationActive),

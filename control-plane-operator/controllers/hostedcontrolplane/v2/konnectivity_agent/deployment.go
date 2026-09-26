@@ -7,7 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -18,7 +18,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		fmt.Sprintf("ipv4=%s", cpContext.InfraStatus.OpenShiftAPIHost),
 		fmt.Sprintf("ipv4=%s", cpContext.InfraStatus.PackageServerAPIAddress),
 	}
-	if util.HCPOAuthEnabled(cpContext.HCP) {
+	if reconcilerpolicy.HCPOAuthEnabled(cpContext.HCP) {
 		ips = append(ips, fmt.Sprintf("ipv4=%s", cpContext.InfraStatus.OauthAPIServerHost))
 	}
 

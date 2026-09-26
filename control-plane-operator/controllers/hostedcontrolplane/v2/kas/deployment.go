@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/secretencryption"
 	"github.com/openshift/hypershift/support/util"
 
@@ -119,7 +120,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	// If the built-in OAuth stack is not enabled, there is no need to do the auth-related
 	// bootstrapping step.
-	if hcp.Spec.Configuration != nil && !util.ConfigOAuthEnabled(hcp.Spec.Configuration.Authentication) {
+	if hcp.Spec.Configuration != nil && !reconcilerpolicy.ConfigOAuthEnabled(hcp.Spec.Configuration.Authentication) {
 		podspec.RemoveInitContainer("init-auth-bootstrap-render", &deployment.Spec.Template.Spec)
 	}
 
