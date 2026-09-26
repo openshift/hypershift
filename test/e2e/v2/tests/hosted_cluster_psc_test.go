@@ -17,14 +17,29 @@ limitations under the License.
 package tests
 
 import (
+	"fmt"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"google.golang.org/api/compute/v1"
+)
+
+const (
+	gcpWIFCredentialsFile        = "wif-cred.json"
+	gcpControlPlaneProjectIDFile = "control-plane-project-id"
+	backendServiceAnnotation     = "service.kubernetes.io/backend-service"
 )
 
 // GCPPrivateServiceConnectTest registers tests that validate PSC resource correctness on GCP.
@@ -78,6 +93,118 @@ func GCPPrivateServiceConnectTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
+// GCPResourceLabelsTest registers tests that validate labels on GCP resources
+// created for Private Service Connect and router load balancers.
+func GCPResourceLabelsTest(getTestCtx internal.TestContextGetter) {
+	Context("GCP resource labels", Label("GCP", "resource-labels"), func() {
+		BeforeEach(func() {
+			getTestCtx().SkipIfNotPlatform(hyperv1.GCPPlatform)
+		})
+
+		It("should apply HostedCluster resource labels to PSC and router forwarding resources", Label("resource-labels"), func() {
+			tc := getTestCtx()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", tc.ClusterNamespace, tc.ClusterName)
+			Expect(hc.Spec.Platform.GCP).NotTo(BeNil(), "HostedCluster %s/%s should have a GCP platform spec", hc.Namespace, hc.Name)
+			if len(hc.Spec.Platform.GCP.ResourceLabels) == 0 {
+				Skip("HostedCluster has no GCP resource labels configured")
+			}
+
+			expectedLabels := make(map[string]string, len(hc.Spec.Platform.GCP.ResourceLabels))
+			for _, label := range hc.Spec.Platform.GCP.ResourceLabels {
+				Expect(label.Value).NotTo(BeNil(), "GCP resource label %q should have a value", label.Key)
+				expectedLabels[label.Key] = *label.Value
+			}
+
+			sharedDir := internal.GetEnvVarValue("SHARED_DIR")
+			if sharedDir == "" {
+				Skip("SHARED_DIR is required to access GCP workload identity credentials")
+			}
+			controlPlaneProjectIDFile := filepath.Join(sharedDir, gcpControlPlaneProjectIDFile)
+			if _, err := os.Stat(controlPlaneProjectIDFile); err != nil {
+				if os.IsNotExist(err) {
+					Skip(fmt.Sprintf("GCP control-plane project ID is unavailable at %s", controlPlaneProjectIDFile))
+				}
+				Expect(err).NotTo(HaveOccurred(), "failed to stat GCP control-plane project ID at %s", controlPlaneProjectIDFile)
+			}
+			controlPlaneProjectID, err := readGCPProjectID(controlPlaneProjectIDFile)
+			Expect(err).NotTo(HaveOccurred(), "failed to read GCP control-plane project ID from %s", controlPlaneProjectIDFile)
+
+			computeService := newGCPComputeClient(tc)
+
+			pscList := &hyperv1.GCPPrivateServiceConnectList{}
+			Expect(tc.MgmtClient.List(tc.Context, pscList, crclient.InNamespace(tc.ControlPlaneNamespace))).To(Succeed(),
+				"failed to list GCPPrivateServiceConnect resources in namespace %s", tc.ControlPlaneNamespace)
+			Expect(pscList.Items).To(HaveLen(1), "expected exactly one GCPPrivateServiceConnect in namespace %s", tc.ControlPlaneNamespace)
+			serviceAttachmentName := pscList.Items[0].Status.ServiceAttachmentName
+			Expect(serviceAttachmentName).NotTo(BeEmpty(), "GCPPrivateServiceConnect %s should have ServiceAttachmentName set", pscList.Items[0].Name)
+
+			customerProjectID := hc.Spec.Platform.GCP.Project
+			region := hc.Spec.Platform.GCP.Region
+			Expect(customerProjectID).NotTo(BeEmpty(), "HostedCluster GCP project should be set")
+			Expect(region).NotTo(BeEmpty(), "HostedCluster GCP region should be set")
+
+			pscAddressName := serviceAttachmentName + "-ip"
+			pscAddress, err := computeService.Addresses.Get(customerProjectID, region, pscAddressName).Context(tc.Context).Do()
+			Expect(err).NotTo(HaveOccurred(), "failed to get PSC Address %s", pscAddressName)
+			assertGCPResourceLabels(pscAddressName, pscAddress.Labels, expectedLabels)
+
+			pscForwardingRuleName := serviceAttachmentName + "-endpoint"
+			pscForwardingRule, err := computeService.ForwardingRules.Get(customerProjectID, region, pscForwardingRuleName).Context(tc.Context).Do()
+			Expect(err).NotTo(HaveOccurred(), "failed to get PSC ForwardingRule %s", pscForwardingRuleName)
+			assertGCPResourceLabels(pscForwardingRuleName, pscForwardingRule.Labels, expectedLabels)
+
+			routerService := &corev1.Service{}
+			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{Namespace: tc.ControlPlaneNamespace, Name: "router"}, routerService)).To(Succeed(),
+				"failed to get router Service in namespace %s", tc.ControlPlaneNamespace)
+			backendServiceName := routerService.Annotations[backendServiceAnnotation]
+			Expect(backendServiceName).NotTo(BeEmpty(), "router Service should have %s annotation", backendServiceAnnotation)
+
+			var routerForwardingRule *compute.ForwardingRule
+			foundForwardingRules := false
+			pageToken := ""
+			for {
+				managementForwardingRules, err := computeService.ForwardingRules.List(controlPlaneProjectID, region).PageToken(pageToken).Context(tc.Context).Do()
+				Expect(err).NotTo(HaveOccurred(), "failed to list management-project forwarding rules")
+				if len(managementForwardingRules.Items) > 0 {
+					foundForwardingRules = true
+				}
+				for _, forwardingRule := range managementForwardingRules.Items {
+					if path.Base(forwardingRule.BackendService) == backendServiceName {
+						routerForwardingRule = forwardingRule
+						break
+					}
+				}
+				if routerForwardingRule != nil || managementForwardingRules.NextPageToken == "" {
+					break
+				}
+				pageToken = managementForwardingRules.NextPageToken
+			}
+			Expect(foundForwardingRules).To(BeTrue(), "expected management-project forwarding rules in project %s", controlPlaneProjectID)
+			Expect(routerForwardingRule).NotTo(BeNil(), "expected a management-project forwarding rule for router backend service %s", backendServiceName)
+			assertGCPResourceLabels(routerForwardingRule.Name, routerForwardingRule.Labels, expectedLabels)
+		})
+	})
+}
+
+func assertGCPResourceLabels(resourceName string, actual, expected map[string]string) {
+	for key, value := range expected {
+		Expect(actual).To(HaveKeyWithValue(key, value), "GCP resource %s should have label %s=%s", resourceName, key, value)
+	}
+}
+
+func readGCPProjectID(filename string) (string, error) {
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		return "", fmt.Errorf("read GCP project ID file %s: %w", filename, err)
+	}
+	projectID := strings.TrimSpace(string(contents))
+	if projectID == "" {
+		return "", fmt.Errorf("GCP project ID file %s is empty", filename)
+	}
+	return projectID, nil
+}
+
 // RegisterGCPPSCTests registers all GCP Private Service Connect tests.
 func RegisterGCPPSCTests(getTestCtx internal.TestContextGetter) {
 	GCPPrivateServiceConnectTest(getTestCtx)
@@ -92,4 +219,15 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:GCPPrivateServiceCon
 	})
 
 	RegisterGCPPSCTests(func() *internal.TestContext { return testCtx })
+})
+
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:GCPResourceLabels] GCP Resource Labels", Label("gcp-resource-labels"), func() {
+	var testCtx *internal.TestContext
+
+	BeforeEach(func() {
+		testCtx = internal.GetTestContext()
+		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+	})
+
+	GCPResourceLabelsTest(func() *internal.TestContext { return testCtx })
 })

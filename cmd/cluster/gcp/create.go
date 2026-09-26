@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -19,6 +21,11 @@ import (
 )
 
 var _ core.Platform = (*CreateOptions)(nil)
+
+var (
+	gcpResourceLabelKeyPattern   = regexp.MustCompile(`^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$`)
+	gcpResourceLabelValuePattern = regexp.MustCompile(`^$|^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$`)
+)
 
 const (
 	SATokenIssuerSecret = "sa-token-issuer-key"
@@ -43,6 +50,7 @@ const (
 	flagZone                          = "zone"
 	flagSubnet                        = "subnet"
 	flagBootImage                     = "boot-image"
+	flagResourceLabels                = "resource-labels"
 )
 
 // RawCreateOptions contains the raw command-line options for creating a GCP cluster
@@ -106,6 +114,9 @@ type RawCreateOptions struct {
 
 	// BootImage is the GCP boot image for node instances. Overrides the default RHCOS image from the release payload
 	BootImage string
+
+	// ResourceLabels are labels applied to GCP resources created for the hosted cluster.
+	ResourceLabels []string
 }
 
 // BindOptions binds the GCP-specific flags to the provided flag set
@@ -130,6 +141,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Zone, flagZone, "", "GCP zone for node instances (e.g. us-central1-a). Defaults to {region}-a")
 	flags.StringVar(&opts.Subnet, flagSubnet, "", "Subnet name for node instances. Defaults to the PSC subnet value")
 	flags.StringVar(&opts.BootImage, flagBootImage, "", "GCP boot image for node instances. Overrides the default RHCOS image from the release payload")
+	flags.StringSliceVar(&opts.ResourceLabels, flagResourceLabels, opts.ResourceLabels, "Comma-separated GCP resource labels to apply to cluster resources (key=value). Can be specified multiple times.")
 }
 
 // ValidatedCreateOptions represents validated options for creating a GCP cluster
@@ -269,6 +281,11 @@ func serviceAccountTokenIssuerSecret(namespace, name string) *corev1.Secret {
 
 // ApplyPlatformSpecifics applies GCP-specific configurations to the HostedCluster
 func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedCluster) error {
+	resourceLabels, err := parseResourceLabels(o.ResourceLabels)
+	if err != nil {
+		return err
+	}
+
 	hostedCluster.Spec.Platform.Type = hyperv1.GCPPlatform
 	hostedCluster.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
 		Project: o.Project,
@@ -295,6 +312,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedClus
 			},
 		},
 		EndpointAccess: hyperv1.GCPEndpointAccessType(o.EndpointAccess),
+		ResourceLabels: resourceLabels,
 	}
 
 	hostedCluster.Spec.IssuerURL = o.IssuerURL
@@ -325,6 +343,30 @@ func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedClus
 	}
 
 	return nil
+}
+
+func parseResourceLabels(labels []string) ([]hyperv1.GCPResourceLabel, error) {
+	result := make([]hyperv1.GCPResourceLabel, 0, len(labels))
+	seen := make(map[string]struct{}, len(labels))
+	for _, label := range labels {
+		key, value, found := strings.Cut(label, "=")
+		if !found || key == "" {
+			return nil, fmt.Errorf("invalid --%s value %q: expected key=value", flagResourceLabels, label)
+		}
+		// GCP reserves the goog prefix for its own use; goog-partner-solution is the documented exception.
+		if !gcpResourceLabelKeyPattern.MatchString(key) || (strings.HasPrefix(key, "goog") && key != "goog-partner-solution") {
+			return nil, fmt.Errorf("invalid --%s value %q: invalid label key", flagResourceLabels, label)
+		}
+		if !gcpResourceLabelValuePattern.MatchString(value) {
+			return nil, fmt.Errorf("invalid --%s value %q: invalid label value", flagResourceLabels, label)
+		}
+		if _, exists := seen[key]; exists {
+			return nil, fmt.Errorf("invalid --%s value %q: duplicate key %q", flagResourceLabels, label, key)
+		}
+		seen[key] = struct{}{}
+		result = append(result, hyperv1.GCPResourceLabel{Key: key, Value: &value})
+	}
+	return result, nil
 }
 
 // GenerateNodePools generates the NodePool resources for GCP
