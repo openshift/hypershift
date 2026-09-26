@@ -345,6 +345,40 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(updatedHC.Finalizers).To(Equal([]string{destroyFinalizer}))
 	})
+
+	t.Run("When client operations fail, it should return an aggregated error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-cluster",
+				Namespace:  "clusters",
+				Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(hc).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+					return fmt.Errorf("API server unavailable")
+				},
+			}).
+			Build()
+
+		opts := &DestroyOptions{
+			Name:      "test-cluster",
+			Namespace: "clusters",
+			Log:       log.Log,
+		}
+
+		err := forceRemoveAllFinalizers(ctx, hc, opts, c)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("force removal encountered"))
+		g.Expect(err.Error()).To(ContainSubstring("API server unavailable"))
+	})
 }
 
 func TestStripFinalizers(t *testing.T) {
@@ -478,42 +512,6 @@ func TestStripNodePoolFinalizers(t *testing.T) {
 		err = c.Get(ctx, client.ObjectKeyFromObject(unrelatedNodePool), updatedUnrelatedNodePool)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(updatedUnrelatedNodePool.Finalizers).To(Equal([]string{"hypershift.openshift.io/finalizer"}))
-	})
-}
-
-func TestForceRemoveAllFinalizersErrors(t *testing.T) {
-	t.Run("When client operations fail, it should return an aggregated error", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		ctx := context.Background()
-
-		hc := &hyperv1.HostedCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:       "test-cluster",
-				Namespace:  "clusters",
-				Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
-			},
-		}
-
-		c := fake.NewClientBuilder().
-			WithScheme(hyperapi.Scheme).
-			WithObjects(hc).
-			WithInterceptorFuncs(interceptor.Funcs{
-				Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
-					return fmt.Errorf("API server unavailable")
-				},
-			}).
-			Build()
-
-		opts := &DestroyOptions{
-			Name:      "test-cluster",
-			Namespace: "clusters",
-			Log:       log.Log,
-		}
-
-		err := forceRemoveAllFinalizers(ctx, hc, opts, c)
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("force removal encountered"))
-		g.Expect(err.Error()).To(ContainSubstring("API server unavailable"))
 	})
 }
 
