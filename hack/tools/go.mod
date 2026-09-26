@@ -19,7 +19,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.34.2
 	k8s.io/apimachinery v0.34.3
 	k8s.io/code-generator v0.34.2
-	k8s.io/utils v0.0.0-20260108192941-914a6e750570
+	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20260125163108-a19ec76a3c5d
 	sigs.k8s.io/crdify v0.6.0
 	sigs.k8s.io/kube-api-linter v0.0.0-20260206102632-39e3d06a2850
