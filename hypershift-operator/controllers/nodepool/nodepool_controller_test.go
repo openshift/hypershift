@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -41,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
@@ -51,7 +53,7 @@ import (
 )
 
 func TestEnqueueParentNodePool(t *testing.T) {
-	t.Run("When an annotated token Secret rotates, it should enqueue its NodePool through the scoped Secret watch", func(t *testing.T) {
+	t.Run("When an annotated token Secret rotates, it should enqueue its NodePool through the scoped event handler", func(t *testing.T) {
 		t.Setenv(k8sutil.EnableHostedClustersAnnotationScopingEnv, "true")
 		t.Setenv(k8sutil.HostedClustersScopeAnnotationEnv, "this-operator")
 		nodePool := &hyperv1.NodePool{
@@ -71,10 +73,15 @@ func TestEnqueueParentNodePool(t *testing.T) {
 		rotated := previous.DeepCopy()
 		rotated.Data[TokenSecretTokenKey] = []byte("current-token")
 		g := NewWithT(t)
-		g.Expect(filter.Update(event.UpdateEvent{ObjectOld: previous, ObjectNew: rotated})).To(BeTrue())
-		g.Expect(enqueueParentNodePool(t.Context(), rotated)).To(Equal([]reconcile.Request{
-			{NamespacedName: client.ObjectKeyFromObject(nodePool)},
-		}))
+		update := event.UpdateEvent{ObjectOld: previous, ObjectNew: rotated}
+		g.Expect(filter.Update(update)).To(BeTrue())
+		queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
+		defer queue.ShutDown()
+		handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool).Update(t.Context(), update, queue)
+		g.Expect(queue.Len()).To(Equal(1))
+		request, _ := queue.Get()
+		queue.Done(request)
+		g.Expect(request.NamespacedName).To(Equal(client.ObjectKeyFromObject(nodePool)))
 	})
 }
 

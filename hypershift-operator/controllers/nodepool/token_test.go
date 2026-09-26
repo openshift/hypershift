@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"strings"
 	"testing"
 	"time"
 
@@ -645,6 +647,17 @@ func TestTokenReconcile(t *testing.T) {
 			originalTokenSecret, originalUserDataSecret, machineDeployment, machineSet,
 		).Build()
 		token.Client = fakeClient
+		capi := &CAPI{Token: token, capiClusterName: "cluster"}
+		template := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "existing-template"}}
+		nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{}
+		g.Expect(capi.reconcileMachineDeployment(t.Context(), testr.New(t), machineDeployment, template)).To(Succeed())
+		g.Expect(capi.reconcileMachineSet(t.Context(), machineSet, template)).To(Succeed())
+		g.Expect(capi.reconcileMachineDeployment(t.Context(), testr.New(t), machineDeployment, template)).To(Succeed())
+		g.Expect(capi.reconcileMachineSet(t.Context(), machineSet, template)).To(Succeed())
+		originalDeploymentTemplate := machineDeployment.Spec.Template.DeepCopy()
+		originalSetTemplate := machineSet.Spec.Template.DeepCopy()
+		originalSetAnnotations := maps.Clone(machineSet.Annotations)
+		originalNodePoolAnnotations := maps.Clone(nodePool.Annotations)
 
 		rotatedSecret := &corev1.Secret{}
 		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(originalTokenSecret), rotatedSecret)).To(Succeed())
@@ -655,6 +668,12 @@ func TestTokenReconcile(t *testing.T) {
 		g.Expect(token.isOutdated()).To(BeFalse())
 
 		g.Expect(token.Reconcile(t.Context())).To(Succeed())
+		g.Expect(capi.reconcileMachineDeployment(t.Context(), testr.New(t), machineDeployment, template)).To(Succeed())
+		g.Expect(capi.reconcileMachineSet(t.Context(), machineSet, template)).To(Succeed())
+		g.Expect(machineDeployment.Spec.Template).To(Equal(*originalDeploymentTemplate))
+		g.Expect(machineSet.Spec.Template).To(Equal(*originalSetTemplate))
+		g.Expect(machineSet.Annotations).To(Equal(originalSetAnnotations))
+		g.Expect(nodePool.Annotations).To(Equal(originalNodePoolAnnotations))
 		currentUserData := &corev1.Secret{}
 		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(originalUserDataSecret), currentUserData)).To(Succeed())
 		g.Expect(currentUserData.Name).To(Equal(originalUserDataSecret.Name))
@@ -677,6 +696,14 @@ func TestTokenReconcile(t *testing.T) {
 		}
 		g.Expect(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(ptr.To(originalUserDataSecret.Name)))
 		g.Expect(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(ptr.To(originalUserDataSecret.Name)))
+		nodePool.Spec.Platform.Type = hyperv1.NonePlatform
+		for range 2 {
+			secretsCreated := token.isOutdated()
+			g.Expect(secretsCreated).To(BeFalse())
+			g.Expect(token.Reconcile(t.Context())).To(Succeed())
+			reconcileNonAutomatedNodePool(t.Context(), nodePool, token, secretsCreated)
+			g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(Equal(originalHash))
+		}
 	})
 
 	hcName := "test-hc"
@@ -980,6 +1007,32 @@ func TestTokenReconcile(t *testing.T) {
 		})
 
 	}
+}
+
+func TestRefreshUserDataAuthorization(t *testing.T) {
+	t.Run("When merge sources and unknown Ignition members exist, it should update only Authorization headers", func(t *testing.T) {
+		g := NewWithT(t)
+		original := []byte(`{"unrecognized":{"keep":true},"ignition":{"unknown":"retained","config":{"merge":[{"source":"https://other.example","httpHeaders":[{"name":"Accept","value":"text/plain"}],"extra":1},{"source":"https://ignition.example","httpHeaders":[{"name":"Authorization","value":"Bearer old","extra":"retained"}]}],"unknownConfig":[1,2]}},"storage":{"files":[{"path":"/etc/example"}]}}`)
+		updated, changed, err := refreshUserDataAuthorization(original, []byte("new-token"))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(changed).To(BeTrue())
+		g.Expect(string(updated)).To(ContainSubstring(`"unknownConfig":[1,2]`))
+		g.Expect(string(updated)).To(ContainSubstring(`"extra":"retained"`))
+		g.Expect(string(updated)).To(ContainSubstring(`"storage":{"files":[{"path":"/etc/example"}]}`))
+		g.Expect(string(updated)).To(ContainSubstring(`"value":"Bearer ` + base64.StdEncoding.EncodeToString([]byte("new-token")) + `"`))
+		g.Expect(string(updated)).To(ContainSubstring(`"value":"text/plain"`))
+		unchanged, changed, err := refreshUserDataAuthorization(updated, []byte("new-token"))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(changed).To(BeFalse())
+		g.Expect(unchanged).To(Equal(updated))
+	})
+	t.Run("When no Authorization header exists, it should fail without returning token contents", func(t *testing.T) {
+		g := NewWithT(t)
+		_, _, err := refreshUserDataAuthorization([]byte(`{"ignition":{"config":{"merge":[{"httpHeaders":[{"name":"Accept"}]}]}}}`), []byte("private-token"))
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).NotTo(ContainSubstring("private-token"))
+		g.Expect(strings.Contains(err.Error(), "Authorization")).To(BeTrue())
+	})
 }
 
 func TestReconcileCurrentUserData(t *testing.T) {
