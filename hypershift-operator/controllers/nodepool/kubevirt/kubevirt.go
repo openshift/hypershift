@@ -3,6 +3,7 @@ package kubevirt
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -24,6 +25,20 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
+
+// archConflictError is a sentinel error type returned by PlatformValidation when the
+// user-supplied kubernetes.io/arch NodeSelector conflicts with nodePool.Spec.Arch.
+// Using a typed error lets the caller (setKubevirtConditions) route it to the
+// dedicated NodePoolValidArchPlatform condition without string-matching the message.
+type archConflictError struct{ msg string }
+
+func (e *archConflictError) Error() string { return e.msg }
+
+// IsArchConflictError reports whether err is an archConflictError.
+func IsArchConflictError(err error) bool {
+	var t *archConflictError
+	return errors.As(err, &t)
+}
 
 var LocalStorageVolumes = []string{
 	"private",
@@ -139,6 +154,18 @@ func PlatformValidation(nodePool *hyperv1.NodePool) error {
 		}
 	}
 
+	// If the user has pinned kubernetes.io/arch in the NodeSelector to a value that
+	// differs from nodePool.Spec.Arch, the virt-launcher pod would be scheduled on a
+	// node of a different architecture than the VM's Architecture field — a mismatch
+	// that causes a runtime failure. Catch it early.
+	if nodePool.Spec.Arch != "" {
+		if userArch, ok := kvPlatform.NodeSelector[corev1.LabelArchStable]; ok && userArch != nodePool.Spec.Arch {
+			return &archConflictError{msg: fmt.Sprintf(
+				"nodePool.spec.platform.kubevirt.nodeSelector[%q] is %q but nodePool.spec.arch is %q: the values must match to avoid scheduling a VM on a mismatched architecture node",
+				corev1.LabelArchStable, userArch, nodePool.Spec.Arch)}
+		}
+	}
+
 	return nil
 }
 
@@ -178,20 +205,6 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		},
 		EvictionStrategy: ptr.To(kubevirtv1.EvictionStrategyExternal),
 		Networks:         virtualMachineNetworks(kvPlatform),
-	}
-
-	// Set Architecture from nodePool.Spec.Arch so that VMs are always created
-	// with the correct arch on multi-arch infra clusters. Without this, KubeVirt
-	// inherits the cluster's compiled-in default (e.g. s390x on an s390x cluster)
-	// for every VM regardless of the NodePool arch.
-	//
-	// Machine.Type is intentionally left unset here. When Architecture is
-	// explicitly provided, the KubeVirt admission webhook automatically resolves
-	// the correct machine type from the cluster's ArchitectureConfiguration
-	// (e.g. amd64 → pc-q35-rhel9.x.x, s390x → s390-ccw-virtio-rhel9.x.x).
-	// Hardcoding Machine.Type would bypass the cluster admin's configuration.
-	if nodePool.Spec.Arch != "" {
-		vmiSpec.Architecture = nodePool.Spec.Arch
 	}
 
 	template := &capikubevirt.VirtualMachineTemplateSpec{
@@ -294,24 +307,6 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 	if kvPlatform.NetworkInterfaceMultiQueue != nil &&
 		*nodePool.Spec.Platform.Kubevirt.NetworkInterfaceMultiQueue == hyperv1.MultiQueueEnable {
 		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = ptr.To(true)
-	}
-
-	// Build the node selector from any user-supplied entries and always inject
-	// kubernetes.io/arch so the virt-launcher pod is scheduled on an infra
-	// node of the matching architecture. On a multi-arch infra cluster this
-	// prevents an amd64 VM from landing on an s390x node (or vice versa).
-	// A user-supplied kubernetes.io/arch entry in NodeSelector takes precedence.
-	nodeSelector := make(map[string]string, len(kvPlatform.NodeSelector)+1)
-	for k, v := range kvPlatform.NodeSelector {
-		nodeSelector[k] = v
-	}
-	if nodePool.Spec.Arch != "" {
-		if _, alreadySet := nodeSelector["kubernetes.io/arch"]; !alreadySet {
-			nodeSelector["kubernetes.io/arch"] = nodePool.Spec.Arch
-		}
-	}
-	if len(nodeSelector) > 0 {
-		template.Spec.Template.Spec.NodeSelector = nodeSelector
 	}
 
 	if len(kvPlatform.KubevirtHostDevices) > 0 {
@@ -449,6 +444,41 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 					},
 				},
 			},
+		}
+	}
+
+	// Always apply user-supplied NodeSelector entries. This preserves existing behaviour
+	// for idle NodePools that do not yet carry the arch annotation.
+	if len(nodePool.Spec.Platform.Kubevirt.NodeSelector) > 0 {
+		vmTemplate.Spec.Template.Spec.NodeSelector = make(map[string]string, len(nodePool.Spec.Platform.Kubevirt.NodeSelector))
+		for k, v := range nodePool.Spec.Platform.Kubevirt.NodeSelector {
+			vmTemplate.Spec.Template.Spec.NodeSelector[k] = v
+		}
+	}
+
+	// When this annotation is present the NodePool is either new or already undergoing a version
+	// update, so it is safe to set the VMI Architecture field and inject the kubernetes.io/arch
+	// NodeSelector without triggering an unexpected fleet-wide rolling update.
+	//
+	// Machine.Type is intentionally left unset here. When Architecture is explicitly provided,
+	// the KubeVirt admission webhook automatically resolves the correct machine type from the
+	// cluster's ArchitectureConfiguration
+	// (e.g. amd64 → pc-q35-rhel9.x.x, s390x → s390-ccw-virtio-rhel9.x.x).
+	// Hardcoding Machine.Type would bypass the cluster admin's configuration.
+	if _, ok := nodePool.Annotations[hyperv1.NodePoolSupportsKubevirtArchitectureAnnotation]; ok {
+		if nodePool.Spec.Arch != "" {
+			vmTemplate.Spec.Template.Spec.Architecture = nodePool.Spec.Arch
+
+			// Inject kubernetes.io/arch into the NodeSelector so the virt-launcher pod is
+			// scheduled on an infra node of the matching architecture. On a multi-arch infra
+			// cluster this prevents an amd64 VM from landing on an s390x node (or vice versa).
+			// A user-supplied kubernetes.io/arch entry takes precedence.
+			if vmTemplate.Spec.Template.Spec.NodeSelector == nil {
+				vmTemplate.Spec.Template.Spec.NodeSelector = make(map[string]string, 1)
+			}
+			if _, alreadySet := vmTemplate.Spec.Template.Spec.NodeSelector[corev1.LabelArchStable]; !alreadySet {
+				vmTemplate.Spec.Template.Spec.NodeSelector[corev1.LabelArchStable] = nodePool.Spec.Arch
+			}
 		}
 	}
 

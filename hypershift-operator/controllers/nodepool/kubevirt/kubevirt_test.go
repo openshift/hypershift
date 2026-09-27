@@ -580,13 +580,56 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expectedValidationError: "host device count must be greater than or equal to 1. received: -7",
 		},
 		{
-			// amd64 nodepool on a multi-arch cluster: verifies that Architecture
-			// and the auto-injected kubernetes.io/arch NodeSelector are set correctly.
-			name: "When arch is amd64, it should set Architecture=amd64 and inject kubernetes.io/arch=amd64 NodeSelector",
+			// A user-pinned kubernetes.io/arch NodeSelector that disagrees with
+			// Spec.Arch would put an amd64 VM on an s390x node — catch it at
+			// validation time so the user gets early, actionable feedback.
+			name: "When kubernetes.io/arch NodeSelector conflicts with Spec.Arch, PlatformValidation should return an arch conflict error",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      poolName,
 					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("8Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							nodeSelectorNPOption(map[string]string{
+								corev1.LabelArchStable: hyperv1.ArchitectureS390X,
+							}),
+						),
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expectedValidationError: fmt.Sprintf(
+				`nodePool.spec.platform.kubevirt.nodeSelector[%q] is %q but nodePool.spec.arch is %q: the values must match to avoid scheduling a VM on a mismatched architecture node`,
+				corev1.LabelArchStable, hyperv1.ArchitectureS390X, hyperv1.ArchitectureAMD64,
+			),
+		},
+		{
+			// amd64 nodepool on a multi-arch cluster: verifies that Architecture
+			// and the auto-injected kubernetes.io/arch NodeSelector are set when
+			// the gate annotation is present (new/updating NodePool).
+			name: "When arch is amd64 and gate annotation is set, it should set Architecture=amd64 and inject kubernetes.io/arch=amd64 NodeSelector",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.NodePoolSupportsKubevirtArchitectureAnnotation: "true",
+					},
 				},
 				Spec: hyperv1.NodePoolSpec{
 					ClusterName: clusterName,
@@ -618,7 +661,58 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
 							archTmpltOpt(hyperv1.ArchitectureAMD64),
-							nodeSelectorTmpltOpt(map[string]string{"kubernetes.io/arch": hyperv1.ArchitectureAMD64}),
+							nodeSelectorTmpltOpt(map[string]string{corev1.LabelArchStable: hyperv1.ArchitectureAMD64}),
+						),
+					},
+				},
+			},
+		},
+		{
+			// Existing idle amd64 NodePool (no gate annotation): Architecture and
+			// kubernetes.io/arch NodeSelector must NOT be set to avoid a fleet-wide
+			// rolling update on operator upgrade. User-supplied NodeSelector entries
+			// must still be applied.
+			name: "When arch is amd64 and gate annotation is absent, it should not set Architecture or inject kubernetes.io/arch NodeSelector but should preserve user NodeSelector entries",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("8Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							nodeSelectorNPOption(map[string]string{
+								"custom-label": "custom-value",
+							}),
+						),
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("8Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							nodeSelectorTmpltOpt(map[string]string{
+								"custom-label": "custom-value",
+							}),
 						),
 					},
 				},
@@ -626,12 +720,16 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 		},
 		{
 			// s390x nodepool: verifies that Architecture and the auto-injected
-			// kubernetes.io/arch NodeSelector are set correctly for s390x.
-			name: "When arch is s390x, it should set Architecture=s390x and inject kubernetes.io/arch=s390x NodeSelector",
+			// kubernetes.io/arch NodeSelector are set correctly for s390x when
+			// the gate annotation is present.
+			name: "When arch is s390x and gate annotation is set, it should set Architecture=s390x and inject kubernetes.io/arch=s390x NodeSelector",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      poolName,
 					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.NodePoolSupportsKubevirtArchitectureAnnotation: "true",
+					},
 				},
 				Spec: hyperv1.NodePoolSpec{
 					ClusterName: clusterName,
@@ -663,7 +761,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
 							archTmpltOpt(hyperv1.ArchitectureS390X),
-							nodeSelectorTmpltOpt(map[string]string{"kubernetes.io/arch": hyperv1.ArchitectureS390X}),
+							nodeSelectorTmpltOpt(map[string]string{corev1.LabelArchStable: hyperv1.ArchitectureS390X}),
 						),
 					},
 				},
@@ -677,6 +775,9 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      poolName,
 					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.NodePoolSupportsKubevirtArchitectureAnnotation: "true",
+					},
 				},
 				Spec: hyperv1.NodePoolSpec{
 					ClusterName: clusterName,
@@ -689,7 +790,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 							imageNPOption("testimage"),
 							volumeNPOption("32Gi"),
 							nodeSelectorNPOption(map[string]string{
-								"kubernetes.io/arch": hyperv1.ArchitectureAMD64,
+								corev1.LabelArchStable: hyperv1.ArchitectureAMD64,
 								"custom-label":       "custom-value",
 							}),
 						),
@@ -713,7 +814,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 							storageTmpltOpt("32Gi"),
 							archTmpltOpt(hyperv1.ArchitectureAMD64),
 							nodeSelectorTmpltOpt(map[string]string{
-								"kubernetes.io/arch": hyperv1.ArchitectureAMD64,
+								corev1.LabelArchStable: hyperv1.ArchitectureAMD64,
 								"custom-label":       "custom-value",
 							}),
 						),
