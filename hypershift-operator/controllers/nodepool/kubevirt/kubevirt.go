@@ -52,12 +52,18 @@ var LocalStorageVolumes = []string{
 }
 
 func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage, streamName string) (string, string, error) {
+	// Resolve the stream metadata key for the requested architecture.
+	// ArchAliases covers amd64 (→ "x86_64") and arm64 (→ "aarch64").
+	// s390x uses its own string directly as the stream key.
+	// Any other value is unsupported; callers must supply a custom containerDiskImage.
 	var archName string
 	switch nodePoolArch {
 	case hyperv1.ArchitectureS390X:
 		archName = hyperv1.ArchitectureS390X
+	case hyperv1.ArchitectureAMD64, hyperv1.ArchitectureARM64:
+		archName = hyperv1.ArchAliases[nodePoolArch]
 	default:
-		archName = hyperv1.ArchAliases[hyperv1.ArchitectureAMD64]
+		return "", "", fmt.Errorf("architecture %q does not have a KubeVirt default image; use spec.platform.kubevirt.rootVolume.image.containerDiskImage to supply a custom image", nodePoolArch)
 	}
 	streamMeta, err := releaseImage.StreamForName(streamName)
 	if err != nil {

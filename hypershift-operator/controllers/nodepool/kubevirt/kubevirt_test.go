@@ -840,6 +840,107 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "When arch is s390x and gate annotation is set, it should set Architecture=s390x and inject kubernetes.io/arch=s390x NodeSelector",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.NodePoolSupportsKubevirtArchitectureAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureS390X,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("6Gi"),
+							coresNPOption(2),
+							imageNPOption("testimage"),
+							volumeNPOption("16Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("6Gi"),
+							cpuTmpltOpt(2),
+							storageTmpltOpt("16Gi"),
+							archTmpltOpt(hyperv1.ArchitectureS390X),
+							nodeSelectorTmpltOpt(map[string]string{
+								corev1.LabelArchStable: hyperv1.ArchitectureS390X,
+							}),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "When arch is s390x and gate annotation is set but user already pinned kubernetes.io/arch, user value should take precedence",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.NodePoolSupportsKubevirtArchitectureAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureS390X,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("6Gi"),
+							coresNPOption(2),
+							imageNPOption("testimage"),
+							volumeNPOption("16Gi"),
+							nodeSelectorNPOption(map[string]string{
+								corev1.LabelArchStable: hyperv1.ArchitectureS390X,
+							}),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("6Gi"),
+							cpuTmpltOpt(2),
+							storageTmpltOpt("16Gi"),
+							archTmpltOpt(hyperv1.ArchitectureS390X),
+							nodeSelectorTmpltOpt(map[string]string{
+								corev1.LabelArchStable: hyperv1.ArchitectureS390X,
+							}),
+						),
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1851,6 +1952,13 @@ func TestDefaultImage(t *testing.T) {
 						},
 					},
 				},
+				hyperv1.ArchAliases[hyperv1.ArchitectureARM64]: {
+					Images: stream.Images{
+						KubeVirt: &stream.ContainerImage{
+							DigestRef: "quay.io/openshift/release@sha256:aarch641234",
+						},
+					},
+				},
 			},
 		},
 	}
@@ -1891,10 +1999,20 @@ func TestDefaultImage(t *testing.T) {
 			expectedDigest: "sha256:x86_641234",
 		},
 		{
-			name:           "When unknown architecture is used, it should fall back to x86_64 image",
-			arch:           "",
-			expectedImage:  "quay.io/openshift/release@sha256:x86_641234",
-			expectedDigest: "sha256:x86_641234",
+			name:          "When arm64 architecture is used, it should return the aarch64 image",
+			arch:          hyperv1.ArchitectureARM64,
+			expectedImage: "quay.io/openshift/release@sha256:aarch641234",
+			expectedDigest: "sha256:aarch641234",
+		},
+		{
+			name:          "When ppc64le architecture is used, it should return an error",
+			arch:          hyperv1.ArchitecturePPC64LE,
+			expectedError: true,
+		},
+		{
+			name:          "When empty architecture is used, it should return an error",
+			arch:          "",
+			expectedError: true,
 		},
 		{
 			name:       "When named stream is used with multi-stream ReleaseImage it should resolve from the named stream",
