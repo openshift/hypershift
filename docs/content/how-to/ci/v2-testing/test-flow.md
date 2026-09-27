@@ -61,44 +61,46 @@ once, then multiple specs verify different aspects of the restore). Without `Ord
 |-------|--------|
 | **`lifecycle`** | Marks tests that mutate cluster state (upgrades, nodepool scaling, etcd chaos, global pull secret, OS image stream, autoscaling, platform-specific lifecycle). The simple [`hypershift-e2e-v2` CI chain][e2e-v2-chain] filters these out with `--ginkgo.label-filter='!lifecycle'` so that read-only compliance runs don't trigger mutations. The `run-tests` orchestrator runs lifecycle tests on dedicated clusters via specific label filters. |
 | **`Informing`** | The custom [`InformingAwareFailHandler`][fail-handler] converts failures on specs with this label into skips. The test appears as "skipped" in JUnit XML rather than "failed", so it doesn't block the CI job. Used for tests validating optional or in-progress features (e.g., metrics forwarding, custom labels/tolerations). |
-| **Feature/platform labels** (e.g., `self-managed-azure-public`, `nodepool-autoscaling`, `control-plane-upgrade`) | Control which specs run in which `test-e2e-v2` process. The [`run-tests` orchestrator][run-tests] passes `--ginkgo.label-filter` with non-overlapping label sets so each process only runs specs relevant to its assigned cluster variant. The label-to-cluster mapping is defined by [`TestMatrix`][azure-platform] in the platform config. |
+| **Feature/platform labels** (e.g., `self-managed-azure-public`, `nodepool-autoscaling`, `control-plane-upgrade`) | Control which specs run in which `test-e2e-v2` process. The [`run-tests` orchestrator][run-tests] passes `--ginkgo.label-filter` expressions from the [`TestMatrix`][azure-platform]. The default Azure plan intentionally reuses `hosted-cluster-health` and `control-plane-workloads` in the post-upgrade health step, so those specs run again after upgrade. |
 
 ### How These Layers Compose
 
 ```text
 run-tests orchestrator
-├── Process 1 (public cluster): --ginkgo.label-filter="self-managed-azure-public || nodepool-lifecycle || ..."
-│   ├── Describe "NodePool Lifecycle" [Ordered] ← specs run in order, share BeforeAll setup
-│   │   ├── BeforeAll: create test nodepool
-│   │   ├── It "should scale up" ← mutation test
-│   │   ├── It "should scale down"
-│   │   └── AfterAll: delete test nodepool
-│   ├── Describe "Control Plane Workloads" ← read-only, no Ordered needed
-│   │   ├── It "should have resource requests" ← stateless assertion
+├── Sequential group (public cluster)
+│   ├── Process 1a: --ginkgo.label-filter="self-managed-azure-public || control-plane-workloads || ..."
+│   │   ├── Describe "Control Plane Workloads" ← read-only, no Ordered needed
 │   │   └── Context "Custom labels" [Informing] ← failure → skip, non-blocking
-│   └── ...
-├── Process 2 (private cluster): --ginkgo.label-filter="self-managed-azure-private || ..."
+│   └── Process 1b: --ginkgo.label-filter="nodepool-vm-size-rollout || ..."
+│       └── Describe "NodePool Lifecycle" ← independently labeled mutation specs
+├── Parallel process (private cluster): --ginkgo.label-filter="self-managed-azure-private || ..."
 │   └── ...
 └── Sequential group (upgrade cluster):
-    ├── Process 6a: --ginkgo.label-filter="control-plane-upgrade" ← must finish before 6b
-    │   └── Describe "Control Plane Upgrade" ← triggers version rollout
-    └── Process 6b: --ginkgo.label-filter="etcd-chaos" ← only runs if 6a passed
-        └── Describe "Etcd Chaos" [Ordered] ← specs run in order, BeforeAll snapshots etcd
+        ├── Process 6a: --ginkgo.label-filter="control-plane-upgrade" ← must finish before 6b
+        │   └── Describe "Control Plane Upgrade" ← triggers version rollout
+        ├── Process 6b: --ginkgo.label-filter="hosted-cluster-health || control-plane-workloads" ← must finish before 6c
+        │   └── Describe "Post-upgrade health" ← validates recovered workloads
+        ├── Process 6c: --ginkgo.label-filter="control-plane-pki-operator" ← must finish before 6d
+        │   └── Describe "Control Plane TLS" ← validates certificate rotation
+        └── Process 6d: --ginkgo.label-filter="etcd-chaos" ← only runs if 6c passed
+            └── Describe "Etcd Chaos" [Ordered] ← specs run in order, BeforeAll snapshots etcd
 ```
 
-Cluster-level isolation (different processes target different clusters) prevents
-inter-group interference. Within a process, `Ordered`/`Serial` prevent inter-spec
-interference for mutation-heavy features. `DeferCleanup` ensures each spec restores
-what it touched. `Informing` decouples experimental coverage from gate status. The
-`lifecycle` label separates mutation tests from read-only compliance runs at the CI
-job level.
+For the default Azure `TestPlan`, cluster-level isolation (different processes target
+different clusters) prevents inter-group interference. A custom `TEST_PLAN` must keep
+each hosted-cluster variant in one top-level execution lane; the runner does not
+reject a variant used by multiple concurrent lanes. Within a process, `Ordered`/`Serial`
+prevent inter-spec interference for mutation-heavy features. `DeferCleanup` ensures
+each spec restores what it touched. `Informing` decouples experimental coverage from
+gate status. The `lifecycle` label separates mutation tests from read-only compliance
+runs at the CI job level.
 
 ## High-Level Flow
 
 The diagram below shows the general v2 e2e flow. The framework is
 platform-agnostic — each platform implements the [`PlatformConfig`][platform]
-interface — but Azure is currently the only implementation and serves as the
-reference. The concrete examples here follow the
+interface. Azure and AWS provide implementations; Azure serves as the reference
+for the multi-cluster lifecycle flow. The concrete examples here follow the
 [`e2e-azure-v2-self-managed`][ci-job-config] CI job and its
 [workflow][workflow]. ci-operator builds the [`hypershift-tests`][dockerfile-e2e]
 image (via [`Dockerfile.e2e`][dockerfile-e2e], which invokes several
@@ -145,8 +147,8 @@ sequenceDiagram
         CG->>MC: Create public-{hash}
         CG->>MC: Create private-{hash} (Private endpoint access)
         CG->>MC: Create oauth-lb-{hash} (OAuth via LoadBalancer)
+        CG->>MC: Create oauth-lb-private-{hash} (Private access, OAuth via LoadBalancer)
         CG->>MC: Create upgrade-{hash} (N-1 release, HA control plane)
-        CG->>MC: Create autoscaling-{hash}
         CG->>MC: Create external-oidc-{hash}
     end
     Note right of CG: Each calls `hypershift create cluster azure`<br/>with variant-specific flags.<br/>Hooks run between phases:<br/>PreCreate (deploy Keycloak),<br/>PostCreate (patch OperatorConfiguration),<br/>PostAvailable, PostVersionRollout (OIDC config).
@@ -165,30 +167,38 @@ sequenceDiagram
     CIO->>RT: Run run-e2e-v2-selfmanaged step<br/>(KUBECONFIG=management_cluster_kubeconfig)
 
     activate RT
-    Note over RT: Reads HYPERSHIFT_PLATFORM → builds TestMatrix<br/>Reads cluster names and platform config from SHARED_DIR
+    Note over RT: Reads HYPERSHIFT_PLATFORM → resolves the default TestPlan or TEST_PLAN<br/>Reads cluster names and platform config from SHARED_DIR
 
     RT->>RT: PlatformConfig.SetupTestEnv()<br/>(set env vars from SHARED_DIR files)
 
-    par Parallel test groups (each is a goroutine calling exec.Command)
-        RT->>T: public-{hash} (platform + feature tests)
+    par Test lanes (each lane is a goroutine, steps within each lane are sequential)
         RT->>T: private-{hash} (private topology + compliance)
-        RT->>T: oauth-lb-{hash} (OAuth, health, metrics, registry)
-        RT->>T: autoscaling-{hash}
-        RT->>T: external-oidc-{hash}
+        RT->>T: oauth-lb-private-{hash} (private topology with OAuth via LoadBalancer)
+        RT->>T: public-{hash} (platform, feature, then NodePool rollout tests)
+        RT->>T: oauth-lb-{hash} (OAuth/configuration, NodePool config including MachineConfig rollout, then autoscaling balancing)
+        RT->>T: external-oidc-{hash} (OIDC/pull-secret, autoscaling scale-up/down, then trust bundle tests)
     end
-    Note right of RT: Each subprocess receives cluster name via<br/>E2E_HOSTED_CLUSTER_NAME env var and label<br/>filter via --ginkgo.label-filter
+    Note right of RT: Each subprocess receives the cluster name via env vars,<br/>plus its label filter via --ginkgo.label-filter
 
     par Sequential group: upgrade-and-chaos (single goroutine, steps run in order)
         RT->>T: upgrade-{hash} (upgrade tests)
         Note over T: Process 6a (upgrade)
         T-->>RT: exit 0 (upgrade passed)
 
+        RT->>T: upgrade-{hash} (post-upgrade-health)
+        Note over T: Process 6b (post-upgrade-health)
+        T-->>RT: exit 0 (post-upgrade-health passed)
+
+        RT->>T: upgrade-{hash} (control-plane-tls)
+        Note over T: Process 6c (control-plane-tls)
+        T-->>RT: exit 0 (control-plane-tls passed)
+
         RT->>T: upgrade-{hash} (etcd-chaos, same cluster)
-        Note over T: Process 6b (etcd-chaos)
+        Note over T: Process 6d (etcd-chaos)
         T-->>RT: exit 0 or error
     end
 
-    T-->>RT: All parallel groups return exit codes
+    T-->>RT: All test lanes return exit codes
     RT->>RT: Collect results, report pass/fail summary
     RT-->>CIO: exit code (0 if all passed)
     deactivate RT
@@ -274,7 +284,7 @@ sequenceDiagram
 | **Step shell** | bash | One per CI step | Sets KUBECONFIG, runs Go binaries ([create][create-guests-sh], [run][run-tests-chain], [destroy][destroy-guests-chain]) |
 | **[create-guests][]** | `/hypershift/bin/create-guests` | Runs once in pre step | Forks `hypershift` CLI via `exec.Command`, writes cluster names and platform-specific config to `SHARED_DIR` |
 | **[run-tests][]** | `/hypershift/bin/run-tests` | Runs once in test step | Forks one `test-e2e-v2` process per test group via `exec.Command`. Env vars pass cluster name + config. Collects exit codes. |
-| **test-e2e-v2** | `/hypershift/bin/test-e2e-v2` | One process per test group (7 total, up to 6 concurrent) | Reads env vars for cluster identity. Talks to management + hosted cluster APIs via kubeconfig. Writes JUnit XML to `ARTIFACT_DIR`. Entry point: [`suite_test.go`][suite-test]. |
+| **test-e2e-v2** | `/hypershift/bin/test-e2e-v2` | One process per test group; sequential lanes run one group at a time | Reads env vars for cluster identity. Talks to management + hosted cluster APIs via kubeconfig. Writes JUnit XML to `ARTIFACT_DIR`. Entry point: [`suite_test.go`][suite-test]. |
 | **[destroy-guests][]** | `/hypershift/bin/destroy-guests` | Runs once in post step | Forks `hypershift` CLI via `exec.Command` for each cluster (parallel goroutines). |
 
 ## Sequencing of Mutually Exclusive Tests
@@ -285,48 +295,80 @@ Mutual exclusion between test groups is achieved through **cluster isolation** a
 ```mermaid
 flowchart TD
     subgraph TestMatrix["TestMatrix (defined by PlatformConfig)"]
-        subgraph Parallel["Parallel Groups (all run concurrently)"]
-            P1["public cluster<br/>(platform + feature tests)"]
-            P2["private cluster<br/>(private topology + compliance)"]
-            P3["oauth-lb cluster<br/>(OAuth, health, metrics, registry)"]
-            P4["autoscaling cluster"]
-            P5["external-oidc cluster"]
+        subgraph Parallel["Parallel lanes"]
+            P1["private cluster<br/>(private topology + compliance)"]
+            P2["oauth-lb-private cluster<br/>(private topology + OAuth LoadBalancer)"]
         end
 
-        subgraph Sequential["Sequential Group: upgrade-and-chaos"]
+        subgraph Public["Sequential lane: public cluster"]
+            direction TB
+            PUB1["platform + feature tests"]
+            PUB2["NodePool rollout tests"]
+            PUB1 --> PUB2
+        end
+
+        subgraph OAuth["Sequential lane: oauth-lb cluster"]
+            direction TB
+            OAUTH1["OAuth, health, metrics, registry"]
+            OAUTH2["NodePool configuration tests"]
+            OAUTH3["Autoscaling balancing"]
+            OAUTH1 --> OAUTH2 --> OAUTH3
+        end
+
+        subgraph OIDC["Sequential lane: external-oidc cluster"]
+            direction TB
+            OIDC1["External OIDC + global pull-secret"]
+            OIDC2["Autoscaling scale-up/down"]
+            OIDC3["Trust bundle tests"]
+            OIDC1 --> OIDC2 --> OIDC3
+        end
+
+        subgraph Sequential["Sequential lane: upgrade cluster"]
             direction TB
             S1["Step 1: upgrade tests<br/>label: control-plane-upgrade"]
-            S2["Step 2: etcd-chaos tests<br/>label: etcd-chaos"]
-            S1 -->|"pass → continue"| S2
+            S2["Step 2: post-upgrade-health tests<br/>label: hosted-cluster-health"]
+            S3["Step 3: control-plane-tls tests<br/>label: control-plane-pki-operator"]
+            S4["Step 4: etcd-chaos tests<br/>label: etcd-chaos"]
+            S1 -->|"pass → continue"| S2 -->|"pass → continue"| S3 -->|"pass → continue"| S4
             S1 -.->|"fail → skip remaining"| SKIP["Steps skipped"]
         end
     end
 
     RT["run-tests orchestrator"] --> Parallel
+    RT --> Public
+    RT --> OAuth
+    RT --> OIDC
     RT --> Sequential
 
 ```
 
 **Key mechanisms:**
 
-1. **Cluster-per-group isolation**: Each parallel test group targets a **different
-   HostedCluster**. Tests within a group share one cluster but different groups never
-   touch the same cluster. This eliminates inter-group interference without locks.
+1. **Cluster-per-lane isolation**: The Azure matrix provisions six HostedClusters:
+   `private`, `oauth-lb-private`, `public`, `oauth-lb`, `external-oidc`, and
+   `upgrade`. Each top-level execution lane targets exactly one cluster. Tests
+   within a lane share that cluster, while different lanes never touch the same
+   cluster.
 
-2. **Label-based partitioning**: Ginkgo's `--ginkgo.label-filter` ensures each
-   `test-e2e-v2` process only runs specs matching its assigned labels. The label
-   sets are [non-overlapping across groups][azure-platform], so the same spec never
-   runs in two processes.
+2. **Label-based selection**: Ginkgo's `--ginkgo.label-filter` selects the
+   intended feature specs for each process. Some labels intentionally appear in
+   multiple lanes because those lanes target different HostedClusters; lane
+   isolation prevents their processes from interfering with each other.
 
-3. **Sequential groups for ordered dependencies**: The `upgrade-and-chaos`
-   [sequential group][azure-platform] runs upgrade first, then etcd-chaos on the
-   **same cluster**. The [`run-tests` orchestrator][run-tests] enforces ordering by
-   running steps sequentially within a single goroutine. If upgrade fails, etcd-chaos
-   is skipped (the goroutine returns early).
+3. **Sequential groups for ordered dependencies**: The [Azure matrix][azure-platform]
+   runs configuration-specific tests before autoscaling tests on the `oauth-lb` and
+   `external-oidc` clusters. The `upgrade-and-chaos` lane runs upgrade first, then
+   etcd-chaos on the **same cluster**. The [`run-tests` orchestrator][run-tests]
+   enforces ordering by running steps sequentially within one goroutine. If an
+   earlier step fails, the remaining steps in that lane are skipped.
 
-4. **No in-process mutex**: Because each `test-e2e-v2` process targets exactly one
-   cluster and runs non-overlapping label sets, there is no need for mutexes or
-   other synchronization between test specs. Ginkgo runs specs within a single
+4. **Matrix validation protects JUnit paths**: `TestMatrix.Validate` rejects
+   duplicate group names and names that are unsafe as JUnit filename components.
+   It does not reject a variant used by multiple top-level lanes, so custom plans
+   must keep each variant in a single lane to prevent concurrent cluster access.
+
+5. **No in-process mutex**: Each `test-e2e-v2` process targets exactly one cluster,
+   so no mutex is needed between test specs. Ginkgo runs specs within a single
    process serially by default (no `--procs` flag is passed).
 
 ## Inter-Process Communication

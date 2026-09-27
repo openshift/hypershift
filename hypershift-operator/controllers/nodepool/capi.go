@@ -446,12 +446,18 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 	c.setMachineDeploymentMetadata(machineDeployment, capiClusterName)
 
 	machineDeployment.Spec.ClusterName = capiClusterName
-	if machineDeployment.Spec.Selector.MatchLabels == nil {
-		machineDeployment.Spec.Selector.MatchLabels = map[string]string{}
-	}
-	machineDeployment.Spec.Selector.MatchLabels[capiv1.ClusterNameLabel] = capiClusterName
 	resourcesName := generateName(capiClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
-	machineDeployment.Spec.Selector.MatchLabels[resourcesName] = resourcesName
+	// Rebuild the selector deterministically on every reconcile instead of mutating it in place.
+	// The template labels below are always reassigned from scratch, so appending to the selector
+	// map would let a stale key linger: if resourcesName ever changes (e.g. after an infraID
+	// change), the old key stays in the selector while the template only carries the new one. The
+	// selector then matches zero Machines, which drives the MachineSet controller to create
+	// Machines without bound. Assigning a fresh map keeps the selector a strict subset of the
+	// template labels on every reconcile.
+	machineDeployment.Spec.Selector.MatchLabels = map[string]string{
+		capiv1.ClusterNameLabel: capiClusterName,
+		resourcesName:           resourcesName,
+	}
 
 	gvk, err := apiutil.GVKForObject(machineTemplateCR, api.Scheme)
 	if err != nil {
@@ -599,41 +605,118 @@ func (c *CAPI) propagateLabelsAndTaintsToMachines(ctx context.Context, log logr.
 	return nil
 }
 
+// propagateVersionAndTemplate updates the MachineDeployment spec to match the
+// desired version, bootstrap secret, and infrastructure template. It returns
+// true when any spec field was changed, which signals the caller to skip status
+// reconciliation for this cycle (the MachineDeployment needs to roll out before
+// status can reflect the new state).
 func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) bool {
-	nodePool := c.nodePool
-	userDataSecret := c.UserDataSecret()
+	specUpdated := false
+
+	// Version: compared against the MachineDeployment's current spec version.
+	// A mismatch means a release upgrade is in progress.
 	targetVersion := c.Version()
-	targetConfigHash := c.HashWithoutVersion()
-	isUpdating := false
-
-	if userDataSecret.Name != ptr.Deref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
-		log.Info("New user data Secret has been generated",
-			"current", machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName,
-			"target", userDataSecret.Name)
-
-		if targetVersion != machineDeployment.Spec.Template.Spec.Version {
-			log.Info("Starting version update: Propagating new version to the MachineDeployment",
-				"releaseImage", nodePool.Spec.Release.Image, "target", targetVersion)
-		}
-
-		if targetConfigHash != nodePool.Annotations[nodePoolAnnotationCurrentConfig] {
-			log.Info("Starting config update: Propagating new config to the MachineDeployment",
-				"current", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "target", targetConfigHash)
-		}
+	if targetVersion != machineDeployment.Spec.Template.Spec.Version {
+		log.Info("Starting version update: Propagating new version to the MachineDeployment",
+			"releaseImage", c.nodePool.Spec.Release.Image, "target", targetVersion)
 		machineDeployment.Spec.Template.Spec.Version = targetVersion
-		machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
-		isUpdating = true
+		specUpdated = true
 	}
 
+	// Bootstrap secret: the secret name encodes the full config Hash() including
+	// management-side content, so UserDataSecret().Name changes on any input
+	// change — even management-side-only ones like HAProxy image bumps. We must
+	// only propagate a new secret name when a spec-driven change occurred (version
+	// upgrade or rollout config change), otherwise we'd point the MachineDeployment
+	// at a secret that was never created (Token.isOutdated() skips creation for
+	// management-side-only changes).
+	versionChanged := specUpdated // at this point, specUpdated is true only if version changed
+	currentRolloutConfigHash := c.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+	rolloutConfigChanged := currentRolloutConfigHash != "" && c.RolloutHashWithoutVersion() != currentRolloutConfigHash
+	if versionChanged || rolloutConfigChanged {
+		targetDataSecretName := c.UserDataSecret().Name
+		if targetDataSecretName != ptr.Deref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
+			log.Info("New user data Secret has been generated",
+				"current", machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName,
+				"target", targetDataSecretName)
+			machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(targetDataSecretName)
+			specUpdated = true
+		}
+	}
+
+	// Infrastructure template: compared against the MachineDeployment's current
+	// infrastructure ref. A mismatch means a platform-level change (e.g. AMI,
+	// instance type) requires new machines.
 	if machineTemplateCR.GetName() != machineDeployment.Spec.Template.Spec.InfrastructureRef.Name {
 		log.Info("New machine template has been generated",
 			"current", machineDeployment.Spec.Template.Spec.InfrastructureRef.Name,
 			"target", machineTemplateCR.GetName())
 		machineDeployment.Spec.Template.Spec.InfrastructureRef.Name = machineTemplateCR.GetName()
-		isUpdating = true
+		specUpdated = true
 	}
 
-	return isUpdating
+	return specUpdated
+}
+
+// propagateVersionAndTemplateToMachineSet is the MachineSet analog of
+// propagateVersionAndTemplate. It follows the same structure — version check,
+// bootstrap secret gated on spec-driven change, infrastructure template — and
+// additionally sets in-place upgrade annotations on the MachineSet to signal
+// the in-place upgrader. It returns true when any spec field was changed.
+func (c *CAPI) propagateVersionAndTemplateToMachineSet(log logr.Logger, machineSet *capiv1.MachineSet, machineTemplateCR client.Object) bool {
+	specUpdated := false
+
+	// Version: compared against the MachineSet's current spec version.
+	targetVersion := c.Version()
+	if targetVersion != machineSet.Spec.Template.Spec.Version {
+		log.Info("Starting version upgrade: Propagating new version to the MachineSet",
+			"releaseImage", c.nodePool.Spec.Release.Image, "target", targetVersion)
+		machineSet.Spec.Template.Spec.Version = targetVersion
+		specUpdated = true
+	}
+
+	// Bootstrap secret: same gate as propagateVersionAndTemplate — only propagate
+	// when a spec-driven change occurred. See propagateVersionAndTemplate for
+	// full rationale.
+	versionChanged := specUpdated
+	currentRolloutConfigHash := c.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+	rolloutConfigChanged := currentRolloutConfigHash != "" && c.RolloutHashWithoutVersion() != currentRolloutConfigHash
+	if versionChanged || rolloutConfigChanged {
+		targetDataSecretName := c.UserDataSecret().Name
+		if targetDataSecretName != ptr.Deref(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
+			if rolloutConfigChanged {
+				log.Info("Starting config upgrade: Propagating new config to the MachineSet",
+					"current", currentRolloutConfigHash, "target", c.RolloutHashWithoutVersion())
+			}
+			log.Info("New user data Secret has been generated",
+				"current", machineSet.Spec.Template.Spec.Bootstrap.DataSecretName,
+				"target", targetDataSecretName)
+			machineSet.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(targetDataSecretName)
+			specUpdated = true
+		}
+
+		// In-place upgrade annotations (MachineSet-specific): signal the in-place
+		// upgrader when a version or config change is detected. For brand-new
+		// MachineSets, also initialize the current config version so the upgrade
+		// is a no-op.
+		targetConfigVersionHash := c.Hash()
+		machineSet.Annotations[nodePoolAnnotationTargetConfigVersion] = targetConfigVersionHash
+		if _, ok := machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion]; !ok {
+			machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
+		}
+	}
+
+	// Infrastructure template: compared against the MachineSet's current
+	// infrastructure ref.
+	if machineTemplateCR.GetName() != machineSet.Spec.Template.Spec.InfrastructureRef.Name {
+		log.Info("New machine template has been generated",
+			"current", machineSet.Spec.Template.Spec.InfrastructureRef.Name,
+			"target", machineTemplateCR.GetName())
+		machineSet.Spec.Template.Spec.InfrastructureRef.Name = machineTemplateCR.GetName()
+		specUpdated = true
+	}
+
+	return specUpdated
 }
 
 func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Logger, machineDeployment *capiv1.MachineDeployment, machineTemplateCR client.Object) {
@@ -641,6 +724,7 @@ func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Lo
 	targetVersion := c.Version()
 	targetConfigHash := c.HashWithoutVersion()
 	targetConfigVersionHash := c.Hash()
+	targetRolloutConfigHash := c.RolloutHashWithoutVersion()
 
 	// List MachineSets owned by this MachineDeployment to verify rollout completion.
 	// MachineDeployment status counters can be stale after a template change because
@@ -659,21 +743,38 @@ func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Lo
 	// If the MachineDeployment is now processing we know
 	// is at the expected version (spec.version) and config (userData Secret) so we reconcile status and annotation.
 	if MachineDeploymentComplete(machineDeployment, machineSets.Items) {
+		if nodePool.Annotations == nil {
+			nodePool.Annotations = make(map[string]string)
+		}
+
+		versionUpdated := false
 		if nodePool.Status.Version != targetVersion {
 			log.Info("Version update complete",
 				"previous", nodePool.Status.Version, "new", targetVersion)
 			nodePool.Status.Version = targetVersion
+			versionUpdated = true
 		}
 
-		if nodePool.Annotations == nil {
-			nodePool.Annotations = make(map[string]string)
+		rolloutConfigUpdated := false
+		if nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] != targetRolloutConfigHash {
+			log.Info("Rollout config update complete",
+				"previous", nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig], "new", targetRolloutConfigHash)
+			nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
+			rolloutConfigUpdated = true
 		}
-		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
-			log.Info("Config update complete",
-				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
-			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
+
+		// Only update the full hash annotations when a spec-driven rollout completed.
+		// When only management-side content changed (no rollout), keep the old values
+		// so that cleanupOutdated() can find the correct old secrets on the next
+		// spec-driven change.
+		if rolloutConfigUpdated || versionUpdated {
+			if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
+				log.Info("Config update complete",
+					"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
+				nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
+			}
+			nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
 		}
-		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
 
 		if nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] != machineTemplateCR.GetName() {
 			log.Info("Rolling upgrade complete",
@@ -933,11 +1034,7 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	machineTemplateCR client.Object,
 ) error {
 	nodePool := c.nodePool
-	userDataSecret := c.UserDataSecret()
 	capiClusterName := c.capiClusterName
-	targetVersion := c.Version()
-	targetConfigHash := c.HashWithoutVersion()
-	targetConfigVersionHash := c.Hash()
 
 	log := ctrl.LoggerFrom(ctx)
 	// Set annotations and labels
@@ -968,10 +1065,12 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 
 	// Set selector and template
 	machineSet.Spec.ClusterName = capiClusterName
-	if machineSet.Spec.Selector.MatchLabels == nil {
-		machineSet.Spec.Selector.MatchLabels = map[string]string{}
+	// Rebuild the selector deterministically on every reconcile instead of mutating it in place,
+	// so a stale key can never linger if resourcesName changes (see reconcileMachineDeployment for
+	// the full rationale). The template labels below are always reassigned from scratch.
+	machineSet.Spec.Selector.MatchLabels = map[string]string{
+		resourcesName: resourcesName,
 	}
-	machineSet.Spec.Selector.MatchLabels[resourcesName] = resourcesName
 	machineSet.Spec.Template = capiv1.MachineTemplateSpec{
 		ObjectMeta: capiv1.ObjectMeta{
 			Labels: map[string]string{
@@ -1032,96 +1131,34 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	scaleFromZeroSupported := hasStatusCapacity(machineTemplateCR) || nodePool.Spec.Platform.Type == c.scaleFromZeroPlatform
 	setMachineSetReplicas(nodePool, machineSet, scaleFromZeroSupported)
 
-	isUpdating := false
-	// Propagate version and userData Secret to the MachineSet.
-	if userDataSecret.Name != ptr.Deref(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
-		log.Info("New user data Secret has been generated",
-			"current", machineSet.Spec.Template.Spec.Bootstrap.DataSecretName,
-			"target", userDataSecret.Name)
-
-		// TODO (alberto): possibly compare with NodePool here instead so we don't rely on impl details to drive decisions.
-		if targetVersion != machineSet.Spec.Template.Spec.Version {
-			log.Info("Starting version upgrade: Propagating new version to the MachineSet",
-				"releaseImage", nodePool.Spec.Release.Image, "target", targetVersion)
-		}
-
-		if targetConfigHash != nodePool.Annotations[nodePoolAnnotationCurrentConfig] {
-			log.Info("Starting config upgrade: Propagating new config to the MachineSet",
-				"current", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "target", targetConfigHash)
-		}
-		machineSet.Spec.Template.Spec.Version = targetVersion
-		machineSet.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
-
-		// Signal in-place upgrade request.
-		machineSet.Annotations[nodePoolAnnotationTargetConfigVersion] = targetConfigVersionHash
-
-		// If the machineSet is brand new, set current version to target so in-place upgrade no-op.
-		if _, ok := machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion]; !ok {
-			machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
-		}
-		isUpdating = true
-	}
-
-	// template spec has changed, signal a rolling upgrade.
-	if machineTemplateCR.GetName() != machineSet.Spec.Template.Spec.InfrastructureRef.Name {
-		log.Info("New machine template has been generated",
-			"current", machineSet.Spec.Template.Spec.InfrastructureRef.Name,
-			"target", machineTemplateCR.GetName())
-
-		machineSet.Spec.Template.Spec.InfrastructureRef.Name = machineTemplateCR.GetName()
-		isUpdating = true
-	}
-
-	if isUpdating {
-		// We return early here during a version/config/MachineTemplate update to persist the resource with new user data Secret / MachineTemplate,
-		// so in the next reconciling loop we get a new MachineDeployment.Generation
-		// and we can do a legit MachineDeploymentComplete/MachineDeployment.Status.ObservedGeneration check.
+	if c.propagateVersionAndTemplateToMachineSet(log, machineSet, machineTemplateCR) {
+		// Return early during a version/config/MachineTemplate update to persist
+		// the resource, so the next reconcile loop sees a new Generation.
 		return nil
 	}
 
 	if machineSetInPlaceRolloutIsComplete(machineSet) {
-		if nodePool.Status.Version != targetVersion {
-			log.Info("Version upgrade complete",
-				"previous", nodePool.Status.Version, "new", targetVersion)
-			nodePool.Status.Version = targetVersion
-		}
-
-		if nodePool.Annotations == nil {
-			nodePool.Annotations = make(map[string]string)
-		}
-		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
-			log.Info("Config upgrade complete",
-				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
-
-			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
-		}
-		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
-
-		if nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] != machineTemplateCR.GetName() {
-			log.Info("Rolling upgrade complete",
-				"previous", nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate], "new", machineTemplateCR.GetName())
-			nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] = machineTemplateCR.GetName()
-		}
+		c.reconcileMachineSetStatus(log, machineTemplateCR)
 	}
 
 	// Bubble up AvailableReplicas and Ready condition from MachineSet.
 	nodePool.Status.Replicas = ptr.Deref(machineSet.Status.AvailableReplicas, 0)
-	for _, c := range machineSet.Status.Conditions {
+	for _, cond := range machineSet.Status.Conditions {
 		// In CAPI v1beta2 "Ready" was replaced by "MachinesReady" (True when all machines are ready).
 		// https://github.com/kubernetes-sigs/cluster-api/issues/3486.
-		if c.Type == capiv1.MachinesReadyCondition {
+		if cond.Type == capiv1.MachinesReadyCondition {
 			// this is so api server does not complain
 			// invalid value: \"\": status.conditions.reason in body should be at least 1 chars long"
 			reason := hyperv1.AsExpectedReason
-			if c.Reason != "" {
-				reason = c.Reason
+			if cond.Reason != "" {
+				reason = cond.Reason
 			}
 
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolReadyConditionType,
-				Status:             corev1.ConditionStatus(c.Status),
+				Status:             corev1.ConditionStatus(cond.Status),
 				ObservedGeneration: nodePool.Generation,
-				Message:            c.Message,
+				Message:            cond.Message,
 				Reason:             reason,
 			})
 			break
@@ -1129,6 +1166,49 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	}
 
 	return nil
+}
+
+func (c *CAPI) reconcileMachineSetStatus(log logr.Logger, machineTemplateCR client.Object) {
+	nodePool := c.nodePool
+	targetVersion := c.Version()
+	targetConfigHash := c.HashWithoutVersion()
+	targetConfigVersionHash := c.Hash()
+	targetRolloutConfigHash := c.RolloutHashWithoutVersion()
+
+	if nodePool.Annotations == nil {
+		nodePool.Annotations = make(map[string]string)
+	}
+
+	versionUpdated := false
+	if nodePool.Status.Version != targetVersion {
+		log.Info("Version upgrade complete",
+			"previous", nodePool.Status.Version, "new", targetVersion)
+		nodePool.Status.Version = targetVersion
+		versionUpdated = true
+	}
+
+	rolloutConfigUpdated := false
+	if nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] != targetRolloutConfigHash {
+		log.Info("Rollout config upgrade complete",
+			"previous", nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig], "new", targetRolloutConfigHash)
+		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
+		rolloutConfigUpdated = true
+	}
+
+	if rolloutConfigUpdated || versionUpdated {
+		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
+			log.Info("Config upgrade complete",
+				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
+			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
+		}
+		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
+	}
+
+	if nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] != machineTemplateCR.GetName() {
+		log.Info("Rolling upgrade complete",
+			"previous", nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate], "new", machineTemplateCR.GetName())
+		nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] = machineTemplateCR.GetName()
+	}
 }
 
 func machineSetInPlaceRolloutIsComplete(machineSet *capiv1.MachineSet) bool {

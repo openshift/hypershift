@@ -17,10 +17,12 @@ jobs:
           token: ${{ secrets.COMMUNITY_FORK_TOKEN }}
 
       - name: Install PyYAML
-        run: pip install --break-system-packages pyyaml
+        run: python3 -m pip install --target /tmp/pylibs pyyaml==6.0.3
 
       - name: Regenerate job registry
         id: generate
+        env:
+          PYTHONPATH: /tmp/pylibs
         run: |
           python3 hack/ci/update-job-registry.py --output .chai-bot/ci-status-jobs.yaml 2>&1 | grep '^release_sha=' >> "$GITHUB_OUTPUT"
 

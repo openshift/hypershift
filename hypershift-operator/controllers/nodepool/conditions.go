@@ -452,8 +452,8 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
 	}
 
-	targetConfigHash := token.HashWithoutVersion()
-	currentConfigHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig]
+	targetConfigHash := token.RolloutHashWithoutVersion()
+	currentConfigHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentRolloutConfig]
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		reason := hyperv1.AsExpectedReason
@@ -500,6 +500,42 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 	} else {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
+	return nil, nil
+}
+
+func (r *NodePoolReconciler) configUpdatePendingCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+	token, err := r.token(ctx, hcluster, nodePool)
+	if err != nil {
+		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
+	}
+
+	// Config drift exists when the full payload hash differs from the last-applied
+	// payload, but the rollout hash has not changed. This means management-side
+	// content (e.g. HAProxy image) changed without triggering a rollout.
+	currentRolloutConfig := nodePool.GetAnnotations()[nodePoolAnnotationCurrentRolloutConfig]
+	targetRolloutConfig := token.RolloutHashWithoutVersion()
+	targetFullHash := token.Hash()
+	currentFullHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion]
+
+	isUpdating := isUpdatingConfig(nodePool, targetRolloutConfig) || isUpdatingVersion(nodePool, token.Version())
+	hasDrift := currentFullHash != "" && targetFullHash != currentFullHash && currentRolloutConfig == targetRolloutConfig
+
+	if hasDrift && !isUpdating {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolConfigUpdatePendingConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.ManagementConfigDriftReason,
+			Message:            "Management-side configuration has changed. New or replaced nodes will use the updated configuration, but existing nodes retain the previous configuration until the next spec-driven rollout.",
+			ObservedGeneration: nodePool.Generation,
+		})
+	} else {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolConfigUpdatePendingConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.AsExpectedReason,
 			ObservedGeneration: nodePool.Generation,

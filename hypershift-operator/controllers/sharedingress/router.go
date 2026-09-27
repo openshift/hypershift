@@ -6,6 +6,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -20,8 +21,7 @@ import (
 )
 
 const (
-	KASSVCLBPort      = 6443
-	ExternalDNSLBPort = 443
+	KASSVCLBPort = 6443
 
 	// AzurePipIpTagsEnvVar is the environment variable that contains the IP tags for the Azure Public IP.
 	// It is used to tag the Azure Public IP associated with the Shared Ingress.
@@ -242,7 +242,7 @@ func ReconcileRouterService(svc *corev1.Service, azurePipIpTags string) error {
 	if !foundExternaDNS {
 		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
 			Name:       "external-dns",
-			Port:       ExternalDNSLBPort,
+			Port:       netutil.ExternalDNSLBPort,
 			TargetPort: intstr.FromString("external-dns"),
 			Protocol:   corev1.ProtocolTCP,
 		})

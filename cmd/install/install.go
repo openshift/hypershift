@@ -1033,18 +1033,14 @@ func capiStorageVersionForOpts(opts Options) string {
 func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) ([]crclient.Object, error) {
 	existingIPAMCRDs := set.New[string]()
 	if client != nil {
-		// Skip IPAM CRDs only when migration is disabled.
-		// During migration, IPAM CRDs must be updated to set v1beta2 as the storage version.
-		if opts.DisableCAPIMigration {
-			for crdName := range ipamCRDNames {
-				existing := &apiextensionsv1.CustomResourceDefinition{}
-				err := client.Get(ctx, crclient.ObjectKey{Name: crdName}, existing)
-				if err == nil {
-					existingIPAMCRDs.Insert(crdName)
-					fmt.Printf("Skipping existing IPAM CRD %s\n", crdName)
-				} else if !apierrors.IsNotFound(err) {
-					return nil, fmt.Errorf("failed to check if CRD %s exists: %w", crdName, err)
-				}
+		for crdName := range ipamCRDNames {
+			existing := &apiextensionsv1.CustomResourceDefinition{}
+			err := client.Get(ctx, crclient.ObjectKey{Name: crdName}, existing)
+			if err == nil {
+				existingIPAMCRDs.Insert(crdName)
+				fmt.Printf("Skipping existing IPAM CRD %s\n", crdName)
+			} else if !apierrors.IsNotFound(err) {
+				return nil, fmt.Errorf("failed to check if CRD %s exists: %w", crdName, err)
 			}
 		}
 	}
@@ -1369,8 +1365,7 @@ func setupSharedIngress() []crclient.Object {
 	return objects
 }
 
-// setupOperatorResources creates the operator Deployment and Service resources.
-//
+// setupOperatorResources creates the operator Deployment, Service and PodDisruptionBudget resources.
 // Returns the Service and a list of resources to apply.
 func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trustedCABundle *corev1.ConfigMap, operatorNamespace *corev1.Namespace, operatorServiceAccount *corev1.ServiceAccount, operatorCredentialsSecret *corev1.Secret, azureCredentialsSecret *corev1.Secret, oidcSecret *corev1.Secret, scaleFromZeroSecret *corev1.Secret, images map[string]string) (*corev1.Service, []crclient.Object) {
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
@@ -1430,8 +1425,11 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
 	}.Build()
+	operatorPodDisruptionBudget := assets.HyperShiftOperatorPodDisruptionBudget{
+		Namespace: operatorNamespace,
+	}.Build()
 
-	return operatorService, []crclient.Object{operatorDeployment, operatorService}
+	return operatorService, []crclient.Object{operatorDeployment, operatorService, operatorPodDisruptionBudget}
 }
 
 // setupExternalDNS creates the resources for external-dns

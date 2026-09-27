@@ -45,7 +45,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	metricsproxy "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -285,8 +284,15 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		resourcesToWatch = append(resourcesToWatch, &operatorv1.IngressController{})
 	}
 
+	excludeUserCABundlePredicate := notUserCABundlePredicate()
 	for _, r := range resourcesToWatch {
-		if err := c.Watch(source.Kind[client.Object](opts.Manager.GetCache(), r, eventHandler())); err != nil {
+		var err error
+		if _, ok := r.(*corev1.ConfigMap); ok {
+			err = c.Watch(source.Kind[client.Object](opts.Manager.GetCache(), r, eventHandler(), excludeUserCABundlePredicate))
+		} else {
+			err = c.Watch(source.Kind[client.Object](opts.Manager.GetCache(), r, eventHandler()))
+		}
+		if err != nil {
 			return fmt.Errorf("failed to watch %T: %w", r, err)
 		}
 	}
@@ -305,7 +311,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	//  so it could run properly on the cluster.
 	p := predicate.NewPredicateFuncs(func(o client.Object) bool {
 		cm := o.(*corev1.ConfigMap)
-		if _, ok := cm.Labels[nodepool.KubeletConfigConfigMapLabel]; ok {
+		if _, ok := cm.Labels[hyperv1.KubeletConfigConfigMapLabel]; ok {
 			return true
 		}
 		return false
@@ -340,6 +346,13 @@ func namespacedNamePredicateFunc(namespace, name string) func(client.Object) boo
 	return func(o client.Object) bool {
 		return o.GetNamespace() == namespace && o.GetName() == name
 	}
+}
+
+func notUserCABundlePredicate() predicate.Funcs {
+	userCABundle := manifests.UserCABundle()
+	return predicate.NewPredicateFuncs(func(o client.Object) bool {
+		return !namespacedNamePredicateFunc(userCABundle.Namespace, userCABundle.Name)(o)
+	})
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl.Result, returnErr error) {
@@ -886,11 +899,6 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 		}
 	}
 
-	log.Info("reconciling user cert CA bundle")
-	if err := r.reconcileUserCertCABundle(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile user cert CA bundle: %w", err))
-	}
-
 	log.Info("reconciling proxy CA bundle")
 	if err := r.reconcileProxyCABundle(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy CA bundle: %w", err))
@@ -1417,6 +1425,7 @@ func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedContr
 }
 
 func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
 	var errs []error
 	p := ingress.NewIngressParams(hcp)
 	ingressController := manifests.IngressDefaultIngressController()
@@ -1426,10 +1435,36 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
 	}
 
-	sourceCert := cpomanifests.IngressCert(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceCert), sourceCert); err != nil {
-		errs = append(errs, fmt.Errorf("failed to get ingress cert (%s/%s) from control plane: %w", sourceCert.Namespace, sourceCert.Name, err))
+	// When the user provides a custom default certificate, use the secret synced
+	// into the control plane namespace as the source. Otherwise, fall back to the
+	// CPO-generated wildcard cert. IBM Cloud's ingress controller does not consume a
+	// user-provided default certificate (ReconcileDefaultIngressController skips
+	// spec.defaultCertificate for IBM Cloud), so the custom secret is never synced
+	// there; keep sourcing the generated wildcard so this loop does not chase a
+	// secret that will never appear.
+	usingCustomCert := len(p.DefaultCertificate.Name) > 0 && p.PlatformType != hyperv1.IBMCloudPlatform
+	var sourceCert *corev1.Secret
+	if usingCustomCert {
+		sourceCert = cpomanifests.ServiceProviderDefaultIngressServingCert(hcp.Namespace)
 	} else {
+		sourceCert = cpomanifests.IngressCert(hcp.Namespace)
+	}
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceCert), sourceCert); err != nil {
+		if usingCustomCert {
+			// The custom certificate is synced independently by the HyperShift
+			// Operator and may not have landed in the control plane namespace yet
+			// (or the source may be missing). Do not fail reconciliation: leave the
+			// previously synced certificate in place so the HostedCluster does not
+			// become degraded. The IngressDefaultCertificateSynced condition on the
+			// HostedCluster surfaces the underlying problem.
+			log.Info("user-provided ingress default certificate not yet available in the control plane namespace; keeping the existing certificate",
+				"secret", client.ObjectKeyFromObject(sourceCert).String(), "error", err.Error())
+		} else {
+			errs = append(errs, fmt.Errorf("failed to get ingress cert (%s/%s) from control plane: %w", sourceCert.Namespace, sourceCert.Name, err))
+		}
+		sourceCert = nil
+	}
+	if sourceCert != nil {
 		ingressControllerCert := manifests.IngressDefaultIngressControllerCert()
 		if _, err := r.CreateOrUpdate(ctx, r.client, ingressControllerCert, func() error {
 			return ingress.ReconcileDefaultIngressControllerCertSecret(ingressControllerCert, sourceCert)
@@ -2103,32 +2138,6 @@ func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp 
 		return oauth.ReconcileOAuthServerCertCABundle(caBundle, sourceBundle)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth server cert ca bundle: %w", err)
-	}
-	return nil
-}
-
-func (r *reconciler) reconcileUserCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	log := ctrl.LoggerFrom(ctx)
-	userCAConfigMap := manifests.UserCABundle()
-
-	if hcp.Spec.AdditionalTrustBundle != nil {
-		cpUserCAConfigMap := cpomanifests.UserCAConfigMap(hcp.Namespace)
-		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpUserCAConfigMap), cpUserCAConfigMap); err != nil {
-			return fmt.Errorf("cannot get AdditionalTrustBundle ConfigMap: %w", err)
-		}
-		if _, err := r.CreateOrUpdate(ctx, r.client, userCAConfigMap, func() error {
-			userCAConfigMap.Data = cpUserCAConfigMap.Data
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile the %s ConfigMap: %w", client.ObjectKeyFromObject(userCAConfigMap), err)
-		}
-	} else {
-		// If the HostedControlPlane has no additional trust bundle, delete the user-ca-bundle ConfigMap if it exists
-		if deleted, err := k8sutil.DeleteIfNeeded(ctx, r.client, userCAConfigMap); err != nil {
-			return fmt.Errorf("failed to delete unused user-ca-bundle ConfigMap: %w", err)
-		} else if deleted {
-			log.Info("deleted unused user-ca-bundle ConfigMap", "name", userCAConfigMap.Name, "namespace", userCAConfigMap.Namespace)
-		}
 	}
 	return nil
 }
@@ -2983,7 +2992,7 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 
 	wantCMList := &corev1.ConfigMapList{}
 	if err := r.cpClient.List(ctx, wantCMList, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{nodepool.KubeletConfigConfigMapLabel: "true"}),
+		LabelSelector: labels.SelectorFromSet(map[string]string{hyperv1.KubeletConfigConfigMapLabel: "true"}),
 		Namespace:     r.hcpNamespace,
 	}); err != nil {
 		return fmt.Errorf("failed to list KubeletConfig ConfigMaps from controlplane namespace %s: %w", r.hcpNamespace, err)
@@ -3035,7 +3044,7 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 
 	haveCMList := &corev1.ConfigMapList{}
 	if err := r.client.List(ctx, haveCMList, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(map[string]string{nodepool.KubeletConfigConfigMapLabel: "true"}),
+		LabelSelector: labels.SelectorFromSet(map[string]string{hyperv1.KubeletConfigConfigMapLabel: "true"}),
 		Namespace:     ConfigManagedNamespace,
 	}); err != nil {
 		return fmt.Errorf("failed to list KubeletConfig ConfigMaps from hostedcluster namespace %s: %w", ConfigManagedNamespace, err)
@@ -3051,7 +3060,7 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 		// without it, triggering MCO node rollouts. However, if the owning NodePool has been
 		// deleted, its finalizer has already removed all its CMs from the HCP namespace, so
 		// the guest copy is orphaned and safe to delete.
-		if cm.Labels[nodepool.NTOMirroredConfigLabel] == "true" {
+		if cm.Labels[hyperv1.NTOMirroredConfigLabel] == "true" {
 			npName := cm.Labels[hyperv1.NodePoolLabel]
 			// Defensive: if the CM has no NodePoolLabel, we cannot determine whether
 			// its owning NodePool still exists; preserve it to avoid spurious rollouts.
@@ -3077,7 +3086,7 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 // as mutable by the subsequent CreateOrUpdate.
 func (r *reconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log logr.Logger, cm *corev1.ConfigMap) error {
 	_, err := k8sutil.DeleteIfNeededWithPredicate(ctx, r.client, cm, func(existing *corev1.ConfigMap) bool {
-		if existing.Labels[nodepool.KubeletConfigConfigMapLabel] != "true" {
+		if existing.Labels[hyperv1.KubeletConfigConfigMapLabel] != "true" {
 			return false
 		}
 		if existing.Immutable != nil && *existing.Immutable {
@@ -3092,9 +3101,9 @@ func (r *reconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log l
 
 func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.ConfigMap) error {
 	hostedClusterConfigMap.Labels = labels.Merge(hostedClusterConfigMap.Labels, map[string]string{
-		nodepool.KubeletConfigConfigMapLabel: "true",
-		hyperv1.NodePoolLabel:                controlPlaneConfigMap.Labels[hyperv1.NodePoolLabel],
-		nodepool.NTOMirroredConfigLabel:      "true",
+		hyperv1.KubeletConfigConfigMapLabel: "true",
+		hyperv1.NodePoolLabel:               controlPlaneConfigMap.Labels[hyperv1.NodePoolLabel],
+		hyperv1.NTOMirroredConfigLabel:      "true",
 	})
 	hostedClusterConfigMap.Data = controlPlaneConfigMap.Data
 	return nil
@@ -3641,6 +3650,14 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 						},
 						{
 							Key:      "node.kubernetes.io/not-ready",
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoExecute,
+						},
+						// TODO(maxcao13): remove this when we fix this in karpenter-operator which will set the providerId instead
+						// https://redhat.atlassian.net/browse/AUTOSCALE-1036
+						// Karpenter nodes register with karpenter.sh/unregistered taint until providerID is set.
+						{
+							Key:      "karpenter.sh/unregistered",
 							Operator: corev1.TolerationOpExists,
 							Effect:   corev1.TaintEffectNoExecute,
 						},

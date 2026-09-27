@@ -319,6 +319,55 @@ func TestCreatePrivateZone(t *testing.T) {
 	}
 }
 
+func TestCreatePrivateZoneUsesStableCallerReferenceAcrossRetries(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockR53 := awsapi.NewMockROUTE53API(ctrl)
+	mockVPCOwner := awsapi.NewMockROUTE53API(ctrl)
+
+	mockR53.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(emptyZonePage(), nil)
+
+	var callerReferences []string
+	mockR53.EXPECT().CreateHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).
+		Times(2).
+		DoAndReturn(func(_ context.Context, input *route53.CreateHostedZoneInput, _ ...func(*route53.Options)) (*route53.CreateHostedZoneOutput, error) {
+			callerReferences = append(callerReferences, aws.ToString(input.CallerReference))
+			if len(callerReferences) == 1 {
+				return nil, errors.New("temporary create error")
+			}
+			return &route53.CreateHostedZoneOutput{
+				HostedZone: &route53types.HostedZone{
+					Id:   aws.String("/hostedzone/RETRIEDZONE"),
+					Name: aws.String(testZoneName + "."),
+				},
+			}, nil
+		})
+	mockR53.EXPECT().ChangeTagsForResource(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&route53.ChangeTagsForResourceOutput{}, nil)
+	mockR53.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(soaRecordFor(testZoneName), nil)
+	mockR53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&route53.ChangeResourceRecordSetsOutput{}, nil)
+
+	o := &CreateInfraOptions{Region: "us-east-1"}
+	id, err := o.CreatePrivateZone(context.Background(), logr.Discard(), mockR53, testZoneName, testVPCID, false, mockVPCOwner, "")
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if id != "RETRIEDZONE" {
+		t.Fatalf("expected zone ID %q, got %q", "RETRIEDZONE", id)
+	}
+	if len(callerReferences) != 2 {
+		t.Fatalf("expected two caller references, got %d", len(callerReferences))
+	}
+	if callerReferences[0] == "" {
+		t.Fatal("expected a non-empty caller reference")
+	}
+	if callerReferences[0] != callerReferences[1] {
+		t.Fatalf("expected retries to use the same caller reference, got %q and %q", callerReferences[0], callerReferences[1])
+	}
+}
+
 func TestCleanupPublicZone(t *testing.T) {
 	tests := []struct {
 		name             string

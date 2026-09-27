@@ -25,20 +25,20 @@ HCCO is a **separate binary in the same image**, invoked as `control-plane-opera
 
 HCCO controllers are in `hostedclusterconfigoperator/controllers/`. They do **not** use the v2 component framework today — this is a migration opportunity.
 
-## HostedControlPlane Status Patching
+## HostedCluster and HostedControlPlane Status Patching
 
-CPO, HCCO, and the hypershift-operator (karpenter) all write to the same
-`HostedControlPlane.Status` concurrently. Never patch HCP status with a raw
-`Status().Update()` or an unguarded `client.MergeFrom()` — both can silently
-overwrite a concurrent writer's changes (`Update()` replaces the whole status
-subresource; `MergeFrom()` without an optimistic lock lets a stale
-`resourceVersion` succeed silently instead of conflicting).
+CPO, HCCO, and the hypershift-operator (karpenter) write to
+`HostedControlPlane.Status` concurrently. The same status-writing rules apply to
+`HostedCluster`. Use the shared helper for HC/HCP status instead of raw
+`Status().Update()` or unguarded `client.MergeFrom()` / `MergeFromWithOptions()`.
+`Update()` conflicts on stale resource versions; merge patches without an
+optimistic lock can silently overwrite concurrent changes.
 
 Use `support/statuspatching` instead:
 
 - `statuspatching.PatchStatus(ctx, c, obj, mutate)` — general case. Re-fetches
   the object, applies `mutate`, patches with `MergeFromWithOptimisticLock`, and
-  retries automatically on conflict.
+  skips no-op changes, and retries automatically on conflict.
 - `statuspatching.PatchStatusCondition(ctx, c, obj, conditions, condition)` —
   single-condition updates. Uses `meta.SetStatusCondition`'s own change
   detection to skip no-ops without a false positive from `LastTransitionTime`.
@@ -56,10 +56,15 @@ it's derived from a fresh external probe performed immediately before the patch
 call, where no concurrent writer can invalidate the value between the probe and
 the patch, not from an earlier `Status` snapshot.
 
-The `hcpstatuspatch` static analyzer (`hack/tools/hypershiftlinter`) flags
-direct `Status().Update()`/unguarded `MergeFrom()` on `HostedControlPlane` —
-see [CNTRLPLANE-3532](https://redhat.atlassian.net/browse/CNTRLPLANE-3532) for
-migration status.
+The `hcpstatuspatch` static analyzer (`hack/tools/hypershiftlinter`) actively
+checks both HC and HCP in normal lint runs. It flags direct `Status().Update()`
+and unguarded `MergeFrom()` / `MergeFromWithOptions()` status patches, while
+accepting explicitly optimistic-locked patches. Existing call sites have narrow
+migration exceptions in `.golangci.yml`, not approval to repeat these patterns.
+Remove each exception when its last matching call site is migrated. An identical
+new source line in the same file will also match an exception; reviewers must
+watch for this limitation. See the [analyzer README](../hack/tools/hypershiftlinter/README.md#status-writing-enforcement-and-migration-exceptions)
+for detection boundaries and exception maintenance.
 
 ## Key Directories
 

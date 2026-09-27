@@ -101,6 +101,15 @@ func IngressDefaultIngressControllerCert() *corev1.Secret {
 	}
 }
 
+func ServiceProviderDefaultIngressServingCert(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service-provider-default-ingress-serving-cert",
+			Namespace: ns,
+		},
+	}
+}
+
 func IngressObservedDefaultIngressCertCA(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

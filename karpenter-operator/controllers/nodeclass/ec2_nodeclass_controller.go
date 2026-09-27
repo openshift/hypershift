@@ -20,6 +20,8 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
@@ -56,9 +58,7 @@ const (
 	DefaultRootVolumeSize = "120Gi"
 )
 
-var (
-	errKarpenterUserDataSecretNotFound = errors.New("failed to find user data secret for OpenshiftEC2NodeClass")
-)
+var errKarpenterUserDataSecretNotFound = errors.New("failed to find user data secret for OpenshiftEC2NodeClass")
 
 var (
 	crdEC2NodeClass = supportassets.MustCRD(assets.ReadFile, "karpenter.k8s.aws_ec2nodeclasses.yaml")
@@ -68,6 +68,8 @@ var (
 
 type EC2NodeClassReconciler struct {
 	Namespace string
+	// SkipUpstreamCRD leaves the upstream CRD ownership to the standalone operator.
+	SkipUpstreamCRD bool
 
 	managementClient client.Client
 	guestClient      client.Client
@@ -215,6 +217,10 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
+	// We requeue an un-pinned NodeClass if the control plane is in the middle of an upgrade to eventually ensure the NodeClass is upgraded to the new release image.
+	if openshiftEC2NodeClass.Spec.Version == "" && isControlPlaneUpgrading(hcp) {
+		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -225,10 +231,13 @@ func (r *EC2NodeClassReconciler) reconcileCRDs(ctx context.Context, onlyCreate b
 	errs := []error{}
 	var op controllerutil.OperationResult
 	var err error
-	for _, desired := range []*apiextensionsv1.CustomResourceDefinition{
-		crdEC2NodeClass,
+	desiredCRDs := []*apiextensionsv1.CustomResourceDefinition{
 		crdOpenshiftEC2NodeClass,
-	} {
+	}
+	if !r.SkipUpstreamCRD {
+		desiredCRDs = append([]*apiextensionsv1.CustomResourceDefinition{crdEC2NodeClass}, desiredCRDs...)
+	}
+	for _, desired := range desiredCRDs {
 		// We need to deep copy because Create/CreateOrUpdate mutates the object
 		crd := desired.DeepCopy()
 		if onlyCreate {
@@ -275,17 +284,52 @@ func AMISelectorTerms(userDataSecret *corev1.Secret, platform hyperv1.PlatformTy
 	return terms, nil
 }
 
+// isControlPlaneUpgrading returns true when the desired release image differs
+// from the most recent Completed version in history.
+// Returns false during initial install (no Completed entry or desired not yet populated).
+// The loop returns on the first CompletedUpdate entry found. This is safe because the
+// ControlPlaneVersion.History list is ordered newest-first per the API contract.
+func isControlPlaneUpgrading(hcp *hyperv1.HostedControlPlane) bool {
+	desiredImage := hcp.Status.ControlPlaneVersion.Desired.Image
+	if desiredImage == "" {
+		return false
+	}
+
+	for _, entry := range hcp.Status.ControlPlaneVersion.History {
+		if entry.State == configv1.CompletedUpdate {
+			return entry.Image != desiredImage
+		}
+	}
+
+	return false
+}
+
 func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, hcp *hyperv1.HostedControlPlane, userDataSecret *corev1.Secret) error {
 	ownerRef := config.OwnerRefFrom(openshiftEC2NodeClass)
 	ownerRef.ApplyTo(ec2NodeClass)
 
-	amiSelectorTerms, err := AMISelectorTerms(userDataSecret, hcp.Spec.Platform.Type)
-	if err != nil {
-		return fmt.Errorf("failed to get AMISelectorTerms: %w", err)
+	pauseUpgrade := isControlPlaneUpgrading(hcp)
+
+	var amiSelectorTerms []awskarpenterv1.AMISelectorTerm
+
+	userData := ptr.To(string(userDataSecret.Data["value"]))
+
+	// When upgrade is in progress, and the nodeclass is tied to the control plane version, and the EC2NodeClass already has AMI/UserData set
+	// (i.e. not the first creation), preserve the existing drift-triggering fields that cause a node rollout upgrade.
+	if pauseUpgrade && openshiftEC2NodeClass.Spec.Version == "" && len(ec2NodeClass.Spec.AMISelectorTerms) > 0 && ec2NodeClass.Spec.UserData != nil {
+		ctrl.LoggerFrom(ctx).Info("Control plane upgrade in progress, preserving existing userData and amis")
+		userData = ec2NodeClass.Spec.UserData
+		amiSelectorTerms = ec2NodeClass.Spec.AMISelectorTerms
+	} else {
+		var err error
+		amiSelectorTerms, err = AMISelectorTerms(userDataSecret, hcp.Spec.Platform.Type)
+		if err != nil {
+			return fmt.Errorf("failed to get AMISelectorTerms: %w", err)
+		}
 	}
 
 	ec2NodeClass.Spec = awskarpenterv1.EC2NodeClassSpec{
-		UserData:                         ptr.To(string(userDataSecret.Data["value"])),
+		UserData:                         userData,
 		AMIFamily:                        ptr.To("Custom"),
 		AMISelectorTerms:                 amiSelectorTerms,
 		AssociatePublicIPAddress:         karpenterAssociatePublicIPAddressFromNodeClassSpec(openshiftEC2NodeClass.Spec),
@@ -522,7 +566,6 @@ func (r *EC2NodeClassReconciler) reconcileKarpenterSubnetsConfigMap(ctx context.
 
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to reconcile karpenter subnets configmap: %w", err)
 	}

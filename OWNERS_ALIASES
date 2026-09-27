@@ -21,6 +21,7 @@ aliases:
     - jparrill
     - devguyio
     - clebs
+    - sdminonne
   core-reviewers:
     - enxebre
     - csrwng
@@ -81,10 +82,12 @@ aliases:
     - cblecker
     - ckandag
     - cristianoveiga
+    - daniel-rejniak
     - floresroger
     - gbarabasz
     - jimdaga
     - patjlm
+    - pvasant
   powervs-reviewers:
     - alishaIBM
     - bkhadars

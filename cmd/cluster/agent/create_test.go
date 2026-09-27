@@ -12,8 +12,63 @@ import (
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
 )
+
+func TestRawCreateOptions_Validate(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		input         RawCreateOptions
+		expectedError string
+	}{
+		{
+			name: "When service-publishing-strategy is not provided, it should return an error",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: "",
+			},
+			expectedError: "service publishing strategy  is not supported, supported options: NodePort, LoadBalancer",
+		},
+		{
+			name: "When service-publishing-strategy is unsupported, it should return an error",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: "whatever",
+			},
+			expectedError: "service publishing strategy whatever is not supported, supported options: NodePort, LoadBalancer",
+		},
+		{
+			name: "When api-server-address is set with LoadBalancer strategy, it should return an error",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: LoadBalancerServicePublishingStrategy,
+				APIServerAddress:          "1.2.3.4",
+			},
+			expectedError: "--api-server-address is supported only for NodePort service publishing strategy, service publishing strategy LoadBalancer is used",
+		},
+		{
+			name: "When service-publishing-strategy is NodePort, it should pass validation",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: NodePortServicePublishingStrategy,
+				APIServerAddress:          "1.2.3.4",
+			},
+		},
+		{
+			name: "When service-publishing-strategy is LoadBalancer, it should pass validation",
+			input: RawCreateOptions{
+				ServicePublishingStrategy: LoadBalancerServicePublishingStrategy,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var errString string
+			if _, err := test.input.Validate(t.Context(), nil); err != nil {
+				errString = err.Error()
+			}
+			if diff := cmp.Diff(test.expectedError, errString); diff != "" {
+				t.Errorf("got incorrect error: %v", diff)
+			}
+		})
+	}
+}
 
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
@@ -36,6 +91,15 @@ func TestCreateCluster(t *testing.T) {
 			name: "When minimal flags are provided, it should render successfully",
 			args: []string{
 				"--api-server-address=fakeAddress", // if we don't set it, the machine's IP is looked up, which isn't portable
+				"--render-sensitive",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+			},
+		},
+		{
+			name: "When service-publishing-strategy is LoadBalancer, it should render LoadBalancer services",
+			args: []string{
+				"--service-publishing-strategy=LoadBalancer",
 				"--render-sensitive",
 				"--name=example",
 				"--pull-secret=" + pullSecretFile,

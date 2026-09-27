@@ -36,8 +36,11 @@ var allowlist = map[string]map[string]bool{
 		"String":                       true,
 		"Type":                         true,
 		"WithClientOptions":            true,
+		"WithGuestConfig":              true,
 		"WithInterval":                 true,
 		"WithTimeout":                  true,
+		"WithTransport":                true,
+		"WithTransportFactory":         true,
 
 		// Client helpers
 		"GetClient":    true,
@@ -51,8 +54,13 @@ var allowlist = map[string]map[string]bool{
 		"WaitForGuestKubeConfig":                          true,
 		"WaitForNReadyNodesWithOptions":                   true,
 		"WaitForNodePoolConfigUpdateCompleteWithPlatform": true,
+		"WaitForOAuthLoadBalancerEndpoint":                true,
 		"WaitForReadyNodesByNodePool":                     true,
 		"WaitForReadyNodesByLabels":                       true,
+
+		// Port-forward/transport helpers
+		"SetupGuestKASPortForwardConfig": true,
+		"SetupOAuthPortForwardTransport": true,
 
 		// Cloud provider helpers
 		"GetDefaultSecurityGroup": true,
@@ -69,6 +77,7 @@ var allowlist = map[string]map[string]bool{
 		"ValidateAzureWorkloadIdentityWebhookMutation":     true,
 		"ValidateIngressOperatorConfiguration":             true,
 		"ValidateKubeAPIServerAllowedCIDRs":                true,
+		"ValidateOAuthIdentityProviderFlow":                true,
 		"ValidateOAuthWithIdentityProviderViaLoadBalancer": true,
 
 		// OIDC helpers

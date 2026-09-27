@@ -4,12 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"reflect"
@@ -25,21 +24,22 @@ import (
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	awsprivatelink "github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
-	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
-	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	hcc "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
-	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	cpconst "github.com/openshift/hypershift/pkg/controlplane"
+	kasconst "github.com/openshift/hypershift/pkg/kas"
+	"github.com/openshift/hypershift/pkg/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
+	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
+	hcmetrics "github.com/openshift/hypershift/pkg/metrics/hostedcluster"
 	"github.com/openshift/hypershift/support/azureutil"
-	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -78,6 +78,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -707,6 +708,24 @@ func WaitForControlPlaneRollout(t testing.TB, ctx context.Context, client crclie
 	)
 }
 
+// WaitForControlPlaneRolloutImage waits for ControlPlaneVersion to reach Completed
+// for a specific target image. Unlike WaitForControlPlaneRollout, this cannot be
+// satisfied by an already-completed old rollout.
+func WaitForControlPlaneRolloutImage(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, targetImage string) {
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s controlPlaneVersion to complete for target image", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			hc := &hyperv1.HostedCluster{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+			return hc, err
+		},
+		[]Predicate[*hyperv1.HostedCluster]{
+			isControlPlaneVersionCompletedForImage(targetImage),
+		},
+		WithTimeout(30*time.Minute),
+		WithInterval(10*time.Second),
+	)
+}
+
 // WaitForControlPlaneComponentRollout waits for all ControlPlaneComponent resources to report
 // RolloutComplete=True and a version different from initialVersion. This provides a belt-and-suspenders
 // check alongside WaitForControlPlaneRollout by directly inspecting individual component status.
@@ -1162,7 +1181,7 @@ func EnsureCAPIFinalizers(t *testing.T, ctx context.Context, client crclient.Cli
 		AtLeast(t, Version422)
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
-		for _, name := range hcc.CAPIComponents {
+		for _, name := range cpconst.CAPIComponents {
 			deployment := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
@@ -1174,8 +1193,8 @@ func EnsureCAPIFinalizers(t *testing.T, ctx context.Context, client crclient.Cli
 				t.Fatalf("failed to get CAPI deployment: %v", err)
 			}
 
-			if !controllerutil.ContainsFinalizer(deployment, hcc.ControlPlaneComponentFinalizer) {
-				t.Fatalf("CAPI deployment '%s' is expected to have finalizer: %s", name, hcc.ControlPlaneComponentFinalizer)
+			if !controllerutil.ContainsFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer) {
+				t.Fatalf("CAPI deployment '%s' is expected to have finalizer: %s", name, cpconst.ControlPlaneComponentFinalizer)
 			}
 		}
 	})
@@ -1360,17 +1379,11 @@ func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node, nodePool *hyperv1.Nod
 	AtLeast(t, Version418)
 	g := NewWithT(t)
 
-	isRHEL9 := IsLessThan(Version50) ||
-		nodePool.Spec.OSImageStream.Name == string(hyperv1.OSImageStreamRHEL9)
-
-	validHandlers := map[string]bool{
-		"crun": false,
-	}
-	if isRHEL9 {
-		validHandlers["runc"] = false
-	}
+	expectedHandlers, err := expectedNodeRuntimeHandlers(nodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to determine expected runtime handlers")
 
 	for _, node := range nodes {
+		validHandlers := maps.Clone(expectedHandlers)
 		g.Expect(node.Status.RuntimeHandlers).NotTo(BeNil(), "node %s is missing runtime handlers", node.Name)
 		for _, handler := range node.Status.RuntimeHandlers {
 			if _, ok := validHandlers[handler.Name]; ok {
@@ -1382,6 +1395,59 @@ func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node, nodePool *hyperv1.Nod
 			g.Expect(present).To(BeTrue(), "node %s is missing runtime handler %s", node.Name, handler)
 		}
 	}
+}
+
+// expectedNodeRuntimeHandlers determines the runtime handlers expected for a NodePool.
+// The observed OS image stream is the source of truth after an upgrade. The requested
+// stream and the NodePool status version provide fallbacks for clusters where the stream
+// status is not available yet. The suite release version is the final legacy fallback,
+// but must not be used when current NodePool state is available because it can describe
+// the release from before an upgrade.
+func expectedNodeRuntimeHandlers(nodePool *hyperv1.NodePool) (map[string]bool, error) {
+	validHandlers := map[string]bool{
+		"crun": false,
+	}
+	usesRHEL9, err := usesRHEL9NodePool(nodePool)
+	if err != nil {
+		return nil, err
+	}
+	if usesRHEL9 {
+		validHandlers["runc"] = false
+	}
+	return validHandlers, nil
+}
+
+// usesRHEL9NodePool reports whether the given NodePool runs RHEL 9 nodes.
+func usesRHEL9NodePool(nodePool *hyperv1.NodePool) (bool, error) {
+	if nodePool == nil {
+		return IsLessThan(Version50), nil
+	}
+
+	// Status reports the stream observed on the nodes and therefore takes precedence
+	// over the requested stream during and after a rollout.
+	switch nodePool.Status.OSImageStream.Name {
+	case hyperv1.OSImageStreamRHEL9:
+		return true, nil
+	case hyperv1.OSImageStreamRHEL10:
+		return false, nil
+	}
+
+	switch nodePool.Spec.OSImageStream.Name {
+	case hyperv1.OSImageStreamRHEL9:
+		return true, nil
+	case hyperv1.OSImageStreamRHEL10:
+		return false, nil
+	}
+
+	if nodePool.Status.Version != "" {
+		version, err := semver.ParseTolerant(nodePool.Status.Version)
+		if err != nil {
+			return false, fmt.Errorf("invalid NodePool status.version %q: %w", nodePool.Status.Version, err)
+		}
+		return version.LT(Version50), nil
+	}
+
+	return IsLessThan(Version50), nil
 }
 
 func getComponentName(pod *corev1.Pod) string {
@@ -2444,7 +2510,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 
 		// Generate a custom certificate for the KAS
 		t.Log("Generating custom certificate with DNS name", customApiServerHost)
-		customCert, customKey, err := GenerateCustomCertificate([]string{customApiServerHost}, 24*time.Hour)
+		customCert, customKey, err := v2util.GenerateCustomCertificate([]string{customApiServerHost}, 24*time.Hour)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to generate custom certificate")
 
 		// Create secret with the custom certificate
@@ -2804,14 +2870,14 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 			t.Errorf("No ValidatingAdmissionPolicies found")
 		}
 		requiredVAPs := []string{
-			hccokasvap.AdmissionPolicyNameConfig,
-			hccokasvap.AdmissionPolicyNameMirror,
-			hccokasvap.AdmissionPolicyNameICSP,
-			hccokasvap.AdmissionPolicyNameInfra,
-			hccokasvap.AdmissionPolicyNameNTOMirroredConfigs,
+			kasconst.AdmissionPolicyNameConfig,
+			kasconst.AdmissionPolicyNameMirror,
+			kasconst.AdmissionPolicyNameICSP,
+			kasconst.AdmissionPolicyNameInfra,
+			kasconst.AdmissionPolicyNameNTOMirroredConfigs,
 		}
 		if IsGreaterThanOrEqualTo(Version51) {
-			requiredVAPs = append(requiredVAPs, hccokasvap.AdmissionPolicyNameRBAC)
+			requiredVAPs = append(requiredVAPs, kasconst.AdmissionPolicyNameRBAC)
 		}
 		presentVAPs := []string{}
 		for _, vap := range validatingAdmissionPolicies.Items {
@@ -2899,6 +2965,8 @@ const (
 	// TODO (jparrill): We need to separate the metrics.go from the main pkg in the hypershift-operator.
 	//     Delete these references when it's done and import it from there
 	HypershiftOperatorInfoName = "hypershift_operator_info"
+
+	cpoMetricsPort = "8080"
 )
 
 func extractDataFromFamilies(metricFamilies map[string]*dto.MetricFamily, metric, labelKey, labelValue string) []*dto.LabelPair {
@@ -2991,6 +3059,44 @@ func ValidateMetrics(t *testing.T, ctx context.Context, client crclient.Client, 
 		})
 		if err != nil {
 			t.Errorf("Failed to validate all metrics: %v", err)
+		}
+	})
+}
+
+// ValidateCPOMetrics verifies that KAS health metrics are exposed from the
+// control-plane-operator pod in the HCP namespace.
+func ValidateCPOMetrics(t *testing.T, ctx context.Context, c crclient.Client, hc *hyperv1.HostedCluster) {
+	t.Run("When KAS health metrics are exposed, it should contain availability and latency data", func(t *testing.T) {
+		AtLeast(t, Version51)
+		if hc.Spec.Platform.Type == hyperv1.NonePlatform {
+			t.Skip("skipping on None platform")
+		}
+
+		kasMetrics := []string{
+			kas.KASAvailableMetricName,
+			kas.KASRequestDurationMetricName,
+		}
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+
+		err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+			mf, err := GetMetricsFromPod(ctx, c, "control-plane-operator", "control-plane-operator", hcpNamespace, cpoMetricsPort)
+			if err != nil {
+				t.Logf("unable to get CPO metrics: %v", err)
+				return false, nil
+			}
+			for _, metricName := range kasMetrics {
+				// These metrics are emitted without labels, so check family presence directly
+				// rather than using ValidateMetricPresence which relies on label iteration.
+				family, ok := mf[metricName]
+				if !ok || len(family.Metric) == 0 {
+					t.Logf("Expected results for metric %q, found none", metricName)
+					return false, nil
+				}
+			}
+			return true, nil
+		})
+		if err != nil {
+			t.Errorf("failed to validate KAS health metrics: %v", err)
 		}
 	})
 }
@@ -3946,29 +4052,6 @@ func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-image-registry\" not found"))
 	})
-}
-
-// GenerateCustomCertificate generates a self-signed certificate for the given DNS names
-func GenerateCustomCertificate(dnsNames []string, validity time.Duration) ([]byte, []byte, error) {
-	if len(dnsNames) == 0 {
-		return nil, nil, fmt.Errorf("no DNS names provided")
-	}
-
-	cfg := &certs.CertCfg{
-		Subject:      pkix.Name{CommonName: dnsNames[0], Organization: []string{"kubernetes"}, OrganizationalUnit: []string{"test"}},
-		KeyUsages:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		Validity:     validity,
-		DNSNames:     dnsNames,
-		IsCA:         false,
-	}
-
-	key, crt, err := certs.GenerateSelfSignedCertificate(cfg)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate self-signed certificate: %w", err)
-	}
-
-	return certs.CertToPem(crt), certs.PrivateKeyToPem(key), nil
 }
 
 // EnsureOpenshiftSamplesCapabilityDisabled validates the expectations for when OpenShiftSamplesCapability is Disabled

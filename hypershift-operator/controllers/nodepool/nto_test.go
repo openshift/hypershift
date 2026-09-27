@@ -558,7 +558,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      netutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							NTOMirroredConfigLabel:               "true",
+							hyperv1.NTOMirroredConfigLabel:       "true",
 							nodePoolAnnotation:                   npName,
 							ContainerRuntimeConfigConfigMapLabel: "",
 						},
@@ -607,7 +607,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      netutil.ShortenName("foo", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							NTOMirroredConfigLabel:               "true",
+							hyperv1.NTOMirroredConfigLabel:       "true",
 							nodePoolAnnotation:                   npName,
 							ContainerRuntimeConfigConfigMapLabel: "",
 						},
@@ -645,7 +645,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						},
 					},
 					Labels: map[string]string{
-						KubeletConfigConfigMapLabel: "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
 					},
 				},
 			},
@@ -657,9 +657,9 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      netutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							NTOMirroredConfigLabel:      "true",
-							nodePoolAnnotation:          npName,
-							KubeletConfigConfigMapLabel: "true",
+							hyperv1.NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:                  npName,
+							hyperv1.KubeletConfigConfigMapLabel: "true",
 						},
 					},
 					Data: map[string]string{
@@ -684,7 +684,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						},
 					},
 					Labels: map[string]string{
-						KubeletConfigConfigMapLabel: "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
 					},
 				},
 			},
@@ -695,9 +695,9 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      netutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							NTOMirroredConfigLabel:      "true",
-							nodePoolAnnotation:          npName,
-							KubeletConfigConfigMapLabel: "true",
+							hyperv1.NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:                  npName,
+							hyperv1.KubeletConfigConfigMapLabel: "true",
 						},
 					},
 					Data: map[string]string{
@@ -712,9 +712,9 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      netutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							NTOMirroredConfigLabel:      "true",
-							nodePoolAnnotation:          npName,
-							KubeletConfigConfigMapLabel: "true",
+							hyperv1.NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:                  npName,
+							hyperv1.KubeletConfigConfigMapLabel: "true",
 						},
 					},
 					Data: map[string]string{
@@ -739,7 +739,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						},
 					},
 					Labels: map[string]string{
-						KubeletConfigConfigMapLabel: "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
 					},
 				},
 			},
@@ -750,9 +750,9 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      netutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							NTOMirroredConfigLabel:      "true",
-							nodePoolAnnotation:          "other-nodepool",
-							KubeletConfigConfigMapLabel: "true",
+							hyperv1.NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:                  "other-nodepool",
+							hyperv1.KubeletConfigConfigMapLabel: "true",
 						},
 					},
 					Data: map[string]string{
@@ -767,9 +767,9 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      netutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							NTOMirroredConfigLabel:      "true",
-							nodePoolAnnotation:          npName,
-							KubeletConfigConfigMapLabel: "true",
+							hyperv1.NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:                  npName,
+							hyperv1.KubeletConfigConfigMapLabel: "true",
 						},
 					},
 					Data: map[string]string{
@@ -794,7 +794,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						},
 					},
 					Labels: map[string]string{
-						KubeletConfigConfigMapLabel: "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
 					},
 				},
 			},
@@ -805,9 +805,9 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      netutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							NTOMirroredConfigLabel:      "true",
-							nodePoolAnnotation:          npName,
-							KubeletConfigConfigMapLabel: "true",
+							hyperv1.NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:                  npName,
+							hyperv1.KubeletConfigConfigMapLabel: "true",
 						},
 					},
 					Data: map[string]string{
@@ -822,9 +822,9 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      netutil.ShortenName("bar", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							NTOMirroredConfigLabel:      "true",
-							nodePoolAnnotation:          npName,
-							KubeletConfigConfigMapLabel: "true",
+							hyperv1.NTOMirroredConfigLabel:      "true",
+							nodePoolAnnotation:                  npName,
+							hyperv1.KubeletConfigConfigMapLabel: "true",
 						},
 					},
 					Data: map[string]string{
@@ -849,7 +849,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						},
 					},
 					Labels: map[string]string{
-						KubeletConfigConfigMapLabel: "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
 					},
 				},
 			},
@@ -860,9 +860,9 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 						Name:      netutil.ShortenName("bar-2", npName, validation.LabelValueMaxLength),
 						Namespace: hcpNamespace,
 						Labels: map[string]string{
-							nodeTuningGeneratedConfigLabel: "true",
-							nodePoolAnnotation:             npName,
-							KubeletConfigConfigMapLabel:    "true",
+							nodeTuningGeneratedConfigLabel:      "true",
+							nodePoolAnnotation:                  npName,
+							hyperv1.KubeletConfigConfigMapLabel: "true",
 						},
 					},
 					Data: map[string]string{

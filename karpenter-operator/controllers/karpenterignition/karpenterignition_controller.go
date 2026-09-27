@@ -46,10 +46,12 @@ import (
 
 const (
 	openshiftEC2NodeClassAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodeClassCurrentConfigVersion"
+	openshiftEC2NodeClassAnnotationCurrentRolloutConfig = "hypershift.openshift.io/nodeClassCurrentRolloutConfig"
 
 	// nodePoolAnnotationCurrentConfigVersion mirrors the annotation from nodepool_controller.go
 	// It's used to track the current config version for outdated token cleanup
 	nodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+	nodePoolAnnotationCurrentRolloutConfig = "hypershift.openshift.io/nodePoolCurrentRolloutConfig"
 
 	kubeletConfigFinalizer = "hypershift.openshift.io/karpenter-kubelet-config-finalizer"
 )
@@ -126,8 +128,11 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, fmt.Errorf("failed to get HostedCluster: %w", err)
 	}
 
-	releaseImage := hcp.Spec.ReleaseImage
-	version := currentClusterVersion(hostedCluster)
+	releaseImage, version, requeue := currentClusterRelease(hostedCluster)
+	if requeue && openshiftEC2NodeClass.Spec.Version == "" {
+		log.Info("No version history available for unpinned NodeClass, requeueing")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
 
 	// When the user requests a version for the OpenshiftEC2NodeClass we perform further validation and lookup of the release image.
 	// We only detect skew and if the version is valid in this case, as under normal circumstances we can assume the release image
@@ -277,21 +282,29 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 		return fmt.Errorf("failed to create token: %w", err)
 	}
 
-	// Get the current config version from OpenshiftEC2NodeClass to track outdated tokens
+	// Populate the in-memory NodePool annotations and status from the stored nodeclass
+	// state so that Token.isOutdated() can correctly detect config/version changes.
+	// On first reconcile (no stored state), leave annotations absent so isOutdated()
+	// returns true and creates the initial secrets.
 	currentConfigVersion := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationCurrentConfigVersion]
-	if currentConfigVersion == "" {
-		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = cg.Hash()
-	} else {
-		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
+	currentRolloutConfig := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationCurrentRolloutConfig]
+	if currentConfigVersion != "" {
+		np.Annotations[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
+		if currentRolloutConfig != "" {
+			np.Annotations[nodePoolAnnotationCurrentRolloutConfig] = currentRolloutConfig
+		}
+		if openshiftEC2NodeClass.Status.Version != "" {
+			np.Status.Version = openshiftEC2NodeClass.Status.Version
+		}
 	}
 
 	if err := token.Reconcile(ctx); err != nil {
 		return fmt.Errorf("failed to reconcile token: %w", err)
 	}
 
-	// Update the OpenshiftEC2NodeClass annotation if the config hash changed
-	if currentConfigVersion != cg.Hash() {
-		if err := r.updateConfigVersionAnnotation(ctx, openshiftEC2NodeClass, cg.Hash()); err != nil {
+	// Update the OpenshiftEC2NodeClass annotations if the config hash changed
+	if currentConfigVersion != cg.Hash() || currentRolloutConfig != cg.RolloutHashWithoutVersion() {
+		if err := r.updateConfigAnnotations(ctx, openshiftEC2NodeClass, cg.Hash(), cg.RolloutHashWithoutVersion()); err != nil {
 			return err
 		}
 		log.Info("Updated config version annotation", "oldVersion", currentConfigVersion, "newVersion", cg.Hash())
@@ -342,42 +355,36 @@ func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
 	}
 }
 
-// currentClusterVersion returns the version of the most recently completed update from the
-// HostedCluster's version history. It searches history entries for the one with state=Completed
-// and the most recent CompletionTime. If no completed entries exist and there is exactly one
-// history entry, it falls back to the desired version. This handles the case where a cluster
-// is still rolling out its initial version.
-func currentClusterVersion(hostedCluster *hyperv1.HostedCluster) string {
+// currentClusterRelease returns the release image and version of the most recently
+// completed update from the HostedCluster's version history, plus a requeue flag.
+// During a control plane upgrade, this returns the last completed version rather than
+// the desired version, preventing premature drift detection and worker node replacement
+// before the control plane is ready.
+//
+// The function relies on the API ordering guarantee: History is ordered newest-first
+// (per the HostedCluster CRD contract), so the first Completed entry is the most recent.
+func currentClusterRelease(hostedCluster *hyperv1.HostedCluster) (string, string, bool) {
 	if hostedCluster.Status.Version == nil {
-		return ""
+		// CPO hasn't populated version status yet. Use spec as best-effort for initial install.
+		return hostedCluster.Spec.Release.Image, "", false
 	}
 
-	var latest *configv1.UpdateHistory
-	for i := range hostedCluster.Status.Version.History {
-		entry := &hostedCluster.Status.Version.History[i]
-		if entry.State != configv1.CompletedUpdate {
-			continue
-		}
-		if latest == nil {
-			latest = entry
-			continue
-		}
-		if entry.CompletionTime != nil && latest.CompletionTime != nil && entry.CompletionTime.After(latest.CompletionTime.Time) {
-			latest = entry
+	// Return the first Completed entry (most recent finished version).
+	for _, entry := range hostedCluster.Status.Version.History {
+		if entry.State == configv1.CompletedUpdate {
+			return entry.Image, entry.Version, false
 		}
 	}
 
-	if latest != nil {
-		return latest.Version
+	// No completed entries: initial install still in progress.
+	// Use the first history entry (the version being installed).
+	if len(hostedCluster.Status.Version.History) > 0 {
+		entry := &hostedCluster.Status.Version.History[0]
+		return entry.Image, entry.Version, false
 	}
 
-	// If there are no completed entries but exactly one history entry exists, the cluster
-	// is likely still rolling out its first version. Fall back to the desired version.
-	if len(hostedCluster.Status.Version.History) == 1 {
-		return hostedCluster.Status.Version.Desired.Version
-	}
-
-	return hostedCluster.Status.Version.Desired.Version
+	// Empty history: signal caller to requeue.
+	return "", "", true
 }
 
 // validateVersion checks whether the requested version is valid for the given HostedCluster.
@@ -636,15 +643,35 @@ func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane, ignitionEndpoint stri
 		},
 		Status: hyperv1.HostedClusterStatus{
 			IgnitionEndpoint: ignitionEndpoint,
-			Version: &hyperv1.ClusterVersionStatus{
-				Desired: configv1.Release{},
-			},
 		},
 	}
 
-	if hcp.Status.VersionStatus != nil {
-		hc.Status.Version.Desired.Version = hcp.Status.VersionStatus.Desired.Version
-		hc.Status.Version.History = hcp.Status.VersionStatus.History
+	// Prefer ControlPlaneVersion (management-side CP rollout status) so that the
+	// release selector and the ec2nodeclass controller's pause gate agree on the
+	// same completion signal. Fall back to VersionStatus for backward compatibility
+	// with HCPs that don't yet populate ControlPlaneVersion.
+	cpv := hcp.Status.ControlPlaneVersion
+	if cpv.Desired.Image != "" || len(cpv.History) > 0 {
+		history := make([]configv1.UpdateHistory, len(cpv.History))
+		for i, entry := range cpv.History {
+			history[i] = configv1.UpdateHistory{
+				State:   entry.State,
+				Image:   entry.Image,
+				Version: entry.Version,
+			}
+			if !entry.CompletionTime.IsZero() {
+				history[i].CompletionTime = &entry.CompletionTime
+			}
+		}
+		hc.Status.Version = &hyperv1.ClusterVersionStatus{
+			Desired: cpv.Desired,
+			History: history,
+		}
+	} else if hcp.Status.VersionStatus != nil {
+		hc.Status.Version = &hyperv1.ClusterVersionStatus{
+			Desired: hcp.Status.VersionStatus.Desired,
+			History: hcp.Status.VersionStatus.History,
+		}
 	}
 
 	if hcp.Spec.ControlPlaneReleaseImage != nil {
@@ -662,14 +689,15 @@ func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane, ignitionEndpoint stri
 	return hc, nil
 }
 
-func (r *KarpenterIgnitionReconciler) updateConfigVersionAnnotation(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, newVersion string) error {
+func (r *KarpenterIgnitionReconciler) updateConfigAnnotations(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, configVersion, rolloutConfig string) error {
 	original := openshiftEC2NodeClass.DeepCopy()
 	if openshiftEC2NodeClass.Annotations == nil {
 		openshiftEC2NodeClass.Annotations = make(map[string]string)
 	}
-	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = newVersion
+	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = configVersion
+	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentRolloutConfig] = rolloutConfig
 	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
-		return fmt.Errorf("failed to update config version annotation on OpenshiftEC2NodeClass: %w", err)
+		return fmt.Errorf("failed to update config annotations on OpenshiftEC2NodeClass: %w", err)
 	}
 	return nil
 }

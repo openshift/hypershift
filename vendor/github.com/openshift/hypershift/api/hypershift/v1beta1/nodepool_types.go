@@ -22,6 +22,10 @@ const (
 	// NodePoolLabel is used to label Nodes.
 	NodePoolLabel = "hypershift.openshift.io/nodePool"
 
+	KubeletConfigConfigMapLabel = "hypershift.openshift.io/kubeletconfig-config"
+	// NTOMirroredConfigLabel added to objects that were mirrored from the node pool namespace into the HCP namespace
+	NTOMirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
+
 	// IgnitionServerTokenExpirationTimestampAnnotation holds the time that a ignition token expires and should be
 	// removed from the cluster.
 	IgnitionServerTokenExpirationTimestampAnnotation = "hypershift.openshift.io/ignition-token-expiration-timestamp"

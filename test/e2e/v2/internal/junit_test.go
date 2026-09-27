@@ -4,6 +4,8 @@ package internal
 
 import (
 	"encoding/xml"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,265 +13,253 @@ import (
 	"github.com/onsi/ginkgo/v2/types"
 )
 
-func TestBuildLifecycleReport(t *testing.T) {
+func TestGenerateJUnitReport(t *testing.T) {
 	tests := []struct {
-		name  string
-		specs types.SpecReports
-
-		wantTests  int
-		wantFailed int
-
-		// Per-testcase assertions, indexed by position in the output.
-		// Empty means only suite-level counts are checked.
-		wantCases []wantCase
+		name   string
+		spec   types.SpecReport
+		assert func(*testing.T, parsedTestCase)
 	}{
 		{
-			name: "When an informing failure was converted to a skip, it should emit a failure",
-			specs: types.SpecReports{
-				informingFailureSkip("should have custom labels", "expected labels to match"),
-			},
-			wantTests:  1,
-			wantFailed: 1,
-			wantCases: []wantCase{
-				{
-					lifecycle:      lifecycleInforming,
-					failureMessage: "expected labels to match",
-				},
-			},
-		},
-		{
-			name: "When an informing test passes, it should be excluded",
-			specs: types.SpecReports{
-				informingPass("should have custom tolerations"),
-			},
-			wantTests: 0,
-		},
-		{
-			name: "When specs are non-informing, it should exclude them entirely",
-			specs: types.SpecReports{
-				{
-					LeafNodeType:             types.NodeTypeIt,
-					ContainerHierarchyTexts:  []string{"Suite"},
-					ContainerHierarchyLabels: [][]string{{}},
-					LeafNodeText:             "blocking pass",
-					State:                    types.SpecStatePassed,
-					RunTime:                  time.Second,
-				},
-				{
-					LeafNodeType:             types.NodeTypeIt,
-					LeafNodeLabels:           []string{"blocking"},
-					ContainerHierarchyTexts:  []string{"Suite"},
-					ContainerHierarchyLabels: [][]string{{}},
-					LeafNodeText:             "blocking fail",
-					State:                    types.SpecStateFailed,
-					RunTime:                  time.Second,
-					Failure:                  types.Failure{Message: "boom"},
-				},
-			},
-			wantTests: 0,
-		},
-		{
-			name: "When an informing test has a regular skip, it should be excluded",
-			specs: types.SpecReports{
-				{
-					LeafNodeType:             types.NodeTypeIt,
-					LeafNodeLabels:           []string{InformingLabel},
-					ContainerHierarchyTexts:  []string{"Suite"},
-					ContainerHierarchyLabels: [][]string{{}},
-					LeafNodeText:             "should skip",
-					State:                    types.SpecStateSkipped,
-					Failure:                  types.Failure{Message: "platform not supported"},
-				},
-			},
-			wantTests: 0,
-		},
-		{
-			name: "When a spec is a BeforeSuite node, it should exclude it",
-			specs: types.SpecReports{
-				{
-					LeafNodeType:             types.NodeTypeBeforeSuite,
-					LeafNodeLabels:           []string{InformingLabel},
-					ContainerHierarchyTexts:  []string{},
-					ContainerHierarchyLabels: [][]string{{}},
-					LeafNodeText:             "setup",
-					State:                    types.SpecStatePassed,
-				},
-			},
-			wantTests: 0,
-		},
-		{
-			name: "When an informing test panics directly, it should be excluded",
-			specs: types.SpecReports{
-				{
-					LeafNodeType:             types.NodeTypeIt,
-					LeafNodeLabels:           []string{InformingLabel},
-					ContainerHierarchyTexts:  []string{"Suite"},
-					ContainerHierarchyLabels: [][]string{{}},
-					LeafNodeText:             "should not panic",
-					State:                    types.SpecStatePanicked,
-					RunTime:                  500 * time.Millisecond,
-					Failure: types.Failure{
-						Message:  "runtime error: nil pointer",
-						Location: types.CodeLocation{FileName: "x_test.go", LineNumber: 7},
-					},
-				},
-			},
-			wantTests: 0,
-		},
-		{
-			name: "When specs are mixed, it should include only informing failure skips",
-			specs: types.SpecReports{
-				informingPass("informing pass"),
-				{
-					LeafNodeType:             types.NodeTypeIt,
-					ContainerHierarchyTexts:  []string{"Suite"},
-					ContainerHierarchyLabels: [][]string{{}},
-					LeafNodeText:             "blocking pass",
-					State:                    types.SpecStatePassed,
-					RunTime:                  time.Second,
-				},
-				informingFailureSkip("informing fail", "expected X"),
-				{
-					LeafNodeType:             types.NodeTypeIt,
-					ContainerHierarchyTexts:  []string{"Suite"},
-					ContainerHierarchyLabels: [][]string{{}},
-					LeafNodeText:             "blocking fail",
-					State:                    types.SpecStateFailed,
-					RunTime:                  time.Second,
-					Failure:                  types.Failure{Message: "bad"},
-				},
-			},
-			wantTests:  1,
-			wantFailed: 1,
-			wantCases: []wantCase{
-				{lifecycle: lifecycleInforming, failureMessage: "expected X"},
+			name: "When a regular test passes with inherited and leaf labels, it should omit labels from its name",
+			spec: specReport("regular pass", types.SpecStatePassed, []string{"leaf-label"}, [][]string{{"container-label"}}),
+			assert: func(t *testing.T, tc parsedTestCase) {
+				if strings.HasPrefix(tc.Name, "[It] ") {
+					t.Fatalf("testcase name contains Ginkgo leaf node type: %q", tc.Name)
+				}
+				if strings.Contains(tc.Name, "leaf-label") || strings.Contains(tc.Name, "container-label") {
+					t.Fatalf("testcase name contains Ginkgo labels: %q", tc.Name)
+				}
+				if !strings.Contains(tc.Name, "[sig-hypershift][Jira:Hypershift][Feature:JUnitContract]") {
+					t.Fatalf("testcase name dropped textual annotations: %q", tc.Name)
+				}
+				assertNoLifecycle(t, tc)
 			},
 		},
 		{
-			name:      "When the spec list is empty, it should produce an empty suite",
-			specs:     types.SpecReports{},
-			wantTests: 0,
+			name: "When a regular test fails, it should emit a blocking failure",
+			spec: func() types.SpecReport {
+				spec := specReport("regular failure", types.SpecStateFailed, nil, [][]string{{}})
+				spec.Failure = types.Failure{Message: "blocking boom"}
+				return spec
+			}(),
+			assert: func(t *testing.T, tc parsedTestCase) {
+				if tc.Failure == nil || tc.Failure.Message != "blocking boom" {
+					t.Fatalf("expected blocking failure, got %#v", tc.Failure)
+				}
+				assertNoLifecycle(t, tc)
+			},
+		},
+		{
+			name:   "When an informing test passes, it should emit informing lifecycle metadata",
+			spec:   specReport("informing pass", types.SpecStatePassed, []string{InformingLabel}, [][]string{{}}),
+			assert: assertInformingLifecycle,
+		},
+		{
+			name: "When an informing assertion failure was converted to a skip, it should emit an informing failure",
+			spec: informingFailureSkip("informing failure", "informing boom"),
+			assert: func(t *testing.T, tc parsedTestCase) {
+				assertInformingLifecycle(t, tc)
+				if tc.Skipped != nil {
+					t.Fatalf("informing assertion failure was rendered as skipped: %#v", tc.Skipped)
+				}
+				if tc.Failure == nil || tc.Failure.Message != "informing boom" {
+					t.Fatalf("expected restored informing failure, got %#v", tc.Failure)
+				}
+				if strings.Contains(tc.Failure.Message, informingSkipPrefix) {
+					t.Fatalf("failure contains internal informing prefix: %q", tc.Failure.Message)
+				}
+			},
+		},
+		{
+			name: "When an informing test is genuinely skipped, it should remain skipped with lifecycle metadata",
+			spec: func() types.SpecReport {
+				spec := specReport("informing skip", types.SpecStateSkipped, []string{InformingLabel}, [][]string{{}})
+				spec.Failure = types.Failure{Message: "platform not supported"}
+				return spec
+			}(),
+			assert: func(t *testing.T, tc parsedTestCase) {
+				assertInformingLifecycle(t, tc)
+				if tc.Skipped == nil || !strings.Contains(tc.Skipped.Message, "platform not supported") {
+					t.Fatalf("expected genuine skip, got %#v", tc.Skipped)
+				}
+				if tc.Failure != nil {
+					t.Fatalf("genuine skip was rendered as a failure: %#v", tc.Failure)
+				}
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := BuildInformingTestsLifecycleReport("test-suite", tt.specs)
-
-			if n := len(result.Suites); n != 1 {
-				t.Fatalf("expected 1 suite, got %d", n)
+			report := types.Report{
+				SuiteDescription: "JUnit contract",
+				SuitePath:        "/hypershift/test/e2e/v2",
+				SuiteSucceeded:   true,
+				StartTime:        time.Date(2026, time.September, 10, 8, 12, 16, 0, time.UTC),
+				EndTime:          time.Date(2026, time.September, 10, 8, 12, 18, 0, time.UTC),
+				RunTime:          2 * time.Second,
+				SpecReports:      types.SpecReports{tt.spec},
 			}
-			suite := result.Suites[0]
-
-			if suite.NumTests != tt.wantTests {
-				t.Errorf("NumTests: got %d, want %d", suite.NumTests, tt.wantTests)
-			}
-			if suite.NumFailed != tt.wantFailed {
-				t.Errorf("NumFailed: got %d, want %d", suite.NumFailed, tt.wantFailed)
-			}
-			if n := len(suite.TestCases); n != tt.wantTests {
-				t.Fatalf("len(TestCases): got %d, want %d", n, tt.wantTests)
+			path := filepath.Join(t.TempDir(), "junit.xml")
+			if err := GenerateJUnitReport(report, path); err != nil {
+				t.Fatalf("GenerateJUnitReport returned an error: %v", err)
 			}
 
-			for i, want := range tt.wantCases {
-				tc := suite.TestCases[i]
-				if tc.Lifecycle != want.lifecycle {
-					t.Errorf("case[%d] lifecycle: got %q, want %q", i, tc.Lifecycle, want.lifecycle)
-				}
-				if tc.FailureOutput == nil {
-					t.Fatalf("case[%d] expected failure output", i)
-				}
-				if want.failureMessage != "" && tc.FailureOutput.Message != want.failureMessage {
-					t.Errorf("case[%d] failure message: got %q, want %q", i, tc.FailureOutput.Message, want.failureMessage)
-				}
-				assertLifecycleProperty(t, i, tc, want.lifecycle)
+			parsed := parseJUnitReport(t, path)
+			if len(parsed.Suites) != 1 || len(parsed.Suites[0].TestCases) != 1 {
+				t.Fatalf("expected one suite with one testcase, got %#v", parsed)
 			}
+			if parsed.Suites[0].Name != report.SuiteDescription {
+				t.Fatalf("suite name: got %q, want %q", parsed.Suites[0].Name, report.SuiteDescription)
+			}
+			tt.assert(t, parsed.Suites[0].TestCases[0])
 		})
 	}
-}
 
-func TestBuildLifecycleReport_XMLRoundTrip(t *testing.T) {
-	specs := types.SpecReports{
-		informingFailureSkip("should emit lifecycle", "expected value"),
-	}
-
-	result := BuildInformingTestsLifecycleReport("e2e", specs)
-	data, err := xml.MarshalIndent(result, "", "    ")
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	xmlStr := string(data)
-
-	for _, want := range []string{
-		`lifecycle="informing"`,
-		`<property name="lifecycle" value="informing"`,
-		`<failure`,
-	} {
-		if !strings.Contains(xmlStr, want) {
-			t.Errorf("XML missing %q:\n%s", want, xmlStr)
+	t.Run("When the destination is empty, it should return an error", func(t *testing.T) {
+		if err := GenerateJUnitReport(types.Report{}, ""); err == nil {
+			t.Fatal("expected an error")
 		}
-	}
-	if strings.Contains(xmlStr, `<skipped`) {
-		t.Errorf("XML should not contain <skipped> for informing failure:\n%s", xmlStr)
-	}
+	})
 
-	var parsed JUnitTestSuites
-	if err := xml.Unmarshal(data, &parsed); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if n := len(parsed.Suites); n != 1 {
-		t.Fatalf("round-trip produced %d suites, want 1", n)
-	}
-	if n := len(parsed.Suites[0].TestCases); n != 1 {
-		t.Fatalf("round-trip produced %d cases, want 1", n)
-	}
-	tc := parsed.Suites[0].TestCases[0]
-	if tc.Lifecycle != lifecycleInforming {
-		t.Errorf("round-trip lifecycle: got %q, want %q", tc.Lifecycle, lifecycleInforming)
-	}
+	t.Run("When the report contains suite setup nodes, it should omit them", func(t *testing.T) {
+		report := types.Report{
+			SuiteDescription: "JUnit contract",
+			SpecReports: types.SpecReports{
+				{LeafNodeType: types.NodeTypeBeforeSuite, LeafNodeText: "setup", State: types.SpecStatePassed},
+				specReport("test", types.SpecStatePassed, nil, [][]string{{"container-label"}}),
+			},
+		}
+		path := filepath.Join(t.TempDir(), "junit.xml")
+		if err := GenerateJUnitReport(report, path); err != nil {
+			t.Fatalf("GenerateJUnitReport returned an error: %v", err)
+		}
+		parsed := parseJUnitReport(t, path)
+		if len(parsed.Suites) != 1 || len(parsed.Suites[0].TestCases) != 1 {
+			t.Fatalf("expected only the It testcase, got %#v", parsed)
+		}
+	})
+
+	t.Run("When specs do not match the suite label filter, it should omit them", func(t *testing.T) {
+		report := types.Report{
+			SuiteDescription: "JUnit contract",
+			SuiteConfig:      types.SuiteConfig{LabelFilter: "selected"},
+			SpecReports: types.SpecReports{
+				specReport("selected pass", types.SpecStatePassed, []string{"selected"}, [][]string{{}}),
+				specReport("filtered informing skip", types.SpecStateSkipped, []string{InformingLabel, "other-group"}, [][]string{{}}),
+			},
+		}
+		path := filepath.Join(t.TempDir(), "junit.xml")
+		if err := GenerateJUnitReport(report, path); err != nil {
+			t.Fatalf("GenerateJUnitReport returned an error: %v", err)
+		}
+		parsed := parseJUnitReport(t, path)
+		if len(parsed.Suites) != 1 || len(parsed.Suites[0].TestCases) != 1 {
+			t.Fatalf("expected only the selected testcase, got %#v", parsed)
+		}
+		if parsed.Suites[0].Tests != 1 || parsed.Suites[0].Skipped != 0 {
+			t.Fatalf("unexpected suite counts: tests=%d skipped=%d", parsed.Suites[0].Tests, parsed.Suites[0].Skipped)
+		}
+		if !strings.Contains(parsed.Suites[0].TestCases[0].Name, "selected pass") {
+			t.Fatalf("unexpected selected testcase: %#v", parsed.Suites[0].TestCases[0])
+		}
+	})
 }
 
-// --- helpers ---
-
-type wantCase struct {
-	lifecycle      string
-	failureMessage string
+func TestAddLifecycleMetadata(t *testing.T) {
+	t.Run("When testcase and spec counts differ, it should return an error", func(t *testing.T) {
+		src := filepath.Join(t.TempDir(), "ginkgo.xml")
+		if err := os.WriteFile(src, []byte(`<testsuites><testsuite><testcase name="one"/></testsuite></testsuites>`), 0600); err != nil {
+			t.Fatalf("write source JUnit report: %v", err)
+		}
+		var output strings.Builder
+		if err := addLifecycleMetadata(src, &output, nil); err == nil {
+			t.Fatal("expected an error")
+		}
+	})
 }
 
-func informingFailureSkip(leafText, originalMessage string) types.SpecReport {
+type parsedTestSuites struct {
+	Suites []parsedTestSuite `xml:"testsuite"`
+}
+
+type parsedTestSuite struct {
+	Name      string           `xml:"name,attr"`
+	Tests     int              `xml:"tests,attr"`
+	Failures  int              `xml:"failures,attr"`
+	Skipped   int              `xml:"skipped,attr"`
+	TestCases []parsedTestCase `xml:"testcase"`
+}
+
+type parsedTestCase struct {
+	Name       string          `xml:"name,attr"`
+	Lifecycle  string          `xml:"lifecycle,attr"`
+	Properties []junitProperty `xml:"properties>property"`
+	Skipped    *parsedMessage  `xml:"skipped"`
+	Failure    *parsedMessage  `xml:"failure"`
+}
+
+type parsedMessage struct {
+	Message string `xml:"message,attr"`
+}
+
+func parseJUnitReport(t *testing.T, path string) parsedTestSuites {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read JUnit report: %v", err)
+	}
+	var report parsedTestSuites
+	if err := xml.Unmarshal(data, &report); err != nil {
+		t.Fatalf("parse JUnit report: %v\n%s", err, data)
+	}
+	return report
+}
+
+func specReport(leafText string, state types.SpecState, leafLabels []string, containerLabels [][]string) types.SpecReport {
 	return types.SpecReport{
 		LeafNodeType:             types.NodeTypeIt,
-		LeafNodeLabels:           []string{InformingLabel},
-		ContainerHierarchyTexts:  []string{"[sig-hypershift] Suite"},
-		ContainerHierarchyLabels: [][]string{{}},
 		LeafNodeText:             leafText,
-		State:                    types.SpecStateSkipped,
-		RunTime:                  2 * time.Second,
-		Failure: types.Failure{
-			Message:  informingSkipPrefix + originalMessage,
-			Location: types.CodeLocation{FileName: "test.go", LineNumber: 42},
-		},
-	}
-}
-
-func informingPass(leafText string) types.SpecReport {
-	return types.SpecReport{
-		LeafNodeType:             types.NodeTypeIt,
-		LeafNodeLabels:           []string{InformingLabel},
-		ContainerHierarchyTexts:  []string{"[sig-hypershift] Suite"},
-		ContainerHierarchyLabels: [][]string{{}},
-		LeafNodeText:             leafText,
-		State:                    types.SpecStatePassed,
+		LeafNodeLabels:           leafLabels,
+		ContainerHierarchyTexts:  []string{"[sig-hypershift][Jira:Hypershift][Feature:JUnitContract] Synthetic suite"},
+		ContainerHierarchyLabels: containerLabels,
+		State:                    state,
+		StartTime:                time.Date(2026, time.September, 10, 8, 12, 16, 0, time.UTC),
+		EndTime:                  time.Date(2026, time.September, 10, 8, 12, 17, 0, time.UTC),
 		RunTime:                  time.Second,
 	}
 }
 
-func assertLifecycleProperty(t *testing.T, idx int, tc *JUnitTestCase, expected string) {
+func informingFailureSkip(leafText, originalMessage string) types.SpecReport {
+	spec := specReport(leafText, types.SpecStateSkipped, []string{InformingLabel}, [][]string{{}})
+	spec.Failure = types.Failure{
+		Message:  informingSkipPrefix + originalMessage,
+		Location: types.CodeLocation{FileName: "synthetic_test.go", LineNumber: 42},
+	}
+	return spec
+}
+
+func assertInformingLifecycle(t *testing.T, tc parsedTestCase) {
 	t.Helper()
-	for _, p := range tc.Properties {
-		if p.Name == "lifecycle" && p.Value == expected {
+	if tc.Lifecycle != lifecycleInforming {
+		t.Errorf("lifecycle attribute: got %q, want %q", tc.Lifecycle, lifecycleInforming)
+	}
+	for _, property := range tc.Properties {
+		if property.Name == "lifecycle" && property.Value == lifecycleInforming {
 			return
 		}
 	}
-	t.Errorf("case[%d]: expected lifecycle property %q, not found", idx, expected)
+	t.Errorf("expected lifecycle property %q, got %#v", lifecycleInforming, tc.Properties)
+}
+
+func assertNoLifecycle(t *testing.T, tc parsedTestCase) {
+	t.Helper()
+	if tc.Lifecycle != "" {
+		t.Errorf("unexpected lifecycle attribute %q", tc.Lifecycle)
+	}
+	for _, property := range tc.Properties {
+		if property.Name == "lifecycle" {
+			t.Errorf("unexpected lifecycle property %#v", property)
+		}
+	}
 }

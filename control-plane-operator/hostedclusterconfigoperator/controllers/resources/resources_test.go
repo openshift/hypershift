@@ -18,7 +18,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -52,6 +51,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
@@ -94,7 +94,6 @@ var initialObjects = []client.Object{
 	},
 	manifests.NodeTuningClusterOperator(),
 	manifests.NamespaceKubeSystem(),
-	manifests.UserCABundle(),
 	manifests.OpenShiftUserCABundle(),
 	&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
 	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameConfig),
@@ -368,6 +367,112 @@ func (*simpleCreateOrUpdater) CreateOrUpdate(ctx context.Context, c client.Clien
 	return controllerutil.CreateOrUpdate(ctx, c, obj, f)
 }
 
+func TestReconcileIngressControllerCertSource(t *testing.T) {
+	ctx := t.Context()
+
+	customData := map[string][]byte{
+		corev1.TLSCertKey:       []byte("custom-cert"),
+		corev1.TLSPrivateKeyKey: []byte("custom-key"),
+	}
+	wildcardData := map[string][]byte{
+		corev1.TLSCertKey:       []byte("wildcard-cert"),
+		corev1.TLSPrivateKeyKey: []byte("wildcard-key"),
+	}
+
+	newHCP := func(withCustom bool) *hyperv1.HostedControlPlane {
+		hcp := fakeHCP()
+		hcp.Spec.Platform.Type = hyperv1.NonePlatform
+		hcp.Spec.DNS.BaseDomain = "example.com"
+		if withCustom {
+			hcp.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+				IngressOperator: &hyperv1.IngressOperatorSpec{
+					DefaultCertificate: hyperv1.IngressDefaultCertificateReference{Name: "my-cert"},
+				},
+			}
+		}
+		return hcp
+	}
+
+	wildcardSource := func() *corev1.Secret {
+		s := cpomanifests.IngressCert("bar")
+		s.Type = corev1.SecretTypeTLS
+		s.Data = wildcardData
+		return s
+	}
+	customSource := func() *corev1.Secret {
+		s := cpomanifests.ServiceProviderDefaultIngressServingCert("bar")
+		s.Type = corev1.SecretTypeTLS
+		s.Data = customData
+		return s
+	}
+	existingGuestCert := func() *corev1.Secret {
+		s := manifests.IngressDefaultIngressControllerCert()
+		s.Type = corev1.SecretTypeTLS
+		s.Data = wildcardData
+		return s
+	}
+
+	testCases := []struct {
+		name         string
+		hcp          *hyperv1.HostedControlPlane
+		cpObjects    []client.Object
+		guestObjects []client.Object
+		// expectCert is the tls.crt expected in the guest default-ingress-cert secret.
+		expectCert []byte
+	}{
+		{
+			name:       "When no custom certificate is configured, it should sync the generated wildcard certificate",
+			hcp:        newHCP(false),
+			cpObjects:  []client.Object{wildcardSource()},
+			expectCert: wildcardData[corev1.TLSCertKey],
+		},
+		{
+			name:       "When a custom certificate is configured and synced, it should use the custom certificate",
+			hcp:        newHCP(true),
+			cpObjects:  []client.Object{customSource()},
+			expectCert: customData[corev1.TLSCertKey],
+		},
+		{
+			name:         "When a custom certificate is configured but not yet synced, it should not error and preserve the existing certificate",
+			hcp:          newHCP(true),
+			cpObjects:    []client.Object{},
+			guestObjects: []client.Object{existingGuestCert()},
+			expectCert:   wildcardData[corev1.TLSCertKey],
+		},
+		{
+			name: "When a custom certificate is configured on IBM Cloud, it should ignore it and use the generated wildcard certificate",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := newHCP(true)
+				hcp.Spec.Platform.Type = hyperv1.IBMCloudPlatform
+				return hcp
+			}(),
+			cpObjects:  []client.Object{wildcardSource(), customSource()},
+			expectCert: wildcardData[corev1.TLSCertKey],
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.cpObjects, tc.hcp)...).Build()
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.guestObjects...).Build()
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+
+			// A missing custom certificate must not fail reconciliation, so the
+			// HostedCluster does not become degraded.
+			g.Expect(r.reconcileIngressController(ctx, tc.hcp)).To(Succeed())
+
+			guestCert := manifests.IngressDefaultIngressControllerCert()
+			g.Expect(guestClient.Get(ctx, client.ObjectKeyFromObject(guestCert), guestCert)).To(Succeed())
+			g.Expect(guestCert.Data[corev1.TLSCertKey]).To(Equal(tc.expectCert))
+		})
+	}
+}
+
 func fakeHCP() *hyperv1.HostedControlPlane {
 	hcp := manifests.HostedControlPlane("bar", "foo")
 	hcp.Status.ControlPlaneEndpoint.Host = "server"
@@ -637,94 +742,6 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			actualOauthDeployment := manifests.OAuthDeployment(testNamespace)
 			err = r.cpClient.Get(t.Context(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
 			g.Expect(err).To(BeNil())
-		})
-	}
-}
-
-func TestReconcileUserCertCABundle(t *testing.T) {
-	t.Parallel()
-	testNamespace := "master-cluster1"
-	testHCPName := "cluster1"
-	tests := map[string]struct {
-		inputHCP              *hyperv1.HostedControlPlane
-		inputObjects          []client.Object
-		existingGuestObjects  []client.Object
-		expectUserCAConfigMap bool
-	}{
-		"When no AdditionalTrustBundle is set, it should not create user CA configmap": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-			},
-			inputObjects:          []client.Object{},
-			existingGuestObjects:  []client.Object{},
-			expectUserCAConfigMap: false,
-		},
-		"When AdditionalTrustBundle is set, it should create user CA configmap": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					AdditionalTrustBundle: &corev1.LocalObjectReference{
-						Name: cpomanifests.UserCAConfigMap(testNamespace).Name,
-					},
-				},
-			},
-			inputObjects: []client.Object{
-				&corev1.ConfigMap{
-					ObjectMeta: cpomanifests.UserCAConfigMap(testNamespace).ObjectMeta,
-					Data: map[string]string{
-						"ca-bundle.crt": "acertxyz",
-					},
-				},
-			},
-			existingGuestObjects:  []client.Object{},
-			expectUserCAConfigMap: true,
-		},
-		"When AdditionalTrustBundle is removed, it should delete existing user-ca-bundle": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-			},
-			inputObjects: []client.Object{},
-			existingGuestObjects: []client.Object{
-				&corev1.ConfigMap{
-					ObjectMeta: manifests.UserCABundle().ObjectMeta,
-					Data: map[string]string{
-						"ca-bundle.crt": "oldcertdata",
-					},
-				},
-			},
-			expectUserCAConfigMap: false,
-		},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-			r := &reconciler{
-				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existingGuestObjects...).Build(),
-				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
-				hcpName:                testHCPName,
-				hcpNamespace:           testNamespace,
-			}
-			err := r.reconcileUserCertCABundle(t.Context(), test.inputHCP)
-			g.Expect(err).To(BeNil())
-			guestUserCABundle := manifests.UserCABundle()
-			if test.expectUserCAConfigMap {
-				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
-				g.Expect(err).To(BeNil())
-				g.Expect(len(guestUserCABundle.Data["ca-bundle.crt"]) > 0).To(BeTrue())
-			} else {
-				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
-				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			}
 		})
 	}
 }
@@ -1789,8 +1806,8 @@ func TestReconcileKubeletConfig(t *testing.T) {
 						Name:      "orphan-no-np-label",
 						Namespace: hcNamespace,
 						Labels: map[string]string{
-							nodepool.KubeletConfigConfigMapLabel: "true",
-							nodepool.NTOMirroredConfigLabel:      "true",
+							hyperv1.KubeletConfigConfigMapLabel: "true",
+							hyperv1.NTOMirroredConfigLabel:      "true",
 						},
 					},
 					Data: map[string]string{"config": kubeletConfig1},
@@ -1802,8 +1819,8 @@ func TestReconcileKubeletConfig(t *testing.T) {
 						Name:      "orphan-no-np-label",
 						Namespace: hcNamespace,
 						Labels: map[string]string{
-							nodepool.KubeletConfigConfigMapLabel: "true",
-							nodepool.NTOMirroredConfigLabel:      "true",
+							hyperv1.KubeletConfigConfigMapLabel: "true",
+							hyperv1.NTOMirroredConfigLabel:      "true",
 						},
 					},
 					Data: map[string]string{"config": kubeletConfig1},
@@ -1877,7 +1894,7 @@ func TestReconcileKubeletConfig(t *testing.T) {
 			listOpts := []client.ListOption{
 				client.InNamespace(hcNamespace),
 				client.MatchingLabels{
-					nodepool.KubeletConfigConfigMapLabel: "true",
+					hyperv1.KubeletConfigConfigMapLabel: "true",
 				},
 			}
 			cmList := &corev1.ConfigMapList{}
@@ -1952,7 +1969,7 @@ func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap 
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				nodepool.KubeletConfigConfigMapLabel: "true",
+				hyperv1.KubeletConfigConfigMapLabel: "true",
 			},
 		},
 		Data: map[string]string{
@@ -1967,9 +1984,9 @@ func makeMirroredKubeletConfigConfigMap(name, namespace, nodePoolName, data stri
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				nodepool.KubeletConfigConfigMapLabel: "true",
-				nodepool.NTOMirroredConfigLabel:      "true",
-				hyperv1.NodePoolLabel:                nodePoolName,
+				hyperv1.KubeletConfigConfigMapLabel: "true",
+				hyperv1.NTOMirroredConfigLabel:      "true",
+				hyperv1.NodePoolLabel:               nodePoolName,
 			},
 		},
 		Data: map[string]string{
@@ -1984,7 +2001,7 @@ func makeImmutableKubeletConfigConfigMap(name, namespace, data string) *corev1.C
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				nodepool.KubeletConfigConfigMapLabel: "true",
+				hyperv1.KubeletConfigConfigMapLabel: "true",
 			},
 		},
 		Immutable: ptr.To(true),
@@ -3536,6 +3553,17 @@ func TestNamespacedNamePredicateFunc(t *testing.T) {
 			g.Expect(predicate(tt.object)).To(Equal(tt.want))
 		})
 	}
+}
+
+func TestNotUserCABundlePredicate(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	p := notUserCABundlePredicate()
+
+	g.Expect(p.Create(event.TypedCreateEvent[client.Object]{Object: manifests.UserCABundle()})).To(BeFalse())
+	g.Expect(p.Create(event.TypedCreateEvent[client.Object]{Object: &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-config", Name: "another-config"},
+	}})).To(BeTrue())
 }
 
 func TestReconcileDeletion(t *testing.T) {

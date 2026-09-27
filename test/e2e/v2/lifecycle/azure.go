@@ -148,15 +148,19 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			ExtraArgs:               append([]string{"--oauth-publishing-strategy=LoadBalancer"}, extraArgs...),
 		},
 		{
+			Variant:                 "oauth-lb-private",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs: append([]string{
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
+				"--oauth-publishing-strategy=LoadBalancer",
+			}, extraArgs...),
+		},
+		{
 			Variant:                 "upgrade",
 			ReleaseImage:            n1Image,
 			InitialNodePoolReplicas: &twoInitialReplicas,
 			ExtraArgs:               append([]string{"--control-plane-availability-policy=HighlyAvailable"}, extraArgs...),
-		},
-		{
-			Variant:                 "autoscaling",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               extraArgs,
 		},
 		{
 			Variant:                 "external-oidc",
@@ -358,6 +362,11 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 				Variant:     "private",
 				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
 			},
+			{
+				Name:        "oauth-lb-private",
+				Variant:     "oauth-lb-private",
+				LabelFilter: "self-managed-azure-oauth-lb-private",
+			},
 		},
 		Sequential: []SequentialGroup{
 			{
@@ -366,7 +375,7 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 					{
 						Name:        "public",
 						Variant:     "public",
-						LabelFilter: "self-managed-azure-public || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream",
+						LabelFilter: "self-managed-azure-public || hosted-cluster-node-communication || hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress",
 						Skip:        "KAS allowed CIDRs",
 					},
 					{
@@ -374,21 +383,6 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 						Variant: "public",
 						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
 							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-disk-encryption || nodepool-osimagestream-upgrade",
-					},
-				},
-			},
-			{
-				Name: "autoscaling",
-				Steps: []TestGroup{
-					{
-						Name:        "autoscaling-nodepool-machineconfig",
-						Variant:     "autoscaling",
-						LabelFilter: "nodepool-machineconfig-rollout",
-					},
-					{
-						Name:        "autoscaling-balancing",
-						Variant:     "autoscaling",
-						LabelFilter: "nodepool-autoscaling-balancing",
 					},
 				},
 			},
@@ -404,7 +398,12 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 						Name:    "oauth-lb-nodepool-config",
 						Variant: "oauth-lb",
 						LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || " +
-							"nodepool-performance-profile || nodepool-mirror-config",
+							"nodepool-performance-profile || nodepool-mirror-config || nodepool-machineconfig-rollout",
+					},
+					{
+						Name:        "oauth-lb-autoscaling",
+						Variant:     "oauth-lb",
+						LabelFilter: "nodepool-autoscaling-balancing",
 					},
 				},
 			},

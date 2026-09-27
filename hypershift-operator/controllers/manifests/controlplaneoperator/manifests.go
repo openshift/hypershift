@@ -117,6 +117,15 @@ func PullSecret(controlPlaneNamespace string) *corev1.Secret {
 	}
 }
 
+func CombinedPullSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "combined-pull-secret",
+		},
+	}
+}
+
 func SSHKey(controlPlaneNamespace string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

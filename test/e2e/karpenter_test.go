@@ -20,13 +20,14 @@ import (
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
-	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
-	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
+	cpconst "github.com/openshift/hypershift/pkg/controlplane"
+	"github.com/openshift/hypershift/pkg/manifests"
+	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
+	npmetrics "github.com/openshift/hypershift/pkg/metrics/nodepool"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -36,6 +37,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -110,8 +112,8 @@ func testKarpenterPlumbing(ctx context.Context, mgtClient, guestClient crclient.
 			karpenterassets.KarpenterBuildInfoMetricName,
 			karpenterassets.KarpenterOperatorInfoMetricName,
 		}
-		operatorComponentName := karpenteroperatorcpov2.ComponentName
-		karpenterComponentName := karpentercpov2.ComponentName
+		operatorComponentName := cpconst.KarpenterOperatorComponentName
+		karpenterComponentName := cpconst.KarpenterComponentName
 		karpenterNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		t.Log("Checking Karpenter metrics are exposed")
@@ -312,7 +314,7 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 		}
 
 		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 1, armNodeLabels)
-		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, 1, map[string]string{"app": "arm-app"})
+		waitForReadyKarpenterPods(t, ctx, guestClient, nodes, 1, map[string]string{"app": "arm-app"}, "")
 
 		g.Expect(guestClient.Delete(ctx, armNodePool)).To(Succeed())
 		t.Logf("Deleted ARM64 NodePool")
@@ -381,6 +383,11 @@ func testInstanceProfileAnnotation(ctx context.Context, mgtClient, guestClient c
 
 		nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hc.Spec.Platform.Type, 1, testNodeLabels)
 		t.Logf("Karpenter nodes are ready")
+
+		// Verify global-pull-secret-syncer DaemonSet pod is scheduled and running on the Karpenter node
+		g.Expect(nodes[0].Labels).NotTo(HaveKey("hypershift.openshift.io/nodepool-globalps-enabled"),
+			"Karpenter node should not have legacy globalps workaround label")
+		waitForGlobalPSSyncerOnNode(t, ctx, guestClient, nodes[0].Name)
 
 		// Verify EC2 instances have the correct instance profile
 		ec2client := ec2Client(awsCredsFile, awsRegion)
@@ -1510,7 +1517,7 @@ func testBillingConsolidationAndPDB(ctx context.Context, mgtClient, guestClient 
 	}
 }
 
-func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclient.Client, nodes []corev1.Node, n int, podLabels map[string]string) []corev1.Pod {
+func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclient.Client, nodes []corev1.Node, n int, podLabels map[string]string, excludeNodeName string) []corev1.Pod {
 	pods := &corev1.PodList{}
 	waitTimeout := 20 * time.Minute
 	e2eutil.EventuallyObjects(t, ctx, "Pods to be scheduled on provisioned Karpenter nodes",
@@ -1534,9 +1541,14 @@ func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclien
 				Type:   string(corev1.PodScheduled),
 				Status: metav1.ConditionTrue,
 			}),
-			// wait for each pod to be scheduled on one of the correct nodes
 			e2eutil.Predicate[*corev1.Pod](func(pod *corev1.Pod) (done bool, reasons string, err error) {
 				nodeName := pod.Spec.NodeName
+				if excludeNodeName != "" {
+					if nodeName == "" || nodeName == excludeNodeName {
+						return false, fmt.Sprintf("pod %s still on pre-upgrade node %q", pod.Name, nodeName), nil
+					}
+					return true, fmt.Sprintf("pod %s rescheduled to %s", pod.Name, nodeName), nil
+				}
 				for _, node := range getNodeNames(nodes) {
 					if nodeName == node {
 						return true, fmt.Sprintf("pod %s correctly scheduled on a specified node %s", pod.Name, nodeName), nil
@@ -1606,39 +1618,88 @@ func waitForReadyNodeClaims(t *testing.T, ctx context.Context, client crclient.C
 	return nodeClaims
 }
 
-func waitForNodeClaimDrifted(t *testing.T, ctx context.Context, client crclient.Client, nc *karpenterv1.NodeClaim) {
-	waitTimeout := 5 * time.Minute
-	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodeClaim %s to be drifted", nc.Name),
-		func(ctx context.Context) (*karpenterv1.NodeClaim, error) {
-			nodeClaim := &karpenterv1.NodeClaim{}
-			err := client.Get(ctx, crclient.ObjectKeyFromObject(nc), nodeClaim)
-			// make sure that the condition actually exists first
-			if err == nil {
-				haystack, err := e2eutil.Conditions(nodeClaim)
-				if err != nil {
-					return nil, err
-				}
-				for _, condition := range haystack {
-					if karpenterv1.ConditionTypeDrifted == condition.Type {
-						if condition.Status == metav1.ConditionTrue {
-							return nodeClaim, nil
-						}
-						return nil, fmt.Errorf("condition %s is not True in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nc.Name)
-					}
-				}
-				return nil, fmt.Errorf("condition %s not found in NodeClaim %s", karpenterv1.ConditionTypeDrifted, nc.Name)
-			} else {
-				return nil, err
+// expectControlPlaneRolloutWithoutDrift waits for ControlPlaneVersion to reach
+// Completed for the target image while asserting that no pre-upgrade NodeClaim
+// drifts or is deleted before the rollout finishes. If any NodeClaim shows
+// premature drift or disappears, the test fails immediately.
+func expectControlPlaneRolloutWithoutDrift(
+	t *testing.T,
+	ctx context.Context,
+	mgmtClient crclient.Client,
+	guestClient crclient.Client,
+	hc *hyperv1.HostedCluster,
+	targetImage string,
+	nodeClaims *karpenterv1.NodeClaimList,
+) {
+	t.Helper()
+	err := wait.PollUntilContextTimeout(ctx, 15*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
+		// Check CP completion first. If the target image already reached Completed,
+		// drift is expected and correct, so return success without inspecting NodeClaims.
+		currentHC := &hyperv1.HostedCluster{}
+		if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), currentHC); err != nil {
+			t.Logf("failed to get HostedCluster: %v", err)
+			return false, nil
+		}
+		cpv := currentHC.Status.ControlPlaneVersion
+		if cpv.Desired.Image == targetImage &&
+			len(cpv.History) > 0 &&
+			cpv.History[0].Image == targetImage &&
+			cpv.History[0].State == configv1.CompletedUpdate {
+			return true, nil
+		}
+
+		// CP rollout still in progress — any drift at this point is premature.
+		for i := range nodeClaims.Items {
+			nc := &karpenterv1.NodeClaim{}
+			err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(&nodeClaims.Items[i]), nc)
+			if apierrors.IsNotFound(err) {
+				t.Fatalf("NodeClaim %s deleted before CP upgrade completed", nodeClaims.Items[i].Name)
 			}
-		},
-		[]e2eutil.Predicate[*karpenterv1.NodeClaim]{
-			e2eutil.ConditionPredicate[*karpenterv1.NodeClaim](e2eutil.Condition{
-				Type:   karpenterv1.ConditionTypeDrifted,
-				Status: metav1.ConditionTrue,
-			}),
-		},
-		e2eutil.WithTimeout(waitTimeout),
-	)
+			if err != nil {
+				t.Logf("failed to get NodeClaim %s: %v", nodeClaims.Items[i].Name, err)
+				return false, nil
+			}
+			conditions, err := e2eutil.Conditions(nc)
+			if err != nil {
+				t.Logf("failed to read conditions for NodeClaim %s: %v", nodeClaims.Items[i].Name, err)
+				return false, nil
+			}
+			for _, c := range conditions {
+				if c.Type == karpenterv1.ConditionTypeDrifted && c.Status == metav1.ConditionTrue {
+					t.Fatalf("NodeClaim %s detected drift before CP upgrade completed", nodeClaims.Items[i].Name)
+				}
+			}
+		}
+
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("timed out waiting for CP rollout to complete for image %s: %v", targetImage, err)
+	}
+}
+
+func waitForNodeClaimDrifted(t *testing.T, ctx context.Context, client crclient.Client, nc *karpenterv1.NodeClaim) {
+	t.Helper()
+	err := wait.PollUntilContextTimeout(ctx, 3*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		nodeClaim := &karpenterv1.NodeClaim{}
+		err := client.Get(ctx, crclient.ObjectKeyFromObject(nc), nodeClaim)
+		if apierrors.IsNotFound(err) {
+			t.Logf("WARNING: NodeClaim %s not found; assuming it was deleted after drifting", nc.Name)
+			return true, nil
+		}
+		if err != nil {
+			return false, nil
+		}
+		for _, condition := range nodeClaim.Status.Conditions {
+			if condition.Type == karpenterv1.ConditionTypeDrifted && condition.Status == metav1.ConditionTrue {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("timed out waiting for NodeClaim %s to be drifted: %v", nc.Name, err)
+	}
 }
 
 // waitForAutoNodeStatusVCPUs polls until HostedCluster.Status.AutoNode.VCPUs
@@ -1753,11 +1814,6 @@ func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
 				ConsolidateAfter: karpenterv1.MustParseNillableDuration("60s"),
 			},
 			Template: karpenterv1.NodeClaimTemplate{
-				ObjectMeta: karpenterv1.ObjectMeta{
-					Labels: map[string]string{
-						"hypershift.openshift.io/nodepool-globalps-enabled": "true",
-					},
-				},
 				Spec: karpenterv1.NodeClaimTemplateSpec{
 					Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
 						{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}},
@@ -1851,4 +1907,52 @@ func getNodeNames(nodes []corev1.Node) []string {
 		nodeNames[i] = node.Name
 	}
 	return nodeNames
+}
+
+// waitForGlobalPSSyncerOnNode verifies that the global-pull-secret-syncer DaemonSet pod is running on the specified node.
+func waitForGlobalPSSyncerOnNode(t *testing.T, ctx context.Context, client crclient.Client, nodeName string) {
+	t.Helper()
+
+	// Inspect DaemonSet nodeAffinity. External or older release payloads (e.g. e2e-aws-autonode, e2e-aws-5-0)
+	// run unpatched CPO images that lack the Karpenter nodeAffinity.
+	ds := &appsv1.DaemonSet{}
+	if err := client.Get(ctx, crclient.ObjectKey{Namespace: hccomanifests.GlobalPullSecretNamespace, Name: hccomanifests.GlobalPullSecretDSName}, ds); err != nil {
+		t.Logf("global-pull-secret-syncer DaemonSet not found in %s, skipping syncer node check: %v", hccomanifests.GlobalPullSecretNamespace, err)
+		return
+	}
+	hasKarpenterAffinity := false
+	if ds.Spec.Template.Spec.Affinity != nil &&
+		ds.Spec.Template.Spec.Affinity.NodeAffinity != nil &&
+		ds.Spec.Template.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
+		for _, term := range ds.Spec.Template.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms {
+			for _, expr := range term.MatchExpressions {
+				if expr.Key == karpenterv1.NodePoolLabelKey {
+					hasKarpenterAffinity = true
+					break
+				}
+			}
+		}
+	}
+	if !hasKarpenterAffinity {
+		t.Log("Skipping syncer pod check: global-pull-secret-syncer DaemonSet does not have karpenter.sh/nodepool affinity (running unpatched CPO payload)")
+		return
+	}
+
+	t.Log("Waiting for global-pull-secret-syncer pod to be running on Karpenter node")
+	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		pods := &corev1.PodList{}
+		if err := client.List(ctx, pods, crclient.InNamespace(hccomanifests.GlobalPullSecretNamespace), crclient.MatchingLabels{"name": hccomanifests.GlobalPullSecretDSName}); err != nil {
+			return false, err
+		}
+		for i := range pods.Items {
+			if pods.Items[i].Spec.NodeName == nodeName && pods.Items[i].Status.Phase == corev1.PodRunning {
+				t.Log("global-pull-secret-syncer pod is running on Karpenter node")
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("global-pull-secret-syncer pod failed to run on Karpenter node: %v", err)
+	}
 }

@@ -7,6 +7,8 @@ import (
 	"github.com/openshift/hypershift/support/util"
 
 	v1 "github.com/openshift/api/config/v1"
+
+	"github.com/blang/semver"
 )
 
 func TestNormalizeV1Alpha1ClusterImagePolicy(t *testing.T) {
@@ -106,6 +108,39 @@ metadata:
 			result := NormalizeV1Alpha1ClusterImagePolicy([]byte(tt.input))
 			if string(result) != tt.expected {
 				t.Errorf("NormalizeV1Alpha1ClusterImagePolicy() =\n%s\nwant:\n%s", string(result), tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetBackwardCompatibleCAPIImage(t *testing.T) {
+	tests := []struct {
+		name           string
+		releaseVersion semver.Version
+		expectedImage  string
+	}{
+		{
+			name:           "When version is 4.19.0 or above, it should return empty string",
+			releaseVersion: semver.MustParse("4.19.0"),
+			expectedImage:  "",
+		},
+		{
+			name:           "When version is below 4.19.0, it should return the pinned image",
+			releaseVersion: semver.MustParse("4.18.0"),
+			expectedImage:  "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c5c3e36db897fae332284e1a681044cd6997a70e8cb9059f810385352e7575ac",
+		},
+		{
+			name:           "When version is 4.16.0, it should return the pinned image",
+			releaseVersion: semver.MustParse("4.16.0"),
+			expectedImage:  "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c5c3e36db897fae332284e1a681044cd6997a70e8cb9059f810385352e7575ac",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			image := GetBackwardCompatibleCAPIImage(tt.releaseVersion)
+			if image != tt.expectedImage {
+				t.Errorf("GetBackwardCompatibleCAPIImage() = %q, want %q", image, tt.expectedImage)
 			}
 		})
 	}

@@ -17,10 +17,13 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/upsert"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,6 +36,24 @@ import (
 )
 
 const testInfraID = "test-infra"
+
+func TestReconcileCRDsStandaloneAdapterOnlyInstallsHyperShiftCRD(t *testing.T) {
+	g := NewWithT(t)
+	guestClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+	r := &EC2NodeClassReconciler{
+		guestClient:            guestClient,
+		CreateOrUpdateProvider: upsert.New(false),
+		SkipUpstreamCRD:        true,
+	}
+
+	err := r.reconcileCRDs(t.Context(), true)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	crdList := &apiextensionsv1.CustomResourceDefinitionList{}
+	g.Expect(guestClient.List(t.Context(), crdList)).To(Succeed())
+	g.Expect(crdList.Items).To(HaveLen(1))
+	g.Expect(crdList.Items[0].Name).To(Equal(crdOpenshiftEC2NodeClass.Name))
+}
 
 func TestReconcileEC2NodeClass(t *testing.T) {
 	userDataSecret := &corev1.Secret{
@@ -681,6 +702,210 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 			}
 
 			g.Expect(ec2NodeClass.Spec).To(Equal(tc.expectedSpec))
+		})
+	}
+}
+
+func TestIsControlPlaneUpgrading(t *testing.T) {
+	testCases := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected bool
+	}{
+		{
+			name: "When desired image is empty, it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					ControlPlaneVersion: hyperv1.ControlPlaneVersionStatus{},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When no history entries exist (initial install), it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					ControlPlaneVersion: hyperv1.ControlPlaneVersionStatus{
+						Desired: configv1.Release{Image: "quay.io/release:4.17.0"},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When desired matches completed, it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					ControlPlaneVersion: hyperv1.ControlPlaneVersionStatus{
+						Desired: configv1.Release{Image: "quay.io/release:4.17.0"},
+						History: []hyperv1.ControlPlaneUpdateHistory{
+							{State: configv1.CompletedUpdate, Image: "quay.io/release:4.17.0"},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When desired differs from completed (upgrade in progress), it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					ControlPlaneVersion: hyperv1.ControlPlaneVersionStatus{
+						Desired: configv1.Release{Image: "quay.io/release:4.18.0"},
+						History: []hyperv1.ControlPlaneUpdateHistory{
+							{State: configv1.PartialUpdate, Image: "quay.io/release:4.18.0"},
+							{State: configv1.CompletedUpdate, Image: "quay.io/release:4.17.0"},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When only partial entries exist (initial install still running), it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					ControlPlaneVersion: hyperv1.ControlPlaneVersionStatus{
+						Desired: configv1.Release{Image: "quay.io/release:4.17.0"},
+						History: []hyperv1.ControlPlaneUpdateHistory{
+							{State: configv1.PartialUpdate, Image: "quay.io/release:4.17.0"},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isControlPlaneUpgrading(tc.hcp)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestReconcileEC2NodeClassUpgradePause(t *testing.T) {
+	oldUserData := ptr.To("old-userdata-hash-abc")
+	oldAMI := []awskarpenterv1.AMISelectorTerm{{ID: "ami-old"}}
+	newUserData := "new-userdata-hash-xyz"
+	newAMI := "ami-new"
+
+	userDataSecret := &corev1.Secret{
+		Data: map[string][]byte{
+			"value": []byte(newUserData),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				hyperkarpenterv1.UserDataAMILabel: newAMI,
+			},
+		},
+	}
+
+	upgradingHCP := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: testInfraID,
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			ControlPlaneVersion: hyperv1.ControlPlaneVersionStatus{
+				Desired: configv1.Release{Image: "quay.io/release:4.18.0"},
+				History: []hyperv1.ControlPlaneUpdateHistory{
+					{State: configv1.PartialUpdate, Image: "quay.io/release:4.18.0"},
+					{State: configv1.CompletedUpdate, Image: "quay.io/release:4.17.0"},
+				},
+			},
+		},
+	}
+
+	stableHCP := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: testInfraID,
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			ControlPlaneVersion: hyperv1.ControlPlaneVersionStatus{
+				Desired: configv1.Release{Image: "quay.io/release:4.17.0"},
+				History: []hyperv1.ControlPlaneUpdateHistory{
+					{State: configv1.CompletedUpdate, Image: "quay.io/release:4.17.0"},
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name                  string
+		hcp                   *hyperv1.HostedControlPlane
+		ec2NodeClass          *awskarpenterv1.EC2NodeClass
+		openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass
+		expectedUserData      *string
+		expectedAMIs          []awskarpenterv1.AMISelectorTerm
+	}{
+		{
+			name: "When CP is upgrading and NodeClass is unpinned with existing values, preserve old userData and AMIs",
+			hcp:  upgradingHCP,
+			ec2NodeClass: &awskarpenterv1.EC2NodeClass{
+				Spec: awskarpenterv1.EC2NodeClassSpec{
+					UserData:         oldUserData,
+					AMISelectorTerms: oldAMI,
+				},
+			},
+			openshiftEC2NodeClass: &hyperkarpenterv1.OpenshiftEC2NodeClass{},
+			expectedUserData:      oldUserData,
+			expectedAMIs:          oldAMI,
+		},
+		{
+			name: "When CP is upgrading but NodeClass is pinned, apply new values",
+			hcp:  upgradingHCP,
+			ec2NodeClass: &awskarpenterv1.EC2NodeClass{
+				Spec: awskarpenterv1.EC2NodeClassSpec{
+					UserData:         oldUserData,
+					AMISelectorTerms: oldAMI,
+				},
+			},
+			openshiftEC2NodeClass: &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+					Version: "4.18.0",
+				},
+			},
+			expectedUserData: ptr.To(newUserData),
+			expectedAMIs:     []awskarpenterv1.AMISelectorTerm{{ID: newAMI}},
+		},
+		{
+			name:                  "When CP is upgrading and NodeClass is unpinned but has no existing values (first creation), it should still apply new values",
+			hcp:                   upgradingHCP,
+			ec2NodeClass:          &awskarpenterv1.EC2NodeClass{},
+			openshiftEC2NodeClass: &hyperkarpenterv1.OpenshiftEC2NodeClass{},
+			expectedUserData:      ptr.To(newUserData),
+			expectedAMIs:          []awskarpenterv1.AMISelectorTerm{{ID: newAMI}},
+		},
+		{
+			name: "When CP is stable, apply new values regardless",
+			hcp:  stableHCP,
+			ec2NodeClass: &awskarpenterv1.EC2NodeClass{
+				Spec: awskarpenterv1.EC2NodeClassSpec{
+					UserData:         oldUserData,
+					AMISelectorTerms: oldAMI,
+				},
+			},
+			openshiftEC2NodeClass: &hyperkarpenterv1.OpenshiftEC2NodeClass{},
+			expectedUserData:      ptr.To(newUserData),
+			expectedAMIs:          []awskarpenterv1.AMISelectorTerm{{ID: newAMI}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			err := reconcileEC2NodeClass(context.Background(), tc.ec2NodeClass, tc.openshiftEC2NodeClass, tc.hcp, userDataSecret)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(tc.ec2NodeClass.Spec.UserData).To(Equal(tc.expectedUserData))
+			g.Expect(tc.ec2NodeClass.Spec.AMISelectorTerms).To(Equal(tc.expectedAMIs))
 		})
 	}
 }

@@ -1,6 +1,7 @@
 package karpenter
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -8,7 +9,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
+	hypershiftfake "github.com/openshift/hypershift/client/clientset/clientset/fake"
+	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/api"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
@@ -17,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -394,6 +400,97 @@ func TestKarpenterDeletion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileDefaultOpenshiftEC2NodeClass(t *testing.T) {
+	testCases := map[string]struct {
+		standaloneAdapter  bool
+		annotations        map[string]string
+		expectDefaultClass bool
+	}{
+		"When standalone adapter mode is enabled, it should reconcile the default OpenshiftEC2NodeClass and return early": {
+			standaloneAdapter:  true,
+			expectDefaultClass: true,
+		},
+		"When embedded mode is enabled, it should reconcile the default OpenshiftEC2NodeClass": {
+			expectDefaultClass: true,
+		},
+		"When the Karpenter E2E override is set, it should skip the default OpenshiftEC2NodeClass": {
+			standaloneAdapter: true,
+			annotations: map[string]string{
+				hyperkarpenterv1.KarpenterCoreE2EOverrideAnnotation: "true",
+			},
+			expectDefaultClass: false,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			const namespace = "test-namespace"
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-hcp",
+					Namespace:   namespace,
+					Annotations: tc.annotations,
+				},
+			}
+
+			managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(hcp.DeepCopy(), &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+					Name: "pull-secret", Namespace: namespace,
+				}}).
+				Build()
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			hypershiftClient := hypershiftfake.NewSimpleClientset(hcp.DeepCopy())
+
+			// Conditionally set the fields the reconciler needs in embedded mode
+			var provider releaseinfo.Provider
+			var component controlplanecomponent.ControlPlaneComponent
+			if !tc.standaloneAdapter {
+				provider = &testReleaseProvider{}
+				component = &testKarpenterComponent{}
+			}
+
+			r := &Reconciler{
+				ManagementClient:       managementClient,
+				GuestClient:            guestClient,
+				HypershiftClient:       hypershiftClient,
+				Namespace:              namespace,
+				StandaloneAdapter:      tc.standaloneAdapter,
+				KarpenterComponent:     component,
+				ReleaseProvider:        provider,
+				CreateOrUpdateProvider: upsert.New(false),
+			}
+
+			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(hcp)})
+			g.Expect(err).NotTo(HaveOccurred())
+
+			ec2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+			err = guestClient.Get(t.Context(), client.ObjectKey{Name: assets.EC2NodeClassDefault}, ec2NodeClass)
+			if tc.expectDefaultClass {
+				g.Expect(err).NotTo(HaveOccurred())
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}
+		})
+	}
+}
+
+type testReleaseProvider struct{}
+
+func (p *testReleaseProvider) Lookup(context.Context, string, []byte) (*releaseinfo.ReleaseImage, error) {
+	return testutils.InitReleaseImageOrDie("4.18.0"), nil
+}
+
+type testKarpenterComponent struct{}
+
+func (c *testKarpenterComponent) Name() string {
+	return "test-karpenter-component"
+}
+
+func (c *testKarpenterComponent) Reconcile(controlplanecomponent.ControlPlaneContext) error {
+	return nil
 }
 
 func TestReconcileCRDsConcurrentAccess(t *testing.T) {
