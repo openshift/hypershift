@@ -1152,3 +1152,136 @@ func TestNodePoolReconciler_setGCPConditions(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateGCPPlatformConfig(t *testing.T) {
+	testCases := []struct {
+		name        string
+		nodePool    *hyperv1.NodePool
+		hcluster    *hyperv1.HostedCluster
+		expectError bool
+		errContains string
+	}{
+		{
+			name: "When zone is in the correct region, it should return no error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPNodePoolPlatform{
+							Zone: "us-central1-a",
+						},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{
+							Region: "us-central1",
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When zone is in a different region, it should return an error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPNodePoolPlatform{
+							Zone: "europe-west1-b",
+						},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{
+							Region: "us-central1",
+						},
+					},
+				},
+			},
+			expectError: true,
+			errContains: "not in HostedCluster region",
+		},
+		{
+			name: "When zone is empty, it should return no error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP:  &hyperv1.GCPNodePoolPlatform{},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{
+							Region: "us-central1",
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When NodePool has no GCP config, it should return an error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{
+							Region: "us-central1",
+						},
+					},
+				},
+			},
+			expectError: true,
+			errContains: "GCP platform configuration is required",
+		},
+		{
+			name: "When HostedCluster has no GCP config, it should return an error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPNodePoolPlatform{
+							Zone: "us-central1-a",
+						},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{},
+				},
+			},
+			expectError: true,
+			errContains: "HostedCluster has no GCP platform configuration",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			err := validateGCPPlatformConfig(tc.nodePool, tc.hcluster)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred(), "expected an error but got none")
+				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}

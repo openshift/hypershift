@@ -1021,6 +1021,12 @@ func (r NodePoolReconciler) validPlatformConfigCondition(ctx context.Context, no
 			condition.Reason = hyperv1.AWSErrorReason
 			condition.Message = err.Error()
 		}
+	case hyperv1.GCPPlatform:
+		if err := validateGCPPlatformConfig(nodePool, hc); err != nil {
+			condition.Status = corev1.ConditionFalse
+			condition.Reason = hyperv1.GCPErrorReason
+			condition.Message = err.Error()
+		}
 	}
 
 	SetStatusCondition(&nodePool.Status.Conditions, *condition)
