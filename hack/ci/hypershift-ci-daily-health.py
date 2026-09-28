@@ -24,6 +24,8 @@ import os
 import re
 import sys
 import tempfile
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -49,6 +51,12 @@ MAX_CANDIDATES = 100
 MAX_SAMPLE_RUNS = 6
 MAX_SOURCE_FAILURES = 100
 MAX_WORKERS = 8
+MAX_COLLECTION_REQUESTS = 500
+COLLECTION_DEADLINE_SECONDS = 120.0
+MAX_SOURCE_JOBS = 5000
+MAX_SOURCE_STRING = 2000
+MAX_CANDIDATE_STRING = 1000
+MAX_CANDIDATE_DOCUMENT_BYTES = 512 * 1024
 STAGE_ONE_LIMIT = 1999
 THREAD_REPLY_LIMIT = 3900
 
@@ -73,17 +81,33 @@ RESULT_STATES = {
     "ABORTED": "ABORTED",
 }
 
-ALLOWED_JUDGMENTS = {
+PRESUBMIT_JUDGMENTS = {
     "not_permafailing",
     "flaky",
     "permafail_candidate",
+    "infrastructure_triage",
+    "one_off_failure",
+    "no_data",
+}
+PERIODIC_JUDGMENTS = {
+    "flaky",
     "infrastructure_triage",
     "one_off_failure",
     "incident_candidate",
     "payload_impact_unknown",
     "no_data",
 }
+KIND_JUDGMENTS = {
+    "presubmit": PRESUBMIT_JUDGMENTS,
+    "periodic": PERIODIC_JUDGMENTS,
+}
 TRACKING_KEY_RE = re.compile(r"^(?:OCPBUGS|CNTRLPLANE)-[1-9][0-9]*$")
+JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
+PAYLOAD_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
+PHASE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 ._-]{0,63}$")
+CANDIDATE_ID_RE = re.compile(r"^hci-[0-9a-f]{16}$")
+RELEASE_RE = re.compile(r"^[0-9]+\.[0-9]+$")
+BRANCH_RE = re.compile(r"^(?:main|release-[0-9]+\.[0-9]+)$")
 STREAM_LINK_RE = re.compile(r'href=["\']/releasestream/([^"\'/]+)')
 ALL_BUILDS_RE = re.compile(r"var\s+allBuilds\s*=\s*(\[.*?\]);\s*</script>", re.DOTALL)
 OLDER_LINK_RE = re.compile(r'href="([^"]+\?buildId=\d+)">&lt;- Older Runs')
@@ -93,12 +117,70 @@ class ReportError(RuntimeError):
     """A fail-closed data or validation error."""
 
 
+class NoDataError(ReportError):
+    """An expected, explicit absence of public history."""
+
+
+def _bounded_string(value: Any, label: str, limit: int = MAX_SOURCE_STRING) -> str:
+    if not isinstance(value, str) or not value or len(value) > limit:
+        raise ReportError(f"{label} must be a non-empty string of at most {limit} characters")
+    if any(character in value for character in ("\r", "\n", "\x00")):
+        raise ReportError(f"{label} contains a control character")
+    return value
+
+
+def _grammar_string(value: Any, label: str, pattern: re.Pattern[str]) -> str:
+    text = _bounded_string(value, label, 255)
+    if not pattern.fullmatch(text):
+        raise ReportError(f"{label} has an invalid format")
+    return text
+
+
+def _is_missing_prow_history(status: int, body: bytes) -> bool:
+    if status not in {404, 500}:
+        return False
+    text = body.decode("utf-8", errors="replace").lower()
+    return "latest-build.txt" in text and (
+        "object doesn't exist" in text or "no such object" in text
+    )
+
+
+class ValidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Validate every redirect target before urllib follows it."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        validate_public_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 class HTTPTransport:
     """Small bounded HTTP client restricted to the report's public hosts."""
 
     def __init__(self, timeout: float = 20.0, max_bytes: int = MAX_HTTP_BYTES):
         self.timeout = timeout
         self.max_bytes = max_bytes
+        self.deadline: float | None = None
+        self.requests_remaining = MAX_COLLECTION_REQUESTS
+        self._limit_lock = threading.Lock()
+        self.opener = urllib.request.build_opener(ValidatingRedirectHandler())
+
+    def configure_collection_limits(
+        self, deadline_seconds: float, max_requests: int
+    ) -> None:
+        self.deadline = time.monotonic() + deadline_seconds
+        self.requests_remaining = max_requests
+
+    def _request_timeout(self) -> float:
+        with self._limit_lock:
+            if self.requests_remaining <= 0:
+                raise ReportError("public request budget exhausted")
+            self.requests_remaining -= 1
+        remaining = (
+            self.deadline - time.monotonic() if self.deadline is not None else self.timeout
+        )
+        if remaining <= 0:
+            raise ReportError("collection deadline exhausted")
+        return min(self.timeout, remaining)
 
     def get_text(self, url: str) -> str:
         validate_public_url(url)
@@ -107,9 +189,15 @@ class HTTPTransport:
             headers={"User-Agent": "hypershift-ci-daily-health/1"},
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with self.opener.open(request, timeout=self._request_timeout()) as response:
+                validate_public_url(response.geturl())
                 data = response.read(self.max_bytes + 1)
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+        except urllib.error.HTTPError as exc:
+            body = exc.read(self.max_bytes + 1)
+            if _is_missing_prow_history(exc.code, body):
+                raise NoDataError("Prow history has never run") from exc
+            raise ReportError(f"GET failed for {safe_url_label(url)}: {exc}") from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
             raise ReportError(f"GET failed for {safe_url_label(url)}: {exc}") from exc
         if len(data) > self.max_bytes:
             raise ReportError(f"response too large from {safe_url_label(url)}")
@@ -135,15 +223,43 @@ class FixtureTransport:
         except (OSError, json.JSONDecodeError) as exc:
             raise ReportError(f"invalid fixture manifest in {directory}") from exc
         self.entries = []
+        self.deadline: float | None = None
+        self.requests_remaining = MAX_COLLECTION_REQUESTS
+        self._limit_lock = threading.Lock()
         for item in manifest.get("responses", []):
+            if not isinstance(item, dict):
+                raise ReportError("fixture manifest responses must be objects")
             self.entries.append((re.compile(item["pattern"]), item))
+
+    def configure_collection_limits(
+        self, deadline_seconds: float, max_requests: int
+    ) -> None:
+        self.deadline = time.monotonic() + deadline_seconds
+        self.requests_remaining = max_requests
+
+    def _before_request(self) -> None:
+        with self._limit_lock:
+            if self.requests_remaining <= 0:
+                raise ReportError("public request budget exhausted")
+            self.requests_remaining -= 1
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            raise ReportError("collection deadline exhausted")
 
     def get_text(self, url: str) -> str:
         validate_public_url(url)
+        self._before_request()
         for pattern, item in self.entries:
             if pattern.search(url):
                 status = int(item.get("status", 200))
                 if status < 200 or status >= 300:
+                    body = b""
+                    if item.get("file"):
+                        try:
+                            body = (self.directory / item["file"]).read_bytes()
+                        except OSError as exc:
+                            raise ReportError(f"missing fixture {item['file']}") from exc
+                    if _is_missing_prow_history(status, body):
+                        raise NoDataError("Prow history has never run")
                     raise ReportError(
                         f"GET failed for {safe_url_label(url)}: HTTP {status}"
                     )
@@ -163,6 +279,10 @@ class FixtureTransport:
 
 
 def validate_public_url(url: str) -> None:
+    if not isinstance(url, str) or len(url) > MAX_SOURCE_STRING:
+        raise ReportError("URL must be a bounded string")
+    if any(character in url for character in ("\r", "\n", "\x00", "`", "<", ">", "|")):
+        raise ReportError("refusing URL with Slack/control delimiters")
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in ALLOWED_HOSTS:
         raise ReportError(
@@ -170,10 +290,47 @@ def validate_public_url(url: str) -> None:
         )
     if parsed.username or parsed.password or parsed.fragment:
         raise ReportError("refusing URL with credentials or fragment")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ReportError("refusing URL with invalid port") from exc
+    if port not in {None, 443}:
+        raise ReportError("refusing URL with non-HTTPS port")
+    path = parsed.path or "/"
+    allowed_path = False
+    if parsed.hostname == urllib.parse.urlparse(DASHBOARD_BASE).hostname:
+        allowed_path = path in {
+            "/api/job-registry",
+            "/api/schemas/Registry.json",
+            "/_dashboard/health/windows/1w",
+            "/_dashboard/health/windows/2w",
+            "/_dashboard/health/windows/1m",
+        }
+    elif parsed.hostname in {
+        urllib.parse.urlparse(RELEASE_CONTROLLER_BASE).hostname,
+        urllib.parse.urlparse(MULTI_RELEASE_CONTROLLER_BASE).hostname,
+    }:
+        allowed_path = path == "/" or path == "/api/v1/releasestreams/all" or path.startswith(
+            ("/api/v1/releasestream/", "/releasestream/")
+        )
+    elif parsed.hostname == urllib.parse.urlparse(SIPPY_RUNS_URL).hostname:
+        allowed_path = path == "/api/jobs/runs" or path.startswith("/sippy-ng/")
+    elif parsed.hostname == PROW_HOST:
+        allowed_path = path.startswith("/job-history/gs/test-platform-results/") or bool(
+            re.match(
+                r"^/view/gs/(?:test-platform-results|test-platform-results-public)/",
+                path,
+            )
+        )
+    elif parsed.hostname == "openshift-release.apps.ci.l2s4.p1.openshiftapps.com":
+        allowed_path = path.startswith("/releasestream/")
     if parsed.hostname == "storage.googleapis.com":
         segments = [part for part in parsed.path.split("/") if part]
         if not segments or segments[0] != PUBLIC_RESULTS_BUCKET:
             raise ReportError("refusing non-public Prow results bucket")
+        allowed_path = True
+    if not allowed_path:
+        raise ReportError(f"refusing unexpected public-source path: {path}")
 
 
 def safe_url_label(url: str) -> str:
@@ -230,6 +387,105 @@ def atomic_write(path: Path, content: str) -> None:
         except OSError:
             pass
         raise
+
+
+def validate_registry(registry: Any) -> list[dict[str, Any]]:
+    if not isinstance(registry, dict) or not isinstance(registry.get("jobs"), list):
+        raise ReportError("dashboard registry jobs is not a list")
+    jobs = registry["jobs"]
+    if len(jobs) > MAX_SOURCE_JOBS:
+        raise ReportError(f"dashboard registry exceeds {MAX_SOURCE_JOBS} jobs")
+    for index, job in enumerate(jobs):
+        if not isinstance(job, dict):
+            raise ReportError(f"dashboard registry job {index} is not an object")
+        job_id = _grammar_string(job.get("id"), f"registry job {index} id", JOB_ID_RE)
+        for field in ("repository", "type"):
+            if field in job and not isinstance(job[field], str):
+                raise ReportError(f"registry {job_id} {field} must be a string")
+        platforms = job.get("platforms") or []
+        if not isinstance(platforms, list) or len(platforms) > 20 or any(
+            not isinstance(item, str) or len(item) > 100 for item in platforms
+        ):
+            raise ReportError(f"registry {job_id} platforms has an unexpected shape")
+        if "e2e_framework" in job and not isinstance(job["e2e_framework"], str):
+            raise ReportError(f"registry {job_id} e2e_framework must be a string")
+        if job.get("prow_job_history_url"):
+            validate_public_url(job["prow_job_history_url"])
+        presubmit = job.get("presubmit")
+        if presubmit is not None:
+            if not isinstance(presubmit, dict):
+                raise ReportError(f"registry {job_id} presubmit must be an object")
+            if "required" in presubmit and not isinstance(presubmit["required"], bool):
+                raise ReportError(f"registry {job_id} presubmit.required must be boolean")
+            for field in ("target_branch", "target_release"):
+                if presubmit.get(field) is not None and not isinstance(
+                    presubmit[field], str
+                ):
+                    raise ReportError(f"registry {job_id} presubmit.{field} must be a string")
+        participations = job.get("release_controller") or []
+        if not isinstance(participations, list) or len(participations) > 20:
+            raise ReportError(f"registry {job_id} release_controller must be a bounded list")
+        for participation in participations:
+            if not isinstance(participation, dict):
+                raise ReportError(f"registry {job_id} release participation is not an object")
+            stream = participation.get("stream")
+            verification = participation.get("verification")
+            if not isinstance(stream, dict) or not isinstance(verification, dict):
+                raise ReportError(f"registry {job_id} release participation is incomplete")
+            for field in ("name", "release", "kind", "architecture"):
+                _bounded_string(stream.get(field), f"registry {job_id} stream.{field}", 255)
+            if not isinstance(stream.get("end_of_life"), bool):
+                raise ReportError(f"registry {job_id} stream.end_of_life must be boolean")
+            if stream.get("release_status_url"):
+                validate_public_url(stream["release_status_url"])
+            _bounded_string(
+                verification.get("name"), f"registry {job_id} verification.name", 255
+            )
+            _bounded_string(
+                verification.get("role"), f"registry {job_id} verification.role", 64
+            )
+            for field in ("optional", "disabled"):
+                if not isinstance(verification.get(field), bool):
+                    raise ReportError(
+                        f"registry {job_id} verification.{field} must be boolean"
+                    )
+    return jobs
+
+
+def validate_health(health: Any) -> dict[str, Any]:
+    if not isinstance(health, dict) or not isinstance(health.get("data"), dict):
+        raise ReportError("dashboard health data is not an object")
+    for group in ("jobs", "payload_blocking_jobs"):
+        rows = health["data"].get(group) or []
+        if not isinstance(rows, list) or len(rows) > MAX_SOURCE_JOBS:
+            raise ReportError(f"dashboard health {group} is not a bounded list")
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                raise ReportError(f"dashboard health {group} row {index} is not an object")
+            for identity in ("id", "prow"):
+                if row.get(identity) is not None and not isinstance(row[identity], str):
+                    raise ReportError(
+                        f"dashboard health {group} row {index} {identity} must be a string"
+                    )
+    return health
+
+
+def validate_tag_catalog(catalog: Any, label: str) -> dict[str, list[str]]:
+    if not isinstance(catalog, dict) or len(catalog) > MAX_SOURCE_JOBS:
+        raise ReportError(f"{label} tag catalog is not a bounded object")
+    result: dict[str, list[str]] = {}
+    for stream, tags in catalog.items():
+        if not isinstance(stream, str) or not isinstance(tags, list) or len(tags) > 1000:
+            raise ReportError(f"{label} tag catalog has an unexpected entry")
+        if any(
+            not isinstance(tag, str)
+            or len(tag) > 255
+            or not PAYLOAD_TAG_RE.fullmatch(tag)
+            for tag in tags
+        ):
+            raise ReportError(f"{label} tag catalog has an invalid payload tag")
+        result[stream] = tags
+    return result
 
 
 def exact_health_rows(health: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -336,15 +592,63 @@ def bound_text(text: str, limit: int) -> str:
 
 def escape_slack(value: Any, limit: int = 1000) -> str:
     text = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+    text = text.replace("`", "ˋ")
     text = html.escape(text, quote=False)
     return text[:limit]
 
 
+def bound_candidates(
+    candidates: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Apply deterministic count/byte priority without concealing overflow."""
+    selected = list(candidates[:MAX_CANDIDATES])
+    # Reserve room for bounded scope failures/uncertainties and envelope fields.
+    byte_limit = MAX_CANDIDATE_DOCUMENT_BYTES - 224 * 1024
+    while selected and len(
+        json.dumps({"candidates": selected}, separators=(",", ":")).encode("utf-8")
+    ) > byte_limit:
+        selected.pop()
+    omitted = len(candidates) - len(selected)
+    if not omitted:
+        return selected, None
+    return selected, {
+        "total": len(candidates),
+        "published": len(selected),
+        "omitted": omitted,
+        "count_limit": MAX_CANDIDATES,
+        "byte_limit": MAX_CANDIDATE_DOCUMENT_BYTES,
+        "priority": "periodic first, newest release first, then job ID",
+    }
+
+
+def bound_messages(messages: Iterable[str], label: str) -> list[str]:
+    unique = sorted(set(str(message) for message in messages))
+    bounded = []
+    for message in unique[: MAX_SOURCE_FAILURES - 1]:
+        if len(message) > 1000:
+            message = message[:960].rstrip() + " … message truncated by 1000-character bound"
+        bounded.append(message)
+    omitted = len(unique) - len(bounded)
+    if omitted:
+        bounded.append(f"{omitted} additional {label} omitted by the explicit count bound")
+    return bounded
+
+
 class Collector:
-    def __init__(self, transport: HTTPTransport | FixtureTransport, as_of: dt.datetime):
+    def __init__(
+        self,
+        transport: HTTPTransport | FixtureTransport,
+        as_of: dt.datetime,
+        deadline_seconds: float = COLLECTION_DEADLINE_SECONDS,
+        max_requests: int = MAX_COLLECTION_REQUESTS,
+    ):
         self.transport = transport
         self.as_of = as_of
         self.source_failures: list[str] = []
+        self.coverage_uncertainties: list[str] = []
+        if deadline_seconds <= 0 or max_requests <= 0:
+            raise ReportError("collection deadline and request budget must be positive")
+        self.transport.configure_collection_limits(deadline_seconds, max_requests)
 
     def collect(self) -> tuple[str, dict[str, Any]]:
         try:
@@ -356,14 +660,10 @@ class Collector:
             all_tags = self.transport.get_json(
                 f"{RELEASE_CONTROLLER_BASE}/api/v1/releasestreams/all"
             )
-            jobs = registry["jobs"]
-            if not isinstance(jobs, list):
-                raise ReportError("dashboard registry jobs is not a list")
-            if not isinstance(health.get("data"), dict) or not isinstance(
-                all_tags, dict
-            ):
-                raise ReportError("required public response has an unexpected shape")
-        except (KeyError, TypeError, ReportError) as exc:
+            jobs = validate_registry(registry)
+            health = validate_health(health)
+            all_tags = validate_tag_catalog(all_tags, "amd64 release controller")
+        except ReportError as exc:
             return self._unknown_report(str(exc))
 
         try:
@@ -379,8 +679,11 @@ class Collector:
         tag_catalogs = {RELEASE_CONTROLLER_BASE: all_tags}
         if any(item["architecture"] == "multi" for item in blockers):
             try:
-                tag_catalogs[MULTI_RELEASE_CONTROLLER_BASE] = self.transport.get_json(
-                    f"{MULTI_RELEASE_CONTROLLER_BASE}/api/v1/releasestreams/all"
+                tag_catalogs[MULTI_RELEASE_CONTROLLER_BASE] = validate_tag_catalog(
+                    self.transport.get_json(
+                        f"{MULTI_RELEASE_CONTROLLER_BASE}/api/v1/releasestreams/all"
+                    ),
+                    "multi-architecture release controller",
                 )
             except ReportError as exc:
                 self.source_failures.append(
@@ -402,7 +705,7 @@ class Collector:
                 try:
                     runs, uncertainty = future.result()
                     for item in uncertainty:
-                        self.source_failures.append(f"Sippy {key[0]}: {item}")
+                        self.coverage_uncertainties.append(f"Sippy {key[0]}: {item}")
                     trend_by_job[key] = {
                         "trend": calculate_trend(runs, self.as_of),
                         "runs": runs,
@@ -427,7 +730,7 @@ class Collector:
                 try:
                     evidence = future.result()
                     for item in evidence["uncertainties"]:
-                        self.source_failures.append(f"Prow {job['id']}: {item}")
+                        self.coverage_uncertainties.append(f"Prow {job['id']}: {item}")
                     presubmit_evidence[job["id"]] = evidence
                 except ReportError as exc:
                     self.source_failures.append(f"Prow {job['id']}: {exc}")
@@ -438,7 +741,7 @@ class Collector:
                         "recent_status": "no_data",
                     }
 
-        candidates = self._build_candidates(
+        all_candidates = self._build_candidates(
             blockers,
             payloads,
             trend_by_job,
@@ -446,8 +749,17 @@ class Collector:
             presubmit_evidence,
             health_rows,
         )
-        candidates = candidates[:MAX_CANDIDATES]
-        self.source_failures = sorted(set(self.source_failures))[:MAX_SOURCE_FAILURES]
+        candidates, candidate_overflow = bound_candidates(all_candidates)
+        if candidate_overflow:
+            self.source_failures.append(
+                "candidate coverage overflow: "
+                f"published {len(candidates)} of {len(all_candidates)} using "
+                "periodic-first, newest-release, job-ID priority"
+            )
+        self.source_failures = bound_messages(self.source_failures, "source failure(s)")
+        self.coverage_uncertainties = bound_messages(
+            self.coverage_uncertainties, "coverage uncertainty item(s)"
+        )
 
         gate_ids = {item["job_id"] for item in blockers}
         gate_ids.update(
@@ -467,11 +779,17 @@ class Collector:
             "schema_version": SCHEMA_VERSION,
             "generated_at": format_rfc3339(self.as_of),
             "scope": {
-                "state": "unknown" if self.source_failures else "complete",
+                "state": (
+                    "unknown"
+                    if self.source_failures or self.coverage_uncertainties
+                    else "complete"
+                ),
                 "releases": releases,
                 "branches": ["main", *[f"release-{release}" for release in releases]],
                 "validated_streams": validated_streams,
                 "source_failures": self.source_failures,
+                "coverage_uncertainties": self.coverage_uncertainties,
+                "candidate_overflow": candidate_overflow,
             },
             "candidates": candidates,
         }
@@ -485,10 +803,13 @@ class Collector:
             candidates,
             dashboard_healthy,
             dashboard_total,
+            candidate_overflow,
         )
+        validate_candidates_document(document)
         return stage_one, document
 
     def _unknown_report(self, failure: str) -> tuple[str, dict[str, Any]]:
+        failure = bound_messages([failure], "source failure(s)")[0]
         message = (
             f"*HyperShift CI Daily Health Report* — as of {format_rfc3339(self.as_of)}\n\n"
             "⚪ *Overall*: Unknown — required public data could not be validated\n"
@@ -504,6 +825,8 @@ class Collector:
                 "releases": [],
                 "branches": [],
                 "source_failures": [failure],
+                "coverage_uncertainties": [],
+                "candidate_overflow": None,
             },
             "candidates": [],
         }
@@ -689,8 +1012,16 @@ class Collector:
             for future, (stream, tag) in futures.items():
                 try:
                     detail = future.result()
+                    if not isinstance(detail, dict):
+                        raise ReportError("release detail is not an object")
                     if detail.get("name") != tag:
                         raise ReportError("release detail tag mismatch")
+                    _grammar_string(detail.get("name"), "release detail tag", PAYLOAD_TAG_RE)
+                    _grammar_string(
+                        detail.get("phase") or "Unknown", "release detail phase", PHASE_RE
+                    )
+                    if not isinstance(detail.get("results") or {}, dict):
+                        raise ReportError("release detail results is not an object")
                     statuses[(stream, tag)] = detail
                 except (AttributeError, ReportError) as exc:
                     self.source_failures.append(f"release controller {stream}: {exc}")
@@ -714,11 +1045,44 @@ class Collector:
             verification_status = None
             results = detail.get("results") or {}
             for group in ("blockingJobs", "pendingJobs", "informingJobs", "asyncJobs"):
-                value = (results.get(group) or {}).get(blocker["verification"])
+                group_results = results.get(group) or {}
+                if not isinstance(group_results, dict):
+                    self.source_failures.append(
+                        f"release controller {stream}: {group} is not an object"
+                    )
+                    continue
+                value = group_results.get(blocker["verification"])
                 if value:
+                    if not isinstance(value, dict):
+                        self.source_failures.append(
+                            f"release controller {stream}: verification result is not an object"
+                        )
+                        continue
                     verification_status = value
                     break
             state = (verification_status or {}).get("state")
+            if state is not None and not isinstance(state, str):
+                self.source_failures.append(
+                    f"release controller {stream}: verification state is not a string"
+                )
+                state = None
+            raw_verification_url = (verification_status or {}).get("url") or ""
+            if not isinstance(raw_verification_url, str):
+                self.source_failures.append(
+                    f"release controller {stream}: verification URL is not a string"
+                )
+                raw_verification_url = ""
+            verification_url = raw_verification_url
+            verification_uncertainty = ""
+            if verification_url:
+                try:
+                    validate_verification_url(verification_url)
+                except ReportError as exc:
+                    verification_url = ""
+                    verification_uncertainty = f"verification URL rejected: {exc}"
+                    self.source_failures.append(
+                        f"release controller {stream}: {verification_uncertainty}"
+                    )
             if state in {"Failed", "Pending"} and phase not in {"Accepted", "Rejected"}:
                 impact = "verified_blocker"
             elif state == "Succeeded":
@@ -729,8 +1093,9 @@ class Collector:
                 "tag": tag,
                 "phase": phase or "Unknown",
                 "verification_state": state or "Unknown",
-                "verification_url": str((verification_status or {}).get("url") or ""),
-                "impact": impact,
+                "verification_url": verification_url,
+                "impact": "unknown" if verification_uncertainty else impact,
+                "uncertainty": verification_uncertainty,
                 "release_status_url": blocker["release_status_url"],
             }
         return result
@@ -769,11 +1134,29 @@ class Collector:
                 }
             )
             data = self.transport.get_json(f"{SIPPY_RUNS_URL}?{params}")
+            if not isinstance(data, dict):
+                raise ReportError("Sippy response is not an object")
             page_rows = data.get("rows")
             if not isinstance(page_rows, list):
                 raise ReportError("Sippy rows is not a list")
+            if any(not isinstance(row, dict) for row in page_rows):
+                raise ReportError("Sippy rows must contain only objects")
+            for row in page_rows:
+                for field in ("job", "timestamp", "overall_result"):
+                    if not isinstance(row.get(field), str):
+                        raise ReportError(f"Sippy row {field} must be a string")
+                if row.get("annotations") is not None and not isinstance(
+                    row["annotations"], dict
+                ):
+                    raise ReportError("Sippy row annotations must be an object")
+                for field in ("url", "test_grid_url"):
+                    if row.get(field) is not None and not isinstance(row[field], str):
+                        raise ReportError(f"Sippy row {field} must be a string")
             rows.extend(page_rows)
-            total_rows = int(data.get("total_rows", len(rows)))
+            try:
+                total_rows = int(data.get("total_rows", len(rows)))
+            except (TypeError, ValueError) as exc:
+                raise ReportError("Sippy total_rows is not an integer") from exc
             if len(rows) >= total_rows or not page_rows:
                 break
             page += 1
@@ -813,7 +1196,18 @@ class Collector:
         window_start = self.as_of - dt.timedelta(hours=12)
         uncertainty: list[str] = []
         for _ in range(MAX_HISTORY_PAGES):
-            text = self.transport.get_text(page_url)
+            try:
+                text = self.transport.get_text(page_url)
+            except NoDataError:
+                if not rows:
+                    return {
+                        "candidate_trigger": None,
+                        "runs": [],
+                        "uncertainties": ["Prow history has no runs yet"],
+                        "recent_status": "no_data",
+                    }
+                uncertainty.append("older Prow history page has no data")
+                break
             page_rows, older = parse_prow_history(text, page_url)
             rows.extend(page_rows)
             starts = [
@@ -857,22 +1251,52 @@ class Collector:
         refined = []
         for run in relevant[:3]:
             prowjob = self.transport.get_json(public_prowjob_url(run["url"]))
-            status = prowjob.get("status") or {}
-            spec = prowjob.get("spec") or {}
-            refs = spec.get("refs") or {}
-            pulls = refs.get("pulls") or []
+            if not isinstance(prowjob, dict):
+                raise ReportError(f"public prowjob for {run['id']} is not an object")
+            status = prowjob.get("status")
+            spec = prowjob.get("spec")
+            if not isinstance(status, dict) or not isinstance(spec, dict):
+                raise ReportError(f"invalid public prowjob shape for {run['id']}")
+            refs = spec.get("refs")
+            if not isinstance(refs, dict):
+                raise ReportError(f"invalid public prowjob refs for {run['id']}")
+            pulls = refs.get("pulls")
+            if not isinstance(pulls, list) or any(
+                not isinstance(pull, dict) for pull in pulls
+            ):
+                raise ReportError(f"invalid public prowjob refs for {run['id']}")
             try:
                 started = parse_rfc3339(str(status.get("startTime")))
-                completed = parse_rfc3339(str(status.get("completionTime")))
             except ReportError as exc:
                 raise ReportError(
                     f"invalid public prowjob timing for {run['id']}"
                 ) from exc
+            state = normalize_state(status.get("state"))
+            if state not in {"SUCCESS", "FAILURE", "ABORTED", "ERROR"}:
+                raise ReportError(f"invalid public prowjob state for {run['id']}")
+            completion_value = status.get("completionTime")
+            if completion_value:
+                try:
+                    completed = parse_rfc3339(str(completion_value))
+                except ReportError as exc:
+                    raise ReportError(
+                        f"invalid public prowjob timing for {run['id']}"
+                    ) from exc
+            elif state == "ABORTED":
+                completed = parse_rfc3339(run["completed"])
+                uncertainty.append(
+                    f"aborted run {run['id']} lacks completionTime; used history-derived completion"
+                )
+            else:
+                uncertainty.append(
+                    f"run {run['id']} lacks completionTime and was omitted"
+                )
+                continue
             run = {
                 **run,
                 "started": format_rfc3339(started),
                 "completed": format_rfc3339(completed),
-                "state": normalize_state(status.get("state")),
+                "state": state,
                 "head_sha": str(pulls[0].get("sha") or run["head_sha"])
                 if pulls
                 else run["head_sha"],
@@ -994,6 +1418,7 @@ class Collector:
         candidates: list[dict[str, Any]],
         dashboard_healthy: int,
         dashboard_total: int,
+        candidate_overflow: dict[str, Any] | None,
     ) -> str:
         trend_counts: dict[str, int] = defaultdict(int)
         for evidence in trends.values():
@@ -1003,8 +1428,12 @@ class Collector:
             for payload in payloads.values()
             if payload["impact"] == "verified_blocker"
         )
-        unknown_count = len(self.source_failures) + sum(
-            1 for payload in payloads.values() if payload["impact"] == "unknown"
+        unknown_count = (
+            len(self.source_failures)
+            + len(self.coverage_uncertainties)
+            + sum(
+                1 for payload in payloads.values() if payload["impact"] == "unknown"
+            )
         )
         if unknown_count:
             emoji, overall = "⚪", "Unknown — public source or coverage gaps remain"
@@ -1017,6 +1446,11 @@ class Collector:
             )
         else:
             emoji, overall = "🟢", "No live blockers or merge-gate candidates"
+        if candidate_overflow:
+            overall += (
+                f"; candidate coverage {candidate_overflow['published']}/"
+                f"{candidate_overflow['total']}"
+            )
 
         lines = [
             f"*HyperShift CI Daily Health Report* — as of {format_rfc3339(self.as_of)}",
@@ -1055,11 +1489,13 @@ class Collector:
                 sample = payloads[
                     (release_blockers[0]["job_id"], release_blockers[0]["stream"])
                 ]
-                tag = f"{sample['tag'] or 'Unknown'} {sample['phase']}"
+                safe_tag = escape_slack(sample["tag"] or "Unknown", 255)
+                safe_phase = escape_slack(sample["phase"], 64)
+                tag = f"{safe_tag} {safe_phase}"
                 url = sample["release_status_url"]
             label = f"<{url}|{tag}>" if url else tag
             lines.append(
-                f"• *OCP {release}* · {label}: {len(live)} blocker(s), {len(unknown)} unknown"
+                f"• *OCP {escape_slack(release, 20)}* · {label}: {len(live)} blocker(s), {len(unknown)} unknown"
             )
 
         lines.extend(["", "*Merge-gate candidates — by branch*"])
@@ -1080,7 +1516,8 @@ class Collector:
                 1 for job in jobs if not presubmit_evidence[job["id"]]["runs"]
             )
             lines.append(
-                f"• *{branch} → OCP {target}*: {count} candidate(s), {no_data} no-data gate(s)"
+                f"• *{escape_slack(branch, 80)} → OCP {escape_slack(target, 20)}*: "
+                f"{count} candidate(s), {no_data} no-data gate(s)"
             )
 
         lines.extend(
@@ -1088,8 +1525,21 @@ class Collector:
                 "",
                 "*Action items*",
                 f"• Judge {len(candidates)} bounded candidate(s); do not infer branch impact from one PR",
-                "• Tracking: verify an existing OCPBUGS/CNTRLPLANE issue or record an explicit gap; no automated writes",
             ]
+        )
+        if candidate_overflow:
+            lines.append(
+                "• Coverage overflow: "
+                f"{candidate_overflow['omitted']} of {candidate_overflow['total']} candidate(s) "
+                "omitted after deterministic periodic/newest-release/job-ID priority; state is Unknown"
+            )
+        if self.coverage_uncertainties:
+            lines.append(
+                f"• Coverage uncertainties: {len(self.coverage_uncertainties)}; "
+                "preserved separately from transport/source failures"
+            )
+        lines.append(
+            "• Tracking: verify an existing OCPBUGS/CNTRLPLANE issue only for a deduplicated incident; no automated writes"
         )
         return bound_text("\n".join(lines), STAGE_ONE_LIMIT)
 
@@ -1104,13 +1554,39 @@ def parse_prow_history(
         raw_rows = json.loads(match.group(1))
     except json.JSONDecodeError as exc:
         raise ReportError("Prow allBuilds is invalid JSON") from exc
+    if not isinstance(raw_rows, list):
+        raise ReportError("Prow allBuilds is not a list")
     rows = []
-    for row in raw_rows[:20]:
+    for index, row in enumerate(raw_rows[:20]):
+        if not isinstance(row, dict):
+            raise ReportError(f"Prow allBuilds row {index} is not an object")
+        for field in ("ID", "Started", "Duration", "Result", "SpyglassLink", "Refs"):
+            if field not in row:
+                raise ReportError(f"Prow allBuilds row {index} lacks {field}")
+        refs = row.get("Refs")
+        if not isinstance(refs, dict):
+            raise ReportError(f"Prow allBuilds row {index} Refs is not an object")
+        pulls = refs.get("pulls")
+        if not isinstance(pulls, list) or any(not isinstance(pull, dict) for pull in pulls):
+            raise ReportError(f"Prow allBuilds row {index} pulls is not a list of objects")
         try:
             started = parse_rfc3339(str(row.get("Started")))
             duration_ns = int(row.get("Duration") or 0)
         except (ReportError, TypeError, ValueError):
-            continue
+            raise ReportError(f"Prow allBuilds row {index} has invalid timing")
+        if duration_ns < 0:
+            raise ReportError(f"Prow allBuilds row {index} has negative duration")
+        if normalize_state(row.get("Result")) not in {
+            "SUCCESS",
+            "FAILURE",
+            "ABORTED",
+            "ERROR",
+        }:
+            raise ReportError(f"Prow allBuilds row {index} has invalid result")
+        run_url = urllib.parse.urljoin(
+            f"https://{PROW_HOST}", str(row.get("SpyglassLink") or "")
+        )
+        validate_public_url(run_url)
         rows.append(
             {
                 **row,
@@ -1145,18 +1621,33 @@ def public_prowjob_url(prow_url: str) -> str:
     return url
 
 
+def validate_verification_url(url: str) -> None:
+    """Release verification evidence must be a canonical public Prow run."""
+    validate_public_url(url)
+    parsed = urllib.parse.urlparse(url)
+    if parsed.hostname != PROW_HOST or not parsed.path.startswith(
+        "/view/gs/test-platform-results-public/"
+    ):
+        raise ReportError("verification URL is not a public Prow result")
+
+
 def serialize_sippy_run(run: dict[str, Any]) -> dict[str, Any]:
     annotations = run.get("annotations") or {}
+    if not isinstance(annotations, dict):
+        raise ReportError("Sippy run annotations is not an object")
     url = str(run.get("url") or run.get("test_grid_url") or "")
     if url:
         validate_public_url(url)
+    payload_tag = str(annotations.get("release.openshift.io/tag") or "")
+    if payload_tag:
+        _grammar_string(payload_tag, "Sippy payload tag", PAYLOAD_TAG_RE)
     return {
         "id": str(run.get("prow_id") or run.get("id") or ""),
         "timestamp": format_rfc3339(run["_timestamp"]),
         "state": normalize_state(run.get("overall_result")),
         "head_sha": str(run.get("pull_request_sha") or ""),
         "url": url,
-        "payload_tag": str(annotations.get("release.openshift.io/tag") or ""),
+        "payload_tag": payload_tag,
     }
 
 
@@ -1173,7 +1664,92 @@ def summarize_health(row: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _validate_string_list(
+    value: Any, label: str, max_items: int, max_length: int
+) -> list[str]:
+    if not isinstance(value, list) or len(value) > max_items:
+        raise ReportError(f"{label} must be a list of at most {max_items} strings")
+    for item in value:
+        if not isinstance(item, str) or len(item) > max_length:
+            raise ReportError(f"{label} contains an invalid string")
+    return value
+
+
+def _validate_candidate_run(run: Any, kind: str, label: str) -> None:
+    if not isinstance(run, dict):
+        raise ReportError(f"{label} must be an object")
+    identifier = _bounded_string(run.get("id"), f"{label}.id", 255)
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", identifier):
+        raise ReportError(f"{label}.id has an invalid format")
+    if run.get("state") not in {"SUCCESS", "FAILURE", "ABORTED", "ERROR"}:
+        raise ReportError(f"{label}.state is invalid")
+    timestamp_fields = ("timestamp",) if kind == "periodic" else ("started", "completed")
+    for field in timestamp_fields:
+        parse_rfc3339(run.get(field))
+    head_sha = run.get("head_sha") or ""
+    if not isinstance(head_sha, str) or len(head_sha) > 64 or any(
+        character in head_sha for character in "\r\n`<>&|"
+    ):
+        raise ReportError(f"{label}.head_sha is invalid")
+    url = run.get("url") or ""
+    if not isinstance(url, str):
+        raise ReportError(f"{label}.url must be a string")
+    if url:
+        validate_public_url(url)
+    payload_tag = run.get("payload_tag") or ""
+    if not isinstance(payload_tag, str):
+        raise ReportError(f"{label}.payload_tag must be a string")
+    if payload_tag:
+        _grammar_string(payload_tag, f"{label}.payload_tag", PAYLOAD_TAG_RE)
+
+
+def _validate_trend(trend: Any, label: str) -> None:
+    if not isinstance(trend, dict):
+        raise ReportError(f"{label} must be an object")
+    for window in ("current", "baseline"):
+        counts = trend.get(window)
+        if not isinstance(counts, dict):
+            raise ReportError(f"{label}.{window} must be an object")
+        for state in ("SUCCESS", "FAILURE", "ABORTED", "ERROR", "denominator"):
+            if not isinstance(counts.get(state), int) or counts[state] < 0:
+                raise ReportError(f"{label}.{window}.{state} must be a non-negative integer")
+        if counts["denominator"] != counts["SUCCESS"] + counts["FAILURE"]:
+            raise ReportError(f"{label}.{window}.denominator is inconsistent")
+        rate = counts.get("rate")
+        expected_rate = (
+            counts["SUCCESS"] / counts["denominator"]
+            if counts["denominator"]
+            else None
+        )
+        if expected_rate is None:
+            if rate is not None:
+                raise ReportError(f"{label}.{window}.rate must be null")
+        elif not isinstance(rate, (int, float)) or abs(rate - expected_rate) > 1e-9:
+            raise ReportError(f"{label}.{window}.rate is inconsistent")
+    if trend.get("classification") not in {
+        "no_data",
+        "low_confidence",
+        "improving",
+        "degrading",
+        "stable",
+    }:
+        raise ReportError(f"{label}.classification is invalid")
+    change = trend.get("change_points")
+    if change is not None and not isinstance(change, (int, float)):
+        raise ReportError(f"{label}.change_points must be numeric or null")
+
+
 def validate_candidates_document(document: Any) -> dict[str, Any]:
+    try:
+        document_bytes = len(
+            json.dumps(document, separators=(",", ":")).encode("utf-8")
+        )
+    except (TypeError, ValueError) as exc:
+        raise ReportError("candidates document is not valid JSON data") from exc
+    if document_bytes > MAX_CANDIDATE_DOCUMENT_BYTES:
+        raise ReportError(
+            f"candidates document exceeds {MAX_CANDIDATE_DOCUMENT_BYTES} bytes"
+        )
     if (
         not isinstance(document, dict)
         or document.get("schema_version") != SCHEMA_VERSION
@@ -1181,22 +1757,134 @@ def validate_candidates_document(document: Any) -> dict[str, Any]:
         raise ReportError(f"candidates schema_version must be {SCHEMA_VERSION}")
     if not isinstance(document.get("candidates"), list):
         raise ReportError("candidates must be a list")
-    ids = [
-        item.get("candidate_id")
-        for item in document["candidates"]
-        if isinstance(item, dict)
-    ]
-    if (
-        len(ids) != len(document["candidates"])
-        or len(ids) != len(set(ids))
-        or any(not value for value in ids)
-    ):
+    if len(document["candidates"]) > MAX_CANDIDATES:
+        raise ReportError(f"candidates must contain at most {MAX_CANDIDATES} entries")
+    parse_rfc3339(document.get("generated_at"))
+    scope = document.get("scope")
+    if not isinstance(scope, dict) or scope.get("state") not in {"complete", "unknown"}:
+        raise ReportError("candidate scope must be a complete or unknown object")
+    _validate_string_list(
+        scope.get("source_failures", []), "scope.source_failures", MAX_SOURCE_FAILURES, 1000
+    )
+    _validate_string_list(
+        scope.get("coverage_uncertainties", []),
+        "scope.coverage_uncertainties",
+        MAX_SOURCE_FAILURES,
+        1000,
+    )
+    overflow = scope.get("candidate_overflow")
+    if overflow is not None:
+        if not isinstance(overflow, dict) or any(
+            not isinstance(overflow.get(field), int) or overflow[field] < 0
+            for field in ("total", "published", "omitted", "count_limit", "byte_limit")
+        ):
+            raise ReportError("scope.candidate_overflow has an unexpected shape")
+        if (
+            overflow["published"] != len(document["candidates"])
+            or overflow["total"] - overflow["published"] != overflow["omitted"]
+            or overflow["omitted"] <= 0
+        ):
+            raise ReportError("scope.candidate_overflow counts are inconsistent")
+        _bounded_string(overflow.get("priority"), "scope.candidate_overflow.priority", 200)
+        if scope["state"] != "unknown":
+            raise ReportError("candidate overflow requires unknown scope")
+
+    ids: list[str] = []
+    for index, item in enumerate(document["candidates"]):
+        label = f"candidate {index}"
+        if not isinstance(item, dict):
+            raise ReportError(f"{label} must be an object")
+        identifier = _grammar_string(
+            item.get("candidate_id"), f"{label}.candidate_id", CANDIDATE_ID_RE
+        )
+        ids.append(identifier)
+        kind = item.get("kind")
+        if kind not in KIND_JUDGMENTS:
+            raise ReportError(f"{label}.kind is invalid")
+        _grammar_string(item.get("job_id"), f"{label}.job_id", JOB_ID_RE)
+        _grammar_string(item.get("release"), f"{label}.release", RELEASE_RE)
+        branch = item.get("branch")
+        if kind == "presubmit":
+            _grammar_string(branch, f"{label}.branch", BRANCH_RE)
+        elif branch is not None:
+            raise ReportError(f"{label}.branch must be null for a periodic")
+        _bounded_string(
+            item.get("deterministic_trigger"), f"{label}.deterministic_trigger", 100
+        )
+        role = item.get("configured_role")
+        if not isinstance(role, dict):
+            raise ReportError(f"{label}.configured_role must be an object")
+        if kind == "periodic":
+            for field in ("verification", "stream", "architecture", "stream_kind", "framework"):
+                _bounded_string(role.get(field), f"{label}.configured_role.{field}", 255)
+        else:
+            if role.get("required") is not True:
+                raise ReportError(f"{label}.configured_role.required must be true")
+            _bounded_string(role.get("framework"), f"{label}.configured_role.framework", 255)
+        _validate_string_list(
+            role.get("platforms"), f"{label}.configured_role.platforms", 20, 100
+        )
+        dashboard = item.get("dashboard_1w")
+        if not isinstance(dashboard, dict) or dashboard.get("status") not in {
+            "available",
+            "no_dashboard_data",
+        }:
+            raise ReportError(f"{label}.dashboard_1w has an unexpected shape")
+        if dashboard["status"] == "available":
+            rate = dashboard.get("rate")
+            if rate is not None and not isinstance(rate, (int, float)):
+                raise ReportError(f"{label}.dashboard_1w.rate must be numeric or null")
+            for field in ("runs", "fails", "test_fails", "infra_fails"):
+                if dashboard.get(field) is not None and (
+                    not isinstance(dashboard[field], int) or dashboard[field] < 0
+                ):
+                    raise ReportError(f"{label}.dashboard_1w.{field} is invalid")
+        if kind == "periodic":
+            payload = item.get("live_payload")
+            if not isinstance(payload, dict):
+                raise ReportError(f"{label}.live_payload must be an object")
+            tag = payload.get("tag") or ""
+            if not isinstance(tag, str):
+                raise ReportError(f"{label}.live_payload.tag must be a string")
+            if tag:
+                _grammar_string(tag, f"{label}.live_payload.tag", PAYLOAD_TAG_RE)
+            _grammar_string(payload.get("phase"), f"{label}.live_payload.phase", PHASE_RE)
+            for field in ("verification_state", "impact"):
+                _bounded_string(payload.get(field), f"{label}.live_payload.{field}", 100)
+            for field in ("verification_url", "release_status_url"):
+                url = payload.get(field) or ""
+                if not isinstance(url, str):
+                    raise ReportError(f"{label}.live_payload.{field} must be a string")
+                if url:
+                    (
+                        validate_verification_url(url)
+                        if field == "verification_url"
+                        else validate_public_url(url)
+                    )
+            uncertainty = payload.get("uncertainty") or ""
+            if not isinstance(uncertainty, str) or len(uncertainty) > 1000:
+                raise ReportError(f"{label}.live_payload.uncertainty is invalid")
+            _validate_trend(item.get("trend"), f"{label}.trend")
+        elif item.get("live_payload") is not None or item.get("trend") is not None:
+            raise ReportError(f"{label} presubmit payload and trend must be null")
+        runs = item.get("runs")
+        if not isinstance(runs, list) or len(runs) > MAX_SAMPLE_RUNS:
+            raise ReportError(f"{label}.runs must be a bounded list")
+        for run_index, run in enumerate(runs):
+            _validate_candidate_run(run, kind, f"{label}.runs[{run_index}]")
+        _validate_string_list(
+            item.get("coverage_uncertainties"),
+            f"{label}.coverage_uncertainties",
+            20,
+            500,
+        )
+    if len(ids) != len(set(ids)):
         raise ReportError("candidate IDs must be present and unique")
     return document
 
 
 def validate_judgments(
-    document: Any, expected_ids: set[str]
+    document: Any, candidate_kinds: dict[str, str]
 ) -> dict[str, dict[str, Any]]:
     if (
         not isinstance(document, dict)
@@ -1213,8 +1901,12 @@ def validate_judgments(
         identifier = judgment.get("candidate_id")
         if not isinstance(identifier, str) or identifier in by_id:
             raise ReportError("judgment candidate IDs must be present and unique")
-        if judgment.get("classification") not in ALLOWED_JUDGMENTS:
+        classification = judgment.get("classification")
+        kind = candidate_kinds.get(identifier)
+        if classification not in set().union(*KIND_JUDGMENTS.values()):
             raise ReportError(f"unsupported classification for {identifier}")
+        if kind and classification not in KIND_JUDGMENTS[kind]:
+            raise ReportError(f"unsupported {kind} classification for {identifier}")
         for field in ("summary", "signature", "next_action"):
             if not isinstance(judgment.get(field), str) or len(judgment[field]) > 1000:
                 raise ReportError(
@@ -1224,7 +1916,7 @@ def validate_judgments(
         if (
             not isinstance(evidence, list)
             or len(evidence) > 5
-            or any(not isinstance(item, str) for item in evidence)
+            or any(not isinstance(item, str) or len(item) > 300 for item in evidence)
         ):
             raise ReportError("recurring_evidence must contain at most five strings")
         tracking = judgment.get("tracking")
@@ -1243,7 +1935,12 @@ def validate_judgments(
                 )
         elif tracking.get("key"):
             raise ReportError("tracking gaps and none must not include an issue key")
+        if tracking["status"] != "none" and classification != "incident_candidate":
+            raise ReportError(
+                "tracking existing/gap is legal only for an incident_candidate"
+            )
         by_id[identifier] = judgment
+    expected_ids = set(candidate_kinds)
     if set(by_id) != expected_ids:
         missing = sorted(expected_ids - set(by_id))
         extra = sorted(set(by_id) - expected_ids)
@@ -1253,65 +1950,186 @@ def validate_judgments(
     return by_id
 
 
+def _format_rate(window: dict[str, Any]) -> str:
+    rate = window["rate"]
+    percentage = "No data" if rate is None else f"{rate * 100:.1f}%"
+    return (
+        f"{window['SUCCESS']}/{window['denominator']} ({percentage}); "
+        f"ABORTED {window['ABORTED']}, ERROR {window['ERROR']}"
+    )
+
+
+def _candidate_lines(candidate: dict[str, Any], judgment: dict[str, Any]) -> list[str]:
+    classification = judgment["classification"].replace("_", " ").title()
+    role = candidate["configured_role"]
+    platforms = ", ".join(escape_slack(item, 100) for item in role["platforms"]) or "none"
+    lines = [
+        f"• *Job:* {escape_slack(candidate['job_id'], 255)} — *{classification}*",
+        f"  ◦ Candidate: {candidate['candidate_id']} · deterministic trigger: "
+        f"{escape_slack(candidate['deterministic_trigger'], 100)}",
+    ]
+    if candidate["kind"] == "periodic":
+        lines.append(
+            "  ◦ Configured role: blocking verification "
+            f"{escape_slack(role['verification'], 255)} · stream "
+            f"{escape_slack(role['stream'], 255)} ({escape_slack(role['architecture'], 50)} "
+            f"{escape_slack(role['stream_kind'], 50)})"
+        )
+    else:
+        lines.append(
+            f"  ◦ Configured role: required presubmit for {escape_slack(candidate['branch'], 80)}"
+        )
+    lines.append(
+        f"  ◦ Platform/framework: {platforms} / {escape_slack(role['framework'], 255)}"
+    )
+    dashboard = candidate["dashboard_1w"]
+    if dashboard["status"] == "available":
+        dashboard_rate = dashboard.get("rate")
+        rate_text = "No testable data" if dashboard_rate is None else f"{dashboard_rate:.1f}%"
+        lines.append(
+            f"  ◦ Dashboard 1w: {rate_text} · runs {dashboard.get('runs')} · "
+            f"fails {dashboard.get('fails')} (test {dashboard.get('test_fails')}, "
+            f"infra {dashboard.get('infra_fails')})"
+        )
+    else:
+        lines.append("  ◦ Dashboard 1w: No dashboard data")
+    if candidate["kind"] == "periodic":
+        trend = candidate["trend"]
+        change = trend["change_points"]
+        change_text = "n/a" if change is None else f"{change:+.1f} pp"
+        lines.append(
+            f"  ◦ Exact trend ({escape_slack(trend['classification'], 40)}, {change_text}): "
+            f"current {_format_rate(trend['current'])}; baseline {_format_rate(trend['baseline'])}"
+        )
+        payload = candidate["live_payload"]
+        payload_text = (
+            f"{escape_slack(payload['tag'] or 'Unknown', 255)} · "
+            f"phase {escape_slack(payload['phase'], 64)} · verification "
+            f"{escape_slack(payload['verification_state'], 100)} · impact "
+            f"{escape_slack(payload['impact'], 100)}"
+        )
+        payload_links = []
+        if payload["release_status_url"]:
+            payload_links.append(f"<{payload['release_status_url']}|release status>")
+        if payload["verification_url"]:
+            payload_links.append(f"<{payload['verification_url']}|verification run>")
+        if payload_links:
+            payload_text += " · " + ", ".join(payload_links)
+        lines.append(f"  ◦ Live payload: {payload_text}")
+        if payload.get("uncertainty"):
+            lines.append(
+                f"  ◦ Payload uncertainty: {escape_slack(payload['uncertainty'], 1000)}"
+            )
+    lines.append(f"  ◦ Summary: {escape_slack(judgment['summary'])}")
+    lines.append(
+        f"  ◦ Verified signature: {escape_slack(judgment['signature']) or 'None verified'}"
+    )
+    for evidence in judgment["recurring_evidence"]:
+        lines.append(f"  ◦ Recurring evidence: {escape_slack(evidence, 300)}")
+    if candidate["runs"]:
+        lines.append("  ◦ Ordered timestamped runs:")
+        for run in candidate["runs"]:
+            timestamp = run.get("timestamp") or run.get("completed")
+            run_label = f"{escape_slack(run['id'], 255)} {escape_slack(run['state'], 40)}"
+            run_url = run.get("url") or ""
+            run_identity = f"<{run_url}|{run_label}>" if run_url else run_label
+            suffix = f" · {timestamp}"
+            if run.get("head_sha"):
+                suffix += f" · head {escape_slack(run['head_sha'], 64)}"
+            if run.get("payload_tag"):
+                suffix += f" · payload {escape_slack(run['payload_tag'], 255)}"
+            lines.append(f"    ◦ {run_identity}{suffix}")
+    else:
+        lines.append("  ◦ Ordered timestamped runs: None available")
+    uncertainties = list(candidate["coverage_uncertainties"])
+    if uncertainties:
+        for uncertainty in uncertainties:
+            lines.append(f"  ◦ Coverage uncertainty: {escape_slack(uncertainty, 500)}")
+    else:
+        lines.append("  ◦ Coverage uncertainty: None recorded")
+    tracking = judgment["tracking"]
+    if tracking["status"] == "existing":
+        tracking_text = f"{tracking['key']} (verified existing)"
+    elif tracking["status"] == "gap":
+        tracking_text = "Tracking issue needed — human follow-up only"
+    else:
+        tracking_text = "None"
+    lines.append(f"  ◦ Tracking: {escape_slack(tracking_text)}")
+    lines.append(f"  ◦ Next action: {escape_slack(judgment['next_action'])}")
+    return lines
+
+
+def _pack_replies(key: str, entries: list[list[str]]) -> list[str]:
+    header = f"*{escape_slack(key)}*"
+    continuation = f"*{escape_slack(key)}* _(continued)_"
+    replies: list[str] = []
+    lines = [header, ""]
+    for entry in entries:
+        for line in [*entry, ""]:
+            candidate = "\n".join([*lines, line]).rstrip()
+            if len(candidate) <= THREAD_REPLY_LIMIT:
+                lines.append(line)
+                continue
+            reply = "\n".join(lines).rstrip()
+            if not reply or len(reply) > THREAD_REPLY_LIMIT:
+                raise ReportError(f"thread evidence line exceeds {THREAD_REPLY_LIMIT} characters")
+            replies.append(reply)
+            lines = [continuation, "", line]
+            if len("\n".join(lines).rstrip()) > THREAD_REPLY_LIMIT:
+                raise ReportError(f"thread evidence line exceeds {THREAD_REPLY_LIMIT} characters")
+    final = "\n".join(lines).rstrip()
+    if final:
+        replies.append(final)
+    return replies
+
+
 def render_report(stage_one: str, candidates_doc: Any, judgments_doc: Any) -> str:
     if len(stage_one) > STAGE_ONE_LIMIT:
         raise ReportError(f"stage-one message exceeds {STAGE_ONE_LIMIT} characters")
     candidates_doc = validate_candidates_document(candidates_doc)
     candidates = candidates_doc["candidates"]
     judgments = validate_judgments(
-        judgments_doc, {item["candidate_id"] for item in candidates}
+        judgments_doc,
+        {item["candidate_id"]: item["kind"] for item in candidates},
     )
     if not candidates:
-        return stage_one
+        if candidates_doc["scope"]["state"] == "complete":
+            summary = "*No candidate judgments required* — deterministic collection found no candidates."
+        else:
+            summary = (
+                "*No candidate judgments requested* — collector scope is Unknown; "
+                "review the parent coverage warning."
+            )
+        return stage_one + "\n\n---THREAD_DETAILS---\n" + summary
 
     grouped: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
     order = []
     for candidate in candidates:
         key = (
-            f"OCP {candidate.get('release')}"
-            if candidate.get("kind") == "periodic"
-            else f"{candidate.get('branch')} → OCP {candidate.get('release')}"
+            f"OCP {candidate['release']}"
+            if candidate["kind"] == "periodic"
+            else f"{candidate['branch']} → OCP {candidate['release']}"
         )
         if key not in grouped:
             order.append(key)
         grouped[key].append((candidate, judgments[candidate["candidate_id"]]))
 
     replies = []
+    overflow = candidates_doc["scope"].get("candidate_overflow")
+    if overflow:
+        replies.append(
+            "*Coverage Unknown* — rendered "
+            f"{overflow['published']} of {overflow['total']} candidates; "
+            f"{overflow['omitted']} omitted by the explicit {escape_slack(overflow['priority'], 200)} policy."
+        )
     for key in order:
-        lines = [f"*{escape_slack(key)}*", ""]
-        for candidate, judgment in grouped[key]:
-            classification = judgment["classification"].replace("_", " ").title()
-            lines.append(f"• `{candidate['job_id']}` — *{classification}*")
-            lines.append(f"  ◦ Summary: {escape_slack(judgment['summary'])}")
-            lines.append(
-                f"  ◦ Signature: {escape_slack(judgment['signature']) or 'None verified'}"
-            )
-            if judgment["recurring_evidence"]:
-                evidence = "; ".join(
-                    escape_slack(item, 300) for item in judgment["recurring_evidence"]
-                )
-                lines.append(f"  ◦ Recurring evidence: {evidence}")
-            run_links = []
-            for run in candidate.get("runs", [])[:3]:
-                url = str(run.get("url") or "")
-                if url:
-                    validate_public_url(url)
-                    run_links.append(
-                        f"<{url}|{escape_slack(run.get('id'), 80)} {escape_slack(run.get('state'), 40)}>"
-                    )
-            if run_links:
-                lines.append(f"  ◦ Runs: {', '.join(run_links)}")
-            tracking = judgment["tracking"]
-            if tracking["status"] == "existing":
-                tracking_text = f"{tracking['key']} (verified existing)"
-            elif tracking["status"] == "gap":
-                tracking_text = "Tracking issue needed — human follow-up only"
-            else:
-                tracking_text = "None"
-            lines.append(f"  ◦ Tracking: {escape_slack(tracking_text)}")
-            lines.append(f"  ◦ Next action: {escape_slack(judgment['next_action'])}")
-            lines.append("")
-        replies.append(bound_text("\n".join(lines).rstrip(), THREAD_REPLY_LIMIT))
+        entries = [
+            _candidate_lines(candidate, judgment)
+            for candidate, judgment in grouped[key]
+        ]
+        replies.extend(_pack_replies(key, entries))
+    if any(len(reply) > THREAD_REPLY_LIMIT for reply in replies):
+        raise ReportError("renderer produced an oversized thread reply")
     return (
         stage_one
         + "\n\n---THREAD_DETAILS---\n"
@@ -1335,7 +2153,12 @@ def collect_command(args: argparse.Namespace) -> int:
         transport = FixtureTransport(Path(args.fixture_dir))
     else:
         transport = HTTPTransport(timeout=args.timeout)
-    stage_one, candidates = Collector(transport, as_of).collect()
+    stage_one, candidates = Collector(
+        transport,
+        as_of,
+        deadline_seconds=args.collection_deadline,
+        max_requests=args.max_requests,
+    ).collect()
     atomic_write(Path(args.slack_out), stage_one + "\n")
     atomic_write(
         Path(args.candidates_out),
@@ -1374,6 +2197,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     collect.add_argument(
         "--timeout", type=float, default=20.0, help="per-request timeout in seconds"
+    )
+    collect.add_argument(
+        "--collection-deadline",
+        type=float,
+        default=COLLECTION_DEADLINE_SECONDS,
+        help="overall collection deadline in seconds",
+    )
+    collect.add_argument(
+        "--max-requests",
+        type=int,
+        default=MAX_COLLECTION_REQUESTS,
+        help="overall public request budget",
     )
     collect.add_argument(
         "--fixture-dir", help="offline regex-manifest fixture directory"

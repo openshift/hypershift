@@ -13,7 +13,7 @@ python3 hack/ci/hypershift-ci-daily-health.py collect \
   --candidates-out /tmp/hypershift-ci-candidates.json
 ```
 
-The text file is a deterministic Slack parent message shorter than 2000 characters. The JSON file contains only bounded candidates and public evidence for later LLM judgment. Source failures are rendered as `Unknown`; they are never treated as healthy or as confirmed blockers.
+The text file is a deterministic Slack parent message shorter than 2000 characters. The JSON file contains only bounded candidates and public evidence for later LLM judgment. Collection has an overall deadline and request budget in addition to per-request limits. Source failures and explicit candidate count/byte overflow are rendered as `Unknown`; expected never-run Prow history is retained separately as visible `no_data` coverage rather than misreported as a transport outage.
 
 ## Render judgments
 
@@ -30,13 +30,13 @@ The judgment document must use `schema_version: 1` and contain exactly one entry
       "signature": "Verified repeated signature",
       "recurring_evidence": ["Evidence from two independent runs"],
       "next_action": "Human follow-up",
-      "tracking": {"status": "gap"}
+      "tracking": {"status": "none"}
     }
   ]
 }
 ```
 
-Allowed classifications are `not_permafailing`, `flaky`, `permafail_candidate`, `infrastructure_triage`, `one_off_failure`, `incident_candidate`, `payload_impact_unknown`, and `no_data`. Existing tracking must be a verified public OCPBUGS or CNTRLPLANE key; otherwise use `gap` or `none`.
+Presubmits allow `not_permafailing`, `flaky`, `permafail_candidate`, `infrastructure_triage`, `one_off_failure`, and `no_data`. Periodics allow `flaky`, `infrastructure_triage`, `one_off_failure`, `incident_candidate`, `payload_impact_unknown`, and `no_data`. Only a periodic `incident_candidate` can use `tracking.status` `existing` or `gap`; all other judgments use `none`. Existing tracking must be a verified public OCPBUGS or CNTRLPLANE key.
 
 ```console
 python3 hack/ci/hypershift-ci-daily-health.py render \
@@ -46,7 +46,7 @@ python3 hack/ci/hypershift-ci-daily-health.py render \
   --slack-out /tmp/hypershift-ci-report.txt
 ```
 
-The result preserves the parent text and uses `---THREAD_DETAILS---` and `---THREAD_BREAK---` for bounded same-thread replies.
+The result preserves the parent text and uses `---THREAD_DETAILS---` and `---THREAD_BREAK---` for bounded same-thread replies. Every candidate includes its deterministic role, Dashboard context, exact trend where applicable, timestamped run evidence, payload evidence, uncertainty, judgment, tracking state, and action. Large groups split across replies without slicing away candidates or actions; zero-candidate runs still emit a consistent thread summary.
 
 ## Offline verification
 
