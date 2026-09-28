@@ -498,7 +498,7 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 		}
 	}
 
-	// Always apply user-supplied NodeSelector entries. This preserves existing behaviour
+	// Always apply user-supplied NodeSelector entries. This preserves existing behavior
 	// for idle NodePools that do not yet carry the arch annotation.
 	if len(nodePool.Spec.Platform.Kubevirt.NodeSelector) > 0 {
 		vmTemplate.Spec.Template.Spec.NodeSelector = make(map[string]string, len(nodePool.Spec.Platform.Kubevirt.NodeSelector))

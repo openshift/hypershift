@@ -890,7 +890,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
-			name: "When arch is s390x and gate annotation is set but user already pinned kubernetes.io/arch, user value should take precedence",
+			name: "When arch is s390x and gate annotation is set but user already pinned kubernetes.io/arch, it should not overwrite the user value",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      poolName,
@@ -1999,9 +1999,9 @@ func TestDefaultImage(t *testing.T) {
 			expectedDigest: "sha256:x86_641234",
 		},
 		{
-			name:          "When arm64 architecture is used, it should return the aarch64 image",
-			arch:          hyperv1.ArchitectureARM64,
-			expectedImage: "quay.io/openshift/release@sha256:aarch641234",
+			name:           "When arm64 architecture is used, it should return the aarch64 image",
+			arch:           hyperv1.ArchitectureARM64,
+			expectedImage:  "quay.io/openshift/release@sha256:aarch641234",
 			expectedDigest: "sha256:aarch641234",
 		},
 		{
