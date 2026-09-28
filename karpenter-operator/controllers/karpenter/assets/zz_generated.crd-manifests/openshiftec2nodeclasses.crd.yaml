@@ -607,6 +607,18 @@ spec:
                   rule: self.all(k, k !='karpenter.sh/nodeclaim')
                 - message: tag contains a restricted tag matching karpenter.k8s.aws/ec2nodeclass
                   rule: self.all(k, k !='karpenter.k8s.aws/ec2nodeclass')
+              tuningConfig:
+                description: |-
+                  tuningConfig embeds Node Tuning Operator configurations to apply to nodes
+                  provisioned by this NodeClass. Each entry is a raw Tuned or PerformanceProfile
+                  manifest that is validated and forwarded to NTO at reconcile time.
+                items:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                maxItems: 10
+                minItems: 1
+                type: array
+                x-kubernetes-list-type: atomic
               version:
                 description: |-
                   version is an OpenShift version (e.g., "4.20.1") specifying the release version
