@@ -1380,18 +1380,19 @@ func TestFindAvailableNodes(t *testing.T) {
 func TestUpdateHostedClusterAnnotations(t *testing.T) {
 	tests := []struct {
 		name                string
+		seededAnnotations   map[string]string
 		nodesToUse          map[string]*corev1.Node
 		expectedAnnotations map[string]string
+		expectRemovedKeys   []string
 	}{
 		{
-			name: "When nodes have GoMemLimit, LBSubnets, and pair label, it should set all annotations",
+			name: "When nodes have GoMemLimit and pair label, it should set all annotations",
 			nodesToUse: map[string]*corev1.Node{
 				"zone-a": {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "n1",
 						Labels: map[string]string{
 							schedulerutil.GoMemLimitLabel:   "4096",
-							schedulerutil.LBSubnetsLabel:    "subnet-1.subnet-2",
 							OSDFleetManagerPairedNodesLabel: "pair-1",
 						},
 					},
@@ -1400,7 +1401,6 @@ func TestUpdateHostedClusterAnnotations(t *testing.T) {
 			expectedAnnotations: map[string]string{
 				hyperv1.HostedClusterScheduledAnnotation:     "true",
 				hyperv1.KubeAPIServerGOMemoryLimitAnnotation: "4096",
-				hyperv1.AWSLoadBalancerSubnetsAnnotation:     "subnet-1,subnet-2",
 				hyperv1.AWSLoadBalancerTargetNodesAnnotation: OSDFleetManagerPairedNodesLabel + "=pair-1",
 			},
 		},
@@ -1419,32 +1419,40 @@ func TestUpdateHostedClusterAnnotations(t *testing.T) {
 			},
 		},
 		{
-			name: "When LBSubnets use periods as separators, it should replace with commas",
+			name: "When the deprecated subnet annotation is present, it should be pruned",
+			seededAnnotations: map[string]string{
+				hyperv1.AWSLoadBalancerSubnetsAnnotation: "subnet-1,subnet-2",
+			},
 			nodesToUse: map[string]*corev1.Node{
 				"zone-a": {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "n1",
 						Labels: map[string]string{
-							schedulerutil.LBSubnetsLabel: "subnet-a.subnet-b.subnet-c",
+							OSDFleetManagerPairedNodesLabel: "pair-1",
 						},
 					},
 				},
 			},
 			expectedAnnotations: map[string]string{
-				hyperv1.HostedClusterScheduledAnnotation: "true",
-				hyperv1.AWSLoadBalancerSubnetsAnnotation: "subnet-a,subnet-b,subnet-c",
+				hyperv1.HostedClusterScheduledAnnotation:     "true",
+				hyperv1.AWSLoadBalancerTargetNodesAnnotation: OSDFleetManagerPairedNodesLabel + "=pair-1",
 			},
+			expectRemovedKeys: []string{hyperv1.AWSLoadBalancerSubnetsAnnotation},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
+			annotations := map[string]string{}
+			for k, v := range test.seededAnnotations {
+				annotations[k] = v
+			}
 			hc := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:   "test-ns",
 					Name:        "test-hc",
-					Annotations: map[string]string{},
+					Annotations: annotations,
 				},
 			}
 			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hc).Build()
@@ -1457,6 +1465,9 @@ func TestUpdateHostedClusterAnnotations(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			for key, value := range test.expectedAnnotations {
 				g.Expect(updated.Annotations).To(HaveKeyWithValue(key, value))
+			}
+			for _, key := range test.expectRemovedKeys {
+				g.Expect(updated.Annotations).ToNot(HaveKey(key))
 			}
 		})
 	}
