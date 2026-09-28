@@ -3630,6 +3630,30 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			},
 		},
 		{
+			name: "When the deprecated AESCBC backup key is present, it should set the condition to True with DeprecatedConfigurationInUse reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 9,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.AESCBC,
+						AESCBC: &hyperv1.AESCBCSpec{
+							ActiveKey: corev1.LocalObjectReference{Name: "active-key"},
+							BackupKey: &corev1.LocalObjectReference{Name: "backup-key"},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.DeprecatedConfigurationInUseReason,
+				Message:            "The deprecated spec.secretEncryption.aescbc.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after status.secretEncryption.activeKey is set",
+				ObservedGeneration: 9,
+			},
+		},
+		{
 			name: "When neither the logLevel field nor the deprecated annotation is set, it should set the condition to False with AsExpected reason",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{

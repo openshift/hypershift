@@ -9532,6 +9532,8 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 
 	const multiArchDeprecationMessage = "The deprecated spec.platform.aws.multiArch field is set to true; remove it because it is no longer used"
 
+	const aescbcBackupKeyDeprecationMessage = "The deprecated spec.secretEncryption.aescbc.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after status.secretEncryption.activeKey is set"
+
 	testCases := []struct {
 		name            string
 		hcAnnotations   map[string]string
@@ -9627,6 +9629,24 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			expectedStatus:  metav1.ConditionTrue,
 			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
 			expectedMessage: multiArchDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports a deprecated AESCBC backup key, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: aescbcBackupKeyDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: aescbcBackupKeyDeprecationMessage,
 		},
 		{
 			name: "When the HCP reports no deprecated configuration, it should set the condition to False",
