@@ -3,7 +3,6 @@ package manifests
 import (
 	"fmt"
 
-	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -17,15 +16,6 @@ import (
 const (
 	EtcdDefragName = "etcd-defrag-controller"
 )
-
-func EtcdStatefulSet(ns string) *appsv1.StatefulSet {
-	return &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "etcd",
-			Namespace: ns,
-		},
-	}
-}
 
 func EtcdDiscoveryService(ns string) *corev1.Service {
 	return &corev1.Service{

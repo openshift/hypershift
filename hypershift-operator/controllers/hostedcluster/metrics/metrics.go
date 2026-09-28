@@ -9,6 +9,7 @@ import (
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	platformgcp "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/gcp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
+	hcmetrics "github.com/openshift/hypershift/pkg/metrics/hostedcluster"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/conditions"
 
@@ -28,80 +29,41 @@ import (
 const (
 	HasBeenAvailableAnnotation = "hypershift.openshift.io/HasBeenAvailable"
 
-	// Aggregating metrics - name & help
-
-	CountByIdentityProviderMetricName = "hypershift_cluster_identity_providers" // What about renaming it to hypershift_clusters_by_identity_provider_type ?
-	countByIdentityProviderMetricHelp = "Number of HostedClusters for a given identity provider."
-
-	CountByPlatformMetricName = "hypershift_hostedclusters" // What about renaming it to hypershift_clusters_by_platform ?
-	countByPlatformMetricHelp = "Number of HostedClusters for a given platform."
-
-	CountByPlatformAndFailureConditionMetricName = "hypershift_hostedclusters_failure_conditions" // What about renaming it to hypershift_clusters_by_platform_and_failure_condition ?
+	countByIdentityProviderMetricHelp            = "Number of HostedClusters for a given identity provider."
+	countByPlatformMetricHelp                    = "Number of HostedClusters for a given platform."
 	countByPlatformAndFailureConditionMetricHelp = "Number of HostedClusters for a given platform and failure condition."
+	transitionDurationMetricHelp                 = "Time in seconds it took for conditions to become true since the creation of the HostedCluster."
 
-	TransitionDurationMetricName = "hypershift_hosted_cluster_transition_seconds" // What about renaming it to hypershift_hosted_clusters_transition_duration_seconds ?
-	transitionDurationMetricHelp = "Time in seconds it took for conditions to become true since the creation of the HostedCluster."
-
-	// Per hosted cluster metrics - name & help
-
-	WaitingInitialAvailabilityDurationMetricName = "hypershift_cluster_waiting_initial_availability_duration_seconds"
 	waitingInitialAvailabilityDurationMetricHelp = "Time in seconds it is taking to get the HostedClusterAvailable condition becoming true since the creation of the HostedCluster. " +
 		"Undefined if the condition has already become true once or if the cluster no longer exists."
 
-	InitialRollingOutDurationMetricName = "hypershift_cluster_initial_rolling_out_duration_seconds"
 	initialRollingOutDurationMetricHelp = "Time in seconds it is taking to roll out the initial version since the creation of the HostedCluster. " +
 		"Version is rolled out when its state is set to 'Completed' in the history. " +
 		"Undefined if this state has already been reached in the past or if the cluster no longer exists."
 
-	UpgradingDurationMetricName = "hypershift_cluster_upgrading_duration_seconds"
 	upgradingDurationMetricHelp = "Time in seconds it is taking to upgrade the HostedCluster / to roll out subsequent versions since the beginning of the update. " +
 		"Version is rolled out when its state is set to 'Completed' in the history. " +
 		"Undefined if the cluster is not upgrading or if the upgrade is finished or if the cluster no longer exists."
 
-	LimitedSupportEnabledMetricName = "hypershift_cluster_limited_support_enabled"
-	limitedSupportEnabledMetricHelp = "Indicates if the given HostedCluster is in limited support or not"
-
-	SilenceAlertsMetricName = "hypershift_cluster_silence_alerts"
-	silenceAlertsMetricHelp = "Indicates if the given HostedCluster is silenced or not"
-
-	ProxyMetricName = "hypershift_cluster_proxy"
-	proxyMetricHelp = "Indicates if the given HostedCluster is available through a proxy or not"
-
-	ProxyCAValidMetricName = "hypershift_cluster_proxy_ca_valid"
-	proxyCAValidMetricHelp = "Indicates if the given HostedCluster's proxy has a valid CA bundle configured"
-
-	ProxyCAExpiryTimestampName       = "hypershift_cluster_proxy_ca_expiry_timestamp"
+	limitedSupportEnabledMetricHelp  = "Indicates if the given HostedCluster is in limited support or not"
+	silenceAlertsMetricHelp          = "Indicates if the given HostedCluster is silenced or not"
+	proxyMetricHelp                  = "Indicates if the given HostedCluster is available through a proxy or not"
+	proxyCAValidMetricHelp           = "Indicates if the given HostedCluster's proxy has a valid CA bundle configured"
 	proxyCAExpiryTimestampMetricHelp = "Shows the earliest timestamp when a certificate in the configured CA will expire."
-
-	InvalidAwsCredsMetricName = "hypershift_cluster_invalid_aws_creds"
-	invalidAwsCredsMetricHelp = "AWS credential status for the HostedCluster: 0=valid, 1=invalid, 2=unknown"
-
-	InvalidGcpCredsMetricName = "hypershift_cluster_invalid_gcp_creds"
-	invalidGcpCredsMetricHelp = "GCP credential status for the HostedCluster: 0=valid, 1=invalid, 2=unknown"
-
-	DeletingDurationMetricName = "hypershift_cluster_deleting_duration_seconds"
-	deletingDurationMetricHelp = "Time in seconds it is taking to delete the HostedCluster since the beginning of the delete. " +
+	invalidAwsCredsMetricHelp        = "AWS credential status for the HostedCluster: 0=valid, 1=invalid, 2=unknown"
+	invalidGcpCredsMetricHelp        = "GCP credential status for the HostedCluster: 0=valid, 1=invalid, 2=unknown"
+	deletingDurationMetricHelp       = "Time in seconds it is taking to delete the HostedCluster since the beginning of the delete. " +
 		"Undefined if the cluster is not deleting or no longer exists."
-
-	GuestCloudResourcesDeletingDurationMetricName = "hypershift_cluster_guest_cloud_resources_deleting_duration_seconds"
 	guestCloudResourcesDeletingDurationMetricHelp = "Time in seconds it is taking to get the CloudResourcesDestroyed condition become true since the beginning of the delete of the HostedCluster. " +
 		"Undefined if the cluster is not deleting/no longer exists or if the condition has already become true."
-
-	EtcdManualInterventionRequiredMetricName = "hypershift_etcd_manual_intervention_required"
 	etcdManualInterventionRequiredMetricHelp = "Indicates that manual intervention is required to recover the ETCD cluster"
+	clusterSizeOverrideMetricHelp            = "Number of HostedClusters with a cluster size override annotation"
 
-	ClusterSizeOverrideMetricName = "hypershift_cluster_size_override_instances"
-	clusterSizeOverrideMetricHelp = "Number of HostedClusters with a cluster size override annotation"
-
-	HostedClusterManagedAzureInfoMetricName = "hosted_cluster_managed_azure_info"
 	HostedClusterManagedAzureInfoMetricHelp = "Reports Azure managed (ARO) specific information about the given HostedCluster"
 	// see https://github.com/Azure/ARO-HCP/blob/4134b5bb53782858047a0493f31b250c811eb84c/api/redhatopenshift/resource-manager/Microsoft.RedHatOpenShift/hcpclusters/preview/2024-06-10-preview/openapi.json#L131
 	HostedClusterManagedAzureResourceType = "hcpOpenShiftClusters"
 
-	HostedClusterAzureInfoMetricName = "hosted_cluster_azure_info"
-	HostedClusterAzureInfoMetricHelp = "Reports Azure information about the given HostedCluster"
-
-	AcrPullIdentityConfiguredMetricName = "hypershift_cluster_acr_pull_identity_configured"
+	HostedClusterAzureInfoMetricHelp    = "Reports Azure information about the given HostedCluster"
 	acrPullIdentityConfiguredMetricHelp = "Indicates whether a HostedCluster has an ACR pull managed identity configured (1=configured, 0=not configured). Only emitted for Azure platform clusters."
 )
 
@@ -126,17 +88,17 @@ var (
 
 	// Metrics descriptions
 	countByIdentityProviderMetricDesc = prometheus.NewDesc(
-		CountByIdentityProviderMetricName,
+		hcmetrics.CountByIdentityProviderMetricName,
 		countByIdentityProviderMetricHelp,
 		[]string{"identity_provider"}, nil)
 
 	countByPlatformMetricDesc = prometheus.NewDesc(
-		CountByPlatformMetricName,
+		hcmetrics.CountByPlatformMetricName,
 		countByPlatformMetricHelp,
 		[]string{"platform"}, nil)
 
 	countByPlatformAndFailureConditionMetricDesc = prometheus.NewDesc(
-		CountByPlatformAndFailureConditionMetricName,
+		hcmetrics.CountByPlatformAndFailureConditionMetricName,
 		countByPlatformAndFailureConditionMetricHelp,
 		[]string{"platform", "condition"}, nil)
 
@@ -144,65 +106,65 @@ var (
 	hclusterLabels = []string{"namespace", "name", "_id"}
 
 	waitingInitialAvailabilityDurationMetricDesc = prometheus.NewDesc(
-		WaitingInitialAvailabilityDurationMetricName,
+		hcmetrics.WaitingInitialAvailabilityDurationMetricName,
 		waitingInitialAvailabilityDurationMetricHelp,
 		hclusterLabels, nil)
 
 	initialRollingOutDurationMetricDesc = prometheus.NewDesc(
-		InitialRollingOutDurationMetricName,
+		hcmetrics.InitialRollingOutDurationMetricName,
 		initialRollingOutDurationMetricHelp,
 		hclusterLabels, nil)
 
 	upgradingDurationMetricDesc = prometheus.NewDesc(
-		UpgradingDurationMetricName, upgradingDurationMetricHelp,
+		hcmetrics.UpgradingDurationMetricName, upgradingDurationMetricHelp,
 		append(hclusterLabels, "previous_version", "new_version"), nil)
 
 	limitedSupportEnabledMetricDesc = prometheus.NewDesc(
-		LimitedSupportEnabledMetricName, limitedSupportEnabledMetricHelp,
+		hcmetrics.LimitedSupportEnabledMetricName, limitedSupportEnabledMetricHelp,
 		hclusterLabels, nil)
 
 	silenceAlertsMetricDesc = prometheus.NewDesc(
-		SilenceAlertsMetricName, silenceAlertsMetricHelp,
+		hcmetrics.SilenceAlertsMetricName, silenceAlertsMetricHelp,
 		hclusterLabels, nil)
 
 	proxyMetricDesc = prometheus.NewDesc(
-		ProxyMetricName, proxyMetricHelp,
+		hcmetrics.ProxyMetricName, proxyMetricHelp,
 		append(hclusterLabels, "proxy_http", "proxy_https", "proxy_trusted_ca"), nil)
 
 	proxyCAMetricDesc = prometheus.NewDesc(
-		ProxyCAValidMetricName, proxyCAValidMetricHelp,
+		hcmetrics.ProxyCAValidMetricName, proxyCAValidMetricHelp,
 		hclusterLabels, nil)
 
 	proxyCAExpiryMetricDesc = prometheus.NewDesc(
-		ProxyCAExpiryTimestampName, proxyCAExpiryTimestampMetricHelp,
+		hcmetrics.ProxyCAExpiryTimestampName, proxyCAExpiryTimestampMetricHelp,
 		hclusterLabels, nil)
 
 	invalidAwsCredsMetricDesc = prometheus.NewDesc(
-		InvalidAwsCredsMetricName, invalidAwsCredsMetricHelp,
+		hcmetrics.InvalidAwsCredsMetricName, invalidAwsCredsMetricHelp,
 		hclusterLabels, nil)
 
 	invalidGcpCredsMetricDesc = prometheus.NewDesc(
-		InvalidGcpCredsMetricName, invalidGcpCredsMetricHelp,
+		hcmetrics.InvalidGcpCredsMetricName, invalidGcpCredsMetricHelp,
 		hclusterLabels, nil)
 
 	deletingDurationMetricDesc = prometheus.NewDesc(
-		DeletingDurationMetricName, deletingDurationMetricHelp,
+		hcmetrics.DeletingDurationMetricName, deletingDurationMetricHelp,
 		hclusterLabels, nil)
 
 	guestCloudResourcesDeletingDurationMetricDesc = prometheus.NewDesc(
-		GuestCloudResourcesDeletingDurationMetricName, guestCloudResourcesDeletingDurationMetricHelp,
+		hcmetrics.GuestCloudResourcesDeletingDurationMetricName, guestCloudResourcesDeletingDurationMetricHelp,
 		hclusterLabels, nil)
 
 	etcdManualInterventionRequiredMetricDesc = prometheus.NewDesc(
-		EtcdManualInterventionRequiredMetricName, etcdManualInterventionRequiredMetricHelp,
+		hcmetrics.EtcdManualInterventionRequiredMetricName, etcdManualInterventionRequiredMetricHelp,
 		append(hclusterLabels, "environment", "internal_id"), nil)
 
 	clusterSizeOverrideMetricDesc = prometheus.NewDesc(
-		ClusterSizeOverrideMetricName, clusterSizeOverrideMetricHelp,
+		hcmetrics.ClusterSizeOverrideMetricName, clusterSizeOverrideMetricHelp,
 		append(hclusterLabels, "environment", "internal_id", "size"), nil)
 
 	managedAzureHostedClusterInfoDesc = prometheus.NewDesc(
-		HostedClusterManagedAzureInfoMetricName, HostedClusterManagedAzureInfoMetricHelp,
+		hcmetrics.HostedClusterManagedAzureInfoMetricName, HostedClusterManagedAzureInfoMetricHelp,
 		append(hclusterLabels,
 			"location",
 			"microsoft_subscription_id",
@@ -211,14 +173,14 @@ var (
 			"microsoft_resource_id"), nil)
 
 	azureHostedClusterInfoDesc = prometheus.NewDesc(
-		HostedClusterAzureInfoMetricName, HostedClusterAzureInfoMetricHelp,
+		hcmetrics.HostedClusterAzureInfoMetricName, HostedClusterAzureInfoMetricHelp,
 		append(hclusterLabels,
 			"location",
 			"microsoft_subscription_id",
 			"microsoft_resource_group_name"), nil)
 
 	acrPullIdentityConfiguredMetricDesc = prometheus.NewDesc(
-		AcrPullIdentityConfiguredMetricName, acrPullIdentityConfiguredMetricHelp,
+		hcmetrics.AcrPullIdentityConfiguredMetricName, acrPullIdentityConfiguredMetricHelp,
 		hclusterLabels, nil)
 )
 
@@ -236,7 +198,7 @@ func createHostedClustersMetricsCollector(client client.Client, clock clock.Cloc
 		Client: client,
 		clock:  clock,
 		transitionDurationMetric: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    TransitionDurationMetricName,
+			Name:    hcmetrics.TransitionDurationMetricName,
 			Help:    transitionDurationMetricHelp,
 			Buckets: []float64{5, 10, 20, 30, 60, 90, 120, 180, 240, 300, 360, 480, 600},
 		}, []string{"condition"}),

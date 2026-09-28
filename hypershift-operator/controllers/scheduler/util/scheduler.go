@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	pkgscheduler "github.com/openshift/hypershift/pkg/scheduler"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -16,8 +17,7 @@ import (
 )
 
 const (
-	GoMemLimitLabel = "hypershift.openshift.io/request-serving-gomemlimit"
-	LBSubnetsLabel  = "hypershift.openshift.io/request-serving-subnets"
+	LBSubnetsLabel = "hypershift.openshift.io/request-serving-subnets"
 )
 
 // setHostedClusterSchedulingAnnotations sets the scheduling annotations on the hosted cluster based on the cluster sizing configuration.
@@ -134,8 +134,8 @@ func getLBSubnetsFromNodes(nodes []corev1.Node) string {
 
 func getGoMemLimitLabelFromNodes(nodes []corev1.Node) string {
 	for _, node := range nodes {
-		if node.Labels[GoMemLimitLabel] != "" {
-			return node.Labels[GoMemLimitLabel]
+		if node.Labels[pkgscheduler.GoMemLimitLabel] != "" {
+			return node.Labels[pkgscheduler.GoMemLimitLabel]
 		}
 	}
 	return ""

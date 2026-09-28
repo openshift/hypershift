@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
@@ -272,7 +273,7 @@ func reconcileExternalRoute(route *routev1.Route, owner *metav1.OwnerReference, 
 	route.Spec.Host = hostname
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
-		Name: manifests.KubeAPIServerService("").Name,
+		Name: cpomanifests.KubeAPIServerService("").Name,
 	}
 	route.Spec.TLS = &routev1.TLSConfig{
 		Termination:                   routev1.TLSTerminationPassthrough,
@@ -287,7 +288,7 @@ func ReconcileInternalRoute(route *routev1.Route, owner *metav1.OwnerReference) 
 	k8sutil.EnsureOwnerRef(route, owner)
 	route.Spec.Host = fmt.Sprintf("api.%s.hypershift.local", owner.Name)
 	// Assumes owner is the HCP
-	return netutil.ReconcileInternalRoute(route, "", manifests.KubeAPIServerService("").Name)
+	return netutil.ReconcileInternalRoute(route, "", cpomanifests.KubeAPIServerService("").Name)
 }
 
 func ReconcileKonnectivityServerLocalService(svc *corev1.Service, ownerRef config.OwnerRef) error {

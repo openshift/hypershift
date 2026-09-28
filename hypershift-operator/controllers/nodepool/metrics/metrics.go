@@ -8,7 +8,8 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/pkg/manifests"
+	npmetrics "github.com/openshift/hypershift/pkg/metrics/nodepool"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/conditions"
 
@@ -30,42 +31,26 @@ import (
 )
 
 const (
-	// Aggregating metrics - name & help
-
-	CountByPlatformMetricName = "hypershift_nodepools" // What about renaming it to hypershift_nodepools_by_platform ?
-	countByPlatformMetricHelp = "Number of NodePools for a given platform."
-
-	CountByPlatformAndFailureConditionMetricName = "hypershift_nodepools_failure_conditions" // What about renaming it to hypershift_nodepools_by_platform_and_failure_condition ?
+	countByPlatformMetricHelp                    = "Number of NodePools for a given platform."
 	countByPlatformAndFailureConditionMetricHelp = "Number of NodePools for a given platform and failure condition."
+	countByHClusterMetricHelp                    = "Number of NodePools for a given HostedCluster"
 
-	CountByHClusterMetricName = "hypershift_hostedcluster_nodepools" // What about renaming it to hypershift_cluster_nodepools ?
-	countByHClusterMetricHelp = "Number of NodePools for a given HostedCluster"
-
-	VCpusCountByHClusterMetricName = "hypershift_cluster_vcpus"
 	VCpusCountByHClusterMetricHelp = "Number of virtual CPUs as reported by the platform for a given HostedCluster. " +
-		"-1 if this number cannot be computed." // Be careful when changing this metric as it is used for billing the customers
+		"-1 if this number cannot be computed."
 
-	VCpusComputationErrorByHClusterMetricName = "hypershift_cluster_vcpus_computation_error"
-	VCpusComputationErrorByHClusterMetricHelp = "Defined if and only if " + VCpusCountByHClusterMetricName + " is cannot be computed and is set to -1. " +
+	VCpusComputationErrorByHClusterMetricHelp = "Defined if and only if " + npmetrics.VCpusCountByHClusterMetricName + " is cannot be computed and is set to -1. " +
 		"Reason is given by the reason label which only takes a finite number of values."
 
-	TransitionDurationMetricName = "hypershift_nodepools_transition_seconds" // What about renaming it to hypershift_nodepools_transition_duration_seconds ?
 	transitionDurationMetricHelp = "Time in seconds it took for conditions to become true since the creation of the NodePool."
 
-	// Per node pool metrics - name
-
-	InitialRollingOutDurationMetricName = "hypershift_nodepools_initial_rolling_out_duration_seconds" // What about renaming it to hypershift_nodepool_initial_rolling_out_duration_seconds ?
 	initialRollingOutDurationMetricHelp = "Time in seconds it is taking to roll out the initial version since the creation of the NodePool" +
 		"Version is rolled out when the corresponding MachineDeployment has its number of available replicas matches the number of wished replicas. " +
 		"Undefined if the number of available replicas is already reached or if the node pool no longer exists."
 
-	SizeMetricName = "hypershift_nodepools_size" // What about renaming it to hypershift_nodepool_size ?
 	sizeMetricHelp = "Number of desired replicas associated with a given NodePool"
 
-	AvailableReplicasMetricName = "hypershift_nodepools_available_replicas" // What about renaming it to hypershift_nodepool_available_replicas ?
 	availableReplicasMetricHelp = "Number of available replicas associated with a given NodePool"
 
-	DeletingDurationMetricName = "hypershift_nodepools_deleting_duration_seconds" // What about renaming it to hypershift_nodepool_deleting_duration_seconds ?
 	deletingDurationMetricHelp = "Time in seconds it is taking to delete the NodePool since the beginning of the delete. " +
 		"Undefined if the node pool is not deleting or no longer exists."
 )
@@ -84,29 +69,29 @@ var (
 
 	// Metrics descriptions
 	countByPlatformMetricDesc = prometheus.NewDesc(
-		CountByPlatformMetricName,
+		npmetrics.CountByPlatformMetricName,
 		countByPlatformMetricHelp,
 		[]string{"platform"}, nil)
 
 	countByPlatformAndFailureConditionMetricDesc = prometheus.NewDesc(
-		CountByPlatformAndFailureConditionMetricName,
+		npmetrics.CountByPlatformAndFailureConditionMetricName,
 		countByPlatformAndFailureConditionMetricHelp,
 		[]string{"platform", "condition"}, nil)
 
 	hclusterLabels = []string{"namespace", "name", "_id", "platform"}
 
 	countByHClusterMetricDesc = prometheus.NewDesc(
-		CountByHClusterMetricName,
+		npmetrics.CountByHClusterMetricName,
 		countByHClusterMetricHelp,
 		hclusterLabels, nil)
 
 	vCpusCountByHClusterMetricDesc = prometheus.NewDesc(
-		VCpusCountByHClusterMetricName,
+		npmetrics.VCpusCountByHClusterMetricName,
 		VCpusCountByHClusterMetricHelp,
 		hclusterLabels, nil)
 
 	vCpusComputationErrorByHClusterMetricDesc = prometheus.NewDesc(
-		VCpusComputationErrorByHClusterMetricName,
+		npmetrics.VCpusComputationErrorByHClusterMetricName,
 		VCpusComputationErrorByHClusterMetricHelp,
 		append(hclusterLabels, "reason"), nil)
 
@@ -114,22 +99,22 @@ var (
 	nodePoolLabels = []string{"namespace", "name", "_id", "cluster_name", "platform"}
 
 	initialRollingOutDurationMetricDesc = prometheus.NewDesc(
-		InitialRollingOutDurationMetricName,
+		npmetrics.InitialRollingOutDurationMetricName,
 		initialRollingOutDurationMetricHelp,
 		nodePoolLabels, nil)
 
 	sizeMetricDesc = prometheus.NewDesc(
-		SizeMetricName,
+		npmetrics.SizeMetricName,
 		sizeMetricHelp,
 		nodePoolLabels, nil)
 
 	availableReplicasMetricDesc = prometheus.NewDesc(
-		AvailableReplicasMetricName,
+		npmetrics.AvailableReplicasMetricName,
 		availableReplicasMetricHelp,
 		nodePoolLabels, nil)
 
 	deletingDurationMetricDesc = prometheus.NewDesc(
-		DeletingDurationMetricName,
+		npmetrics.DeletingDurationMetricName,
 		deletingDurationMetricHelp,
 		nodePoolLabels, nil)
 )
@@ -162,7 +147,7 @@ func createNodePoolsMetricsCollector(client client.Client, ec2Client ec2.Describ
 		ec2InstanceTypeToVCpusCount: make(map[string]int32),
 		awsInstanceTypeUnknown:      sets.New[string](),
 		transitionDurationMetric: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    TransitionDurationMetricName,
+			Name:    npmetrics.TransitionDurationMetricName,
 			Help:    transitionDurationMetricHelp,
 			Buckets: []float64{5, 10, 20, 30, 60, 90, 120, 180, 240, 300, 360, 480, 600},
 		}, []string{"condition"}),

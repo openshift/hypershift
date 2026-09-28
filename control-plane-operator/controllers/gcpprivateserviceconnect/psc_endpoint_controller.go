@@ -9,7 +9,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
@@ -464,9 +464,9 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileExternalServices(ctx conte
 			var svc *corev1.Service
 			switch svcType {
 			case "api":
-				svc = manifests.KubeAPIServerExternalPrivateService(hcp.Namespace)
+				svc = cpomanifests.KubeAPIServerExternalPrivateService(hcp.Namespace)
 			case "oauth":
-				svc = manifests.OauthServerExternalPrivateService(hcp.Namespace)
+				svc = cpomanifests.OauthServerExternalPrivateService(hcp.Namespace)
 			}
 			if _, err := r.CreateOrUpdate(ctx, r, svc, func() error {
 				log.Info("Reconciling external name service for GCP PSC", "service", svc.Name, "externalName", externalName)

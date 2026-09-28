@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	pkgscheduler "github.com/openshift/hypershift/pkg/scheduler"
 	"github.com/openshift/hypershift/support/testutil"
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
@@ -272,7 +273,7 @@ func scheduled(indices ...int) func([]corev1.Pod) {
 func withPodPairLabel(pair string, indices ...int) func([]corev1.Pod) {
 	return func(pods []corev1.Pod) {
 		for _, i := range indices {
-			pods[i].Spec.NodeSelector[OSDFleetManagerPairedNodesLabel] = pair
+			pods[i].Spec.NodeSelector[pkgscheduler.OSDFleetManagerPairedNodesLabel] = pair
 		}
 	}
 }
@@ -306,9 +307,9 @@ func machineSets(count int, mods ...func([]machinev1beta1.MachineSet)) []machine
 					Spec: machinev1beta1.MachineSpec{
 						ObjectMeta: machinev1beta1.ObjectMeta{
 							Labels: map[string]string{
-								hyperv1.NodeSizeLabel:                "small",
-								OSDFleetManagerPairedNodesLabel:      fmt.Sprintf("pair-%d", i/2),
-								hyperv1.RequestServingComponentLabel: "true",
+								hyperv1.NodeSizeLabel:                        "small",
+								pkgscheduler.OSDFleetManagerPairedNodesLabel: fmt.Sprintf("pair-%d", i/2),
+								hyperv1.RequestServingComponentLabel:         "true",
 							},
 						},
 					},
@@ -333,10 +334,10 @@ func nodes(count int, mods ...func([]corev1.Node)) []corev1.Node {
 					"machine.openshift.io/machine": fmt.Sprintf("openshift-machine-api/machine-%d", i),
 				},
 				Labels: map[string]string{
-					hyperv1.RequestServingComponentLabel: "true",
-					hyperv1.NodeSizeLabel:                "small",
-					OSDFleetManagerPairedNodesLabel:      fmt.Sprintf("pair-%d", pair),
-					hyperv1.HostedClusterLabel:           "hc-name",
+					hyperv1.RequestServingComponentLabel:         "true",
+					hyperv1.NodeSizeLabel:                        "small",
+					pkgscheduler.OSDFleetManagerPairedNodesLabel: fmt.Sprintf("pair-%d", pair),
+					hyperv1.HostedClusterLabel:                   "hc-name",
 				},
 			},
 		})
@@ -368,7 +369,7 @@ func withSizeLabel(size string, indices ...int) func([]corev1.Node) {
 func withPairLabel(pair string, indices ...int) func([]corev1.Node) {
 	return func(nodes []corev1.Node) {
 		for _, i := range indices {
-			nodes[i].Labels[OSDFleetManagerPairedNodesLabel] = pair
+			nodes[i].Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel] = pair
 		}
 	}
 }
@@ -884,8 +885,8 @@ func TestCollectTakenPairLabels(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "n1",
 						Labels: map[string]string{
-							hyperv1.HostedClusterLabel:      "ns-hc1",
-							OSDFleetManagerPairedNodesLabel: "pair-a",
+							hyperv1.HostedClusterLabel:                   "ns-hc1",
+							pkgscheduler.OSDFleetManagerPairedNodesLabel: "pair-a",
 						},
 					},
 				},
@@ -893,8 +894,8 @@ func TestCollectTakenPairLabels(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "n2",
 						Labels: map[string]string{
-							hyperv1.HostedClusterLabel:      "ns-hc2",
-							OSDFleetManagerPairedNodesLabel: "pair-b",
+							hyperv1.HostedClusterLabel:                   "ns-hc2",
+							pkgscheduler.OSDFleetManagerPairedNodesLabel: "pair-b",
 						},
 					},
 				},
@@ -909,7 +910,7 @@ func TestCollectTakenPairLabels(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "n1",
 						Labels: map[string]string{
-							OSDFleetManagerPairedNodesLabel: "pair-a",
+							pkgscheduler.OSDFleetManagerPairedNodesLabel: "pair-a",
 						},
 					},
 				},
@@ -929,7 +930,7 @@ func TestCollectTakenPairLabels(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "n1",
 						Labels: map[string]string{
-							OSDFleetManagerPairedNodesLabel: "pair-c",
+							pkgscheduler.OSDFleetManagerPairedNodesLabel: "pair-c",
 						},
 					},
 				},
@@ -943,7 +944,7 @@ func TestCollectTakenPairLabels(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{Name: "p1"},
 					Spec: corev1.PodSpec{
 						NodeSelector: map[string]string{
-							OSDFleetManagerPairedNodesLabel: "pair-d",
+							pkgscheduler.OSDFleetManagerPairedNodesLabel: "pair-d",
 						},
 					},
 				},
@@ -958,7 +959,7 @@ func TestCollectTakenPairLabels(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{Name: "p1"},
 					Spec: corev1.PodSpec{
 						NodeSelector: map[string]string{
-							OSDFleetManagerPairedNodesLabel: "pair-from-pod",
+							pkgscheduler.OSDFleetManagerPairedNodesLabel: "pair-from-pod",
 						},
 					},
 				},
@@ -968,8 +969,8 @@ func TestCollectTakenPairLabels(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "n1",
 						Labels: map[string]string{
-							hyperv1.HostedClusterLabel:      "ns-hc1",
-							OSDFleetManagerPairedNodesLabel: "pair-from-node",
+							hyperv1.HostedClusterLabel:                   "ns-hc1",
+							pkgscheduler.OSDFleetManagerPairedNodesLabel: "pair-from-node",
 						},
 					},
 				},
@@ -1004,9 +1005,9 @@ func TestScaleMachineSetsForRequirement(t *testing.T) {
 					Spec: machinev1beta1.MachineSpec{
 						ObjectMeta: machinev1beta1.ObjectMeta{
 							Labels: map[string]string{
-								hyperv1.NodeSizeLabel:                sizeLabel,
-								OSDFleetManagerPairedNodesLabel:      pairLabel,
-								hyperv1.RequestServingComponentLabel: reqServingLabel[hyperv1.RequestServingComponentLabel],
+								hyperv1.NodeSizeLabel:                        sizeLabel,
+								pkgscheduler.OSDFleetManagerPairedNodesLabel: pairLabel,
+								hyperv1.RequestServingComponentLabel:         reqServingLabel[hyperv1.RequestServingComponentLabel],
 							},
 						},
 					},
@@ -1026,9 +1027,9 @@ func TestScaleMachineSetsForRequirement(t *testing.T) {
 					machineNameNodeAnnotation: "openshift-machine-api/" + name + "-machine",
 				},
 				Labels: map[string]string{
-					hyperv1.RequestServingComponentLabel: "true",
-					hyperv1.NodeSizeLabel:                sizeLabel,
-					OSDFleetManagerPairedNodesLabel:      pairLabel,
+					hyperv1.RequestServingComponentLabel:         "true",
+					hyperv1.NodeSizeLabel:                        sizeLabel,
+					pkgscheduler.OSDFleetManagerPairedNodesLabel: pairLabel,
 				},
 			},
 		}
@@ -1122,9 +1123,9 @@ func TestPickAvailableMachineSetPairs(t *testing.T) {
 					Spec: machinev1beta1.MachineSpec{
 						ObjectMeta: machinev1beta1.ObjectMeta{
 							Labels: map[string]string{
-								hyperv1.NodeSizeLabel:                sizeLabel,
-								OSDFleetManagerPairedNodesLabel:      pairLabel,
-								hyperv1.RequestServingComponentLabel: "true",
+								hyperv1.NodeSizeLabel:                        sizeLabel,
+								pkgscheduler.OSDFleetManagerPairedNodesLabel: pairLabel,
+								hyperv1.RequestServingComponentLabel:         "true",
 							},
 						},
 					},

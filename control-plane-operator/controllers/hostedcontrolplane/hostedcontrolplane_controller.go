@@ -73,6 +73,7 @@ import (
 	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	ignitionmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/awsapi"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
@@ -446,7 +447,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, 
 	switch hostedControlPlane.Spec.Etcd.ManagementType {
 	case hyperv1.Managed:
 		r.Log.Info("Reconciling etcd cluster status for managed strategy")
-		sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
+		sts := cpomanifests.EtcdStatefulSet(hostedControlPlane.Namespace)
 		if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err != nil {
 			if apierrors.IsNotFound(err) {
 				newCondition = metav1.Condition{
@@ -481,7 +482,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, 
 		restoreCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
 		if restoreCondition == nil {
 			r.Log.Info("Reconciling etcd cluster restore status")
-			sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
+			sts := cpomanifests.EtcdStatefulSet(hostedControlPlane.Namespace)
 			if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err == nil {
 				rc := metav1.Condition{}
 				conditionPtr := r.etcdRestoredCondition(ctx, sts)
@@ -1003,12 +1004,12 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		// When the cluster is private, checking the load balancers will depend on whether the load balancer is
 		// using the right subnets. To avoid uncertainty, we'll limit the check to the service endpoint.
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort, r.KASHealthMetrics)
+			return healthCheckKASEndpoint(ctx, cpomanifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort, r.KASHealthMetrics)
 		}
-		return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCPort, r.KASHealthMetrics)
+		return healthCheckKASEndpoint(ctx, cpomanifests.KubeAPIServerService("").Name, config.KASSVCPort, r.KASHealthMetrics)
 	case serviceStrategy.Type == hyperv1.Route:
 		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
-			externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
+			externalRoute := cpomanifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
 			if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
 				return fmt.Errorf("failed to get kube apiserver external route: %w", err)
 			}
@@ -1020,7 +1021,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 			return healthCheckKASEndpoint(ctx, endpoint, port, r.KASHealthMetrics)
 		}
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
-		svc := manifests.KubeAPIServerService(hcp.Namespace)
+		svc := cpomanifests.KubeAPIServerService(hcp.Namespace)
 		port := config.KASSVCPort
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 			port = config.KASSVCIBMCloudPort
@@ -1029,7 +1030,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 			hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform) {
 			// If Azure or Kubevirt on Azure we get the SVC handling the LB.
 			// TODO(alberto): remove this hack when having proper traffic management for Azure.
-			svc = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
+			svc = cpomanifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
 			port = config.KASSVCLBAzurePort
 		}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
@@ -3470,7 +3471,7 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 }
 
 func setKASCustomKubeconfigStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane, c client.Client) error {
-	customKubeconfig := manifests.KASCustomKubeconfigSecret(hcp.Namespace, nil)
+	customKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcp.Namespace, nil)
 	if err := c.Get(ctx, client.ObjectKeyFromObject(customKubeconfig), customKubeconfig); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get custom kubeconfig secret: %w", err)

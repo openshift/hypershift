@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
@@ -629,7 +630,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var awsEndpointServiceList hyperv1.AWSEndpointServiceList
 		if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{
@@ -647,7 +648,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 
 	// Copy GCPEndpointAvailable and GCPServiceAttachmentAvailable conditions from the GCPPrivateServiceConnect resources.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var gcpPSCList hyperv1.GCPPrivateServiceConnectList
 		if err := r.List(ctx, &gcpPSCList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{
@@ -666,7 +667,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	// Copy Azure Private Link conditions from the AzurePrivateLinkService resources.
 	// ARO HCP uses Swift networking, not Private Link Services.
 	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform && !netutil.UseSwiftNetworkingHC(hcluster) {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var azPLSList hyperv1.AzurePrivateLinkServiceList
 		if err := r.List(ctx, &azPLSList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{

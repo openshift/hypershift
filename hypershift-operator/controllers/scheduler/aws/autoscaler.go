@@ -12,6 +12,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	pkgscheduler "github.com/openshift/hypershift/pkg/scheduler"
 	"github.com/openshift/hypershift/support/k8sutil"
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
@@ -209,10 +210,10 @@ func (r *MachineSetDescaler) Reconcile(ctx context.Context, req ctrl.Request) (c
 // given a node labeled for a HostedCluster that no longer exists
 func nodeMachineSetsToScaleDown(node *corev1.Node, machineSets []machinev1beta1.MachineSet, machines []machinev1beta1.Machine, nodes []corev1.Node) []machinev1beta1.MachineSet {
 	var nodesToScaleDown []corev1.Node
-	pairLabel := node.Labels[OSDFleetManagerPairedNodesLabel]
+	pairLabel := node.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel]
 	if pairLabel != "" {
 		nodesToScaleDown = filterNodes(nodes, func(n *corev1.Node) bool {
-			return n.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel && n.Labels[hyperv1.NodeSizeLabel] != ""
+			return n.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel] == pairLabel && n.Labels[hyperv1.NodeSizeLabel] != ""
 		})
 	} else {
 		if node.Labels[hyperv1.NodeSizeLabel] != "" {
@@ -252,9 +253,9 @@ func hostedClusterMachineSetsToScaleDown(ctx context.Context, hostedCluster *hyp
 		return n.Labels[hyperv1.HostedClusterLabel] == clusterKey(hostedCluster)
 	})
 	if len(nodesWithClusterLabel) > 0 {
-		pairLabel := nodesWithClusterLabel[0].Labels[OSDFleetManagerPairedNodesLabel]
+		pairLabel := nodesWithClusterLabel[0].Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel]
 		clusterNodes = filterNodes(nodes, func(n *corev1.Node) bool {
-			return n.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel && n.Labels[hyperv1.NodeSizeLabel] != ""
+			return n.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel] == pairLabel && n.Labels[hyperv1.NodeSizeLabel] != ""
 		})
 	}
 
@@ -425,7 +426,7 @@ func collectTakenPairLabels(pods []corev1.Pod, nodes []corev1.Node) sets.Set[str
 	takenPairLabels := sets.New[string]()
 	for _, n := range nodes {
 		if n.Labels[hyperv1.HostedClusterLabel] != "" {
-			takenPairLabels.Insert(n.Labels[OSDFleetManagerPairedNodesLabel])
+			takenPairLabels.Insert(n.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel])
 		}
 	}
 	for _, p := range pods {
@@ -449,7 +450,7 @@ func scaleMachineSetsForRequirement(r nodeRequirement, machineSets []machinev1be
 	availableNodes := filterNodes(nodes, func(n *corev1.Node) bool {
 		return n.Labels[hyperv1.RequestServingComponentLabel] != "" &&
 			n.Labels[hyperv1.NodeSizeLabel] == r.sizeLabel &&
-			!takenPairLabels.Has(n.Labels[OSDFleetManagerPairedNodesLabel])
+			!takenPairLabels.Has(n.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel])
 	})
 	needCount -= len(availableNodes)
 
@@ -648,7 +649,7 @@ func machineSetSize(machineSet *machinev1beta1.MachineSet) string {
 }
 
 func machineSetPairLabel(machineSet *machinev1beta1.MachineSet) string {
-	return machineSet.Spec.Template.Spec.ObjectMeta.Labels[OSDFleetManagerPairedNodesLabel]
+	return machineSet.Spec.Template.Spec.ObjectMeta.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel]
 }
 
 func isRequestServingMachineSet(machineSet *machinev1beta1.MachineSet) bool {
@@ -663,10 +664,10 @@ func podPairLabel(pod *corev1.Pod, nodes []corev1.Node) string {
 	if pod.Spec.NodeName != "" {
 		node := findNode(pod.Spec.NodeName, nodes)
 		if node != nil {
-			return node.Labels[OSDFleetManagerPairedNodesLabel]
+			return node.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel]
 		}
 	}
-	return pod.Spec.NodeSelector[OSDFleetManagerPairedNodesLabel]
+	return pod.Spec.NodeSelector[pkgscheduler.OSDFleetManagerPairedNodesLabel]
 }
 
 func findNode(name string, nodes []corev1.Node) *corev1.Node {

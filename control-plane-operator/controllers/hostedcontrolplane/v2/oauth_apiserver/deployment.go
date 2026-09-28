@@ -7,7 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
@@ -37,7 +37,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	}
 
 	noProxy := []string{
-		manifests.KubeAPIServerService("").Name,
+		cpomanifests.KubeAPIServerService("").Name,
 		etcdHostname,
 		config.AuditWebhookService,
 	}

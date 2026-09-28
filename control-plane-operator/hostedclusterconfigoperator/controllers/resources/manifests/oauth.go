@@ -21,14 +21,6 @@ func OAuthCABundle() *corev1.ConfigMap {
 	}
 }
 
-func OAuthServerChallengingClient() *oauthv1.OAuthClient {
-	return &oauthv1.OAuthClient{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "openshift-challenging-client",
-		},
-	}
-}
-
 func OAuthServerBrowserClient() *oauthv1.OAuthClient {
 	return &oauthv1.OAuthClient{
 		ObjectMeta: metav1.ObjectMeta{

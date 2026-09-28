@@ -15,7 +15,7 @@ import (
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	homanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
 
 	v1 "k8s.io/api/authentication/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -45,7 +45,7 @@ func WaitForGuestRestConfig(ctx context.Context, logger logr.Logger, opts *Optio
 		return nil, fmt.Errorf("couldn't create mgmt kube client: %w", err)
 	}
 
-	hostedControlPlaneNamespace := homanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+	hostedControlPlaneNamespace := pkgmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 	localKubeConfig := hcpmanifests.KASLocalhostKubeconfigSecret(hostedControlPlaneNamespace)
 	if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 2*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		s, err := mgmtKubeClient.CoreV1().Secrets(localKubeConfig.Namespace).Get(ctx, localKubeConfig.Name, metav1.GetOptions{})

@@ -11,9 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
@@ -23,7 +22,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -255,7 +257,6 @@ func VerifyEtcdClusterHealth(ctx context.Context, logger logr.Logger, mgmtClient
 
 	return nil
 }
-
 
 // etcdInitLogResult holds the results of parsing etcd-init container logs.
 type etcdInitLogResult struct {

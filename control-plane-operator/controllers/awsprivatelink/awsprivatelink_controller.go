@@ -11,6 +11,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/awsapi"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/config"
@@ -951,9 +952,9 @@ func (r *AWSEndpointServiceReconciler) reconcileExternalNameServices(ctx context
 			var svc *corev1.Service
 			switch svcType {
 			case "api":
-				svc = manifests.KubeAPIServerExternalPrivateService(hcp.Namespace)
+				svc = cpomanifests.KubeAPIServerExternalPrivateService(hcp.Namespace)
 			case "oauth":
-				svc = manifests.OauthServerExternalPrivateService(hcp.Namespace)
+				svc = cpomanifests.OauthServerExternalPrivateService(hcp.Namespace)
 			}
 			if _, err := r.CreateOrUpdate(ctx, r, svc, func() error {
 				log.Info("Reconciling external name service", "service", svc.Name, "externalName", externalName)

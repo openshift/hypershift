@@ -12,6 +12,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/netutil"
 
@@ -121,7 +122,7 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 	}
 
 	hcpNamespace := hc.Namespace + "-" + hc.Name
-	kasService := manifests.KubeAPIServerService(hcpNamespace)
+	kasService := cpomanifests.KubeAPIServerService(hcpNamespace)
 	if err := client.Get(ctx, crclient.ObjectKeyFromObject(kasService), kasService); err != nil {
 		return nil, nil, fmt.Errorf("failed to get kube-apiserver service: %w", err)
 	}
@@ -160,7 +161,7 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 		}
 
 		switch route.Name {
-		case manifests.KubeAPIServerExternalPublicRoute("").Name:
+		case cpomanifests.KubeAPIServerExternalPublicRoute("").Name:
 			externalDNSBackends = append(externalDNSBackends, externalDNSBackendDesc{
 				Name:         route.Namespace + "-apiserver",
 				HostName:     route.Spec.Host,
@@ -181,7 +182,7 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 				SVCIP:        svc.Spec.ClusterIP,
 				SVCPort:      8091,
 				AllowedCIDRs: allowedCIDRs})
-		case manifests.OauthServerExternalPublicRoute("").Name:
+		case cpomanifests.OauthServerExternalPublicRoute("").Name:
 			externalDNSBackends = append(externalDNSBackends, externalDNSBackendDesc{
 				Name:         route.Namespace + "-oauth",
 				HostName:     route.Spec.Host,

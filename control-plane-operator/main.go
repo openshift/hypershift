@@ -32,6 +32,7 @@ import (
 	konnectivityhttpsproxy "github.com/openshift/hypershift/konnectivity-https-proxy"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -674,7 +675,7 @@ func setupAzurePrivateControllers(ctx context.Context, mgr ctrl.Manager, hcp *hy
 			Client:                 mgr.GetClient(),
 			ControllerName:         azureOAuthObserverName,
 			ServiceNamespace:       namespace,
-			ServiceName:            manifests.OauthServerService("").Name,
+			ServiceName:            cpomanifests.OauthServerService("").Name,
 			HCPNamespace:           namespace,
 			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
 		}).SetupWithManager(ctx, mgr); err != nil {

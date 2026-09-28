@@ -7,7 +7,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	manifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -1006,8 +1006,8 @@ func hcpExternalPrivateServices(hcp *hyperv1.HostedControlPlane) []externalPriva
 		manifestFn  func(string) *corev1.Service
 	}
 	candidates := []candidate{
-		{hyperv1.APIServer, manifests.KubeAPIServerExternalPrivateService},
-		{hyperv1.OAuthServer, manifests.OauthServerExternalPrivateService},
+		{hyperv1.APIServer, cpomanifests.KubeAPIServerExternalPrivateService},
+		{hyperv1.OAuthServer, cpomanifests.OauthServerExternalPrivateService},
 	}
 
 	var entries []externalPrivateServiceEntry

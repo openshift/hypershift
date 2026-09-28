@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	kasconst "github.com/openshift/hypershift/pkg/kas"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -149,7 +150,7 @@ func TestReconcileRBACValidatingAdmissionPolicy(t *testing.T) {
 	g.Expect(reconcileRBACValidatingAdmissionPolicy(t.Context(), c, upsert.New(false).CreateOrUpdate)).To(Succeed())
 
 	vap := &k8sadmissionv1.ValidatingAdmissionPolicy{}
-	g.Expect(c.Get(t.Context(), client.ObjectKey{Name: AdmissionPolicyNameRBAC}, vap)).To(Succeed())
+	g.Expect(c.Get(t.Context(), client.ObjectKey{Name: kasconst.AdmissionPolicyNameRBAC}, vap)).To(Succeed())
 
 	rule := vap.Spec.MatchConstraints.ResourceRules[0]
 	g.Expect(rule.APIGroups).To(ConsistOf(rbacv1.SchemeGroupVersion.Group))
@@ -173,8 +174,8 @@ func TestReconcileRBACValidatingAdmissionPolicy(t *testing.T) {
 	g.Expect(userWhiteList).NotTo(ContainElement(systemAdminUser))
 
 	binding := &k8sadmissionv1.ValidatingAdmissionPolicyBinding{}
-	g.Expect(c.Get(t.Context(), client.ObjectKey{Name: AdmissionPolicyNameRBAC + "-binding"}, binding)).To(Succeed())
-	g.Expect(binding.Spec.PolicyName).To(Equal(AdmissionPolicyNameRBAC))
+	g.Expect(c.Get(t.Context(), client.ObjectKey{Name: kasconst.AdmissionPolicyNameRBAC + "-binding"}, binding)).To(Succeed())
+	g.Expect(binding.Spec.PolicyName).To(Equal(kasconst.AdmissionPolicyNameRBAC))
 	g.Expect(binding.Spec.ValidationActions).To(ConsistOf(k8sadmissionv1.Deny))
 }
 
