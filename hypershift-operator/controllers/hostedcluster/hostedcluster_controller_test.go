@@ -9528,6 +9528,8 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 
 	const metricsForwardingMessage = "The deprecated \"hypershift.openshift.io/enable-metrics-forwarding\" annotation is set; migrate to spec.monitoring.metricsForwarding and remove the annotation"
 
+	const serviceDeprecationMessage = "The deprecated spec.services entry \"OVNSbDb\" is present; remove this entry because the service is no longer used; The deprecated spec.services entry \"OIDC\" is present; remove this entry because the service is no longer used"
+
 	testCases := []struct {
 		name            string
 		hcAnnotations   map[string]string
@@ -9587,6 +9589,24 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			expectedStatus:  metav1.ConditionTrue,
 			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
 			expectedMessage: hcpDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports deprecated no-op service entries, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: serviceDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: serviceDeprecationMessage,
 		},
 		{
 			name: "When the HCP reports no deprecated configuration, it should set the condition to False",

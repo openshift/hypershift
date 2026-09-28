@@ -3580,6 +3580,33 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			},
 		},
 		{
+			name: "When the deprecated OVNSbDb and OIDC service entries are present, it should set the condition to True with DeprecatedConfigurationInUse reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 6,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service:                   hyperv1.OVNSbDb,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.None},
+						},
+						{
+							Service:                   hyperv1.OIDC,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.None},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.DeprecatedConfigurationInUseReason,
+				Message:            `The deprecated spec.services entry "OVNSbDb" is present; remove this entry because the service is no longer used; The deprecated spec.services entry "OIDC" is present; remove this entry because the service is no longer used`,
+				ObservedGeneration: 6,
+			},
+		},
+		{
 			name: "When neither the logLevel field nor the deprecated annotation is set, it should set the condition to False with AsExpected reason",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
@@ -3607,6 +3634,9 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			g.Expect(cond.Status).To(Equal(tc.expectedCondition.Status))
 			g.Expect(cond.Reason).To(Equal(tc.expectedCondition.Reason))
 			g.Expect(cond.ObservedGeneration).To(Equal(tc.expectedCondition.ObservedGeneration))
+			if tc.expectedCondition.Message != "" {
+				g.Expect(cond.Message).To(Equal(tc.expectedCondition.Message))
+			}
 		})
 	}
 }
