@@ -172,7 +172,7 @@ func TestCreateCluster(t *testing.T) {
 		expectedZone string
 	}{
 		{
-			name: "When minimal flags are provided, it should render successfully",
+			name: "When minimal flags are provided with no NodePool, it should render successfully",
 			args: []string{
 				"--project=test-project-123",
 				"--region=us-central1",
@@ -192,6 +192,29 @@ func TestCreateCluster(t *testing.T) {
 				"--pull-secret=" + pullSecretFile,
 			},
 			expectedZone: "",
+		},
+		{
+			name: "When NodePool with 0 replicas is created with explicit zone, it should render successfully with zone set",
+			args: []string{
+				"--project=test-project-123",
+				"--region=us-central1",
+				"--zone=us-central1-b",
+				"--network=test-network",
+				"--private-service-connect-subnet=test-psc-subnet",
+				"--workload-identity-project-number=123456789012",
+				"--workload-identity-pool-id=test-pool",
+				"--workload-identity-provider-id=test-provider",
+				"--node-pool-service-account=nodepool@test-project-123.iam.gserviceaccount.com",
+				"--control-plane-service-account=controlplane@test-project-123.iam.gserviceaccount.com",
+				"--cloud-controller-service-account=cloudcontroller@test-project-123.iam.gserviceaccount.com",
+				"--storage-service-account=storage@test-project-123.iam.gserviceaccount.com",
+				"--image-registry-service-account=imageregistry@test-project-123.iam.gserviceaccount.com",
+				"--network-service-account=network@test-project-123.iam.gserviceaccount.com",
+				"--node-pool-replicas=0",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+			},
+			expectedZone: "us-central1-b",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
