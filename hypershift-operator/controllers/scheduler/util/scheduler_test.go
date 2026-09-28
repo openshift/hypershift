@@ -238,10 +238,12 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 			expectedErr: "",
 		},
 		{
-			name: "When size config has subnet labels on nodes it should set the subnet annotation",
+			name: "When the deprecated subnet annotation is present it should be pruned and the request serving selector set",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{},
+					Annotations: map[string]string{
+						hyperv1.AWSLoadBalancerSubnetsAnnotation: "subnet-1,subnet-2",
+					},
 				},
 			},
 			size: "medium",
@@ -256,18 +258,13 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 			},
 			nodes: []corev1.Node{
 				{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels: map[string]string{
-							LBSubnetsLabel: "subnet-54321",
-						},
-					},
+					ObjectMeta: metav1.ObjectMeta{},
 				},
 			},
 			expectedHC: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						hyperv1.HostedClusterScheduledAnnotation:               "true",
-						hyperv1.AWSLoadBalancerSubnetsAnnotation:               "subnet-54321",
 						hyperv1.RequestServingNodeAdditionalSelectorAnnotation: fmt.Sprintf("%s=%s", hyperv1.NodeSizeLabel, "medium"),
 					},
 				},
