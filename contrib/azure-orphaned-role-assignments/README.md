@@ -40,6 +40,13 @@ These orphans:
 
 ### Safety guardrails
 
+- **Requires an explicit ownership boundary to delete broadly.** With
+  `-dry-run=false`, the tool refuses to run unless you pass a `-scope-filter`
+  and/or `-role-filter` to constrain what gets removed. A subscription-wide sweep
+  (delete every orphan, all roles, all resource groups) must be opted into
+  explicitly with `-all-orphans`. This caps the blast radius to what you intend and
+  guards against a misconfigured Microsoft Graph read wiping out unrelated grants.
+  Dry-run is always unconstrained so you can survey everything first.
 - **Only deletes within the target subscription.** Assignments inherited from
   management-group or root (tenant) scope are reported but never passed to
   `DeleteByID`, since other subscriptions may rely on them.
@@ -64,15 +71,36 @@ go build -o azure-orphaned-role-assignments .
 # Dry run with per-assignment detail
 ./azure-orphaned-role-assignments -subscription-id <subscription-id> -verbose
 
-# Restrict cleanup to the shared Key Vault resource group and the Key Vault role
+# Recommended for the CI orphans this tool was written for: the shared Key Vault
+# resource group and the Key Vault role the deleted CI managed identities held.
 ./azure-orphaned-role-assignments \
   -subscription-id <subscription-id> \
   -scope-filter os4-common \
   -role-filter "Key Vault Secrets User"
 
-# Actually delete the orphaned assignments
-./azure-orphaned-role-assignments -subscription-id <subscription-id> -dry-run=false
+# Same, actually deleting the orphaned assignments
+./azure-orphaned-role-assignments \
+  -subscription-id <subscription-id> \
+  -scope-filter os4-common \
+  -role-filter "Key Vault Secrets User" \
+  -dry-run=false
 ```
+
+### Recommended values for CI orphans
+
+The orphans this tool was written for come from ephemeral HyperShift/ARO HCP CI
+clusters. Each cluster grants its control-plane managed identities access to the
+shared CI Key Vault, and those grants are left behind when the cluster (and its
+identity) is deleted. For that case, use:
+
+| Flag | Value | Why |
+|------|-------|-----|
+| `-scope-filter` | `os4-common` | The shared resource group that holds the CI Key Vault, where the vast majority of orphaned grants accumulate. Matched **exactly**, so it will not touch a sibling like `os4-common-backup`. |
+| `-role-filter` | `Key Vault Secrets User` | The role those CI managed identities were granted. Scoping to it ensures only Key-Vault-secrets grants are removed, never an unrelated leftover such as `Contributor` or `Reader`. |
+
+These compose with the `-min-age` guard (default 24h), so grants for a
+freshly-created CI cluster whose identity Microsoft Graph has not yet propagated
+are not swept.
 
 ### Flags
 
@@ -80,6 +108,7 @@ go build -o azure-orphaned-role-assignments .
 |------|----------|---------|-------------|
 | `-subscription-id` | Yes | | Azure subscription ID |
 | `-dry-run` | No | `true` | Preview changes without deleting |
+| `-all-orphans` | No | `false` | Opt in to a subscription-wide sweep. Required to delete (`-dry-run=false`) when neither `-scope-filter` nor `-role-filter` is set. |
 | `-verbose` | No | `false` | Show individual assignments and Graph batch progress |
 | `-scope-filter` | No | | Only consider assignments in this scope. A bare name (e.g. `os4-common`) matches that resource group **exactly** — it will not match `os4-common-backup`; a value containing `/` is treated as a scope path and matches that scope or anything beneath it. Case-insensitive. |
 | `-role-filter` | No | | Comma-separated role names to restrict to (substring, case-insensitive) |
@@ -103,10 +132,10 @@ The identity used needs, at minimum:
 ## Example
 
 ```bash
-./azure-orphaned-role-assignments -subscription-id 5f99720c-6823-4792-8a28-69efb0719eea
+./azure-orphaned-role-assignments -subscription-id <subscription-id>
 
 # Output:
-# Listing all role assignments in subscription 5f99720c-... (this includes resource group and resource scopes)
+# Listing all role assignments in the target subscription (this includes resource group and resource scopes)
 # Total role assignments in subscription (all scopes): 3555
 # Breakdown by scope level (only subscription/management-group/root show in the portal IAM list):
 #     3346  resource group

@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-const testSubID = "5f99720c-6823-4792-8a28-69efb0719eea"
+const testSubID = "11111111-1111-1111-1111-111111111111"
 
 func rgScope(rg string) string {
 	return "/subscriptions/" + testSubID + "/resourceGroups/" + rg
@@ -37,6 +37,28 @@ func TestIsUnderSubscription(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := isUnderSubscription(tc.scope, testSubID); got != tc.want {
 				t.Errorf("isUnderSubscription(%q) = %v, want %v", tc.scope, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRequireDeleteScope(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    options
+		wantErr bool
+	}{
+		{name: "When dry-run is enabled, it should allow an unconstrained run", opts: options{dryRun: true}, wantErr: false},
+		{name: "When deleting with no filters and no opt-in, it should be rejected", opts: options{dryRun: false}, wantErr: true},
+		{name: "When deleting with a scope filter, it should be allowed", opts: options{dryRun: false, scopeFilter: "os4-common"}, wantErr: false},
+		{name: "When deleting with a role filter, it should be allowed", opts: options{dryRun: false, roleFilter: "Key Vault Secrets User"}, wantErr: false},
+		{name: "When deleting with the all-orphans opt-in and no filters, it should be allowed", opts: options{dryRun: false, allOrphans: true}, wantErr: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := requireDeleteScope(tc.opts)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("requireDeleteScope(%+v) error = %v, wantErr %v", tc.opts, err, tc.wantErr)
 			}
 		})
 	}

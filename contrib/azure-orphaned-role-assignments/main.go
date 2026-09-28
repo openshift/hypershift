@@ -32,6 +32,7 @@ type options struct {
 	principalTypes string
 	minAge         time.Duration
 	dryRun         bool
+	allOrphans     bool
 	verbose        bool
 }
 
@@ -49,6 +50,7 @@ func main() {
 	flag.StringVar(&opts.principalTypes, "principal-types", "ServicePrincipal", "Comma-separated principal types to consider for cleanup (e.g. ServicePrincipal,User,Group)")
 	flag.DurationVar(&opts.minAge, "min-age", 24*time.Hour, "Only consider assignments created at least this long ago. Guards against deleting grants for freshly-created principals that Microsoft Graph has not yet propagated. Set to 0 to disable.")
 	flag.BoolVar(&opts.dryRun, "dry-run", true, "If true, only print what would be deleted (default: true)")
+	flag.BoolVar(&opts.allOrphans, "all-orphans", false, "Allow deleting across the entire subscription without a -scope-filter or -role-filter. Required to opt in to a subscription-wide sweep when -dry-run=false.")
 	flag.BoolVar(&opts.verbose, "verbose", false, "Enable verbose logging")
 	flag.Parse()
 
@@ -58,6 +60,9 @@ func main() {
 	}
 	if opts.minAge < 0 {
 		log.Fatalf("Error: -min-age must be >= 0 (use 0 to disable the guard), got %s", opts.minAge)
+	}
+	if err := requireDeleteScope(opts); err != nil {
+		log.Fatalf("Error: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -74,6 +79,23 @@ func main() {
 	if err := run(ctx, opts); err != nil {
 		log.Fatalf("Error: %v", err)
 	}
+}
+
+// requireDeleteScope enforces an explicit ownership boundary before a destructive
+// run. Deleting with -dry-run=false but no -scope-filter and no -role-filter would
+// sweep every orphaned assignment in the subscription, which is far broader than
+// this tool's intended use (CI Key Vault grants in a single resource group) and
+// dangerous if Microsoft Graph misreports principals as deleted. Such a
+// subscription-wide sweep must be opted into explicitly with -all-orphans. Dry-run
+// is always unconstrained so operators can survey everything.
+func requireDeleteScope(opts options) error {
+	if opts.dryRun || opts.allOrphans {
+		return nil
+	}
+	if opts.scopeFilter == "" && opts.roleFilter == "" {
+		return fmt.Errorf("refusing to delete across the entire subscription: pass -scope-filter and/or -role-filter to constrain cleanup (e.g. -scope-filter os4-common -role-filter \"Key Vault Secrets User\"), or -all-orphans to explicitly opt in to a subscription-wide sweep")
+	}
+	return nil
 }
 
 // assignmentInfo holds the details we care about for reporting and deletion.
