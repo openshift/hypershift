@@ -2,19 +2,16 @@ aliases:
   api-approvers:
     - enxebre
     - csrwng
-    - sjenning
     - joelspeed
     - everettraven
   tech-leads:
     - enxebre
     - csrwng
-    - sjenning
   e2e-approvers:
     - ironcladlou
   core-approvers:
     - enxebre
     - csrwng
-    - sjenning
     - muraee
     - bryan-cox
     - cblecker
