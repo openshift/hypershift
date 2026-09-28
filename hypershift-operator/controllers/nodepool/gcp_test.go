@@ -1027,7 +1027,7 @@ func TestNodePoolReconciler_setGCPConditions(t *testing.T) {
 		check        func(t *testing.T, nodePool *hyperv1.NodePool, err error)
 	}{
 		{
-			name: "Not a GCP NodePool",
+			name: "When the NodePool is not a GCP NodePool, it should not set any GCP condition",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -1044,7 +1044,7 @@ func TestNodePoolReconciler_setGCPConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "Missing GCP config in NodePool",
+			name: "When the NodePool has no GCP platform config, it should not set any GCP condition",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -1061,7 +1061,7 @@ func TestNodePoolReconciler_setGCPConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "Missing GCP config in HostedCluster",
+			name: "When the HostedCluster has no GCP platform config, it should return an error",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -1086,7 +1086,7 @@ func TestNodePoolReconciler_setGCPConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "Could not discover release image",
+			name: "When the release image cannot be resolved, it should set ValidPlatformImage to False",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
@@ -1114,7 +1114,7 @@ func TestNodePoolReconciler_setGCPConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "success",
+			name: "When a custom GCP image is specified, it should set ValidPlatformImage to True",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
