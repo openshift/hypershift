@@ -174,8 +174,8 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for previous image")
 	latestReleaseInfo, err := releaseInfoProvider.Lookup(ctx, ru.latestReleaseImage, pullSecret)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for latest image")
-	previousVersion, err := semver.ParseTolerant(previousReleaseInfo.Version())
-	g.Expect(err).NotTo(HaveOccurred(), "failed to parse previous release version")
+	latestVersion, err := semver.ParseTolerant(latestReleaseInfo.Version())
+	g.Expect(err).NotTo(HaveOccurred(), "failed to parse latest release version")
 
 	t.Logf("Validating all Nodes have the synced labels and taints")
 	e2eutil.EnsureNodesLabelsAndTaints(t, nodePool, nodes)
@@ -193,25 +193,7 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		},
 		e2eutil.WithTimeout(2*time.Minute),
 	)
-	if previousVersion.Major >= e2eutil.Version50.Major {
-		expectedStream := string(hyperv1.OSImageStreamRHEL10)
-		if nodePool.Spec.OSImageStream.Name != "" {
-			expectedStream = nodePool.Spec.OSImageStream.Name
-		}
-		e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to have osImageStream=%s", nodePool.Namespace, nodePool.Name, expectedStream),
-			func(ctx context.Context) (*hyperv1.NodePool, error) {
-				np := &hyperv1.NodePool{}
-				err := ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
-				return np, err
-			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(expectedStream),
-			},
-			e2eutil.WithTimeout(2*time.Minute),
-		)
-	}
-	preUpgradeNodePool := &hyperv1.NodePool{}
-	g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), preUpgradeNodePool)).To(Succeed(), "failed to get NodePool before upgrade")
+	preUpgradeNodePool, nodes := waitForUpgradeOSImageStream(t, ctx, ru.mgmtClient, ru.hostedClusterClient, crclient.ObjectKeyFromObject(&nodePool), "", e2eutil.WithTimeout(2*time.Minute))
 	e2eutil.EnsureNodesRuntime(t, nodes, preUpgradeNodePool)
 
 	// Validate NodesInfo is populated with the previous version before upgrade.
@@ -276,9 +258,14 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		},
 		e2eutil.WithTimeout(ru.getNodePoolUpgradeTimeout()),
 	)
-	newNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, &nodePool, ru.hostedCluster.Spec.Platform.Type)
-	postUpgradeNodePool := &hyperv1.NodePool{}
-	g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), postUpgradeNodePool)).To(Succeed(), "failed to get NodePool after upgrade")
+	desiredStream := string(hyperv1.OSImageStreamRHEL9)
+	if latestVersion.Major >= e2eutil.Version50.Major {
+		desiredStream = string(hyperv1.OSImageStreamRHEL10)
+	}
+	if nodePool.Spec.OSImageStream.Name != "" {
+		desiredStream = nodePool.Spec.OSImageStream.Name
+	}
+	postUpgradeNodePool, newNodes := waitForUpgradeOSImageStream(t, ctx, ru.mgmtClient, ru.hostedClusterClient, crclient.ObjectKeyFromObject(&nodePool), desiredStream, e2eutil.WithTimeout(nodePoolUpgradeReadinessTimeout(ru.hostedCluster.Spec.Platform.Type)))
 	e2eutil.EnsureNodesRuntime(t, newNodes, postUpgradeNodePool)
 
 	// Validate NodesInfo is populated with the latest version after upgrade.
@@ -301,13 +288,4 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		},
 		e2eutil.WithTimeout(2*time.Minute),
 	)
-
-	// Verify osImageStream is populated after upgrade.
-	{
-		np := &hyperv1.NodePool{}
-		g.Expect(ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)).To(Succeed(), "failed to get NodePool for osImageStream validation")
-		if np.Status.OSImageStream.Name != "" {
-			t.Logf("Post-upgrade osImageStream: %s", np.Status.OSImageStream.Name)
-		}
-	}
 }
