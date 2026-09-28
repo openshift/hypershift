@@ -28,6 +28,8 @@ tools/bin
 !vendor/**/.envrc
 .env
 .DS_Store
+.serena/*
+.claude/.headroom*
 
 .kube
 /kubeconfig

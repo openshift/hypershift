@@ -1239,7 +1239,7 @@ type ClusterNetworking struct {
 	// networkType specifies the SDN provider used for cluster networking.
 	// Defaults to OVNKubernetes.
 	// This field is required and immutable.
-	// kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="networkType is immutable"
 	// +optional
 	// +kubebuilder:default:="OVNKubernetes"
 	// +immutable

@@ -65,7 +65,7 @@ func ValidateIngressOperatorConfiguration(t testing.TB, ctx context.Context, gue
 // is properly reflected in the hosted cluster's IngressController and that the Ingress Operator doesn't report any errors via HCP conditions.
 func EnsureIngressOperatorConfiguration(t *testing.T, ctx context.Context, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureIngressOperatorConfiguration", func(t *testing.T) {
-		AtLeast(t, Version421)
+		AtLeast(t, Version419)
 		ValidateIngressOperatorConfiguration(t, ctx, guestClient, hostedCluster)
 	})
 }

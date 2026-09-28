@@ -488,10 +488,11 @@ type AWSPlatformSpec struct {
 	// before they are terminated, providing a best effort for graceful shutdown.
 	//
 	// Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).
+	// Supports FedRAMP/FIPS endpoints (sqs-fips prefix) and GovCloud regions.
 	//
 	// +optional
 	// +kubebuilder:validation:MaxLength=512
-	// +kubebuilder:validation:Pattern=`^https://sqs\.[a-z0-9-]+\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$`
+	// +kubebuilder:validation:Pattern=`^https://sqs(-fips)?\.([a-z0-9-]+)\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$`
 	TerminationHandlerQueueURL string `json:"terminationHandlerQueueURL,omitempty"`
 }
 

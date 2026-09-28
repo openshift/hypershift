@@ -165,7 +165,7 @@ func isKASAvailable(ctx context.Context, cpNamespace string, c client.Client) (b
 // state (spec) and the actual rollout progress of the Karpenter ControlPlaneComponent resources.
 //
 // States:
-//   - True  / AsExpected          — Karpenter enabled in spec AND both components fully rolled out.
+//   - True  / AsExpected          — Karpenter enabled in spec AND all expected components fully rolled out.
 //   - False / AutoNodeProgressing — Enable or disable operation is in progress.
 //   - False / AutoNodeNotConfigured — Karpenter not in spec AND no components present.
 //
@@ -191,17 +191,26 @@ func (r *HostedClusterReconciler) reconcileAutoNodeEnabledCondition(ctx context.
 		return condition, false
 	}
 
-	// Grab all of our karpenter components
-	var karpenterComponents []hyperv1.ControlPlaneComponent
+	expectedKarpenterComponentNames := []string{karpenteroperatorv2.ComponentName}
+	if !karpenterutil.IsStandaloneKarpenterOperatorEnabled() {
+		expectedKarpenterComponentNames = append(expectedKarpenterComponentNames, karpenterv2.ComponentName)
+	}
+
+	componentsByName := make(map[string]hyperv1.ControlPlaneComponent, len(componentList.Items))
 	for _, c := range componentList.Items {
-		if c.Name == karpenteroperatorv2.ComponentName || c.Name == karpenterv2.ComponentName {
+		componentsByName[c.Name] = c
+	}
+
+	var karpenterComponents []hyperv1.ControlPlaneComponent
+	for _, name := range expectedKarpenterComponentNames {
+		if c, ok := componentsByName[name]; ok {
 			karpenterComponents = append(karpenterComponents, c)
 		}
 	}
 
 	if karpenterEnabled {
 		// Check if they're there
-		if len(karpenterComponents) < 2 {
+		if len(karpenterComponents) < len(expectedKarpenterComponentNames) {
 			condition.Status = metav1.ConditionFalse
 			condition.Reason = hyperv1.AutoNodeProgressingReason
 			condition.Message = "AutoNode is being enabled: waiting for components to be created"

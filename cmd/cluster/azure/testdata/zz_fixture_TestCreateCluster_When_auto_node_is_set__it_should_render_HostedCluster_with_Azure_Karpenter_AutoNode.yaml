@@ -51,7 +51,6 @@ spec:
         platform: Azure
       name: Karpenter
   autoscaling: {}
-  capabilities: {}
   configuration: {}
   controllerAvailabilityPolicy: SingleReplica
   dns:

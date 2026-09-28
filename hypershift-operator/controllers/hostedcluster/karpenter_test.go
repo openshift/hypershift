@@ -9,9 +9,12 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	karpenterv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/support/api"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -301,6 +304,7 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 		autoNode       hyperv1.AutoNode
 		components     []hyperv1.ControlPlaneComponent
 		deployments    []appsv1.Deployment
+		standalone     bool
 		want           metav1.Condition
 		wantProgessing bool
 	}{
@@ -415,10 +419,50 @@ func TestReconcileAutoNodeEnabledCondition(t *testing.T) {
 				Reason: hyperv1.AutoNodeNotConfiguredReason,
 			},
 		},
+		"When standalone karpenter is enabled and its component is rolled out, it should report ready": {
+			autoNode: karpenterEnabledAutoNode,
+			components: []hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: karpenteroperatorv2.ComponentName, Namespace: hcpNamespace},
+					Status:     hyperv1.ControlPlaneComponentStatus{Conditions: []metav1.Condition{rolloutCompleteTrue}},
+				},
+			},
+			standalone: true,
+			want: metav1.Condition{
+				Type:   string(hyperv1.AutoNodeEnabled),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.AsExpectedReason,
+			},
+		},
+		"When standalone karpenter is enabled and its component is not rolled out, it should report progressing": {
+			autoNode: karpenterEnabledAutoNode,
+			components: []hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: karpenteroperatorv2.ComponentName, Namespace: hcpNamespace},
+					Status:     hyperv1.ControlPlaneComponentStatus{Conditions: []metav1.Condition{rolloutCompleteFalse}},
+				},
+			},
+			standalone:     true,
+			wantProgessing: true,
+			want: metav1.Condition{
+				Type:   string(hyperv1.AutoNodeEnabled),
+				Status: metav1.ConditionFalse,
+				Reason: hyperv1.AutoNodeProgressingReason,
+			},
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
+			if tc.standalone {
+				previousFeatureSet := featuregate.FeatureSet()
+				featuregate.ConfigureFeatureSet(string(configv1.TechPreviewNoUpgrade))
+				t.Cleanup(func() {
+					featuregate.ConfigureFeatureSet(string(previousFeatureSet))
+				})
+				t.Setenv(karpenterutil.EnableStandaloneKarpenterOperatorEnvVar, "1")
+			}
+
 			components := make([]hyperv1.ControlPlaneComponent, len(tc.components))
 			copy(components, tc.components)
 

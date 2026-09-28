@@ -50,7 +50,7 @@ var capiCRDNames = []string{
 	"clusterresourcesets.addons.cluster.x-k8s.io",
 }
 
-// CAPICRDNames returns the list of CAPI CRD names that are managed by HyperShift.
+// CAPICRDNames returns the list of CAPI CRDs.
 func CAPICRDNames() []string {
 	return slices.Clone(capiCRDNames)
 }

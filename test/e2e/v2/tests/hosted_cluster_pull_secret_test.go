@@ -46,13 +46,10 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 	When("an additional pull secret is created in the hosted cluster", Label("Informing"), func() {
 		It("should propagate it through the global pull secret pipeline and clean up on deletion", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version419)
+			tc.SkipIfVersionBelow(e2eutil.Version420)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform, hyperv1.AzurePlatform)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			if hc.Spec.Platform.Type == hyperv1.AWSPlatform && !tc.VersionAtLeast(e2eutil.Version421) {
-				Skip("AWS platform requires version >= 4.21 for global pull secret")
-			}
 			if !netutil.IsPublicHC(hc) {
 				Skip("global pull secret test is only supported on public clusters")
 			}
@@ -69,7 +66,7 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 			}
 			nodeCount := np.Status.Replicas
 
-			var dummyPullSecretData = []byte(`{"auths": {"quay.io": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
+			var dummyPullSecretData = []byte(`{"auths": {"e2e-globalps-registry.example.com": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
 			var updatedPullSecretData = []byte(`{"auths": {"registry.example.com": {"auth": "dXNlcjpwYXNzd29yZA=="}}}`)
 
 			By("verifying in-place management-cluster pull secret propagation without rollout")
@@ -80,9 +77,52 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 			By("verifying Replace nodes have globalPS label")
 			verifyGlobalPSLabel(tc, hcClient, np, nodeCount)
 
+			By("verifying combined-pull-secret exists in CP namespace with original data")
+			var originalCombinedData []byte
+			Eventually(func(g Gomega) {
+				combinedSecret := &corev1.Secret{}
+				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+					Name:      "combined-pull-secret",
+					Namespace: tc.ControlPlaneNamespace,
+				}, combinedSecret)).To(Succeed(), "combined-pull-secret should exist in CP namespace")
+				g.Expect(combinedSecret.Data[corev1.DockerConfigJsonKey]).NotTo(BeEmpty(),
+					"combined-pull-secret should have data")
+				originalCombinedData = combinedSecret.Data[corev1.DockerConfigJsonKey]
+			}, 30*time.Second, 5*time.Second).Should(Succeed())
+
+			By("snapshotting any pre-existing additional-pull-secret")
+			var preExistingPS *corev1.Secret
+			{
+				existing := hccomanifests.AdditionalPullSecret()
+				err := hcClient.Get(tc.Context, crclient.ObjectKeyFromObject(existing), existing)
+				if apierrors.IsNotFound(err) {
+					// No pre-existing secret; cleanup will delete.
+				} else {
+					Expect(err).NotTo(HaveOccurred(), "failed to check for pre-existing additional-pull-secret")
+					preExistingPS = existing.DeepCopy()
+				}
+			}
+
 			By("creating additional-pull-secret with dummy data")
 			createAdditionalPullSecret(tc, hcClient, dummyPullSecretData)
 			DeferCleanup(func() {
+				if preExistingPS != nil {
+					existing := hccomanifests.AdditionalPullSecret()
+					err := hcClient.Get(tc.Context, crclient.ObjectKeyFromObject(existing), existing)
+					if apierrors.IsNotFound(err) {
+						restored := preExistingPS.DeepCopy()
+						restored.ResourceVersion = ""
+						Expect(hcClient.Create(tc.Context, restored)).To(Succeed(),
+							"cleanup: failed to recreate pre-existing additional-pull-secret")
+					} else {
+						Expect(err).NotTo(HaveOccurred(), "cleanup: failed to get additional-pull-secret for restoration")
+						existing.Data = preExistingPS.Data
+						existing.Type = preExistingPS.Type
+						Expect(hcClient.Update(tc.Context, existing)).To(Succeed(),
+							"cleanup: failed to restore pre-existing additional-pull-secret")
+					}
+					return
+				}
 				additionalPS := hccomanifests.AdditionalPullSecret()
 				err := hcClient.Delete(tc.Context, additionalPS)
 				if err != nil && !apierrors.IsNotFound(err) {
@@ -100,6 +140,27 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 					"global-pull-secret data should not be empty")
 				oldGlobalPSData = globalPS.Data[corev1.DockerConfigJsonKey]
 			}, 30*time.Second, 5*time.Second).Should(Succeed())
+
+			By("verifying combined-pull-secret is updated with merged data")
+			Eventually(func(g Gomega) {
+				combinedSecret := &corev1.Secret{}
+				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+					Name:      "combined-pull-secret",
+					Namespace: tc.ControlPlaneNamespace,
+				}, combinedSecret)).To(Succeed(), "failed to get combined-pull-secret from namespace %s", tc.ControlPlaneNamespace)
+
+				raw := combinedSecret.Data[corev1.DockerConfigJsonKey]
+				g.Expect(raw).NotTo(BeEmpty(), "combined-pull-secret .dockerconfigjson should not be empty")
+
+				var dockerConfig map[string]map[string]any
+				g.Expect(json.Unmarshal(raw, &dockerConfig)).To(Succeed(), "failed to parse combined-pull-secret .dockerconfigjson")
+				auths := dockerConfig["auths"]
+				g.Expect(auths).NotTo(BeEmpty(), "combined-pull-secret auths should not be empty")
+
+				entry, hasDummy := auths["e2e-globalps-registry.example.com"]
+				g.Expect(hasDummy).To(BeTrue(), "combined-pull-secret should contain e2e-globalps-registry.example.com after additional-pull-secret created")
+				g.Expect(entry).NotTo(BeEmpty(), "e2e-globalps-registry.example.com auth entry should not be empty")
+			}, 60*time.Second, 5*time.Second).Should(Succeed())
 
 			By("verifying critical DaemonSets are ready (first check)")
 			verifyDaemonSetsReady(tc, hcClient, nodeCount)
@@ -124,6 +185,29 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 					"global-pull-secret should be updated after adding valid pull secret")
 			}, 30*time.Second, 5*time.Second).Should(Succeed())
 
+			By("verifying combined-pull-secret reflects updated additional credentials")
+			Eventually(func(g Gomega) {
+				combinedSecret := &corev1.Secret{}
+				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+					Name:      "combined-pull-secret",
+					Namespace: tc.ControlPlaneNamespace,
+				}, combinedSecret)).To(Succeed(), "failed to get combined-pull-secret from namespace %s", tc.ControlPlaneNamespace)
+
+				raw := combinedSecret.Data[corev1.DockerConfigJsonKey]
+				g.Expect(raw).NotTo(BeEmpty(), "combined-pull-secret .dockerconfigjson should not be empty")
+
+				var dockerConfig map[string]map[string]any
+				g.Expect(json.Unmarshal(raw, &dockerConfig)).To(Succeed(), "failed to parse combined-pull-secret .dockerconfigjson")
+				auths := dockerConfig["auths"]
+				g.Expect(auths).NotTo(BeEmpty(), "combined-pull-secret auths should not be empty")
+
+				_, hasNewRegistry := auths["registry.example.com"]
+				g.Expect(hasNewRegistry).To(BeTrue(), "combined-pull-secret should contain registry.example.com after credential update")
+
+				_, hasOldDummy := auths["e2e-globalps-registry.example.com"]
+				g.Expect(hasOldDummy).To(BeFalse(), "combined-pull-secret should not contain prior dummy e2e-globalps-registry.example.com entry after credential update")
+			}, 60*time.Second, 5*time.Second).Should(Succeed())
+
 			By("verifying critical DaemonSets are ready (second check)")
 			verifyDaemonSetsReady(tc, hcClient, nodeCount)
 
@@ -134,6 +218,17 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 					Namespace: "kube-system",
 				},
 			})).To(Succeed(), "failed to delete additional-pull-secret")
+
+			By("verifying combined-pull-secret reverts to original data after deletion")
+			Eventually(func(g Gomega) {
+				combinedSecret := &corev1.Secret{}
+				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+					Name:      "combined-pull-secret",
+					Namespace: tc.ControlPlaneNamespace,
+				}, combinedSecret)).To(Succeed(), "failed to get combined-pull-secret from namespace %s", tc.ControlPlaneNamespace)
+				g.Expect(combinedSecret.Data[corev1.DockerConfigJsonKey]).To(Equal(originalCombinedData),
+					"combined-pull-secret should revert to original data after additional-pull-secret deletion")
+			}, 60*time.Second, 5*time.Second).Should(Succeed())
 
 			By("verifying GlobalPullSecret is deleted from the hosted cluster")
 			Eventually(func() error {
@@ -199,7 +294,7 @@ func verifyPullSecretPropagation(tc *internal.TestContext, hc *hyperv1.HostedClu
 	}
 	var cfg dockerConfigJSON
 	Expect(json.Unmarshal(originalData, &cfg)).To(Succeed(), "failed to parse pull secret")
-	cfg.Auths["e2e-dummy.example.com"] = json.RawMessage(`{"auth":"e2e-dummy-token"}`)
+	cfg.Auths["e2e-registry.example.com"] = json.RawMessage(`{"auth":"e2e-dummy-token"}`)
 	modifiedData, err := json.Marshal(cfg)
 	Expect(err).NotTo(HaveOccurred(), "failed to marshal modified pull secret")
 
@@ -212,7 +307,7 @@ func verifyPullSecretPropagation(tc *internal.TestContext, hc *hyperv1.HostedClu
 		if err := hcClient.Get(tc.Context, crclient.ObjectKey{Name: "pull-secret", Namespace: "openshift-config"}, secret); err != nil {
 			return false
 		}
-		return bytes.Contains(secret.Data[corev1.DockerConfigJsonKey], []byte("e2e-dummy.example.com"))
+		return bytes.Contains(secret.Data[corev1.DockerConfigJsonKey], []byte("e2e-registry.example.com"))
 	}, 150*time.Second, 5*time.Second).Should(BeTrue(),
 		"openshift-config/pull-secret did not propagate dummy entry")
 
@@ -221,7 +316,7 @@ func verifyPullSecretPropagation(tc *internal.TestContext, hc *hyperv1.HostedClu
 		if err := hcClient.Get(tc.Context, crclient.ObjectKeyFromObject(secret), secret); err != nil {
 			return false
 		}
-		return bytes.Contains(secret.Data[corev1.DockerConfigJsonKey], []byte("e2e-dummy.example.com"))
+		return bytes.Contains(secret.Data[corev1.DockerConfigJsonKey], []byte("e2e-registry.example.com"))
 	}, 150*time.Second, 5*time.Second).Should(BeTrue(),
 		"kube-system/original-pull-secret did not propagate dummy entry")
 

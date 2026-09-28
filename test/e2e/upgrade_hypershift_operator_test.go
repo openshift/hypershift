@@ -13,7 +13,7 @@ import (
 	"github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/supportedversion"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

@@ -193,7 +193,7 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		},
 		e2eutil.WithTimeout(2*time.Minute),
 	)
-	if previousVersion.GE(e2eutil.Version50) {
+	if previousVersion.Major >= e2eutil.Version50.Major {
 		expectedStream := string(hyperv1.OSImageStreamRHEL10)
 		if nodePool.Spec.OSImageStream.Name != "" {
 			expectedStream = nodePool.Spec.OSImageStream.Name

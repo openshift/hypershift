@@ -446,12 +446,18 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 	c.setMachineDeploymentMetadata(machineDeployment, capiClusterName)
 
 	machineDeployment.Spec.ClusterName = capiClusterName
-	if machineDeployment.Spec.Selector.MatchLabels == nil {
-		machineDeployment.Spec.Selector.MatchLabels = map[string]string{}
-	}
-	machineDeployment.Spec.Selector.MatchLabels[capiv1.ClusterNameLabel] = capiClusterName
 	resourcesName := generateName(capiClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
-	machineDeployment.Spec.Selector.MatchLabels[resourcesName] = resourcesName
+	// Rebuild the selector deterministically on every reconcile instead of mutating it in place.
+	// The template labels below are always reassigned from scratch, so appending to the selector
+	// map would let a stale key linger: if resourcesName ever changes (e.g. after an infraID
+	// change), the old key stays in the selector while the template only carries the new one. The
+	// selector then matches zero Machines, which drives the MachineSet controller to create
+	// Machines without bound. Assigning a fresh map keeps the selector a strict subset of the
+	// template labels on every reconcile.
+	machineDeployment.Spec.Selector.MatchLabels = map[string]string{
+		capiv1.ClusterNameLabel: capiClusterName,
+		resourcesName:           resourcesName,
+	}
 
 	gvk, err := apiutil.GVKForObject(machineTemplateCR, api.Scheme)
 	if err != nil {
@@ -968,10 +974,12 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 
 	// Set selector and template
 	machineSet.Spec.ClusterName = capiClusterName
-	if machineSet.Spec.Selector.MatchLabels == nil {
-		machineSet.Spec.Selector.MatchLabels = map[string]string{}
+	// Rebuild the selector deterministically on every reconcile instead of mutating it in place,
+	// so a stale key can never linger if resourcesName changes (see reconcileMachineDeployment for
+	// the full rationale). The template labels below are always reassigned from scratch.
+	machineSet.Spec.Selector.MatchLabels = map[string]string{
+		resourcesName: resourcesName,
 	}
-	machineSet.Spec.Selector.MatchLabels[resourcesName] = resourcesName
 	machineSet.Spec.Template = capiv1.MachineTemplateSpec{
 		ObjectMeta: capiv1.ObjectMeta{
 			Labels: map[string]string{
