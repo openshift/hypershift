@@ -3607,6 +3607,29 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			},
 		},
 		{
+			name: "When the deprecated multiArch field is true, it should set the condition to True with DeprecatedConfigurationInUse reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 8,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							MultiArch: true,
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.DeprecatedConfigurationInUseReason,
+				Message:            "The deprecated spec.platform.aws.multiArch field is set to true; remove it because it is no longer used",
+				ObservedGeneration: 8,
+			},
+		},
+		{
 			name: "When neither the logLevel field nor the deprecated annotation is set, it should set the condition to False with AsExpected reason",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{

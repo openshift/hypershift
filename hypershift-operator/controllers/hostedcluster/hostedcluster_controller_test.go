@@ -9530,6 +9530,8 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 
 	const serviceDeprecationMessage = "The deprecated spec.services entry \"OVNSbDb\" is present; remove this entry because the service is no longer used; The deprecated spec.services entry \"OIDC\" is present; remove this entry because the service is no longer used"
 
+	const multiArchDeprecationMessage = "The deprecated spec.platform.aws.multiArch field is set to true; remove it because it is no longer used"
+
 	testCases := []struct {
 		name            string
 		hcAnnotations   map[string]string
@@ -9607,6 +9609,24 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			expectedStatus:  metav1.ConditionTrue,
 			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
 			expectedMessage: serviceDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports deprecated multiArch configuration, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: multiArchDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: multiArchDeprecationMessage,
 		},
 		{
 			name: "When the HCP reports no deprecated configuration, it should set the condition to False",

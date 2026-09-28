@@ -551,11 +551,12 @@ func (r *HostedControlPlaneReconciler) reconcileKASStatus(ctx context.Context, h
 // check appends a message to the collected list; if any fire, the condition is set to True
 // with the messages joined together, otherwise it is set to False. This makes it easy to
 // add new deprecation checks over time. Today the mechanisms are the
-// hypershift.openshift.io/kube-apiserver-verbosity-level annotation and the legacy
-// OVNSbDb and OIDC service entries. The annotation fires whenever it is present, even if
-// spec.operatorConfiguration.kubeAPIServer.logLevel is also set and taking precedence;
-// the service entries fire whenever they are present because those services are no longer
-// used. The condition is message-only: it does not affect configuration resolution, config
+// hypershift.openshift.io/kube-apiserver-verbosity-level annotation, the legacy OVNSbDb
+// and OIDC service entries, and spec.platform.aws.multiArch. The annotation fires whenever
+// it is present, even if spec.operatorConfiguration.kubeAPIServer.logLevel is also set and
+// taking precedence; the service entries fire whenever they are present because those
+// services are no longer used, and multiArch fires when true because it is no longer used.
+// The condition is message-only: it does not affect configuration resolution, config
 // hashes, or rollouts.
 func (r *HostedControlPlaneReconciler) reconcileDeprecatedConfigurationStatus(hostedControlPlane *hyperv1.HostedControlPlane) {
 	var deprecationMessages []string
@@ -567,6 +568,9 @@ func (r *HostedControlPlaneReconciler) reconcileDeprecatedConfigurationStatus(ho
 		if service.Service == hyperv1.OVNSbDb || service.Service == hyperv1.OIDC {
 			deprecationMessages = append(deprecationMessages, fmt.Sprintf("The deprecated spec.services entry %q is present; remove this entry because the service is no longer used", service.Service))
 		}
+	}
+	if hostedControlPlane.Spec.Platform.AWS != nil && hostedControlPlane.Spec.Platform.AWS.MultiArch {
+		deprecationMessages = append(deprecationMessages, "The deprecated spec.platform.aws.multiArch field is set to true; remove it because it is no longer used")
 	}
 
 	newCondition := metav1.Condition{
