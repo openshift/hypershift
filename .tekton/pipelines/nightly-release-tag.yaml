@@ -345,7 +345,7 @@ spec:
             echo "Tagging into: ${IMAGE_STREAM_TAG}"
 
             oc tag --source=docker --loglevel=2 --reference-policy='source' \
-              --import-mode='PreserveOriginal' --reference "${IMAGE}" "${IMAGE_STREAM_TAG}"
+              --import-mode='PreserveOriginal' "${IMAGE}" "${IMAGE_STREAM_TAG}"
           done
 
           echo "=== tag-image: done ==="
