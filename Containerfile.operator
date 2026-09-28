@@ -6,7 +6,7 @@ COPY . .
 
 RUN make build
 
-FROM registry.redhat.io/rhel9-4-els/rhel:9.4
+FROM registry.redhat.io/rhel9-8-els/rhel:9.8
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hypershift-operator \
                     /hypershift/bin/control-plane-operator \
