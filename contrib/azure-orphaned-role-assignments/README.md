@@ -81,10 +81,10 @@ go build -o azure-orphaned-role-assignments .
 | `-subscription-id` | Yes | | Azure subscription ID |
 | `-dry-run` | No | `true` | Preview changes without deleting |
 | `-verbose` | No | `false` | Show individual assignments and Graph batch progress |
-| `-scope-filter` | No | | Only consider assignments whose scope contains this substring (e.g. a resource group name) |
+| `-scope-filter` | No | | Only consider assignments in this scope. A bare name (e.g. `os4-common`) matches that resource group **exactly** — it will not match `os4-common-backup`; a value containing `/` is treated as a scope path and matches that scope or anything beneath it. Case-insensitive. |
 | `-role-filter` | No | | Comma-separated role names to restrict to (substring, case-insensitive) |
 | `-principal-types` | No | `ServicePrincipal` | Comma-separated principal types to consider (e.g. `ServicePrincipal,User,Group`) |
-| `-min-age` | No | `24h` | Only consider assignments created at least this long ago (guards against Graph propagation lag). Set to `0` to disable. |
+| `-min-age` | No | `24h` | Only consider assignments created at least this long ago (guards against Graph propagation lag). Set to `0` to disable. Negative values are rejected. |
 
 ## Authentication
 

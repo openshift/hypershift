@@ -45,7 +45,7 @@ func main() {
 
 	flag.StringVar(&opts.subscriptionID, "subscription-id", "", "Azure subscription ID (required)")
 	flag.StringVar(&opts.roleFilter, "role-filter", "", "Comma-separated list of role definition names to restrict deletion to (optional; substring match, case-insensitive). If empty, all roles are considered.")
-	flag.StringVar(&opts.scopeFilter, "scope-filter", "", "Only consider assignments whose scope contains this substring, case-insensitive (optional, e.g. a resource group name)")
+	flag.StringVar(&opts.scopeFilter, "scope-filter", "", "Only consider assignments in this scope (optional). A bare name (e.g. \"os4-common\") matches that resource group exactly; a value containing \"/\" is treated as a scope path and matches that scope or anything beneath it. Case-insensitive.")
 	flag.StringVar(&opts.principalTypes, "principal-types", "ServicePrincipal", "Comma-separated principal types to consider for cleanup (e.g. ServicePrincipal,User,Group)")
 	flag.DurationVar(&opts.minAge, "min-age", 24*time.Hour, "Only consider assignments created at least this long ago. Guards against deleting grants for freshly-created principals that Microsoft Graph has not yet propagated. Set to 0 to disable.")
 	flag.BoolVar(&opts.dryRun, "dry-run", true, "If true, only print what would be deleted (default: true)")
@@ -55,6 +55,9 @@ func main() {
 	if opts.subscriptionID == "" {
 		flag.Usage()
 		os.Exit(1)
+	}
+	if opts.minAge < 0 {
+		log.Fatalf("Error: -min-age must be >= 0 (use 0 to disable the guard), got %s", opts.minAge)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -156,8 +159,10 @@ func listAllAssignments(ctx context.Context, raClient *armauthorization.RoleAssi
 				continue
 			}
 			info := assignmentInfo{
-				id:          *ra.ID,
-				principalID: *ra.Properties.PrincipalID,
+				id: *ra.ID,
+				// Normalize the GUID so ARM and Graph IDs compare regardless of the
+				// hex casing each service happens to serialize.
+				principalID: strings.ToLower(*ra.Properties.PrincipalID),
 			}
 			if ra.Properties.Scope != nil {
 				info.scope = *ra.Properties.Scope
@@ -185,18 +190,19 @@ func listAllAssignments(ctx context.Context, raClient *armauthorization.RoleAssi
 func selectCandidates(all []assignmentInfo, existing sets.Set[string], opts options) []assignmentInfo {
 	wantedTypes := parseCSVSet(opts.principalTypes)
 	roleFilters := parseCSVList(opts.roleFilter)
-	scopeFilter := strings.ToLower(opts.scopeFilter)
 
 	var candidates []assignmentInfo
 	var skippedInherited, skippedRecent int
 	for _, a := range all {
-		if existing.Has(a.principalID) {
+		// Compare GUIDs case-insensitively: ARM and Graph may serialize the same
+		// principal ID with different hex casing.
+		if existing.Has(strings.ToLower(a.principalID)) {
 			continue // principal still exists, not orphaned
 		}
 		if wantedTypes.Len() > 0 && !wantedTypes.Has(a.principalType) {
 			continue
 		}
-		if scopeFilter != "" && !strings.Contains(strings.ToLower(a.scope), scopeFilter) {
+		if !scopeMatchesFilter(a.scope, opts.scopeFilter) {
 			continue
 		}
 		if len(roleFilters) > 0 && !matchesAnySubstring(a.roleName, roleFilters) {
@@ -228,9 +234,15 @@ func selectCandidates(all []assignmentInfo, existing sets.Set[string], opts opti
 	return candidates
 }
 
+// assignmentDeleter is the subset of the Azure role-assignments client that
+// deleteCandidates needs, so the deletion path can be unit-tested with a fake.
+type assignmentDeleter interface {
+	DeleteByID(ctx context.Context, roleAssignmentID string, options *armauthorization.RoleAssignmentsClientDeleteByIDOptions) (armauthorization.RoleAssignmentsClientDeleteByIDResponse, error)
+}
+
 // deleteCandidates deletes the selected assignments (or, in dry-run, only reports
 // them), attempting every candidate and returning an error if any deletion failed.
-func deleteCandidates(ctx context.Context, raClient *armauthorization.RoleAssignmentsClient, candidates []assignmentInfo, opts options) error {
+func deleteCandidates(ctx context.Context, deleter assignmentDeleter, candidates []assignmentInfo, opts options) error {
 	var deleted, failed int
 	for _, a := range candidates {
 		if opts.dryRun {
@@ -250,7 +262,7 @@ func deleteCandidates(ctx context.Context, raClient *armauthorization.RoleAssign
 		if err := func() error {
 			delCtx, cancel := context.WithTimeout(ctx, apiTimeout)
 			defer cancel()
-			_, err := raClient.DeleteByID(delCtx, a.id, nil)
+			_, err := deleter.DeleteByID(delCtx, a.id, nil)
 			return err
 		}(); err != nil {
 			log.Printf("  ERROR: failed to delete assignment %s: %v", shortID(a.id), err)
@@ -361,7 +373,8 @@ func resolveExistingPrincipals(ctx context.Context, cred azcore.TokenCredential,
 			return nil, fmt.Errorf("failed to parse graph response: %w", err)
 		}
 		for _, o := range parsed.Value {
-			existing.Insert(o.ID)
+			// Normalize to match the lower-cased principal IDs from ARM.
+			existing.Insert(strings.ToLower(o.ID))
 		}
 		if verbose {
 			log.Printf("  Graph batch %d-%d: %d of %d principals exist", start, end, len(parsed.Value), len(batch))
@@ -378,6 +391,23 @@ func isUnderSubscription(scope, subscriptionID string) bool {
 	s := strings.ToLower(scope)
 	prefix := "/subscriptions/" + strings.ToLower(subscriptionID)
 	return s == prefix || strings.HasPrefix(s, prefix+"/")
+}
+
+// scopeMatchesFilter reports whether scope satisfies the -scope-filter value.
+// An empty filter matches everything. A filter containing "/" is treated as a
+// scope path and matches that scope exactly or any scope beneath it. A bare name
+// is treated as a resource group and matches that resource-group component
+// exactly, so "os4-common" does not match "os4-common-backup". Case-insensitive.
+func scopeMatchesFilter(scope, filter string) bool {
+	if filter == "" {
+		return true
+	}
+	f := strings.ToLower(filter)
+	if strings.Contains(f, "/") {
+		s := strings.ToLower(scope)
+		return s == f || strings.HasPrefix(s, f+"/")
+	}
+	return resourceGroupOf(scope) == f
 }
 
 var rgRe = regexp.MustCompile(`(?i)/resourcegroups/([^/]+)`)
