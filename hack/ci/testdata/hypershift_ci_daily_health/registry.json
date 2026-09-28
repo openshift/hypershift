@@ -1,0 +1,56 @@
+{
+  "$schema": "https://hypershift-ci-health.apps.rosa.hypershift-ci-2.1xls.p3.openshiftapps.com/api/schemas/Registry.json",
+  "api_version": "job-registry/v7",
+  "jobs": [
+    {
+      "id": "periodic-ci-openshift-hypershift-release-5.2-periodics-marker",
+      "name": "periodic-ci-openshift-hypershift-release-5.2-periodics-marker",
+      "repository": "openshift/hypershift", "type": "periodic", "platforms": ["aws"], "e2e_framework": "v2",
+      "release_controller": [{"stream":{"name":"5.2.0-0.ci","release":"5.2","kind":"ci","architecture":"amd64","end_of_life":false,"release_status_url":"https://amd64.ocp.releases.ci.openshift.org/releasestream/5.2.0-0.ci"},"verification":{"name":"marker","role":"informing","optional":true,"disabled":false}}]
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-aws",
+      "name": "periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-aws",
+      "repository": "openshift/hypershift", "type": "periodic", "platforms": ["aws"], "e2e_framework": "v2",
+      "release_controller": [{"stream":{"name":"5.1.0-0.ci","release":"5.1","kind":"ci","architecture":"amd64","end_of_life":false,"release_status_url":"https://amd64.ocp.releases.ci.openshift.org/releasestream/5.1.0-0.ci"},"verification":{"name":"hypershift-e2e-aws","role":"blocking","optional":false,"disabled":false}}]
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-5.0-periodics-marker", "name": "periodic-ci-openshift-hypershift-release-5.0-periodics-marker",
+      "repository": "openshift/hypershift", "type": "periodic", "platforms": ["aws"], "e2e_framework": "none",
+      "release_controller": [{"stream":{"name":"5.0.0-0.ci","release":"5.0","kind":"ci","architecture":"amd64","end_of_life":false,"release_status_url":"https://amd64.ocp.releases.ci.openshift.org/releasestream/5.0.0-0.ci"},"verification":{"name":"marker","role":"informing","optional":true,"disabled":false}}]
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-4.23-periodics-marker", "name": "periodic-ci-openshift-hypershift-release-4.23-periodics-marker",
+      "repository": "openshift/hypershift", "type": "periodic", "platforms": ["aws"], "e2e_framework": "none",
+      "release_controller": [{"stream":{"name":"4.23.0-0.ci","release":"4.23","kind":"ci","architecture":"amd64","end_of_life":false,"release_status_url":"https://amd64.ocp.releases.ci.openshift.org/releasestream/4.23.0-0.ci"},"verification":{"name":"marker","role":"informing","optional":true,"disabled":false}}]
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-4.22-periodics-marker", "name": "periodic-ci-openshift-hypershift-release-4.22-periodics-marker",
+      "repository": "openshift/hypershift", "type": "periodic", "platforms": ["aws"], "e2e_framework": "none",
+      "release_controller": [{"stream":{"name":"4.22.0-0.ci","release":"4.22","kind":"ci","architecture":"amd64","end_of_life":false,"release_status_url":"https://amd64.ocp.releases.ci.openshift.org/releasestream/4.22.0-0.ci"},"verification":{"name":"marker","role":"informing","optional":true,"disabled":false}}]
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-4.21-periodics-marker", "name": "periodic-ci-openshift-hypershift-release-4.21-periodics-marker",
+      "repository": "openshift/hypershift", "type": "periodic", "platforms": ["aws"], "e2e_framework": "none",
+      "release_controller": [{"stream":{"name":"4.21.0-0.ci","release":"4.21","kind":"ci","architecture":"amd64","end_of_life":false,"release_status_url":"https://amd64.ocp.releases.ci.openshift.org/releasestream/4.21.0-0.ci"},"verification":{"name":"marker","role":"informing","optional":true,"disabled":false}}]
+    },
+    {
+      "id": "pull-ci-openshift-hypershift-main-e2e-streak", "name": "pull-ci-openshift-hypershift-main-e2e-streak",
+      "repository": "openshift/hypershift", "type": "presubmit", "platforms": ["aws"], "e2e_framework": "v2",
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-main-e2e-streak",
+      "presubmit": {"required":true,"target_branch":"main","target_release":"5.1","branches":["^main$"],"sippy_ingestion":{"enabled":true}}
+    },
+    {
+      "id": "pull-ci-openshift-hypershift-release-5.0-e2e-veto", "name": "pull-ci-openshift-hypershift-release-5.0-e2e-veto",
+      "repository": "openshift/hypershift", "type": "presubmit", "platforms": ["aws"], "e2e_framework": "v2",
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-release-5.0-e2e-veto",
+      "presubmit": {"required":true,"target_branch":"release-5.0","target_release":"5.0","branches":["^release-5\\.0$"],"sippy_ingestion":{"enabled":false}}
+    },
+    {
+      "id": "pull-ci-openshift-hypershift-release-4.22-e2e-error", "name": "pull-ci-openshift-hypershift-release-4.22-e2e-error",
+      "repository": "openshift/hypershift", "type": "presubmit", "platforms": ["aws"], "e2e_framework": "v2",
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-release-4.22-e2e-error",
+      "presubmit": {"required":true,"target_branch":"release-4.22","target_release":"4.22","branches":["^release-4\\.22$"],"sippy_ingestion":{"enabled":false}}
+    }
+  ]
+}

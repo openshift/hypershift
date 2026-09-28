@@ -1,0 +1,20 @@
+{
+  "responses": [
+    {"pattern": "/api/job-registry$", "file": "registry.json"},
+    {"pattern": "/_dashboard/health/windows/1w$", "file": "health-1w.json"},
+    {"pattern": "releases\\.ci\\.openshift\\.org/$", "file": "release-index.html"},
+    {"pattern": "/api/v1/releasestreams/all$", "file": "streams-all.json"},
+    {"pattern": "/releasestream/5\\.1\\.0-0\\.ci/release/5\\.1\\.0-0\\.ci-2026-09-28-100000", "file": "current-5.1.json"},
+    {"pattern": "sippy\\.dptools\\.openshift\\.org/api/jobs/runs\\?release=5\\.1", "file": "sippy-periodic.json"},
+    {"pattern": "job-history/.*/pull-ci-openshift-hypershift-main-e2e-streak(?:\\?.*)?$", "file": "prow-main-streak.html"},
+    {"pattern": "job-history/.*/pull-ci-openshift-hypershift-release-5\\.0-e2e-veto(?:\\?.*)?$", "file": "prow-release-veto.html"},
+    {"pattern": "job-history/.*/pull-ci-openshift-hypershift-release-4\\.22-e2e-error(?:\\?.*)?$", "file": "prow-release-error.html"},
+    {"pattern": "/310/prowjob\\.json$", "file": "prowjob-310.json"},
+    {"pattern": "/309/prowjob\\.json$", "file": "prowjob-309.json"},
+    {"pattern": "/308/prowjob\\.json$", "file": "prowjob-308.json"},
+    {"pattern": "/410/prowjob\\.json$", "file": "prowjob-410.json"},
+    {"pattern": "/409/prowjob\\.json$", "file": "prowjob-409.json"},
+    {"pattern": "/408/prowjob\\.json$", "file": "prowjob-408.json"},
+    {"pattern": "/510/prowjob\\.json$", "file": "prowjob-510.json"}
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "api_version": "dashboard-health/v1", "window": "1w",
+  "data": {
+    "jobs": [
+      {"id":"pull-ci-openshift-hypershift-main-e2e-streak","prow":"pull-ci-openshift-hypershift-main-e2e-streak","name":"e2e-streak","rate":40,"runs":10,"fails":6,"test_fails":5,"infra_fails":1},
+      {"id":"pull-ci-openshift-hypershift-release-5.0-e2e-veto","prow":"pull-ci-openshift-hypershift-release-5.0-e2e-veto","name":"e2e-veto","rate":90,"runs":10,"fails":1,"test_fails":1,"infra_fails":0},
+      {"id":"pull-ci-openshift-hypershift-release-4.22-e2e-error","prow":"pull-ci-openshift-hypershift-release-4.22-e2e-error","name":"e2e-error","rate":70,"runs":10,"fails":3,"test_fails":0,"infra_fails":3}
+    ],
+    "payload_blocking_jobs": [
+      {"id":"periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-aws","prow":"periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-aws","name":"e2e-aws","release":"5.1","rate":75,"runs":20,"fails":5,"test_fails":4,"infra_fails":1}
+    ],
+    "component_readiness_jobs": [], "sparkline_slots": [], "alerts": []
+  }
+}
