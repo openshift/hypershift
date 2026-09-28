@@ -1,0 +1,269 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedCluster AWS terminationHandlerQueueURL validation"
+crdName: hostedclusters.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  # --- AWS terminationHandlerQueueURL validation ---
+  # Note: Envtest format requires self-contained inline YAML for each test case.
+  # Duplication is unavoidable but kept minimal by removing verbose service config.
+
+  - name: when terminationHandlerQueueURL is a valid commercial SQS URL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/image
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              networkARN: arn:aws:iam::123456789012:role/network
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/npm
+              storageARN: arn:aws:iam::123456789012:role/storage
+            terminationHandlerQueueURL: https://sqs.us-east-1.amazonaws.com/123456789012/my-queue
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+
+  - name: when terminationHandlerQueueURL is a valid FIPS commercial SQS URL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/image
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              networkARN: arn:aws:iam::123456789012:role/network
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/npm
+              storageARN: arn:aws:iam::123456789012:role/storage
+            terminationHandlerQueueURL: https://sqs-fips.us-east-1.amazonaws.com/123456789012/my-queue
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+
+  - name: when terminationHandlerQueueURL is a valid GovCloud SQS FIFO URL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-gov-west-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws-us-gov:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws-us-gov:iam::123456789012:role/image
+              ingressARN: arn:aws-us-gov:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws-us-gov:iam::123456789012:role/kcc
+              networkARN: arn:aws-us-gov:iam::123456789012:role/network
+              nodePoolManagementARN: arn:aws-us-gov:iam::123456789012:role/npm
+              storageARN: arn:aws-us-gov:iam::123456789012:role/storage
+            terminationHandlerQueueURL: https://sqs.us-gov-west-1.amazonaws.com/123456789012/my-queue.fifo
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+
+  - name: when terminationHandlerQueueURL is a valid FIPS GovCloud SQS FIFO URL it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-gov-west-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws-us-gov:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws-us-gov:iam::123456789012:role/image
+              ingressARN: arn:aws-us-gov:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws-us-gov:iam::123456789012:role/kcc
+              networkARN: arn:aws-us-gov:iam::123456789012:role/network
+              nodePoolManagementARN: arn:aws-us-gov:iam::123456789012:role/npm
+              storageARN: arn:aws-us-gov:iam::123456789012:role/storage
+            terminationHandlerQueueURL: https://sqs-fips.us-gov-west-1.amazonaws.com/123456789012/my-queue.fifo
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+
+  - name: when terminationHandlerQueueURL has invalid format it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/image
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              networkARN: arn:aws:iam::123456789012:role/network
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/npm
+              storageARN: arn:aws:iam::123456789012:role/storage
+            terminationHandlerQueueURL: http://invalid-url
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+    expectedError: "spec.platform.aws.terminationHandlerQueueURL in body should match"
+
+  - name: when terminationHandlerQueueURL has wrong account ID format it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/image
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              networkARN: arn:aws:iam::123456789012:role/network
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/npm
+              storageARN: arn:aws:iam::123456789012:role/storage
+            terminationHandlerQueueURL: https://sqs.us-east-1.amazonaws.com/12345/my-queue
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+    expectedError: "spec.platform.aws.terminationHandlerQueueURL in body should match"
