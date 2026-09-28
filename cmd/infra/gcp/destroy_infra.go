@@ -68,7 +68,6 @@ func (o *DestroyInfraOptions) Validate() error {
 
 // Run executes the infrastructure destruction
 func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error {
-	logger.Info("Destroying GCP infrastructure")
 
 	// Initialize network manager
 	networkManager, err := NewNetworkManager(ctx, o.ProjectID, o.InfraID, o.Region, logger)
@@ -104,5 +103,6 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		return fmt.Errorf("failed to delete VPC network: %w", err)
 	}
 
+	logger.Info("Successfully destroyed GCP infrastructure")
 	return nil
 }

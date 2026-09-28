@@ -68,7 +68,7 @@ func TestExtractParameters(t *testing.T) {
 			expectedProject: "test-project",
 			expectedRegion:  "us-central1",
 		},
-		"When explicit flags provided, it should preserve flag values and not overwrite": {
+		"When HostedCluster exists, it should override flag values": {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "cluster-infra",
@@ -88,9 +88,9 @@ func TestExtractParameters(t *testing.T) {
 					Region:    "flag-region",
 				},
 			},
-			expectedInfraID: "flag-infra",
-			expectedProject: "flag-project",
-			expectedRegion:  "flag-region",
+			expectedInfraID: "cluster-infra",
+			expectedProject: "cluster-project",
+			expectedRegion:  "cluster-region",
 		},
 		"When HostedCluster is nil, it should preserve existing flag values": {
 			hostedCluster: nil,
@@ -379,7 +379,7 @@ func TestValidateInputs(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := validateInputs(test.opts)
+			err := validateInputs(nil, test.opts)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred(), "Should return validation error for missing inputs")
 			} else {

@@ -91,37 +91,45 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	return errors.Join(errs...)
 }
 
-// extractParameters extracts GCP parameters from HostedCluster when not explicitly provided via flags.
-// Only extracts when user hasn't provided explicit flag values, allowing manual override for cross-project scenarios.
+// extractParameters extracts GCP parameters from HostedCluster spec.
+// When HostedCluster exists, its spec values always take precedence over CLI flags.
+// When HostedCluster is nil (already deleted), CLI flags must provide all required values.
 func extractParameters(hostedCluster *hyperv1.HostedCluster, o *core.DestroyOptions) {
 	if hostedCluster != nil {
-		if o.InfraID == "" {
-			o.InfraID = hostedCluster.Spec.InfraID
-		}
+		o.InfraID = hostedCluster.Spec.InfraID
 		if hostedCluster.Spec.Platform.GCP != nil {
-			// Extract project ID from infrastructure project - works for same-project scenarios.
-			// For cross-project IAM/infra, user must provide explicit --project-id flag.
-			if o.GCPPlatform.ProjectID == "" {
-				o.GCPPlatform.ProjectID = hostedCluster.Spec.Platform.GCP.Project
-			}
-			if o.GCPPlatform.Region == "" {
-				o.GCPPlatform.Region = hostedCluster.Spec.Platform.GCP.Region
-			}
+			o.GCPPlatform.ProjectID = hostedCluster.Spec.Platform.GCP.Project
+			o.GCPPlatform.Region = hostedCluster.Spec.Platform.GCP.Region
 		}
 	}
 }
 
 // validateInputs validates required GCP destroy inputs
-func validateInputs(o *core.DestroyOptions) error {
+func validateInputs(hostedCluster *hyperv1.HostedCluster, o *core.DestroyOptions) error {
 	var inputErrors []error
+
+	hcMissing := hostedCluster == nil
+
 	if len(o.InfraID) == 0 {
-		inputErrors = append(inputErrors, fmt.Errorf("infrastructure ID is required"))
+		if hcMissing {
+			inputErrors = append(inputErrors, fmt.Errorf("infrastructure ID is required (HostedCluster not found, provide --infra-id)"))
+		} else {
+			inputErrors = append(inputErrors, fmt.Errorf("infrastructure ID is required"))
+		}
 	}
 	if len(o.GCPPlatform.ProjectID) == 0 {
-		inputErrors = append(inputErrors, fmt.Errorf("project ID is required"))
+		if hcMissing {
+			inputErrors = append(inputErrors, fmt.Errorf("project ID is required (HostedCluster not found, provide --project-id)"))
+		} else {
+			inputErrors = append(inputErrors, fmt.Errorf("project ID is required"))
+		}
 	}
 	if !o.GCPPlatform.PreserveInfra && len(o.GCPPlatform.Region) == 0 {
-		inputErrors = append(inputErrors, fmt.Errorf("region is required"))
+		if hcMissing {
+			inputErrors = append(inputErrors, fmt.Errorf("region is required when destroying infrastructure (HostedCluster not found, provide --region)"))
+		} else {
+			inputErrors = append(inputErrors, fmt.Errorf("region is required when destroying infrastructure"))
+		}
 	}
 	if err := errors.Join(inputErrors...); err != nil {
 		return fmt.Errorf("required inputs are missing: %w", err)
@@ -138,7 +146,7 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 
 	extractParameters(hostedCluster, o)
 
-	if err := validateInputs(o); err != nil {
+	if err := validateInputs(hostedCluster, o); err != nil {
 		return err
 	}
 
