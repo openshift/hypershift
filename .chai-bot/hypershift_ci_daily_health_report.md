@@ -19,11 +19,11 @@ https://hypershift-ci-health.apps.rosa.hypershift-ci-2.1xls.p3.openshiftapps.com
 
 Do not construct other window paths. The dashboard registry is broader than the selected health rows. Treat these registry fields as authoritative:
 
-- Job identity and classification: `name`, `type`, `repository`, `versions`, `platforms`, and `e2e_framework`.
+- Job identity and classification: `id`, `name`, `type`, `repository`, `versions`, `platforms`, and `e2e_framework`. Registry `id` and `name` are full Prow identities; a health row's shorter `name` is display-only.
 - Required presubmits: `presubmit.required`, `presubmit.target_branch`, and `presubmit.target_release`. Use `presubmit.branches` only when `presubmit.target_branch` is empty, and label the resulting branch mapping uncertain.
 - Release-controller participation: `release_controller[].stream` and `release_controller[].verification`, including release, architecture, stream kind, end-of-life state, release-status URL, verification name, role, optional state, and disabled state.
 
-The health response contains `data.jobs`, `data.payload_blocking_jobs`, `data.component_readiness_jobs`, and `data.sparkline_slots`. Use their aggregate fields such as `runs`, `fails`, `test_fails`, `infra_fails`, `rate`, `prev`, `prev_runs`, and `trend` only for dashboard historical context. A configured job can be absent from a health response; absence means `No dashboard data`, not healthy.
+The health response contains `data.jobs`, `data.payload_blocking_jobs`, `data.component_readiness_jobs`, and `data.sparkline_slots`. Join a registry job to either `data.jobs` or `data.payload_blocking_jobs` only when the registry `id` exactly equals the health row's full `id` or `prow`; never join on the health row's display `name`. Use display names only when rendering the report. Use aggregate fields such as `runs`, `fails`, `test_fails`, `infra_fails`, `rate`, `prev`, `prev_runs`, and `trend` only for dashboard historical context. A configured job can be absent from a health response; absence means `No dashboard data`, not healthy.
 
 Do not infer job identity, platform, framework, branch, release, or configured role from display text or job-name conventions when registry metadata supplies it.
 
@@ -33,12 +33,12 @@ Use public Sippy data to augment the dashboard with test-level evidence: complet
 
 Sippy is not interchangeable with Prow. Do not use Component Readiness to determine job pass rates, configured release-blocker status, or branch-wide merge impact. For the current and previous supported releases, retain these supplemental links:
 
-- HyperShift-filtered jobs: `https://sippy.dptools.openshift.org/sippy-ng/jobs/{VERSION}?filters={encoded_hypershift_name_filter}` using the double-encoded filter `{"items":[{"columnField":"name","operatorValue":"contains","value":"hypershift"}]}`.
+- HyperShift-filtered jobs: `https://sippy.dptools.openshift.org/sippy-ng/jobs/{VERSION}?filters=%7B%22items%22%3A%5B%7B%22columnField%22%3A%22name%22%2C%22operatorValue%22%3A%22contains%22%2C%22value%22%3A%22hypershift%22%7D%5D%7D`. This is the JSON filter `{"items":[{"columnField":"name","operatorValue":"contains","value":"hypershift"}]}` percent-encoded exactly once; do not encode the resulting query value again.
 - Component Readiness: `https://sippy.dptools.openshift.org/sippy-ng/component_readiness/capabilities?view={VERSION}-hypershift-candidates&component=HyperShift`.
 
 ### Release controller — subordinate live payload status
 
-Use the public release controller to discover the latest current OpenShift release `N`, enumerate its actual predecessor sequence, identify payloads under evaluation, and read configured verification results. A future-version job in the registry does not establish `N`.
+Use the public release controller to discover the latest current OpenShift release `N`, enumerate its actual predecessor sequence, identify payloads under evaluation, and read configured verification results. A future-version job in the registry does not establish `N`, and the highest GA minor in a stable stream does not establish the active development minor.
 
 For each supported release and participating stream, capture the exact payload tag, phase, verification name and result, and release-status URL. Only call a periodic job a **release blocker** when the live release controller shows that its non-optional blocking verification is failed or pending on the named payload and prevents that payload from being accepted. If this cannot be established, report `Payload impact unknown`.
 
@@ -52,11 +52,12 @@ Use Sippy and Prow according to their separate roles. When they disagree, show t
 
 At execution time:
 
-1. Discover current release `N` from the live public release controller. Do not hard-code a release number and do not choose the highest registry version blindly.
-2. Follow the actual OpenShift release sequence to select `N` and its four predecessors (`N-4`). Do not subtract minor numbers arithmetically across a major-version boundary.
-3. Confirm the selected releases against registry stream metadata and exclude streams explicitly marked end-of-life. If discovery cannot establish all five positions, retain known releases, mark missing positions `Unknown`, and continue fail-closed.
-4. Build the presubmit branch list first: `main`, followed by the exact `release-X.Y` branches for the supported release sequence in newest-to-oldest order.
-5. Iterate `openshift/hypershift` presubmit jobs and append each required job to the group matching its exact `presubmit.target_branch`. Annotate each branch with `presubmit.target_release`. Keep a branch group even when it has no matching health row. Put jobs with only an uncertain `presubmit.branches` mapping in a separately labeled uncertain group.
+1. Fetch the live amd64 release-controller stream index at `https://amd64.ocp.releases.ci.openshift.org/` and the dashboard job registry. From registry `release_controller[].stream` entries, consider only amd64 `ci` or `nightly` streams with `end_of_life == false` whose exact stream name appears in the controller index.
+2. Validate each candidate against `GET https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/{stream}/latest`. The endpoint must return a current payload whose semantic major/minor exactly matches the registry `stream.release`. Group validated streams by that release and select the greatest semantic major/minor as `N`. Do not hard-code a release, use a future stream that lacks a current payload or registry match, or substitute the highest GA stable release.
+3. Build the predecessor sequence by sorting distinct lower semantic major/minor releases from matching non-end-of-life registry `ci`/`nightly` streams in descending order and validating their exact streams through the same controller API. Select the first four distinct releases after `N`; semantic tuple ordering, not minor-number subtraction, defines the transition across a major-version boundary.
+4. Fail closed if either source is unavailable, a payload minor disagrees with registry metadata, candidate selection is ambiguous, or five validated distinct releases cannot be established: set the scope and overall state to `Unknown`, identify the failed check, and do not publish partial release-gate conclusions.
+5. Build the presubmit branch list first: `main`, followed by the exact `release-X.Y` branches for the supported release sequence in newest-to-oldest order.
+6. Iterate `openshift/hypershift` presubmit jobs and append each required job to the group matching its exact `presubmit.target_branch`. Annotate each branch with `presubmit.target_release`. Keep a branch group even when it has no matching health row. Put jobs with only an uncertain `presubmit.branches` mapping in a separately labeled uncertain group.
 
 ## Configured gate inventory
 
@@ -101,6 +102,7 @@ Exclude `ABORTED` and `ERROR` from the denominator and report their counts separ
 - 📉 **Degrading:** change is less than -10 percentage points.
 - ➡️ **Stable:** change is between -10 and +10 percentage points, inclusive.
 - ⚪ **No data:** either window has zero `SUCCESS + FAILURE` results.
+- ⚠️ **Low confidence:** both windows have data, but either contains fewer than five `SUCCESS + FAILURE` results. Show the raw fractions, percentages, and percentage-point change, but do not label the trend improving, degrading, or stable.
 
 Do not calculate an exact trend from dashboard fixed buckets. If timestamped Prow or Sippy records do not cover both exact windows, report `No data` and identify the missing interval. The dashboard remains the default source for inventory and historical context; the auxiliary run source is required only for exact chronology and trend math.
 
@@ -151,6 +153,7 @@ Stage 1 — initial channel message:
   • 📈 Improving: {count and highest-priority jobs, or None}
   • 📉 Degrading: {count and highest-priority jobs, or None}
   • ➡️ Stable: {count}
+  • ⚠️ Low confidence: {count and raw changes, or None}
   • ⚪ No data: {count}
 
 *Release blockers — N through N-4*
@@ -164,7 +167,7 @@ Stage 1 — initial channel message:
 
 *Action items*
   • {owner-neutral next action and incident next step, or None}
-  • Tracking: {authorized existing public Jira key, or Tracking issue needed}
+  • Tracking: {confirmed existing public Jira key, Tracking issue needed, or None}
 
 _Dashboard: <https://hypershift-ci-health.apps.rosa.hypershift-ci-2.1xls.p3.openshiftapps.com|CI Health> · <https://prow.ci.openshift.org/?job=*hypershift*|Prow> · <{sippy_jobs_url}|Sippy Jobs>_
 ```
@@ -192,7 +195,7 @@ An HTML chart is optional only if the scheduled-report framework explicitly expo
 
 ### Jira and incident bookkeeping
 
-Include an existing public Jira tracking key only when it was explicitly supplied and its relevance was confirmed. After confirmation, at most one consolidated Jira update may summarize the report; never create, comment on, assign, or bulk-update Jira issues autonomously. If no authorized key exists, surface `Tracking issue needed` as an action item.
+The scheduled report is read-only with respect to Jira. It may read and reference an existing public Jira key only when the key was explicitly supplied and its relevance was confirmed, but it must not create, comment on, assign, transition, or update an issue. Render `Tracking: None` when the report is healthy or no deduplicated incident candidate exists. Only when a confirmed deduplicated incident candidate exists without a verified key, render the human action `Tracking issue needed`.
 
 Incident language is a recommendation for the responsible humans. Do not create an incident, trigger testing, or contact individuals automatically.
 
