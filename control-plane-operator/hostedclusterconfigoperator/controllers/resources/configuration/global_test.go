@@ -434,4 +434,72 @@ func TestReconcileGlobal(t *testing.T) {
 		assert.Expect(dns.Spec.PublicZone).To(Equal(&configv1.DNSZone{ID: "ZPUBLICINGRESS00001"}))
 		assert.Expect(dns.Spec.PrivateZone).To(Equal(&configv1.DNSZone{ID: "ZPRIVATEINGRESS0001"}))
 	})
+	t.Run("When image settings are removed, it should reconcile guest configuration", func(t *testing.T) {
+		testCases := []struct {
+			name   string
+			remove func(*hyperv1.HostedControlPlane)
+		}{
+			{
+				name: "When image configuration is removed, it should clear the guest Image spec and preserve IDMS",
+				remove: func(hcp *hyperv1.HostedControlPlane) {
+					hcp.Spec.Configuration.Image = nil
+				},
+			},
+			{
+				name: "When cluster configuration is removed, it should clear the guest Image spec and preserve IDMS",
+				remove: func(hcp *hyperv1.HostedControlPlane) {
+					hcp.Spec.Configuration = nil
+				},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				g := NewWithT(t)
+				ctx := t.Context()
+				hcp := configurationHCP()
+				hcp.Spec.ImageContentSources = []hyperv1.ImageContentSource{
+					{
+						Source:  "quay.io/openshift-release-dev/ocp-release",
+						Mirrors: []string{"mirror.example.com/openshift/release-images"},
+					},
+				}
+				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
+					Image: &configv1.ImageSpec{
+						AdditionalTrustedCA: configv1.ConfigMapNameReference{Name: "mirror-registry-ca"},
+						RegistrySources: configv1.RegistrySources{
+							InsecureRegistries: []string{"mirror.example.com"},
+							AllowedRegistries:  []string{"quay.io", "mirror.example.com"},
+						},
+					},
+				}
+				configuredSpec := *hcp.Spec.Configuration.Image
+
+				guestClient, controlPlaneClient := configurationClients(globalconfig.ProxyConfig())
+				r := &configurationTestClients{
+					client:                 guestClient,
+					cpClient:               controlPlaneClient,
+					CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				}
+
+				g.Expect(ReconcileGlobal(ctx, r.hosted(), r.controlPlane(), hcp)).To(Succeed(), "failed to reconcile configured guest Image and IDMS")
+				image := globalconfig.ImageConfig()
+				g.Expect(guestClient.Get(ctx, client.ObjectKeyFromObject(image), image)).To(Succeed(), "failed to get guest Image after initial reconciliation")
+				g.Expect(image.Spec).To(Equal(configuredSpec), "guest Image spec should match HCP image configuration after reconciliation")
+				idms := globalconfig.ImageDigestMirrorSet()
+				g.Expect(guestClient.Get(ctx, client.ObjectKeyFromObject(idms), idms)).To(Succeed(), "failed to get guest IDMS after initial reconciliation")
+				compareICSAndIDMS(g, hcp.Spec.ImageContentSources, idms)
+				originalMirrors := idms.Spec.DeepCopy()
+
+				tc.remove(hcp)
+				g.Expect(ReconcileGlobal(ctx, r.hosted(), r.controlPlane(), hcp)).To(Succeed(), "failed to reconcile after HCP Image configuration was removed")
+				image = globalconfig.ImageConfig()
+				g.Expect(guestClient.Get(ctx, client.ObjectKeyFromObject(image), image)).To(Succeed(), "failed to get guest Image after HCP Image configuration was removed")
+				g.Expect(image.Spec).To(Equal(configv1.ImageSpec{}), "guest Image spec should be cleared after HCP Image configuration was removed")
+				idms = globalconfig.ImageDigestMirrorSet()
+				g.Expect(guestClient.Get(ctx, client.ObjectKeyFromObject(idms), idms)).To(Succeed(), "failed to get guest IDMS after HCP Image configuration was removed")
+				g.Expect(idms.Spec).To(Equal(*originalMirrors), "guest IDMS spec should remain unchanged when HCP Image configuration is removed")
+			})
+		}
+	})
 }

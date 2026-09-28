@@ -19,6 +19,8 @@ func ImageConfig() *configv1.Image {
 func ReconcileImageConfig(cfg *configv1.Image, hcp *hyperv1.HostedControlPlane) {
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Image != nil {
 		cfg.Spec = *hcp.Spec.Configuration.Image
+	} else {
+		cfg.Spec = configv1.ImageSpec{}
 	}
 }
 
