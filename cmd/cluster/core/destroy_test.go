@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -218,6 +219,14 @@ func TestDestroyCluster(t *testing.T) {
 
 	t.Run("When force cleanup fails after the grace period, it should continue with platform cleanup", func(t *testing.T) {
 		g := NewGomegaWithT(t)
+		discoveryErr := errors.New("discovery unavailable for private-cluster")
+		cliSecretsErr := apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "private-secret", errors.New("private server response"))
+		var cleanupLogLines []string
+		logger := funcr.New(func(prefix, args string) {
+			if strings.Contains(prefix+args, "cleanup") || strings.Contains(prefix+args, "finalizer removal") || strings.Contains(prefix+args, "CLI generated secrets") {
+				cleanupLogLines = append(cleanupLogLines, prefix+args)
+			}
+		}, funcr.Options{})
 		hc := &hyperv1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace:  "clusters",
@@ -225,7 +234,15 @@ func TestDestroyCluster(t *testing.T) {
 				Finalizers: []string{"hypershift.openshift.io/finalizer"},
 			},
 		}
-		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hc).Build()
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithObjects(hc).
+			WithInterceptorFuncs(interceptor.Funcs{
+				DeleteAllOf: func(context.Context, client.WithWatch, client.Object, ...client.DeleteAllOfOption) error {
+					return cliSecretsErr
+				},
+			}).
+			Build()
 		platformSpecificsCalled := false
 		opts := &DestroyOptions{
 			ClusterGracePeriod: time.Nanosecond,
@@ -233,21 +250,29 @@ func TestDestroyCluster(t *testing.T) {
 			Name:               "test-cluster",
 			Namespace:          "clusters",
 			InfraID:            "test-infra",
-			Log:                log.Log,
+			Log:                logger,
 		}
 
-		err := destroyCluster(context.Background(), c, &fakeNamespacedResourceDiscovery{err: fmt.Errorf("discovery unavailable")}, hc, opts, func(context.Context, *DestroyOptions) error {
+		err := destroyCluster(context.Background(), c, &fakeNamespacedResourceDiscovery{err: discoveryErr}, hc, opts, func(context.Context, *DestroyOptions) error {
 			platformSpecificsCalled = true
 			return nil
 		})
 
 		g.Expect(err).To(HaveOccurred(), "force cleanup errors should be returned after platform cleanup")
 		g.Expect(err.Error()).To(ContainSubstring("failed to discover namespaced resources"), "the returned error should identify the failed cleanup stage")
+		g.Expect(errors.Is(err, discoveryErr)).To(BeTrue(), "the returned force-cleanup error should retain the discovery cause")
+		g.Expect(errors.Is(err, cliSecretsErr)).To(BeTrue(), "the returned force-cleanup error should include a concurrent CLI-secret cleanup failure")
 		g.Expect(platformSpecificsCalled).To(BeTrue(), "platform cleanup should still run after a force cleanup error")
 		updatedHC := &hyperv1.HostedCluster{}
 		getErr := c.Get(context.Background(), client.ObjectKeyFromObject(hc), updatedHC)
 		g.Expect(getErr).ToNot(HaveOccurred(), "HostedCluster should remain available for a cleanup retry")
 		g.Expect(controllerutil.ContainsFinalizer(updatedHC, destroyFinalizer)).To(BeTrue(), "force cleanup errors should preserve the HostedCluster destroy finalizer")
+		cleanupLogs := strings.Join(cleanupLogLines, "\n")
+		g.Expect(cleanupLogs).To(ContainSubstring("*errors.errorString"), "generic cleanup failures should log a safe error type")
+		g.Expect(cleanupLogs).To(ContainSubstring("Forbidden (HTTP 403)"), "API cleanup failures should log a safe status summary")
+		g.Expect(cleanupLogs).ToNot(ContainSubstring("private-cluster"), "cleanup logs should not disclose resource names")
+		g.Expect(cleanupLogs).ToNot(ContainSubstring("private-secret"), "cleanup logs should not disclose secret names")
+		g.Expect(cleanupLogs).ToNot(ContainSubstring("private server response"), "cleanup logs should not disclose raw server messages")
 	})
 
 	t.Run("When kubeconfig is set it should use it for the client", func(t *testing.T) {
@@ -324,6 +349,12 @@ func TestDestroyCluster(t *testing.T) {
 
 	t.Run("When deleteCLISecrets fails it should log and continue", func(t *testing.T) {
 		g := NewGomegaWithT(t)
+		var cleanupLogLines []string
+		logger := funcr.New(func(prefix, args string) {
+			if strings.Contains(prefix+args, "Failed to delete CLI generated secrets") {
+				cleanupLogLines = append(cleanupLogLines, prefix+args)
+			}
+		}, funcr.Options{})
 
 		c := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
@@ -348,12 +379,82 @@ func TestDestroyCluster(t *testing.T) {
 			Name:               "test-cluster",
 			Namespace:          "clusters",
 			InfraID:            "test-infra",
-			Log:                log.Log,
+			Log:                logger,
 		}
 
 		err := destroyCluster(context.Background(), c, nil, nil, opts, mockPlatformSpecifics)
 		g.Expect(err).ToNot(HaveOccurred(), "secret cleanup failures should not fail destruction")
 		g.Expect(platformSpecificsCalled).To(BeTrue(), "platform cleanup should run despite CLI secret cleanup failure")
+		cleanupLogs := strings.Join(cleanupLogLines, "\n")
+		g.Expect(cleanupLogs).To(ContainSubstring("Forbidden (HTTP 403)"), "secret cleanup should log a safe API status summary")
+		g.Expect(cleanupLogs).ToNot(ContainSubstring("clusters"), "secret cleanup logs should not disclose the namespace")
+		g.Expect(cleanupLogs).ToNot(ContainSubstring("access denied"), "secret cleanup logs should not disclose the raw server message")
+	})
+}
+
+func TestDeleteCLISecrets(t *testing.T) {
+	t.Run("When secret deletion fails, it should retain the API cause without logging sensitive identifiers", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		deleteErr := apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "private-secret", errors.New("private server response"))
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				DeleteAllOf: func(context.Context, client.WithWatch, client.Object, ...client.DeleteAllOfOption) error {
+					return deleteErr
+				},
+			}).
+			Build()
+		var logLines []string
+		logger := funcr.New(func(prefix, args string) {
+			logLines = append(logLines, prefix+args)
+		}, funcr.Options{})
+		opts := &DestroyOptions{Namespace: "private-namespace", InfraID: "private-infra", Log: logger}
+
+		err := deleteCLISecrets(context.Background(), opts, c)
+
+		g.Expect(errors.Is(err, deleteErr)).To(BeTrue(), "secret cleanup should retain the API cause")
+		logs := strings.Join(logLines, "\n")
+		g.Expect(logs).ToNot(ContainSubstring("private-namespace"), "secret cleanup logs should not disclose the namespace")
+		g.Expect(logs).ToNot(ContainSubstring("private-infra"), "secret cleanup logs should not disclose label values")
+		g.Expect(logs).ToNot(ContainSubstring("private-secret"), "secret cleanup logs should not disclose secret names")
+		g.Expect(logs).ToNot(ContainSubstring("private server response"), "secret cleanup logs should not disclose raw server messages")
+	})
+}
+
+func TestLogCleanupError(t *testing.T) {
+	t.Run("When an API error contains sensitive details, it should log only the status reason and code", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		var logLines []string
+		logger := funcr.New(func(prefix, args string) {
+			logLines = append(logLines, prefix+args)
+		}, funcr.Options{})
+		err := fmt.Errorf("failed to delete private-namespace/private-object: %w",
+			apierrors.NewForbidden(schema.GroupResource{Resource: "widgets"}, "private-object", errors.New("private server response")))
+
+		logCleanupError(logger, err, "Cleanup failed")
+
+		logs := strings.Join(logLines, "\n")
+		g.Expect(logs).To(ContainSubstring("Forbidden (HTTP 403)"), "the log should include a useful API status summary")
+		g.Expect(logs).ToNot(ContainSubstring("private-namespace"), "the log should not disclose namespaces")
+		g.Expect(logs).ToNot(ContainSubstring("private-object"), "the log should not disclose resource names")
+		g.Expect(logs).ToNot(ContainSubstring("private server response"), "the log should not disclose raw server messages")
+	})
+}
+
+func TestSafeErrorSummary(t *testing.T) {
+	t.Run("When an error is not an API status, it should summarize leaf error types without messages", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		err := errors.Join(
+			fmt.Errorf("private object failed: %w", errors.New("private response")),
+			context.DeadlineExceeded,
+		)
+
+		summary := safeErrorSummary(err)
+
+		g.Expect(summary).To(ContainSubstring("*errors.errorString"), "the summary should include the generic leaf error type")
+		g.Expect(summary).To(ContainSubstring("context.deadlineExceededError"), "the summary should include the deadline leaf error type")
+		g.Expect(summary).ToNot(ContainSubstring("private object"), "the summary should not disclose resource names")
+		g.Expect(summary).ToNot(ContainSubstring("private response"), "the summary should not disclose raw error messages")
 	})
 }
 
@@ -472,6 +573,8 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 		namespaceDeleteCount := 0
 		namespaceTerminating := false
 		namespaceFinalizerRetained := false
+		namespaceMetadataFinalizersCleared := false
+		var namespaceSpecFinalizersAtPatch []corev1.FinalizerName
 		c := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
 			WithObjects(hc, nodePool, unrelatedNodePool, hcp, azureMachine, capiCluster, capiMachine, deployment, service, pvc, widget, ns).
@@ -484,6 +587,11 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 					return err
 				},
 				Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					if namespace, ok := obj.(*corev1.Namespace); ok && namespace.Name == cpNamespace {
+						namespaceMetadataFinalizersCleared = len(namespace.Finalizers) == 0
+						namespaceSpecFinalizersAtPatch = append([]corev1.FinalizerName(nil), namespace.Spec.Finalizers...)
+						return nil
+					}
 					err := cl.Patch(ctx, obj, patch, opts...)
 					if obj.GetObjectKind().GroupVersionKind().GroupKind() == testWidgetGVK.GroupKind() {
 						operations = append(operations, "widget-patch")
@@ -546,9 +654,9 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred(), "the unrelated NodePool should be readable after cleanup")
 		g.Expect(unrelatedNP.Finalizers).To(Equal([]string{"hypershift.openshift.io/finalizer"}), "unrelated NodePool finalizers should be preserved")
 
-		// Verify every namespaced object, including Service and PVC objects that
-		// were absent from the old fixed allowlist, is removed before namespace
-		// finalization.
+		// Verify every discovered namespaced object, including Service and PVC
+		// objects that were absent from the old fixed allowlist, is removed while
+		// normal namespace lifecycle finalization remains in control.
 		for _, expected := range []struct {
 			name   string
 			object client.Object
@@ -577,21 +685,26 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			}
 			return -1
 		}
-		finalizeIndex := indexOf("namespace-finalize")
 		namespaceDeleteRequestIndex := indexOf("namespace-delete-1")
 		namespaceDeleteIndex := indexOf("namespace-delete-2")
-		for _, operation := range []string{"namespace-delete-1", "widget-patch", "widget-delete", "widget-list-0", "namespace-finalize", "namespace-delete-2"} {
+		for _, operation := range []string{"namespace-delete-1", "widget-patch", "widget-delete", "widget-list-0", "namespace-delete-2"} {
 			g.Expect(indexOf(operation)).To(BeNumerically(">=", 0), "expected operation %q to be recorded", operation)
 		}
 		g.Expect(namespaceTerminating).To(BeTrue(), "the namespace should be Terminating before the resource sweep")
 		g.Expect(namespaceFinalizerRetained).To(BeTrue(), "the content-purge finalizer should remain during the resource sweep")
 		g.Expect(namespaceDeleteRequestIndex).To(BeNumerically("<", indexOf("widget-patch")), "the namespace delete request should precede resource cleanup")
-		g.Expect(indexOf("widget-patch")).To(BeNumerically("<", finalizeIndex), "Widget finalizers should be patched before namespace finalization")
-		g.Expect(indexOf("widget-delete")).To(BeNumerically("<", finalizeIndex), "Widgets should be deleted before namespace finalization")
-		g.Expect(indexOf("widget-list-0")).To(BeNumerically("<", finalizeIndex), "Widget emptiness should be confirmed before namespace finalization")
+		g.Expect(indexOf("namespace-finalize")).To(Equal(-1), "force cleanup should never call the namespace finalize subresource")
 		g.Expect(indexOf("widget-patch")).To(BeNumerically("<", namespaceDeleteIndex), "Widget finalizers should be patched before namespace deletion")
 		g.Expect(indexOf("widget-delete")).To(BeNumerically("<", namespaceDeleteIndex), "Widgets should be deleted before namespace deletion")
 		g.Expect(indexOf("widget-list-0")).To(BeNumerically("<", namespaceDeleteIndex), "Widget emptiness should be confirmed before namespace deletion")
+
+		updatedNamespace := &corev1.Namespace{}
+		err = c.Get(ctx, types.NamespacedName{Name: cpNamespace}, updatedNamespace)
+		g.Expect(err).ToNot(HaveOccurred(), "the namespace should remain for normal lifecycle finalization")
+		g.Expect(updatedNamespace.DeletionTimestamp).ToNot(BeNil(), "the namespace should remain Terminating after cleanup")
+		g.Expect(namespaceMetadataFinalizersCleared).To(BeTrue(), "metadata finalizers should be handled separately")
+		g.Expect(namespaceSpecFinalizersAtPatch).To(Equal([]corev1.FinalizerName{"kubernetes"}), "the metadata patch should leave spec.finalizers untouched")
+		g.Expect(updatedNamespace.Spec.Finalizers).To(Equal([]corev1.FinalizerName{"kubernetes"}), "force cleanup should leave the content finalizer untouched")
 	})
 
 	t.Run("When the control plane namespace is empty, it should succeed without errors", func(t *testing.T) {
@@ -626,7 +739,7 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 		g.Expect(updatedHC.Finalizers).To(Equal([]string{destroyFinalizer}), "the destroy finalizer should remain on the HostedCluster")
 	})
 
-	for _, mode := range []string{"hostedcluster-get", "namespace-get", "namespace-patch", "namespace-finalize", "namespace-delete"} {
+	for _, mode := range []string{"hostedcluster-get", "namespace-get", "namespace-patch", "namespace-delete"} {
 		t.Run("When "+mode+" fails, it should return an aggregated error", func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			ctx := context.Background()
@@ -680,12 +793,6 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 						}
 						return cl.Delete(ctx, obj, opts...)
 					},
-					SubResourceUpdate: func(ctx context.Context, cl client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-						if mode == "namespace-finalize" && subResourceName == "finalize" {
-							return operationError
-						}
-						return cl.SubResource(subResourceName).Update(ctx, obj, opts...)
-					},
 				}).
 				Build()
 
@@ -693,6 +800,7 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			err := forceRemoveAllFinalizers(ctx, hc, opts, c, &fakeNamespacedResourceDiscovery{})
 			g.Expect(err).To(HaveOccurred(), "namespace operation failures should be returned")
 			g.Expect(err.Error()).To(ContainSubstring("force removal encountered"), "aggregated cleanup errors should identify force removal")
+			g.Expect(errors.Is(err, operationError)).To(BeTrue(), "aggregated cleanup errors should retain the API cause")
 		})
 	}
 
@@ -708,12 +816,13 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			},
 		}
 
+		patchErr := errors.New("API server unavailable")
 		c := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
 			WithObjects(hc).
 			WithInterceptorFuncs(interceptor.Funcs{
 				Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
-					return fmt.Errorf("API server unavailable")
+					return patchErr
 				},
 			}).
 			Build()
@@ -727,8 +836,123 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 		err := forceRemoveAllFinalizers(ctx, hc, opts, c, testNamespacedResourceDiscovery())
 		g.Expect(err).To(HaveOccurred(), "client operation failures should be returned")
 		g.Expect(err.Error()).To(ContainSubstring("force removal encountered"), "aggregated errors should identify force removal")
-		g.Expect(err.Error()).ToNot(ContainSubstring("API server unavailable"), "raw server response data should not be exposed")
+		g.Expect(errors.Is(err, patchErr)).To(BeTrue(), "aggregated errors should retain the patch cause")
 	})
+
+	t.Run("When discovery fails, it should preserve the namespace content finalizer for retry", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+		clusterName := "discovery-error-cluster"
+		cpNamespace := manifests.HostedControlPlaneNamespace("clusters", clusterName)
+		discoveryErr := errors.New("discovery unavailable")
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       clusterName,
+				Namespace:  "clusters",
+				Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
+			},
+		}
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: cpNamespace, Finalizers: []string{"test.namespace/finalizer"}},
+			Spec:       corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{"kubernetes"}},
+		}
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hc, ns).Build()
+
+		opts := &DestroyOptions{Name: clusterName, Namespace: "clusters", Log: log.Log}
+		err := forceRemoveAllFinalizers(ctx, hc, opts, c, &fakeNamespacedResourceDiscovery{err: discoveryErr})
+		g.Expect(err).To(HaveOccurred(), "discovery failures should block namespace lifecycle progress")
+		g.Expect(errors.Is(err, discoveryErr)).To(BeTrue(), "force cleanup should retain the discovery cause for retry")
+
+		updatedNamespace := &corev1.Namespace{}
+		err = c.Get(ctx, types.NamespacedName{Name: cpNamespace}, updatedNamespace)
+		g.Expect(err).ToNot(HaveOccurred(), "the namespace should remain readable after a blocked cleanup")
+		g.Expect(updatedNamespace.DeletionTimestamp).ToNot(BeNil(), "the namespace delete request should precede discovery")
+		g.Expect(updatedNamespace.Spec.Finalizers).To(Equal([]corev1.FinalizerName{"kubernetes"}), "the content-purge finalizer should remain after discovery failure")
+	})
+
+	t.Run("When discovery is partial, it should clean known resources and preserve the namespace content finalizer", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ctx := context.Background()
+		clusterName := "partial-discovery-cluster"
+		cpNamespace := manifests.HostedControlPlaneNamespace("clusters", clusterName)
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       clusterName,
+				Namespace:  "clusters",
+				Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
+			},
+		}
+		widget := testWidget(cpNamespace, "test-widget", "example.com/widget-finalizer")
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: cpNamespace, Finalizers: []string{"test.namespace/finalizer"}},
+			Spec:       corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{"kubernetes"}},
+		}
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hc, widget, ns).Build()
+		resourceDiscovery := &fakeNamespacedResourceDiscovery{
+			resources: []*metav1.APIResourceList{{
+				GroupVersion: testWidgetGVK.GroupVersion().String(),
+				APIResources: []metav1.APIResource{{Name: "widgets", Kind: testWidgetGVK.Kind, Verbs: []string{"list", "delete", "patch"}}},
+			}},
+			err: &discovery.ErrGroupDiscoveryFailed{Groups: map[schema.GroupVersion]error{
+				{Group: "broken.example.com", Version: "v1"}: errors.New("group unavailable"),
+			}},
+		}
+
+		opts := &DestroyOptions{Name: clusterName, Namespace: "clusters", Log: log.Log}
+		err := forceRemoveAllFinalizers(ctx, hc, opts, c, resourceDiscovery)
+		g.Expect(err).To(HaveOccurred(), "partial discovery should block namespace lifecycle progress")
+		var groupDiscoveryErr *discovery.ErrGroupDiscoveryFailed
+		g.Expect(errors.As(err, &groupDiscoveryErr)).To(BeTrue(), "force cleanup should retain the typed partial discovery cause")
+
+		deletedWidget := &unstructured.Unstructured{}
+		deletedWidget.SetGroupVersionKind(testWidgetGVK)
+		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "test-widget"}, deletedWidget)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the discovered Widget should be deleted despite partial discovery")
+
+		updatedNamespace := &corev1.Namespace{}
+		err = c.Get(ctx, types.NamespacedName{Name: cpNamespace}, updatedNamespace)
+		g.Expect(err).ToNot(HaveOccurred(), "the namespace should remain readable after partial discovery")
+		g.Expect(updatedNamespace.DeletionTimestamp).ToNot(BeNil(), "the namespace delete request should precede partial discovery")
+		g.Expect(updatedNamespace.Spec.Finalizers).To(Equal([]corev1.FinalizerName{"kubernetes"}), "the content-purge finalizer should remain after partial discovery")
+	})
+}
+
+func TestMarkNamespaceTerminating(t *testing.T) {
+	tests := []struct {
+		name         string
+		interceptors interceptor.Funcs
+	}{
+		{
+			name: "When namespace lookup fails, it should retain the API cause",
+			interceptors: interceptor.Funcs{
+				Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+					return errors.New("namespace lookup failed")
+				},
+			},
+		},
+		{
+			name: "When namespace deletion fails, it should retain the API cause",
+			interceptors: interceptor.Funcs{
+				Delete: func(context.Context, client.WithWatch, client.Object, ...client.DeleteOption) error {
+					return errors.New("namespace deletion failed")
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "private-namespace"}}
+			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(ns).WithInterceptorFuncs(tc.interceptors).Build()
+
+			terminating, err := markNamespaceTerminating(context.Background(), c, ns.Name)
+
+			g.Expect(terminating).To(BeFalse(), "a failed namespace operation should not report the namespace as Terminating")
+			g.Expect(err).To(HaveOccurred(), "the namespace operation failure should be returned")
+			g.Expect(err.Error()).To(ContainSubstring("failed"), "the error should identify the namespace deletion stage")
+			g.Expect(errors.Unwrap(err)).ToNot(BeNil(), "the error should wrap the API cause")
+		})
+	}
 }
 
 func TestStripFinalizers(t *testing.T) {
@@ -775,6 +999,7 @@ func TestStripFinalizers(t *testing.T) {
 	t.Run("When the patch fails, it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		ctx := context.Background()
+		patchErr := errors.New("API server unavailable")
 
 		hcp := &hyperv1.HostedControlPlane{
 			ObjectMeta: metav1.ObjectMeta{
@@ -789,14 +1014,39 @@ func TestStripFinalizers(t *testing.T) {
 			WithObjects(hcp).
 			WithInterceptorFuncs(interceptor.Funcs{
 				Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
-					return fmt.Errorf("API server unavailable")
+					return patchErr
 				},
 			}).
 			Build()
 
 		err := stripFinalizers(ctx, c, hcp, log.Log)
 		g.Expect(err).To(HaveOccurred(), "patch failures should be returned")
-		g.Expect(err.Error()).To(ContainSubstring("failed to strip finalizers"), "patch failures should identify the cleanup operation without server details")
+		g.Expect(err.Error()).To(ContainSubstring("failed to strip finalizers"), "patch failures should identify the cleanup operation")
+		g.Expect(errors.Is(err, patchErr)).To(BeTrue(), "patch failures should retain the API cause")
+	})
+
+	t.Run("When finalizers are stripped, it should log the resource type without names or namespaces", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "private-control-plane",
+				Namespace:  "private-namespace",
+				Finalizers: []string{"fin1"},
+			},
+		}
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hcp).Build()
+		var logLines []string
+		logger := funcr.New(func(prefix, args string) {
+			logLines = append(logLines, prefix+args)
+		}, funcr.Options{})
+
+		err := stripFinalizers(context.Background(), c, hcp, logger)
+
+		g.Expect(err).ToNot(HaveOccurred(), "finalizer cleanup should succeed")
+		logs := strings.Join(logLines, "\n")
+		g.Expect(logs).To(ContainSubstring("*v1beta1.HostedControlPlane"), "cleanup logs should identify the resource type")
+		g.Expect(logs).ToNot(ContainSubstring("private-control-plane"), "cleanup logs should not disclose resource names")
+		g.Expect(logs).ToNot(ContainSubstring("private-namespace"), "cleanup logs should not disclose namespaces")
 	})
 }
 
@@ -813,10 +1063,12 @@ func TestCleanupNamespacedResources(t *testing.T) {
 	t.Run("When discovery is unavailable, it should return an error without processing resources", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		discoveryErr := errors.New("discovery unavailable")
 
-		errs := cleanupNamespacedResources(context.Background(), c, &fakeNamespacedResourceDiscovery{err: fmt.Errorf("discovery unavailable")}, "test-ns", log.Log)
+		errs := cleanupNamespacedResources(context.Background(), c, &fakeNamespacedResourceDiscovery{err: discoveryErr}, "test-ns", log.Log)
 		g.Expect(errs).To(HaveLen(1), "discovery failure should produce one cleanup error")
-		g.Expect(errs[0].Error()).To(ContainSubstring("failed to discover namespaced resources"), "discovery errors should use a redacted operation message")
+		g.Expect(errs[0].Error()).To(ContainSubstring("failed to discover namespaced resources"), "discovery errors should identify the cleanup stage")
+		g.Expect(errors.Is(errs[0], discoveryErr)).To(BeTrue(), "discovery failures should retain the discovery cause")
 	})
 
 	t.Run("When discovery contains malformed and unsupported resources, it should clean supported resources and report malformed entries", func(t *testing.T) {
@@ -863,9 +1115,10 @@ func TestCleanupNamespacedResources(t *testing.T) {
 
 	t.Run("When a supported resource cleanup fails, it should return the cleanup error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
+		listErr := errors.New("resource list failed")
 		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
 			List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
-				return fmt.Errorf("resource list failed")
+				return listErr
 			},
 		}).Build()
 		resourceDiscovery := &fakeNamespacedResourceDiscovery{resources: []*metav1.APIResourceList{{
@@ -875,7 +1128,8 @@ func TestCleanupNamespacedResources(t *testing.T) {
 
 		errs := cleanupNamespacedResources(context.Background(), c, resourceDiscovery, "test-ns", log.Log)
 		g.Expect(errs).To(HaveLen(1), "a resource list failure should produce one cleanup error")
-		g.Expect(errs[0].Error()).To(ContainSubstring("failed to list discovered namespaced resource"), "list failures should use a redacted operation message")
+		g.Expect(errs[0].Error()).To(ContainSubstring("failed to list discovered namespaced resource"), "list failures should identify the resource GVK")
+		g.Expect(errors.Is(errs[0], listErr)).To(BeTrue(), "list failures should retain the API cause")
 	})
 
 	t.Run("When discovery is partial, it should clean returned resources but block namespace finalization", func(t *testing.T) {
@@ -895,6 +1149,8 @@ func TestCleanupNamespacedResources(t *testing.T) {
 		errs := cleanupNamespacedResources(context.Background(), c, resourceDiscovery, "test-ns", log.Log)
 		g.Expect(errs).To(HaveLen(1), "partial discovery should produce one cleanup error")
 		g.Expect(errs[0].Error()).To(ContainSubstring("partial namespaced resource discovery failed"), "partial discovery should remain a blocking cleanup error")
+		var groupDiscoveryErr *discovery.ErrGroupDiscoveryFailed
+		g.Expect(errors.As(errs[0], &groupDiscoveryErr)).To(BeTrue(), "partial discovery should retain its typed discovery cause")
 
 		deletedWidget := &unstructured.Unstructured{}
 		deletedWidget.SetGroupVersionKind(testWidgetGVK)
@@ -930,14 +1186,16 @@ func TestCleanupNamespacedResource(t *testing.T) {
 
 	t.Run("When listing returns an unexpected error, it should return the error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
+		listErr := errors.New("list failed")
 		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
 			List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
-				return fmt.Errorf("list failed")
+				return listErr
 			},
 		}).Build()
 
 		err := cleanupNamespacedResource(context.Background(), c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
-		g.Expect(err).To(MatchError(ContainSubstring("failed to list discovered namespaced resource")), "unexpected list failures should be redacted and returned")
+		g.Expect(err).To(MatchError(ContainSubstring("failed to list discovered namespaced resource")), "unexpected list failures should identify the resource GVK")
+		g.Expect(errors.Is(err, listErr)).To(BeTrue(), "list failures should retain the API cause")
 	})
 
 	t.Run("When a resource has finalizers but does not support patching, it should return an error", func(t *testing.T) {
@@ -950,34 +1208,38 @@ func TestCleanupNamespacedResource(t *testing.T) {
 
 	t.Run("When patching finalizers fails, it should return the error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
+		patchErr := errors.New("patch failed")
 		c := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
 			WithObjects(testWidget("test-ns", "test-widget", "example.com/widget-finalizer")).
 			WithInterceptorFuncs(interceptor.Funcs{
 				Patch: func(context.Context, client.WithWatch, client.Object, client.Patch, ...client.PatchOption) error {
-					return fmt.Errorf("patch failed")
+					return patchErr
 				},
 			}).
 			Build()
 
 		err := cleanupNamespacedResource(context.Background(), c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
-		g.Expect(err).To(MatchError(ContainSubstring("failed to strip finalizers")), "patch failures should be redacted and returned")
+		g.Expect(err).To(MatchError(ContainSubstring("failed to strip finalizers")), "patch failures should identify the resource GVK")
+		g.Expect(errors.Is(err, patchErr)).To(BeTrue(), "patch failures should retain the API cause")
 	})
 
 	t.Run("When deleting a resource fails, it should return the error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
+		deleteErr := errors.New("delete failed")
 		c := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
 			WithObjects(testWidget("test-ns", "test-widget")).
 			WithInterceptorFuncs(interceptor.Funcs{
 				Delete: func(context.Context, client.WithWatch, client.Object, ...client.DeleteOption) error {
-					return fmt.Errorf("delete failed")
+					return deleteErr
 				},
 			}).
 			Build()
 
 		err := cleanupNamespacedResource(context.Background(), c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
-		g.Expect(err).To(MatchError(ContainSubstring("failed to delete discovered namespaced resource")), "delete failures should be redacted and returned")
+		g.Expect(err).To(MatchError(ContainSubstring("failed to delete discovered namespaced resource")), "delete failures should identify the resource GVK")
+		g.Expect(errors.Is(err, deleteErr)).To(BeTrue(), "delete failures should retain the API cause")
 	})
 
 	t.Run("When the empty-list poll returns an API absence error, it should complete successfully", func(t *testing.T) {
@@ -1005,6 +1267,7 @@ func TestCleanupNamespacedResource(t *testing.T) {
 	t.Run("When the empty-list poll returns an unexpected error, it should return the polling error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		listCalls := 0
+		pollErr := errors.New("poll list failed")
 		c := fake.NewClientBuilder().
 			WithScheme(hyperapi.Scheme).
 			WithObjects(testWidget("test-ns", "test-widget")).
@@ -1014,14 +1277,14 @@ func TestCleanupNamespacedResource(t *testing.T) {
 					if listCalls == 1 {
 						return cl.List(ctx, list, opts...)
 					}
-					return fmt.Errorf("poll list failed")
+					return pollErr
 				},
 			}).
 			Build()
 
 		err := cleanupNamespacedResource(context.Background(), c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
 		g.Expect(err).To(MatchError(ContainSubstring("discovered namespaced resources of type")), "polling failures should block namespace finalization")
-		g.Expect(err.Error()).ToNot(ContainSubstring("poll list failed"), "polling errors should not expose raw server response data")
+		g.Expect(errors.Is(err, pollErr)).To(BeTrue(), "polling failures should retain the API cause")
 	})
 
 	t.Run("When resources remain until the polling context expires, it should return an error", func(t *testing.T) {
@@ -1040,24 +1303,25 @@ func TestCleanupNamespacedResource(t *testing.T) {
 
 		err := cleanupNamespacedResource(ctx, c, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "test-ns", log.Log)
 		g.Expect(err).To(MatchError(ContainSubstring("discovered namespaced resources of type")), "remaining resources should block namespace finalization")
+		g.Expect(errors.Is(err, context.DeadlineExceeded)).To(BeTrue(), "polling timeouts should retain the context deadline cause")
 	})
-}
 
-func TestCleanupNamespacedResourceRedactedLogging(t *testing.T) {
-	g := NewGomegaWithT(t)
-	widget := testWidget("customer-namespace", "customer-widget")
-	client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(widget).Build()
-	var logLines []string
-	logger := funcr.New(func(prefix, args string) {
-		logLines = append(logLines, prefix+args)
-	}, funcr.Options{})
+	t.Run("When cleanup succeeds, it should log the resource GVK without names or namespaces", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		widget := testWidget("customer-namespace", "customer-widget")
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(widget).Build()
+		var logLines []string
+		logger := funcr.New(func(prefix, args string) {
+			logLines = append(logLines, prefix+args)
+		}, funcr.Options{})
 
-	err := cleanupNamespacedResource(context.Background(), client, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "customer-namespace", logger)
-	g.Expect(err).ToNot(HaveOccurred(), "cleanup should succeed for a resource without finalizers")
-	logs := strings.Join(logLines, "\n")
-	g.Expect(logs).To(ContainSubstring(testWidgetGVK.String()), "cleanup logs should identify the discovered resource type")
-	g.Expect(logs).ToNot(ContainSubstring("customer-namespace"), "cleanup logs should not expose the customer namespace")
-	g.Expect(logs).ToNot(ContainSubstring("customer-widget"), "cleanup logs should not expose the customer resource name")
+		err := cleanupNamespacedResource(context.Background(), client, testWidgetGVK, metav1.APIResource{Verbs: []string{"list", "delete", "patch"}}, "customer-namespace", logger)
+		g.Expect(err).ToNot(HaveOccurred(), "cleanup should succeed for a resource without finalizers")
+		logs := strings.Join(logLines, "\n")
+		g.Expect(logs).To(ContainSubstring(testWidgetGVK.String()), "cleanup logs should identify the discovered resource type")
+		g.Expect(logs).ToNot(ContainSubstring("customer-namespace"), "cleanup logs should not expose the customer namespace")
+		g.Expect(logs).ToNot(ContainSubstring("customer-widget"), "cleanup logs should not expose the customer resource name")
+	})
 }
 
 func TestSupportsVerb(t *testing.T) {
@@ -1078,93 +1342,6 @@ func TestSupportsVerb(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestForceRemoveAllFinalizersDiscoveryError(t *testing.T) {
-	t.Run("When discovery fails, it should not finalize the control plane namespace", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		ctx := context.Background()
-		clusterName := "discovery-error-cluster"
-		cpNamespace := manifests.HostedControlPlaneNamespace("clusters", clusterName)
-		hc := &hyperv1.HostedCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:       clusterName,
-				Namespace:  "clusters",
-				Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
-			},
-		}
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: cpNamespace, Finalizers: []string{"test.namespace/finalizer"}},
-			Spec:       corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{"kubernetes"}},
-		}
-		operations := []string{}
-		c := fake.NewClientBuilder().
-			WithScheme(hyperapi.Scheme).
-			WithObjects(hc, ns).
-			WithInterceptorFuncs(interceptor.Funcs{
-				SubResourceUpdate: func(ctx context.Context, cl client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-					if subResourceName == "finalize" {
-						operations = append(operations, "namespace-finalize")
-					}
-					return cl.SubResource(subResourceName).Update(ctx, obj, opts...)
-				},
-			}).
-			Build()
-
-		opts := &DestroyOptions{Name: clusterName, Namespace: "clusters", Log: log.Log}
-		err := forceRemoveAllFinalizers(ctx, hc, opts, c, &fakeNamespacedResourceDiscovery{err: fmt.Errorf("discovery unavailable")})
-		g.Expect(err).To(HaveOccurred(), "discovery failures should block namespace finalization")
-		g.Expect(operations).NotTo(ContainElement("namespace-finalize"), "namespace finalization should not run after discovery failure")
-
-		updatedNamespace := &corev1.Namespace{}
-		err = c.Get(ctx, types.NamespacedName{Name: cpNamespace}, updatedNamespace)
-		g.Expect(err).ToNot(HaveOccurred(), "the namespace should remain readable after a blocked cleanup")
-		g.Expect(updatedNamespace.Spec.Finalizers).To(Equal([]corev1.FinalizerName{"kubernetes"}), "the content-purge finalizer should remain after discovery failure")
-	})
-
-	t.Run("When discovery is partial, it should clean known resources but not finalize the control plane namespace", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		ctx := context.Background()
-		clusterName := "partial-discovery-cluster"
-		cpNamespace := manifests.HostedControlPlaneNamespace("clusters", clusterName)
-		hc := &hyperv1.HostedCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:       clusterName,
-				Namespace:  "clusters",
-				Finalizers: []string{destroyFinalizer, "hypershift.openshift.io/finalizer"},
-			},
-		}
-		widget := testWidget(cpNamespace, "test-widget", "example.com/widget-finalizer")
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: cpNamespace, Finalizers: []string{"test.namespace/finalizer"}},
-			Spec:       corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{"kubernetes"}},
-		}
-		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hc, widget, ns).Build()
-		resourceDiscovery := &fakeNamespacedResourceDiscovery{
-			resources: []*metav1.APIResourceList{{
-				GroupVersion: testWidgetGVK.GroupVersion().String(),
-				APIResources: []metav1.APIResource{{Name: "widgets", Kind: testWidgetGVK.Kind, Verbs: []string{"list", "delete", "patch"}}},
-			}},
-			err: &discovery.ErrGroupDiscoveryFailed{Groups: map[schema.GroupVersion]error{
-				{Group: "broken.example.com", Version: "v1"}: fmt.Errorf("group unavailable"),
-			}},
-		}
-
-		opts := &DestroyOptions{Name: clusterName, Namespace: "clusters", Log: log.Log}
-		err := forceRemoveAllFinalizers(ctx, hc, opts, c, resourceDiscovery)
-		g.Expect(err).To(HaveOccurred(), "partial discovery should block namespace finalization")
-		g.Expect(err.Error()).To(ContainSubstring("partial namespaced resource discovery failed"), "partial discovery should be reported as a cleanup error")
-
-		deletedWidget := &unstructured.Unstructured{}
-		deletedWidget.SetGroupVersionKind(testWidgetGVK)
-		err = c.Get(ctx, types.NamespacedName{Namespace: cpNamespace, Name: "test-widget"}, deletedWidget)
-		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the discovered Widget should be deleted despite partial discovery")
-
-		updatedNamespace := &corev1.Namespace{}
-		err = c.Get(ctx, types.NamespacedName{Name: cpNamespace}, updatedNamespace)
-		g.Expect(err).ToNot(HaveOccurred(), "the namespace should remain readable after partial discovery")
-		g.Expect(updatedNamespace.Spec.Finalizers).To(Equal([]corev1.FinalizerName{"kubernetes"}), "the content-purge finalizer should remain after partial discovery")
-	})
 }
 
 func TestStripNodePoolFinalizers(t *testing.T) {
@@ -1210,6 +1387,24 @@ func TestStripNodePoolFinalizers(t *testing.T) {
 		err = c.Get(ctx, client.ObjectKeyFromObject(unrelatedNodePool), updatedUnrelatedNodePool)
 		g.Expect(err).ToNot(HaveOccurred(), "the unrelated NodePool should be readable")
 		g.Expect(updatedUnrelatedNodePool.Finalizers).To(Equal([]string{"hypershift.openshift.io/finalizer"}), "unrelated NodePool finalizers should be preserved")
+	})
+
+	t.Run("When listing NodePools fails, it should retain the API cause", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		listErr := errors.New("NodePool list failed")
+		c := fake.NewClientBuilder().
+			WithScheme(hyperapi.Scheme).
+			WithInterceptorFuncs(interceptor.Funcs{
+				List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+					return listErr
+				},
+			}).
+			Build()
+
+		errs := stripNodePoolFinalizers(context.Background(), c, "clusters", "test-cluster", log.Log)
+
+		g.Expect(errs).To(HaveLen(1), "the NodePool list failure should be returned")
+		g.Expect(errors.Is(errs[0], listErr)).To(BeTrue(), "the NodePool list failure should retain the API cause")
 	})
 }
 

@@ -182,10 +182,9 @@ func destroyCluster(ctx context.Context, c client.Client, resourceDiscovery name
 				if !o.ForceDestroy {
 					return err
 				}
-				o.Log.Info("Grace period expired and --force is set, force-removing finalizers from all child resources",
-					"namespace", o.Namespace, "name", o.Name)
+				o.Log.Info("Grace period expired and --force is set, force-removing finalizers from all child resources")
 				if forceCleanupErr = forceRemoveAllFinalizers(ctx, hostedCluster, o, c, resourceDiscovery); forceCleanupErr != nil {
-					o.Log.Error(forceCleanupErr, "Errors during force finalizer removal, continuing with platform cleanup")
+					logCleanupError(o.Log, forceCleanupErr, "Errors during force finalizer removal, continuing with platform cleanup")
 				}
 			}
 		}
@@ -204,12 +203,16 @@ func destroyCluster(ctx context.Context, c client.Client, resourceDiscovery name
 	// Non-fatal: CLI-created secrets are labeled with DeleteWithClusterLabelName: "true"
 	// and AutoInfraLabelName. The operator's reconcileCLISecrets sets the HostedCluster
 	// as their ownerRef, ensuring they are garbage-collected when the HC is deleted.
+	var cliSecretsErr error
 	if err = deleteCLISecrets(ctx, o, c); err != nil {
-		o.Log.Info("Failed to delete CLI generated secrets, skipping",
-			"error", "cleanup failed")
+		cliSecretsErr = err
+		logCleanupError(o.Log, err, "Failed to delete CLI generated secrets, skipping")
 	}
 
 	if forceCleanupErr != nil {
+		if cliSecretsErr != nil {
+			return errors.Join(forceCleanupErr, cliSecretsErr)
+		}
 		return forceCleanupErr
 	}
 
@@ -226,10 +229,10 @@ func destroyCluster(ctx context.Context, c client.Client, resourceDiscovery name
 }
 
 func deleteCLISecrets(ctx context.Context, o *DestroyOptions, c client.Client) error {
-	o.Log.Info("Deleting Secrets", "namespace", o.Namespace)
+	o.Log.Info("Deleting CLI generated secrets")
 	if err := c.DeleteAllOf(ctx, &v1.Secret{}, client.InNamespace(o.Namespace), client.MatchingLabels{util.AutoInfraLabelName: o.InfraID}); err != nil {
 		if apierrors.IsNotFound(err) {
-			o.Log.Info("Secrets not found based on labels, skipping delete", "namespace", o.Namespace, "labels", util.AutoInfraLabelName+":"+o.InfraID)
+			o.Log.Info("CLI generated secrets not found based on labels, skipping delete")
 		} else {
 			return fmt.Errorf("failed to clean up secrets in %s namespace: %w", o.Namespace, err)
 		}
@@ -278,6 +281,50 @@ func returnOrForceLog(o *DestroyOptions, err error, msg string) error {
 	return nil
 }
 
+func logCleanupError(log logr.Logger, err error, msg string) {
+	log.Info(msg, "error", safeErrorSummary(err))
+}
+
+func safeErrorSummary(err error) string {
+	var apiStatus apierrors.APIStatus
+	if errors.As(err, &apiStatus) {
+		status := apiStatus.Status()
+		if status.Reason != "" && status.Code != 0 {
+			return fmt.Sprintf("%s (HTTP %d)", status.Reason, status.Code)
+		}
+		if status.Reason != "" {
+			return string(status.Reason)
+		}
+		if status.Code != 0 {
+			return fmt.Sprintf("HTTP %d", status.Code)
+		}
+	}
+
+	errorTypes := sets.New[string]()
+	var collectLeafTypes func(error)
+	collectLeafTypes = func(current error) {
+		if current == nil {
+			return
+		}
+		if joined, ok := current.(interface{ Unwrap() []error }); ok {
+			for _, nested := range joined.Unwrap() {
+				collectLeafTypes(nested)
+			}
+			return
+		}
+		if nested := errors.Unwrap(current); nested != nil {
+			collectLeafTypes(nested)
+			return
+		}
+		errorTypes.Insert(fmt.Sprintf("%T", current))
+	}
+	collectLeafTypes(err)
+	if errorTypes.Len() == 0 {
+		return "unknown error"
+	}
+	return strings.Join(sets.List(errorTypes), ", ")
+}
+
 // stripFinalizers removes all finalizers from a single object via a merge patch.
 func stripFinalizers(ctx context.Context, c client.Client, obj client.Object, log logr.Logger) error {
 	if len(obj.GetFinalizers()) == 0 {
@@ -289,9 +336,14 @@ func stripFinalizers(ctx context.Context, c client.Client, obj client.Object, lo
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
-		return fmt.Errorf("failed to strip finalizers from %s", objectIdentity(obj))
+		return fmt.Errorf("failed to strip finalizers from %s: %w", objectIdentity(obj), err)
 	}
-	log.Info("Stripped finalizers", "resource", objectIdentity(obj))
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	resourceType := gvk.String()
+	if gvk.Empty() {
+		resourceType = fmt.Sprintf("%T", obj)
+	}
+	log.Info("Stripped finalizers", "resource", resourceType)
 	return nil
 }
 
@@ -307,7 +359,7 @@ func stripNodePoolFinalizers(ctx context.Context, c client.Client, namespace, cl
 	nodePools := &hyperv1.NodePoolList{}
 	if err := c.List(ctx, nodePools, client.InNamespace(namespace)); err != nil {
 		if !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
-			return []error{fmt.Errorf("failed to list %T", nodePools)}
+			return []error{fmt.Errorf("failed to list %T: %w", nodePools, err)}
 		}
 		return nil
 	}
@@ -328,10 +380,11 @@ func stripNodePoolFinalizers(ctx context.Context, c client.Client, namespace, cl
 	return errs
 }
 
-// cleanupNamespacedResources removes every namespaced object from namespace before
-// the namespace is finalized. Discovery is used instead of a fixed type allowlist
-// because extension resources can add finalizers that the destroy command does not
-// know about.
+// cleanupNamespacedResources removes every discovered namespaced object after
+// namespace deletion is requested. Discovery is used instead of a fixed type
+// allowlist because extension resources can add finalizers that the destroy
+// command does not know about. Normal namespace lifecycle finalization remains
+// responsible for detecting anything discovery did not return.
 func cleanupNamespacedResources(ctx context.Context, c client.Client, resourceDiscovery namespacedResourceDiscovery, namespace string, log logr.Logger) []error {
 	if resourceDiscovery == nil {
 		return []error{fmt.Errorf("namespaced resource discovery is not configured")}
@@ -340,7 +393,7 @@ func cleanupNamespacedResources(ctx context.Context, c client.Client, resourceDi
 	apiResourceLists, err := resourceDiscovery.ServerPreferredNamespacedResources()
 	var errs []error
 	if err != nil && !discovery.IsGroupDiscoveryFailedError(err) {
-		return []error{fmt.Errorf("failed to discover namespaced resources")}
+		return []error{fmt.Errorf("failed to discover namespaced resources: %w", err)}
 	}
 	if err != nil {
 		groupCount := 0
@@ -349,13 +402,13 @@ func cleanupNamespacedResources(ctx context.Context, c client.Client, resourceDi
 			groupCount = len(discoveryErr.Groups)
 		}
 		log.Info("Partial namespaced resource discovery failed; namespace finalization will remain blocked", "groupCount", groupCount)
-		errs = append(errs, fmt.Errorf("partial namespaced resource discovery failed for %d API group(s)", groupCount))
+		errs = append(errs, fmt.Errorf("partial namespaced resource discovery failed for %d API group(s): %w", groupCount, err))
 	}
 
 	for _, apiResourceList := range apiResourceLists {
 		groupVersion, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to parse discovered group version"))
+			errs = append(errs, fmt.Errorf("failed to parse discovered group version: %w", err))
 			continue
 		}
 
@@ -381,7 +434,7 @@ func cleanupNamespacedResource(ctx context.Context, c client.Client, resourceGVK
 		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) || apierrors.IsMethodNotSupported(err) {
 			return nil
 		}
-		return fmt.Errorf("failed to list discovered namespaced resource %s", resourceGVK)
+		return fmt.Errorf("failed to list discovered namespaced resource %s: %w", resourceGVK, err)
 	}
 
 	for i := range list.Items {
@@ -395,7 +448,7 @@ func cleanupNamespacedResource(ctx context.Context, c client.Client, resourceGVK
 			}
 		}
 		if err := c.Delete(ctx, obj, client.GracePeriodSeconds(0)); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to delete discovered namespaced resource %s", resourceGVK)
+			return fmt.Errorf("failed to delete discovered namespaced resource %s: %w", resourceGVK, err)
 		}
 	}
 
@@ -406,11 +459,11 @@ func cleanupNamespacedResource(ctx context.Context, c client.Client, resourceGVK
 			if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) || apierrors.IsMethodNotSupported(err) {
 				return true, nil
 			}
-			return false, fmt.Errorf("failed to poll discovered namespaced resource %s", resourceGVK)
+			return false, fmt.Errorf("failed to poll discovered namespaced resource %s: %w", resourceGVK, err)
 		}
 		return len(remaining.Items) == 0, nil
 	}); err != nil {
-		return fmt.Errorf("discovered namespaced resources of type %s remain", resourceGVK)
+		return fmt.Errorf("discovered namespaced resources of type %s remain: %w", resourceGVK, err)
 	}
 
 	log.Info("Deleted namespaced resources", "resource", resourceGVK.String(), "count", len(list.Items))
@@ -437,10 +490,10 @@ func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.Hosted
 		errs = append(errs, err)
 	}
 
-	// Remove and wait for every discovered namespaced resource before clearing
-	// namespace spec.finalizers. The delete request above blocks new writes while
-	// the sweep runs, preventing the namespace finalizer bypass from leaving
-	// objects behind in etcd.
+	// Remove and wait for every discovered namespaced resource after requesting
+	// namespace deletion. The delete request above blocks new writes while the
+	// sweep runs. The namespace lifecycle controller remains responsible for
+	// clearing spec.finalizers after it confirms that all content is gone.
 	errs = append(errs, cleanupNamespacedResources(ctx, c, resourceDiscovery, cpNamespace, o.Log)...)
 
 	// NodePools live in the HC namespace, not the CP namespace
@@ -450,7 +503,7 @@ func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.Hosted
 	// is removed by the normal removeFinalizer path after platform cleanup.
 	if err := c.Get(ctx, client.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
 		if !apierrors.IsNotFound(err) {
-			errs = append(errs, fmt.Errorf("failed to refresh HostedCluster"))
+			errs = append(errs, fmt.Errorf("failed to refresh HostedCluster: %w", err))
 		}
 	} else if len(hostedCluster.Finalizers) > 0 {
 		original := hostedCluster.DeepCopy()
@@ -463,10 +516,10 @@ func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.Hosted
 		hostedCluster.SetFinalizers(kept)
 		if err := c.Patch(ctx, hostedCluster, client.MergeFrom(original)); err != nil {
 			if !apierrors.IsNotFound(err) {
-				errs = append(errs, fmt.Errorf("failed to strip non-destroy finalizers from HostedCluster"))
+				errs = append(errs, fmt.Errorf("failed to strip non-destroy finalizers from HostedCluster: %w", err))
 			}
 		} else {
-			o.Log.Info("Stripped non-destroy finalizers from HostedCluster", "namespace", o.Namespace, "name", o.Name)
+			o.Log.Info("Stripped non-destroy finalizers from HostedCluster")
 		}
 	}
 
@@ -477,41 +530,31 @@ func forceRemoveAllFinalizers(ctx context.Context, hostedCluster *hyperv1.Hosted
 		return nil
 	}
 
-	// Strip both metadata.finalizers and spec.finalizers from the control
-	// plane namespace, then delete it. spec.finalizers require the finalize
-	// subresource; a Terminating namespace stays stuck until both are empty.
+	// Strip only metadata.finalizers from the control plane namespace. Never
+	// clear spec.finalizers: the namespace lifecycle controller uses its content
+	// finalizer to prevent undiscovered resources from being orphaned.
 	ns := &v1.Namespace{}
 	if err := c.Get(ctx, types.NamespacedName{Name: cpNamespace}, ns); err != nil {
 		if !apierrors.IsNotFound(err) {
-			errs = append(errs, fmt.Errorf("failed to get control plane namespace"))
+			errs = append(errs, fmt.Errorf("failed to get control plane namespace: %w", err))
 		}
 	} else {
 		if err := stripFinalizers(ctx, c, ns, o.Log); err != nil {
 			errs = append(errs, err)
 		}
-		if len(ns.Spec.Finalizers) > 0 {
-			ns.Spec.Finalizers = nil
-			if err := c.SubResource("finalize").Update(ctx, ns); err != nil {
-				if !apierrors.IsNotFound(err) {
-					errs = append(errs, fmt.Errorf("failed to clear spec.finalizers on control plane namespace"))
-				}
-			} else {
-				o.Log.Info("Cleared spec.finalizers on control plane namespace")
-			}
-		}
 		if err := c.Delete(ctx, ns); err != nil {
 			if !apierrors.IsNotFound(err) {
-				errs = append(errs, fmt.Errorf("failed to delete control plane namespace"))
+				errs = append(errs, fmt.Errorf("failed to request control plane namespace deletion: %w", err))
 			}
 		} else {
-			o.Log.Info("Deleted control plane namespace")
+			o.Log.Info("Requested control plane namespace deletion")
 		}
 	}
 
 	if len(errs) > 0 {
 		return fmt.Errorf("force removal encountered %d error(s): %w", len(errs), errors.Join(errs...))
 	}
-	o.Log.Info("Force removal of all finalizers complete", "namespace", o.Namespace, "name", o.Name)
+	o.Log.Info("Force finalizer cleanup complete; namespace deletion requested")
 	return nil
 }
 
@@ -521,13 +564,13 @@ func markNamespaceTerminating(ctx context.Context, c client.Client, namespace st
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to get control plane namespace")
+		return false, fmt.Errorf("failed to get control plane namespace before deletion: %w", err)
 	}
 	if ns.DeletionTimestamp != nil {
 		return true, nil
 	}
 	if err := c.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
-		return false, fmt.Errorf("failed to mark control plane namespace for deletion")
+		return false, fmt.Errorf("failed to mark control plane namespace for deletion: %w", err)
 	}
 	return true, nil
 }
