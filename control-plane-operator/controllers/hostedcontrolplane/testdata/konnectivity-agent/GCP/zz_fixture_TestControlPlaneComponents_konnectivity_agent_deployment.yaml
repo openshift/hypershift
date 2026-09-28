@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: cf7dc5b1c33bb2991d4ef2203e47d92db602f201b0b59718d87be57cc0a559d0
+    hypershift.openshift.io/desired-state-hash: a55050d03fa79e0574b65f4ae604fa6f42538bdd27f6f0a28e5554cff5798f57
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: konnectivity-agent
@@ -100,6 +100,7 @@ spec:
         - 5s
         - --sync-interval-cap
         - 30s
+        - --sync-forever
         - --v
         - "3"
         - --agent-identifiers
