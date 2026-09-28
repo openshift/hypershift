@@ -333,7 +333,7 @@ func (m *FirewallManager) Delete(ctx context.Context) error {
 	name := firewallRuleName(m.infraID)
 	if err := validateFirewallName(name); err != nil {
 		m.logger.Info("WARNING: skipping firewall deletion for invalid configuration: " + err.Error())
-		return nil
+		return nil //nolint:nilerr // rule could never have been created with this name; nothing to delete, not a failure
 	}
 
 	client, err := m.getClient(ctx)

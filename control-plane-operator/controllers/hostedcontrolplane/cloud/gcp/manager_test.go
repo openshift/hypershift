@@ -8,9 +8,10 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/api/compute/v1"
