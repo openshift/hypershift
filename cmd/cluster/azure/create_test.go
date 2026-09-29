@@ -86,7 +86,6 @@ func TestDNSZoneRGValidation(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	t.Setenv("FAKE_CLIENT", "true")
 
 	credentialsFile, _, pullSecretFile := setupAzureTestFixtures(t)
 	tempDir := t.TempDir()
@@ -138,7 +137,7 @@ func TestDNSZoneRGValidation(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
 
-			err = core.CreateCluster(ctx, coreOpts, azureOpts)
+			err = core.CreateCluster(ctx, coreOpts, azureOpts, nil)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
@@ -201,7 +200,6 @@ func TestRoleAssignmentWithInfraJSON(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	t.Setenv("FAKE_CLIENT", "true")
 
 	credentialsFile, infraFile, pullSecretFile := setupAzureTestFixtures(t)
 	tempDir := t.TempDir()
@@ -259,7 +257,7 @@ func TestRoleAssignmentWithInfraJSON(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
 
-			err = core.CreateCluster(ctx, coreOpts, azureOpts)
+			err = core.CreateCluster(ctx, coreOpts, azureOpts, nil)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
@@ -274,7 +272,6 @@ func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	t.Setenv("FAKE_CLIENT", "true")
 
 	credentialsFile, infraFile, pullSecretFile := setupAzureTestFixtures(t)
 	tempDir := t.TempDir()
@@ -484,7 +481,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, azureOpts); err != nil {
+			if err := core.CreateCluster(ctx, coreOpts, azureOpts, nil); err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 
@@ -545,7 +542,7 @@ func TestCreateClusterAutoNodeRequiresKarpenterClientID(t *testing.T) {
 	coreOpts.Render = true
 	coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
 
-	err = core.CreateCluster(ctx, coreOpts, azureOpts)
+	err = core.CreateCluster(ctx, coreOpts, azureOpts, nil)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("autoNode on Azure requires a Karpenter workload identity"))
 }

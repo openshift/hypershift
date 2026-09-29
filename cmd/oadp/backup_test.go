@@ -1,6 +1,7 @@
 package oadp
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -8,7 +9,13 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	cmdutil "github.com/openshift/hypershift/cmd/util"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 )
 
 // TestCreateOptionsDefaults verifies that the default values for CreateOptions
@@ -875,4 +882,30 @@ func TestBackupCommandIncludedNamespacesFlag(t *testing.T) {
 			t.Errorf("Expected namespace %d to be '%s', got '%s'", i, expected, parsedNamespaces[i])
 		}
 	}
+}
+
+func TestRunBackupClientProvider(t *testing.T) {
+	t.Run("When no client provider is configured in normal mode, it should return a configuration error", func(t *testing.T) {
+		opts := &CreateOptions{
+			HCName:      "test-cluster",
+			HCNamespace: "clusters",
+			Render:      false,
+			Log:         logr.Discard(),
+		}
+		err := opts.RunBackup(t.Context())
+		NewWithT(t).Expect(err).To(MatchError("failed to create kubernetes client: client provider is not configured"))
+	})
+
+	t.Run("When client creation fails in render mode, it should render with the default platform", func(t *testing.T) {
+		opts := &CreateOptions{
+			HCName:      "test-cluster",
+			HCNamespace: "clusters",
+			Render:      true,
+			Log:         logr.Discard(),
+			ClientProvider: &cmdutil.ClientProvider{ControllerRuntimeClient: func(string) (crclient.Client, error) {
+				return nil, errors.New("client unavailable")
+			}},
+		}
+		NewWithT(t).Expect(opts.RunBackup(t.Context())).ToNot(HaveOccurred())
+	})
 }

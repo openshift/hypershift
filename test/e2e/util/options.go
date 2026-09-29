@@ -485,7 +485,7 @@ func (o *Options) Complete() error {
 	}
 
 	if len(o.LatestReleaseImage) == 0 {
-		client, err := util.GetClient()
+		client, err := util.GetClientWithKubeconfig("")
 		if err != nil {
 			return fmt.Errorf("failed to get client: %w", err)
 		}
