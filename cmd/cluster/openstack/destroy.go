@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/log"
 
@@ -42,8 +43,21 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	return cmd
 }
+
 func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
-	hostedCluster, err := core.GetCluster(ctx, o)
+	return destroyCluster(ctx, o, core.GetCluster, core.DestroyCluster)
+}
+
+// getClusterFunc resolves the HostedCluster to destroy. It is a parameter of
+// destroyCluster so tests can exercise the destroy logic without a cluster.
+type getClusterFunc func(ctx context.Context, o *core.DestroyOptions) (*hyperv1.HostedCluster, error)
+
+// coreDestroyFunc performs the platform-agnostic destroy. It is a parameter of
+// destroyCluster so tests can observe what is handed to the core destroy path.
+type coreDestroyFunc func(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *core.DestroyOptions, destroyPlatformSpecifics core.DestroyPlatformSpecifics) error
+
+func destroyCluster(ctx context.Context, o *core.DestroyOptions, getCluster getClusterFunc, coreDestroy coreDestroyFunc) error {
+	hostedCluster, err := getCluster(ctx, o)
 	if err != nil {
 		return err
 	}
@@ -60,7 +74,7 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 		return fmt.Errorf("required inputs are missing: %w", err)
 	}
 
-	return core.DestroyCluster(ctx, hostedCluster, o, destroyPlatformSpecifics)
+	return coreDestroy(ctx, hostedCluster, o, destroyPlatformSpecifics)
 }
 
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
