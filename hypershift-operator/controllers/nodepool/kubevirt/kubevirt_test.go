@@ -841,6 +841,50 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 		},
 		{
+			name: "When arch is s390x but gate annotation is absent, it should not set Architecture or inject NodeSelector",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					// No NodePoolSupportsKubevirtArchitectureAnnotation — gate is closed.
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureS390X,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("6Gi"),
+							coresNPOption(2),
+							imageNPOption("testimage"),
+							volumeNPOption("16Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						// Architecture and NodeSelector must be absent — gate annotation not set.
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("6Gi"),
+							cpuTmpltOpt(2),
+							storageTmpltOpt("16Gi"),
+						),
+					},
+				},
+			},
+		},
+		{
 			name: "When arch is s390x and gate annotation is set, it should set Architecture=s390x and inject kubernetes.io/arch=s390x NodeSelector",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
