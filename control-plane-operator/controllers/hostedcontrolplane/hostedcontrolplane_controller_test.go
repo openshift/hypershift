@@ -5592,6 +5592,63 @@ func TestReconcileGCPWorkerFirewallRules(t *testing.T) {
 	})
 }
 
+func TestGCPFirewallSkipOnWIFUnavailableReason(t *testing.T) {
+	t.Run("When the GCPFirewallRulesReady condition was never recorded, it should return a non-empty reason", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).ToNot(BeEmpty())
+	})
+
+	t.Run("When the condition last reported waiting-for-credentials, it should return a non-empty reason", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{
+			Status: hyperv1.HostedControlPlaneStatus{
+				Conditions: []metav1.Condition{{
+					Type:   string(hyperv1.GCPFirewallRulesReady),
+					Status: metav1.ConditionFalse,
+					Reason: hyperv1.GCPFirewallWaitingForCredentials,
+				}},
+			},
+		}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).ToNot(BeEmpty())
+	})
+
+	t.Run("When the condition reflects a prior successful reconcile, it should return an empty reason", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{
+			Status: hyperv1.HostedControlPlaneStatus{
+				Conditions: []metav1.Condition{{
+					Type:   string(hyperv1.GCPFirewallRulesReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				}},
+			},
+		}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).To(BeEmpty())
+	})
+
+	t.Run("When the manual skip annotation is set, it should return a non-empty reason even with a converged condition", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{hyperv1.GCPFirewallSkipDeletionAnnotation: "true"},
+			},
+			Status: hyperv1.HostedControlPlaneStatus{
+				Conditions: []metav1.Condition{{
+					Type:   string(hyperv1.GCPFirewallRulesReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				}},
+			},
+		}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).ToNot(BeEmpty())
+	})
+}
+
 func TestHealthCheckKASEndpoint(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
