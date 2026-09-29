@@ -1096,7 +1096,7 @@ def test_judgments_reject_incident_promotion_and_tracking(tracking):
     judgment["classification"] = "incident_candidate"
     judgment["tracking"] = {"status": tracking}
     if tracking == "existing":
-        judgment["tracking"].update({"verified": True, "key": "OCPBUGS-12345"})
+        judgment["tracking"].update({"verified": True, "key": "EXAMPLE-12345"})
     others = [
         valid_judgment(item)
         for item in candidate_items(candidates)
