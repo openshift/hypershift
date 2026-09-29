@@ -13,7 +13,7 @@ package v1
 // AUTO-GENERATED FUNCTIONS START HERE
 var map_AdditionalArtifactStore = map[string]string{
 	"":     "AdditionalArtifactStore defines an additional read-only storage location for Open Container Initiative (OCI) artifacts.",
-	"path": "path specifies the absolute location of the additional artifact store. The path must exist on the node before configuration is applied. When an artifact is requested, artifacts found at this location will be used instead of retrieving from the registry. The path is required and must be between 1 and 256 characters long, begin with a forward slash, and only contain the characters a-z, A-Z, 0-9, '/', '.', '_', and '-'. Consecutive forward slashes are not permitted.",
+	"path": "path specifies the absolute location of the additional artifact store. The path must exist on the node before configuration is applied. When an artifact is requested, artifacts found at this location will be used instead of retrieving from the registry. The path is required and must be between 1 and 256 characters long, begin with a forward slash, and only contain the characters a-z, A-Z, 0-9, '/', '.', '_', and '-'. Consecutive forward slashes and '..' directory traversal components are not permitted.",
 }
 
 func (AdditionalArtifactStore) SwaggerDoc() map[string]string {
@@ -22,7 +22,7 @@ func (AdditionalArtifactStore) SwaggerDoc() map[string]string {
 
 var map_AdditionalImageStore = map[string]string{
 	"":     "AdditionalImageStore defines an additional read-only storage location for Open Container Initiative (OCI) images.",
-	"path": "path specifies the absolute location of the additional image store. The path must exist on the node before configuration is applied. When a container image is requested, images found at this location will be used instead of retrieving from the registry. The path is required and must be between 1 and 256 characters long, begin with a forward slash, and only contain the characters a-z, A-Z, 0-9, '/', '.', '_', and '-'. Consecutive forward slashes are not permitted.",
+	"path": "path specifies the absolute location of the additional image store. The path must exist on the node before configuration is applied. When a container image is requested, images found at this location will be used instead of retrieving from the registry. The path is required and must be between 1 and 256 characters long, begin with a forward slash, and only contain the characters a-z, A-Z, 0-9, '/', '.', '_', and '-'. Consecutive forward slashes and '..' directory traversal components are not permitted.",
 }
 
 func (AdditionalImageStore) SwaggerDoc() map[string]string {
@@ -31,7 +31,7 @@ func (AdditionalImageStore) SwaggerDoc() map[string]string {
 
 var map_AdditionalLayerStore = map[string]string{
 	"":     "AdditionalLayerStore defines a read-only storage location for Open Container Initiative (OCI) container image layers.",
-	"path": "path specifies the absolute location of the additional layer store. The path must exist on the node before configuration is applied. When a container image is requested, layers found at this location will be used instead of retrieving from the registry. The path is required and must be between 1 and 256 characters long, begin with a forward slash, and only contain the characters a-z, A-Z, 0-9, '/', '.', '_', and '-'. Consecutive forward slashes are not permitted.",
+	"path": "path specifies the absolute location of the additional layer store. The path must exist on the node before configuration is applied. When a container image is requested, layers found at this location will be used instead of retrieving from the registry. The path is required and must be between 1 and 256 characters long, begin with a forward slash, and only contain the characters a-z, A-Z, 0-9, '/', '.', '_', and '-'. Consecutive forward slashes and '..' directory traversal components are not permitted.",
 }
 
 func (AdditionalLayerStore) SwaggerDoc() map[string]string {
