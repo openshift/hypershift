@@ -1729,25 +1729,25 @@ func TestDNSZonesToDelete(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:     "Partial provisioning: empty status but HCP present falls back to deterministic names",
+			name:     "When status has no zones but HCP is present, it should fall back to deterministic names",
 			psc:      pscWithStatusZones(),
 			hcp:      hcpWithDomain("example.com"),
 			expected: []string{"example-com-private", "example-com-public", "test-hcp-hypershift-local"},
 		},
 		{
-			name:     "Recorded status zones are unioned with deterministic names",
+			name:     "When status records zones, it should union them with deterministic names",
 			psc:      pscWithStatusZones("leftover-zone"),
 			hcp:      hcpWithDomain("example.com"),
 			expected: []string{"example-com-private", "example-com-public", "leftover-zone", "test-hcp-hypershift-local"},
 		},
 		{
-			name:     "No HCP and empty status yields nothing",
+			name:     "When there is no HCP and status is empty, it should yield nothing",
 			psc:      pscWithStatusZones(),
 			hcp:      nil,
 			expected: []string{},
 		},
 		{
-			name:     "HCP without base domain and empty status yields nothing",
+			name:     "When the HCP has no base domain and status is empty, it should yield nothing",
 			psc:      pscWithStatusZones(),
 			hcp:      hcpWithDomain(""),
 			expected: []string{},
