@@ -849,9 +849,6 @@ spec:
   - service: Ignition
     servicePublishingStrategy:
       type: Route
-  - service: OVNSbDb
-    servicePublishingStrategy:
-      type: Route
   sshKey:
     name: ssh-key`
 	hcp := &hyperv1.HostedControlPlane{}
