@@ -130,14 +130,17 @@ func TestManifestAndReconcileGetKey(t *testing.T) {
 		})
 	}
 
-	wantCapabilities := map[string]hyperv1.OptionalCapability{
+}
+
+func TestRbacCapabilityMap(t *testing.T) {
+	want := map[string]hyperv1.OptionalCapability{
 		"system:openshift:openshift-controller-manager:ingress-to-route-controller/ClusterRole":        hyperv1.IngressCapability,
 		"openshift-route-controller-manager/openshift-route-controllers/Role":                          hyperv1.IngressCapability,
 		"system:openshift:openshift-controller-manager:ingress-to-route-controller/ClusterRoleBinding": hyperv1.IngressCapability,
 		"openshift-route-controller-manager/openshift-route-controllers/RoleBinding":                   hyperv1.IngressCapability,
 	}
-	if !reflect.DeepEqual(RbacCapabilityMap, wantCapabilities) {
-		t.Fatalf("unexpected RBAC capability map: got %#v, want %#v", RbacCapabilityMap, wantCapabilities)
+	if !reflect.DeepEqual(RbacCapabilityMap, want) {
+		t.Fatalf("unexpected RBAC capability map: got %#v, want %#v", RbacCapabilityMap, want)
 	}
 }
 

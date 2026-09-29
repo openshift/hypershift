@@ -19,7 +19,6 @@ var RbacCapabilityMap = map[string]hyperv1.OptionalCapability{
 	"openshift-route-controller-manager/openshift-route-controllers/Role":                          hyperv1.IngressCapability,
 	"system:openshift:openshift-controller-manager:ingress-to-route-controller/ClusterRoleBinding": hyperv1.IngressCapability,
 	"openshift-route-controller-manager/openshift-route-controllers/RoleBinding":                   hyperv1.IngressCapability,
-	// add others as needed
 }
 
 // ReconcileParams contains the policy facts needed to select the RBAC resources
@@ -35,8 +34,7 @@ type manifestAndReconcile[o client.Object] struct {
 	reconcile func(o) error
 }
 
-func (m manifestAndReconcile[o]) upsert(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
-	obj := m.manifest()
+func (m manifestAndReconcile[o]) upsert(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, obj o) error {
 	if _, err := createOrUpdate(ctx, c, obj, func() error {
 		return m.reconcile(obj)
 	}); err != nil {
@@ -54,8 +52,7 @@ func (m manifestAndReconcile[o]) upsert(ctx context.Context, c client.Client, cr
 //
 // - For namespaced objects: "<namespace>/<name>/<kind>"
 // - For cluster-scoped objects: "<name>/<kind>"
-func (m manifestAndReconcile[o]) getKey() string {
-	obj := m.manifest()
+func getKey(obj client.Object) string {
 	gvk := obj.GetObjectKind().GroupVersionKind()
 	ns := obj.GetNamespace()
 	name := obj.GetName()
@@ -65,9 +62,22 @@ func (m manifestAndReconcile[o]) getKey() string {
 	return fmt.Sprintf("%s/%s", name, gvk.Kind) // cluster-scoped
 }
 
+func (m manifestAndReconcile[o]) getKey() string {
+	return getKey(m.manifest())
+}
+
 type manifestReconciler interface {
-	upsert(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN) error
-	getKey() string
+	apply(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, params ReconcileParams) error
+}
+
+func (m manifestAndReconcile[o]) apply(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, params ReconcileParams) error {
+	obj := m.manifest()
+	mKey := getKey(obj)
+	capability, found := RbacCapabilityMap[mKey]
+	if found && capability == hyperv1.IngressCapability && !params.IngressEnabled {
+		return nil
+	}
+	return m.upsert(ctx, c, createOrUpdate, obj)
 }
 
 // Reconcile applies all applicable HCCO RBAC resources in their established
@@ -76,12 +86,7 @@ type manifestReconciler interface {
 func Reconcile(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, params ReconcileParams) error {
 	var errs []error
 	for _, resource := range resources(params.IsAROHCP) {
-		mKey := resource.getKey()
-		capability, found := RbacCapabilityMap[mKey]
-		if found && capability == hyperv1.IngressCapability && !params.IngressEnabled {
-			continue
-		}
-		if err := resource.upsert(ctx, c, createOrUpdate); err != nil {
+		if err := resource.apply(ctx, c, createOrUpdate, params); err != nil {
 			errs = append(errs, err)
 		}
 	}
