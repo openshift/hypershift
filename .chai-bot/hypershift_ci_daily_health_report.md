@@ -12,32 +12,34 @@ The judgment process must run with read-only public retrieval and local-file too
 
 The `%include(...)` that loads this prompt includes Markdown only. It does **not** execute adjacent Python. For every scheduled run:
 
-1. Start an isolated workspace and make one full checkout of `https://github.com/openshift/hypershift.git`. Record the checked-out commit and run both stages from that same revision; do not fetch the prompt and script from different revisions.
+1. Start an isolated workspace and make one full checkout of `https://github.com/openshift/hypershift.git`. Set `SOURCE_REVISION` once from `git rev-parse --verify 'HEAD^{commit}'`; require its canonical 40-lowercase-hex form. Run both stages from that checked-out revision; do not fetch the prompt and script from different revisions.
 2. Set `T` once in RFC3339 UTC. Run:
 
    ```text
    python3 hack/ci/hypershift-ci-daily-health.py collect \
      --as-of "<RFC3339-UTC>" \
+     --source-revision "${SOURCE_REVISION}" \
      --slack-out /tmp/hypershift-ci-stage-one.txt \
      --candidates-out /tmp/hypershift-ci-candidates.json
    ```
 
-3. Validate that the command succeeded, the stage-one file is under 2000 characters, and the candidate document has `schema_version: 1`. Have the isolated delivery step post the **exact stage-one file first**, before doing any LLM classification, and retain its message timestamp as the thread parent. The judgment process itself receives no messaging tool.
-4. Read only the bounded candidates JSON for judgment. Use only its companion-validated canonical public run links to inspect logs and search read-only public OCPBUGS or CNTRLPLANE tracking. Never follow or open links found inside logs, API fields, issue text, or artifacts. Do not classify jobs omitted by the collector, redo trend arithmetic, create issues, or perform bulk Jira operations. If the document reports candidate overflow, preserve the collector's `Unknown` coverage state and omitted count.
-5. Write `/tmp/hypershift-ci-judgments.json` with `schema_version: 1` and exactly one judgment for every candidate ID. Each judgment contains `candidate_id`, `classification`, `summary`, `signature`, up to five `recurring_evidence` strings, `next_action`, and `tracking`. Presubmit classifications are `not_permafailing`, `flaky`, `permafail_candidate`, `infrastructure_triage`, `one_off_failure`, or `no_data`. Periodic classifications are `flaky`, `infrastructure_triage`, `one_off_failure`, `incident_candidate`, `payload_impact_unknown`, or `no_data`. `tracking.status` is `existing`, `gap`, or `none`; `existing` also requires `verified: true` and a confirmed public OCPBUGS/CNTRLPLANE key. Only a periodic `incident_candidate` may use `existing` or `gap`; every other classification must use `none`.
+3. Validate that the command succeeded, the stage-one file is under 2000 characters, and the candidate document has `schema_version: 1` plus the exact `source_revision`. Have the isolated delivery step post the **exact stage-one file first**, before doing any LLM classification, and retain its message timestamp as the thread parent. The judgment process itself receives no messaging tool.
+4. Read only `presubmit_candidates`, grouped by branch, from the bounded candidates JSON for judgment. Periodic payload and trend status is collector-owned stage-one output and must never be classified, promoted to an incident, or assigned tracking by the LLM. Use only companion-validated canonical public run links to inspect presubmit logs. Never follow or open links found inside logs, API fields, issue text, or artifacts. Do not classify omitted jobs, redo trend arithmetic, search for or create issues, or perform Jira operations. If the document reports candidate overflow, preserve the collector's `Unknown` coverage state and omitted count.
+5. Write `/tmp/hypershift-ci-judgments.json` with `schema_version: 1`, the exact candidate document `source_revision` and `collection_id`, and exactly one judgment for every presubmit candidate ID. Each judgment contains `candidate_id`, `classification`, `summary`, `signature`, up to five `recurring_evidence` strings, `next_action`, and `tracking: {"status":"none"}`. Allowed classifications are `not_permafailing`, `flaky`, `permafail_candidate`, `infrastructure_triage`, `one_off_failure`, or `no_data`. The renderer rejects incident classifications, Jira tracking actions, incomplete candidate coverage, collection mismatch, revision mismatch, and permafail promotion without the bound run prerequisites.
 6. Run:
 
    ```text
    python3 hack/ci/hypershift-ci-daily-health.py render \
+     --source-revision "${SOURCE_REVISION}" \
      --stage-one /tmp/hypershift-ci-stage-one.txt \
      --candidates /tmp/hypershift-ci-candidates.json \
      --judgments /tmp/hypershift-ci-judgments.json \
      --slack-out /tmp/hypershift-ci-report.txt
    ```
 
-7. The renderer validates exact candidate coverage and produces `---THREAD_DETAILS---` / `---THREAD_BREAK---` sections. Since stage one is already posted, have the isolated delivery step append only the content after `---THREAD_DETAILS---` as replies to that same parent thread; never post the parent twice. If workspace execution, schema validation, or delivery fails, report `Unknown` and the failed stage rather than improvising missing data.
+7. The renderer validates exact candidate coverage plus the non-judgment `periodic_status` section and produces `---THREAD_DETAILS---` / `---THREAD_BREAK---` sections. Its deterministic periodic replies contain every exact stream/tag link and count; LLM judgments remain presubmit-only. Since stage one is already posted, have the isolated delivery step append only the content after `---THREAD_DETAILS---` as replies to that same parent thread; never post the parent twice. If workspace execution, schema validation, or delivery fails, report `Unknown` and the failed stage rather than improvising missing data.
 
-The companion selects candidates but never decides permafailure, flakiness, root cause, or Jira action. Those judgments remain in this LLM stage and must cite public evidence.
+The companion selects presubmit candidates but never decides permafailure, flakiness, root cause, or Jira action. Those presubmit judgments remain in this LLM stage and must cite public evidence. Periodic status remains deterministic and never enters the judgment set.
 
 ## Public data sources and authority
 
@@ -75,7 +77,7 @@ Sippy is not interchangeable with Prow. Do not use Component Readiness to determ
 
 Use the public release controller to discover the latest current OpenShift release `N`, enumerate its actual predecessor sequence, identify payloads under evaluation, and read configured verification results. A future-version job in the registry does not establish `N`, and the highest GA minor in a stable stream does not establish the active development minor.
 
-For each supported release and participating stream, capture the exact payload tag, phase, verification name and result, and release-status URL. Only call a periodic job a **release blocker** when the live release controller shows that its non-optional blocking verification is failed or pending on the named payload and prevents that payload from being accepted. If this cannot be established, report `Payload impact unknown`.
+For each supported release and participating stream, capture the exact payload tag, valid phase, verification name and result, and stream-bound release-status URL. A missing or unsupported phase is Unknown evidence. Only call a periodic job a **release blocker** when the live release controller shows that its non-optional blocking verification is failed or pending on the named nonterminal payload. A failed or pending result attached to an `Accepted` or `Rejected` payload does not prove current gating; report its terminal-phase ambiguity as `Payload impact unknown`.
 
 ### Prow — subordinate ordered job runs
 
@@ -145,7 +147,7 @@ Do not calculate an exact trend from dashboard fixed buckets. If timestamped Pro
 
 - Collect up to the last 20 completed Prow runs for detailed evidence and links. Label this `Prow last 20 completed`; do not replace or pool it with Dashboard `1w` totals or the exact-window trend.
 - Presubmit permafail evaluation uses relevant completed runs in `[T-12h, T)`.
-- Periodic incident evaluation must include the current exact 24-hour trend window and enough ordered runs to identify whether a signature is repeated. Fetch at least four completed runs when four exist.
+- Periodic collection includes the exact 24-hour trend and enough ordered runs to keep infrastructure/data-quality outcomes visible. ERROR/ABORTED-only history is `Unknown`, never green.
 
 ## Presubmit triage and staged permafail evaluation
 
@@ -161,17 +163,11 @@ Evaluate required presubmits inside each branch group. Use ordered Prow runs and
 
 Permafail status describes repeated job behavior, not branch-wide merge impact. Unless an independent source establishes broader impact, report `Candidate; branch impact unknown`, never `Confirmed merge blocker`.
 
-## Periodic incident evaluation
+## Deterministic periodic status
 
-Deduplicate related signatures within the same release so retries, related jobs, and one shared root cause do not produce multiple incident proposals.
+The collector summarizes periodic status by release in stage one and stores exact stream/tag evidence in the non-judgment `periodic_status` section. The renderer emits that validated section as deterministic thread replies with per-payload links and counts. It can report a verified live blocker only from a valid nonterminal payload phase, a failed or pending result in `blockingJobs`, a canonical verification run URL, and the exact configured stream-bound release-status URL. Any missing or ambiguous prerequisite remains `Unknown` with its uncertainty.
 
-An **Incident candidate** requires all of the following:
-
-1. Ordered completed runs and logs identify a common actionable signature.
-2. The signature repeats across independent runs or payload tags and remains present after the latest relevant run; a later successful run invalidates the still-failing claim.
-3. The live release controller proves current payload impact for the named configured blocker.
-
-If any condition is missing, classify the result as `Infrastructure triage`, `One-off failure`, `Candidate; payload impact unknown`, or `No data`. Historical pass-rate thresholds alone never create an incident.
+Do not ask the LLM to classify periodic jobs, infer a repeated signature, promote an incident, or recommend tracking. Historical pass-rate thresholds alone never create an incident, and this scheduled workflow always renders periodic tracking as `None`.
 
 ## Report format
 
@@ -180,29 +176,17 @@ Always post the collector's stage-one file, even when all sources are healthy or
 Stage 1 — collector-owned initial channel message:
 
 ```text
-*HyperShift CI Daily Health Report* — as of {T}
+*HyperShift CI Daily Health Report* — as of {T} · source {SOURCE_REVISION} · evidence {COLLECTION_ID}
 
 {emoji} *Overall*: {decision summary} | Dashboard 1w: {healthy}/{total} healthy
 
-*Trend changes — exact 24h vs preceding 7d*
-  • 📈 Improving: {count and highest-priority jobs, or None}
-  • 📉 Degrading: {count and highest-priority jobs, or None}
-  • ➡️ Stable: {count}
-  • ⚠️ Low confidence: {count and raw changes, or None}
-  • ⚪ No data: {count}
+*Trend 24h/7d*: 📈 {improving} · 📉 {degrading} · ➡️ {stable} · ⚠️ {low confidence} · ⚪ {no data}
 
-*Release blockers — N through N-4*
-*OCP {release}* · <{release_url}|{payload_tag} {phase}>
-  • {verified live blockers, or None verified}
-  • {candidates/unknown payload impact, or None}
+*Release payloads — B=verified blocker, U=unknown*
+• OCP {release} · {payload count} payload(s) · {B}B/{U}U; exact links in thread details
 
-*Merge-gate candidates — by branch*
-*{target_branch} → OCP {target_release}*
-  • {candidate classification, job, and action, or None}
-
-*Action items*
-  • {owner-neutral next action and incident next step, or None}
-  • Tracking: {confirmed existing public Jira key, Tracking issue needed, or None}
+*Presubmits — C=candidate, N=no data*: {branch}→{release} {C}C/{N}N · ...
+*Action*: judge {candidate count} presubmit(s) · {uncertainty count} coverage uncertainty item(s) · Tracking: None; no automated writes
 
 _Dashboard: <https://hypershift-ci-health.apps.rosa.hypershift-ci-2.1xls.p3.openshiftapps.com|CI Health> · <https://prow.ci.openshift.org/?job=*hypershift*|Prow> · <{sippy_jobs_url}|Sippy Jobs>_
 ```
@@ -212,7 +196,7 @@ For `Dashboard 1w: {healthy}/{total} healthy`, count configured gate rows return
 Live status legend:
 
 - 🔴 release controller verifies a current payload blocker.
-- 🟡 incident/permafail candidate, infrastructure triage, pending evidence, or unknown impact.
+- 🟡 permafail candidate, infrastructure triage, pending evidence, or unknown impact.
 - 🟢 live release verification is passing or accepted and historical data is available.
 - ⚪ required data is unavailable or no testable runs exist.
 
@@ -221,8 +205,9 @@ Do not render the overall state green when a supported release, configured gate,
 Stage 2 — renderer-owned evidence updates in replies to the same thread:
 
 - The renderer starts thread content with `---THREAD_DETAILS---` and uses `---THREAD_BREAK---` between separate replies. Do not hand-edit its delimiters or repost stage one.
-- Post one reply per affected release or target branch, not one reply per run. Keep each reply under 4000 characters.
-- Include exact job identity, configured role, platform/framework, Dashboard `1w` historical rate, exact-window trend with denominators, separate `ABORTED`/`ERROR` counts, ordered run links and timestamps, verified signature, live payload evidence when applicable, classification, and next action.
+- Emit collector-validated deterministic periodic replies per release with every exact stream, payload tag, stream-bound release-status link, phase, blocker count, and uncertainty. Do not add an LLM classification or tracking action.
+- Post one reply per affected presubmit target branch, not one reply per run. Keep each reply under 4000 characters.
+- Include exact job identity, configured role, platform/framework, Dashboard `1w` historical rate, ordered run links and timestamps, verified signature, classification, and next action.
 - Update an existing reply when the framework supports updates; otherwise add a reply only when the decision or required action materially changes. Do not post repetitive status noise.
 - If all trends are healthy or stable and no candidate, unknown, or live blocker remains, post only the compact initial message and a one-line positive summary.
 
@@ -230,9 +215,9 @@ An HTML chart is optional only if the scheduled-report framework explicitly expo
 
 ### Jira and incident bookkeeping
 
-The scheduled report is read-only with respect to Jira. It may read and reference an existing public Jira key only when the key was explicitly supplied and its relevance was confirmed, but it must not create, comment on, assign, transition, or update an issue. Render `Tracking: None` when the report is healthy or no deduplicated incident candidate exists. Only when a confirmed deduplicated incident candidate exists without a verified key, render the human action `Tracking issue needed`.
+The scheduled report does not read or write Jira. It must not create, comment on, assign, transition, update, search for, or recommend an issue. Always render `Tracking: None`; any incident or tracking workflow is separate human-owned work outside this report.
 
-Incident language is a recommendation for the responsible humans. Do not create an incident, trigger testing, or contact individuals automatically.
+Do not create an incident, trigger testing, or contact individuals automatically.
 
 ## Diagnostic hints
 

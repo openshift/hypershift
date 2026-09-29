@@ -24,6 +24,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import threading
@@ -43,6 +44,9 @@ DASHBOARD_BASE = (
 )
 RELEASE_CONTROLLER_BASE = "https://amd64.ocp.releases.ci.openshift.org"
 MULTI_RELEASE_CONTROLLER_BASE = "https://multi.ocp.releases.ci.openshift.org"
+AMD64_RELEASE_STATUS_BASE = (
+    "https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com"
+)
 SIPPY_RUNS_URL = "https://sippy.dptools.openshift.org/api/jobs/runs"
 PROW_HOST = "prow.ci.openshift.org"
 PUBLIC_RESULTS_BUCKET = "test-platform-results-public"
@@ -71,7 +75,7 @@ ALLOWED_HOSTS = {
     urllib.parse.urlparse(SIPPY_RUNS_URL).hostname,
     PROW_HOST,
     "storage.googleapis.com",
-    "openshift-release.apps.ci.l2s4.p1.openshiftapps.com",
+    urllib.parse.urlparse(AMD64_RELEASE_STATUS_BASE).hostname,
 }
 
 RESULT_STATES = {
@@ -93,19 +97,7 @@ PRESUBMIT_JUDGMENTS = {
     "one_off_failure",
     "no_data",
 }
-PERIODIC_JUDGMENTS = {
-    "flaky",
-    "infrastructure_triage",
-    "one_off_failure",
-    "incident_candidate",
-    "payload_impact_unknown",
-    "no_data",
-}
-KIND_JUDGMENTS = {
-    "presubmit": PRESUBMIT_JUDGMENTS,
-    "periodic": PERIODIC_JUDGMENTS,
-}
-TRACKING_KEY_RE = re.compile(r"^(?:OCPBUGS|CNTRLPLANE)-[1-9][0-9]*$")
+VALID_PAYLOAD_PHASES = {"Pending", "Ready", "Accepted", "Rejected", "Failed"}
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 PAYLOAD_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 PHASE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 ._-]{0,63}$")
@@ -144,7 +136,9 @@ def _parse_url(url: str) -> urllib.parse.ParseResult:
 
 def _bounded_string(value: Any, label: str, limit: int = MAX_SOURCE_STRING) -> str:
     if not isinstance(value, str) or not value or len(value) > limit:
-        raise ReportError(f"{label} must be a non-empty string of at most {limit} characters")
+        raise ReportError(
+            f"{label} must be a non-empty string of at most {limit} characters"
+        )
     if any(character in value for character in ("\r", "\n", "\x00")):
         raise ReportError(f"{label} contains a control character")
     return value
@@ -155,6 +149,30 @@ def _grammar_string(value: Any, label: str, pattern: re.Pattern[str]) -> str:
     if not pattern.fullmatch(text):
         raise ReportError(f"{label} has an invalid format")
     return text
+
+
+def validate_source_revision(value: Any) -> str:
+    """Require the canonical commit identity bound into both report stages."""
+    return _grammar_string(value, "source_revision", GIT_SHA_RE)
+
+
+def checked_out_source_revision() -> str:
+    """Return the commit containing the companion script, without accepting aliases."""
+    repository = Path(__file__).resolve().parents[2]
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+            cwd=repository,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ReportError("unable to resolve checked-out source revision") from exc
+    if completed.returncode != 0:
+        raise ReportError("unable to resolve checked-out source revision")
+    return validate_source_revision(completed.stdout.strip())
 
 
 def _is_missing_prow_history(status: int, body: bytes) -> bool:
@@ -197,7 +215,9 @@ class HTTPTransport:
                 raise ReportError("public request budget exhausted")
             self.requests_remaining -= 1
         remaining = (
-            self.deadline - time.monotonic() if self.deadline is not None else self.timeout
+            self.deadline - time.monotonic()
+            if self.deadline is not None
+            else self.timeout
         )
         if remaining <= 0:
             raise ReportError("collection deadline exhausted")
@@ -288,7 +308,9 @@ class FixtureTransport:
                         try:
                             body = (self.directory / item["file"]).read_bytes()
                         except OSError as exc:
-                            raise ReportError(f"missing fixture {item['file']}") from exc
+                            raise ReportError(
+                                f"missing fixture {item['file']}"
+                            ) from exc
                     if _is_missing_prow_history(status, body):
                         raise NoDataError("Prow history has never run")
                     raise ReportError(
@@ -328,6 +350,10 @@ def validate_public_url(url: str) -> None:
     if port not in {None, 443}:
         raise ReportError("refusing URL with non-HTTPS port")
     path = parsed.path or "/"
+    decoded_path = urllib.parse.unquote(path)
+    segments = [part for part in decoded_path.split("/") if part]
+    if any(part in {".", ".."} for part in segments) or "\\" in decoded_path:
+        raise ReportError("refusing noncanonical public-source path")
     allowed_path = False
     if parsed.hostname == urllib.parse.urlparse(DASHBOARD_BASE).hostname:
         allowed_path = path in {
@@ -341,13 +367,17 @@ def validate_public_url(url: str) -> None:
         urllib.parse.urlparse(RELEASE_CONTROLLER_BASE).hostname,
         urllib.parse.urlparse(MULTI_RELEASE_CONTROLLER_BASE).hostname,
     }:
-        allowed_path = path == "/" or path == "/api/v1/releasestreams/all" or path.startswith(
-            ("/api/v1/releasestream/", "/releasestream/")
+        allowed_path = (
+            path == "/"
+            or path == "/api/v1/releasestreams/all"
+            or path.startswith(("/api/v1/releasestream/", "/releasestream/"))
         )
     elif parsed.hostname == urllib.parse.urlparse(SIPPY_RUNS_URL).hostname:
         allowed_path = path == "/api/jobs/runs" or path.startswith("/sippy-ng/")
     elif parsed.hostname == PROW_HOST:
-        allowed_path = path.startswith("/job-history/gs/test-platform-results/") or bool(
+        allowed_path = path.startswith(
+            "/job-history/gs/test-platform-results/"
+        ) or bool(
             re.match(
                 r"^/view/gs/(?:test-platform-results|test-platform-results-public)/",
                 path,
@@ -356,15 +386,19 @@ def validate_public_url(url: str) -> None:
     elif parsed.hostname == "openshift-release.apps.ci.l2s4.p1.openshiftapps.com":
         allowed_path = path.startswith("/releasestream/")
     if parsed.hostname == "storage.googleapis.com":
-        decoded_path = urllib.parse.unquote(parsed.path)
-        segments = [part for part in decoded_path.split("/") if part]
-        if any(part in {".", ".."} for part in segments) or "\\" in decoded_path:
-            raise ReportError("refusing noncanonical Prow results path")
         if not segments or segments[0] != PUBLIC_RESULTS_BUCKET:
             raise ReportError("refusing non-public Prow results bucket")
         allowed_path = True
     if not allowed_path:
         raise ReportError(f"refusing unexpected public-source path: {path}")
+
+
+def validate_release_status_url(url: str, status_base: str, stream: str) -> None:
+    """Bind a release-status link to one controller and exact stream."""
+    validate_public_url(url)
+    expected = f"{status_base}/releasestream/{urllib.parse.quote(stream, safe='')}"
+    if url != expected:
+        raise ReportError("release-status URL does not match its controller stream")
 
 
 def safe_url_label(url: str) -> str:
@@ -443,8 +477,10 @@ def validate_registry(registry: Any) -> list[dict[str, Any]]:
             if field in job and not isinstance(job[field], str):
                 raise ReportError(f"registry {job_id} {field} must be a string")
         platforms = job.get("platforms") or []
-        if not isinstance(platforms, list) or len(platforms) > 20 or any(
-            not isinstance(item, str) or len(item) > 100 for item in platforms
+        if (
+            not isinstance(platforms, list)
+            or len(platforms) > 20
+            or any(not isinstance(item, str) or len(item) > 100 for item in platforms)
         ):
             raise ReportError(f"registry {job_id} platforms has an unexpected shape")
         if "e2e_framework" in job and not isinstance(job["e2e_framework"], str):
@@ -456,35 +492,56 @@ def validate_registry(registry: Any) -> list[dict[str, Any]]:
             if not isinstance(presubmit, dict):
                 raise ReportError(f"registry {job_id} presubmit must be an object")
             if "required" in presubmit and not isinstance(presubmit["required"], bool):
-                raise ReportError(f"registry {job_id} presubmit.required must be boolean")
+                raise ReportError(
+                    f"registry {job_id} presubmit.required must be boolean"
+                )
             for field in ("target_branch", "target_release"):
                 if presubmit.get(field) is not None and not isinstance(
                     presubmit[field], str
                 ):
-                    raise ReportError(f"registry {job_id} presubmit.{field} must be a string")
+                    raise ReportError(
+                        f"registry {job_id} presubmit.{field} must be a string"
+                    )
         participations = job.get("release_controller") or []
         if not isinstance(participations, list) or len(participations) > 20:
-            raise ReportError(f"registry {job_id} release_controller must be a bounded list")
+            raise ReportError(
+                f"registry {job_id} release_controller must be a bounded list"
+            )
         for participation in participations:
             if not isinstance(participation, dict):
-                raise ReportError(f"registry {job_id} release participation is not an object")
+                raise ReportError(
+                    f"registry {job_id} release participation is not an object"
+                )
             stream = participation.get("stream")
             verification = participation.get("verification")
             if not isinstance(stream, dict) or not isinstance(verification, dict):
-                raise ReportError(f"registry {job_id} release participation is incomplete")
+                raise ReportError(
+                    f"registry {job_id} release participation is incomplete"
+                )
             # Custom streams legitimately omit the release-controller fields used by
             # this report. Select the report's ci/nightly stream class first, then
             # apply the strict schema only to that selected scope.
             if stream.get("kind") not in {"ci", "nightly"}:
                 continue
             for field in ("name", "release", "kind", "architecture"):
-                _bounded_string(stream.get(field), f"registry {job_id} stream.{field}", 255)
+                _bounded_string(
+                    stream.get(field), f"registry {job_id} stream.{field}", 255
+                )
             if stream.get("architecture") not in {"amd64", "multi"}:
                 continue
             if not isinstance(stream.get("end_of_life"), bool):
-                raise ReportError(f"registry {job_id} stream.end_of_life must be boolean")
+                raise ReportError(
+                    f"registry {job_id} stream.end_of_life must be boolean"
+                )
             if stream.get("release_status_url"):
-                validate_public_url(stream["release_status_url"])
+                status_base = (
+                    MULTI_RELEASE_CONTROLLER_BASE
+                    if stream.get("architecture") == "multi"
+                    else AMD64_RELEASE_STATUS_BASE
+                )
+                validate_release_status_url(
+                    stream["release_status_url"], status_base, stream["name"]
+                )
             _bounded_string(
                 verification.get("name"), f"registry {job_id} verification.name", 255
             )
@@ -506,7 +563,9 @@ def _validate_metric(value: Any, label: str, minimum: float, maximum: float) -> 
         or not math.isfinite(value)
         or not minimum <= value <= maximum
     ):
-        raise ReportError(f"{label} must be finite and between {minimum:g} and {maximum:g}")
+        raise ReportError(
+            f"{label} must be finite and between {minimum:g} and {maximum:g}"
+        )
 
 
 def validate_health(health: Any) -> dict[str, Any]:
@@ -518,7 +577,9 @@ def validate_health(health: Any) -> dict[str, Any]:
             raise ReportError(f"dashboard health {group} is not a bounded list")
         for index, row in enumerate(rows):
             if not isinstance(row, dict):
-                raise ReportError(f"dashboard health {group} row {index} is not an object")
+                raise ReportError(
+                    f"dashboard health {group} row {index} is not an object"
+                )
             for identity in ("id", "prow"):
                 if row.get(identity) is not None and not isinstance(row[identity], str):
                     raise ReportError(
@@ -551,7 +612,11 @@ def validate_tag_catalog(
         tags = catalog.get(stream)
         if tags is None:
             continue
-        if not isinstance(stream, str) or not isinstance(tags, list) or len(tags) > 1000:
+        if (
+            not isinstance(stream, str)
+            or not isinstance(tags, list)
+            or len(tags) > 1000
+        ):
             raise ReportError(f"{label} tag catalog has an unexpected entry")
         if any(
             not isinstance(tag, str)
@@ -567,7 +632,9 @@ def validate_tag_catalog(
 def selected_stream_names(
     jobs: list[dict[str, Any]], architecture: str, index_html: str | None = None
 ) -> set[str]:
-    index_streams = set(STREAM_LINK_RE.findall(index_html)) if index_html is not None else None
+    index_streams = (
+        set(STREAM_LINK_RE.findall(index_html)) if index_html is not None else None
+    )
     names = set()
     for job in jobs:
         if job.get("repository") != REPOSITORY:
@@ -636,9 +703,9 @@ def calculate_trend(
         change = (current["rate"] - baseline["rate"]) * 100
         if current["denominator"] < 5 or baseline["denominator"] < 5:
             classification = "low_confidence"
-        elif change > 10:
+        elif change > 10 and not math.isclose(change, 10, abs_tol=1e-9):
             classification = "improving"
-        elif change < -10:
+        elif change < -10 and not math.isclose(change, -10, abs_tol=1e-9):
             classification = "degrading"
         else:
             classification = "stable"
@@ -715,9 +782,15 @@ def bound_candidates(
     selected = list(candidates[:MAX_CANDIDATES])
     # Reserve room for bounded scope failures/uncertainties and envelope fields.
     byte_limit = MAX_CANDIDATE_DOCUMENT_BYTES - 224 * 1024
-    while selected and len(
-        json.dumps({"candidates": selected}, separators=(",", ":")).encode("utf-8")
-    ) > byte_limit:
+    while (
+        selected
+        and len(
+            json.dumps(
+                {"presubmit_candidates": selected}, separators=(",", ":")
+            ).encode("utf-8")
+        )
+        > byte_limit
+    ):
         selected.pop()
     omitted = len(candidates) - len(selected)
     if not omitted:
@@ -728,7 +801,7 @@ def bound_candidates(
         "omitted": omitted,
         "count_limit": MAX_CANDIDATES,
         "byte_limit": MAX_CANDIDATE_DOCUMENT_BYTES,
-        "priority": "periodic first, newest release first, then job ID",
+        "priority": "configured branch order, then job ID",
     }
 
 
@@ -737,12 +810,59 @@ def bound_messages(messages: Iterable[str], label: str) -> list[str]:
     bounded = []
     for message in unique[: MAX_SOURCE_FAILURES - 1]:
         if len(message) > 1000:
-            message = message[:960].rstrip() + " … message truncated by 1000-character bound"
+            message = (
+                message[:960].rstrip() + " … message truncated by 1000-character bound"
+            )
         bounded.append(message)
     omitted = len(unique) - len(bounded)
     if omitted:
-        bounded.append(f"{omitted} additional {label} omitted by the explicit count bound")
+        bounded.append(
+            f"{omitted} additional {label} omitted by the explicit count bound"
+        )
     return bounded
+
+
+def build_periodic_status(
+    blockers: list[dict[str, Any]],
+    payloads: dict[tuple[str, str], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Group deterministic blocker evidence by its exact stream and payload."""
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for blocker in blockers:
+        grouped[(blocker["release"], blocker["stream"])].append(blocker)
+    result = []
+    for (release, stream), stream_blockers in grouped.items():
+        evidence = [
+            payloads[(blocker["job_id"], stream)] for blocker in stream_blockers
+        ]
+        sample = evidence[0]
+        verified = sum(item["impact"] == "verified_blocker" for item in evidence)
+        unknown = sum(item["impact"] == "unknown" for item in evidence)
+        result.append(
+            {
+                "release": release,
+                "stream": stream,
+                "architecture": stream_blockers[0]["architecture"],
+                "stream_kind": stream_blockers[0]["stream_kind"],
+                "tag": sample["tag"],
+                "phase": sample["phase"],
+                "release_status_url": sample["release_status_url"],
+                "configured_blockers": len(stream_blockers),
+                "verified_blockers": verified,
+                "unknown": unknown,
+                "passing": len(stream_blockers) - verified - unknown,
+                "uncertainties": sorted(
+                    {item["uncertainty"] for item in evidence if item["uncertainty"]}
+                ),
+            }
+        )
+    return sorted(
+        result,
+        key=lambda item: (
+            tuple(-part for part in release_key(item["release"])),
+            item["stream"],
+        ),
+    )
 
 
 class Collector:
@@ -750,11 +870,15 @@ class Collector:
         self,
         transport: HTTPTransport | FixtureTransport,
         as_of: dt.datetime,
+        source_revision: str | None = None,
         deadline_seconds: float = COLLECTION_DEADLINE_SECONDS,
         max_requests: int = MAX_COLLECTION_REQUESTS,
     ):
         self.transport = transport
         self.as_of = as_of
+        self.source_revision = validate_source_revision(
+            source_revision or checked_out_source_revision()
+        )
         self.source_failures: list[str] = []
         self.coverage_uncertainties: list[str] = []
         if deadline_seconds <= 0 or max_requests <= 0:
@@ -799,7 +923,11 @@ class Collector:
                         f"{MULTI_RELEASE_CONTROLLER_BASE}/api/v1/releasestreams/all"
                     ),
                     "multi-architecture release controller",
-                    {item["stream"] for item in blockers if item["architecture"] == "multi"},
+                    {
+                        item["stream"]
+                        for item in blockers
+                        if item["architecture"] == "multi"
+                    },
                 )
             except ReportError as exc:
                 self.source_failures.append(
@@ -820,10 +948,21 @@ class Collector:
             for future, key in futures.items():
                 try:
                     runs, uncertainty = future.result()
+                    trend = calculate_trend(runs, self.as_of)
+                    for window in ("current", "baseline"):
+                        counts = trend[window]
+                        if (
+                            counts["denominator"] == 0
+                            and counts["ERROR"] + counts["ABORTED"] > 0
+                        ):
+                            uncertainty.append(
+                                f"{window} window contains only ERROR/ABORTED results; "
+                                "testable status is Unknown"
+                            )
                     for item in uncertainty:
                         self.coverage_uncertainties.append(f"Sippy {key[0]}: {item}")
                     trend_by_job[key] = {
-                        "trend": calculate_trend(runs, self.as_of),
+                        "trend": trend,
                         "runs": runs,
                         "uncertainties": uncertainty,
                     }
@@ -858,13 +997,8 @@ class Collector:
                     }
 
         try:
-            all_candidates = self._build_candidates(
-                blockers,
-                payloads,
-                trend_by_job,
-                required,
-                presubmit_evidence,
-                health_rows,
+            all_candidates = self._build_presubmit_candidates(
+                required, presubmit_evidence, health_rows
             )
         except ReportError as exc:
             return self._unknown_report(str(exc))
@@ -873,7 +1007,7 @@ class Collector:
             self.source_failures.append(
                 "candidate coverage overflow: "
                 f"published {len(candidates)} of {len(all_candidates)} using "
-                "periodic-first, newest-release, job-ID priority"
+                "configured-branch, job-ID priority"
             )
         self.source_failures = bound_messages(self.source_failures, "source failure(s)")
         self.coverage_uncertainties = bound_messages(
@@ -896,6 +1030,7 @@ class Collector:
 
         document = {
             "schema_version": SCHEMA_VERSION,
+            "source_revision": self.source_revision,
             "generated_at": format_rfc3339(self.as_of),
             "scope": {
                 "state": (
@@ -910,7 +1045,11 @@ class Collector:
                 "coverage_uncertainties": self.coverage_uncertainties,
                 "candidate_overflow": candidate_overflow,
             },
-            "candidates": candidates,
+            "presubmit_candidates": {
+                branch: [item for item in candidates if item["branch"] == branch]
+                for branch in required
+            },
+            "periodic_status": build_periodic_status(blockers, payloads),
         }
         document["collection_id"] = collection_id(document)
         stage_one = self._render_stage_one(
@@ -943,6 +1082,7 @@ class Collector:
         )
         document = {
             "schema_version": SCHEMA_VERSION,
+            "source_revision": self.source_revision,
             "generated_at": format_rfc3339(self.as_of),
             "scope": {
                 "state": "unknown",
@@ -952,11 +1092,17 @@ class Collector:
                 "coverage_uncertainties": [],
                 "candidate_overflow": None,
             },
-            "candidates": [],
+            "presubmit_candidates": {},
+            "periodic_status": [],
         }
         document["collection_id"] = collection_id(document)
         message = message.replace(
-            "\n\n⚪", f" · evidence {document['collection_id']}\n\n⚪", 1
+            "\n\n⚪",
+            (
+                f" · source {self.source_revision} · evidence "
+                f"{document['collection_id']}\n\n⚪"
+            ),
+            1,
         )
         return bound_text(message, STAGE_ONE_LIMIT), document
 
@@ -1057,7 +1203,16 @@ class Collector:
                     release_status_url = str(stream.get("release_status_url") or "")
                     if release_status_url:
                         try:
-                            validate_public_url(release_status_url)
+                            status_base = (
+                                MULTI_RELEASE_CONTROLLER_BASE
+                                if stream.get("architecture") == "multi"
+                                else AMD64_RELEASE_STATUS_BASE
+                            )
+                            validate_release_status_url(
+                                release_status_url,
+                                status_base,
+                                str(stream.get("name")),
+                            )
                         except ReportError as exc:
                             self.source_failures.append(
                                 f"registry release-status URL for {job.get('id')}: {exc}"
@@ -1170,10 +1325,16 @@ class Collector:
                         raise ReportError("release detail is not an object")
                     if detail.get("name") != tag:
                         raise ReportError("release detail tag mismatch")
-                    _grammar_string(detail.get("name"), "release detail tag", PAYLOAD_TAG_RE)
                     _grammar_string(
-                        detail.get("phase") or "Unknown", "release detail phase", PHASE_RE
+                        detail.get("name"), "release detail tag", PAYLOAD_TAG_RE
                     )
+                    phase = _grammar_string(
+                        detail.get("phase"), "release detail phase", PHASE_RE
+                    )
+                    if phase not in VALID_PAYLOAD_PHASES:
+                        raise ReportError(
+                            f"release detail phase is unsupported: {phase}"
+                        )
                     if not isinstance(detail.get("results") or {}, dict):
                         raise ReportError("release detail results is not an object")
                     statuses[(controller, stream, release, tag)] = detail
@@ -1233,6 +1394,13 @@ class Collector:
                 raw_verification_url = ""
             verification_url = raw_verification_url
             verification_uncertainty = str(detail.get("uncertainty") or "")
+            if not blocker["release_status_url"]:
+                verification_uncertainty = "; ".join(
+                    filter(
+                        None,
+                        [verification_uncertainty, "release-status URL unavailable"],
+                    )
+                )
             if verification_status is not None and verification_group != "blockingJobs":
                 verification_uncertainty = (
                     f"configured blocking verification appeared in {verification_group}"
@@ -1246,6 +1414,16 @@ class Collector:
                     self.source_failures.append(
                         f"release controller {stream}: {verification_uncertainty}"
                     )
+            if (
+                not verification_uncertainty
+                and verification_group == "blockingJobs"
+                and state in {"Failed", "Pending"}
+                and phase in {"Accepted", "Rejected"}
+            ):
+                verification_uncertainty = (
+                    f"payload phase {phase} is terminal; a {state} verification "
+                    "does not prove current gating"
+                )
             if (
                 verification_group == "blockingJobs"
                 and state in {"Failed", "Pending"}
@@ -1419,8 +1597,11 @@ class Collector:
                     "completed": format_rfc3339(completion),
                     "state": state,
                     "head_sha": sha,
-                    "url": urllib.parse.urljoin(
-                        f"https://{PROW_HOST}", str(row.get("SpyglassLink") or "")
+                    "url": canonical_public_prow_run_url(
+                        urllib.parse.urljoin(
+                            f"https://{PROW_HOST}",
+                            str(row.get("SpyglassLink") or ""),
+                        )
                     ),
                 }
             )
@@ -1479,16 +1660,16 @@ class Collector:
                 else run["head_sha"],
             }
             if not GIT_SHA_RE.fullmatch(run["head_sha"]):
-                uncertainty.append(
-                    f"run {run['id']} lacks a canonical head SHA"
-                )
+                uncertainty.append(f"run {run['id']} lacks a canonical head SHA")
                 run["head_sha"] = ""
             if window_start <= completed < self.as_of:
                 refined.append(run)
         relevant = refined + relevant[3:]
         relevant.sort(key=lambda row: parse_rfc3339(row["completed"]), reverse=True)
         if not relevant:
-            uncertainty.append("Prow history has no completed runs in the 12-hour window")
+            uncertainty.append(
+                "Prow history has no completed runs in the 12-hour window"
+            )
         candidate_trigger, recent_status = select_presubmit_trigger(relevant)
         return {
             "candidate_trigger": candidate_trigger,
@@ -1497,65 +1678,13 @@ class Collector:
             "recent_status": recent_status,
         }
 
-    def _build_candidates(
+    def _build_presubmit_candidates(
         self,
-        blockers: list[dict[str, Any]],
-        payloads: dict[tuple[str, str], dict[str, Any]],
-        trends: dict[tuple[str, str], dict[str, Any]],
         required: dict[str, list[dict[str, Any]]],
         presubmit_evidence: dict[str, dict[str, Any]],
         health_rows: dict[str, dict[str, Any]],
     ) -> list[dict[str, Any]]:
         candidates = []
-        seen_periodics = set()
-        for blocker in blockers:
-            key = (blocker["job_id"], blocker["release"])
-            payload = payloads[(blocker["job_id"], blocker["stream"])]
-            evidence = trends[key]
-            trend = evidence["trend"]
-            trigger = None
-            if payload["impact"] == "verified_blocker":
-                trigger = "live_payload_blocking_verification"
-            elif payload["impact"] == "unknown":
-                trigger = "payload_impact_unknown"
-            elif trend["current"]["FAILURE"]:
-                trigger = "current_window_failures"
-            elif trend["classification"] == "degrading":
-                trigger = "degrading_exact_window_trend"
-            if not trigger or key in seen_periodics:
-                continue
-            seen_periodics.add(key)
-            samples = [
-                serialize_sippy_run(run) for run in evidence["runs"][:MAX_SAMPLE_RUNS]
-            ]
-            candidates.append(
-                {
-                    "candidate_id": candidate_id(
-                        "periodic", blocker["job_id"], blocker["release"]
-                    ),
-                    "kind": "periodic",
-                    "job_id": blocker["job_id"],
-                    "release": blocker["release"],
-                    "branch": None,
-                    "deterministic_trigger": trigger,
-                    "configured_role": {
-                        "verification": blocker["verification"],
-                        "stream": blocker["stream"],
-                        "architecture": blocker["architecture"],
-                        "stream_kind": blocker["stream_kind"],
-                        "platforms": blocker["platforms"],
-                        "framework": blocker["framework"],
-                    },
-                    "live_payload": payload,
-                    "dashboard_1w": summarize_health(
-                        health_rows.get(blocker["job_id"])
-                    ),
-                    "trend": trend,
-                    "runs": samples,
-                    "coverage_uncertainties": evidence["uncertainties"],
-                }
-            )
-
         for branch, jobs in required.items():
             for job in jobs:
                 evidence = presubmit_evidence[job["id"]]
@@ -1582,14 +1711,7 @@ class Collector:
                         "coverage_uncertainties": evidence["uncertainties"],
                     }
                 )
-        return sorted(
-            candidates,
-            key=lambda item: (
-                0 if item["kind"] == "periodic" else 1,
-                tuple(-part for part in release_key(str(item.get("release") or "0.0"))),
-                item["job_id"],
-            ),
-        )
+        return candidates
 
     def _render_stage_one(
         self,
@@ -1616,9 +1738,7 @@ class Collector:
         unknown_count = (
             len(self.source_failures)
             + len(self.coverage_uncertainties)
-            + sum(
-                1 for payload in payloads.values() if payload["impact"] == "unknown"
-            )
+            + sum(1 for payload in payloads.values() if payload["impact"] == "unknown")
         )
         if unknown_count:
             emoji, overall = "⚪", "Unknown — public source or coverage gaps remain"
@@ -1627,7 +1747,7 @@ class Collector:
         elif candidates:
             emoji, overall = (
                 "🟡",
-                f"{len(candidates)} candidate(s) require LLM judgment",
+                f"{len(candidates)} presubmit candidate(s) require LLM judgment",
             )
         else:
             emoji, overall = "🟢", "No live blockers or merge-gate candidates"
@@ -1638,59 +1758,56 @@ class Collector:
             )
 
         lines = [
-            f"*HyperShift CI Daily Health Report* — as of {format_rfc3339(self.as_of)} · evidence {evidence_set}",
+            (
+                f"*HyperShift CI Daily Health Report* — as of {format_rfc3339(self.as_of)} "
+                f"· source {self.source_revision} · evidence {evidence_set}"
+            ),
             "",
             f"{emoji} *Overall*: {overall} | Dashboard 1w: {dashboard_healthy}/{dashboard_total} healthy",
-            "",
-            "*Trend — exact 24h vs preceding 7d*",
             (
-                f"• 📈 {trend_counts['improving']} · 📉 {trend_counts['degrading']} · "
+                f"*Trend 24h/7d*: 📈 {trend_counts['improving']} · "
+                f"📉 {trend_counts['degrading']} · "
                 f"➡️ {trend_counts['stable']} · ⚠️ {trend_counts['low_confidence']} · "
                 f"⚪ {trend_counts['no_data']}"
             ),
             "",
-            "*Release blockers — N through N-4*",
+            "*Release payloads — B=verified blocker, U=unknown*",
         ]
         by_release: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for blocker in blockers:
             by_release[blocker["release"]].append(blocker)
         for release in releases:
             release_blockers = by_release[release]
-            live = [
-                blocker
-                for blocker in release_blockers
-                if payloads[(blocker["job_id"], blocker["stream"])]["impact"]
+            if not release_blockers:
+                lines.append(
+                    f"• OCP {escape_slack(release, 20)} · no configured blocker payload"
+                )
+                continue
+            streams = {blocker["stream"] for blocker in release_blockers}
+            live = sum(
+                payloads[(blocker["job_id"], blocker["stream"])]["impact"]
                 == "verified_blocker"
-            ]
-            unknown = [
-                blocker
                 for blocker in release_blockers
-                if payloads[(blocker["job_id"], blocker["stream"])]["impact"]
-                == "unknown"
-            ]
-            tag = "No current configured blocker payload"
-            url = ""
-            if release_blockers:
-                sample = payloads[
-                    (release_blockers[0]["job_id"], release_blockers[0]["stream"])
-                ]
-                safe_tag = escape_slack(sample["tag"] or "Unknown", 255)
-                safe_phase = escape_slack(sample["phase"], 64)
-                tag = f"{safe_tag} {safe_phase}"
-                url = sample["release_status_url"]
-            label = f"<{url}|{tag}>" if url else tag
+            )
+            unknown = sum(
+                payloads[(blocker["job_id"], blocker["stream"])]["impact"] == "unknown"
+                for blocker in release_blockers
+            )
             lines.append(
-                f"• *OCP {escape_slack(release, 20)}* · {label}: {len(live)} blocker(s), {len(unknown)} unknown"
+                f"• OCP {escape_slack(release, 20)} · {len(streams)} payload(s) · "
+                f"{live}B/{unknown}U; exact links in thread details"
             )
 
-        lines.extend(["", "*Merge-gate candidates — by branch*"])
-        candidate_jobs = {
-            item["job_id"] for item in candidates if item["kind"] == "presubmit"
-        }
+        candidate_jobs = {item["job_id"] for item in candidates}
+        branch_summaries = []
         for branch, jobs in required.items():
             target = (
                 str(
-                    (jobs[0].get("presubmit") or {}).get("target_release")
+                    (
+                        (jobs[0].get("presubmit") or {}).get("target_release")
+                        if jobs
+                        else None
+                    )
                     or releases[0]
                 )
                 if branch == "main"
@@ -1700,31 +1817,28 @@ class Collector:
             no_data = sum(
                 1 for job in jobs if not presubmit_evidence[job["id"]]["runs"]
             )
-            lines.append(
-                f"• *{escape_slack(branch, 80)} → OCP {escape_slack(target, 20)}*: "
-                f"{count} candidate(s), {no_data} no-data gate(s)"
+            branch_summaries.append(
+                f"{escape_slack(branch, 80)}→{escape_slack(target, 20)} "
+                f"{count}C/{no_data}N"
             )
 
         lines.extend(
             [
                 "",
-                "*Action items*",
-                f"• Judge {len(candidates)} bounded candidate(s); do not infer branch impact from one PR",
+                "*Presubmits — C=candidate, N=no data*: "
+                + " · ".join(branch_summaries),
             ]
         )
         if candidate_overflow:
             lines.append(
                 "• Coverage overflow: "
                 f"{candidate_overflow['omitted']} of {candidate_overflow['total']} candidate(s) "
-                "omitted after deterministic periodic/newest-release/job-ID priority; state is Unknown"
-            )
-        if self.coverage_uncertainties:
-            lines.append(
-                f"• Coverage uncertainties: {len(self.coverage_uncertainties)}; "
-                "preserved separately from transport/source failures"
+                "omitted after configured-branch/job-ID priority; state is Unknown"
             )
         lines.append(
-            "• Tracking: verify an existing OCPBUGS/CNTRLPLANE issue only for a deduplicated incident; no automated writes"
+            f"*Action*: judge {len(candidates)} presubmit(s) · "
+            f"{len(self.coverage_uncertainties)} coverage uncertainty item(s) · "
+            "Tracking: None; no automated writes"
         )
         return bound_text("\n".join(lines), STAGE_ONE_LIMIT)
 
@@ -1753,8 +1867,12 @@ def parse_prow_history(
         if not isinstance(refs, dict):
             raise ReportError(f"Prow allBuilds row {index} Refs is not an object")
         pulls = refs.get("pulls")
-        if not isinstance(pulls, list) or any(not isinstance(pull, dict) for pull in pulls):
-            raise ReportError(f"Prow allBuilds row {index} pulls is not a list of objects")
+        if not isinstance(pulls, list) or any(
+            not isinstance(pull, dict) for pull in pulls
+        ):
+            raise ReportError(
+                f"Prow allBuilds row {index} pulls is not a list of objects"
+            )
         state = normalize_state(row.get("Result"))
         if state not in {"SUCCESS", "FAILURE", "ABORTED", "ERROR"}:
             nonterminal += 1
@@ -1769,7 +1887,7 @@ def parse_prow_history(
         run_url = urllib.parse.urljoin(
             f"https://{PROW_HOST}", str(row.get("SpyglassLink") or "")
         )
-        validate_public_url(run_url)
+        run_url = canonical_public_prow_run_url(run_url)
         rows.append(
             {
                 **row,
@@ -1786,7 +1904,9 @@ def parse_prow_history(
     if older:
         validate_public_url(older)
     uncertainties = (
-        [f"Prow history omitted {nonterminal} nonterminal run(s)"] if nonterminal else []
+        [f"Prow history omitted {nonterminal} nonterminal run(s)"]
+        if nonterminal
+        else []
     )
     return rows, older, uncertainties
 
@@ -1799,7 +1919,7 @@ def public_prowjob_url(prow_url: str) -> str:
         raise ReportError("unexpected Prow run path")
     remainder = parsed.path[len(prefix) :]
     bucket, separator, object_path = remainder.partition("/")
-    if not separator or bucket not in {"test-platform-results", PUBLIC_RESULTS_BUCKET}:
+    if not separator or bucket != PUBLIC_RESULTS_BUCKET:
         raise ReportError("unexpected Prow results bucket")
     url = f"https://storage.googleapis.com/{PUBLIC_RESULTS_BUCKET}/{object_path}/prowjob.json"
     validate_public_url(url)
@@ -1808,47 +1928,48 @@ def public_prowjob_url(prow_url: str) -> str:
 
 def validate_verification_url(url: str) -> None:
     """Release verification evidence must be a canonical public Prow run."""
+    validate_run_evidence_url(url)
+
+
+def canonical_public_prow_run_url(url: str) -> str:
+    """Normalize Prow's legacy public alias before emitting run evidence."""
     validate_public_url(url)
-    parsed = urllib.parse.urlparse(url)
-    if parsed.hostname != PROW_HOST or not parsed.path.startswith(
-        "/view/gs/test-platform-results-public/"
-    ):
-        raise ReportError("verification URL is not a public Prow result")
+    parsed = _parse_url(url)
+    alias = "/view/gs/test-platform-results/"
+    if parsed.hostname == PROW_HOST and parsed.path.startswith(alias):
+        parsed = parsed._replace(
+            path=(f"/view/gs/{PUBLIC_RESULTS_BUCKET}/{parsed.path.removeprefix(alias)}")
+        )
+        url = urllib.parse.urlunparse(parsed)
+    validate_run_evidence_url(url)
+    return url
 
 
 def validate_run_evidence_url(url: str, expected_id: str | None = None) -> None:
     """Run evidence must identify one canonical public Prow execution."""
     validate_public_url(url)
     parsed = _parse_url(url)
-    if parsed.hostname != PROW_HOST or not re.fullmatch(
-        r"/view/gs/(?:test-platform-results|test-platform-results-public)/"
-        r"(?:logs|pr-logs)/.+/[0-9]+",
+    decoded_path = urllib.parse.unquote(parsed.path)
+    if decoded_path != parsed.path or parsed.query:
+        raise ReportError("run URL is not a canonical public Prow result")
+    logs_path = re.fullmatch(
+        rf"/view/gs/{PUBLIC_RESULTS_BUCKET}/logs/"
+        r"[A-Za-z0-9][A-Za-z0-9._-]{0,254}/[1-9][0-9]*",
         parsed.path,
-    ):
+    )
+    presubmit_path = re.fullmatch(
+        rf"/view/gs/{PUBLIC_RESULTS_BUCKET}/pr-logs/pull/"
+        r"[A-Za-z0-9][A-Za-z0-9._-]{0,254}/[1-9][0-9]*/"
+        r"[A-Za-z0-9][A-Za-z0-9._-]{0,254}/[1-9][0-9]*",
+        parsed.path,
+    )
+    if parsed.hostname != PROW_HOST or not (logs_path or presubmit_path):
         raise ReportError("run URL is not a canonical public Prow result")
     run_id = parsed.path.rsplit("/", 1)[-1]
-    if expected_id is not None and run_id != expected_id:
+    if expected_id is not None and (
+        not re.fullmatch(r"[1-9][0-9]*", expected_id) or run_id != expected_id
+    ):
         raise ReportError("run URL does not match its run ID")
-
-
-def serialize_sippy_run(run: dict[str, Any]) -> dict[str, Any]:
-    annotations = run.get("annotations") or {}
-    if not isinstance(annotations, dict):
-        raise ReportError("Sippy run annotations is not an object")
-    url = str(run.get("url") or run.get("test_grid_url") or "")
-    if url:
-        validate_run_evidence_url(url, str(run.get("prow_id") or run.get("id") or ""))
-    payload_tag = str(annotations.get("release.openshift.io/tag") or "")
-    if payload_tag:
-        _grammar_string(payload_tag, "Sippy payload tag", PAYLOAD_TAG_RE)
-    return {
-        "id": str(run.get("prow_id") or run.get("id") or ""),
-        "timestamp": format_rfc3339(run["_timestamp"]),
-        "state": normalize_state(run.get("overall_result")),
-        "head_sha": str(run.get("pull_request_sha") or ""),
-        "url": url,
-        "payload_tag": payload_tag,
-    }
 
 
 def summarize_health(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -1883,11 +2004,15 @@ def _validate_candidate_run(run: Any, kind: str, label: str) -> None:
         raise ReportError(f"{label}.id has an invalid format")
     if run.get("state") not in {"SUCCESS", "FAILURE", "ABORTED", "ERROR"}:
         raise ReportError(f"{label}.state is invalid")
-    timestamp_fields = ("timestamp",) if kind == "periodic" else ("started", "completed")
+    timestamp_fields = (
+        ("timestamp",) if kind == "periodic" else ("started", "completed")
+    )
     for field in timestamp_fields:
         parse_rfc3339(run.get(field))
     head_sha = run.get("head_sha") or ""
-    if not isinstance(head_sha, str) or (head_sha and not GIT_SHA_RE.fullmatch(head_sha)):
+    if not isinstance(head_sha, str) or (
+        head_sha and not GIT_SHA_RE.fullmatch(head_sha)
+    ):
         raise ReportError(f"{label}.head_sha is invalid")
     url = run.get("url") or ""
     if not isinstance(url, str):
@@ -1901,51 +2026,17 @@ def _validate_candidate_run(run: Any, kind: str, label: str) -> None:
         _grammar_string(payload_tag, f"{label}.payload_tag", PAYLOAD_TAG_RE)
 
 
-def _validate_trend(trend: Any, label: str) -> None:
-    if not isinstance(trend, dict):
-        raise ReportError(f"{label} must be an object")
-    for window in ("current", "baseline"):
-        counts = trend.get(window)
-        if not isinstance(counts, dict):
-            raise ReportError(f"{label}.{window} must be an object")
-        for state in ("SUCCESS", "FAILURE", "ABORTED", "ERROR", "denominator"):
-            if not isinstance(counts.get(state), int) or counts[state] < 0:
-                raise ReportError(f"{label}.{window}.{state} must be a non-negative integer")
-        if counts["denominator"] != counts["SUCCESS"] + counts["FAILURE"]:
-            raise ReportError(f"{label}.{window}.denominator is inconsistent")
-        rate = counts.get("rate")
-        expected_rate = (
-            counts["SUCCESS"] / counts["denominator"]
-            if counts["denominator"]
-            else None
-        )
-        if expected_rate is None:
-            if rate is not None:
-                raise ReportError(f"{label}.{window}.rate must be null")
-        elif (
-            isinstance(rate, bool)
-            or not isinstance(rate, (int, float))
-            or not math.isfinite(rate)
-            or not 0 <= rate <= 1
-            or abs(rate - expected_rate) > 1e-9
-        ):
-            raise ReportError(f"{label}.{window}.rate is inconsistent")
-    if trend.get("classification") not in {
-        "no_data",
-        "low_confidence",
-        "improving",
-        "degrading",
-        "stable",
-    }:
-        raise ReportError(f"{label}.classification is invalid")
-    change = trend.get("change_points")
-    if change is not None and (
-        isinstance(change, bool)
-        or not isinstance(change, (int, float))
-        or not math.isfinite(change)
-        or not -100 <= change <= 100
-    ):
-        raise ReportError(f"{label}.change_points must be finite and ranged")
+def flatten_presubmit_candidates(document: dict[str, Any]) -> list[dict[str, Any]]:
+    groups = document.get("presubmit_candidates")
+    if not isinstance(groups, dict):
+        raise ReportError("presubmit_candidates must be an object grouped by branch")
+    candidates: list[dict[str, Any]] = []
+    for branch, items in groups.items():
+        _grammar_string(branch, "presubmit candidate branch", BRANCH_RE)
+        if not isinstance(items, list):
+            raise ReportError(f"presubmit_candidates.{branch} must be a list")
+        candidates.extend(items)
+    return candidates
 
 
 def validate_candidates_document(document: Any) -> dict[str, Any]:
@@ -1964,10 +2055,7 @@ def validate_candidates_document(document: Any) -> dict[str, Any]:
         or document.get("schema_version") != SCHEMA_VERSION
     ):
         raise ReportError(f"candidates schema_version must be {SCHEMA_VERSION}")
-    if not isinstance(document.get("candidates"), list):
-        raise ReportError("candidates must be a list")
-    if len(document["candidates"]) > MAX_CANDIDATES:
-        raise ReportError(f"candidates must contain at most {MAX_CANDIDATES} entries")
+    source_revision = validate_source_revision(document.get("source_revision"))
     parse_rfc3339(document.get("generated_at"))
     collection_identifier = _grammar_string(
         document.get("collection_id"), "collection_id", COLLECTION_ID_RE
@@ -1975,8 +2063,75 @@ def validate_candidates_document(document: Any) -> dict[str, Any]:
     scope = document.get("scope")
     if not isinstance(scope, dict) or scope.get("state") not in {"complete", "unknown"}:
         raise ReportError("candidate scope must be a complete or unknown object")
+    branches = _validate_string_list(
+        scope.get("branches", []), "scope.branches", 20, 100
+    )
+    for branch in branches:
+        _grammar_string(branch, "scope branch", BRANCH_RE)
+    candidates = flatten_presubmit_candidates(document)
+    periodic_status = document.get("periodic_status")
+    if not isinstance(periodic_status, list) or len(periodic_status) > MAX_SOURCE_JOBS:
+        raise ReportError("periodic_status must be a bounded list")
+    periodic_identities = []
+    for index, item in enumerate(periodic_status):
+        label = f"periodic_status[{index}]"
+        if not isinstance(item, dict):
+            raise ReportError(f"{label} must be an object")
+        release = _grammar_string(item.get("release"), f"{label}.release", RELEASE_RE)
+        stream = _grammar_string(item.get("stream"), f"{label}.stream", JOB_ID_RE)
+        periodic_identities.append((release, stream))
+        architecture = _bounded_string(
+            item.get("architecture"), f"{label}.architecture", 64
+        )
+        if architecture not in {"amd64", "multi"}:
+            raise ReportError(f"{label}.architecture is invalid")
+        if item.get("stream_kind") not in {"ci", "nightly"}:
+            raise ReportError(f"{label}.stream_kind is invalid")
+        tag = item.get("tag") or ""
+        if not isinstance(tag, str):
+            raise ReportError(f"{label}.tag must be a string")
+        if tag:
+            _grammar_string(tag, f"{label}.tag", PAYLOAD_TAG_RE)
+        phase = _grammar_string(item.get("phase"), f"{label}.phase", PHASE_RE)
+        if phase not in VALID_PAYLOAD_PHASES | {"Unknown"}:
+            raise ReportError(f"{label}.phase is invalid")
+        status_base = (
+            MULTI_RELEASE_CONTROLLER_BASE
+            if architecture == "multi"
+            else AMD64_RELEASE_STATUS_BASE
+        )
+        validate_release_status_url(item.get("release_status_url"), status_base, stream)
+        counts = []
+        for field in (
+            "configured_blockers",
+            "verified_blockers",
+            "unknown",
+            "passing",
+        ):
+            value = item.get(field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ReportError(f"{label}.{field} must be a non-negative integer")
+            counts.append(value)
+        if counts[0] != sum(counts[1:]):
+            raise ReportError(f"{label} blocker counts are inconsistent")
+        _validate_string_list(
+            item.get("uncertainties"), f"{label}.uncertainties", 20, 1000
+        )
+    if len(periodic_identities) != len(set(periodic_identities)):
+        raise ReportError("periodic_status stream identities must be unique")
+    if set(document["presubmit_candidates"]) != set(branches):
+        raise ReportError(
+            "presubmit candidate groups must exactly match scope branches"
+        )
+    if len(candidates) > MAX_CANDIDATES:
+        raise ReportError(
+            f"presubmit_candidates must contain at most {MAX_CANDIDATES} entries"
+        )
     _validate_string_list(
-        scope.get("source_failures", []), "scope.source_failures", MAX_SOURCE_FAILURES, 1000
+        scope.get("source_failures", []),
+        "scope.source_failures",
+        MAX_SOURCE_FAILURES,
+        1000,
     )
     _validate_string_list(
         scope.get("coverage_uncertainties", []),
@@ -1992,38 +2147,38 @@ def validate_candidates_document(document: Any) -> dict[str, Any]:
         ):
             raise ReportError("scope.candidate_overflow has an unexpected shape")
         if (
-            overflow["published"] != len(document["candidates"])
+            overflow["published"] != len(candidates)
             or overflow["total"] - overflow["published"] != overflow["omitted"]
             or overflow["omitted"] <= 0
         ):
             raise ReportError("scope.candidate_overflow counts are inconsistent")
-        _bounded_string(overflow.get("priority"), "scope.candidate_overflow.priority", 200)
+        _bounded_string(
+            overflow.get("priority"), "scope.candidate_overflow.priority", 200
+        )
         if scope["state"] != "unknown":
             raise ReportError("candidate overflow requires unknown scope")
 
     ids: list[str] = []
-    for index, item in enumerate(document["candidates"]):
-        label = f"candidate {index}"
+    for index, item in enumerate(candidates):
+        label = f"presubmit candidate {index}"
         if not isinstance(item, dict):
             raise ReportError(f"{label} must be an object")
         identifier = _grammar_string(
             item.get("candidate_id"), f"{label}.candidate_id", CANDIDATE_ID_RE
         )
         ids.append(identifier)
-        kind = item.get("kind")
-        if kind not in KIND_JUDGMENTS:
-            raise ReportError(f"{label}.kind is invalid")
+        if item.get("kind") != "presubmit":
+            raise ReportError(f"{label}.kind must be presubmit")
         _grammar_string(item.get("job_id"), f"{label}.job_id", JOB_ID_RE)
         _grammar_string(item.get("release"), f"{label}.release", RELEASE_RE)
         branch = item.get("branch")
-        if kind == "presubmit":
-            _grammar_string(branch, f"{label}.branch", BRANCH_RE)
-        elif branch is not None:
-            raise ReportError(f"{label}.branch must be null for a periodic")
+        _grammar_string(branch, f"{label}.branch", BRANCH_RE)
+        if item not in document["presubmit_candidates"].get(branch, []):
+            raise ReportError(f"{label}.branch does not match its document group")
         expected_identifier = candidate_id(
-            kind,
+            "presubmit",
             item["job_id"],
-            branch if kind == "presubmit" else item["release"],
+            branch,
         )
         if identifier != expected_identifier:
             raise ReportError(f"{label}.candidate_id does not match its identity")
@@ -2033,13 +2188,11 @@ def validate_candidates_document(document: Any) -> dict[str, Any]:
         role = item.get("configured_role")
         if not isinstance(role, dict):
             raise ReportError(f"{label}.configured_role must be an object")
-        if kind == "periodic":
-            for field in ("verification", "stream", "architecture", "stream_kind", "framework"):
-                _bounded_string(role.get(field), f"{label}.configured_role.{field}", 255)
-        else:
-            if role.get("required") is not True:
-                raise ReportError(f"{label}.configured_role.required must be true")
-            _bounded_string(role.get("framework"), f"{label}.configured_role.framework", 255)
+        if role.get("required") is not True:
+            raise ReportError(f"{label}.configured_role.required must be true")
+        _bounded_string(
+            role.get("framework"), f"{label}.configured_role.framework", 255
+        )
         _validate_string_list(
             role.get("platforms"), f"{label}.configured_role.platforms", 20, 100
         )
@@ -2060,39 +2213,13 @@ def validate_candidates_document(document: Any) -> dict[str, Any]:
                     or not 0 <= dashboard[field] <= MAX_METRIC_COUNT
                 ):
                     raise ReportError(f"{label}.dashboard_1w.{field} is invalid")
-        if kind == "periodic":
-            payload = item.get("live_payload")
-            if not isinstance(payload, dict):
-                raise ReportError(f"{label}.live_payload must be an object")
-            tag = payload.get("tag") or ""
-            if not isinstance(tag, str):
-                raise ReportError(f"{label}.live_payload.tag must be a string")
-            if tag:
-                _grammar_string(tag, f"{label}.live_payload.tag", PAYLOAD_TAG_RE)
-            _grammar_string(payload.get("phase"), f"{label}.live_payload.phase", PHASE_RE)
-            for field in ("verification_state", "impact"):
-                _bounded_string(payload.get(field), f"{label}.live_payload.{field}", 100)
-            for field in ("verification_url", "release_status_url"):
-                url = payload.get(field) or ""
-                if not isinstance(url, str):
-                    raise ReportError(f"{label}.live_payload.{field} must be a string")
-                if url:
-                    (
-                        validate_verification_url(url)
-                        if field == "verification_url"
-                        else validate_public_url(url)
-                    )
-            uncertainty = payload.get("uncertainty") or ""
-            if not isinstance(uncertainty, str) or len(uncertainty) > 1000:
-                raise ReportError(f"{label}.live_payload.uncertainty is invalid")
-            _validate_trend(item.get("trend"), f"{label}.trend")
-        elif item.get("live_payload") is not None or item.get("trend") is not None:
+        if item.get("live_payload") is not None or item.get("trend") is not None:
             raise ReportError(f"{label} presubmit payload and trend must be null")
         runs = item.get("runs")
         if not isinstance(runs, list) or len(runs) > MAX_SAMPLE_RUNS:
             raise ReportError(f"{label}.runs must be a bounded list")
         for run_index, run in enumerate(runs):
-            _validate_candidate_run(run, kind, f"{label}.runs[{run_index}]")
+            _validate_candidate_run(run, "presubmit", f"{label}.runs[{run_index}]")
         _validate_string_list(
             item.get("coverage_uncertainties"),
             f"{label}.coverage_uncertainties",
@@ -2103,17 +2230,25 @@ def validate_candidates_document(document: Any) -> dict[str, Any]:
         raise ReportError("candidate IDs must be present and unique")
     if collection_identifier != collection_id(document):
         raise ReportError("collection_id does not match the candidate evidence")
+    if source_revision != document["source_revision"]:
+        raise ReportError("source_revision is not canonical")
     return document
 
 
 def validate_judgments(
-    document: Any, candidate_kinds: dict[str, str]
+    document: Any, candidates_document: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:
     if (
         not isinstance(document, dict)
         or document.get("schema_version") != SCHEMA_VERSION
     ):
         raise ReportError(f"judgments schema_version must be {SCHEMA_VERSION}")
+    if document.get("collection_id") != candidates_document["collection_id"]:
+        raise ReportError("judgments collection_id does not match candidate evidence")
+    if document.get("source_revision") != candidates_document["source_revision"]:
+        raise ReportError("judgments source_revision does not match candidate evidence")
+    candidates = flatten_presubmit_candidates(candidates_document)
+    candidates_by_id = {item["candidate_id"]: item for item in candidates}
     judgments = document.get("judgments")
     if not isinstance(judgments, list):
         raise ReportError("judgments must be a list")
@@ -2125,11 +2260,9 @@ def validate_judgments(
         if not isinstance(identifier, str) or identifier in by_id:
             raise ReportError("judgment candidate IDs must be present and unique")
         classification = judgment.get("classification")
-        kind = candidate_kinds.get(identifier)
-        if classification not in set().union(*KIND_JUDGMENTS.values()):
-            raise ReportError(f"unsupported classification for {identifier}")
-        if kind and classification not in KIND_JUDGMENTS[kind]:
-            raise ReportError(f"unsupported {kind} classification for {identifier}")
+        candidate = candidates_by_id.get(identifier)
+        if classification not in PRESUBMIT_JUDGMENTS:
+            raise ReportError(f"unsupported presubmit classification for {identifier}")
         for field in ("summary", "signature", "next_action"):
             if not isinstance(judgment.get(field), str) or len(judgment[field]) > 1000:
                 raise ReportError(
@@ -2142,8 +2275,11 @@ def validate_judgments(
             or any(not isinstance(item, str) or len(item) > 300 for item in evidence)
         ):
             raise ReportError("recurring_evidence must contain at most five strings")
-        if classification in {"incident_candidate", "permafail_candidate"}:
-            if any(not judgment[field].strip() for field in ("summary", "signature", "next_action")):
+        if classification == "permafail_candidate":
+            if any(
+                not judgment[field].strip()
+                for field in ("summary", "signature", "next_action")
+            ):
                 raise ReportError(
                     f"{classification} requires summary, signature, and next_action evidence"
                 )
@@ -2151,28 +2287,24 @@ def validate_judgments(
                 raise ReportError(
                     f"{classification} requires non-empty recurring_evidence"
                 )
-        tracking = judgment.get("tracking")
-        if not isinstance(tracking, dict) or tracking.get("status") not in {
-            "existing",
-            "gap",
-            "none",
-        }:
-            raise ReportError("tracking status must be existing, gap, or none")
-        if tracking["status"] == "existing":
-            if tracking.get("verified") is not True or not TRACKING_KEY_RE.fullmatch(
-                str(tracking.get("key") or "")
+            runs = (candidate or {}).get("runs", [])[:3]
+            heads = {run.get("head_sha") for run in runs if run.get("head_sha")}
+            if (
+                (candidate or {}).get("deterministic_trigger")
+                != "repeated_failure_review"
+                or len(runs) < 3
+                or any(run.get("state") != "FAILURE" for run in runs)
+                or len(heads) < 2
             ):
                 raise ReportError(
-                    "existing tracking requires a verified OCPBUGS/CNTRLPLANE key"
+                    "permafail_candidate requires three consecutive failures "
+                    "across two canonical PR heads"
                 )
-        elif tracking.get("key"):
-            raise ReportError("tracking gaps and none must not include an issue key")
-        if tracking["status"] != "none" and classification != "incident_candidate":
-            raise ReportError(
-                "tracking existing/gap is legal only for an incident_candidate"
-            )
+        tracking = judgment.get("tracking")
+        if not isinstance(tracking, dict) or tracking != {"status": "none"}:
+            raise ReportError("presubmit judgments require tracking status none")
         by_id[identifier] = judgment
-    expected_ids = set(candidate_kinds)
+    expected_ids = set(candidates_by_id)
     if set(by_id) != expected_ids:
         missing = sorted(expected_ids - set(by_id))
         extra = sorted(set(by_id) - expected_ids)
@@ -2182,19 +2314,12 @@ def validate_judgments(
     return by_id
 
 
-def _format_rate(window: dict[str, Any]) -> str:
-    rate = window["rate"]
-    percentage = "No data" if rate is None else f"{rate * 100:.1f}%"
-    return (
-        f"{window['SUCCESS']}/{window['denominator']} ({percentage}); "
-        f"ABORTED {window['ABORTED']}, ERROR {window['ERROR']}"
-    )
-
-
 def _candidate_lines(candidate: dict[str, Any], judgment: dict[str, Any]) -> list[str]:
     classification = judgment["classification"].replace("_", " ").title()
     role = candidate["configured_role"]
-    platforms = ", ".join(escape_slack(item, 100) for item in role["platforms"]) or "none"
+    platforms = (
+        ", ".join(escape_slack(item, 100) for item in role["platforms"]) or "none"
+    )
     lines = [
         f"• *Job:* {escape_slack(candidate['job_id'], 255)} — *{classification}*",
         (
@@ -2202,24 +2327,18 @@ def _candidate_lines(candidate: dict[str, Any], judgment: dict[str, Any]) -> lis
             f"{escape_slack(candidate['deterministic_trigger'], 100)}"
         ),
     ]
-    if candidate["kind"] == "periodic":
-        lines.append(
-            "  ◦ Configured role: blocking verification "
-            f"{escape_slack(role['verification'], 255)} · stream "
-            f"{escape_slack(role['stream'], 255)} ({escape_slack(role['architecture'], 50)} "
-            f"{escape_slack(role['stream_kind'], 50)})"
-        )
-    else:
-        lines.append(
-            f"  ◦ Configured role: required presubmit for {escape_slack(candidate['branch'], 80)}"
-        )
+    lines.append(
+        f"  ◦ Configured role: required presubmit for {escape_slack(candidate['branch'], 80)}"
+    )
     lines.append(
         f"  ◦ Platform/framework: {platforms} / {escape_slack(role['framework'], 255)}"
     )
     dashboard = candidate["dashboard_1w"]
     if dashboard["status"] == "available":
         dashboard_rate = dashboard.get("rate")
-        rate_text = "No testable data" if dashboard_rate is None else f"{dashboard_rate:.1f}%"
+        rate_text = (
+            "No testable data" if dashboard_rate is None else f"{dashboard_rate:.1f}%"
+        )
         lines.append(
             f"  ◦ Dashboard 1w: {rate_text} · runs {dashboard.get('runs')} · "
             f"fails {dashboard.get('fails')} (test {dashboard.get('test_fails')}, "
@@ -2227,33 +2346,6 @@ def _candidate_lines(candidate: dict[str, Any], judgment: dict[str, Any]) -> lis
         )
     else:
         lines.append("  ◦ Dashboard 1w: No dashboard data")
-    if candidate["kind"] == "periodic":
-        trend = candidate["trend"]
-        change = trend["change_points"]
-        change_text = "n/a" if change is None else f"{change:+.1f} pp"
-        lines.append(
-            f"  ◦ Exact trend ({escape_slack(trend['classification'], 40)}, {change_text}): "
-            f"current {_format_rate(trend['current'])}; baseline {_format_rate(trend['baseline'])}"
-        )
-        payload = candidate["live_payload"]
-        payload_text = (
-            f"{escape_slack(payload['tag'] or 'Unknown', 255)} · "
-            f"phase {escape_slack(payload['phase'], 64)} · verification "
-            f"{escape_slack(payload['verification_state'], 100)} · impact "
-            f"{escape_slack(payload['impact'], 100)}"
-        )
-        payload_links = []
-        if payload["release_status_url"]:
-            payload_links.append(f"<{payload['release_status_url']}|release status>")
-        if payload["verification_url"]:
-            payload_links.append(f"<{payload['verification_url']}|verification run>")
-        if payload_links:
-            payload_text += " · " + ", ".join(payload_links)
-        lines.append(f"  ◦ Live payload: {payload_text}")
-        if payload.get("uncertainty"):
-            lines.append(
-                f"  ◦ Payload uncertainty: {escape_slack(payload['uncertainty'], 1000)}"
-            )
     lines.append(f"  ◦ Summary: {escape_slack(judgment['summary'])}")
     lines.append(
         f"  ◦ Verified signature: {escape_slack(judgment['signature']) or 'None verified'}"
@@ -2264,7 +2356,9 @@ def _candidate_lines(candidate: dict[str, Any], judgment: dict[str, Any]) -> lis
         lines.append("  ◦ Ordered timestamped runs:")
         for run in candidate["runs"]:
             timestamp = run.get("timestamp") or run.get("completed")
-            run_label = f"{escape_slack(run['id'], 255)} {escape_slack(run['state'], 40)}"
+            run_label = (
+                f"{escape_slack(run['id'], 255)} {escape_slack(run['state'], 40)}"
+            )
             run_url = run.get("url") or ""
             run_identity = f"<{run_url}|{run_label}>" if run_url else run_label
             suffix = f" · {timestamp}"
@@ -2281,15 +2375,33 @@ def _candidate_lines(candidate: dict[str, Any], judgment: dict[str, Any]) -> lis
             lines.append(f"  ◦ Coverage uncertainty: {escape_slack(uncertainty, 500)}")
     else:
         lines.append("  ◦ Coverage uncertainty: None recorded")
-    tracking = judgment["tracking"]
-    if tracking["status"] == "existing":
-        tracking_text = f"{tracking['key']} (verified existing)"
-    elif tracking["status"] == "gap":
-        tracking_text = "Tracking issue needed — human follow-up only"
-    else:
-        tracking_text = "None"
-    lines.append(f"  ◦ Tracking: {escape_slack(tracking_text)}")
+    lines.append("  ◦ Tracking: None")
     lines.append(f"  ◦ Next action: {escape_slack(judgment['next_action'])}")
+    return lines
+
+
+def _periodic_status_lines(status: dict[str, Any]) -> list[str]:
+    tag = escape_slack(status["tag"] or "Unknown", 255)
+    link = f"<{status['release_status_url']}|{tag}>"
+    lines = [
+        (
+            f"• {link} — stream {escape_slack(status['stream'], 255)} "
+            f"({escape_slack(status['architecture'], 64)} "
+            f"{escape_slack(status['stream_kind'], 64)})"
+        ),
+        (
+            f"  ◦ Phase {escape_slack(status['phase'], 64)} · configured "
+            f"{status['configured_blockers']} · verified blockers "
+            f"{status['verified_blockers']} · unknown {status['unknown']} · "
+            f"passing {status['passing']}"
+        ),
+    ]
+    if status["uncertainties"]:
+        for uncertainty in status["uncertainties"]:
+            lines.append(f"  ◦ Payload uncertainty: {escape_slack(uncertainty, 1000)}")
+    else:
+        lines.append("  ◦ Payload uncertainty: None recorded")
+    lines.append("  ◦ Tracking: None")
     return lines
 
 
@@ -2306,50 +2418,41 @@ def _pack_replies(key: str, entries: list[list[str]]) -> list[str]:
                 continue
             reply = "\n".join(lines).rstrip()
             if not reply or len(reply) > THREAD_REPLY_LIMIT:
-                raise ReportError(f"thread evidence line exceeds {THREAD_REPLY_LIMIT} characters")
+                raise ReportError(
+                    f"thread evidence line exceeds {THREAD_REPLY_LIMIT} characters"
+                )
             replies.append(reply)
             lines = [continuation, "", line]
             if len("\n".join(lines).rstrip()) > THREAD_REPLY_LIMIT:
-                raise ReportError(f"thread evidence line exceeds {THREAD_REPLY_LIMIT} characters")
+                raise ReportError(
+                    f"thread evidence line exceeds {THREAD_REPLY_LIMIT} characters"
+                )
     final = "\n".join(lines).rstrip()
     if final:
         replies.append(final)
     return replies
 
 
-def render_report(stage_one: str, candidates_doc: Any, judgments_doc: Any) -> str:
+def render_report(
+    stage_one: str,
+    candidates_doc: Any,
+    judgments_doc: Any,
+    source_revision: str | None = None,
+) -> str:
     if len(stage_one) > STAGE_ONE_LIMIT:
         raise ReportError(f"stage-one message exceeds {STAGE_ONE_LIMIT} characters")
     candidates_doc = validate_candidates_document(candidates_doc)
+    source_revision = validate_source_revision(
+        source_revision or checked_out_source_revision()
+    )
+    if candidates_doc["source_revision"] != source_revision:
+        raise ReportError("render source revision does not match candidate evidence")
+    if f"source {source_revision}" not in stage_one:
+        raise ReportError("stage-one message does not match the source revision")
     if f"evidence {candidates_doc['collection_id']}" not in stage_one:
         raise ReportError("stage-one message does not match the candidate evidence set")
-    candidates = candidates_doc["candidates"]
-    judgments = validate_judgments(
-        judgments_doc,
-        {item["candidate_id"]: item["kind"] for item in candidates},
-    )
-    if not candidates:
-        if candidates_doc["scope"]["state"] == "complete":
-            summary = "*No candidate judgments required* — deterministic collection found no candidates."
-        else:
-            summary = (
-                "*No candidate judgments requested* — collector scope is Unknown; "
-                "review the parent coverage warning."
-            )
-        return stage_one + "\n\n---THREAD_DETAILS---\n" + summary
-
-    grouped: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
-    order = []
-    for candidate in candidates:
-        key = (
-            f"OCP {candidate['release']}"
-            if candidate["kind"] == "periodic"
-            else f"{candidate['branch']} → OCP {candidate['release']}"
-        )
-        if key not in grouped:
-            order.append(key)
-        grouped[key].append((candidate, judgments[candidate["candidate_id"]]))
-
+    candidates = flatten_presubmit_candidates(candidates_doc)
+    judgments = validate_judgments(judgments_doc, candidates_doc)
     replies = []
     overflow = candidates_doc["scope"].get("candidate_overflow")
     if overflow:
@@ -2358,6 +2461,38 @@ def render_report(stage_one: str, candidates_doc: Any, judgments_doc: Any) -> st
             f"{overflow['published']} of {overflow['total']} candidates; "
             f"{overflow['omitted']} omitted by the explicit {escape_slack(overflow['priority'], 200)} policy."
         )
+
+    periodic_by_release: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for status in candidates_doc["periodic_status"]:
+        periodic_by_release[status["release"]].append(status)
+    for release in candidates_doc["scope"].get("releases", []):
+        statuses = periodic_by_release.get(release, [])
+        if statuses:
+            replies.extend(
+                _pack_replies(
+                    f"OCP {release} periodic payloads",
+                    [_periodic_status_lines(status) for status in statuses],
+                )
+            )
+
+    if not candidates:
+        if candidates_doc["scope"]["state"] == "complete":
+            summary = "*No candidate judgments required* — deterministic collection found no candidates."
+        else:
+            summary = (
+                "*No candidate judgments requested* — collector scope is Unknown; "
+                "review the parent coverage warning."
+            )
+        replies.append(summary)
+
+    grouped: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
+    order = []
+    for candidate in candidates:
+        key = f"{candidate['branch']} → OCP {candidate['release']}"
+        if key not in grouped:
+            order.append(key)
+        grouped[key].append((candidate, judgments[candidate["candidate_id"]]))
+
     for key in order:
         entries = [
             _candidate_lines(candidate, judgment)
@@ -2384,6 +2519,9 @@ def load_json(path: Path, label: str) -> Any:
 
 def collect_command(args: argparse.Namespace) -> int:
     as_of = parse_rfc3339(args.as_of)
+    source_revision = validate_source_revision(args.source_revision)
+    if source_revision != checked_out_source_revision():
+        raise ReportError("collect source revision does not match checked-out HEAD")
     transport: HTTPTransport | FixtureTransport
     if args.fixture_dir:
         transport = FixtureTransport(Path(args.fixture_dir))
@@ -2392,6 +2530,7 @@ def collect_command(args: argparse.Namespace) -> int:
     stage_one, candidates = Collector(
         transport,
         as_of,
+        source_revision,
         deadline_seconds=args.collection_deadline,
         max_requests=args.max_requests,
     ).collect()
@@ -2404,13 +2543,16 @@ def collect_command(args: argparse.Namespace) -> int:
 
 
 def render_command(args: argparse.Namespace) -> int:
+    source_revision = validate_source_revision(args.source_revision)
+    if source_revision != checked_out_source_revision():
+        raise ReportError("render source revision does not match checked-out HEAD")
     try:
         stage_one = Path(args.stage_one).read_text().rstrip("\n")
     except OSError as exc:
         raise ReportError(f"unable to read stage-one file: {args.stage_one}") from exc
     candidates = load_json(Path(args.candidates), "candidates")
     judgments = load_json(Path(args.judgments), "judgments")
-    report = render_report(stage_one, candidates, judgments)
+    report = render_report(stage_one, candidates, judgments, source_revision)
     atomic_write(Path(args.slack_out), report + "\n")
     return 0
 
@@ -2424,6 +2566,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     collect.add_argument(
         "--as-of", required=True, help="report time as timezone-aware RFC3339"
+    )
+    collect.add_argument(
+        "--source-revision",
+        required=True,
+        help="canonical checked-out 40-hex Git commit",
     )
     collect.add_argument(
         "--slack-out", required=True, help="stage-one Slack text output"
@@ -2456,6 +2603,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     render.add_argument(
         "--stage-one", required=True, help="stage-one Slack text from collect"
+    )
+    render.add_argument(
+        "--source-revision",
+        required=True,
+        help="same canonical checked-out 40-hex Git commit used by collect",
     )
     render.add_argument(
         "--candidates", required=True, help="candidate JSON from collect"

@@ -4,16 +4,17 @@
 
 ## Collect
 
-Use one UTC timestamp for the entire run:
+Use one UTC timestamp and one canonical checked-out commit for the entire run:
 
 ```console
 python3 hack/ci/hypershift-ci-daily-health.py collect \
   --as-of 2026-09-28T12:00:00Z \
+  --source-revision "$(git rev-parse HEAD)" \
   --slack-out /tmp/hypershift-ci-stage-one.txt \
   --candidates-out /tmp/hypershift-ci-candidates.json
 ```
 
-The text file is a deterministic Slack parent message shorter than 2000 characters. The JSON file contains only bounded candidates and public evidence for later LLM judgment. Collection has an overall deadline and request budget in addition to per-request limits. Source failures and explicit candidate count/byte overflow are rendered as `Unknown`; expected never-run Prow history is retained separately as visible `no_data` coverage rather than misreported as a transport outage.
+The text file is a deterministic Slack parent message shorter than 2000 characters. It owns a compact periodic payload/trend summary by release. The JSON file contains only bounded presubmit candidates grouped by branch plus a separate, non-judgment `periodic_status` section with exact stream/tag links and counts for deterministic rendering. Periodics are never sent for LLM judgment. Collection has an overall deadline and request budget in addition to per-request limits. Source failures and explicit candidate count/byte overflow are rendered as `Unknown`; expected never-run Prow history and ERROR/ABORTED-only windows remain visible coverage uncertainties rather than being reported green.
 
 ## Render judgments
 
@@ -22,6 +23,8 @@ The judgment document must use `schema_version: 1` and contain exactly one entry
 ```json
 {
   "schema_version": 1,
+  "source_revision": "0123456789abcdef0123456789abcdef01234567",
+  "collection_id": "hci-doc-0123456789abcdef",
   "judgments": [
     {
       "candidate_id": "hci-0123456789abcdef",
@@ -36,17 +39,18 @@ The judgment document must use `schema_version: 1` and contain exactly one entry
 }
 ```
 
-Presubmits allow `not_permafailing`, `flaky`, `permafail_candidate`, `infrastructure_triage`, `one_off_failure`, and `no_data`. Periodics allow `flaky`, `infrastructure_triage`, `one_off_failure`, `incident_candidate`, `payload_impact_unknown`, and `no_data`. Only a periodic `incident_candidate` can use `tracking.status` `existing` or `gap`; all other judgments use `none`. Existing tracking must be a verified public OCPBUGS or CNTRLPLANE key.
+Presubmits allow `not_permafailing`, `flaky`, `permafail_candidate`, `infrastructure_triage`, `one_off_failure`, and `no_data`. Every judgment must use `tracking.status: none`; this scheduled workflow never promotes a periodic incident or proposes a Jira action. The renderer requires the exact collection ID and source revision, and accepts `permafail_candidate` only when the bound candidate has three consecutive failures across at least two canonical PR head SHAs.
 
 ```console
 python3 hack/ci/hypershift-ci-daily-health.py render \
+  --source-revision "$(git rev-parse HEAD)" \
   --stage-one /tmp/hypershift-ci-stage-one.txt \
   --candidates /tmp/hypershift-ci-candidates.json \
   --judgments /tmp/hypershift-ci-judgments.json \
   --slack-out /tmp/hypershift-ci-report.txt
 ```
 
-The result preserves the parent text and uses `---THREAD_DETAILS---` and `---THREAD_BREAK---` for bounded same-thread replies. Every candidate includes its deterministic role, Dashboard context, exact trend where applicable, timestamped run evidence, payload evidence, uncertainty, judgment, tracking state, and action. Large groups split across replies without slicing away candidates or actions; zero-candidate runs still emit a consistent thread summary.
+The result preserves the parent text and uses `---THREAD_DETAILS---` and `---THREAD_BREAK---` for bounded same-thread replies. Deterministic periodic replies include every validated stream, payload tag, release-status link, phase, count, and uncertainty without an LLM classification. Every presubmit candidate includes its deterministic role, Dashboard context, timestamped run evidence, uncertainty, judgment, and action. Large groups split across replies without slicing away candidates or actions; zero-candidate runs still emit a consistent thread summary.
 
 ## Offline verification
 
