@@ -48,14 +48,14 @@ func TestExpectedHCConditions(t *testing.T) {
 			expectedStatus: metav1.ConditionUnknown,
 		},
 		{
-			name: "When Azure KMS KeyVaultAccess is Private on ARO HCP, it should expect ValidAzureKMSConfig Unknown",
+			name: "When Azure KMS KeyVaultAccess is Private on ARO HCP, it should expect ValidAzureKMSConfig True",
 			hc: newAzureHC(true, &hyperv1.KMSSpec{
 				Provider: hyperv1.AZURE,
 				Azure: &hyperv1.AzureKMSSpec{
 					KeyVaultAccess: hyperv1.AzureKeyVaultPrivate,
 				},
 			}),
-			expectedStatus: metav1.ConditionUnknown,
+			expectedStatus: metav1.ConditionTrue,
 		},
 		{
 			name: "When Azure KMS KeyVaultAccess is Public on ARO HCP, it should expect ValidAzureKMSConfig True",

@@ -59,10 +59,9 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 		if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.Azure == nil {
 			// Azure KMS is not configured
 			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
-		} else if netutil.IsAroHCPByHC(hostedCluster) && hostedCluster.Spec.SecretEncryption.KMS.Azure.KeyVaultAccess == hyperv1.AzureKeyVaultPrivate {
-			// CPO cannot validate a private Key Vault from the management cluster.
-			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
 		} else {
+			// Private Key Vaults are validated too: the CPO reaches them
+			// through the private router rather than the public endpoint.
 			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionTrue
 		}
 	case hyperv1.GCPPlatform:
