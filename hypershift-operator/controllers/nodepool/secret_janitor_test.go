@@ -1,6 +1,8 @@
 package nodepool
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -25,6 +27,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/blang/semver"
@@ -32,7 +35,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestSecretJanitor_Reconcile(t *testing.T) {
@@ -274,6 +279,8 @@ spec:
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			logCore, logs := observer.New(zap.InfoLevel)
+			ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zap.New(logCore)))
 			if err := c.Create(ctx, testCase.input); err != nil {
 				t.Errorf("failed to create object: %v", err)
 			}
@@ -289,6 +296,13 @@ spec:
 				if !apierrors.IsNotFound(err) {
 					t.Errorf("expected object to not exist, got error: %v", err)
 				}
+				deletedLogs := logs.FilterMessage("Deleted secret").All()
+				if len(deletedLogs) != 1 {
+					t.Fatalf("expected one deletion log, got %d", len(deletedLogs))
+				}
+				if got := deletedLogs[0].ContextMap()["secret"]; got != key.String() {
+					t.Errorf("expected secret log field %q, got %v", key.String(), got)
+				}
 			} else {
 				if err != nil {
 					t.Errorf("failed to fetch object: %v", err)
@@ -299,6 +313,48 @@ spec:
 			}
 		})
 	}
+
+	t.Run("When deleting stale user data fails, it should return the error without logging success", func(t *testing.T) {
+		g := NewWithT(t)
+		logCore, logs := observer.New(zap.InfoLevel)
+		ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zap.New(logCore)))
+		deleteErr := errors.New("injected secret deletion failure")
+		userDataSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "user-data-nodepool-name-oldhash",
+				Namespace: "myns",
+				Annotations: map[string]string{
+					nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				},
+			},
+		}
+		key := client.ObjectKeyFromObject(userDataSecret)
+		deleteCalled := false
+		failingClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+			nodePool, hostedCluster, pullSecret, machineConfig,
+			ignitionConfig, ignitionConfig2, ignitionConfig3, ignitionServerCACert, userDataSecret,
+		).WithInterceptorFuncs(interceptor.Funcs{
+			Delete: func(_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.DeleteOption) error {
+				g.Expect(client.ObjectKeyFromObject(obj)).To(Equal(key))
+				deleteCalled = true
+				return deleteErr
+			},
+		}).Build()
+		failingReconciler := secretJanitor{
+			NodePoolReconciler: &NodePoolReconciler{
+				Client:                failingClient,
+				ReleaseProvider:       r.ReleaseProvider,
+				ImageMetadataProvider: r.ImageMetadataProvider,
+			},
+			now: fakeClock.Now,
+		}
+
+		_, err := failingReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+		g.Expect(err).To(MatchError(deleteErr))
+		g.Expect(deleteCalled).To(BeTrue())
+		g.Expect(failingClient.Get(ctx, key, &corev1.Secret{})).To(Succeed())
+		g.Expect(logs.FilterMessage("Deleted secret").Len()).To(BeZero())
+	})
 
 	t.Run("When the hosted cluster is not found it should clean up token secret", func(t *testing.T) {
 		// Create a client with the nodePool but without the hostedCluster.
