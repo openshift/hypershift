@@ -361,6 +361,22 @@ func (m *FirewallManager) Delete(ctx context.Context) error {
 		return nil
 	}
 
+	// The marker alone does not prove this is our rule: if an infra ID is reused
+	// within a project, or the configured VPC changes, a same-named,
+	// same-marker rule can exist in a different VPC. Mirror Reconcile's
+	// isCompatible check so deletion never removes a rule outside the HCP's
+	// configured VPC.
+	networkSelfLink, err := m.resolveNetwork(ctx, client)
+	if err != nil {
+		return fmt.Errorf("failed to resolve GCP VPC network for deletion: %w", err)
+	}
+	if ok, reason := isCompatible(existing, networkSelfLink); !ok {
+		// Terminal skip, same rationale as the ownership-marker conflict above:
+		// retrying can never change which VPC the rule lives in.
+		m.logger.Info("WARNING: firewall rule is owned by control-plane-operator but is incompatible with the configured VPC; leaving it untouched and skipping deletion", "name", name, "reason", reason)
+		return nil
+	}
+
 	m.logger.Info("Deleting managed worker firewall rule", "name", name)
 	delCtx, cancelDel := context.WithTimeout(ctx, gcpAPITimeout)
 	op, err := client.DeleteFirewall(delCtx, m.projectID, name)

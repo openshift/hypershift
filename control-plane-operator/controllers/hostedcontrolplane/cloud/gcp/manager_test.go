@@ -422,6 +422,27 @@ func TestFirewallManagerDelete(t *testing.T) {
 		g.Expect(client.firewalls).To(HaveKey(name))
 	})
 
+	t.Run("When an owned rule is in the wrong VPC, it should skip deletion terminally and not error", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		name := firewallRuleName(testInfraID)
+		marker, _ := ownershipMarker(testInfraID)
+		client.firewalls[name] = &compute.Firewall{
+			Name:        name,
+			Network:     "projects/" + testProject + "/global/networks/some-other-vpc",
+			Direction:   "INGRESS",
+			Description: marker,
+		}
+
+		// The marker alone does not prove this is our rule if the infra ID was
+		// reused in a different VPC. Retrying can never change which VPC the rule
+		// lives in, so this must be a terminal skip, not an error.
+		err := testManager(client).Delete(ctx)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(client.deleteCalled).To(BeFalse())
+		g.Expect(client.firewalls).To(HaveKey(name))
+	})
+
 	t.Run("When the derived name is invalid, it should skip deletion and not error", func(t *testing.T) {
 		g := NewWithT(t)
 		client := newFakeClient()
