@@ -195,6 +195,18 @@ const (
 	// This condition is used to track the status of the recovery process and to determine if the HostedCluster
 	// is ready to be used after restoration.
 	HostedClusterRestoredFromBackup ConditionType = "HostedClusterRestoredFromBackup"
+
+	// IngressDefaultCertificateSynced indicates whether the user-provided default
+	// ingress certificate referenced by
+	// spec.operatorConfiguration.ingressOperator.defaultCertificate has been
+	// synced from the HostedCluster namespace into the control plane namespace.
+	// **True** means the referenced Secret was found, contains tls.crt and tls.key,
+	// and its data was synced.
+	// **False** means the referenced Secret is missing or malformed; in that case
+	// the previously synced certificate (or the auto-generated wildcard certificate)
+	// keeps serving and the HostedCluster does not become degraded.
+	// The condition is absent when no defaultCertificate is configured.
+	IngressDefaultCertificateSynced ConditionType = "IngressDefaultCertificateSynced"
 )
 
 // Reasons.
@@ -249,6 +261,16 @@ const (
 	KubeVirtNodesLiveMigratableReason = "KubeVirtNodesNotLiveMigratable"
 
 	RecoveryFinishedReason = "RecoveryFinished"
+
+	// IngressDefaultCertificateInvalidReason is used when the referenced default
+	// ingress certificate Secret exists but does not contain the required tls.crt
+	// and tls.key entries.
+	IngressDefaultCertificateInvalidReason = "InvalidCertificateSecret"
+
+	// IngressDefaultCertificatePlatformNotSupportedReason is used when a default
+	// ingress certificate is configured on a platform whose ingress controller does
+	// not consume it (e.g. IBM Cloud), so the certificate is intentionally not synced.
+	IngressDefaultCertificatePlatformNotSupportedReason = "PlatformNotSupported"
 
 	ControlPlaneComponentsNotAvailable = "ComponentsNotAvailable"
 )

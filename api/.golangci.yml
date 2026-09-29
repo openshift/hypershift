@@ -7,6 +7,12 @@ severity:
   default-severity: error
 issues:
   exclude-rules:
+    # Preserve the upstream certificate reference's JSON representation.
+    - path: "hypershift/v1beta1/operator.go"
+      source: 'Name string `json:"name,omitempty"`'
+      text: "requiredfields: field Name is marked as required, but has the omitempty tag"
+      linters:
+        - kubeapilinter
     - linters:
         - staticcheck
       text: "SA1019: src.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release"
