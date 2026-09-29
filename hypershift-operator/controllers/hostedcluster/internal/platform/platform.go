@@ -14,9 +14,9 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/none"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/openstack"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/powervs"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
-	imgUtil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -104,11 +104,11 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		if pullSecretBytes != nil {
-			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, AWSCAPIProvider, pullSecretBytes)
+			capiImageProvider, err = imageregistry.GetPayloadImage(ctx, releaseProvider, hcluster, AWSCAPIProvider, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
 			}
-			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			payloadVersion, err = imageregistry.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
 			}
@@ -121,7 +121,7 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		platform = &none.None{}
 	case hyperv1.AgentPlatform:
 		if pullSecretBytes != nil {
-			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			payloadVersion, err = imageregistry.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
 			}
@@ -129,7 +129,7 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		platform = agent.New(payloadVersion)
 	case hyperv1.KubevirtPlatform:
 		if pullSecretBytes != nil {
-			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			payloadVersion, err = imageregistry.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
 			}
@@ -137,11 +137,11 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		platform = kubevirt.New(payloadVersion)
 	case hyperv1.AzurePlatform:
 		if pullSecretBytes != nil {
-			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, AzureCAPIProvider, pullSecretBytes)
+			capiImageProvider, err = imageregistry.GetPayloadImage(ctx, releaseProvider, hcluster, AzureCAPIProvider, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
 			}
-			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			payloadVersion, err = imageregistry.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
 			}
@@ -150,11 +150,11 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		platform = azure.New(utilitiesImage, capiImageProvider, payloadVersion)
 	case hyperv1.PowerVSPlatform:
 		if pullSecretBytes != nil {
-			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, PowerVSCAPIProvider, pullSecretBytes)
+			capiImageProvider, err = imageregistry.GetPayloadImage(ctx, releaseProvider, hcluster, PowerVSCAPIProvider, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
 			}
-			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			payloadVersion, err = imageregistry.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
 			}
@@ -162,18 +162,18 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		platform = powervs.New(capiImageProvider, payloadVersion)
 	case hyperv1.OpenStackPlatform:
 		if pullSecretBytes != nil {
-			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, OpenStackCAPIProvider, pullSecretBytes)
+			capiImageProvider, err = imageregistry.GetPayloadImage(ctx, releaseProvider, hcluster, OpenStackCAPIProvider, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
 			}
-			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			payloadVersion, err = imageregistry.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
 			}
 			// Get the ORC image only if the payload version is 4.19 or later.
 			// ORC was decoupled from CAPO in 4.19 but was part of CAPO in 4.18.
 			if payloadVersion != nil && (payloadVersion.Major >= 5 || (payloadVersion.Major == 4 && payloadVersion.Minor > 18)) {
-				orcImage, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, OpenStackResourceController, pullSecretBytes)
+				orcImage, err = imageregistry.GetPayloadImage(ctx, releaseProvider, hcluster, OpenStackResourceController, pullSecretBytes)
 				if err != nil {
 					return nil, fmt.Errorf("failed to retrieve orc image: %w", err)
 				}
@@ -182,11 +182,11 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		platform = openstack.New(capiImageProvider, orcImage, payloadVersion)
 	case hyperv1.GCPPlatform:
 		if pullSecretBytes != nil {
-			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, GCPCAPIProvider, pullSecretBytes)
+			capiImageProvider, err = imageregistry.GetPayloadImage(ctx, releaseProvider, hcluster, GCPCAPIProvider, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
 			}
-			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			payloadVersion, err = imageregistry.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
 			}

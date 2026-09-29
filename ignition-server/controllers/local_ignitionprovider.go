@@ -22,6 +22,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
@@ -77,7 +78,7 @@ type LocalIgnitionProvider struct {
 
 	// ImageMetaDataProvider is used to get the image metadata for the images
 	// used in the ignition payload.
-	ImageMetadataProvider *util.RegistryClientImageMetadataProvider
+	ImageMetadataProvider *imageregistry.RegistryClientImageMetadataProvider
 
 	ImageFileCache *imageFileCache
 

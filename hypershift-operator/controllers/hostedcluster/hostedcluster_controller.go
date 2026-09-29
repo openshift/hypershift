@@ -63,6 +63,7 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/gcpapi"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
@@ -1457,11 +1458,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return fmt.Errorf("failed to get pull secret: %w", err)
 		}
-		controlPlaneOperatorImage, err = hyperutil.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+		controlPlaneOperatorImage, err = imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 		}
-		controlPlaneOperatorImageLabels, err = hyperutil.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
+		controlPlaneOperatorImageLabels, err = imageregistry.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 		}
@@ -3237,8 +3238,8 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 		UtilitiesImage:              utilitiesImage,
 		HasUtilities:                cpoHasUtilities,
 		CertRotationScale:           certRotationScale,
-		RegistryOverrideCommandLine: hyperutil.ConvertRegistryOverridesToCommandLineFlag(releaseProvider.GetRegistryOverrides()),
-		OpenShiftRegistryOverrides:  hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
+		RegistryOverrideCommandLine: imageregistry.ConvertRegistryOverridesToCommandLineFlag(releaseProvider.GetRegistryOverrides()),
+		OpenShiftRegistryOverrides:  imageregistry.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
 		DefaultIngressDomain:        defaultIngressDomain,
 		FeatureSet:                  r.FeatureSet,
 	})
@@ -3602,7 +3603,7 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	// It is also used before the HostedControlPlane is created to bootstrap
 	// the ClusterVersionStatus.
 
-	releaseImage := hyperutil.HCControlPlaneReleaseImage(hcluster)
+	releaseImage := imageregistry.HCControlPlaneReleaseImage(hcluster)
 
 	// If there's no history, rebuild it from scratch.
 	if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) == 0 {
@@ -3651,7 +3652,7 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	// state. For now it assumes when status.releaseImage matches, that rollout
 	// is definitely done.
 	//lint:ignore SA1019 consume the deprecated property until we can drop compatibility with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
-	hcpRolloutComplete := (hyperutil.HCPControlPlaneReleaseImage(hcp) == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
+	hcpRolloutComplete := (imageregistry.HCPControlPlaneReleaseImage(hcp) == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
 	if !hcpRolloutComplete {
 		return version
 	}
@@ -4511,7 +4512,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	}
 
 	var currentVersion *semver.Version
-	if hc.Status.Version != nil && hc.Status.Version.Desired.Image != hyperutil.HCControlPlaneReleaseImage(hc) {
+	if hc.Status.Version != nil && hc.Status.Version.Desired.Image != imageregistry.HCControlPlaneReleaseImage(hc) {
 		releaseInfo, err := releaseProvider.Lookup(ctx, hc.Status.Version.Desired.Image, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to lookup release image: %w", err)
@@ -5375,7 +5376,7 @@ func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hclust
 	if err != nil {
 		return nil, err
 	}
-	return releaseProvider.Lookup(ctx, hyperutil.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
+	return releaseProvider.Lookup(ctx, imageregistry.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
 }
 
 func (r *HostedClusterReconciler) isAutoscalingNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) (bool, error) {
@@ -5469,7 +5470,7 @@ func (r *HostedClusterReconciler) syncKVLiveMigratableCondition(ctx context.Cont
 // 2) non-error message about the condition of the upgrade
 // 3) error indicating that the upgrade is not allowed or we were not able to determine
 func isUpgrading(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (bool, string, error) {
-	if hcluster.Status.Version == nil || hcluster.Status.Version.Desired.Image == hyperutil.HCControlPlaneReleaseImage(hcluster) {
+	if hcluster.Status.Version == nil || hcluster.Status.Version.Desired.Image == imageregistry.HCControlPlaneReleaseImage(hcluster) {
 		// cluster is either installing or at the version requested by the spec, no upgrade in progress
 		return false, "", nil
 	}
@@ -5482,7 +5483,7 @@ func isUpgrading(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.Rele
 	// Check if the upgrade is being forced
 	upgradeImage, exists := hcluster.Annotations[hyperv1.ForceUpgradeToAnnotation]
 	if exists {
-		if upgradeImage != hyperutil.HCControlPlaneReleaseImage(hcluster) {
+		if upgradeImage != imageregistry.HCControlPlaneReleaseImage(hcluster) {
 			return true, "", fmt.Errorf("force upgrade annotation is present but does not match desired release image")
 		} else {
 			return true, "upgrade is forced by annotation", nil

@@ -51,6 +51,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
@@ -157,7 +158,7 @@ type reconciler struct {
 	oauthPort                 int32
 	versions                  map[string]string
 	operateOnReleaseImage     string
-	ImageMetaDataProvider     util.ImageMetadataProvider
+	ImageMetaDataProvider     imageregistry.ImageMetadataProvider
 	cleanupTracker            *reconcilerpolicy.CleanupTracker
 
 	// exposed for unit test since GetLogs looks hard to be mocked

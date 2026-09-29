@@ -84,6 +84,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
@@ -192,7 +193,7 @@ type HostedControlPlaneReconciler struct {
 	awsSession                              *aws.Config
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
-	ImageMetadataProvider                   util.ImageMetadataProvider
+	ImageMetadataProvider                   imageregistry.ImageMetadataProvider
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
 	clock                                   clock.Clock
@@ -643,8 +644,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != util.HCPControlPlaneReleaseImage(hostedControlPlane) {
-		r.Log.Info("releaseImage is " + util.HCPControlPlaneReleaseImage(hostedControlPlane) + ", but this operator is configured for " + r.OperateOnReleaseImage + ", skipping reconciliation")
+	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane) {
+		r.Log.Info("releaseImage is " + imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane) + ", but this operator is configured for " + r.OperateOnReleaseImage + ", skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
 
@@ -909,7 +910,7 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlaneVersionStatus(ctx co
 	}
 	// Resolve the release image to its digest so controlPlaneVersion records
 	// the immutable image reference, consistent with how CVO records images.
-	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, util.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
+	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
 		return fmt.Errorf("failed to resolve control plane release image digest: %w", err)
 	}
@@ -1182,7 +1183,7 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	}
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer lookupCancel()
-	return r.ReleaseProvider.Lookup(lookupCtx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
+	return r.ReleaseProvider.Lookup(lookupCtx, imageregistry.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {

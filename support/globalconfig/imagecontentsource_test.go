@@ -8,8 +8,8 @@ import (
 
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -210,7 +210,7 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 		idms               *configv1.ImageDigestMirrorSetList
 		icsp               *operatorv1alpha1.ImageContentSourcePolicyList
 		expectedRelease    *releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator
-		expectedMetadata   *hyperutil.RegistryClientImageMetadataProvider
+		expectedMetadata   *imageregistry.RegistryClientImageMetadataProvider
 		expectedError      error
 		expectedErrorMatch string
 	}{
@@ -257,7 +257,7 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 					},
 				},
 			},
-			expectedMetadata: &hyperutil.RegistryClientImageMetadataProvider{
+			expectedMetadata: &imageregistry.RegistryClientImageMetadataProvider{
 				OpenShiftImageRegistryOverrides: map[string][]string{
 					"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
 					"registry2": {"mirror1", "mirror2"},
@@ -303,7 +303,7 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 				},
 				OpenShiftImageRegistryOverrides: nil,
 			},
-			expectedMetadata: &hyperutil.RegistryClientImageMetadataProvider{
+			expectedMetadata: &imageregistry.RegistryClientImageMetadataProvider{
 				OpenShiftImageRegistryOverrides: nil,
 			},
 			expectedError: nil,

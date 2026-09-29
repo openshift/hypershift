@@ -17,9 +17,9 @@ import (
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/util"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
@@ -52,7 +52,7 @@ type HAProxy struct {
 	HypershiftOperatorImage string
 
 	ReleaseProvider       releaseinfo.Provider
-	ImageMetadataProvider util.ImageMetadataProvider
+	ImageMetadataProvider imageregistry.ImageMetadataProvider
 }
 
 func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *hyperv1.HostedCluster) (m bool, cpoImage string, err error) {
@@ -64,7 +64,7 @@ func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *
 	if !ok {
 		return false, "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
-	controlPlaneOperatorImage, err := util.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
@@ -74,7 +74,7 @@ func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *
 		return false, "", fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
 
-	_, cpoSkips := util.ImageLabels(controlPlaneOperatorImageMetadata)[ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel]
+	_, cpoSkips := imageregistry.ImageLabels(controlPlaneOperatorImageMetadata)[ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel]
 	return cpoSkips, controlPlaneOperatorImage, nil
 }
 

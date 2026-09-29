@@ -39,6 +39,7 @@ import (
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -47,7 +48,6 @@ import (
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -115,7 +115,7 @@ func (rp fakeReleaseProvider) GetReleaseProvider() releaseinfo.ProviderWithOpenS
 	return rp.releaseProvider
 }
 
-func (rp fakeReleaseProvider) GetMetadataProvider() hyperutil.ImageMetadataProvider {
+func (rp fakeReleaseProvider) GetMetadataProvider() imageregistry.ImageMetadataProvider {
 	return &rp.metadataProvider
 }
 

@@ -38,6 +38,7 @@ import (
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/forwarder"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -3790,7 +3791,7 @@ func EnsurePayloadArchSetCorrectly(t *testing.T, ctx context.Context, client crc
 			},
 			[]Predicate[*hyperv1.HostedCluster]{
 				func(cluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
-					imageMetadataProvider := &hyperutil.RegistryClientImageMetadataProvider{}
+					imageMetadataProvider := &imageregistry.RegistryClientImageMetadataProvider{}
 					payloadArch, err := hyperutil.DetermineHostedClusterPayloadArch(ctx, client, cluster, imageMetadataProvider)
 					if err != nil {
 						return false, "failed to get hc payload arch", err
@@ -4495,7 +4496,7 @@ func hasAzureCSIDriverUIDSupport(t *testing.T, ctx context.Context, client crcli
 	}
 
 	releaseProvider := releaseinfo.RegistryClientProvider{}
-	version, err := hyperutil.GetPayloadVersion(ctx, &releaseProvider, hostedCluster, pullSecret)
+	version, err := imageregistry.GetPayloadVersion(ctx, &releaseProvider, hostedCluster, pullSecret)
 	if err != nil {
 		t.Logf("Warning: Failed to get payload version for Azure CSI driver UID support check: %v. Assuming no UID support.", err)
 		return false

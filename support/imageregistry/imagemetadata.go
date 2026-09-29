@@ -1,4 +1,4 @@
-package util
+package imageregistry
 
 import (
 	"context"
@@ -110,7 +110,7 @@ type ImageMetadataProvider interface {
 	GetOverride(ctx context.Context, imageRef string, pullSecret []byte) (*reference.DockerImageReference, error)
 }
 
-//go:generate ../../hack/tools/bin/mockgen -package=util -destination=imagemetadata_mock.go github.com/docker/distribution Repository,TagService,ManifestService
+//go:generate ../../hack/tools/bin/mockgen -package=imageregistry -destination=imagemetadata_mock.go github.com/docker/distribution Repository,TagService,ManifestService
 
 // metadataGetterFn is a function that retrieves image metadata from a registry.
 type metadataGetterFn func(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error)
