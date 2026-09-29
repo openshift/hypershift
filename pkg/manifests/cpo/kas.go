@@ -9,7 +9,24 @@ import (
 
 const (
 	KubeAPIServerServiceName = "kube-apiserver"
+
+	// KubeAPIServerConfigMapName is the ConfigMap in the control plane namespace holding the
+	// rendered kube-apiserver configuration.
+	KubeAPIServerConfigMapName = "kas-config"
+
+	// KubeAPIServerConfigKey is the key within KubeAPIServerConfigMapName holding the serialized
+	// KubeAPIServerConfig.
+	KubeAPIServerConfigKey = "config.json"
 )
+
+func KubeAPIServerConfigMap(controlPlaneNamespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      KubeAPIServerConfigMapName,
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
 
 func KASCustomKubeconfigSecret(controlPlaneNamespace string, ref *hyperv1.KubeconfigSecretRef) *corev1.Secret {
 	s := &corev1.Secret{
