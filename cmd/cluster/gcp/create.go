@@ -127,7 +127,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.EndpointAccess, flagEndpointAccess, string(hyperv1.GCPEndpointAccessPrivate), "Endpoint access type (Private or PublicAndPrivate)")
 	flags.StringVar(&opts.IssuerURL, flagIssuerURL, "", "The OIDC provider issuer URL")
 	flags.StringVar(&opts.MachineType, flagMachineType, "", util.GCPMachineTypeHelp)
-	flags.StringVar(&opts.Zone, flagZone, "", "GCP zone for node instances (e.g. us-central1-a). Defaults to {region}-a")
+	flags.StringVar(&opts.Zone, flagZone, "", "GCP zone for node instances (e.g. us-central1-a). Required when --node-pool-replicas >= 0")
 	flags.StringVar(&opts.Subnet, flagSubnet, "", "Subnet name for node instances. Defaults to the PSC subnet value")
 	flags.StringVar(&opts.BootImage, flagBootImage, "", "GCP boot image for node instances. Overrides the default RHCOS image from the release payload")
 }
@@ -144,7 +144,7 @@ type validatedCreateOptions struct {
 }
 
 // Validate validates the GCP create cluster command options
-func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (core.PlatformCompleter, error) {
+func (o *RawCreateOptions) Validate(_ context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
 
 	if err := util.ValidateRequiredOption(flagProject, o.Project); err != nil {
 		return nil, err
@@ -184,6 +184,13 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 	}
 	if err := util.ValidateRequiredOption(flagNetworkServiceAccount, o.NetworkServiceAccount); err != nil {
 		return nil, err
+	}
+	// Zone is only required when a NodePool will be created (NodePoolReplicas >= 0)
+	// opts == nil handles unit tests; production always passes completed opts
+	if opts == nil || opts.NodePoolReplicas >= 0 {
+		if err := util.ValidateRequiredOption(flagZone, o.Zone); err != nil {
+			return nil, err
+		}
 	}
 	return &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
@@ -335,9 +342,6 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	}
 
 	zone := o.Zone
-	if zone == "" {
-		zone = o.Region + "-a"
-	}
 	subnet := o.Subnet
 	if subnet == "" {
 		subnet = o.PrivateServiceConnectSubnet

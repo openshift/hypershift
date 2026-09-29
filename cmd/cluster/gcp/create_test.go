@@ -74,6 +74,7 @@ func TestValidateGCPOptions(t *testing.T) {
 	validOpts := RawCreateOptions{
 		Project:                       "test-project-123",
 		Region:                        "us-central1",
+		Zone:                          "us-central1-a",
 		Network:                       "test-network",
 		PrivateServiceConnectSubnet:   "test-psc-subnet",
 		WorkloadIdentityProjectNumber: "123456789012",
@@ -127,6 +128,11 @@ func TestValidateGCPOptions(t *testing.T) {
 			expectErr:    true,
 			expectSubstr: "required flag(s) \"network-service-account\" not set",
 		},
+		"When zone is missing, it should return an error": {
+			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount, ImageRegistryServiceAccount: validOpts.ImageRegistryServiceAccount, NetworkServiceAccount: validOpts.NetworkServiceAccount},
+			expectErr:    true,
+			expectSubstr: "required flag(s) \"zone\" not set",
+		},
 		"When all required fields are provided, it should succeed": {
 			opts:      validOpts,
 			expectErr: false,
@@ -135,7 +141,7 @@ func TestValidateGCPOptions(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, err := tc.opts.Validate(context.Background(), &core.CreateOptions{})
+			_, err := tc.opts.Validate(context.Background(), nil)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 				if tc.expectSubstr != "" {
@@ -161,11 +167,12 @@ func TestCreateCluster(t *testing.T) {
 	}
 
 	for _, testCase := range []struct {
-		name string
-		args []string
+		name         string
+		args         []string
+		expectedZone string
 	}{
 		{
-			name: "When minimal flags are provided, it should render successfully",
+			name: "When minimal flags are provided with no NodePool, it should render successfully",
 			args: []string{
 				"--project=test-project-123",
 				"--region=us-central1",
@@ -184,6 +191,30 @@ func TestCreateCluster(t *testing.T) {
 				"--name=example",
 				"--pull-secret=" + pullSecretFile,
 			},
+			expectedZone: "",
+		},
+		{
+			name: "When NodePool with 0 replicas is created with explicit zone, it should render successfully with zone set",
+			args: []string{
+				"--project=test-project-123",
+				"--region=us-central1",
+				"--zone=us-central1-b",
+				"--network=test-network",
+				"--private-service-connect-subnet=test-psc-subnet",
+				"--workload-identity-project-number=123456789012",
+				"--workload-identity-pool-id=test-pool",
+				"--workload-identity-provider-id=test-provider",
+				"--node-pool-service-account=nodepool@test-project-123.iam.gserviceaccount.com",
+				"--control-plane-service-account=controlplane@test-project-123.iam.gserviceaccount.com",
+				"--cloud-controller-service-account=cloudcontroller@test-project-123.iam.gserviceaccount.com",
+				"--storage-service-account=storage@test-project-123.iam.gserviceaccount.com",
+				"--image-registry-service-account=imageregistry@test-project-123.iam.gserviceaccount.com",
+				"--network-service-account=network@test-project-123.iam.gserviceaccount.com",
+				"--node-pool-replicas=0",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+			},
+			expectedZone: "us-central1-b",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -209,6 +240,13 @@ func TestCreateCluster(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read manifests file: %v", err)
 			}
+
+			// Verify zone is set in NodePool if expected
+			g := NewGomegaWithT(t)
+			if testCase.expectedZone != "" {
+				g.Expect(string(manifests)).To(ContainSubstring("zone: " + testCase.expectedZone))
+			}
+
 			testutil.CompareWithFixture(t, manifests)
 		})
 	}
