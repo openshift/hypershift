@@ -11,7 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
-	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -114,7 +114,7 @@ func aroExpectedHCPRouterRouteNames(hcp *hyperv1.HostedControlPlane) []string {
 	}
 
 	names := append([]string(nil), aroBaseHCPRouterRouteNames...)
-	if supportutil.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		names = append(names, "oauth-internal")
 	}
 	if metricsProxyRouteRequired(hcp) {

@@ -4,7 +4,7 @@ import (
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 
 	"k8s.io/utils/ptr"
 )
@@ -84,5 +84,5 @@ func NewComponent() component.ControlPlaneComponent {
 }
 
 func isOAuthEnabled(cpContext component.WorkloadContext) (bool, error) {
-	return util.HCPOAuthEnabled(cpContext.HCP), nil
+	return reconcilerpolicy.HCPOAuthEnabled(cpContext.HCP), nil
 }

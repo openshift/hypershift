@@ -13,9 +13,9 @@ import (
 	kasaescbc "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas/kms"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/secretencryption"
 	"github.com/openshift/hypershift/support/statuspatching"
-	"github.com/openshift/hypershift/support/util"
 
 	"github.com/openshift/library-go/pkg/operator/encryption/controllers/migrators"
 
@@ -554,7 +554,7 @@ func (r *Reconciler) encryptedResources(hcp *hyperv1.HostedControlPlane) []schem
 		return nil
 	}
 
-	oauthEnabled := util.HCPOAuthEnabled(hcp)
+	oauthEnabled := reconcilerpolicy.HCPOAuthEnabled(hcp)
 	resources := make([]schema.GroupResource, 0, len(resourceStrings))
 	for _, rs := range resourceStrings {
 		gr := parseGroupResource(rs)

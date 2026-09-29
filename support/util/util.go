@@ -12,7 +12,6 @@ import (
 	"hash/fnv"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -20,7 +19,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
-	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 
@@ -29,7 +27,6 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/blang/semver"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -394,73 +391,6 @@ func getImageArchitecture(ctx context.Context, image string, pullSecretBytes []b
 	}
 
 	return "", fmt.Errorf("failed to find image CPU architecture for %s", image)
-}
-
-// PredicatesForHostedClusterAnnotationScoping returns predicate filters for all event types that will ignore incoming
-// event requests for resources in which the parent hostedcluster does not
-// match the "scope" annotation specified in the HOSTEDCLUSTERS_SCOPE_ANNOTATION env var.  If not defined or empty, the
-// default behavior is to accept all events for hostedclusters that do not have the annotation.
-// The ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var must also be set to "true" to enable the scoping feature.
-func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Predicate {
-	hcAnnotationScopingEnabledEnvVal := os.Getenv(k8sutil.EnableHostedClustersAnnotationScopingEnv)
-	hcScopeAnnotationEnvVal := os.Getenv(k8sutil.HostedClustersScopeAnnotationEnv)
-	filter := func(obj client.Object) bool {
-		if hcAnnotationScopingEnabledEnvVal != "true" {
-			return true // process event; the scoping feature has not been enabled via the ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var
-		}
-		hostedClusterScopeAnnotation := getHostedClusterScopeAnnotation(obj, r)
-		if hostedClusterScopeAnnotation == "" && hcScopeAnnotationEnvVal == "" {
-			return true // process event; both the operator's scope and hostedcluster's scope are empty
-		}
-		if hostedClusterScopeAnnotation != hcScopeAnnotationEnvVal {
-			return false // ignore event; the associated hostedcluster's scope annotation does not match what is defined in HOSTEDCLUSTERS_SCOPE_ANNOTATION
-		}
-		return true
-	}
-	return predicate.NewPredicateFuncs(filter)
-}
-
-// getHostedClusterScopeAnnotation will extract the "scope" annotation from the hostedcluster resource that owns the specified object.
-// Depending on the object type being passed in, slightly different paths will be used to ultimately retrieve the hostedcluster resource containing the annotation.
-// If an annotation is not found, an empty string is returned.
-func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string {
-	hostedClusterName := ""
-	nodePoolName := ""
-	switch obj := obj.(type) {
-	case *hyperv1.HostedCluster:
-		if obj.GetAnnotations() != nil {
-			return obj.GetAnnotations()[k8sutil.HostedClustersScopeAnnotation]
-		}
-	case *hyperv1.NodePool:
-		hostedClusterName = fmt.Sprintf("%s/%s", obj.Namespace, obj.Spec.ClusterName)
-	default:
-		if obj.GetAnnotations() != nil {
-			nodePoolName = obj.GetAnnotations()["hypershift.openshift.io/nodePool"]
-			hostedClusterName = obj.GetAnnotations()[k8sutil.HostedClusterAnnotation]
-		}
-		if nodePoolName != "" {
-			namespacedName := ParseNamespacedName(nodePoolName)
-			np := &hyperv1.NodePool{}
-			err := r.Get(context.Background(), namespacedName, np)
-			if err != nil {
-				return ""
-			}
-			hostedClusterName = fmt.Sprintf("%s/%s", np.Namespace, np.Spec.ClusterName)
-		}
-	}
-	if hostedClusterName == "" {
-		return ""
-	}
-	namespacedName := ParseNamespacedName(hostedClusterName)
-	hcluster := &hyperv1.HostedCluster{}
-	err := r.Get(context.Background(), namespacedName, hcluster)
-	if err != nil {
-		return ""
-	}
-	if hcluster.GetAnnotations() != nil {
-		return hcluster.GetAnnotations()[k8sutil.HostedClustersScopeAnnotation]
-	}
-	return ""
 }
 
 // SanitizeIgnitionPayload make sure the IgnitionPayload is valid

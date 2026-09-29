@@ -13,9 +13,9 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
-	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -126,9 +126,9 @@ func findMachineStatusCondition(machine *capiv1.Machine, conditionType string) *
 
 // generateReconciliationActiveCondition will generate the resource condition that reflects the state of reconciliation
 // on the resource.
-// (copied from support/util/pausereconcile_test.go and adjusted to use NodePoolCondition)
+// (copied from support/reconcilerpolicy/pausereconcile.go and adjusted to use NodePoolCondition)
 func generateReconciliationActiveCondition(pausedUntilField *string, objectGeneration int64) hyperv1.NodePoolCondition {
-	isPaused, _, err := util.ProcessPausedUntilField(pausedUntilField, time.Now())
+	isPaused, _, err := reconcilerpolicy.ProcessPausedUntilField(pausedUntilField, time.Now())
 	var msgString string
 	if isPaused {
 		if _, err := strconv.ParseBool(*pausedUntilField); err == nil {

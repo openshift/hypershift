@@ -18,7 +18,7 @@ import (
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 
 	configv1 "github.com/openshift/api/config/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
@@ -198,7 +198,7 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("egress-selector-config-file", cpath(egressSelectorConfigVolumeName, EgressSelectorConfigKey))
 	args.Set("enable-admission-plugins", enabledAdmissionPlugins(p)...)
 	args.Set("disable-admission-plugins", disabledAdmissionPlugins(p)...)
-	if util.ConfigOAuthEnabled(p.Authentication) {
+	if reconcilerpolicy.ConfigOAuthEnabled(p.Authentication) {
 		args.Set("authentication-token-webhook-config-file", cpath(authTokenWebhookConfigVolumeName, KubeconfigKey))
 		args.Set("authentication-token-webhook-version", "v1")
 	} else {
@@ -365,7 +365,7 @@ func enabledAdmissionPlugins(cfg KubeAPIServerConfigParams) []string {
 		"storage.openshift.io/CSIInlineVolumeSecurity",
 	}
 
-	if util.ConfigOAuthEnabled(cfg.Authentication) {
+	if reconcilerpolicy.ConfigOAuthEnabled(cfg.Authentication) {
 		enabled = append(enabled, "authorization.openshift.io/RestrictSubjectBindings", "authorization.openshift.io/ValidateRoleBindingRestriction")
 	}
 
@@ -375,7 +375,7 @@ func enabledAdmissionPlugins(cfg KubeAPIServerConfigParams) []string {
 func disabledAdmissionPlugins(cfg KubeAPIServerConfigParams) []string {
 	disabled := []string{}
 
-	if !util.ConfigOAuthEnabled(cfg.Authentication) {
+	if !reconcilerpolicy.ConfigOAuthEnabled(cfg.Authentication) {
 		disabled = append(disabled, "authorization.openshift.io/RestrictSubjectBindings", "authorization.openshift.io/ValidateRoleBindingRestriction")
 	}
 

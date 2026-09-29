@@ -12,6 +12,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -59,7 +60,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args, fmt.Sprintf("--v=%d", resolveOAPIVerbosity(cpContext.HCP)))
-		if !util.HCPOAuthEnabled(cpContext.HCP) {
+		if !reconcilerpolicy.HCPOAuthEnabled(cpContext.HCP) {
 			c.Args = append(c.Args, "--internal-oauth-disabled=true")
 		}
 
