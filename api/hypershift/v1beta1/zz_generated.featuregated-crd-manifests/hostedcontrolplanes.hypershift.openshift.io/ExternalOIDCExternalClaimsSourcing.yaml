@@ -3695,11 +3695,12 @@ spec:
                   allocateNodeCIDRs:
                     description: |-
                       allocateNodeCIDRs controls whether the kube-controller-manager manages node CIDR allocation.
-                      When using networkType=Other, it is recommended to set this field to "Enabled"
-                      if Flannel is used as the CNI, as it relies on this behavior.
+                      When using a third-party CNI (any networkType other than OpenShiftSDN or OVNKubernetes), it is
+                      recommended to set this field to "Enabled" if Flannel is used as the CNI, as it relies on this behavior.
                       Default is "Disabled".
-                      This field can only be set to "Enabled" when NetworkType is "Other". Setting it to "Enabled"
-                      with any other NetworkType will result in a validation error during cluster creation.
+                      This field can only be set to "Enabled" when NetworkType is a third-party CNI (any value other than
+                      OpenShiftSDN or OVNKubernetes). Setting it to "Enabled" with OpenShiftSDN or OVNKubernetes will result
+                      in a validation error during cluster creation.
                     enum:
                     - Enabled
                     - Disabled
@@ -3831,13 +3832,18 @@ spec:
                     default: OVNKubernetes
                     description: |-
                       networkType specifies the SDN provider used for cluster networking.
+                      OVNKubernetes is the supported built-in provider and the default.
+                      OpenShiftSDN is a legacy built-in provider usable only on OCP versions <= 4.10 or the PowerVS platform.
+                      Any other value (for example "Other", "Calico", or "Cilium") selects a third-party CNI: HyperShift does
+                      not deploy a default CNI and the cluster administrator is responsible for installing one. To run a
+                      third-party CNI, setting networkType to "Other" is recommended.
+                      This field is authoritative for the cluster network type. A networkType set within
+                      spec.configuration.network is ignored by HyperShift; only this value is propagated to the
+                      cluster-network-operator.
                       Defaults to OVNKubernetes.
-                      This field is required and immutable.
-                    enum:
-                    - OpenShiftSDN
-                    - Calico
-                    - OVNKubernetes
-                    - Other
+                      This field is immutable.
+                    maxLength: 255
+                    minLength: 1
                     type: string
                     x-kubernetes-validations:
                     - message: networkType is immutable
@@ -3885,9 +3891,10 @@ spec:
                     self.serviceNetwork.all(s, m.cidr != s.cidr)) && self.clusterNetwork.all(c,
                     self.serviceNetwork.all(s, c.cidr != s.cidr)))))
                 - message: allocateNodeCIDRs can only be set to Enabled when networkType
-                    is 'Other'
+                    is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes)
                   rule: 'has(self.allocateNodeCIDRs) && self.allocateNodeCIDRs ==
-                    ''Enabled'' ? self.networkType == ''Other'' : true'
+                    ''Enabled'' ? !(self.networkType in [''OpenShiftSDN'',''OVNKubernetes''])
+                    : true'
               nodeSelector:
                 additionalProperties:
                   type: string
@@ -3921,8 +3928,9 @@ spec:
                           guest cluster and the multus-admission-controller in the management cluster.
                           Default is false (Multus is enabled).
                           This field is immutable.
-                          This field can only be set to true when NetworkType is "Other". Setting it to true
-                          with any other NetworkType will result in a validation error during cluster creation.
+                          This field can only be set to true when NetworkType is a third-party CNI (any value other than
+                          OpenShiftSDN or OVNKubernetes). Setting it to true with OpenShiftSDN or OVNKubernetes will result
+                          in a validation error during cluster creation.
                         type: boolean
                         x-kubernetes-validations:
                         - message: disableMultiNetwork is immutable
@@ -7627,11 +7635,12 @@ spec:
               rule: 'self.platform.type == ''IBMCloud'' ? size(self.services) >= 3
                 : size(self.services) >= 4'
             - message: disableMultiNetwork can only be set to true when networkType
-                is 'Other'
+                is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes)
               rule: '!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator)
                 || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork)
                 || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork
-                || self.networking.networkType == ''Other'''
+                || (has(self.networking) && has(self.networking.networkType) && !(self.networking.networkType
+                in [''OpenShiftSDN'',''OVNKubernetes'']))'
             - message: secretEncryption cannot be removed once configured
               rule: '!has(oldSelf.secretEncryption) || has(self.secretEncryption)'
           status:

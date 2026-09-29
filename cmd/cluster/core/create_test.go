@@ -434,7 +434,7 @@ func TestValidate(t *testing.T) {
 				DisableMultiNetwork: true,
 				NetworkType:         "OVNKubernetes",
 			},
-			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OVNKubernetes')",
+			expectedErr: "disableMultiNetwork is only allowed when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes) (got 'OVNKubernetes')",
 		},
 		{
 			name: "fails when disable-multi-network is true with network-type=OpenShiftSDN",
@@ -446,10 +446,10 @@ func TestValidate(t *testing.T) {
 				DisableMultiNetwork: true,
 				NetworkType:         "OpenShiftSDN",
 			},
-			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OpenShiftSDN')",
+			expectedErr: "disableMultiNetwork is only allowed when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes) (got 'OpenShiftSDN')",
 		},
 		{
-			name: "fails when disable-multi-network is true with network-type=Calico",
+			name: "passes when disable-multi-network is true with a third-party network-type=Calico",
 			rawOpts: &RawCreateOptions{
 				Name:                "test-hc",
 				Namespace:           "test-hc",
@@ -458,7 +458,7 @@ func TestValidate(t *testing.T) {
 				DisableMultiNetwork: true,
 				NetworkType:         "Calico",
 			},
-			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'Calico')",
+			expectedErr: "",
 		},
 		{
 			name: "When ovn-kubernetes-mtu is set with OVNKubernetes, it should pass validation",
@@ -554,7 +554,7 @@ func TestValidate(t *testing.T) {
 				AllocateNodeCIDRs: true,
 				NetworkType:       "OVNKubernetes",
 			},
-			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'OVNKubernetes')",
+			expectedErr: "allocateNodeCIDRs is only allowed when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes) (got 'OVNKubernetes')",
 		},
 		{
 			name: "fails when allocate-node-cidrs is true with network-type=OpenShiftSDN",
@@ -566,10 +566,10 @@ func TestValidate(t *testing.T) {
 				AllocateNodeCIDRs: true,
 				NetworkType:       "OpenShiftSDN",
 			},
-			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'OpenShiftSDN')",
+			expectedErr: "allocateNodeCIDRs is only allowed when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes) (got 'OpenShiftSDN')",
 		},
 		{
-			name: "fails when allocate-node-cidrs is true with network-type=Calico",
+			name: "passes when allocate-node-cidrs is true with a third-party network-type=Calico",
 			rawOpts: &RawCreateOptions{
 				Name:              "test-hc",
 				Namespace:         "test-hc",
@@ -578,7 +578,7 @@ func TestValidate(t *testing.T) {
 				AllocateNodeCIDRs: true,
 				NetworkType:       "Calico",
 			},
-			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'Calico')",
+			expectedErr: "",
 		},
 	}
 	for _, test := range tests {

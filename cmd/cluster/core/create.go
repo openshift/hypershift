@@ -72,7 +72,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster. If omitted for an HCP KubeVirt cluster, this defaults to the management cluster's apps domain.")
 	flags.StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. Use 'none' for an empty prefix")
 	flags.StringVar(&opts.ExternalDNSDomain, "external-dns-domain", opts.ExternalDNSDomain, "Sets hostname to opinionated values in the specified domain for services with publishing type LoadBalancer or Route.")
-	flags.StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico, OVNKubernetes, OpenShiftSDN or Other.")
+	flags.StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Specifies the cluster SDN provider. OVNKubernetes (default) and OpenShiftSDN (legacy) are built-in; any other value (e.g. Other) selects a third-party CNI that you must install yourself.")
 	flags.StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
 	flags.StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
 	flags.StringVar(&opts.ControlPlaneAvailabilityPolicy, "control-plane-availability-policy", opts.ControlPlaneAvailabilityPolicy, "Availability policy for hosted cluster components. Supported options: SingleReplica, HighlyAvailable")
@@ -116,7 +116,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.BoolVar(&opts.DisableMultiNetwork, "disable-multi-network", opts.DisableMultiNetwork, "Disables the Multus CNI plugin and related components in the hosted cluster")
 	flags.Int32Var(&opts.OVNKubernetesMTU, "ovn-kubernetes-mtu", opts.OVNKubernetesMTU, "The MTU to use for the OVN-Kubernetes tunnel interface. Must be 100 bytes smaller than the uplink MTU. Only valid when network-type is OVNKubernetes. When unset, the cluster-network-operator auto-detects the MTU.")
 	flags.BoolVar(&opts.VersionCheck, "version-check", opts.VersionCheck, "Checks version of CLI and Hypershift operator and blocks create if mismatched")
-	flags.BoolVar(&opts.AllocateNodeCIDRs, "allocate-node-cidrs", opts.AllocateNodeCIDRs, "When networkType=Other, it's recommended to set this field to 'true' when using Flannel as the CNI.")
+	flags.BoolVar(&opts.AllocateNodeCIDRs, "allocate-node-cidrs", opts.AllocateNodeCIDRs, "Only valid with a third-party CNI (any network-type other than OpenShiftSDN or OVNKubernetes); recommended to set to 'true' when using Flannel as the CNI.")
 }
 
 // BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
@@ -895,8 +895,11 @@ func (opts *RawCreateOptions) validateCapabilities() error {
 }
 
 func (opts *RawCreateOptions) validateNetworkOptions() error {
-	if opts.DisableMultiNetwork && opts.NetworkType != "Other" {
-		return fmt.Errorf("disableMultiNetwork is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
+	// disableMultiNetwork and allocateNodeCIDRs are only meaningful with a third-party CNI,
+	// i.e. any networkType other than the built-in OpenShiftSDN or OVNKubernetes providers.
+	isBuiltInNetworkType := opts.NetworkType == string(hyperv1.OpenShiftSDN) || opts.NetworkType == string(hyperv1.OVNKubernetes)
+	if opts.DisableMultiNetwork && isBuiltInNetworkType {
+		return fmt.Errorf("disableMultiNetwork is only allowed when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes) (got '%s')", opts.NetworkType)
 	}
 	if opts.OVNKubernetesMTU != 0 {
 		if opts.NetworkType != string(hyperv1.OVNKubernetes) {
@@ -906,8 +909,8 @@ func (opts *RawCreateOptions) validateNetworkOptions() error {
 			return fmt.Errorf("--ovn-kubernetes-mtu must be between 576 and 9216 (got %d)", opts.OVNKubernetesMTU)
 		}
 	}
-	if opts.AllocateNodeCIDRs && opts.NetworkType != "Other" {
-		return fmt.Errorf("allocateNodeCIDRs is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
+	if opts.AllocateNodeCIDRs && isBuiltInNetworkType {
+		return fmt.Errorf("allocateNodeCIDRs is only allowed when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes) (got '%s')", opts.NetworkType)
 	}
 	return nil
 }

@@ -47171,8 +47171,9 @@ in the hosted cluster. This prevents the installation of multus daemon sets in t
 guest cluster and the multus-admission-controller in the management cluster.
 Default is false (Multus is enabled).
 This field is immutable.
-This field can only be set to true when NetworkType is &ldquo;Other&rdquo;. Setting it to true
-with any other NetworkType will result in a validation error during cluster creation.</p>
+This field can only be set to true when NetworkType is a third-party CNI (any value other than
+OpenShiftSDN or OVNKubernetes). Setting it to true with OpenShiftSDN or OVNKubernetes will result
+in a validation error during cluster creation.</p>
 </td>
 </tr>
 <tr>
@@ -47276,8 +47277,16 @@ NetworkType
 <td>
 <em>(Optional)</em>
 <p>networkType specifies the SDN provider used for cluster networking.
+OVNKubernetes is the supported built-in provider and the default.
+OpenShiftSDN is a legacy built-in provider usable only on OCP versions &lt;= 4.10 or the PowerVS platform.
+Any other value (for example &ldquo;Other&rdquo;, &ldquo;Calico&rdquo;, or &ldquo;Cilium&rdquo;) selects a third-party CNI: HyperShift does
+not deploy a default CNI and the cluster administrator is responsible for installing one. To run a
+third-party CNI, setting networkType to &ldquo;Other&rdquo; is recommended.
+This field is authoritative for the cluster network type. A networkType set within
+spec.configuration.network is ignored by HyperShift; only this value is propagated to the
+cluster-network-operator.
 Defaults to OVNKubernetes.
-This field is required and immutable.</p>
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -47307,11 +47316,12 @@ AllocateNodeCIDRsMode
 <td>
 <em>(Optional)</em>
 <p>allocateNodeCIDRs controls whether the kube-controller-manager manages node CIDR allocation.
-When using networkType=Other, it is recommended to set this field to &ldquo;Enabled&rdquo;
-if Flannel is used as the CNI, as it relies on this behavior.
+When using a third-party CNI (any networkType other than OpenShiftSDN or OVNKubernetes), it is
+recommended to set this field to &ldquo;Enabled&rdquo; if Flannel is used as the CNI, as it relies on this behavior.
 Default is &ldquo;Disabled&rdquo;.
-This field can only be set to &ldquo;Enabled&rdquo; when NetworkType is &ldquo;Other&rdquo;. Setting it to &ldquo;Enabled&rdquo;
-with any other NetworkType will result in a validation error during cluster creation.</p>
+This field can only be set to &ldquo;Enabled&rdquo; when NetworkType is a third-party CNI (any value other than
+OpenShiftSDN or OVNKubernetes). Setting it to &ldquo;Enabled&rdquo; with OpenShiftSDN or OVNKubernetes will result
+in a validation error during cluster creation.</p>
 </td>
 </tr>
 </tbody>
@@ -55630,7 +55640,10 @@ NetworkFilter
 <a href="#hypershift.openshift.io/v1beta1.ClusterNetworking">ClusterNetworking</a>)
 </p>
 <p>
-<p>NetworkType specifies the SDN provider used for cluster networking.</p>
+<p>NetworkType specifies the SDN provider used for cluster networking.
+Any string value is accepted to support third-party network providers, mirroring how the
+cluster-network-operator treats this value. OVNKubernetes and OpenShiftSDN are the only values
+that receive special handling by HyperShift; any other value is treated as a third-party CNI.</p>
 </p>
 <table>
 <thead>
@@ -55640,16 +55653,22 @@ NetworkFilter
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;Calico&#34;</p></td>
-<td><p>Calico specifies Calico as the SDN provider</p>
+<td><p>Calico specifies Calico as the SDN provider.</p>
+<p>Deprecated: Calico is not a HyperShift built-in and receives no special handling; a
+HostedCluster created with this value behaves identically to &ldquo;Other&rdquo;. To run Calico (or any
+third-party CNI), set networkType to &ldquo;Other&rdquo;. This constant is retained only for API
+backward compatibility and may be removed in a future API version.</p>
 </td>
 </tr><tr><td><p>&#34;OVNKubernetes&#34;</p></td>
-<td><p>OVNKubernetes specifies OVN as the SDN provider</p>
+<td><p>OVNKubernetes specifies OVN as the SDN provider. This is the supported built-in provider.</p>
 </td>
 </tr><tr><td><p>&#34;OpenShiftSDN&#34;</p></td>
-<td><p>OpenShiftSDN specifies OpenShiftSDN as the SDN provider</p>
+<td><p>OpenShiftSDN specifies OpenShiftSDN as the SDN provider.
+This is a legacy provider usable only on OCP versions &lt;= 4.10 or the PowerVS platform.</p>
 </td>
 </tr><tr><td><p>&#34;Other&#34;</p></td>
-<td><p>Other specifies an undefined SDN provider</p>
+<td><p>Other specifies a third-party (bring-your-own) SDN provider. When set, HyperShift skips
+deploying a default CNI and the cluster administrator is responsible for installing one.</p>
 </td>
 </tr></tbody>
 </table>
