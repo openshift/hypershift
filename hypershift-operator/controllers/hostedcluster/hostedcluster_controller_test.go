@@ -8321,6 +8321,48 @@ func TestDeleteOrcImagesDuringHostedClusterDeletion(t *testing.T) {
 	}
 }
 
+func TestDelete_WhenGCPPSCExists_ItShouldDeleteAndWaitForCleanup(t *testing.T) {
+	g := NewWithT(t)
+	const (
+		hcNamespace = "test-namespace"
+		hcName      = "test-cluster"
+		pscName     = "private-router"
+	)
+	cpNamespace := hcpmanifests.HostedControlPlaneNamespace(hcNamespace, hcName)
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.GCPPlatform,
+				GCP:  &hyperv1.GCPPlatformSpec{},
+			},
+		},
+	}
+	hcp := controlplaneoperator.HostedControlPlane(cpNamespace, hcName)
+	psc := &hyperv1.GCPPrivateServiceConnect{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       pscName,
+			Namespace:  cpNamespace,
+			Finalizers: []string{"hypershift.openshift.io/gcp-psc-customer"},
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hc, hcp, psc).Build()
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+	}
+
+	done, err := r.delete(t.Context(), hc)
+	g.Expect(err).ToNot(HaveOccurred(), "HostedCluster delete operation should not return an error")
+	g.Expect(done).To(BeFalse(), "deletion should wait for PSC cleanup to complete")
+
+	updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+	g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(psc), updatedPSC)).To(Succeed(), "PSC CR should still exist while being deleted")
+	g.Expect(updatedPSC.DeletionTimestamp).ToNot(BeNil(), "PSC CR should be marked for deletion")
+	g.Expect(updatedPSC.Finalizers).To(ContainElement("hypershift.openshift.io/gcp-psc-customer"), "PSC finalizer should remain to allow CPO to clean up GCP resources")
+}
+
 func TestKasServingCertHashFromEndpoint(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
