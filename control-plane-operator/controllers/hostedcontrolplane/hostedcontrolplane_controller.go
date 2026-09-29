@@ -2974,9 +2974,10 @@ func (r *HostedControlPlaneReconciler) reconcileGCPWorkerFirewallRules(ctx conte
 // destroyGCPWorkerFirewallRules deletes the managed GCP worker firewall rule
 // during HCP deletion. A missing rule is success, and an ownership conflict is a
 // terminal skip (the unowned rule is left untouched so finalization can
-// proceed). Any other failure (including WIF credentials not yet being
-// available) returns an error so the caller retains the HCP finalizer and
-// retries.
+// proceed). If WIF credentials are unavailable, deletion normally returns an
+// error so the caller retains the HCP finalizer and retries; see
+// gcpFirewallSkipOnWIFUnavailableReason for the narrow cases where it is safe to
+// skip instead.
 func (r *HostedControlPlaneReconciler) destroyGCPWorkerFirewallRules(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	if hcp.Spec.Platform.Type != hyperv1.GCPPlatform {
 		return nil
@@ -2987,7 +2988,36 @@ func (r *HostedControlPlaneReconciler) destroyGCPWorkerFirewallRules(ctx context
 	if err != nil {
 		return fmt.Errorf("failed to build GCP firewall manager: %w", err)
 	}
-	return manager.Delete(ctx)
+	return manager.Delete(ctx, gcpFirewallSkipOnWIFUnavailableReason(hcp))
+}
+
+// gcpFirewallSkipOnWIFUnavailableReason decides whether it is safe to let
+// firewall deletion proceed when GCP WIF credentials are unavailable, and
+// returns a non-empty reason if so.
+//
+// The managed firewall rule can only ever have been created after a Reconcile
+// call obtained a WIF-backed compute client: every Reconcile path sets the
+// GCPFirewallRulesReady condition before making its first GCP API call. So if
+// the condition has never been recorded, or its Reason is still
+// GCPFirewallWaitingForCredentials (the last state Reconcile can reach before
+// ever calling the Compute API), the rule was never created and deletion is a
+// safe no-op. This inference covers the common case (WIF never becomes
+// available before the HCP is deleted) but cannot rule out WIF having flapped
+// available then unavailable again after a rule was created, so an explicit,
+// manually-set annotation remains available as a documented escape hatch for
+// that residual case.
+func gcpFirewallSkipOnWIFUnavailableReason(hcp *hyperv1.HostedControlPlane) string {
+	if hcp.Annotations[hyperv1.GCPFirewallSkipDeletionAnnotation] == "true" {
+		return "explicit " + hyperv1.GCPFirewallSkipDeletionAnnotation + " annotation is set"
+	}
+	cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.GCPFirewallRulesReady))
+	if cond == nil {
+		return "GCPFirewallRulesReady condition was never recorded; the rule was never created"
+	}
+	if cond.Reason == hyperv1.GCPFirewallWaitingForCredentials {
+		return "GCPFirewallRulesReady last reported waiting-for-credentials; the rule was never created"
+	}
+	return ""
 }
 
 func awsSecurityGroupFilters(infraID string) []ec2types.Filter {

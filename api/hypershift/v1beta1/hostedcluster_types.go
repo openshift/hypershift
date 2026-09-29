@@ -414,6 +414,15 @@ const (
 	// namespace during hosted cluster deletion when this annotation is set to the value "true".
 	SkipControlPlaneNamespaceDeletionAnnotation = "hypershift.openshift.io/skip-delete-hosted-controlplane-namespace"
 
+	// GCPFirewallSkipDeletionAnnotation is a manual escape hatch for the GCP worker
+	// firewall rule finalizer. If GCP Workload Identity Federation credentials
+	// never become available, the control-plane-operator cannot even check
+	// whether the managed rule exists, so it retains the HCP finalizer and
+	// retries indefinitely. Set this annotation to "true" only after manually
+	// confirming (e.g. via gcloud) that no stale rule is left behind in the
+	// project, to let deletion proceed anyway.
+	GCPFirewallSkipDeletionAnnotation = "hypershift.openshift.io/skip-gcp-firewall-rule-cleanup"
+
 	// DisableIgnitionServerAnnotation controls skipping of the ignition server deployment.
 	DisableIgnitionServerAnnotation = "hypershift.openshift.io/disable-ignition-server"
 
