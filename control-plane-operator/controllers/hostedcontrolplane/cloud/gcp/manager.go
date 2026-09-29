@@ -322,7 +322,15 @@ func (m *FirewallManager) waitOp(ctx context.Context, client firewallClient, op 
 // is a terminal skip: it is logged and returns nil so the caller can finish
 // deletion, since retrying can never change the rule's ownership. Any other
 // failure returns an error so the caller retains the finalizer and retries.
-func (m *FirewallManager) Delete(ctx context.Context) error {
+//
+// skipOnWIFUnavailableReason lets the caller allow deletion to proceed even
+// though WIF credentials are unavailable (and the rule's existence therefore
+// cannot be checked). It must be empty unless the caller has independently
+// established that this is safe (e.g. the rule was never created, or an
+// operator has manually confirmed no rule is left behind); passing a non-empty
+// reason when that does not hold risks leaking the firewall rule. When empty,
+// Delete returns an error so the caller retains the finalizer and retries.
+func (m *FirewallManager) Delete(ctx context.Context, skipOnWIFUnavailableReason string) error {
 	if err := m.validateInputs(); err != nil {
 		return fmt.Errorf("cannot delete firewall rule: %w", err)
 	}
@@ -338,6 +346,10 @@ func (m *FirewallManager) Delete(ctx context.Context) error {
 
 	client, err := m.getClient(ctx)
 	if err != nil {
+		if errors.Is(err, errWIFUnavailable) && skipOnWIFUnavailableReason != "" {
+			m.logger.Info("WARNING: skipping firewall deletion while GCP WIF credentials are unavailable: " + skipOnWIFUnavailableReason)
+			return nil //nolint:nilerr // caller has established it is safe to skip; see skipOnWIFUnavailableReason doc
+		}
 		return fmt.Errorf("cannot delete firewall rule: %w", err)
 	}
 
