@@ -135,20 +135,43 @@ func EnsureGCPWorkerFirewallTest(getTestCtx internal.TestContextGetter) {
 			clientset, err := kubernetes.NewForConfig(restConfig)
 			Expect(err).NotTo(HaveOccurred(), "failed to create hosted cluster kubernetes clientset")
 
+			// Determine the *intended* worker count from the NodePool specs, not
+			// the currently-observed Ready count: the CI job's create chain
+			// defaults to two workers, so if a node is transiently NotReady (for
+			// example because the very firewall rule under test is broken), a
+			// Skip here would silently mask the failure instead of catching it.
+			// Only genuinely single-worker configurations should skip; a
+			// configuration that expects >=2 workers must wait for them and fail
+			// if they never become Ready.
+			npList := &hyperv1.NodePoolList{}
+			Expect(tc.MgmtClient.List(tc.Context, npList, crclient.InNamespace(hc.Namespace))).To(Succeed(),
+				"failed to list NodePools")
+			expectedWorkers := int32(0)
+			for i := range npList.Items {
+				np := &npList.Items[i]
+				if np.Spec.ClusterName == hc.Name && np.DeletionTimestamp.IsZero() && np.Spec.Replicas != nil {
+					expectedWorkers += *np.Spec.Replicas
+				}
+			}
+			if expectedWorkers < 2 {
+				Skip(fmt.Sprintf("cross-node firewall test requires NodePools specifying >=2 workers, got %d", expectedWorkers))
+			}
+
 			// Require at least two schedulable, Ready worker nodes for a
 			// cross-node test. Counting all node entries would include cordoned
 			// or NotReady nodes that can't run the probe workload.
 			nodeList := &corev1.NodeList{}
-			Expect(hcClient.List(tc.Context, nodeList)).To(Succeed())
-			eligibleNodes := 0
-			for i := range nodeList.Items {
-				if isNodeSchedulableAndReady(&nodeList.Items[i]) {
-					eligibleNodes++
+			Eventually(func(g Gomega) {
+				g.Expect(hcClient.List(tc.Context, nodeList)).To(Succeed())
+				eligibleNodes := 0
+				for i := range nodeList.Items {
+					if isNodeSchedulableAndReady(&nodeList.Items[i]) {
+						eligibleNodes++
+					}
 				}
-			}
-			if eligibleNodes < 2 {
-				Skip(fmt.Sprintf("cross-node firewall test requires >=2 schedulable Ready worker nodes, got %d", eligibleNodes))
-			}
+				g.Expect(eligibleNodes).To(BeNumerically(">=", 2),
+					"expected >=2 schedulable Ready worker nodes (NodePools specify %d)", expectedWorkers)
+			}, 10*time.Minute, 15*time.Second).Should(Succeed())
 
 			// Use a generated namespace name so this test only ever owns (and
 			// deletes) a namespace it created, never one that pre-exists.
