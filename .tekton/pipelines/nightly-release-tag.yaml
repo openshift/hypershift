@@ -16,11 +16,26 @@ spec:
       spec.data.mapping.components[]:
         - name: <snapshot component name>
           destination-imagestream: <namespace>/<imagestream>
-          release-version: <version prefix>
+          release-version: <version prefix>   # optional, see below
     apply-mapping deep-merges those keys into the matching snapshot components,
     so tag-image reads containerImage + destination-imagestream + release-version
     directly off each component. Components present in the snapshot but not the
     mapping (and vice-versa) are dropped by apply-mapping.
+
+    release-version may be omitted, in which case tag-image derives it by running
+    git describe --tags against the component's own source.git.revision - the
+    commit the image was built from, not the branch head - and dropping a leading
+    v. This needs egress from the tag step to the component's git remote. A
+    component with neither a mapped release-version nor a describable revision is
+    still a hard error.
+
+    The nightly tag is the version plus a semver pre-release segment, and how that
+    segment is introduced depends on the version:
+      0.0.1                 -> 0.0.1-0.nightly-<ts>
+      0.1.85-98-g812f9129e  -> 0.1.85-98-g812f9129e.nightly-<ts>
+    A described revision that is not an exact tag already carries a pre-release
+    segment (the commit distance and hash), so the nightly extends it with a dot
+    rather than opening a second one with -0.
 
     NOTE: this pipeline lives in the openshift/hypershift repo but references
     tasks/stepactions from the release-service-catalog. Those refs use the
@@ -75,7 +90,8 @@ spec:
   # from the ReleasePlanAdmission spec.data.mapping.components[] entries, which
   # apply-mapping merges into the matching snapshot components. tag-image reads
   # those merged values off each component, a component missing
-  # containerImage/destination-imagestream/release-version is a hard error.
+  # containerImage/destination-imagestream is a hard error. release-version is
+  # optional: without it tag-image describes the component's source.git.revision.
   - name: ci-cluster-credentials-secret
     type: string
     description: Name of the Secret in the pipeline namespace holding the CI cluster kubeconfig under key 'kubeconfig'.
@@ -323,6 +339,45 @@ spec:
           # One timestamp for the whole run so all components share a nightly tag.
           TIMESTAMP=$(date -u +%Y-%m-%d-%H%M%S)
 
+          # A mapping entry may omit release-version. Rather than fail the release, derive
+          # one from the tag history of the commit the image was actually built from, which
+          # the snapshot records per component under source.git. Describing that revision
+          # rather than the branch head matters: main moves on after a build, and the tag
+          # has to describe the artifact being tagged.
+          #
+          # Clones are cached per repository under the workdir, so a run with several
+          # components from one repo clones once.
+          GIT_CACHE=/var/workdir/git-cache
+          mkdir -p "${GIT_CACHE}"
+
+          # describe_source_revision <url> <revision>, printing the describe output on
+          # stdout and returning non-zero if the revision cannot be described. Callers
+          # fall back to the hard error below, so every git failure here is non-fatal
+          # despite the set -e above.
+          describe_source_revision() {
+            local url="$1" revision="$2" dir
+            # The URL as a directory name, so the cache needs no hashing tool.
+            dir="${GIT_CACHE}/$(printf '%s' "${url}" | tr -c '[:alnum:]._-' '_')"
+
+            if [ ! -d "${dir}" ]; then
+              # Blobless and with no checkout: describe walks commits and tags only, so
+              # file contents are never needed and this stays a fraction of a full clone.
+              if ! git clone --quiet --filter=blob:none --no-checkout "${url}" "${dir}" >&2; then
+                rm -rf "${dir}"
+                return 1
+              fi
+            fi
+
+            # A clone fetches the tags and branch heads, but the built revision can be
+            # absent from them if its branch was since deleted or force-pushed, so ask
+            # the remote for it directly before giving up.
+            if ! git -C "${dir}" cat-file -e "${revision}^{commit}" 2>/dev/null; then
+              git -C "${dir}" fetch --quiet --tags --filter=blob:none origin "${revision}" >&2 || return 1
+            fi
+
+            git -C "${dir}" describe --tags "${revision}" 2>/dev/null
+          }
+
           for i in $(seq 0 $((NUM - 1))); do
             component=$(jq -c --argjson i "$i" '.components[$i]' "${SNAPSHOT_SPEC_FILE}")
             NAME=$(jq -r '.name // empty' <<< "${component}")
@@ -330,14 +385,50 @@ spec:
             DESTINATION_IMAGESTREAM=$(jq -r '."destination-imagestream" // empty' <<< "${component}")
             RELEASE_VERSION=$(jq -r '."release-version" // empty' <<< "${component}")
 
+            # The nightly suffix is a semver pre-release segment, and how it has to be
+            # introduced depends on whether the version already has one. A mapped
+            # release-version is a plain release like 0.0.1, so the -0 is what opens the
+            # segment: 0.0.1-0.nightly-<ts>. Reset per component, because the branch below
+            # overrides it.
+            NIGHTLY_SUFFIX="-0.nightly-${TIMESTAMP}"
+
+            if [ -z "${RELEASE_VERSION}" ]; then
+              SOURCE_URL=$(jq -r '.source.git.url // empty' <<< "${component}")
+              SOURCE_REVISION=$(jq -r '.source.git.revision // empty' <<< "${component}")
+              if [ -n "${SOURCE_URL}" ] && [ -n "${SOURCE_REVISION}" ]; then
+                echo "No release-version in the mapping for '${NAME:-<unnamed>}'; describing ${SOURCE_URL} at ${SOURCE_REVISION}"
+                RELEASE_VERSION=$(describe_source_revision "${SOURCE_URL}" "${SOURCE_REVISION}" || true)
+                # git describe reports the tag verbatim, and this repository's are v-prefixed.
+                # The imagestream tag is built from a bare version, so drop a leading v.
+                RELEASE_VERSION="${RELEASE_VERSION#v}"
+                if [ -n "${RELEASE_VERSION}" ]; then
+                  echo "Derived release-version: ${RELEASE_VERSION}"
+                  # A described version off a tag is already a pre-release, because the
+                  # commit distance and hash git appends are one: 0.1.85-98-g812f9129e.
+                  # A second -0 would not open a second segment, it would just extend that
+                  # one with a confusing 0, so append to it with a dot instead.
+                  #
+                  # An exact tag match has no suffix and so is a plain release, and takes
+                  # the -0 for the same reason a mapped version does.
+                  case "${RELEASE_VERSION}" in
+                    *-*) NIGHTLY_SUFFIX=".nightly-${TIMESTAMP}" ;;
+                  esac
+                else
+                  echo "WARNING: could not describe ${SOURCE_URL} at ${SOURCE_REVISION}"
+                fi
+              fi
+            fi
+
             if [ -z "${IMAGE}" ] || [ -z "${DESTINATION_IMAGESTREAM}" ] || [ -z "${RELEASE_VERSION}" ]; then
               echo "ERROR: component '${NAME:-<unnamed>}' is missing containerImage, destination-imagestream or release-version after mapping."
               echo "  Ensure the RPA spec.data.mapping.components[] entry for '${NAME}' sets destination-imagestream and release-version."
+              echo "  release-version may be omitted only if the component records source.git.url and source.git.revision"
+              echo "  and that revision can be described against a tag in its repository."
               echo "  component: ${component}"
               exit 1
             fi
 
-            TAG="${RELEASE_VERSION}-0.nightly-${TIMESTAMP}"
+            TAG="${RELEASE_VERSION}${NIGHTLY_SUFFIX}"
             IMAGE_STREAM_TAG="${DESTINATION_IMAGESTREAM}:${TAG}"
 
             echo "--- ${NAME} ---"
