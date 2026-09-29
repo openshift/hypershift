@@ -493,6 +493,17 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
+			name: "When event TTL is configured, it should set event-ttl argument",
+			params: KubeAPIServerConfigParams{
+				EventTTL: "60m",
+			},
+			expected: modifyKasConfig(defaultKASConfig(),
+				func(kasc *kcpv1.KubeAPIServerConfig) {
+					kasc.APIServerArguments["event-ttl"] = kcpv1.Arguments{"60m"}
+				},
+			),
+		},
+		{
 			name: "When max mutating requests in flight is configured, it should set the argument",
 			params: KubeAPIServerConfigParams{
 				MaxMutatingRequestsInflight: "20",

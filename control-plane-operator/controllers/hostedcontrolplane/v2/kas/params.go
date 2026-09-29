@@ -24,6 +24,7 @@ const (
 	defaultMaxRequestsInflight         = 3000
 	defaultMaxMutatingRequestsInflight = 1000
 	defaultGoAwayChance                = 0.001
+	defaultEventTTL                    = "3h"
 )
 
 type KubeAPIServerConfigParams struct {
@@ -55,6 +56,7 @@ type KubeAPIServerConfigParams struct {
 	MaxRequestsInflight              string
 	MaxMutatingRequestsInflight      string
 	GoAwayChance                     string
+	EventTTL                         string
 }
 
 func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
@@ -148,6 +150,8 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 		kasConfig.GoAwayChance = hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]
 	}
 
+	kasConfig.EventTTL = resolveEventTTL(hcp)
+
 	if maxTokenExpiration := hcp.Annotations[hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration]; maxTokenExpiration != "" {
 		kasConfig.ServiceAccountMaxTokenExpiration = maxTokenExpiration
 	}
@@ -157,6 +161,17 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 	}
 
 	return kasConfig
+}
+
+// resolveEventTTL returns the --event-ttl value for the kube-apiserver. The platform owns the
+// default, so spec.operatorConfiguration.kubeAPIServer.eventTTLMinutes carries no CRD default and
+// its zero value means "no opinion". The field is bounded to [5, 180] by the CRD schema, so an
+// out-of-range value is rejected at admission and never reaches this code.
+func resolveEventTTL(hcp *hyperv1.HostedControlPlane) string {
+	if hcp.Spec.OperatorConfiguration != nil && hcp.Spec.OperatorConfiguration.KubeAPIServer.EventTTLMinutes > 0 {
+		return fmt.Sprintf("%dm", hcp.Spec.OperatorConfiguration.KubeAPIServer.EventTTLMinutes)
+	}
+	return defaultEventTTL
 }
 
 func tlsSecurityProfile(configuration *hyperv1.ClusterConfiguration) *configv1.TLSSecurityProfile {
