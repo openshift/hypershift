@@ -5242,20 +5242,51 @@ func TestRouterComponentComesAfterRouteCreatingComponents(t *testing.T) {
 }
 
 func TestValidateAzureKMSConfig(t *testing.T) {
+	// Built from the same manifest helper the reconciler looks up, so the test
+	// cannot pass against a Service the production code would not find.
+	privateRouterService := func(clusterIP string) *corev1.Service {
+		svc := manifests.PrivateRouterService("hcp-namespace")
+		svc.Spec.ClusterIP = clusterIP
+		svc.Spec.Ports = []corev1.ServicePort{{Name: "https", Port: 443, Protocol: corev1.ProtocolTCP}}
+		return svc
+	}
+
 	tests := []struct {
 		name              string
 		keyVaultAccess    hyperv1.AzureKeyVaultAccessType
+		objects           []client.Object
 		expectedStatus    metav1.ConditionStatus
 		expectedReason    string
 		expectMsgContains string
 		expectMsgExcludes string
 	}{
 		{
-			name:              "When KeyVaultAccess is Private, it should short-circuit to Unknown",
+			// Without a relay there is no way to tell whether the vault is
+			// reachable, so the condition must stay Unknown and retry.
+			name:              "When KeyVaultAccess is Private and the private router does not exist, it should report Unknown",
 			keyVaultAccess:    hyperv1.AzureKeyVaultPrivate,
 			expectedStatus:    metav1.ConditionUnknown,
 			expectedReason:    hyperv1.StatusUnknownReason,
-			expectMsgContains: "not reachable from the management cluster",
+			expectMsgContains: "cannot be validated yet",
+		},
+		{
+			name:              "When KeyVaultAccess is Private and the private router has no ClusterIP, it should report Unknown",
+			keyVaultAccess:    hyperv1.AzureKeyVaultPrivate,
+			objects:           []client.Object{privateRouterService("")},
+			expectedStatus:    metav1.ConditionUnknown,
+			expectedReason:    hyperv1.StatusUnknownReason,
+			expectMsgContains: "no ClusterIP",
+		},
+		{
+			// With a relay available the private path no longer short-circuits:
+			// it proceeds to credential validation like the public path, which
+			// fails here because no credentials are configured.
+			name:              "When KeyVaultAccess is Private and the private router is ready, it should proceed to credential validation",
+			keyVaultAccess:    hyperv1.AzureKeyVaultPrivate,
+			objects:           []client.Object{privateRouterService("172.30.0.100")},
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.InvalidAzureCredentialsReason,
+			expectMsgExcludes: "cannot be validated yet",
 		},
 		{
 			// Public falls through to credential validation, which fails because no client is configured.
@@ -5263,7 +5294,7 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 			keyVaultAccess:    hyperv1.AzureKeyVaultPublic,
 			expectedStatus:    metav1.ConditionFalse,
 			expectedReason:    hyperv1.InvalidAzureCredentialsReason,
-			expectMsgExcludes: "not reachable from the management cluster",
+			expectMsgExcludes: "cannot be validated yet",
 		},
 	}
 
@@ -5315,7 +5346,9 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 				},
 			}
 
-			r := &HostedControlPlaneReconciler{}
+			r := &HostedControlPlaneReconciler{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.objects...).Build(),
+			}
 			r.validateAzureKMSConfig(t.Context(), hcp)
 
 			g := NewWithT(t)
@@ -5331,6 +5364,61 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 			if tc.expectMsgExcludes != "" {
 				g.Expect(cond.Message).ToNot(ContainSubstring(tc.expectMsgExcludes))
 			}
+		})
+	}
+}
+
+func TestKeyVaultRelayTransport(t *testing.T) {
+	const keyVaultFQDN = "test-kms-keyvault.vault.azure.net"
+
+	// Stand in for the private router: whatever the transport dials lands here.
+	relay, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer relay.Close()
+
+	tests := []struct {
+		name        string
+		address     string
+		expectRelay bool
+	}{
+		{
+			name:        "When the address is the Key Vault FQDN, it should dial the relay",
+			address:     net.JoinHostPort(keyVaultFQDN, "443"),
+			expectRelay: true,
+		},
+		{
+			name:        "When the Key Vault FQDN differs only in case, it should dial the relay",
+			address:     net.JoinHostPort(strings.ToUpper(keyVaultFQDN), "443"),
+			expectRelay: true,
+		},
+		{
+			name:        "When the address is another host, it should dial that host directly",
+			address:     "login.microsoftonline.com:443",
+			expectRelay: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			transport := keyVaultRelayTransport(keyVaultFQDN, relay.Addr().String())
+
+			conn, err := transport.DialContext(t.Context(), "tcp", tc.address)
+			if !tc.expectRelay {
+				// Unrelated hosts must not be redirected. Asserting on a real
+				// dial would need network access, so assert that whatever
+				// happened, it did not land on the relay.
+				if err == nil {
+					g.Expect(conn.RemoteAddr().String()).ToNot(Equal(relay.Addr().String()), "unrelated host was redirected to the relay")
+					conn.Close()
+				}
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred(), "dial to the Key Vault FQDN should reach the relay")
+			defer conn.Close()
+			g.Expect(conn.RemoteAddr().String()).To(Equal(relay.Addr().String()))
 		})
 	}
 }
