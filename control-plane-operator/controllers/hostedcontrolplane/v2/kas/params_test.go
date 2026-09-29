@@ -128,6 +128,7 @@ func defaultKubeAPIServerConfigParams() KubeAPIServerConfigParams {
 		MaxRequestsInflight:          fmt.Sprint(defaultMaxRequestsInflight),
 		MaxMutatingRequestsInflight:  fmt.Sprint(defaultMaxMutatingRequestsInflight),
 		GoAwayChance:                 fmt.Sprint(defaultGoAwayChance),
+		EventTTL:                     defaultEventTTL,
 		APIServerSTSDirectives:       "max-age=31536000,includeSubDomains,preload",
 	}
 }
@@ -314,6 +315,52 @@ func TestNewConfigParams(t *testing.T) {
 				params := defaultKubeAPIServerConfigParams()
 				params.FeatureGates = featureGates
 				params.GoAwayChance = "0.002"
+				return params
+			},
+		},
+		{
+			name: "When the event TTL annotation is set, it should convert minutes to a duration",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Annotations = map[string]string{
+					hyperv1.KubeAPIServerEventTTLMinutes: "60",
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.EventTTL = "60m"
+				return params
+			},
+		},
+		{
+			name: "When the event TTL annotation is out of range, it should keep the default",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Annotations = map[string]string{
+					hyperv1.KubeAPIServerEventTTLMinutes: "240",
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				return params
+			},
+		},
+		{
+			name: "When the event TTL annotation is not a number, it should keep the default",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Annotations = map[string]string{
+					hyperv1.KubeAPIServerEventTTLMinutes: "30m",
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
 				return params
 			},
 		},
@@ -579,6 +626,69 @@ func TestNewConfigParams(t *testing.T) {
 			expected := tc.expected(tc.hcp, tc.featureGates)
 
 			g.Expect(actual).To(Equal(expected))
+		})
+	}
+}
+
+func TestEventTTLFromAnnotation(t *testing.T) {
+	tests := []struct {
+		name          string
+		value         string
+		expected      string
+		expectedValid bool
+	}{
+		{
+			name:  "When the annotation is unset, it should not be applied",
+			value: "",
+		},
+		{
+			name:          "When the value is the minimum, it should be accepted",
+			value:         "5",
+			expected:      "5m",
+			expectedValid: true,
+		},
+		{
+			name:          "When the value is the maximum, it should be accepted",
+			value:         "180",
+			expected:      "180m",
+			expectedValid: true,
+		},
+		{
+			name:          "When the value is within the range, it should be accepted",
+			value:         "60",
+			expected:      "60m",
+			expectedValid: true,
+		},
+		{
+			name:  "When the value is below the minimum, it should be rejected",
+			value: "4",
+		},
+		{
+			name:  "When the value is above the maximum, it should be rejected",
+			value: "181",
+		},
+		{
+			name:  "When the value is negative, it should be rejected",
+			value: "-60",
+		},
+		{
+			name:  "When the value is a duration string, it should be rejected",
+			value: "60m",
+		},
+		{
+			name:  "When the value is not numeric, it should be rejected",
+			value: "sixty",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			actual, valid := eventTTLFromAnnotation(tc.value)
+
+			g.Expect(valid).To(Equal(tc.expectedValid))
+			g.Expect(actual).To(Equal(tc.expected))
 		})
 	}
 }
