@@ -36,6 +36,61 @@ var openSSLToIANACiphersMap = map[string]string{
 	"ECDHE-RSA-AES256-SHA":   "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",   // 0xC0,0x14
 }
 
+// fipsTLSGroups are the groups our services are allowed to use when running
+// with FIPS enabled. X25519 and X25519MLKEM768 aren't yet formally validated
+// by NIST, that may take some time. The default behavior for new Curves is to
+// start as "not validated by NIST" so this list here works as an allow list.
+var fipsTLSGroups = map[configv1.TLSGroup]struct{}{
+	configv1.TLSGroupSecP256r1: {},
+	configv1.TLSGroupSecP384r1: {},
+	configv1.TLSGroupSecP521r1: {},
+}
+
+// TLSGroups returns the TLS groups that should be used based on the profile
+// and if we must or not restrict the groups based on FIPS.
+func TLSGroups(securityProfile *configv1.TLSSecurityProfile, fips bool) ([]configv1.TLSGroup, error) {
+	groups, err := tlsGroupsFromProfile(securityProfile)
+	if !fips || err != nil {
+		return groups, err
+	}
+	return fipsApprovedTLSGroups(groups), nil
+}
+
+// fipsApprovedTLSGroups filters the provided list of TLS groups, only FIPS
+// approved groups are returned.
+func fipsApprovedTLSGroups(groups []configv1.TLSGroup) []configv1.TLSGroup {
+	approved := make([]configv1.TLSGroup, 0, len(groups))
+	for _, g := range groups {
+		if _, ok := fipsTLSGroups[g]; !ok {
+			continue
+		}
+		approved = append(approved, g)
+	}
+	return approved
+}
+
+// tlsGroupsFromProfile returns the configured TLS groups for the provided
+// TLSSecurityProfile, if no Profile has been selected returns the Groups
+// belonging to default profile.
+func tlsGroupsFromProfile(securityProfile *configv1.TLSSecurityProfile) ([]configv1.TLSGroup, error) {
+	// Directly returns the groups of the default profile type.
+	if securityProfile == nil {
+		return configv1.TLSProfiles[crypto.DefaultTLSProfileType].Groups, nil
+	}
+
+	// Return the predefined groups for the known types.
+	if securityProfile.Type != configv1.TLSProfileCustomType {
+		return configv1.TLSProfiles[securityProfile.Type].Groups, nil
+	}
+
+	if securityProfile.Custom == nil {
+		return nil, fmt.Errorf("TLS profile type is Custom but Custom field is nil")
+	}
+
+	// Return the list of custom groups.
+	return securityProfile.Custom.Groups, nil
+}
+
 func MinTLSVersion(securityProfile *configv1.TLSSecurityProfile) (string, error) {
 	if securityProfile == nil {
 		securityProfile = &configv1.TLSSecurityProfile{

@@ -1,6 +1,8 @@
 package controlplanecomponent
 
 import (
+	"fmt"
+
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/k8sutil"
 
@@ -10,6 +12,8 @@ import (
 
 	capiutil "sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 type Predicate func(cpContext WorkloadContext) bool
@@ -117,11 +121,28 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Ob
 // and generates the appropriate config.yaml data.
 func NewGenericControllerConfigAdapter(bindAddress, bindNetwork string) func(WorkloadContext, *corev1.ConfigMap) error {
 	return func(cpContext WorkloadContext, cm *corev1.ConfigMap) error {
+		payloadVersion, err := semver.Parse(cpContext.UserReleaseImageProvider.Version())
+		if err != nil {
+			return fmt.Errorf("failed to parse release image version: %w", err)
+		}
+
+		featureGates, err := config.FeatureGatesFromConfigMap(
+			cpContext.Context,
+			cpContext.Client,
+			cpContext.HCP.Namespace,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to load feature gates config map: %w", err)
+		}
+
 		return config.SetGenericControllerConfig(
 			bindAddress,
 			bindNetwork,
 			cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile(),
 			cm,
+			featureGates,
+			payloadVersion,
+			cpContext.HCP.Spec.FIPS,
 		)
 	}
 }

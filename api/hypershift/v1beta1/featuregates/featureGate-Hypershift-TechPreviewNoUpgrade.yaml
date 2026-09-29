@@ -60,6 +60,9 @@
                     },
                     {
                         "name": "DeterministicLBIP"
+                    },
+                    {
+                        "name": "TLSGroupPreferences"
                     }
                 ],
                 "version": ""
