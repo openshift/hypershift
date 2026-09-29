@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-import importlib.util
 import copy
+import http.client
+import importlib.util
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +28,15 @@ def as_of():
 def collect_fixture():
     collector = MODULE.Collector(MODULE.FixtureTransport(FIXTURES), as_of())
     return collector.collect()
+
+
+def rebind_document(document):
+    document["collection_id"] = MODULE.collection_id(document)
+    return document
+
+
+def stage_one_for(document, text="synthetic stage one"):
+    return f"{text} · evidence {document['collection_id']}"
 
 
 class FailingHealthTransport(MODULE.FixtureTransport):
@@ -119,6 +130,77 @@ class MalformedSippyTransport(MODULE.FixtureTransport):
         return super().get_json(url)
 
 
+class CustomStreamAndLargeCatalogTransport(MODULE.FixtureTransport):
+    def get_json(self, url):
+        data = super().get_json(url)
+        if url.endswith("/api/job-registry"):
+            data = copy.deepcopy(data)
+            data["jobs"][1]["release_controller"].append(
+                {
+                    "stream": {
+                        "name": "hypershift",
+                        "release": "",
+                        "kind": "",
+                        "architecture": "",
+                        "end_of_life": False,
+                    },
+                    "verification": {
+                        "name": "custom",
+                        "role": "informing",
+                        "optional": True,
+                        "disabled": False,
+                    },
+                }
+            )
+        if url.endswith("/api/v1/releasestreams/all"):
+            data = copy.deepcopy(data)
+            data["4-stable"] = [f"4.20.{index}" for index in range(1001)]
+        return data
+
+
+class EmptyProwHistoryTransport(MODULE.FixtureTransport):
+    def get_text(self, url):
+        if "/job-history/" in url:
+            return "<!doctype html><script>var allBuilds = [];</script>"
+        return super().get_text(url)
+
+
+class InformingVerificationTransport(NoLatestTransport):
+    def get_json(self, url):
+        data = super().get_json(url)
+        if "/release/5.1.0-0.ci-2026-09-28-100000" in url:
+            data = copy.deepcopy(data)
+            result = data["results"]["blockingJobs"].pop("hypershift-e2e-aws")
+            data["results"]["informingJobs"] = {"hypershift-e2e-aws": result}
+        return data
+
+
+class MalformedHealthMetricTransport(MODULE.FixtureTransport):
+    def get_json(self, url):
+        data = super().get_json(url)
+        if url.endswith("/_dashboard/health/windows/1w"):
+            data = copy.deepcopy(data)
+            data["data"]["jobs"][0]["rate"] = math.nan
+        return data
+
+
+class MalformedHeadTransport(MODULE.FixtureTransport):
+    def get_text(self, url):
+        text = super().get_text(url)
+        if "/job-history/" in url:
+            text = text.replace("a" * 40, "not-a-sha-a").replace(
+                "b" * 40, "not-a-sha-b"
+            )
+        return text
+
+    def get_json(self, url):
+        data = super().get_json(url)
+        if url.endswith("/prowjob.json"):
+            data = copy.deepcopy(data)
+            data["spec"]["refs"]["pulls"][0]["sha"] = "not-a-sha"
+        return data
+
+
 def valid_judgment(candidate):
     return {
         "candidate_id": candidate["candidate_id"],
@@ -147,6 +229,22 @@ def test_collect_uses_active_payload_and_excludes_future_stream():
     assert "5.1.0-0.ci-2026-09-24-111734" not in stage_one
     assert "*main → OCP 5.1*" in stage_one
     assert len(stage_one) < 2000
+
+
+def test_collection_filters_custom_streams_and_bounds_only_selected_catalogs():
+    collector = MODULE.Collector(CustomStreamAndLargeCatalogTransport(FIXTURES), as_of())
+    stage_one, document = collector.collect()
+
+    assert document["scope"]["releases"] == ["5.1", "5.0", "4.23", "4.22", "4.21"]
+    assert document["candidates"]
+    assert "required public data could not be validated" not in stage_one
+
+    with pytest.raises(MODULE.ReportError, match="unexpected entry"):
+        MODULE.validate_tag_catalog(
+            {"selected": [f"5.1.{index}" for index in range(1001)]},
+            "selected catalog",
+            {"selected"},
+        )
 
 
 def test_collect_fails_closed_when_primary_source_is_partial():
@@ -260,6 +358,30 @@ def test_presubmit_history_distinguishes_never_run_from_transport_failure():
     assert not MODULE._is_missing_prow_history(500, b"upstream unavailable")
 
 
+def test_pending_rows_are_omitted_and_empty_required_histories_are_unknown():
+    html = """<script>var allBuilds = [
+    {"ID":"pending","Started":"2026-09-28T11:30:00Z","Duration":0,
+     "Result":"PENDING","SpyglassLink":"/view/gs/test-platform-results/pr-logs/job/pending",
+     "Refs":{"pulls":[]}},
+    {"ID":"123","Started":"2026-09-28T10:00:00Z","Duration":60000000000,
+     "Result":"FAILURE","SpyglassLink":"/view/gs/test-platform-results/pr-logs/job/123",
+     "Refs":{"pulls":[{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}}
+    ];</script>"""
+    rows, _, uncertainties = MODULE.parse_prow_history(
+        html,
+        "https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/job",
+    )
+    assert [row["ID"] for row in rows] == ["123"]
+    assert uncertainties == ["Prow history omitted 1 nonterminal run(s)"]
+
+    stage_one, document = MODULE.Collector(EmptyProwHistoryTransport(FIXTURES), as_of()).collect()
+    assert document["scope"]["state"] == "unknown"
+    assert len(document["scope"]["coverage_uncertainties"]) == 3
+    assert all("no completed runs" in item for item in document["scope"]["coverage_uncertainties"])
+    assert "Overall*: Unknown" in stage_one
+    assert "🟢" not in stage_one
+
+
 def test_aborted_prowjob_without_completion_uses_history_timestamp():
     collector = MODULE.Collector(AbortedWithoutCompletionTransport(FIXTURES), as_of())
     job = {
@@ -302,6 +424,39 @@ def test_release_verification_url_is_source_specifically_allowlisted():
     assert "Overall*: Unknown" in stage_one
 
 
+def test_only_blocking_result_groups_can_prove_payload_impact():
+    _, document = MODULE.Collector(InformingVerificationTransport(FIXTURES), as_of()).collect()
+    periodic = next(item for item in document["candidates"] if item["kind"] == "periodic")
+
+    assert periodic["live_payload"]["impact"] == "unknown"
+    assert "appeared in informingJobs" in periodic["live_payload"]["uncertainty"]
+    assert periodic["deterministic_trigger"] == "payload_impact_unknown"
+
+
+def test_multi_architecture_tag_must_match_configured_release():
+    collector = MODULE.Collector(MODULE.FixtureTransport(FIXTURES), as_of())
+    blocker = {
+        "job_id": "periodic-ci-openshift-hypershift-release-5.1-multi",
+        "release": "5.1",
+        "stream": "5.1.0-0.nightly-multi",
+        "architecture": "multi",
+        "verification": "hypershift-e2e",
+        "release_status_url": "",
+    }
+    result = collector._payload_statuses(
+        [blocker],
+        {
+            MODULE.MULTI_RELEASE_CONTROLLER_BASE: {
+                "5.1.0-0.nightly-multi": ["4.99.0-0.nightly-multi-x"]
+            }
+        },
+    )
+
+    payload = result[(blocker["job_id"], blocker["stream"])]
+    assert payload["impact"] == "unknown"
+    assert "does not match configured release 5.1" in payload["uncertainty"]
+
+
 def test_render_requires_exact_candidate_ids_and_escapes_judgment_text():
     stage_one, candidates = collect_fixture()
     judgments = {
@@ -323,6 +478,32 @@ def test_render_requires_exact_candidate_ids_and_escapes_judgment_text():
     judgments["judgments"].pop()
     with pytest.raises(MODULE.ReportError, match="do not match candidates"):
         MODULE.render_report(stage_one, candidates, judgments)
+
+
+def test_candidate_ids_timestamps_and_evidence_sets_are_bound():
+    stage_one, document = collect_fixture()
+    malformed = copy.deepcopy(document)
+    malformed["candidates"][0]["job_id"] += "-substituted"
+    with pytest.raises(MODULE.ReportError, match="candidate_id does not match"):
+        MODULE.validate_candidates_document(malformed)
+
+    substituted = copy.deepcopy(document)
+    substituted["candidates"][0]["deterministic_trigger"] = "substituted-evidence"
+    with pytest.raises(MODULE.ReportError, match="collection_id does not match"):
+        MODULE.validate_candidates_document(substituted)
+
+    with pytest.raises(MODULE.ReportError, match="stage-one message does not match"):
+        MODULE.render_report(
+            stage_one.replace(document["collection_id"], "hci-doc-0000000000000000"),
+            document,
+            {
+                "schema_version": 1,
+                "judgments": [valid_judgment(item) for item in document["candidates"]],
+            },
+        )
+
+    with pytest.raises(MODULE.ReportError, match="canonical RFC3339 UTC"):
+        MODULE.parse_rfc3339("2026-09-28\n11:00:00+00:00")
 
 
 def test_render_rejects_bad_candidates_schema():
@@ -384,6 +565,27 @@ def test_existing_tracking_requires_verified_supported_project_key():
         MODULE.render_report(stage_one, candidates, judgments)
 
 
+@pytest.mark.parametrize("classification", ["incident_candidate", "permafail_candidate"])
+def test_incident_verdicts_require_actionable_evidence(classification):
+    stage_one, candidates = collect_fixture()
+    target_kind = "periodic" if classification == "incident_candidate" else "presubmit"
+    target = next(item for item in candidates["candidates"] if item["kind"] == target_kind)
+    judgments = [valid_judgment(item) for item in candidates["candidates"]]
+    judgment = next(item for item in judgments if item["candidate_id"] == target["candidate_id"])
+    judgment["classification"] = classification
+    judgment["summary"] = ""
+    judgment["signature"] = ""
+    judgment["recurring_evidence"] = []
+    judgment["next_action"] = ""
+
+    with pytest.raises(MODULE.ReportError, match="requires summary"):
+        MODULE.render_report(
+            stage_one,
+            candidates,
+            {"schema_version": 1, "judgments": judgments},
+        )
+
+
 def test_public_url_allowlist_rejects_private_and_unknown_buckets():
     with pytest.raises(MODULE.ReportError, match="unknown host"):
         MODULE.validate_public_url("https://private.invalid/data")
@@ -396,6 +598,24 @@ def test_public_url_allowlist_rejects_private_and_unknown_buckets():
     ) == (
         "https://storage.googleapis.com/test-platform-results-public/pr-logs/job/1/prowjob.json"
     )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://storage.googleapis.com/test-platform-results-public/../test-platform-results/x",
+        "https://storage.googleapis.com/test-platform-results-public/%2e%2e/test-platform-results/x",
+    ],
+)
+def test_public_gcs_urls_reject_path_traversal_before_request(url):
+    with pytest.raises(MODULE.ReportError, match="noncanonical"):
+        MODULE.validate_public_url(url)
+
+
+@pytest.mark.parametrize("url", ["https://[", "https://[not-ip]/x"])
+def test_malformed_urls_are_normalized_to_report_errors(url):
+    with pytest.raises(MODULE.ReportError, match="malformed URL"):
+        MODULE.validate_public_url(url)
 
 
 def test_http_transport_revalidates_redirects_and_final_url():
@@ -437,6 +657,69 @@ def test_http_transport_revalidates_redirects_and_final_url():
         MODULE.validate_public_url(f"{MODULE.DASHBOARD_BASE}/admin")
 
 
+def test_http_transport_normalizes_incomplete_reads():
+    class IncompleteResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def geturl(self):
+            return f"{MODULE.DASHBOARD_BASE}/api/job-registry"
+
+        def read(self, _):
+            raise http.client.IncompleteRead(b"partial", 99)
+
+    class IncompleteOpener:
+        def open(self, *_args, **_kwargs):
+            return IncompleteResponse()
+
+    transport = MODULE.HTTPTransport()
+    transport.opener = IncompleteOpener()
+    with pytest.raises(MODULE.ReportError, match="GET failed"):
+        transport.get_text(f"{MODULE.DASHBOARD_BASE}/api/job-registry")
+
+
+def test_duration_and_health_metrics_are_finite_and_ranged():
+    huge_duration = """<script>var allBuilds = [{
+      "ID":"1","Started":"2026-09-28T11:00:00Z","Duration":999999999999999999999,
+      "Result":"FAILURE","SpyglassLink":"/view/gs/test-platform-results/pr-logs/job/1",
+      "Refs":{"pulls":[]}}];</script>"""
+    with pytest.raises(MODULE.ReportError, match="duration is out of range"):
+        MODULE.parse_prow_history(
+            huge_duration,
+            "https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/job",
+        )
+
+    for rate in (math.nan, math.inf, -1, 1000):
+        health = {"data": {"jobs": [{"id": "job", "rate": rate}], "payload_blocking_jobs": []}}
+        with pytest.raises(MODULE.ReportError, match="finite and between"):
+            MODULE.validate_health(health)
+
+    stage_one, document = MODULE.Collector(MalformedHealthMetricTransport(FIXTURES), as_of()).collect()
+    assert document["scope"]["state"] == "unknown"
+    assert document["candidates"] == []
+    assert "Overall*: Unknown" in stage_one
+
+
+def test_run_evidence_urls_are_canonical_and_bound_to_run_ids():
+    with pytest.raises(MODULE.ReportError, match="canonical public Prow"):
+        MODULE.serialize_sippy_run(
+            {
+                "prow_id": "123",
+                "_timestamp": as_of(),
+                "overall_result": "F",
+                "url": f"{MODULE.DASHBOARD_BASE}/api/job-registry",
+            }
+        )
+    with pytest.raises(MODULE.ReportError, match="does not match its run ID"):
+        MODULE.validate_run_evidence_url(
+            "https://prow.ci.openshift.org/view/gs/test-platform-results-public/logs/job/456",
+            "123",
+        )
+
+
 @pytest.mark.parametrize(
     "malicious",
     ["safe`break", "safe<!channel>", "safe<break", "safe>break", "safe&break", "safe\rbreak", "safe\nbreak"],
@@ -447,6 +730,22 @@ def test_candidate_external_labels_reject_slack_control_syntax(malicious):
     document["candidates"][0]["job_id"] = malicious
     with pytest.raises(MODULE.ReportError, match="job_id"):
         MODULE.validate_candidates_document(document)
+
+
+def test_malformed_heads_do_not_establish_independent_failures_and_add_uncertainty():
+    collector = MODULE.Collector(MalformedHeadTransport(FIXTURES), as_of())
+    job = {
+        "id": "pull-ci-openshift-hypershift-main-e2e-streak",
+        "prow_job_history_url": (
+            "https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/"
+            "directory/pull-ci-openshift-hypershift-main-e2e-streak"
+        ),
+    }
+    evidence = collector._presubmit_history(job)
+
+    assert evidence["candidate_trigger"] is None
+    assert all(run["head_sha"] == "" for run in evidence["runs"])
+    assert any("canonical head SHA" in item for item in evidence["uncertainties"])
 
 
 def test_payload_tag_and_phase_reject_slack_control_syntax():
@@ -477,7 +776,7 @@ def test_render_slack_escapes_untrusted_judgment_text():
 
 
 def test_render_splits_maximum_sized_group_without_omitting_candidates_or_actions():
-    stage_one, original = collect_fixture()
+    _, original = collect_fixture()
     source = next(
         item for item in original["candidates"] if item["kind"] == "presubmit"
     )
@@ -486,8 +785,10 @@ def test_render_splits_maximum_sized_group_without_omitting_candidates_or_action
     judgments = {"schema_version": 1, "judgments": []}
     for index in range(3):
         candidate = copy.deepcopy(source)
-        candidate["candidate_id"] = MODULE.candidate_id("maximum", str(index))
         candidate["job_id"] = f"pull-ci-openshift-hypershift-main-maximum-{index}"
+        candidate["candidate_id"] = MODULE.candidate_id(
+            "presubmit", candidate["job_id"], candidate["branch"]
+        )
         candidates["candidates"].append(candidate)
         judgment = valid_judgment(candidate)
         judgment["summary"] = f"summary-{index}-" + "s" * 980
@@ -496,7 +797,8 @@ def test_render_splits_maximum_sized_group_without_omitting_candidates_or_action
         judgment["recurring_evidence"] = ["e" * 300 for _ in range(5)]
         judgments["judgments"].append(judgment)
 
-    rendered = MODULE.render_report(stage_one, candidates, judgments)
+    rebind_document(candidates)
+    rendered = MODULE.render_report(stage_one_for(candidates), candidates, judgments)
     replies = rendered.split("---THREAD_DETAILS---", 1)[1].split("---THREAD_BREAK---")
     assert len(replies) > 1
     assert all(len(reply.strip()) <= MODULE.THREAD_REPLY_LIMIT for reply in replies)
@@ -619,8 +921,10 @@ def test_candidate_overflow_is_explicit_and_deterministically_bounded():
     all_candidates = []
     for index in range(MODULE.MAX_CANDIDATES + 1):
         candidate = copy.deepcopy(template)
-        candidate["candidate_id"] = MODULE.candidate_id("overflow", str(index))
         candidate["job_id"] = f"periodic-ci-openshift-hypershift-overflow-{index:03d}"
+        candidate["candidate_id"] = MODULE.candidate_id(
+            "periodic", candidate["job_id"], candidate["release"]
+        )
         all_candidates.append(candidate)
     selected, overflow = MODULE.bound_candidates(all_candidates)
     assert len(selected) == MODULE.MAX_CANDIDATES
@@ -632,6 +936,7 @@ def test_candidate_overflow_is_explicit_and_deterministically_bounded():
     document["candidates"] = selected
     document["scope"]["state"] = "unknown"
     document["scope"]["candidate_overflow"] = overflow
+    rebind_document(document)
     MODULE.validate_candidates_document(document)
 
 
@@ -653,8 +958,9 @@ def test_request_budget_and_no_candidate_rendering_are_explicit():
     complete = copy.deepcopy(document)
     complete["scope"]["state"] = "complete"
     complete["scope"]["source_failures"] = []
+    rebind_document(complete)
     complete_rendered = MODULE.render_report(
-        "healthy stage one",
+        stage_one_for(complete, "healthy stage one"),
         complete,
         {"schema_version": 1, "judgments": []},
     )
