@@ -1,15 +1,20 @@
 package config
 
 import (
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
+	"github.com/openshift/library-go/pkg/crypto"
 
 	corev1 "k8s.io/api/core/v1"
 
 	"sigs.k8s.io/yaml"
+
+	"github.com/blang/semver"
 )
 
 func TestBuildGenericControllerConfigData(t *testing.T) {
@@ -42,15 +47,25 @@ func TestBuildGenericControllerConfigData(t *testing.T) {
 		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
 	}
 
+	customGroups := []configv1.TLSGroup{
+		configv1.TLSGroupSecP256r1MLKEM768,
+		configv1.TLSGroupSecP256r1,
+		configv1.TLSGroupSecP384r1,
+	}
+
 	testCases := []struct {
 		name                 string
 		bindAddress          string
 		bindNetwork          string
 		profile              *configv1.TLSSecurityProfile
+		featureGates         []string
+		payloadVersion       semver.Version
+		fips                 bool
 		expectedMinTLS       string
 		expectedCipherSuites []string
 		expectError          bool
 		expectedErrSubstr    string
+		expectedTLSGroups    []configv1.TLSGroup
 	}{
 		{
 			name:                 "When TLS profile is nil, it should use intermediate defaults",
@@ -140,6 +155,99 @@ func TestBuildGenericControllerConfigData(t *testing.T) {
 			expectError:       true,
 			expectedErrSubstr: "Custom but Custom field is nil",
 		},
+		{
+			name:                 "When TLSGroupPreferences feature flag is enabled the groups are populated",
+			bindAddress:          "0.0.0.0:8443",
+			bindNetwork:          "tcp",
+			expectedMinTLS:       "VersionTLS12",
+			payloadVersion:       semver.Version{Major: 5, Minor: 1},
+			featureGates:         []string{fmt.Sprintf("%s=true", features.FeatureGateTLSGroupPreferences)},
+			expectedCipherSuites: intermediateCiphers,
+			expectedTLSGroups:    configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Groups,
+		},
+		{
+			name:                 "When Custom groups are provided they are populated",
+			bindAddress:          "0.0.0.0:8443",
+			bindNetwork:          "tcp",
+			expectedMinTLS:       "VersionTLS12",
+			featureGates:         []string{fmt.Sprintf("%s=true", features.FeatureGateTLSGroupPreferences)},
+			payloadVersion:       semver.Version{Major: 5, Minor: 1},
+			expectedTLSGroups:    customGroups,
+			expectedCipherSuites: []string{"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"},
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Ciphers:       []string{"ECDHE-ECDSA-AES128-GCM-SHA256"},
+						Groups:        customGroups,
+					},
+				},
+			},
+		},
+		{
+			name:                 "When fips is enabled, invalid TLS Groups are removed",
+			bindAddress:          "0.0.0.0:8443",
+			bindNetwork:          "tcp",
+			expectedMinTLS:       "VersionTLS12",
+			featureGates:         []string{fmt.Sprintf("%s=true", features.FeatureGateTLSGroupPreferences)},
+			payloadVersion:       semver.Version{Major: 5, Minor: 1},
+			expectedTLSGroups:    []configv1.TLSGroup{configv1.TLSGroupSecP256r1, configv1.TLSGroupSecP384r1},
+			expectedCipherSuites: []string{"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"},
+			fips:                 true,
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Ciphers:       []string{"ECDHE-ECDSA-AES128-GCM-SHA256"},
+						Groups:        customGroups,
+					},
+				},
+			},
+		},
+		{
+			name:                 "When fips is enabled using only custom non fips approved groups, it should return an empty list of groups",
+			bindAddress:          "0.0.0.0:8443",
+			bindNetwork:          "tcp",
+			expectedMinTLS:       "VersionTLS12",
+			featureGates:         []string{fmt.Sprintf("%s=true", features.FeatureGateTLSGroupPreferences)},
+			payloadVersion:       semver.Version{Major: 5, Minor: 1},
+			expectedTLSGroups:    []configv1.TLSGroup{},
+			expectedCipherSuites: []string{"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"},
+			fips:                 true,
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Ciphers:       []string{"ECDHE-ECDSA-AES128-GCM-SHA256"},
+						Groups:        []configv1.TLSGroup{configv1.TLSGroupX25519},
+					},
+				},
+			},
+		},
+		{
+			name:                 "When the version is old TLS Groups are ignored",
+			bindAddress:          "0.0.0.0:8443",
+			bindNetwork:          "tcp",
+			expectedMinTLS:       "VersionTLS12",
+			payloadVersion:       semver.Version{Major: 4, Minor: 22},
+			featureGates:         []string{fmt.Sprintf("%s=true", features.FeatureGateTLSGroupPreferences)},
+			expectedTLSGroups:    []configv1.TLSGroup{},
+			expectedCipherSuites: []string{"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"},
+			fips:                 true,
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Ciphers:       []string{"ECDHE-ECDSA-AES128-GCM-SHA256"},
+						Groups:        customGroups,
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -147,7 +255,7 @@ func TestBuildGenericControllerConfigData(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
 
-			yamlStr, err := BuildGenericControllerConfigData(tc.bindAddress, tc.bindNetwork, tc.profile)
+			yamlStr, err := BuildGenericControllerConfigData(tc.bindAddress, tc.bindNetwork, tc.profile, tc.featureGates, tc.payloadVersion, tc.fips)
 
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
@@ -179,6 +287,19 @@ func TestBuildGenericControllerConfigData(t *testing.T) {
 				g.Expect(cipherSuites).To(HaveLen(len(tc.expectedCipherSuites)))
 				for i, expectedCipher := range tc.expectedCipherSuites {
 					g.Expect(cipherSuites[i]).To(Equal(expectedCipher))
+				}
+			}
+
+			if len(tc.expectedTLSGroups) == 0 {
+				curvePreferences := servingInfo["curvePreferences"]
+				g.Expect(curvePreferences).To(BeNil())
+			} else {
+				curvePreferences := servingInfo["curvePreferences"].([]interface{})
+				g.Expect(curvePreferences).To(HaveLen(len(tc.expectedTLSGroups)))
+				expectedCurves, unknown := crypto.TLSGroupsToCurvePreferences(tc.expectedTLSGroups)
+				g.Expect(unknown).To(HaveLen(0))
+				for i, expectedCurve := range expectedCurves {
+					g.Expect(curvePreferences[i]).To(Equal(float64(expectedCurve)))
 				}
 			}
 		})
@@ -219,7 +340,7 @@ func TestSetGenericControllerConfig(t *testing.T) {
 
 			cm := &corev1.ConfigMap{Data: tc.existingData}
 
-			err := SetGenericControllerConfig("0.0.0.0:8443", "tcp4", tc.profile, cm)
+			err := SetGenericControllerConfig("0.0.0.0:8443", "tcp4", tc.profile, cm, nil, semver.Version{}, false)
 
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
