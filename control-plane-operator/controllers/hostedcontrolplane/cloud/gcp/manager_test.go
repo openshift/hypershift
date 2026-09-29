@@ -392,7 +392,7 @@ func TestFirewallManagerDelete(t *testing.T) {
 		marker, _ := ownershipMarker(testInfraID)
 		client.firewalls[name] = &compute.Firewall{Name: name, Description: marker, Network: client.network.SelfLink, Direction: "INGRESS"}
 
-		err := testManager(client).Delete(ctx)
+		err := testManager(client).Delete(ctx, "")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(client.deleteCalled).To(BeTrue())
 		g.Expect(client.firewalls).ToNot(HaveKey(name))
@@ -402,7 +402,7 @@ func TestFirewallManagerDelete(t *testing.T) {
 		g := NewWithT(t)
 		client := newFakeClient()
 
-		err := testManager(client).Delete(ctx)
+		err := testManager(client).Delete(ctx, "")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(client.deleteCalled).To(BeFalse())
 	})
@@ -416,7 +416,7 @@ func TestFirewallManagerDelete(t *testing.T) {
 		// An ownership conflict is terminal: retrying can never change ownership,
 		// so Delete must not error (which would retain the finalizer forever). It
 		// leaves the rule untouched and lets deletion finish.
-		err := testManager(client).Delete(ctx)
+		err := testManager(client).Delete(ctx, "")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(client.deleteCalled).To(BeFalse())
 		g.Expect(client.firewalls).To(HaveKey(name))
@@ -437,7 +437,7 @@ func TestFirewallManagerDelete(t *testing.T) {
 		// The marker alone does not prove this is our rule if the infra ID was
 		// reused in a different VPC. Retrying can never change which VPC the rule
 		// lives in, so this must be a terminal skip, not an error.
-		err := testManager(client).Delete(ctx)
+		err := testManager(client).Delete(ctx, "")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(client.deleteCalled).To(BeFalse())
 		g.Expect(client.firewalls).To(HaveKey(name))
@@ -451,18 +451,40 @@ func TestFirewallManagerDelete(t *testing.T) {
 
 		// The rule could never have been created, so deletion is a no-op that must
 		// not wedge finalization.
-		err := m.Delete(ctx)
+		err := m.Delete(ctx, "")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(client.deleteCalled).To(BeFalse())
 	})
 
-	t.Run("When WIF credentials are unavailable, it should error so the finalizer is retained", func(t *testing.T) {
+	t.Run("When WIF credentials are unavailable and no skip reason is given, it should error so the finalizer is retained", func(t *testing.T) {
 		g := NewWithT(t)
 		client := newFakeClient()
 		m := testManager(client)
 		m.wifAvailable = func() (bool, error) { return false, nil }
 
-		err := m.Delete(ctx)
+		err := m.Delete(ctx, "")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(client.deleteCalled).To(BeFalse())
+	})
+
+	t.Run("When WIF credentials are unavailable but a skip reason is given, it should skip deletion and not error", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		m := testManager(client)
+		m.wifAvailable = func() (bool, error) { return false, nil }
+
+		err := m.Delete(ctx, "the rule was never created")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(client.deleteCalled).To(BeFalse())
+	})
+
+	t.Run("When the client build fails unexpectedly, it should error regardless of a skip reason", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		m := testManager(client)
+		m.wifAvailable = func() (bool, error) { return false, errors.New("permission denied reading token") }
+
+		err := m.Delete(ctx, "the rule was never created")
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(client.deleteCalled).To(BeFalse())
 	})
