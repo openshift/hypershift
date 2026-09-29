@@ -2,12 +2,14 @@ package imageregistry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
@@ -80,33 +82,42 @@ func (provider *releaseProviderStub) Lookup(_ context.Context, image string, _ [
 }
 
 func TestGetControlPlaneOperatorImage(t *testing.T) {
-	t.Setenv("ENABLE_CPO_OVERRIDES", "0")
+	t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "0")
 	for _, testCase := range []struct {
-		name        string
-		annotation  string
-		provider    releaseProviderStub
-		expected    string
-		expectError bool
+		name            string
+		annotation      string
+		provider        releaseProviderStub
+		expected        string
+		expectedError   string
+		enableOverrides bool
 	}{
 		{name: "When an annotation is set, it should bypass release lookup", annotation: "quay.io/hypershift/hypershift:latest", expected: "quay.io/hypershift/hypershift:latest"},
 		{name: "When the payload includes hypershift, it should use the payload image", provider: releaseProviderStub{version: "4.21.0", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"}, expected: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
 		{name: "When the payload lacks hypershift, it should use the operator image", provider: releaseProviderStub{version: "4.21.0"}, expected: "quay.io/hypershift/hypershift-operator:latest"},
-		{name: "When the release lookup fails, it should return an error", provider: releaseProviderStub{err: fmt.Errorf("lookup failed")}, expectError: true},
-		{name: "When the release version is invalid, it should return an error", provider: releaseProviderStub{version: "invalid"}, expectError: true},
-		{name: "When the release is unsupported, it should return an error", provider: releaseProviderStub{version: "4.8.0"}, expectError: true},
+		{name: "When enabled overrides do not match the platform, it should use the payload image", enableOverrides: true, provider: releaseProviderStub{version: "4.21.0", image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"}, expected: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.21.11-hypershift"},
+		{name: "When the release lookup fails, it should return an error", provider: releaseProviderStub{err: fmt.Errorf("lookup failed")}, expectedError: "lookup failed"},
+		{name: "When the release version is invalid, it should return an error", provider: releaseProviderStub{version: "invalid"}, expectedError: "No Major.Minor.Patch elements found"},
+		{name: "When the release is unsupported, it should return an error", provider: releaseProviderStub{version: "4.8.0"}, expectedError: "unsupported release image with version 4.8.0"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			g := NewWithT(t)
 			cluster := &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{ControlPlaneRelease: &hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.21.11-x86_64"}}}
+			if testCase.enableOverrides {
+				t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "1")
+				cluster.Spec.Platform.Type = hyperv1.NonePlatform
+			}
 			if testCase.annotation != "" {
 				cluster.Annotations = map[string]string{hyperv1.ControlPlaneOperatorImageAnnotation: testCase.annotation}
 			}
 			image, err := GetControlPlaneOperatorImage(t.Context(), cluster, &testCase.provider, "quay.io/hypershift/hypershift-operator:latest", nil)
 			g.Expect(image).To(Equal(testCase.expected))
-			if testCase.expectError {
-				g.Expect(err).To(HaveOccurred())
+			if testCase.expectedError != "" {
+				g.Expect(err).To(MatchError(testCase.expectedError))
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
+			}
+			if testCase.provider.err != nil {
+				g.Expect(errors.Is(err, testCase.provider.err)).To(BeTrue())
 			}
 			if testCase.annotation == "" {
 				g.Expect(testCase.provider.requestedImage).To(Equal("quay.io/openshift-release-dev/ocp-release:4.21.11-x86_64"))
@@ -119,24 +130,27 @@ func TestGetControlPlaneOperatorImage(t *testing.T) {
 
 func TestGetControlPlaneOperatorImageLabels(t *testing.T) {
 	for _, testCase := range []struct {
-		name        string
-		annotations map[string]string
-		provider    fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider
-		expected    map[string]string
-		expectError bool
+		name          string
+		annotations   map[string]string
+		provider      fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider
+		expected      map[string]string
+		expectedError string
 	}{
 		{name: "When labels are annotated, it should bypass metadata lookup", annotations: map[string]string{hyperv1.ControlPlaneOperatorImageLabelsAnnotation: "a=b,c=d"}, provider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Err: fmt.Errorf("not called")}, expected: map[string]string{"a": "b", "c": "d"}},
-		{name: "When an annotated label is malformed, it should return an error", annotations: map[string]string{hyperv1.ControlPlaneOperatorImageLabelsAnnotation: "invalid"}, expectError: true},
+		{name: "When an annotated label is malformed, it should return an error", annotations: map[string]string{hyperv1.ControlPlaneOperatorImageLabelsAnnotation: "invalid"}, expectedError: "hosted cluster clusters/example annotation 0 malformed: label invalid not in key=value form"},
 		{name: "When labels are not annotated, it should use image metadata", provider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{Labels: map[string]string{"a": "b"}}}}, expected: map[string]string{"a": "b"}},
-		{name: "When metadata lookup fails, it should return an error", provider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Err: fmt.Errorf("lookup failed")}, expectError: true},
+		{name: "When metadata lookup fails, it should return an error", provider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Err: fmt.Errorf("lookup failed")}, expectedError: "failed to look up image metadata for quay.io/hypershift/hypershift-operator:latest: lookup failed"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			g := NewWithT(t)
-			cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Annotations: testCase.annotations}}
+			cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "example", Annotations: testCase.annotations}}
 			labels, err := GetControlPlaneOperatorImageLabels(t.Context(), cluster, "quay.io/hypershift/hypershift-operator:latest", nil, &testCase.provider)
 			g.Expect(labels).To(Equal(testCase.expected))
-			if testCase.expectError {
-				g.Expect(err).To(HaveOccurred())
+			if testCase.expectedError != "" {
+				g.Expect(err).To(MatchError(testCase.expectedError))
+				if testCase.provider.Err != nil {
+					g.Expect(errors.Is(err, testCase.provider.Err)).To(BeTrue())
+				}
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
 			}
