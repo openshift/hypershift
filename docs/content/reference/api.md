@@ -12768,6 +12768,26 @@ ComponentLogLevelSpec
 </p>
 </td>
 </tr>
+<tr>
+<td>
+<code>eventTTLMinutes</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>eventTTLMinutes specifies the amount of time, in minutes, that events are stored
+in etcd before being deleted.
+The TTL is allowed between 5 minutes minimum up to a maximum of 180 minutes (3 hours).</p>
+<p>Lowering this value will reduce the storage required in etcd. Note that this setting
+will only apply to new events being created and will not update existing events.</p>
+<p>Changing this value causes the kube-apiserver to be rolled out with the new setting.</p>
+<p>When omitted this means no opinion, and the platform is left to choose a reasonable
+default, which is subject to change over time.
+The current default value is 180 minutes (3 hours).</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubeControllerManagerOperatorSpec { #hypershift.openshift.io/v1beta1.KubeControllerManagerOperatorSpec }
