@@ -519,6 +519,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			if hcp != nil {
 				hcpCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(conditionType))
 				if hcpCondition != nil {
+					if conditionType == hyperv1.GCPFirewallRulesReady {
+						hcpCondition = gcpFirewallRulesReadyCondition(hcp, hcpCondition)
+					}
 					condition = hcpCondition
 				} else {
 					condition.Message = "Condition not found in the HCP"
