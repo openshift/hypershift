@@ -119,6 +119,26 @@ type AWSEndpointServiceStatus struct {
 	// SecurityGroupID is the ID of the security group.
 	// +optional
 	SecurityGroupID string `json:"securityGroupID,omitempty"`
+
+	// sharedVPCEndpointRoleARN is the persisted ARN of the SharedVPC role used
+	// for EC2 endpoint and security group operations during deletion.
+	//
+	// The role ARN is copied from the HostedControlPlane so cleanup can continue
+	// after the HCP is gone, for example after a controller restart.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	SharedVPCEndpointRoleARN string `json:"sharedVPCEndpointRoleARN,omitempty"`
+
+	// sharedVPCRoute53RoleARN is the persisted ARN of the SharedVPC role used
+	// for Route53 operations during deletion.
+	//
+	// The role ARN is copied from the HostedControlPlane so cleanup can continue
+	// after the HCP is gone, for example after a controller restart.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	SharedVPCRoute53RoleARN string `json:"sharedVPCRoute53RoleARN,omitempty"`
 }
 
 // +kubebuilder:object:root=true
