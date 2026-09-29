@@ -985,6 +985,37 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "When arch is s390x and NodeSelector has conflicting kubernetes.io/arch=amd64, it should fail validation",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureS390X,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("6Gi"),
+							coresNPOption(2),
+							imageNPOption("testimage"),
+							volumeNPOption("16Gi"),
+							nodeSelectorNPOption(map[string]string{
+								corev1.LabelArchStable: hyperv1.ArchitectureAMD64,
+							}),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-hostedcluster", Namespace: "clusters"},
+				Spec:       hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expectedValidationError: `nodePool.spec.platform.kubevirt.nodeSelector["kubernetes.io/arch"] is "amd64" but nodePool.spec.arch is "s390x": the values must match to avoid scheduling a VM on a mismatched architecture node`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1012,6 +1043,32 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
 		})
 	}
+}
+
+func TestIsArchConflictError(t *testing.T) {
+	q := apiresource.MustParse("16Gi")
+	archErr := PlatformValidation(&hyperv1.NodePool{
+		Spec: hyperv1.NodePoolSpec{
+			Arch: hyperv1.ArchitectureS390X,
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.KubevirtPlatform,
+				Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+					RootVolume: &hyperv1.KubevirtRootVolume{
+						KubevirtVolume: hyperv1.KubevirtVolume{
+							Type:       hyperv1.KubevirtVolumeTypePersistent,
+							Persistent: &hyperv1.KubevirtPersistentVolume{Size: &q},
+						},
+					},
+					NodeSelector: map[string]string{
+						corev1.LabelArchStable: hyperv1.ArchitectureAMD64,
+					},
+				},
+			},
+		},
+	})
+	g := NewWithT(t)
+	g.Expect(IsArchConflictError(archErr)).To(BeTrue(), "expected archConflictError")
+	g.Expect(IsArchConflictError(fmt.Errorf("plain error"))).To(BeFalse(), "plain error should not match")
 }
 
 func TestCacheImage(t *testing.T) {
