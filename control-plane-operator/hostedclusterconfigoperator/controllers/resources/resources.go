@@ -52,6 +52,7 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/upsert"
@@ -156,7 +157,7 @@ type reconciler struct {
 	versions                  map[string]string
 	operateOnReleaseImage     string
 	ImageMetaDataProvider     util.ImageMetadataProvider
-	cleanupTracker            *util.CleanupTracker
+	cleanupTracker            *reconcilerpolicy.CleanupTracker
 
 	// exposed for unit test since GetLogs looks hard to be mocked
 	GetPodLogs func(context context.Context, clientset *clientset.Clientset, namespace, name, container string) ([]byte, error)
@@ -231,7 +232,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
-		cleanupTracker:            util.NewCleanupTracker(),
+		cleanupTracker:            reconcilerpolicy.NewCleanupTracker(),
 		GetPodLogs:                getPodLogs,
 	}})
 	if err != nil {
@@ -284,8 +285,15 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		resourcesToWatch = append(resourcesToWatch, &operatorv1.IngressController{})
 	}
 
+	excludeUserCABundlePredicate := notUserCABundlePredicate()
 	for _, r := range resourcesToWatch {
-		if err := c.Watch(source.Kind[client.Object](opts.Manager.GetCache(), r, eventHandler())); err != nil {
+		var err error
+		if _, ok := r.(*corev1.ConfigMap); ok {
+			err = c.Watch(source.Kind[client.Object](opts.Manager.GetCache(), r, eventHandler(), excludeUserCABundlePredicate))
+		} else {
+			err = c.Watch(source.Kind[client.Object](opts.Manager.GetCache(), r, eventHandler()))
+		}
+		if err != nil {
 			return fmt.Errorf("failed to watch %T: %w", r, err)
 		}
 	}
@@ -341,6 +349,13 @@ func namespacedNamePredicateFunc(namespace, name string) func(client.Object) boo
 	}
 }
 
+func notUserCABundlePredicate() predicate.Funcs {
+	userCABundle := manifests.UserCABundle()
+	return predicate.NewPredicateFuncs(func(o client.Object) bool {
+		return !namespacedNamePredicateFunc(userCABundle.Namespace, userCABundle.Name)(o)
+	})
+}
+
 func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl.Result, returnErr error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -353,7 +368,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 		return r.reconcileDeletion(ctx, log, hcp)
 	}
 
-	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
 		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
@@ -795,7 +810,7 @@ func (r *reconciler) reconcileAPIServicesAndOAuth(ctx context.Context, hcp *hype
 		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err))
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		errs = append(errs, r.reconcileOAuthAPIServerResources(ctx, hcp, log)...)
 	}
 
@@ -885,17 +900,12 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 		}
 	}
 
-	log.Info("reconciling user cert CA bundle")
-	if err := r.reconcileUserCertCABundle(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile user cert CA bundle: %w", err))
-	}
-
 	log.Info("reconciling proxy CA bundle")
 	if err := r.reconcileProxyCABundle(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy CA bundle: %w", err))
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		log.Info("reconciling oauth serving cert ca bundle")
 		if err := r.reconcileOAuthServingCertCABundle(ctx, hcp); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert CA bundle: %w", err))
@@ -1532,7 +1542,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 
 func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
-	if !util.HCPOAuthEnabled(hcp) &&
+	if !reconcilerpolicy.HCPOAuthEnabled(hcp) &&
 		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 {
 
 		// Copy issuer CA configmap into openshift-config namespace
@@ -2129,32 +2139,6 @@ func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp 
 		return oauth.ReconcileOAuthServerCertCABundle(caBundle, sourceBundle)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth server cert ca bundle: %w", err)
-	}
-	return nil
-}
-
-func (r *reconciler) reconcileUserCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	log := ctrl.LoggerFrom(ctx)
-	userCAConfigMap := manifests.UserCABundle()
-
-	if hcp.Spec.AdditionalTrustBundle != nil {
-		cpUserCAConfigMap := cpomanifests.UserCAConfigMap(hcp.Namespace)
-		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpUserCAConfigMap), cpUserCAConfigMap); err != nil {
-			return fmt.Errorf("cannot get AdditionalTrustBundle ConfigMap: %w", err)
-		}
-		if _, err := r.CreateOrUpdate(ctx, r.client, userCAConfigMap, func() error {
-			userCAConfigMap.Data = cpUserCAConfigMap.Data
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile the %s ConfigMap: %w", client.ObjectKeyFromObject(userCAConfigMap), err)
-		}
-	} else {
-		// If the HostedControlPlane has no additional trust bundle, delete the user-ca-bundle ConfigMap if it exists
-		if deleted, err := k8sutil.DeleteIfNeeded(ctx, r.client, userCAConfigMap); err != nil {
-			return fmt.Errorf("failed to delete unused user-ca-bundle ConfigMap: %w", err)
-		} else if deleted {
-			log.Info("deleted unused user-ca-bundle ConfigMap", "name", userCAConfigMap.Name, "namespace", userCAConfigMap.Namespace)
-		}
 	}
 	return nil
 }
@@ -3667,6 +3651,14 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 						},
 						{
 							Key:      "node.kubernetes.io/not-ready",
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoExecute,
+						},
+						// TODO(maxcao13): remove this when we fix this in karpenter-operator which will set the providerId instead
+						// https://redhat.atlassian.net/browse/AUTOSCALE-1036
+						// Karpenter nodes register with karpenter.sh/unregistered taint until providerID is set.
+						{
+							Key:      "karpenter.sh/unregistered",
 							Operator: corev1.TolerationOpExists,
 							Effect:   corev1.TaintEffectNoExecute,
 						},

@@ -13,6 +13,8 @@ import (
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	"k8s.io/utils/ptr"
+
+	"github.com/blang/semver"
 )
 
 func TestAllowedCIDRsTargetService(t *testing.T) {
@@ -126,6 +128,114 @@ func TestAllowedCIDRsTargetService(t *testing.T) {
 				g.Expect(svc).ToNot(BeNil())
 				g.Expect(svc.Name).To(Equal(tc.wantName))
 				g.Expect(svc.Namespace).To(Equal(ns))
+			}
+		})
+	}
+}
+
+func TestExpectedNodeRuntimeHandlers(t *testing.T) {
+	originalVersion := releaseVersion
+	t.Cleanup(func() { releaseVersion = originalVersion })
+
+	tests := []struct {
+		name           string
+		releaseVersion semver.Version
+		nodePool       *hyperv1.NodePool
+		wantRunc       bool
+		wantErr        bool
+	}{
+		{
+			name:           "When status reports RHEL 10 and suite is pre-5.0, it should not require runc",
+			releaseVersion: Version423,
+			nodePool: &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{
+				OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL10},
+			}},
+			wantRunc: false,
+		},
+		{
+			name:           "When status reports RHEL 9 and suite is 5.0+, it should require runc",
+			releaseVersion: Version50,
+			nodePool: &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{
+				OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL9},
+			}},
+			wantRunc: true,
+		},
+		{
+			name:           "When status reports RHEL 10 and spec requests RHEL 9, it should not require runc",
+			releaseVersion: Version423,
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL9}},
+				Status: hyperv1.NodePoolStatus{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL10}},
+			},
+			wantRunc: false,
+		},
+		{
+			name:           "When status reports RHEL 9 and spec requests RHEL 10, it should require runc",
+			releaseVersion: Version50,
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL10}},
+				Status: hyperv1.NodePoolStatus{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL9}},
+			},
+			wantRunc: true,
+		},
+		{
+			name:           "When status version is pre-5.0 with no stream info, it should require runc",
+			releaseVersion: Version50,
+			nodePool:       &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{Version: "4.23.0"}},
+			wantRunc:       true,
+		},
+		{
+			name:           "When status version is 5.0+ with no stream info, it should not require runc",
+			releaseVersion: Version423,
+			nodePool:       &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{Version: "5.0.0"}},
+			wantRunc:       false,
+		},
+		{
+			name:           "When status version is invalid semver, it should return an error",
+			releaseVersion: Version50,
+			nodePool:       &hyperv1.NodePool{Status: hyperv1.NodePoolStatus{Version: "not-a-semver"}},
+			wantErr:        true,
+		},
+		{
+			name:           "When spec requests RHEL 9 and status version is 5.0+, it should require runc",
+			releaseVersion: Version50,
+			nodePool: &hyperv1.NodePool{
+				Spec:   hyperv1.NodePoolSpec{OSImageStream: hyperv1.OSImageStreamReference{Name: hyperv1.OSImageStreamRHEL9}},
+				Status: hyperv1.NodePoolStatus{Version: "5.0.0"},
+			},
+			wantRunc: true,
+		},
+		{
+			name:           "When NodePool has no stream or version info, it should fall back to suite release version",
+			releaseVersion: Version423,
+			nodePool:       &hyperv1.NodePool{},
+			wantRunc:       true,
+		},
+		{
+			name:           "When NodePool is nil, it should fall back to suite release version",
+			releaseVersion: Version423,
+			wantRunc:       true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			releaseVersion = tc.releaseVersion
+			got, err := expectedNodeRuntimeHandlers(tc.nodePool)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected invalid status version to fail validation")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected valid NodePool state, got error: %v", err)
+			}
+			if _, ok := got["crun"]; !ok {
+				t.Fatal("expected crun to be required")
+			}
+			if _, ok := got["runc"]; ok != tc.wantRunc {
+				t.Errorf("runc required = %t, want %t; handlers = %#v", ok, tc.wantRunc, got)
 			}
 		})
 	}

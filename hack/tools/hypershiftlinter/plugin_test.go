@@ -4,8 +4,25 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/hcpstatuspatch"
+
 	"golang.org/x/tools/go/analysis"
 )
+
+func TestBuildAnalyzers(t *testing.T) {
+	t.Run("When hcpstatuspatch is enabled, it should select the HC and HCP analyzer", func(t *testing.T) {
+		raw := map[string]any{
+			"analyzers": map[string]any{"enable": []any{"hcpstatuspatch"}},
+		}
+		got, err := BuildAnalyzers(raw)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 1 || got[0] != hcpstatuspatch.Analyzer {
+			t.Fatalf("expected only the HC and HCP status analyzer, got %v", analyzerNames(got))
+		}
+	})
+}
 
 func TestBuildAnalyzersRejectsUnknownTopLevelField(t *testing.T) {
 	raw := map[string]any{

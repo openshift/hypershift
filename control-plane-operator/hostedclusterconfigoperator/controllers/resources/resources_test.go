@@ -22,9 +22,9 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
-	supportutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -51,6 +51,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
@@ -93,7 +94,6 @@ var initialObjects = []client.Object{
 	},
 	manifests.NodeTuningClusterOperator(),
 	manifests.NamespaceKubeSystem(),
-	manifests.UserCABundle(),
 	manifests.OpenShiftUserCABundle(),
 	&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
 	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameConfig),
@@ -746,94 +746,6 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	}
 }
 
-func TestReconcileUserCertCABundle(t *testing.T) {
-	t.Parallel()
-	testNamespace := "master-cluster1"
-	testHCPName := "cluster1"
-	tests := map[string]struct {
-		inputHCP              *hyperv1.HostedControlPlane
-		inputObjects          []client.Object
-		existingGuestObjects  []client.Object
-		expectUserCAConfigMap bool
-	}{
-		"When no AdditionalTrustBundle is set, it should not create user CA configmap": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-			},
-			inputObjects:          []client.Object{},
-			existingGuestObjects:  []client.Object{},
-			expectUserCAConfigMap: false,
-		},
-		"When AdditionalTrustBundle is set, it should create user CA configmap": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					AdditionalTrustBundle: &corev1.LocalObjectReference{
-						Name: cpomanifests.UserCAConfigMap(testNamespace).Name,
-					},
-				},
-			},
-			inputObjects: []client.Object{
-				&corev1.ConfigMap{
-					ObjectMeta: cpomanifests.UserCAConfigMap(testNamespace).ObjectMeta,
-					Data: map[string]string{
-						"ca-bundle.crt": "acertxyz",
-					},
-				},
-			},
-			existingGuestObjects:  []client.Object{},
-			expectUserCAConfigMap: true,
-		},
-		"When AdditionalTrustBundle is removed, it should delete existing user-ca-bundle": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-			},
-			inputObjects: []client.Object{},
-			existingGuestObjects: []client.Object{
-				&corev1.ConfigMap{
-					ObjectMeta: manifests.UserCABundle().ObjectMeta,
-					Data: map[string]string{
-						"ca-bundle.crt": "oldcertdata",
-					},
-				},
-			},
-			expectUserCAConfigMap: false,
-		},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-			r := &reconciler{
-				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existingGuestObjects...).Build(),
-				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
-				hcpName:                testHCPName,
-				hcpNamespace:           testNamespace,
-			}
-			err := r.reconcileUserCertCABundle(t.Context(), test.inputHCP)
-			g.Expect(err).To(BeNil())
-			guestUserCABundle := manifests.UserCABundle()
-			if test.expectUserCAConfigMap {
-				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
-				g.Expect(err).To(BeNil())
-				g.Expect(len(guestUserCABundle.Data["ca-bundle.crt"]) > 0).To(BeTrue())
-			} else {
-				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
-				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
-			}
-		})
-	}
-}
-
 var _ manifestReconciler = manifestAndReconcile[*rbacv1.ClusterRole]{}
 
 func TestDestroyCloudResources(t *testing.T) {
@@ -1133,7 +1045,7 @@ func TestDestroyCloudResources(t *testing.T) {
 				uncachedClient:         uncachedClient,
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				cleanupTracker:         supportutil.NewCleanupTracker(),
+				cleanupTracker:         reconcilerpolicy.NewCleanupTracker(),
 			}
 			_, err := r.destroyCloudResources(t.Context(), fakeHCP)
 			g.Expect(err).ToNot(HaveOccurred())
@@ -1210,7 +1122,7 @@ func TestDestroyCloudResourcesWithKASUnavailable(t *testing.T) {
 				uncachedClient:         uncachedClient,
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				cleanupTracker:         supportutil.NewCleanupTracker(),
+				cleanupTracker:         reconcilerpolicy.NewCleanupTracker(),
 			}
 
 			remaining, skipReason, err := r.ensureCloudResourcesDestroyed(t.Context(), fakeHCP)
@@ -3643,6 +3555,17 @@ func TestNamespacedNamePredicateFunc(t *testing.T) {
 	}
 }
 
+func TestNotUserCABundlePredicate(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	p := notUserCABundlePredicate()
+
+	g.Expect(p.Create(event.TypedCreateEvent[client.Object]{Object: manifests.UserCABundle()})).To(BeFalse())
+	g.Expect(p.Create(event.TypedCreateEvent[client.Object]{Object: &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-config", Name: "another-config"},
+	}})).To(BeTrue())
+}
+
 func TestReconcileDeletion(t *testing.T) {
 	log := zapr.NewLogger(zaptest.NewLogger(t))
 
@@ -3826,7 +3749,7 @@ func TestReconcileDeletion(t *testing.T) {
 				uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				cleanupTracker:         supportutil.NewCleanupTracker(),
+				cleanupTracker:         reconcilerpolicy.NewCleanupTracker(),
 			}
 
 			if tt.expectCloudCleanup {

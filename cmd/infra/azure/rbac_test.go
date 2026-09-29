@@ -696,9 +696,19 @@ func TestCleanupRoleAssignments(t *testing.T) {
 				"should clean up data plane component %s", dp)
 		}
 
-		// All 8 control plane components + 3 data plane components should produce delete calls.
+		// Verify Karpenter role assignments are cleaned up on the cluster RG and VNet RG.
+		for _, kp := range []string{config.KarpenterVM, config.KarpenterNetwork, config.KarpenterMI} {
+			kpName := util.GenerateRoleAssignmentName(infraID, kp, managedRGScope)
+			g.Expect(calls).To(ContainElement(deleteCall{scope: managedRGScope, name: kpName}),
+				"should clean up Karpenter component %s on managed RG", kp)
+		}
+		karpenterVNetName := util.GenerateRoleAssignmentName(infraID, config.KarpenterNetwork, vnetRGScope)
+		g.Expect(calls).To(ContainElement(deleteCall{scope: vnetRGScope, name: karpenterVNetName}),
+			"should clean up Karpenter Network Contributor on vnet scope")
+
+		// All 8 control plane components + 3 data plane components + 3 Karpenter on managed RG + 1 Karpenter on vnet RG.
 		// Exact count depends on GetServicePrincipalScopes; verify at least the minimum.
-		g.Expect(len(calls)).To(BeNumerically(">=", 11),
+		g.Expect(len(calls)).To(BeNumerically(">=", 15),
 			"should delete assignments for all components across their scopes")
 	})
 

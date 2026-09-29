@@ -244,6 +244,35 @@ Context("[Feature:AzurePrivateLink] Azure Private Topology", Label("Azure", "sel
 
 **When adding new test files:** Choose a Feature name that maps to a distinct capability. Check existing Feature names in the codebase (`grep -r '\[Feature:' test/e2e/v2/tests/`) to avoid duplicates.
 
+### 20. JUnit Contract
+
+The v2 suite owns its JUnit output through `internal.GenerateJUnitReport`; do not
+enable Ginkgo's built-in `--ginkgo.junit-report`. Pass the destination with
+`--e2e.junit-report` instead.
+
+The downstream contract is:
+
+- Ginkgo decorator labels are omitted from testcase names. Textual Sippy/CR
+  annotations in `Describe`, `Context`, and `It` strings remain part of the name.
+- Ginkgo leaf node types such as `[It]` are omitted from testcase names, and
+  suite setup nodes are not emitted as testcases.
+- Every `It` spec selected by the invocation's label filter produces exactly
+  one testcase. Specs excluded by that filter are omitted rather than reported
+  as skipped because separate `run-tests` invocations are implementation-level
+  shards of the same downstream suite.
+- The testsuite name remains `hypershift-e2e`; informing results must not be
+  split into a differently named suite.
+- Every spec labeled `Informing` has both a `lifecycle="informing"` testcase
+  attribute and a `<property name="lifecycle" value="informing"/>` property.
+- Assertion failures converted to skips by `InformingAwareFailHandler` are
+  rendered as informing failures with their original message. Genuine calls to
+  `Skip` remain skipped.
+- Informing assertion failures handled by `InformingAwareFailHandler` do not
+  cause the test process to exit unsuccessfully; regular failures do.
+
+Run `make test-e2ev2-unit` to exercise the renderer and the synthetic Ginkgo
+contract suite. The standard `make test` target also runs these tests.
+
 ## Expanding v2
 
 When adding new test areas:

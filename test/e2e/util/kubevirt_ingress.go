@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	hcpmanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 
 	routev1 "github.com/openshift/api/route/v1"
 

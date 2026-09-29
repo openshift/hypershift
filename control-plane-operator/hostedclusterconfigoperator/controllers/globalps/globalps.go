@@ -21,6 +21,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	crreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 const (
@@ -62,7 +63,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req crreconcile.Request) (cr
 // - If at some point the user deletes the additional pull secret, the daemonSet will not be removed
 // If the PS doesn't exist, the HCCO doesn't do anything.
 //
-// IMPORTANT: The DaemonSet is ONLY deployed to nodes that are explicitly labeled as eligible.
+// IMPORTANT: The DaemonSet is ONLY deployed to nodes that are eligible (CAPI nodes explicitly labeled
+// as eligible or Karpenter-managed nodes, identified by the presence of the karpenter.sh/nodepool label).
 // Nodes belonging to NodePools using InPlace upgrade strategy are NOT labeled, preventing
 // conflicts between the DaemonSet's kubelet config modifications and Machine Config Daemon operations.
 func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
@@ -123,6 +125,10 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		// Generate a hash of the original pull secret content to trigger pod recreation
 		configSeed := util.HashSimple(originalPullSecretBytes)
 
+		if err := r.syncCombinedPullSecret(ctx, originalPullSecretBytes); err != nil {
+			return err
+		}
+
 		// Reconcile DaemonSet with only original pull secret (global-pull-secret will be optional and empty)
 		daemonSet := manifests.GlobalPullSecretDaemonSet()
 		if err := reconcileDaemonSet(ctx, daemonSet, "", originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
@@ -165,6 +171,10 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		return fmt.Errorf("failed to create global pull secret: %w", err)
 	}
 
+	if err := r.syncCombinedPullSecret(ctx, globalPullSecretBytes); err != nil {
+		return err
+	}
+
 	// Generate a hash of the global pull secret content to trigger pod recreation when content changes
 	configSeed := util.HashSimple(globalPullSecretBytes)
 	daemonSet := manifests.GlobalPullSecretDaemonSet()
@@ -172,6 +182,26 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 	}
 
+	return nil
+}
+
+func (r *Reconciler) syncCombinedPullSecret(ctx context.Context, pullSecretBytes []byte) error {
+	log := ctrl.LoggerFrom(ctx)
+	combinedSecret := manifests.CombinedPullSecret(r.hcpNamespace)
+	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(combinedSecret), combinedSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("combined-pull-secret not yet created by CPO, skipping update")
+			return nil
+		}
+		return fmt.Errorf("failed to get combined pull secret: %w", err)
+	}
+	combinedSecret.Type = corev1.SecretTypeDockerConfigJson
+	combinedSecret.Data = map[string][]byte{
+		corev1.DockerConfigJsonKey: pullSecretBytes,
+	}
+	if err := r.cpClient.Update(ctx, combinedSecret); err != nil {
+		return fmt.Errorf("failed to update combined pull secret: %w", err)
+	}
 	return nil
 }
 
@@ -197,10 +227,7 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 					DNSPolicy:                    corev1.DNSDefault,
 					PriorityClassName:            openshiftUserCriticalPriorityClass,
 					Tolerations:                  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
-					// Use nodeSelector to only include nodes that are explicitly enabled for GlobalPullSecret
-					NodeSelector: map[string]string{
-						globalPSLabelKey: "true",
-					},
+					Affinity:                     buildGlobalPSNodeAffinity(),
 					Containers: []corev1.Container{
 						{
 							Name:            manifests.GlobalPullSecretDSName,
@@ -289,13 +316,27 @@ func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullS
 	if err = json.Unmarshal(originalPullSecret, &originalJSON); err != nil {
 		return nil, fmt.Errorf("invalid original pull secret format: %w", err)
 	}
-	originalAuths = originalJSON["auths"].(map[string]any)
+	rawOriginalAuths, ok := originalJSON["auths"]
+	if !ok {
+		return nil, fmt.Errorf("original pull secret missing \"auths\" key")
+	}
+	originalAuths, ok = rawOriginalAuths.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("original pull secret \"auths\" is not an object")
+	}
 
 	// Unmarshal additional pull secret
 	if err = json.Unmarshal(userProvidedPullSecret, &userProvidedJSON); err != nil {
 		return nil, fmt.Errorf("invalid user provided pull secret format: %w", err)
 	}
-	userProvidedAuths = userProvidedJSON["auths"].(map[string]any)
+	rawUserAuths, ok := userProvidedJSON["auths"]
+	if !ok {
+		return nil, fmt.Errorf("user provided pull secret missing \"auths\" key")
+	}
+	userProvidedAuths, ok = rawUserAuths.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("user provided pull secret \"auths\" is not an object")
+	}
 
 	for k, v := range originalAuths {
 		if _, ok := userProvidedAuths[k]; ok {
@@ -327,6 +368,36 @@ func additionalPullSecretExists(ctx context.Context, c crclient.Client) (bool, *
 		return false, nil, err
 	}
 	return true, additionalPullSecret, nil
+}
+
+// buildGlobalPSNodeAffinity creates node affinity to target CAPI nodes explicitly enabled
+// for GlobalPullSecret as well as Karpenter-managed nodes.
+func buildGlobalPSNodeAffinity() *corev1.Affinity {
+	return &corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{
+					{
+						MatchExpressions: []corev1.NodeSelectorRequirement{
+							{
+								Key:      globalPSLabelKey,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"true"},
+							},
+						},
+					},
+					{
+						MatchExpressions: []corev1.NodeSelectorRequirement{
+							{
+								Key:      karpenterv1.NodePoolLabelKey,
+								Operator: corev1.NodeSelectorOpExists,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 // Volume build functions for GlobalPullSecret DaemonSet

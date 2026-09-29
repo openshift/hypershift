@@ -87,6 +87,7 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/upsert"
@@ -184,6 +185,7 @@ type HostedControlPlaneReconciler struct {
 	OperateOnReleaseImage                   string
 	DefaultIngressDomain                    string
 	MetricsSet                              metrics.MetricsSet
+	KASHealthMetrics                        *kas.KASHealthMetrics
 	SREConfigHash                           string
 	ec2Client                               awsapi.EC2API
 	awsSession                              *aws.Config
@@ -731,12 +733,12 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// control plane is initialized (ControlPlaneInitialized condition on the CAPI Cluster).
 	hostedControlPlane.Status.Initialization.ControlPlaneInitialized = ptr.To(true)
 
-	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationActiveCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, reconcilerpolicy.GenerateReconciliationActiveCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.
 	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
-	if isPaused, duration := util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil); isPaused {
 		r.Log.Info("Reconciliation paused", "pausedUntil", *hostedControlPlane.Spec.PausedUntil)
 		return ctrl.Result{
 			RequeueAfter: duration,
@@ -798,7 +800,7 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 			Message: hyperv1.AllIsWellMessage,
 			Reason:  hyperv1.AsExpectedReason,
 		}
-		if util.HCPOAuthEnabled(hostedControlPlane) {
+		if reconcilerpolicy.HCPOAuthEnabled(hostedControlPlane) {
 			// JoinHostPort brackets IPv6 literals so url.Parse accepts the callback template.
 			hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s/oauth2callback/[identity-provider-name]",
 				net.JoinHostPort(infraStatus.OAuthHost, strconv.Itoa(int(infraStatus.OAuthPort))))
@@ -1001,9 +1003,9 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		// When the cluster is private, checking the load balancers will depend on whether the load balancer is
 		// using the right subnets. To avoid uncertainty, we'll limit the check to the service endpoint.
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort)
+			return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort, r.KASHealthMetrics)
 		}
-		return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCPort)
+		return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCPort, r.KASHealthMetrics)
 	case serviceStrategy.Type == hyperv1.Route:
 		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
 			externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
@@ -1015,7 +1017,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 			if err != nil {
 				return err
 			}
-			return healthCheckKASEndpoint(ctx, endpoint, port)
+			return healthCheckKASEndpoint(ctx, endpoint, port, r.KASHealthMetrics)
 		}
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
@@ -1051,25 +1053,41 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		} else if LBIngress.IP != "" {
 			ingressPoint = LBIngress.IP
 		}
-		return healthCheckKASEndpoint(ctx, ingressPoint, port)
+		return healthCheckKASEndpoint(ctx, ingressPoint, port, r.KASHealthMetrics)
 	}
 	return nil
 }
 
-func healthCheckKASEndpoint(ctx context.Context, ingressPoint string, port int) error {
+func healthCheckKASEndpoint(ctx context.Context, ingressPoint string, port int, metrics *kas.KASHealthMetrics) error {
 	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz?verbose", ingressPoint, port)
 
 	httpClient := util.InsecureHTTPClient()
 	httpClient.Timeout = 10 * time.Second
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthEndpoint, nil)
 	if err != nil {
 		return err
 	}
+
+	start := time.Now()
 	resp, err := httpClient.Do(req)
+	duration := time.Since(start).Seconds()
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+
+	if metrics != nil {
+		metrics.RequestDuration.Observe(duration)
+		if err == nil && resp != nil && resp.StatusCode == http.StatusOK {
+			metrics.Available.Set(1)
+		} else {
+			metrics.Available.Set(0)
+		}
+	}
+
 	if err != nil {
 		return fmt.Errorf("health check to APIServer endpoint %s failed: %w", ingressPoint, err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		failingChecks := parseFailingHealthChecks(resp.Body)
@@ -1307,7 +1325,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		}
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		// Reconcile kubeadmin password
 		r.Log.Info("Reconciling kubeadmin password secret")
 		explicitOauthConfig := hcp.Spec.Configuration != nil && hcp.Spec.Configuration.OAuth != nil
@@ -1534,7 +1552,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenshiftCerts(ctx context.Conte
 		return fmt.Errorf("failed to reconcile kas admin client secret: %w", err)
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		openshiftOAuthAPIServerCertSecret := manifests.OpenShiftOAuthAPIServerCertSecret(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, openshiftOAuthAPIServerCertSecret, func() error {
 			return pki.ReconcileOpenShiftOAuthAPIServerCertSecret(openshiftOAuthAPIServerCertSecret, rootCASecret, p.OwnerRef)
@@ -2070,7 +2088,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile managed UserCA configMap: %w", err)
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		if err := r.reconcileOAuthCerts(ctx, hcp, p, createOrUpdate, rootCASecret, trustedCABundle); err != nil {
 			return err
 		}
@@ -3241,8 +3259,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	if hyperazureutil.IsAroHCPByHCP(hcp) {
 		// CPO cannot reach private Key Vault endpoints; KAS pods access them
 		// through the private router (HAProxy TCP passthrough via hostAlias).
-		// Actual Key Vault access is not verified here, so the condition is
-		// Unknown rather than True until it is validated at runtime.
+		// Unknown rather than True.
 		if hyperazureutil.IsPrivateKeyVault(hcp) {
 			meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
 				Type:               string(hyperv1.ValidAzureKMSConfig),

@@ -108,7 +108,7 @@ Reads cluster names from `SHARED_DIR` files, then executes the resolved `TestPla
 ```bash
 bin/test-e2e-v2 \
   --ginkgo.label-filter="<filter>" \
-  --ginkgo.junit-report="<junit-file>" \
+  --e2e.junit-report="<junit-file>" \
   --ginkgo.timeout="3h" \
   --ginkgo.skip="<skip-pattern>" \
   --ginkgo.v

@@ -177,6 +177,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ControlPlaneUpdateHistoryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneVersionStatus"):
 		return &hypershiftv1beta1.ControlPlaneVersionStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("CPUOptions"):
+		return &hypershiftv1beta1.CPUOptionsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DataPlaneManagedIdentities"):
 		return &hypershiftv1beta1.DataPlaneManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Diagnostics"):
@@ -287,6 +289,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.InPlaceUpgradeApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KarpenterAWSConfig"):
 		return &hypershiftv1beta1.KarpenterAWSConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KarpenterAzureConfig"):
+		return &hypershiftv1beta1.KarpenterAzureConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KarpenterConfig"):
 		return &hypershiftv1beta1.KarpenterConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KMSSpec"):

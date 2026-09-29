@@ -2024,6 +2024,24 @@ PlacementOptions
 <p>placement specifies the placement options for the EC2 instances.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>cpuOptions,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CPUOptions">
+CPUOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>cpuOptions specifies CPU configuration for EC2 instances.
+Supported on C8i, M8i, and R8i instance families.
+When omitted, AWS defaults are used (nested virtualization is not enabled).
+To revert to default behavior after setting cpuOptions, remove the entire
+cpuOptions field rather than clearing individual sub-fields.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSNodePoolResourceTag { #hypershift.openshift.io/v1beta1.AWSNodePoolResourceTag }
@@ -2261,7 +2279,8 @@ graceful handling of spot instance terminations.</p>
 and EC2 Instance Rebalance Recommendations via EventBridge rules.
 The AWS Node Termination Handler will poll this queue and cordon/drain nodes
 before they are terminated, providing a best effort for graceful shutdown.</p>
-<p>Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).</p>
+<p>Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).
+Supports FedRAMP/FIPS endpoints (sqs-fips prefix) and GovCloud regions.</p>
 </td>
 </tr>
 </tbody>
@@ -3495,6 +3514,7 @@ This is only valid for self-managed Azure.</p>
 ###AzureClientID { #hypershift.openshift.io/v1beta1.AzureClientID }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterAzureConfig">KarpenterAzureConfig</a>, 
 <a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">ManagedIdentity</a>, 
 <a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">WorkloadIdentity</a>)
 </p>
@@ -5296,6 +5316,41 @@ used in workload identity authentication for Azure Private Link Service operatio
 </p>
 <p>
 </p>
+###CPUOptions { #hypershift.openshift.io/v1beta1.CPUOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>CPUOptions specifies CPU configuration for EC2 instances.
+At least one field must be specified when cpuOptions is present.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nestedVirtualizationPolicy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy">
+NestedVirtualizationPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+Supported on C8i, M8i, and R8i instance families.
+When omitted, nested virtualization is not enabled (AWS default behavior).</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###Capabilities { #hypershift.openshift.io/v1beta1.Capabilities }
 <p>
 (<em>Appears on:</em>
@@ -6009,8 +6064,7 @@ NetworkType
 <em>(Optional)</em>
 <p>networkType specifies the SDN provider used for cluster networking.
 Defaults to OVNKubernetes.
-This field is required and immutable.
-kubebuilder:validation:XValidation:rule=&ldquo;self == oldSelf&rdquo;, message=&ldquo;networkType is immutable&rdquo;</p>
+This field is required and immutable.</p>
 </td>
 </tr>
 <tr>
@@ -7123,6 +7177,26 @@ int64
 </td>
 </tr>
 </tbody>
+</table>
+###CpuModelType { #hypershift.openshift.io/v1beta1.CpuModelType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtCompute">KubevirtCompute</a>)
+</p>
+<p>
+<p>CpuModelType represents the CPU model for KubeVirt VMs.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;HostPassthrough&#34;</p></td>
+<td><p>CpuModelHostPassthrough configures the VM to use the same CPU model as the node.</p>
+</td>
+</tr></tbody>
 </table>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>
@@ -12226,6 +12300,44 @@ Example:
 </tr>
 </tbody>
 </table>
+###KarpenterAzureConfig { #hypershift.openshift.io/v1beta1.KarpenterAzureConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>)
+</p>
+<p>
+<p>KarpenterAzureConfig specifies Azure-specific configuration for the Karpenter provisioner.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>clientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureClientID">
+AzureClientID
+</a>
+</em>
+</td>
+<td>
+<p>clientID is the client ID of the user-assigned managed identity Karpenter uses
+to provision and manage Azure VMs in the hosted cluster&rsquo;s subscription.</p>
+<p>The identity must have a federated credential that trusts the hosted cluster
+OIDC issuer for subject system:serviceaccount:kube-system:karpenter.</p>
+<p>The identity must be granted Virtual Machine Contributor, Network Contributor,
+and Managed Identity Operator on the cluster resource group (and Network Contributor
+on the VNet resource group when it differs).</p>
+<p>The client ID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KarpenterConfig { #hypershift.openshift.io/v1beta1.KarpenterConfig }
 <p>
 (<em>Appears on:</em>
@@ -12267,7 +12379,23 @@ KarpenterAWSConfig
 </td>
 <td>
 <em>(Optional)</em>
-<p>aws specifies the AWS-specific configuration for Karpenter.</p>
+<p>aws specifies the AWS-specific configuration for Karpenter.
+Required when platform is &ldquo;AWS&rdquo;, and forbidden otherwise.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterAzureConfig">
+KarpenterAzureConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azure specifies the Azure-specific configuration for Karpenter.
+Required when platform is &ldquo;Azure&rdquo;, and forbidden otherwise.</p>
 </td>
 </tr>
 </tbody>
@@ -12531,6 +12659,26 @@ QoSClass
 limit memory and CPU, equal to be the requested values, to set the VMI as a Guaranteed QoS Class;
 See here for more details:
 <a href="https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances">https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>model</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CpuModelType">
+CpuModelType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>model specifies the CPU model for the KubeVirt VirtualMachineInstance.
+Valid values are &ldquo;HostPassthrough&rdquo; and omitted.
+When not set, no explicit CPU model is configured and KubeVirt will use
+its default behavior.
+When set to &ldquo;HostPassthrough&rdquo;, the VM will use the same CPU model as the
+host node, which provides the best performance but may limit live migration
+compatibility between nodes with different CPU types.</p>
 </td>
 </tr>
 </tbody>
@@ -14122,6 +14270,29 @@ which produces significantly higher metrics volume.</p>
 <td></td>
 </tr><tr><td><p>&#34;Enable&#34;</p></td>
 <td></td>
+</tr></tbody>
+</table>
+###NestedVirtualizationPolicy { #hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CPUOptions">CPUOptions</a>)
+</p>
+<p>
+<p>NestedVirtualizationPolicy indicates whether nested virtualization is enabled or disabled.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Disabled&#34;</p></td>
+<td><p>NestedVirtualizationDisabled disables nested virtualization on the instance.</p>
+</td>
+</tr><tr><td><p>&#34;Enabled&#34;</p></td>
+<td><p>NestedVirtualizationEnabled enables nested virtualization on the instance.</p>
+</td>
 </tr></tbody>
 </table>
 ###NetworkFilter { #hypershift.openshift.io/v1beta1.NetworkFilter }

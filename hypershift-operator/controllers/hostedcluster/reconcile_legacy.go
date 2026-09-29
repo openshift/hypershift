@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -860,7 +861,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 	}
-	meta.SetStatusCondition(&hcluster.Status.Conditions, hyperutil.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
+	meta.SetStatusCondition(&hcluster.Status.Conditions, reconcilerpolicy.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
 	// Set ValidReleaseImage condition
 	{
@@ -977,7 +978,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 
 	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
-	if isPaused, duration := hyperutil.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
 		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -1193,12 +1194,12 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 		}
+		srcData, srcHasData := src.Data[".dockerconfigjson"]
+		if !srcHasData {
+			return ctrl.Result{}, fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+		}
 		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, dst, func() error {
-			srcData, srcHasData := src.Data[".dockerconfigjson"]
-			if !srcHasData {
-				return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
-			}
 			dst.Type = corev1.SecretTypeDockerConfigJson
 			if dst.Data == nil {
 				dst.Data = map[string][]byte{}
@@ -1208,6 +1209,16 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile pull secret: %w", err)
+		}
+		// Bootstrap the combined-pull-secret with original data if it doesn't exist yet.
+		// HCCO takes ownership after initial creation, merging additional credentials.
+		combinedDst := controlplaneoperator.CombinedPullSecret(controlPlaneNamespace.Name)
+		combinedDst.Type = corev1.SecretTypeDockerConfigJson
+		combinedDst.Data = map[string][]byte{
+			".dockerconfigjson": srcData,
+		}
+		if err := r.Client.Create(ctx, combinedDst); err != nil && !apierrors.IsAlreadyExists(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to bootstrap combined pull secret: %w", err)
 		}
 	}
 
@@ -1700,7 +1711,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 
 	// Reconcile the CAPI manager components
-	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster)
+	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster, releaseImageVersion)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
 	}

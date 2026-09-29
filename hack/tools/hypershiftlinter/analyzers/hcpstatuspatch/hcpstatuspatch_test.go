@@ -6,7 +6,7 @@ import (
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
-func TestAnalyzer(t *testing.T) {
+func TestRun(t *testing.T) {
 	t.Parallel()
 
 	testdata := analysistest.TestData()
@@ -16,11 +16,11 @@ func TestAnalyzer(t *testing.T) {
 		pattern string
 	}{
 		{
-			name:    "When patches use statuspatching, optimistic lock, or non-HCP types, it should produce no diagnostics",
+			name:    "When patches use statuspatching, optimistic lock, or unrelated types, it should produce no diagnostics",
 			pattern: "a/good",
 		},
 		{
-			name:    "When HostedControlPlane status is updated or patched without an optimistic lock, it should produce diagnostics",
+			name:    "When HostedCluster or HostedControlPlane status is updated or patched without an optimistic lock, it should produce diagnostics",
 			pattern: "a/bad",
 		},
 		{

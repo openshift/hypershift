@@ -28,6 +28,31 @@ func isControlPlaneVersionCompleted(hc *hyperv1.HostedCluster) (done bool, reaso
 	return true, "controlPlaneVersion reached Completed", nil
 }
 
+// isControlPlaneVersionCompletedForImage returns a predicate that waits for a
+// specific target image to reach Completed in ControlPlaneVersion. Unlike
+// isControlPlaneVersionCompleted, this cannot be satisfied by an already-completed
+// old rollout: the Desired.Image and History[0].Image must both match targetImage.
+func isControlPlaneVersionCompletedForImage(targetImage string) Predicate[*hyperv1.HostedCluster] {
+	return func(hc *hyperv1.HostedCluster) (done bool, reasons string, err error) {
+		if hc.Status.ControlPlaneVersion.Desired.Image != targetImage {
+			return false, fmt.Sprintf("controlPlaneVersion desired image %q, waiting for %q",
+				hc.Status.ControlPlaneVersion.Desired.Image, targetImage), nil
+		}
+		if len(hc.Status.ControlPlaneVersion.History) == 0 {
+			return false, "controlPlaneVersion has no history", nil
+		}
+		entry := hc.Status.ControlPlaneVersion.History[0]
+		if entry.Image != targetImage {
+			return false, fmt.Sprintf("most recent history image %q, waiting for %q",
+				entry.Image, targetImage), nil
+		}
+		if entry.State != configv1.CompletedUpdate {
+			return false, fmt.Sprintf("controlPlaneVersion state is %s for target image, waiting for Completed", entry.State), nil
+		}
+		return true, fmt.Sprintf("controlPlaneVersion Completed for %s", targetImage), nil
+	}
+}
+
 // controlPlaneVersionSteadyState returns a Predicate that checks if the
 // control plane version is in a valid steady state (Completed).
 func controlPlaneVersionSteadyState(hasWorkerNodes bool) Predicate[*hyperv1.HostedCluster] {

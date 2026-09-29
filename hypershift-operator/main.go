@@ -95,7 +95,6 @@ import (
 
 	capiaddonsv1beta2 "sigs.k8s.io/cluster-api/api/addons/v1beta2"
 	capiv1beta2 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	ipamv1beta2 "sigs.k8s.io/cluster-api/api/ipam/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -937,7 +936,6 @@ func setupSupportControllers(ctx context.Context, mgr ctrl.Manager, opts *StartO
 	//   - --disable-capi-migration flag and capiStorageVersionForOpts() (cmd/install/install.go)
 	//   - CAPI_STORAGE_VERSION env var plumbing (cmd/install/assets/hypershift_operator.go, cmd/install/install.go)
 	//   - --skip-crd-migration-phases args on CAPI manager (control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager/deployment.go)
-	//   - IPAM skip override in setupCRDs() (cmd/install/install.go)
 	if os.Getenv(capicrdmigrator.CAPIStorageVersionEnvVar) == capicrdmigrator.TargetStorageVersion {
 		capicrdmigrator.RegisterMigrationMetrics(mgr.GetAPIReader(), opts.Namespace)
 		migrator := &capicrdmigrator.CRDMigrator{
@@ -953,8 +951,6 @@ func setupSupportControllers(ctx context.Context, mgr ctrl.Manager, opts *StartO
 				&capiv1beta2.MachinePool{}:                     {},
 				&capiv1beta2.Machine{}:                         {},
 				&capiv1beta2.MachineSet{}:                      {},
-				&ipamv1beta2.IPAddressClaim{}:                  {},
-				&ipamv1beta2.IPAddress{}:                       {},
 				&capiaddonsv1beta2.ClusterResourceSetBinding{}: {},
 				&capiaddonsv1beta2.ClusterResourceSet{}:        {},
 			},

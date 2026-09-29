@@ -44,6 +44,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.WorkloadIdentitiesOutputFileDescription)
 	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
 	cmd.Flags().BoolVar(&opts.EnableKMS, "enable-kms", opts.EnableKMS, util.EnableKMSDescription)
+	cmd.Flags().BoolVar(&opts.EnableKarpenter, "enable-karpenter", opts.EnableKarpenter, util.EnableKarpenterDescription)
 
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("infra-id")
@@ -87,6 +88,7 @@ func BindCreateIAMProductFlags(opts *CreateIAMOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.WorkloadIdentitiesOutputFileDescription)
 	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
 	flags.BoolVar(&opts.EnableKMS, "enable-kms", opts.EnableKMS, util.EnableKMSDescription)
+	flags.BoolVar(&opts.EnableKarpenter, "enable-karpenter", opts.EnableKarpenter, util.EnableKarpenterDescription)
 }
 
 // Validate validates the CreateIAMOptions

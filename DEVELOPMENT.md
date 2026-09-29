@@ -54,7 +54,7 @@ make staticcheck              # Run staticcheck on core packages
 make fmt                      # Format code
 make vet                      # Run go vet
 make verify-codespell         # Catch spelling errors in markdown
-make run-gitlint              # Validate commit message format
+make run-gitlint              # Validate commit message format across a commit range
 make pre-commit               # Full pre-PR gate (build, e2e compile, verify, test)
 ```
 
@@ -124,7 +124,8 @@ The minimum Go version is declared in [`go.mod`](go.mod). The `api/` module uses
 
 ## Commit Messages
 
-Use conventional commit format. Validate with `make run-gitlint`. Do NOT put Jira IDs in commit messages — they belong only in PR titles.
+Use conventional commit format. The installed `commit-msg` hook validates the pending message automatically; use
+`make run-gitlint` to validate a commit range. Do NOT put Jira IDs in commit messages — they belong only in PR titles.
 
 ```
 <type>(<scope>): <description>
@@ -175,6 +176,7 @@ For unit test creation requirements, naming conventions, and placement rules, se
 
 Additional review-derived rules:
 
+- Use `sets.Set[T]` (from `k8s.io/apimachinery/pkg/util/sets`) instead of `map[T]struct{}` for set semantics. It provides readable methods (`.Has()`, `.Insert()`, `.Delete()`) and is the standard pattern in the codebase.
 - Do not leave dead code (functions defined but never called). Remove unused code before submitting.
 - Do not leave TODO comments in validation regex patterns or CEL rules — resolve them before submitting. Reviewers have blocked PRs for shipping regex patterns with placeholder character classes (e.g., allowing `{` and `}` in UUID fields, or missing anchoring constraints).
 - When writing regex for API validation, match the upstream format exactly. For UUIDs, use `[0-9a-f]{8}-...`; for Azure resource names, verify the allowed character set against Azure documentation. Do not over-broaden patterns with catch-all classes like `[a-zA-Z0-9-_().{}]`.

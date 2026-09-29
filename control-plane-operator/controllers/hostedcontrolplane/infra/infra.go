@@ -18,8 +18,8 @@ import (
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -90,7 +90,7 @@ func (r *Reconciler) ReconcileInfrastructure(ctx context.Context, hcp *hyperv1.H
 	if err := r.reconcileKonnectivityServerService(ctx, hcp, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile Konnectivity server service: %w", err)
 	}
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		if err := r.reconcileOAuthServerService(ctx, hcp, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile OAuth server service: %w", err)
 		}
@@ -131,7 +131,7 @@ func (r *Reconciler) ReconcileInfrastructureStatus(ctx context.Context, hcp *hyp
 	if len(msg) > 0 {
 		messages = append(messages, msg)
 	}
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		infraStatus.OAuthEnabled = true
 		if infraStatus.OAuthHost, infraStatus.OAuthPort, msg, err = r.reconcileOAuthServiceStatus(ctx, hcp); err != nil {
 			errs = append(errs, err)

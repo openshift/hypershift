@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d89e1596317150a7427de7468cc40b0f149224a55549a7cfacdd01b4bbb67635
+    hypershift.openshift.io/desired-state-hash: 7cdb03a95ec70c2d8c9e0a4377727bd74e49f310cd020ad5b3f515e46eba9deb
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-scheduler
@@ -206,6 +206,15 @@ spec:
         - containerPort: 10259
           name: client
           protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 10259
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 10
         resources:
           requests:
             cpu: 25m

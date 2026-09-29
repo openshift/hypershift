@@ -8,7 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	schedulerutil "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/util"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -70,7 +70,7 @@ func (r *Scheduler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resul
 		return ctrl.Result{}, nil
 	}
 
-	isPaused, duration, err := util.ProcessPausedUntilField(hc.Spec.PausedUntil, time.Now())
+	isPaused, duration, err := reconcilerpolicy.ProcessPausedUntilField(hc.Spec.PausedUntil, time.Now())
 	if err != nil {
 		log.Error(err, "error processing hosted cluster paused field")
 		return ctrl.Result{}, nil // user needs to reformat the field, returning error is useless

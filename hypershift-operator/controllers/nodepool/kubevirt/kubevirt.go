@@ -142,12 +142,43 @@ func PlatformValidation(nodePool *hyperv1.NodePool) error {
 	return nil
 }
 
+// LiveMigrationWarningCondition returns a NodePoolCondition when the configured
+// CPU model may prevent live migration of VMs, or nil when no warning applies.
+// The caller is responsible for applying the condition via SetStatusCondition.
+func LiveMigrationWarningCondition(nodePool *hyperv1.NodePool) *hyperv1.NodePoolCondition {
+	if nodePool.Spec.Platform.Kubevirt == nil ||
+		nodePool.Spec.Platform.Kubevirt.Compute == nil ||
+		nodePool.Spec.Platform.Kubevirt.Compute.Model != hyperv1.CpuModelHostPassthrough {
+		return nil
+	}
+
+	return &hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolKubeVirtLiveMigratableType,
+		Status:             corev1.ConditionFalse,
+		Reason:             hyperv1.NodePoolKubeVirtLiveMigratableReason,
+		Message:            "CPU model host-passthrough is configured; VMs using host-passthrough may not be live-migratable",
+		ObservedGeneration: nodePool.Generation,
+	}
+}
+
+// CpuModelToKubevirt translates a CpuModelType API enum value to the
+// corresponding KubeVirt CPU model string.
+func CpuModelToKubevirt(model hyperv1.CpuModelType) string {
+	switch model {
+	case hyperv1.CpuModelHostPassthrough:
+		return "host-passthrough"
+	default:
+		return string(model)
+	}
+}
+
 func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage) (*capikubevirt.VirtualMachineTemplateSpec, error) {
 	const rootVolumeName = "rhcos"
 
 	var (
 		memory              apiresource.Quantity
 		cores               uint32
+		cpuModel            string
 		guaranteedResources = false
 	)
 
@@ -165,6 +196,10 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 
 		if kvPlatform.Compute.Cores != nil {
 			cores = *kvPlatform.Compute.Cores
+		}
+
+		if kvPlatform.Compute.Model != "" {
+			cpuModel = CpuModelToKubevirt(kvPlatform.Compute.Model)
 		}
 
 		guaranteedResources = kvPlatform.Compute.QosClass != nil && *kvPlatform.Compute.QosClass == hyperv1.QoSClassGuaranteed
@@ -204,10 +239,20 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 
 		template.Spec.Template.Spec.Domain.Resources.Requests = podResources
 		template.Spec.Template.Spec.Domain.Resources.Limits = podResources
+
+		// In the guaranteed QoS path, cores are specified via resource requests/limits
+		// rather than the CPU struct. Only Model belongs in CPU here.
+		if cpuModel != "" {
+			template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Model: cpuModel}
+		}
 	} else {
 		template.Spec.Template.Spec.Domain.Memory = &kubevirtv1.Memory{Guest: &memory}
-		if cores > 0 {
-			template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Cores: cores}
+		if cores > 0 || cpuModel != "" {
+			cpu := &kubevirtv1.CPU{Model: cpuModel}
+			if cores > 0 {
+				cpu.Cores = cores
+			}
+			template.Spec.Template.Spec.Domain.CPU = cpu
 		}
 	}
 

@@ -54,6 +54,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -66,6 +67,7 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/statuspatching"
@@ -130,7 +132,6 @@ const (
 	clusterDeletionRequeueDuration      = 5 * time.Second
 	ReportingGracePeriodRequeueDuration = 25 * time.Second
 
-	ImageStreamCAPI            = "cluster-capi-controllers"
 	ImageStreamAutoscalerImage = "cluster-autoscaler"
 
 	controlPlaneOperatorSubcommandsLabel                 = "io.openshift.hypershift.control-plane-operator-subcommands"
@@ -258,13 +259,13 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// namespaces, the events are filtered to enqueue only those resources which
 	// are annotated as being associated with a hostedcluster (using an annotation).
 	bldr := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}, builder.WithPredicates(hyperutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		For(&hyperv1.HostedCluster{}, builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
 		})
 	for _, managedResource := range r.managedResources() {
-		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())), builder.WithPredicates(hyperutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))
+		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))
 	}
 
 	// Set based on SCC capability
@@ -1241,7 +1242,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 	}
-	meta.SetStatusCondition(&hcluster.Status.Conditions, hyperutil.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
+	meta.SetStatusCondition(&hcluster.Status.Conditions, reconcilerpolicy.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
 	// Set ValidReleaseImage condition
 	{
@@ -1370,7 +1371,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
-	if isPaused, duration := hyperutil.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
 		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -1833,7 +1834,7 @@ func (r *HostedClusterReconciler) reconcileOperatorDeployments(ctx context.Conte
 		cpoHasUtilities, certRotationScale, releaseImageVersion, releaseProvider); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile control plane operator: %w", err))
 	}
-	if err := r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster); err != nil {
+	if err := r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster, releaseImageVersion); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile CAPI manager: %w", err))
 	}
 	if err := r.reconcileCAPIProvider(cpContext, hcluster, hcp, p); err != nil {
@@ -2032,11 +2033,11 @@ func (r *HostedClusterReconciler) reconcilePullSecretSync(
 		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
 	}
 	dst := controlplaneoperator.PullSecret(controlPlaneNamespace)
+	srcData, srcHasData := src.Data[".dockerconfigjson"]
+	if !srcHasData {
+		return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+	}
 	_, err := createOrUpdate(ctx, r.Client, dst, func() error {
-		srcData, srcHasData := src.Data[".dockerconfigjson"]
-		if !srcHasData {
-			return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
-		}
 		dst.Type = corev1.SecretTypeDockerConfigJson
 		if dst.Data == nil {
 			dst.Data = map[string][]byte{}
@@ -2044,7 +2045,21 @@ func (r *HostedClusterReconciler) reconcilePullSecretSync(
 		dst.Data[".dockerconfigjson"] = srcData
 		return nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Bootstrap the combined-pull-secret with original data if it doesn't exist yet.
+	// HCCO takes ownership after initial creation, merging additional credentials.
+	combinedDst := controlplaneoperator.CombinedPullSecret(controlPlaneNamespace)
+	combinedDst.Type = corev1.SecretTypeDockerConfigJson
+	combinedDst.Data = map[string][]byte{
+		".dockerconfigjson": srcData,
+	}
+	if err := r.Client.Create(ctx, combinedDst); err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to bootstrap combined pull secret: %w", err)
+	}
+	return nil
 }
 
 // reconcileSecretEncryptionSync syncs secret encryption configuration from the
@@ -3077,7 +3092,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 }
 
 // reconcileCAPIManager orchestrates all CAPI manager components.
-func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, releaseVersion semver.Version) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(cpContext, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -3105,6 +3120,10 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 	}
 
 	imageOverride := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
+
+	if imageOverride == "" {
+		imageOverride = backwardcompat.GetBackwardCompatibleCAPIImage(releaseVersion)
+	}
 
 	capiManager := capimanagerv2.NewComponent(imageOverride)
 	if err := capiManager.Reconcile(cpContext); err != nil {

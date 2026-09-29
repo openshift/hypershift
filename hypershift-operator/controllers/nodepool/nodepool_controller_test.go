@@ -2352,9 +2352,66 @@ func TestAggregateMachineMessages(t *testing.T) {
 			expect: strings.Repeat("z", maxMessageLength),
 		},
 		{
-			name:   "When a single message exceeds the limit it should return only the truncation suffix",
+			name:   "When a single message exceeds the limit it should truncate the message preserving the prefix",
 			msgs:   []string{strings.Repeat("a", maxMessageLength+1)},
-			expect: endOfMessage,
+			expect: strings.Repeat("a", maxMessageLength-len(endOfGlobalMessage)) + endOfGlobalMessage,
+		},
+		{
+			// Regression test for OCPBUGS-115468: a single Azure Policy denial message
+			// (RequestDisallowedByPolicy) exceeds 1000 chars. The old code dropped it
+			// entirely, returning only the "... message truncated" placeholder.
+			// The fix should truncate the message, preserving the actionable prefix
+			// (error code, policy name, denied location).
+			name: "When a single long Azure RequestDisallowedByPolicy error exceeds the limit it should truncate preserving the actionable prefix",
+			msgs: []string{
+				"Machine oshr-cluster-oshr-new-den-mr7p4-5vslw: Failed: " +
+					"virtualmachine failed to create or update. err: failed to create or update resource " +
+					"oshr-mrg/oshr-cluster-oshr-new-den-mr7p4-5vslw (service: virtualmachine): " +
+					"PUT https://management.azure.com/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/resourceGroups/oshr-mrg/providers/Microsoft.Compute/virtualMachines/oshr-cluster-oshr-new-den-mr7p4-5vslw\n" +
+					"--------------------------------------------------------------------------------\n" +
+					"RESPONSE 403: 403 Forbidden\n" +
+					"ERROR CODE: RequestDisallowedByPolicy\n" +
+					"--------------------------------------------------------------------------------\n" +
+					`{"error":{"code":"RequestDisallowedByPolicy","target":"oshr-cluster-oshr-new-den-mr7p4-5vslw",` +
+					`"message":"Resource 'oshr-cluster-oshr-new-den-mr7p4-5vslw' was disallowed by policy. ` +
+					`Policy identifiers: '[{\"policyAssignment\":{\"name\":\"deny-vm-regions-test-assign-mrg\",` +
+					`\"id\":\"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/resourceGroups/oshr-mrg/providers/Microsoft.Authorization/policyAssignments/deny-vm-regions-test-assign-mrg\"},` +
+					`\"policyDefinition\":{\"name\":\"Deny VMs outside allowed regions (test)\",` +
+					`\"id\":\"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/providers/Microsoft.Authorization/policyDefinitions/deny-vm-regions-test\",\"version\":\"1.0.0\"}}]'.","additionalInfo":` +
+					`[{"type":"PolicyViolation","info":{"evaluationDetails":{"evaluatedExpressions":[{"result":"True","expressionKind":"Field","expression":"type","path":"type",` +
+					`"expressionValue":"Microsoft.Compute/virtualMachines","targetValue":"Microsoft.Compute/virtualMachines","operator":"Equals"},` +
+					`{"result":"True","expressionKind":"Field","expression":"location","path":"location","expressionValue":"westus3","targetValue":["eastus"],"operator":"NotIn"}]},` +
+					`"policyDefinitionId":"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/providers/Microsoft.Authorization/policyDefinitions/deny-vm-regions-test",` +
+					`"policyDefinitionName":"deny-vm-regions-test","policyDefinitionDisplayName":"Deny VMs outside allowed regions (test)","policyDefinitionVersion":"1.0.0",` +
+					`"policyDefinitionEffect":"deny","policyAssignmentId":"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/resourceGroups/oshr-mrg/providers/Microsoft.Authorization/policyAssignments/deny-vm-regions-test-assign-mrg",` +
+					`"policyAssignmentName":"deny-vm-regions-test-assign-mrg","policyAssignmentScope":"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/resourceGroups/oshr-mrg",` +
+					`"policyAssignmentParameters":{},"policyExemptionIds":[],"policyEnrollmentIds":[]}}}]}}` + "\n",
+			},
+			expect: func() string {
+				msg := "Machine oshr-cluster-oshr-new-den-mr7p4-5vslw: Failed: " +
+					"virtualmachine failed to create or update. err: failed to create or update resource " +
+					"oshr-mrg/oshr-cluster-oshr-new-den-mr7p4-5vslw (service: virtualmachine): " +
+					"PUT https://management.azure.com/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/resourceGroups/oshr-mrg/providers/Microsoft.Compute/virtualMachines/oshr-cluster-oshr-new-den-mr7p4-5vslw\n" +
+					"--------------------------------------------------------------------------------\n" +
+					"RESPONSE 403: 403 Forbidden\n" +
+					"ERROR CODE: RequestDisallowedByPolicy\n" +
+					"--------------------------------------------------------------------------------\n" +
+					`{"error":{"code":"RequestDisallowedByPolicy","target":"oshr-cluster-oshr-new-den-mr7p4-5vslw",` +
+					`"message":"Resource 'oshr-cluster-oshr-new-den-mr7p4-5vslw' was disallowed by policy. ` +
+					`Policy identifiers: '[{\"policyAssignment\":{\"name\":\"deny-vm-regions-test-assign-mrg\",` +
+					`\"id\":\"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/resourceGroups/oshr-mrg/providers/Microsoft.Authorization/policyAssignments/deny-vm-regions-test-assign-mrg\"},` +
+					`\"policyDefinition\":{\"name\":\"Deny VMs outside allowed regions (test)\",` +
+					`\"id\":\"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/providers/Microsoft.Authorization/policyDefinitions/deny-vm-regions-test\",\"version\":\"1.0.0\"}}]'.","additionalInfo":` +
+					`[{"type":"PolicyViolation","info":{"evaluationDetails":{"evaluatedExpressions":[{"result":"True","expressionKind":"Field","expression":"type","path":"type",` +
+					`"expressionValue":"Microsoft.Compute/virtualMachines","targetValue":"Microsoft.Compute/virtualMachines","operator":"Equals"},` +
+					`{"result":"True","expressionKind":"Field","expression":"location","path":"location","expressionValue":"westus3","targetValue":["eastus"],"operator":"NotIn"}]},` +
+					`"policyDefinitionId":"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/providers/Microsoft.Authorization/policyDefinitions/deny-vm-regions-test",` +
+					`"policyDefinitionName":"deny-vm-regions-test","policyDefinitionDisplayName":"Deny VMs outside allowed regions (test)","policyDefinitionVersion":"1.0.0",` +
+					`"policyDefinitionEffect":"deny","policyAssignmentId":"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/resourceGroups/oshr-mrg/providers/Microsoft.Authorization/policyAssignments/deny-vm-regions-test-assign-mrg",` +
+					`"policyAssignmentName":"deny-vm-regions-test-assign-mrg","policyAssignmentScope":"/subscriptions/1d3378d3-5a3f-4712-85a1-2485495dfc4b/resourceGroups/oshr-mrg",` +
+					`"policyAssignmentParameters":{},"policyExemptionIds":[],"policyEnrollmentIds":[]}}}]}}` + "\n"
+				return msg[:maxMessageLength-len(endOfGlobalMessage)] + endOfGlobalMessage
+			}(),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

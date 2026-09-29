@@ -409,6 +409,25 @@ spec:
                           is chosen based on the NodePool release payload image.
                         maxLength: 255
                         type: string
+                      cpuOptions:
+                        description: |-
+                          cpuOptions specifies CPU configuration for EC2 instances.
+                          Supported on C8i, M8i, and R8i instance families.
+                          When omitted, AWS defaults are used (nested virtualization is not enabled).
+                          To revert to default behavior after setting cpuOptions, remove the entire
+                          cpuOptions field rather than clearing individual sub-fields.
+                        minProperties: 1
+                        properties:
+                          nestedVirtualizationPolicy:
+                            description: |-
+                              nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+                              Supported on C8i, M8i, and R8i instance families.
+                              When omitted, nested virtualization is not enabled (AWS default behavior).
+                            enum:
+                            - Enabled
+                            - Disabled
+                            type: string
+                        type: object
                       imageType:
                         description: |-
                           imageType specifies the type of image to use for node instances.
@@ -1421,6 +1440,18 @@ spec:
                               VM should have
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
+                          model:
+                            description: |-
+                              model specifies the CPU model for the KubeVirt VirtualMachineInstance.
+                              Valid values are "HostPassthrough" and omitted.
+                              When not set, no explicit CPU model is configured and KubeVirt will use
+                              its default behavior.
+                              When set to "HostPassthrough", the VM will use the same CPU model as the
+                              host node, which provides the best performance but may limit live migration
+                              compatibility between nodes with different CPU types.
+                            enum:
+                            - HostPassthrough
+                            type: string
                           qosClass:
                             default: Burstable
                             description: |-

@@ -36,7 +36,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/k8sutil"
-	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -192,7 +192,7 @@ func (r *AzurePrivateLinkServiceController) Reconcile(ctx context.Context, req c
 	}
 
 	// 5. Check if reconciliation is paused
-	if isPaused, duration := supportutil.IsReconciliationPaused(log, hc.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hc.Spec.PausedUntil); isPaused {
 		log.Info("Reconciliation paused", "pausedUntil", *hc.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}

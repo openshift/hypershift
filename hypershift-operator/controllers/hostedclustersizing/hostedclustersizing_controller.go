@@ -12,6 +12,7 @@ import (
 	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -190,7 +191,7 @@ func (r *reconciler) reconcile(
 	}
 
 	logger := ctrl.LoggerFrom(ctx)
-	isPaused, duration, err := hyperutil.ProcessPausedUntilField(hostedCluster.Spec.PausedUntil, r.now())
+	isPaused, duration, err := reconcilerpolicy.ProcessPausedUntilField(hostedCluster.Spec.PausedUntil, r.now())
 	if err != nil {
 		logger.Error(err, "error processing hosted cluster paused field")
 		return nil, nil

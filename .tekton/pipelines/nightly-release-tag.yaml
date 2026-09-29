@@ -51,7 +51,7 @@ spec:
   # --- trusted-artifacts plumbing (consumed by collect-data, apply-mapping and the restore step) ---
   - name: ociStorage
     type: string
-    default: quay.io/konflux-ci/release-service-trusted-artifacts
+    default: quay.io/acm-d/release-service-trusted-artifacts
   - name: dataDir
     type: string
     default: /var/workdir/release
@@ -345,7 +345,7 @@ spec:
             echo "Tagging into: ${IMAGE_STREAM_TAG}"
 
             oc tag --source=docker --loglevel=2 --reference-policy='source' \
-              --import-mode='PreserveOriginal' --reference "${IMAGE}" "${IMAGE_STREAM_TAG}"
+              --import-mode='PreserveOriginal' "${IMAGE}" "${IMAGE_STREAM_TAG}"
           done
 
           echo "=== tag-image: done ==="

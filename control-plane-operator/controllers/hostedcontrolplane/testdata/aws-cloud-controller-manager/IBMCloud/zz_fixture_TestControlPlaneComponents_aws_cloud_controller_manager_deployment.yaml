@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 2606a7171611056a202c9ccfafab026f27887c9b031db72814bd5881bfdb1152
+    hypershift.openshift.io/desired-state-hash: 6e409e7dd32ff004656873a42bf77ce3b499e4cccca7ed0a3967b24aab3a0bd9
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: aws-cloud-controller-manager
@@ -27,7 +27,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: b7e59b60
+        component.hypershift.openshift.io/config-hash: a239d48f
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: cloud-controller-manager

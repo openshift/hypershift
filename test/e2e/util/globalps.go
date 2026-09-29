@@ -8,7 +8,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"

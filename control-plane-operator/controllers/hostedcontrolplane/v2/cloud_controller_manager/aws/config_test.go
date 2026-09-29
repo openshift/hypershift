@@ -50,6 +50,24 @@ func TestConfig(t *testing.T) {
 	if !strings.Contains(awsConf, "NLBSecurityGroupMode = Managed") {
 		t.Fatalf("NLBSecurityGroupMode = Managed not present in aws.conf")
 	}
+
+	t.Run("When zone is not configured, it should render the AWS region directly", func(t *testing.T) {
+		hcp := newTestHCP(nil)
+		hcp.Spec.Platform.AWS.CloudProviderConfig.Zone = ""
+
+		cm := &corev1.ConfigMap{}
+		_, _, err := assets.LoadManifestInto(ComponentName, "config.yaml", cm)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := adaptConfig(component.WorkloadContext{HCP: hcp}, cm); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if !strings.Contains(cm.Data["aws.conf"], "Region = my-region") {
+			t.Fatalf("Region = my-region not present in aws.conf")
+		}
+	})
 }
 
 // newTestHCP creates a HostedControlPlane with default AWS configuration for testing.
@@ -68,6 +86,7 @@ func newTestHCP(annotations map[string]string) *hyperv1.HostedControlPlane {
 						Subnet: &hyperv1.AWSResourceReference{ID: ptr.To("my-subnet-ID")},
 						Zone:   "my-zone",
 					},
+					Region: "my-region",
 				},
 			},
 			InfraID: "my-infra-ID",
