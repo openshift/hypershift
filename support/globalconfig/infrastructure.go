@@ -134,5 +134,14 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			})
 		}
 		infra.Status.PlatformStatus.GCP.ResourceLabels = labels
+		var tags []configv1.GCPResourceTag
+		for _, tag := range hcp.Spec.Platform.GCP.ResourceTags {
+			tags = append(tags, configv1.GCPResourceTag{
+				ParentID: hcp.Spec.Platform.GCP.Project,
+				Key:      tag.Key,
+				Value:    tag.Value,
+			})
+		}
+		infra.Status.PlatformStatus.GCP.ResourceTags = tags
 	}
 }

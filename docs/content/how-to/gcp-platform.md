@@ -86,9 +86,9 @@ spec:
 
 ### Resource Manager Tags
 
-Resource Manager tags are distinct from resource labels. Tags are pre-existing
-Google Cloud TagKey and TagValue objects that HyperShift attaches to supported
-resources by creating TagBindings. Define tags using their short names:
+Resource Manager tags are distinct from resource labels. Define the TagKeys and
+TagValues in the HostedCluster's GCP project before installation, then configure
+their short names:
 
 ```yaml
 spec:
@@ -99,19 +99,27 @@ spec:
           value: production
 ```
 
-Tag keys and values can contain UTF-8 Unicode characters, except single quotes
-(`'`), double quotes (`"`), backslashes (`\`), and forward slashes (`/`). A tag
-value must begin with an alphanumeric character. Keys and values can each be up
-to 256 characters long.
+Keys and values must each be 1–63 characters long and begin and end with an
+ASCII letter or digit. Keys may also contain `.`, `_`, and `-`; values accept
+additional punctuation and spaces. At most 50 unique keys can be configured.
+The exact accepted characters are enforced by the HostedCluster API.
 
-HyperShift resolves tags in the customer project during reconciliation. If a
-requested TagKey or TagValue does not exist or cannot be accessed, HyperShift
-cannot create its TagBinding until the condition is corrected. Each key and
-value may be up to 256 characters, and up to 50 tags may be configured,
-matching Google Cloud's per-resource tag limit. The controller identity that
-attaches a tag must have Tag User and the resource-specific TagBinding
-permissions. HyperShift does not create TagKeys or TagValues as part of
-HostedCluster reconciliation.
+HyperShift copies these tags to the guest cluster's
+`Infrastructure/cluster.status.platformStatus.gcp.resourceTags`, with the
+HostedCluster project as each tag's `parentID`. Guest components such as the
+GCP PD CSI driver and image registry operator consume that field to tag the
+persistent disks and registry bucket they create. HyperShift does not create
+TagKeys or TagValues, and this propagation does **not** create TagBindings for
+management-side resources created by HyperShift or CAPG. Those bindings are
+separate future work.
+
+Configure tags when creating the HostedCluster: `resourceTags` cannot be added,
+removed, or changed afterward. This installation-time restriction is temporary
+until tag update reconciliation is implemented; unlike `resourceTags`,
+`resourceLabels` can be changed after creation. The guest components that
+attach tags require the appropriate Google Cloud Tag User and resource-specific
+TagBinding permissions. HyperShift does not currently report a dedicated
+condition for missing or inaccessible TagKeys or TagValues.
 
 ## CAPG Integration
 

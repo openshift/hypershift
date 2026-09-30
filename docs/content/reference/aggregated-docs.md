@@ -25677,9 +25677,9 @@ spec:
 
 ### Resource Manager Tags
 
-Resource Manager tags are distinct from resource labels. Tags are pre-existing
-Google Cloud TagKey and TagValue objects that HyperShift attaches to supported
-resources by creating TagBindings. Define tags using their short names:
+Resource Manager tags are distinct from resource labels. Define the TagKeys and
+TagValues in the HostedCluster's GCP project before installation, then configure
+their short names:
 
 ```yaml
 spec:
@@ -25690,19 +25690,27 @@ spec:
           value: production
 ```
 
-Tag keys and values can contain UTF-8 Unicode characters, except single quotes
-(`'`), double quotes (`"`), backslashes (`\`), and forward slashes (`/`). A tag
-value must begin with an alphanumeric character. Keys and values can each be up
-to 256 characters long.
+Keys and values must each be 1–63 characters long and begin and end with an
+ASCII letter or digit. Keys may also contain `.`, `_`, and `-`; values accept
+additional punctuation and spaces. At most 50 unique keys can be configured.
+The exact accepted characters are enforced by the HostedCluster API.
 
-HyperShift resolves tags in the customer project during reconciliation. If a
-requested TagKey or TagValue does not exist or cannot be accessed, HyperShift
-cannot create its TagBinding until the condition is corrected. Each key and
-value may be up to 256 characters, and up to 50 tags may be configured,
-matching Google Cloud's per-resource tag limit. The controller identity that
-attaches a tag must have Tag User and the resource-specific TagBinding
-permissions. HyperShift does not create TagKeys or TagValues as part of
-HostedCluster reconciliation.
+HyperShift copies these tags to the guest cluster's
+`Infrastructure/cluster.status.platformStatus.gcp.resourceTags`, with the
+HostedCluster project as each tag's `parentID`. Guest components such as the
+GCP PD CSI driver and image registry operator consume that field to tag the
+persistent disks and registry bucket they create. HyperShift does not create
+TagKeys or TagValues, and this propagation does **not** create TagBindings for
+management-side resources created by HyperShift or CAPG. Those bindings are
+separate future work.
+
+Configure tags when creating the HostedCluster: `resourceTags` cannot be added,
+removed, or changed afterward. This installation-time restriction is temporary
+until tag update reconciliation is implemented; unlike `resourceTags`,
+`resourceLabels` can be changed after creation. The guest components that
+attach tags require the appropriate Google Cloud Tag User and resource-specific
+TagBinding permissions. HyperShift does not currently report a dedicated
+condition for missing or inaccessible TagKeys or TagValues.
 
 ## CAPG Integration
 
@@ -49674,16 +49682,16 @@ For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/la
 </td>
 <td>
 <em>(Optional)</em>
-<p>resourceTags are pre-existing Google Cloud Resource Manager tags to apply
-to supported GCP resources created for the cluster. Each entry identifies
-a project-scoped TagKey and TagValue by short name. HyperShift resolves the
-tag value using the customer project.</p>
-<p>HyperShift resolves these tags during reconciliation. If a requested
-TagKey or TagValue does not exist in the customer project, or cannot be
-accessed, its TagBinding cannot be created until the condition is
-corrected. HyperShift does not create TagKeys or TagValues. Attaching tags
-requires the relevant controller identity to have Tag User and
-resource-specific TagBinding permissions.</p>
+<p>resourceTags are pre-existing, project-defined Google Cloud Resource
+Manager tags. HyperShift copies them to the guest cluster&rsquo;s Infrastructure
+status, where the GCP PD CSI driver and image registry operator can apply
+them to resources they create. This does not tag GCP resources created by
+HyperShift or CAPG on the management side. HyperShift does not create
+TagKeys, TagValues, or management-side TagBindings.</p>
+<p>Tags may only be configured during installation. Unlike resourceLabels,
+this field cannot be added, removed, or changed after creation because the
+guest Infrastructure API is also immutable. This restriction may be relaxed
+once update reconciliation is implemented.</p>
 </td>
 </tr>
 <tr>
@@ -50017,8 +50025,9 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 </p>
 <p>
 <p>GCPResourceTag identifies a pre-existing Google Cloud Resource Manager tag.
-HyperShift resolves the key and value in the customer project and attaches the
-resulting tag value to supported resources through TagBindings.
+The TagKey and TagValue must be defined in the customer project. HyperShift
+propagates these tags to the guest Infrastructure status for guest consumers;
+it does not create TagBindings for management-side resources.
 See <a href="https://cloud.google.com/resource-manager/docs/tags/tags-overview">https://cloud.google.com/resource-manager/docs/tags/tags-overview</a>.</p>
 </p>
 <table>
@@ -50038,10 +50047,10 @@ string
 </td>
 <td>
 <p>key is the short name of the pre-existing Resource Manager TagKey.
-TagKeys are scoped to the customer project identified by the GCP platform
-configuration. It must be 1-256 characters and may contain UTF-8 Unicode
-characters other than single quotes, double quotes, backslashes, or forward
-slashes.</p>
+TagKeys must be defined in the customer project identified by the GCP
+platform configuration. A key is 1-63 characters, begins and ends with
+an ASCII alphanumeric character, and may contain letters, digits, &lsquo;.&rsquo;,
+&lsquo;_&rsquo;, or &lsquo;-&rsquo; between them.</p>
 </td>
 </tr>
 <tr>
@@ -50053,10 +50062,10 @@ string
 </td>
 <td>
 <p>value is the short name of the pre-existing Resource Manager TagValue for
-key. Exactly one value for a TagKey can be attached to a resource. It must
-be 1-256 characters, start with a Unicode letter or number, and may contain
-UTF-8 Unicode characters other than single quotes, double quotes,
-backslashes, or forward slashes.</p>
+key. Exactly one value for a TagKey can be attached to a resource. A value
+is 1-63 characters, begins and ends with an ASCII alphanumeric character,
+and may contain ASCII letters and digits, <code>_-.@%=+:,*#&amp;()[]{}</code>, and
+whitespace between them.</p>
 </td>
 </tr>
 </tbody>

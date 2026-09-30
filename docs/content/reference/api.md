@@ -8536,16 +8536,16 @@ For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/la
 </td>
 <td>
 <em>(Optional)</em>
-<p>resourceTags are pre-existing Google Cloud Resource Manager tags to apply
-to supported GCP resources created for the cluster. Each entry identifies
-a project-scoped TagKey and TagValue by short name. HyperShift resolves the
-tag value using the customer project.</p>
-<p>HyperShift resolves these tags during reconciliation. If a requested
-TagKey or TagValue does not exist in the customer project, or cannot be
-accessed, its TagBinding cannot be created until the condition is
-corrected. HyperShift does not create TagKeys or TagValues. Attaching tags
-requires the relevant controller identity to have Tag User and
-resource-specific TagBinding permissions.</p>
+<p>resourceTags are pre-existing, project-defined Google Cloud Resource
+Manager tags. HyperShift copies them to the guest cluster&rsquo;s Infrastructure
+status, where the GCP PD CSI driver and image registry operator can apply
+them to resources they create. This does not tag GCP resources created by
+HyperShift or CAPG on the management side. HyperShift does not create
+TagKeys, TagValues, or management-side TagBindings.</p>
+<p>Tags may only be configured during installation. Unlike resourceLabels,
+this field cannot be added, removed, or changed after creation because the
+guest Infrastructure API is also immutable. This restriction may be relaxed
+once update reconciliation is implemented.</p>
 </td>
 </tr>
 <tr>
@@ -8879,8 +8879,9 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 </p>
 <p>
 <p>GCPResourceTag identifies a pre-existing Google Cloud Resource Manager tag.
-HyperShift resolves the key and value in the customer project and attaches the
-resulting tag value to supported resources through TagBindings.
+The TagKey and TagValue must be defined in the customer project. HyperShift
+propagates these tags to the guest Infrastructure status for guest consumers;
+it does not create TagBindings for management-side resources.
 See <a href="https://cloud.google.com/resource-manager/docs/tags/tags-overview">https://cloud.google.com/resource-manager/docs/tags/tags-overview</a>.</p>
 </p>
 <table>
@@ -8900,10 +8901,10 @@ string
 </td>
 <td>
 <p>key is the short name of the pre-existing Resource Manager TagKey.
-TagKeys are scoped to the customer project identified by the GCP platform
-configuration. It must be 1-256 characters and may contain UTF-8 Unicode
-characters other than single quotes, double quotes, backslashes, or forward
-slashes.</p>
+TagKeys must be defined in the customer project identified by the GCP
+platform configuration. A key is 1-63 characters, begins and ends with
+an ASCII alphanumeric character, and may contain letters, digits, &lsquo;.&rsquo;,
+&lsquo;_&rsquo;, or &lsquo;-&rsquo; between them.</p>
 </td>
 </tr>
 <tr>
@@ -8915,10 +8916,10 @@ string
 </td>
 <td>
 <p>value is the short name of the pre-existing Resource Manager TagValue for
-key. Exactly one value for a TagKey can be attached to a resource. It must
-be 1-256 characters, start with a Unicode letter or number, and may contain
-UTF-8 Unicode characters other than single quotes, double quotes,
-backslashes, or forward slashes.</p>
+key. Exactly one value for a TagKey can be attached to a resource. A value
+is 1-63 characters, begins and ends with an ASCII alphanumeric character,
+and may contain ASCII letters and digits, <code>_-.@%=+:,*#&amp;()[]{}</code>, and
+whitespace between them.</p>
 </td>
 </tr>
 </tbody>

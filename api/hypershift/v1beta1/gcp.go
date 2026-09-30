@@ -48,32 +48,33 @@ type GCPResourceLabel struct {
 }
 
 // GCPResourceTag identifies a pre-existing Google Cloud Resource Manager tag.
-// HyperShift resolves the key and value in the customer project and attaches the
-// resulting tag value to supported resources through TagBindings.
+// The TagKey and TagValue must be defined in the customer project. HyperShift
+// propagates these tags to the guest Infrastructure status for guest consumers;
+// it does not create TagBindings for management-side resources.
 // See https://cloud.google.com/resource-manager/docs/tags/tags-overview.
 type GCPResourceTag struct {
 	// key is the short name of the pre-existing Resource Manager TagKey.
-	// TagKeys are scoped to the customer project identified by the GCP platform
-	// configuration. It must be 1-256 characters and may contain UTF-8 Unicode
-	// characters other than single quotes, double quotes, backslashes, or forward
-	// slashes.
+	// TagKeys must be defined in the customer project identified by the GCP
+	// platform configuration. A key is 1-63 characters, begins and ends with
+	// an ASCII alphanumeric character, and may contain letters, digits, '.',
+	// '_', or '-' between them.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=256
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[^\\\\x27\\\\x22\\\\\\\\/]+$')",message="key may contain UTF-8 Unicode characters except single quotes, double quotes, backslashes, or forward slashes"
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9]([0-9A-Za-z_.-]{0,61}[a-zA-Z0-9])?$`
 	Key string `json:"key,omitempty"`
 
 	// value is the short name of the pre-existing Resource Manager TagValue for
-	// key. Exactly one value for a TagKey can be attached to a resource. It must
-	// be 1-256 characters, start with a Unicode letter or number, and may contain
-	// UTF-8 Unicode characters other than single quotes, double quotes,
-	// backslashes, or forward slashes.
+	// key. Exactly one value for a TagKey can be attached to a resource. A value
+	// is 1-63 characters, begins and ends with an ASCII alphanumeric character,
+	// and may contain ASCII letters and digits, `_-.@%=+:,*#&()[]{}`, and
+	// whitespace between them.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=256
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[\\\\p{L}\\\\p{N}][^\\\\x27\\\\x22\\\\\\\\/]*$')",message="value must start with a letter or number and may contain UTF-8 Unicode characters except single quotes, double quotes, backslashes, or forward slashes"
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9]([0-9A-Za-z_.@%=+:,*#&()\[\]{}\-\s]{0,61}[a-zA-Z0-9])?$`
 	Value string `json:"value,omitempty"`
 }
 
@@ -137,6 +138,7 @@ type GCPNetworkConfig struct {
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.storage.contains('@') && self.workloadIdentity.serviceAccountsEmails.storage.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="storage service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.imageRegistry.contains('@') && self.workloadIdentity.serviceAccountsEmails.imageRegistry.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="imageRegistry service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.network.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="network service account must belong to the same project"
+// +kubebuilder:validation:XValidation:rule="has(self.resourceTags) == has(oldSelf.resourceTags)",message="resourceTags may only be configured during installation"
 type GCPPlatformSpec struct {
 	// project is the GCP project ID.
 	// A valid project ID must satisfy the following rules:
@@ -191,23 +193,25 @@ type GCPPlatformSpec struct {
 	// +kubebuilder:validation:MaxItems=60
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
 
-	// resourceTags are pre-existing Google Cloud Resource Manager tags to apply
-	// to supported GCP resources created for the cluster. Each entry identifies
-	// a project-scoped TagKey and TagValue by short name. HyperShift resolves the
-	// tag value using the customer project.
+	// resourceTags are pre-existing, project-defined Google Cloud Resource
+	// Manager tags. HyperShift copies them to the guest cluster's Infrastructure
+	// status, where the GCP PD CSI driver and image registry operator can apply
+	// them to resources they create. This does not tag GCP resources created by
+	// HyperShift or CAPG on the management side. HyperShift does not create
+	// TagKeys, TagValues, or management-side TagBindings.
 	//
-	// HyperShift resolves these tags during reconciliation. If a requested
-	// TagKey or TagValue does not exist in the customer project, or cannot be
-	// accessed, its TagBinding cannot be created until the condition is
-	// corrected. HyperShift does not create TagKeys or TagValues. Attaching tags
-	// requires the relevant controller identity to have Tag User and
-	// resource-specific TagBinding permissions.
+	// Tags may only be configured during installation. Unlike resourceLabels,
+	// this field cannot be added, removed, or changed after creation because the
+	// guest Infrastructure API is also immutable. This restriction may be relaxed
+	// once update reconciliation is implemented.
 	//
 	// +optional
 	// +listType=map
 	// +listMapKey=key
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=50
+	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="resourceTags are immutable"
 	ResourceTags []GCPResourceTag `json:"resourceTags,omitempty"`
 
 	// workloadIdentity configures Workload Identity Federation for the cluster.
