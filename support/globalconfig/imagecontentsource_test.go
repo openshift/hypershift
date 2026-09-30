@@ -350,3 +350,44 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 		})
 	}
 }
+
+func TestCommonRegistryProvider_Reconcile(t *testing.T) {
+	t.Run("When ICSP and IDMS capabilities are present, it should publish one merged snapshot to both providers", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx := t.Context()
+		idms := createFakeIDMS()
+		icsp := createFakeICSP()
+		var objects []client.Object
+		for i := range idms.Items {
+			objects = append(objects, &idms.Items[i])
+		}
+		for i := range icsp.Items {
+			objects = append(objects, &icsp.Items[i])
+		}
+
+		client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+		capChecker := &capabilities.MockCapabilityChecker{
+			MockHas: func(capability ...capabilities.CapabilityType) bool {
+				return slices.Contains(capability, capabilities.CapabilityICSP) || slices.Contains(capability, capabilities.CapabilityIDMS)
+			},
+		}
+		provider, err := NewCommonRegistryProvider(ctx, capChecker, client, nil)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(provider.Reconcile(ctx, client)).To(Succeed())
+		expected := map[string][]string{
+			"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
+			"registry2": {"mirror1", "mirror2"},
+			"registry1.sample.com/samplens/sampleimage@sha256:123456": {"mirror1.sample.com/samplens/sampleimage@sha256:123456", "mirror1.sample.com/samplens/sampleimage@sha256:123456"},
+			"registry2.sample.com/samplens/sampleimage@sha256:123456": {"mirror2.sample.com/samplens/sampleimage@sha256:123456", "mirror2.sample.com/samplens/sampleimage@sha256:123456"},
+			"registry3.sample.com/samplens/sampleimage@sha256:123456": {
+				"mirror3.sample.com/samplens/sampleimage@sha256:123456",
+				"mirror3.sample.com/samplens/sampleimage@sha256:123456",
+				"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
+				"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
+			},
+		}
+		g.Expect(provider.ReleaseProvider.GetOpenShiftImageRegistryOverrides()).To(Equal(expected))
+		g.Expect(provider.MetadataProvider.OpenShiftImageRegistryOverrides).To(Equal(expected))
+	})
+}
