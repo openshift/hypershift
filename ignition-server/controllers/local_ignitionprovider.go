@@ -349,8 +349,9 @@ func (p *LocalIgnitionProvider) extractImageReferences(ctx context.Context, rele
 		return "", fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 	// Replace the release image with the mirrored release image in disconnected environment cases.
-	if p.ReleaseProvider.GetMirroredReleaseImage() != "" {
-		releaseImage = p.ReleaseProvider.GetMirroredReleaseImage()
+	mirroredReleaseImage := p.ReleaseProvider.GetMirroredReleaseImage()
+	if mirroredReleaseImage != "" {
+		releaseImage = mirroredReleaseImage
 		log.Info("using mirrored release image", "releaseImage", releaseImage)
 	}
 
