@@ -375,3 +375,109 @@ def test_presubmit_history_window_exceeds_permafail_duration():
     # The 50h-old red must be retained (the window is not clipped at D=48h), so the
     # observed span exceeds the permafail duration.
     assert evidence["classification"]["span_hours"] >= 49
+
+
+# ---------------------------------------------------------------------------
+# Rich HTML report + chaibot annotations
+# ---------------------------------------------------------------------------
+def test_html_report_renders_rich_structure_and_annotations():
+    doc = collect_fixture()
+    annotations = MODULE.validate_annotations(
+        {
+            "summary": "Two release blockers today.\nAKS capacity is the dominant signature.",
+            "incident": "Proposing one jobs-incident for the two permafailing blockers.",
+            "job_notes": {
+                "periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-perma-aws": (
+                    "Suspected AKS capacity/lease trouble."
+                )
+            },
+        }
+    )
+    report = MODULE.render_html_report(doc, annotations)
+    for needle in (
+        "<section>",
+        'class="pill red">permafailing',
+        'class="bar"',
+        "<details><summary>Trend charts",
+        "<svg ",
+        "OCP 5.1 — release payloads",
+        "Merge queue — required presubmits",
+        "</html>",
+    ):
+        assert needle in report, needle
+    # chaibot's free-form content is rendered, and its permafailing blocker drives the
+    # incident section (never withheld for a missing Jira story).
+    assert "Two release blockers today." in report
+    assert "Suspected AKS capacity/lease trouble." in report
+    assert "Proposed incident" in report and "e2e-perma-aws" in report
+
+
+def test_html_report_escapes_annotation_html():
+    report = MODULE.render_html_report(
+        collect_fixture(),
+        MODULE.validate_annotations({"summary": "<script>alert(1)</script>"}),
+    )
+    assert "<script>alert(1)</script>" not in report
+    assert "&lt;script&gt;" in report
+
+
+def test_html_report_collapses_dataless_presubmits():
+    # The dashboard emits a row for every planned presubmit, but release-branch presubmits come
+    # back with no Sippy rate/trend and no Prow runs. Those empty stubs must be collapsed into a
+    # per-branch count, not tabled, so the actionable rows are not drowned out.
+    doc = {
+        "generated_at": "2026-09-30T12:00:00Z",
+        "source_revision": "a" * 40,
+        "collection_id": "test",
+        "scope": {
+            "state": "complete",
+            "releases": ["5.1"],
+            "branches": ["main", "release-4.20"],
+        },
+        "periodics": [],
+        "presubmits": {
+            "main": [
+                {
+                    "job_id": "pull-ci-openshift-hypershift-main-e2e-live",
+                    "name": "e2e-live",
+                    "permafail": {"class": "candidate", "streak": 5},
+                    "slo": {"rate": 42.0, "below_slo": True},
+                }
+            ],
+            "release-4.20": [
+                {
+                    "job_id": "pull-ci-openshift-hypershift-release-4.20-e2e-empty",
+                    "name": "e2e-empty",
+                    "permafail": {"class": "unknown", "streak": None},
+                    "slo": {"rate": None, "below_slo": False},
+                }
+            ],
+        },
+        "incident_set": {"release_blockers": [], "merge_queue_blockers": []},
+        "flaky_tests": [],
+    }
+    report = MODULE.render_html_report(doc, None)
+    assert "Merge queue — required presubmits" in report
+    # The job with signal is tabled.
+    assert "<td><code>e2e-live</code>" in report
+    assert 'class="pill amber">candidate' in report
+    # The dataless release-branch job is collapsed, never tabled.
+    assert "1 presubmit(s) with no window data" in report
+    assert "<td><code>e2e-empty</code>" not in report
+    assert "<code>e2e-empty</code>" in report
+
+
+def test_validate_annotations_bounds_and_rejects():
+    assert MODULE.validate_annotations(None) == {}
+    ok = MODULE.validate_annotations(
+        {"summary": "line1\nline2", "job_notes": {"job-a": "note"}}
+    )
+    assert ok["summary"] == "line1\nline2" and ok["job_notes"]["job-a"] == "note"
+    with pytest.raises(MODULE.ReportError):
+        MODULE.validate_annotations("not a dict")
+    with pytest.raises(MODULE.ReportError):
+        MODULE.validate_annotations({"summary": "bad\x07bell"})  # control character
+    with pytest.raises(MODULE.ReportError):
+        MODULE.validate_annotations({"summary": "x" * 5000})  # exceeds the length bound
+    with pytest.raises(MODULE.ReportError):
+        MODULE.validate_annotations({"job_notes": ["not", "a", "dict"]})

@@ -687,9 +687,9 @@ verify-tekton-pipeline-pairs: $(PYTHON_VENV_STAMP) ## Verify paired Tekton Pipel
 .PHONY: verify-hypershift-ci-daily-health
 verify-hypershift-ci-daily-health: $(PYTHON_VENV_STAMP) ## Verify the offline HyperShift CI daily health companion.
 	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
-		$(PYTHON_VENV)/bin/python3 -m pytest -q hack/ci/test_hypershift_ci_daily_health.py; \
+		$(PYTHON_VENV)/bin/python3 -m pytest -q .chai-bot/hypershift-ci-daily-health/scripts/test_hypershift_ci_daily_health.py; \
 	else \
-		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/ci/test_hypershift_ci_daily_health.py; \
+		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q .chai-bot/hypershift-ci-daily-health/scripts/test_hypershift_ci_daily_health.py; \
 	fi
 
 .PHONY: verify-codespell

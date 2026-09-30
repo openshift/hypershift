@@ -54,7 +54,7 @@ def _load_config() -> dict[str, Any]:
     horizon, and [jira] are chaibot's (read from config.toml by the prompt), so the
     Jira-blind script neither reads nor validates them.
     """
-    path = Path(__file__).resolve().with_name("hypershift-ci-daily-health") / "config.toml"
+    path = Path(__file__).resolve().with_name("config.toml")
     try:
         with path.open("rb") as handle:
             cfg = tomllib.load(handle)
@@ -266,6 +266,17 @@ def _grammar_string(value: Any, label: str, pattern: re.Pattern[str]) -> str:
     return text
 
 
+def _bounded_freeform(value: Any, label: str, limit: int) -> str:
+    """Bounded multi-line free-form text (newlines/tabs allowed; escaped on render)."""
+    if not isinstance(value, str):
+        raise ReportError(f"{label} must be a string")
+    if len(value) > limit:
+        raise ReportError(f"{label} exceeds {limit} characters")
+    if "\x00" in value or any(ord(ch) < 32 and ch not in "\n\t" for ch in value):
+        raise ReportError(f"{label} contains a control character")
+    return value.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def validate_source_revision(value: Any) -> str:
     """Require the canonical commit identity bound into both report stages."""
     return _grammar_string(value, "source_revision", GIT_SHA_RE)
@@ -273,7 +284,7 @@ def validate_source_revision(value: Any) -> str:
 
 def checked_out_source_revision() -> str:
     """Return the commit containing the companion script, without accepting aliases."""
-    repository = Path(__file__).resolve().parents[2]
+    repository = Path(__file__).resolve().parents[3]
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "--verify", "HEAD^{commit}"],
@@ -1183,12 +1194,7 @@ class Collector:
             "job_health_below_slo": job_health,
         }
         document["collection_id"] = collection_id(document)
-        self.html_report = render_html_report(
-            format_rfc3339(self.as_of),
-            self.source_revision,
-            document["collection_id"],
-            [self._chart(p) for p in periodics],
-        )
+        self.html_report = render_html_report(document, None)
         try:
             validate_candidates_document(document)
         except ReportError as exc:
@@ -1219,12 +1225,7 @@ class Collector:
             "job_health_below_slo": [],
         }
         document["collection_id"] = collection_id(document)
-        self.html_report = render_html_report(
-            format_rfc3339(self.as_of),
-            self.source_revision,
-            document["collection_id"],
-            [],
-        )
+        self.html_report = render_html_report(document, None)
         return document
 
     def _scope(self, health: dict[str, Any]) -> tuple[list[str], list[str]]:
@@ -1533,17 +1534,6 @@ class Collector:
             if len(result) >= MAX_SOURCE_JOBS:
                 break
         return result
-
-    def _chart(self, periodic: dict[str, Any]) -> dict[str, Any]:
-        """Chart descriptor for one periodic (per-slot pass rate over time)."""
-        return {
-            "name": periodic["name"],
-            "release": periodic["release"],
-            "classification": periodic["permafail"]["class"],
-            "trend": (periodic["slo"].get("trend") or {}).get("classification", "n/a"),
-            "series": periodic["series"],
-        }
-
 
     def _presubmit_history(self, job: dict[str, Any]) -> dict[str, Any]:
         url = str(job.get("prow_job_history_url") or "")
@@ -2044,7 +2034,7 @@ def validate_candidates_document(document: Any) -> dict[str, Any]:
 
 def _load_asset(name: str) -> str:
     path = (
-        Path(__file__).resolve().with_name("hypershift-ci-daily-health") / "assets" / name
+        Path(__file__).resolve().parents[1] / "assets" / name
     )
     try:
         return path.read_text(encoding="utf-8")
@@ -2114,49 +2104,261 @@ def build_chart_svg(
     )
 
 
-def render_html_report(
-    generated_at: str,
-    source_revision: str,
-    collection_id: str,
-    charts: list[dict[str, Any]],
-) -> str:
-    """Deterministic HTML trend report: one per-periodic sparkline chart per job."""
-    ordered = sorted(
-        charts,
-        key=lambda chart: (
-            tuple(-part for part in release_key(str(chart.get("release") or "0.0")))
-            if RELEASE_RE.fullmatch(str(chart.get("release") or ""))
-            else (0, 0),
-            str(chart.get("name") or ""),
-        ),
+def _ann_text(text: Any) -> str:
+    """Escape chaibot's free-form annotation text, preserving line breaks."""
+    return "<br>".join(html.escape(line) for line in str(text or "").splitlines())
+
+
+def _status_pill(pf_class: Any, below_slo: Any, rate: Any) -> str:
+    if pf_class == "permafailing":
+        return '<span class="pill red">permafailing</span>'
+    if pf_class == "candidate":
+        return '<span class="pill amber">candidate</span>'
+    if below_slo:
+        return '<span class="pill amber">below SLO</span>'
+    if isinstance(rate, (int, float)) and not isinstance(rate, bool):
+        return '<span class="pill green">meeting SLO</span>'
+    return '<span class="pill slate">unknown</span>'
+
+
+def _trend_label(trend: Any) -> str:
+    classification = trend.get("classification") if isinstance(trend, dict) else None
+    return {
+        "improving": "improving ↑",
+        "degrading": "degrading ↓",
+        "stable": "stable →",
+        "insufficient": "insufficient",
+    }.get(classification, "—")
+
+
+def _rate_bar(rate: Any) -> str:
+    if not isinstance(rate, (int, float)) or isinstance(rate, bool):
+        return '<span class="mut">no data</span>'
+    pct = max(0.0, min(100.0, float(rate)))
+    color = (
+        "var(--green)"
+        if rate >= SLO_PASS_RATE_PERCENT
+        else "var(--amber)" if rate >= 50 else "var(--red)"
     )
-    sections: list[str] = []
-    current_release = None
-    for chart in ordered:
-        release = str(chart.get("release") or "?")
-        if release != current_release:
-            sections.append(f'<div class="release">OCP {html.escape(release)}</div>')
-            current_release = release
-        cls = str(chart.get("classification") or "unknown")
-        svg = build_chart_svg(
-            str(chart.get("name") or "job"),
-            chart.get("series") or [],
-            SLO_PASS_RATE_PERCENT,
+    return (
+        '<span class="flex"><span class="bar">'
+        f'<span style="width:{pct:.0f}%;background:{color}"></span></span>{rate:.0f}%</span>'
+    )
+
+
+def _release_sort_key(release: str) -> tuple[int, int]:
+    return (
+        tuple(-part for part in release_key(release))
+        if RELEASE_RE.fullmatch(release)
+        else (0, 0)
+    )
+
+
+def _presubmit_has_signal(row: dict[str, Any]) -> bool:
+    """A presubmit row worth a table line: a real Axis-A verdict, below-SLO, or a rate.
+
+    The dashboard emits a row for every planned presubmit across all branches, but only the
+    development branch has Sippy ingestion, so release-branch presubmits come back with no
+    rate/trend and often no Prow runs in the window. Those empty stubs are collapsed into a
+    per-branch count rather than tabled, so the actionable rows are not drowned out.
+    """
+    pf = row.get("permafail") or {}
+    slo = row.get("slo") or {}
+    if pf.get("class") in ("permafailing", "candidate"):
+        return True
+    if slo.get("below_slo"):
+        return True
+    rate = slo.get("rate")
+    if isinstance(rate, (int, float)) and not isinstance(rate, bool):
+        return True
+    streak = pf.get("streak")
+    return isinstance(streak, int) and not isinstance(streak, bool) and streak > 0
+
+
+def render_html_report(
+    document: dict[str, Any], annotations: dict[str, Any] | None = None
+) -> str:
+    """Rich, deterministic HTML report from the data document (+ chaibot annotations).
+
+    The layout is fixed here (readable per-release tables with pass-rate bars, status
+    pills, payload phase, and collapsible trend charts, plus presubmit and flaky-test
+    tables). The only free-form content is chaibot's optional annotations: an overall
+    summary, the incident narrative, and per-job notes -- everything else is deterministic.
+    """
+    ann = annotations or {}
+    notes = ann.get("job_notes") or {}
+    scope = document.get("scope") or {}
+    periodics = document.get("periodics") or []
+    presubmits = document.get("presubmits") or {}
+    incident = document.get("incident_set") or {}
+    flaky = document.get("flaky_tests") or []
+    parts: list[str] = []
+
+    if isinstance(ann.get("summary"), str) and ann["summary"].strip():
+        parts.append(
+            f'<section><h2>Summary</h2><div class="callout">{_ann_text(ann["summary"])}</div></section>'
         )
-        sections.append(
-            '<div class="job"><div class="job-head">'
-            f'<b>{html.escape(str(chart.get("name") or "job"))}</b> · '
-            f'<span class="{cls}">{cls}</span> · trend '
-            f'{html.escape(str(chart.get("trend") or "n/a"))}</div>{svg}</div>'
+
+    release_blockers = incident.get("release_blockers") or []
+    merge_blockers = incident.get("merge_queue_blockers") or []
+    if release_blockers or merge_blockers:
+        items = [
+            f'<li>Release blocker · OCP {html.escape(str(b.get("release")))} · '
+            f'<code>{html.escape(str(b.get("name") or b.get("job_id")))}</code> '
+            f'({html.escape(str(b.get("gate") or ""))})</li>'
+            for b in release_blockers
+        ] + [
+            f'<li>Merge-queue blocker · {html.escape(str(b.get("branch")))} · '
+            f'<code>{html.escape(str(b.get("name") or b.get("job_id")))}</code></li>'
+            for b in merge_blockers
+        ]
+        narrative = (
+            f'<p>{_ann_text(ann["incident"])}</p>'
+            if isinstance(ann.get("incident"), str) and ann["incident"].strip()
+            else ""
         )
-    body = "\n".join(sections) if sections else "<p>No configured periodic blockers.</p>"
+        parts.append(
+            '<section><h2>Proposed incident '
+            '<span class="count">humans declare / bridge / SA</span></h2>'
+            f'<div class="callout red"><ul class="notes">{"".join(items)}</ul>{narrative}</div></section>'
+        )
+    else:
+        parts.append(
+            '<section><h2>Proposed incident</h2>'
+            '<div class="callout green">No permafailing release or merge-queue blockers.</div></section>'
+        )
+
+    by_release: dict[str, list[dict[str, Any]]] = {}
+    for periodic in periodics:
+        by_release.setdefault(str(periodic.get("release") or "?"), []).append(periodic)
+    for release in sorted(by_release, key=_release_sort_key):
+        rows: list[str] = []
+        charts: list[str] = []
+        for periodic in sorted(
+            by_release[release], key=lambda item: str(item.get("name") or "")
+        ):
+            pf = periodic.get("permafail") or {}
+            slo = periodic.get("slo") or {}
+            payload = periodic.get("payload") or {}
+            phase = str(payload.get("phase") or "—")
+            status_url = str(payload.get("release_status_url") or "")
+            phase_cell = (
+                f'<a href="{html.escape(status_url)}">{html.escape(phase)}</a>'
+                if status_url
+                else html.escape(phase)
+            )
+            rows.append(
+                "<tr>"
+                f'<td><code>{html.escape(str(periodic.get("name") or periodic.get("job_id")))}</code></td>'
+                f'<td class="mut">{html.escape(str(periodic.get("gate") or ""))}</td>'
+                f'<td>{_rate_bar(slo.get("rate"))}</td>'
+                f'<td>{_status_pill(pf.get("class"), slo.get("below_slo"), slo.get("rate"))}</td>'
+                f'<td class="mut">{html.escape(_trend_label(slo.get("trend")))}</td>'
+                f'<td class="mut">{phase_cell}</td>'
+                f'<td class="mut">{_ann_text(notes.get(str(periodic.get("job_id"))))}</td>'
+                "</tr>"
+            )
+            charts.append(
+                build_chart_svg(
+                    str(periodic.get("name") or "job"),
+                    periodic.get("series") or [],
+                    SLO_PASS_RATE_PERCENT,
+                )
+            )
+        table = (
+            "<table><thead><tr><th>Job</th><th>Gate</th><th>Pass rate</th><th>Status</th>"
+            "<th>Trend</th><th>Payload</th><th>Note</th></tr></thead><tbody>"
+            + "".join(rows)
+            + "</tbody></table>"
+        )
+        chart_block = (
+            f'<details><summary>Trend charts ({len(charts)})</summary>{"".join(charts)}</details>'
+            if charts
+            else ""
+        )
+        parts.append(
+            f'<section><h2>OCP {html.escape(release)} — release payloads '
+            f'<span class="count">{len(rows)} periodics</span></h2>{table}{chart_block}</section>'
+        )
+
+    branch_blocks: list[str] = []
+    for branch in scope.get("branches") or []:
+        branch_rows = presubmits.get(branch) or []
+        if not branch_rows:
+            continue
+        signal_rows = [row for row in branch_rows if _presubmit_has_signal(row)]
+        quiet_rows = [row for row in branch_rows if not _presubmit_has_signal(row)]
+        block = f"<h3>{html.escape(branch)}</h3>"
+        if signal_rows:
+            trs = []
+            for row in signal_rows:
+                pf = row.get("permafail") or {}
+                slo = row.get("slo") or {}
+                trs.append(
+                    "<tr>"
+                    f'<td><code>{html.escape(str(row.get("name") or row.get("job_id")))}</code></td>'
+                    f'<td>{_status_pill(pf.get("class"), slo.get("below_slo"), slo.get("rate"))}</td>'
+                    f'<td class="mut">{html.escape(str(pf.get("streak", "")))}</td>'
+                    f'<td>{_rate_bar(slo.get("rate"))}</td>'
+                    f'<td class="mut">{_ann_text(notes.get(str(row.get("job_id"))))}</td>'
+                    "</tr>"
+                )
+            block += (
+                "<table><thead><tr><th>Job</th><th>Status</th><th>Streak</th>"
+                "<th>Pass rate</th><th>Note</th></tr></thead><tbody>"
+                + "".join(trs)
+                + "</tbody></table>"
+            )
+        else:
+            block += '<p class="mut">No presubmits with window data.</p>'
+        if quiet_rows:
+            names = ", ".join(
+                f'<code>{html.escape(str(row.get("name") or row.get("job_id")))}</code>'
+                for row in quiet_rows
+            )
+            block += (
+                f"<details><summary>{len(quiet_rows)} presubmit(s) with no window data</summary>"
+                '<p class="mut">No Sippy-backed pass rate/trend (Sippy ingests the development '
+                "branch only) and no runs in the Prow window; shown for completeness.</p>"
+                f"<p>{names}</p></details>"
+            )
+        branch_blocks.append(block)
+    if branch_blocks:
+        parts.append(
+            '<section><h2>Merge queue — required presubmits</h2>'
+            + "".join(branch_blocks)
+            + "</section>"
+        )
+
+    if flaky:
+        trs = "".join(
+            "<tr>"
+            f'<td><code>{html.escape(str(alert.get("test_name")))}</code></td>'
+            f'<td>{html.escape(str(alert.get("failure_count")))}</td>'
+            f'<td class="mut">{html.escape(", ".join(str(j) for j in (alert.get("jobs") or [])))}</td>'
+            "</tr>"
+            for alert in flaky
+        )
+        parts.append(
+            f'<section><h2>Flaky tests <span class="count">{len(flaky)}</span></h2>'
+            "<table><thead><tr><th>Test</th><th>Failures</th><th>Jobs</th></tr></thead>"
+            f"<tbody>{trs}</tbody></table></section>"
+        )
+
+    body = "\n".join(parts) if parts else "<section><p>No data.</p></section>"
+    meta = (
+        f'as of {html.escape(str(document.get("generated_at") or ""))} · '
+        f'source {html.escape(str(document.get("source_revision") or ""))} · '
+        f'evidence {html.escape(str(document.get("collection_id") or ""))} · '
+        f'scope {html.escape(str(scope.get("state") or ""))} · '
+        f'releases {html.escape(", ".join(scope.get("releases") or []))}'
+    )
     template = string.Template(_load_asset("report.html.tmpl"))
     return template.safe_substitute(
-        generated_at=html.escape(generated_at),
-        source_revision=html.escape(source_revision),
-        collection_id=html.escape(collection_id),
+        generated_at=html.escape(str(document.get("generated_at") or "")),
+        meta=meta,
         slo=f"{SLO_PASS_RATE_PERCENT:g}",
-        charts_html=body,
+        body=body,
     )
 
 
@@ -2187,29 +2389,37 @@ def collect_command(args: argparse.Namespace) -> int:
     return 0
 
 
-def report_command(args: argparse.Namespace) -> int:
-    """Render the HTML trend report from a previously written data document."""
-    document = validate_candidates_document(load_json(Path(args.data), "data document"))
-    charts = [
-        {
-            "name": item.get("name")
-            or abbreviated_job(str(item.get("job_id") or "job")),
-            "release": item.get("release"),
-            "classification": (item.get("permafail") or {}).get("class", "unknown"),
-            "trend": ((item.get("slo") or {}).get("trend") or {}).get(
-                "classification", "n/a"
-            ),
-            "series": item.get("series") or [],
+def validate_annotations(annotations: Any) -> dict[str, Any]:
+    """Validate chaibot's optional free-form report annotations (bounded; escaped on render)."""
+    if annotations is None:
+        return {}
+    if not isinstance(annotations, dict):
+        raise ReportError("annotations must be a JSON object")
+    result: dict[str, Any] = {}
+    for key in ("summary", "incident"):
+        value = annotations.get(key)
+        if value is not None:
+            result[key] = _bounded_freeform(value, f"annotations.{key}", 4000)
+    job_notes = annotations.get("job_notes")
+    if job_notes is not None:
+        if not isinstance(job_notes, dict) or len(job_notes) > MAX_SOURCE_JOBS:
+            raise ReportError("annotations.job_notes must be a bounded object")
+        result["job_notes"] = {
+            str(job_id): _bounded_freeform(note, "annotations.job_notes value", 1000)
+            for job_id, note in job_notes.items()
         }
-        for item in document.get("periodics", [])
-    ]
-    html_report = render_html_report(
-        document["generated_at"],
-        document["source_revision"],
-        document["collection_id"],
-        charts,
+    return result
+
+
+def report_command(args: argparse.Namespace) -> int:
+    """Render the rich HTML report from a data document plus optional chaibot annotations."""
+    document = validate_candidates_document(load_json(Path(args.data), "data document"))
+    annotations = (
+        validate_annotations(load_json(Path(args.annotations), "annotations"))
+        if args.annotations
+        else {}
     )
-    atomic_write(Path(args.html_out), html_report + "\n")
+    atomic_write(Path(args.html_out), render_html_report(document, annotations) + "\n")
     return 0
 
 
@@ -2258,7 +2468,11 @@ def build_parser() -> argparse.ArgumentParser:
         "report", help="render the HTML trend report from a saved data document"
     )
     report.add_argument("--data", required=True, help="data document JSON from collect")
-    report.add_argument("--html-out", required=True, help="HTML trend report output")
+    report.add_argument(
+        "--annotations",
+        help="optional chaibot annotations JSON (summary, incident, job_notes)",
+    )
+    report.add_argument("--html-out", required=True, help="HTML report output")
     report.set_defaults(func=report_command)
     return parser
 

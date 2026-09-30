@@ -22,13 +22,13 @@ Every job is judged on **two independent axes**. "Healthy" means only "meeting i
 
 Streak is **run-based, not wall-clock**, so it self-normalizes to branch traffic.
 Candidates are shaded by **H** (flake_horizon_hours, 24h): span `< H` = "fresh"; `≥ H` =
-"persistent". You resolve each candidate into a **real break**, **flaky**, or **false
+"persistent". You MUST resolve each candidate into a **real break**, **flaky**, or **false
 alarm** (per-PR bad code / infra / already recovered), citing public run evidence; a
-real-break verdict needs `≥ 3` reds across `≥ 2` PR heads.
+real-break verdict MUST have `≥ 3` reds across `≥ 2` PR heads.
 
 ### Periodics (Design B — deterministic, binary)
 
-No PR-head ambiguity, so periodics are **binary** and never enter your judgment. From the
+No PR-head ambiguity, so periodics are **binary** and MUST NOT enter your judgment. From the
 ordered run list (dashboard sparkline, ~1 run per 6h slot; Prow when exact order is
 needed), count failures **since the last pass**:
 
@@ -40,7 +40,7 @@ needed), count failures **since the last pass**:
 A recent pass does not by itself clear it — an *old* pass followed by enough failures over
 enough time is permafailing. The **blocking** periodics are enumerated from
 `payload_blocking_jobs` ∪ `component_readiness_jobs`; a permafailing member is a release
-blocker. Live payload phase is context, never the driver.
+blocker. Live payload phase is context and MUST NOT drive the classification.
 
 ## Axis B — SLO + trend (health / deterioration)
 

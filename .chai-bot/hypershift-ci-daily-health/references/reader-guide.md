@@ -10,11 +10,12 @@ surrounding process.
 chaibot composes it from the companion's deterministic data plus its Jira lookups:
 
 - **Overall + Trend** — the headline state and week-over-week movement.
-- **Periodics — release payloads** — per supported release (N-4), which blocking periodics
-  (payload-blocking or component-readiness) are permafailing, with payload phase as context.
-- **Presubmits — merge queue** — per supported branch, which required presubmits are
-  permafailing (confirmed blockers) and how many candidates are under investigation.
-- **Proposed Incident** — the single jobs-incident chaibot proposes: branches/releases
+- **Release Blockers (blocking periodics)** — per supported release (N-4), which blocking
+  periodics (payload-blocking or component-readiness) are permafailing, aggregated per release,
+  with payload phase as context.
+- **Merge Queue Blockers (required PR checks)** — per supported branch, split into *Confirmed*
+  (required presubmits that are permafailing) and *Candidate* (flagged jobs triaged in-thread).
+- **Proposed Incident** — the single incident chaibot proposes: branches/releases
   blocked > 2 days. **You** declare it, open the bridge, and post situational awareness —
   chaibot never does.
 - **Action Items** — your worklist: handle the incident, ensure active owners for ≤ 2-day
@@ -42,9 +43,11 @@ label.
 
 ## The thread
 
-Concise: one line per actionable item, linking out to its Jira issue. **Full evidence lives
-in the Jira issue**, not the channel. chaibot proposes Jira changes and, after your
-approval, creates/links the bugs and subtasks and confirms with links.
+First reply is *Merge Queue Candidates Triage* — the candidates grouped by branch, one line
+per job with a verdict emoji (🔴 real break · 🌊 flaky · ⚪ false alarm), a one-line signature,
+and a run link. Concise: one line per actionable item, linking out to its Jira issue. **Full
+evidence lives in the Jira issue**, not the channel. chaibot proposes Jira changes and, after
+your approval, creates/links the bugs and subtasks and confirms with links.
 
 ## Jira
 

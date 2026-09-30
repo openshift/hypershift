@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HyperShift CI Daily Health — $generated_at</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#1f2733;--muted:#5c6b82;--line:#e0e6f0;--green:#137333;--greenbg:#e6f4ea;--red:#b3261e;--redbg:#fce8e6;--amber:#8a6d00;--amberbg:#fef7e0;--blue:#1a56db;--bluebg:#e8f0fe;--slate:#334155}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:24px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13.5px}
+.meta{margin-top:8px;font-size:12.5px;color:var(--muted)}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:16px 0;box-shadow:0 1px 2px rgba(20,30,50,.04)}
+h2{font-size:17px;margin:0 0 12px}
+h2 .count{font-size:13px;font-weight:600;color:var(--muted)}
+h3{font-size:14px;margin:14px 0 6px;color:var(--slate)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
+tbody tr:hover{background:#f8faff}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:#eef1f7;padding:1px 5px;border-radius:4px}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.pill.green{background:var(--greenbg);color:var(--green)}
+.pill.red{background:var(--redbg);color:var(--red)}
+.pill.amber{background:var(--amberbg);color:var(--amber)}
+.pill.slate{background:#e2e8f0;color:var(--slate)}
+.bar{position:relative;height:8px;width:90px;border-radius:6px;background:#eef1f7;overflow:hidden;display:inline-block;vertical-align:middle}
+.bar>span{position:absolute;left:0;top:0;bottom:0;border-radius:6px}
+.mut{color:var(--muted);font-size:12px}
+.flex{display:flex;align-items:center;gap:8px}
+details{margin-top:10px}
+summary{cursor:pointer;font-size:13px;color:var(--blue);font-weight:600}
+details svg{margin:8px 0}
+.callout{border-left:5px solid var(--blue);background:var(--bluebg);padding:12px 15px;border-radius:6px;margin:4px 0}
+.callout.red{border-left-color:var(--red);background:var(--redbg)}
+.callout.green{border-left-color:var(--green);background:var(--greenbg)}
+ul.notes{margin:4px 0 0;padding-left:20px}
+ul.notes li{margin:4px 0}
+svg{display:block;max-width:100%}
+a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+footer{text-align:center;color:var(--muted);font-size:12px;margin-top:22px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<h1>HyperShift CI Daily Health</h1>
+<div class="sub">Supported releases (N-4): payload-blocking &amp; component-readiness periodics, and merge-queue presubmits.</div>
+<div class="meta">$meta</div>
+</header>
+$body
+<footer>Deterministic report from the CI Health dashboard + release controller. Pass-rate bars exclude infra-only failures; SLO $slo%. Judgment and Jira bookkeeping are the bot's, after human approval.</footer>
+</div>
+</body>
+</html>

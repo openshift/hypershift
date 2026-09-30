@@ -1,8 +1,8 @@
 # Diagnostic hints
 
-Use these only as starting points when triaging a presubmit **candidate**. Always verify
-the actual signature in the surrounding logs and later runs; never turn a matching string
-into a conclusion on its own.
+You MUST use these only as starting points when triaging a presubmit **candidate**. You
+MUST verify the actual signature in the surrounding logs and later runs, and MUST NOT turn a
+matching string into a conclusion on its own.
 
 - `failed to acquire lease` — infrastructure capacity or lease failure (often flake/infra).
 - `etcdserver: leader changed` / `waiting for etcd cluster` — control-plane stability.
