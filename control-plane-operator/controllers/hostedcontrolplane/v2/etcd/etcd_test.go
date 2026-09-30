@@ -25,8 +25,9 @@ func TestBuildEtcdInitContainer(t *testing.T) {
 	t.Parallel()
 
 	const (
-		testNamespace      = "test-hcp-namespace"
-		testInitialCluster = "etcd-0=https://etcd-0.etcd-discovery.test-hcp-namespace.svc:2380,etcd-1=https://etcd-1.etcd-discovery.test-hcp-namespace.svc:2380,etcd-2=https://etcd-2.etcd-discovery.test-hcp-namespace.svc:2380"
+		testNamespace        = "test-hcp-namespace"
+		testInitialCluster   = "etcd-0=https://etcd-0.etcd-discovery.test-hcp-namespace.svc:2380,etcd-1=https://etcd-1.etcd-discovery.test-hcp-namespace.svc:2380,etcd-2=https://etcd-2.etcd-discovery.test-hcp-namespace.svc:2380"
+		testDiscoveryService = "etcd-discovery"
 	)
 
 	testCases := []struct {
@@ -77,6 +78,16 @@ func TestBuildEtcdInitContainer(t *testing.T) {
 			},
 		},
 		{
+			name:       "When called, it should set ETCD_DISCOVERY_SERVICE env var",
+			restoreUrl: "",
+			validate: func(g Gomega, c corev1.Container) {
+				g.Expect(c.Env).To(ContainElement(corev1.EnvVar{
+					Name:  "ETCD_DISCOVERY_SERVICE",
+					Value: testDiscoveryService,
+				}))
+			},
+		},
+		{
 			name:       "When called, it should set the container name to etcd-init",
 			restoreUrl: "",
 			validate: func(g Gomega, c corev1.Container) {
@@ -113,7 +124,7 @@ func TestBuildEtcdInitContainer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
-			c := buildEtcdInitContainer(tc.restoreUrl, testNamespace, testInitialCluster)
+			c := buildEtcdInitContainer(tc.restoreUrl, testNamespace, testInitialCluster, testDiscoveryService)
 			tc.validate(g, c)
 		})
 	}
