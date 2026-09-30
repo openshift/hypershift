@@ -1610,6 +1610,30 @@ type failingProgressWriteClient struct {
 	err error
 }
 
+type failingProgressReadClient struct {
+	client.Client
+	err error
+}
+
+func (c *failingProgressReadClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if _, ok := obj.(*corev1.ConfigMap); ok {
+		return c.err
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+type failingServiceDeleteClient struct {
+	client.Client
+	err error
+}
+
+func (c *failingServiceDeleteClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	if _, ok := obj.(*corev1.Service); ok {
+		return c.err
+	}
+	return c.Client.Delete(ctx, obj, opts...)
+}
+
 type staleProgressReadClient struct {
 	client.Client
 	staleProgressConfigMapReads bool
@@ -1636,6 +1660,167 @@ func (c *failingProgressWriteClient) Update(ctx context.Context, obj client.Obje
 		return c.err
 	}
 	return c.Client.Update(ctx, obj, opts...)
+}
+
+func testHostedControlPlaneOwnerReference(hcp *hyperv1.HostedControlPlane) metav1.OwnerReference {
+	controller := true
+	blockOwnerDeletion := false
+	return metav1.OwnerReference{
+		APIVersion:         hyperv1.GroupVersion.String(),
+		Kind:               "HostedControlPlane",
+		Name:               hcp.Name,
+		UID:                hcp.UID,
+		Controller:         &controller,
+		BlockOwnerDeletion: &blockOwnerDeletion,
+	}
+}
+
+func TestLoadAWSLoadBalancerCleanupProgress(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-hcp", UID: "hcp-uid"},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: "infra-id",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					Region:              "us-east-1",
+					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{VPC: "vpc-owned"},
+				},
+			},
+		},
+	}
+	progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
+	load := func(t *testing.T, data map[string]string, getErr error) error {
+		t.Helper()
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: progressKey.Namespace, Name: progressKey.Name},
+			Data:       data,
+		}).Build()
+		var cpClient client.Client = managementClient
+		if getErr != nil {
+			cpClient = &failingProgressReadClient{Client: managementClient, err: getErr}
+		}
+		_, _, _, err := (&reconciler{cpClient: cpClient}).loadAWSLoadBalancerCleanupProgress(t.Context(), hcp)
+		return err
+	}
+
+	t.Run("When the progress ConfigMap has no data key, it should report the missing key safely", func(t *testing.T) {
+		err := load(t, nil, nil)
+		g := NewGomegaWithT(t)
+		g.Expect(err).To(MatchError(fmt.Sprintf("progress ConfigMap has no data for key %q", awsLoadBalancerProgressDataKey)))
+	})
+
+	t.Run("When progress JSON is malformed, it should preserve the parse error without exposing it", func(t *testing.T) {
+		err := load(t, map[string]string{awsLoadBalancerProgressDataKey: "{"}, nil)
+		g := NewGomegaWithT(t)
+		g.Expect(err).To(MatchError("AWS load balancer cleanup progress is invalid"))
+		var syntaxErr *json.SyntaxError
+		g.Expect(errors.As(err, &syntaxErr)).To(BeTrue())
+	})
+
+	t.Run("When the management read fails, it should preserve the cause but not its endpoint", func(t *testing.T) {
+		const endpoint = "https://private-management-endpoint.example"
+		readErr := errors.New("GET failed at " + endpoint)
+		err := load(t, nil, readErr)
+		g := NewGomegaWithT(t)
+		g.Expect(err).To(MatchError("failed to read AWS load balancer cleanup progress from management cluster"))
+		g.Expect(errors.Is(err, readErr)).To(BeTrue())
+		g.Expect(err.Error()).NotTo(ContainSubstring(endpoint))
+	})
+
+	t.Run("When persisted identity fields differ, it should identify only the mismatched field", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			mutate    func(*awsLoadBalancerCleanupProgress)
+			message   string
+			sensitive string
+		}{
+			{
+				name:    "When the UID differs, it should report the UID mismatch",
+				mutate:  func(progress *awsLoadBalancerCleanupProgress) { progress.HCPUID = "other-hcp-uid" },
+				message: "AWS load balancer cleanup progress UID does not match the HostedControlPlane", sensitive: "other-hcp-uid",
+			},
+			{
+				name:    "When the InfraID differs, it should report the InfraID mismatch",
+				mutate:  func(progress *awsLoadBalancerCleanupProgress) { progress.InfraID = "other-infra-id" },
+				message: "AWS load balancer cleanup progress InfraID does not match the HostedControlPlane", sensitive: "other-infra-id",
+			},
+			{
+				name:    "When the AWS region differs, it should report the region mismatch",
+				mutate:  func(progress *awsLoadBalancerCleanupProgress) { progress.Region = "us-west-2" },
+				message: "AWS load balancer cleanup progress AWS region does not match the HostedControlPlane", sensitive: "us-west-2",
+			},
+			{
+				name:    "When the VPC differs, it should report the VPC mismatch",
+				mutate:  func(progress *awsLoadBalancerCleanupProgress) { progress.VPCID = "vpc-other" },
+				message: "AWS load balancer cleanup progress VPC ID does not match the HostedControlPlane", sensitive: "vpc-other",
+			},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				progress := awsLoadBalancerCleanupProgress{
+					HCPUID: hcp.UID, InfraID: hcp.Spec.InfraID, Region: hcp.Spec.Platform.AWS.Region,
+					VPCID: hcp.Spec.Platform.AWS.CloudProviderConfig.VPC, Services: map[string]awsLoadBalancerServiceProof{},
+				}
+				test.mutate(&progress)
+				serialized, err := json.Marshal(progress)
+				if err != nil {
+					t.Fatal(err)
+				}
+				loadErr := load(t, map[string]string{awsLoadBalancerProgressDataKey: string(serialized)}, nil)
+				g := NewGomegaWithT(t)
+				g.Expect(loadErr).To(MatchError(test.message))
+				g.Expect(loadErr.Error()).NotTo(ContainSubstring(test.sensitive))
+			})
+		}
+	})
+}
+
+func TestPrepareAWSLoadBalancerCleanupStateRepairsOwnerReference(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-hcp", UID: "hcp-uid"},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: "infra-id",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					Region:              "us-east-1",
+					CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{VPC: "vpc-owned"},
+				},
+			},
+		},
+	}
+	progress := awsLoadBalancerCleanupProgress{
+		HCPUID: hcp.UID, InfraID: hcp.Spec.InfraID, Region: "us-east-1", VPCID: "vpc-owned",
+		Services: map[string]awsLoadBalancerServiceProof{
+			"service-uid": {
+				Namespace: "default", Name: "load-balancer",
+				Candidates: []awsLoadBalancerCandidate{{Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com", Name: "cluster-lb", Region: "us-east-1"}},
+			},
+		},
+	}
+	serialized, err := json.Marshal(progress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	progressConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)},
+		Data:       map[string]string{awsLoadBalancerProgressDataKey: string(serialized)},
+	}
+	managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(progressConfigMap).Build()
+	r := &reconciler{cpClient: managementClient, cpAPIReader: managementClient}
+
+	_, err = r.prepareAWSLoadBalancerCleanupState(t.Context(), hcp, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated := &corev1.ConfigMap{}
+	if err := managementClient.Get(t.Context(), client.ObjectKeyFromObject(progressConfigMap), updated); err != nil {
+		t.Fatal(err)
+	}
+	g := NewGomegaWithT(t)
+	g.Expect(updated.OwnerReferences).To(ConsistOf(testHostedControlPlaneOwnerReference(hcp)))
 }
 
 func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
@@ -1801,6 +1986,32 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
 		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeFalse())
 		g.Expect(remaining.Finalizers).To(ContainElement("service.kubernetes.io/load-balancer-cleanup"))
+	})
+
+	t.Run("When VPC configuration and Service deletion are unavailable, it should report both safely", func(t *testing.T) {
+		hcpWithoutVPC := hcp.DeepCopy()
+		hcpWithoutVPC.Spec.Platform.AWS.CloudProviderConfig = nil
+		service := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default", UID: "service-uid"},
+			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+				Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+			}}}},
+		}
+		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+		const endpoint = "https://private-service-endpoint.example"
+		serviceDeleteErr := errors.New("service delete failed at " + endpoint)
+		r := &reconciler{
+			client:   &failingServiceDeleteClient{Client: guestClient, err: serviceDeleteErr},
+			cpClient: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+		}
+
+		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcpWithoutVPC)
+		g := NewGomegaWithT(t)
+		g.Expect(removed).To(BeFalse())
+		g.Expect(err).To(MatchError("AWS VPC configuration is missing; Kubernetes Service cleanup also failed, AWS ownership cannot be verified, and AWS resources may remain"))
+		g.Expect(errors.Is(err, serviceDeleteErr)).To(BeTrue())
+		g.Expect(err.Error()).NotTo(ContainSubstring(endpoint))
 	})
 
 	t.Run("When a load balancer Service has no hostname or cleanup finalizer, it should be deleted through Kubernetes", func(t *testing.T) {
@@ -2031,7 +2242,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		progressConfigMap := &corev1.ConfigMap{}
 		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
 		g.Expect(managementClient.Get(t.Context(), progressKey, progressConfigMap)).To(Succeed())
-		g.Expect(progressConfigMap.OwnerReferences).To(BeEmpty())
+		g.Expect(progressConfigMap.OwnerReferences).To(ConsistOf(testHostedControlPlaneOwnerReference(hcp)))
 		progress := &awsLoadBalancerCleanupProgress{}
 		g.Expect(json.Unmarshal([]byte(progressConfigMap.Data[awsLoadBalancerProgressDataKey]), progress)).To(Succeed())
 		g.Expect(progress.Services[string(service.UID)].Candidates).To(ConsistOf(awsLoadBalancerCandidate{
@@ -2191,8 +2402,12 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		g := NewGomegaWithT(t)
 		g.Expect(err).ToNot(HaveOccurred())
 		progressConfigMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)},
-			Data:       map[string]string{awsLoadBalancerProgressDataKey: string(serializedProgress)},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       hcp.Namespace,
+				Name:            awsLoadBalancerProgressConfigMapName(hcp.UID),
+				OwnerReferences: []metav1.OwnerReference{testHostedControlPlaneOwnerReference(hcp)},
+			},
+			Data: map[string]string{awsLoadBalancerProgressDataKey: string(serializedProgress)},
 		}
 		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(progressConfigMap).Build()
 		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
