@@ -170,14 +170,22 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 	}
 }
 
-func (a *AzurePlatformConfig) CreateArgs() []string {
+func (a *AzurePlatformConfig) CreateArgs(cli CLI) ([]string, error) {
+	// The two CLIs bind the same option under different names: the developer
+	// CLI calls it --assign-service-principal-roles, the product CLI
+	// --auto-assign-roles.
+	assignRoles := "--assign-service-principal-roles"
+	if cli.IsHCP() {
+		assignRoles = "--auto-assign-roles"
+	}
+
 	args := []string{
 		"--azure-creds=" + a.creds,
 		"--location=" + a.location,
 		"--oidc-issuer-url=" + a.oidcIssuerURL,
 		"--sa-token-issuer-private-key-path=" + a.saTokenKeyPath,
 		"--workload-identities-file=" + a.workloadIdentities,
-		"--assign-service-principal-roles",
+		assignRoles,
 		"--dns-zone-rg-name=" + a.dnsZoneRG,
 	}
 
@@ -192,7 +200,7 @@ func (a *AzurePlatformConfig) CreateArgs() []string {
 		}
 	}
 
-	return args
+	return args, nil
 }
 
 // PreCreate deploys infrastructure that must be ready before clusters
@@ -475,12 +483,14 @@ func (a *AzurePlatformConfig) SetupTestEnv(sharedDir string) {
 	}
 }
 
-func (a *AzurePlatformConfig) DestroyArgs() []string {
+// DestroyArgs returns the same flags for both CLIs: `hcp destroy cluster
+// azure` binds the identical flag names as its developer counterpart.
+func (a *AzurePlatformConfig) DestroyArgs(CLI) ([]string, error) {
 	return []string{
 		"--azure-creds=" + a.creds,
 		"--location=" + a.location,
 		"--dns-zone-rg-name=" + a.dnsZoneRG,
-	}
+	}, nil
 }
 
 func envOrDefault(key, defaultVal string) string {

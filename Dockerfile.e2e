@@ -5,7 +5,7 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN make e2e hypershift e2ev2-create-guests e2ev2-run-tests e2ev2-destroy-guests e2ev2-dump-guests
+RUN make e2e hypershift product-cli e2ev2-create-guests e2ev2-run-tests e2ev2-destroy-guests e2ev2-dump-guests
 
 # Reuse the same image as builder because we need go command in ci-test-e2e.sh
 # Multi-stage build lets us drop the source code and build cache from the final image
@@ -20,6 +20,9 @@ COPY --from=builder /hypershift/bin/test-backuprestore /hypershift/bin/test-back
 COPY --from=builder /hypershift/bin/test-setup /hypershift/bin/test-setup
 COPY --from=builder /hypershift/bin/test-reqserving /hypershift/bin/test-reqserving
 COPY --from=builder /hypershift/bin/hypershift /hypershift/bin/hypershift
+# The product CLI ships alongside the developer CLI so a CI step can point
+# HCP_BINARY at it and drive cluster create/destroy through `hcp`.
+COPY --from=builder /hypershift/bin/hcp /hypershift/bin/hcp
 COPY --from=builder /hypershift/bin/create-guests /hypershift/bin/create-guests
 COPY --from=builder /hypershift/bin/run-tests /hypershift/bin/run-tests
 COPY --from=builder /hypershift/bin/destroy-guests /hypershift/bin/destroy-guests
