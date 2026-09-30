@@ -21,6 +21,7 @@ import (
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/control-plane-pki-operator/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/podspec"
 
@@ -586,7 +587,7 @@ func (c *CertificateRevocationController) generateNewSignerCertificate(ctx conte
 const perPodVerifyTimeout = 10 * time.Second
 
 // kasAppLabelSelector is the label selector used to find KAS pods in the hosted control plane namespace.
-var kasAppLabelSelector = labels.SelectorFromSet(labels.Set{"app": hcpmanifests.KubeAPIServerServiceName})
+var kasAppLabelSelector = labels.SelectorFromSet(labels.Set{"app": cpomanifests.KubeAPIServerServiceName})
 
 // verifyCertificateAgainstAllKASPods connects to each KAS pod individually to run verifyFunc,
 // ensuring that all pods (not just one behind a service load balancer) pass the verification.
@@ -630,7 +631,7 @@ func (c *CertificateRevocationController) verifyCertificateAgainstAllKASPods(
 	// Without this, if some pods aren't visible (e.g. informer cache lag or
 	// a pod restarting between list and verification), we could verify only a
 	// subset and miss pods still serving with old trust bundles.
-	kasDeployment, err := c.kubeClient.AppsV1().Deployments(namespace).Get(ctx, hcpmanifests.KubeAPIServerServiceName, metav1.GetOptions{})
+	kasDeployment, err := c.kubeClient.AppsV1().Deployments(namespace).Get(ctx, cpomanifests.KubeAPIServerServiceName, metav1.GetOptions{})
 	if err != nil {
 		return false, fmt.Errorf("couldn't get KAS deployment to verify replica count: %w", err)
 	}
@@ -652,7 +653,7 @@ func (c *CertificateRevocationController) verifyCertificateAgainstAllKASPods(
 		podCfg.Host = fmt.Sprintf("https://%s", net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(int(port))))
 		// We're connecting to the PodIP, but the serving cert is still issued for the KAS service
 		// name. Keep CA verification enabled and override ServerName for SNI + hostname validation.
-		podCfg.TLSClientConfig.ServerName = hcpmanifests.KubeAPIServerServiceName
+		podCfg.TLSClientConfig.ServerName = cpomanifests.KubeAPIServerServiceName
 
 		podClient, err := kubernetes.NewForConfig(podCfg)
 		if err != nil {

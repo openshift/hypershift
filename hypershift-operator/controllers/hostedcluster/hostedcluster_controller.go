@@ -48,9 +48,11 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
-	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	cpconst "github.com/openshift/hypershift/pkg/controlplane"
+	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
+	pkgetcdrecovery "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -128,7 +130,6 @@ import (
 
 const (
 	HostedClusterFinalizer              = "hypershift.openshift.io/finalizer"
-	ControlPlaneComponentFinalizer      = "hypershift.openshift.io/component-finalizer"
 	clusterDeletionRequeueDuration      = 5 * time.Second
 	ReportingGracePeriodRequeueDuration = 25 * time.Second
 
@@ -160,8 +161,7 @@ const (
 
 var (
 	// NoopReconcile is just a default mutation function that does nothing.
-	NoopReconcile  controllerutil.MutateFn = func() error { return nil }
-	CAPIComponents                         = []string{capimanagerv2.ComponentName, capiproviderv2.ComponentName}
+	NoopReconcile controllerutil.MutateFn = func() error { return nil }
 )
 
 // HostedClusterReconciler reconciles a HostedCluster object
@@ -1010,7 +1010,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var awsEndpointServiceList hyperv1.AWSEndpointServiceList
 		if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{
@@ -1028,7 +1028,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Copy GCPEndpointAvailable and GCPServiceAttachmentAvailable conditions from the GCPPrivateServiceConnect resources.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var gcpPSCList hyperv1.GCPPrivateServiceConnectList
 		if err := r.List(ctx, &gcpPSCList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{
@@ -1047,7 +1047,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Copy Azure Private Link conditions from the AzurePrivateLinkService resources.
 	// ARO HCP uses Swift networking, not Private Link Services.
 	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform && !netutil.UseSwiftNetworkingHC(hcluster) {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var azPLSList hyperv1.AzurePrivateLinkServiceList
 		if err := r.List(ctx, &azPLSList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{
@@ -3252,7 +3252,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 
 func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	// We don't create this ServiceAccount, the CPO does, but we can reference it in RBAC before it's created as the system is eventually consistent
-	serviceAccount := cpomanifests.PKIOperatorServiceAccount(manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name))
+	serviceAccount := cpomanifests.PKIOperatorServiceAccount(pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name))
 
 	// Reconcile controlplane PKI operator CSR approver cluster role
 	controlPlanePKIOperatorCSRApproverClusterRole := controlplanepkioperatormanifests.CSRApproverClusterRole(hcluster)
@@ -3295,7 +3295,7 @@ func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx conte
 
 func (r *HostedClusterReconciler) reconcileKubevirtCSIClusterRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	// We don't create this ServiceAccount, it's part of the kubevirt CSI manifests, but we can reference it due to eventual consistency
-	hcpns := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	hcpns := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	serviceAccount := cpomanifests.KubevirtCSIDriverInfraSA(hcpns)
 
 	kubevirtCSIClusterRole := &rbacv1.ClusterRole{
@@ -3521,7 +3521,7 @@ func pauseCAPICluster(ctx context.Context, c client.Client, hc *hyperv1.HostedCl
 		return nil
 	}
 
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+	controlPlaneNamespace := pkgmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 	capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace, hc.Spec.InfraID)
 	err := c.Get(ctx, client.ObjectKeyFromObject(capiCluster), capiCluster)
 	if err != nil {
@@ -4007,7 +4007,7 @@ func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNa
 
 //nolint:gocyclo
 func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+	controlPlaneNamespace := pkgmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 	log := ctrl.LoggerFrom(ctx)
 
 	// Unpause CAPI cluster to allow deletion to proceed
@@ -4312,7 +4312,7 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 			}
 			return []reconcile.Request{}
 		case *batchv1.Job:
-			if typedObj.Name != etcdrecoverymanifests.EtcdRecoveryJob("").Name {
+			if typedObj.Name != pkgetcdrecovery.EtcdRecoveryJob("").Name {
 				return []reconcile.Request{}
 			}
 			name := typedObj.Labels[jobHostedClusterNameLabel]
@@ -5839,7 +5839,7 @@ func (r *HostedClusterReconciler) reconcileMonitoringDashboard(ctx context.Conte
 	varsToReplace := map[string]string{
 		"__NAME__":                    hc.Name,
 		"__NAMESPACE__":               hc.Namespace,
-		"__CONTROL_PLANE_NAMESPACE__": manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name),
+		"__CONTROL_PLANE_NAMESPACE__": pkgmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name),
 		"__CLUSTER_ID__":              hc.Spec.ClusterID,
 	}
 	for k, v := range varsToReplace {
@@ -6020,9 +6020,9 @@ func (r *HostedClusterReconciler) reconcileCAPIFinalizers(ctx context.Context, h
 		return nil
 	}
 
-	namespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+	namespace := pkgmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 
-	for _, name := range CAPIComponents {
+	for _, name := range cpconst.CAPIComponents {
 		deployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
@@ -6040,14 +6040,14 @@ func (r *HostedClusterReconciler) reconcileCAPIFinalizers(ctx context.Context, h
 
 		update := false
 		if remove {
-			if controllerutil.ContainsFinalizer(deployment, ControlPlaneComponentFinalizer) {
+			if controllerutil.ContainsFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer) {
 				log.Info("Removing finalizer from CAPI deployment", "deployment", deployment.Name)
-				update = controllerutil.RemoveFinalizer(deployment, ControlPlaneComponentFinalizer)
+				update = controllerutil.RemoveFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer)
 			}
 		} else {
-			if !controllerutil.ContainsFinalizer(deployment, ControlPlaneComponentFinalizer) {
+			if !controllerutil.ContainsFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer) {
 				log.Info("adding finalizer to CAPI deployment")
-				update = controllerutil.AddFinalizer(deployment, ControlPlaneComponentFinalizer)
+				update = controllerutil.AddFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer)
 			}
 		}
 

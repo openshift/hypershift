@@ -721,7 +721,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
-						npconst.KubeletConfigConfigMapLabel: "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
 						hyperv1.NodePoolLabel:               np.Name,
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
@@ -746,13 +746,13 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				},
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
 					if diff := cmp.Diff(map[string]string{
-						npconst.KubeletConfigConfigMapLabel: cm.Labels[npconst.KubeletConfigConfigMapLabel],
+						hyperv1.KubeletConfigConfigMapLabel: cm.Labels[hyperv1.KubeletConfigConfigMapLabel],
 						hyperv1.NodePoolLabel:               cm.Labels[hyperv1.NodePoolLabel],
-						npconst.NTOMirroredConfigLabel:      cm.Labels[npconst.NTOMirroredConfigLabel],
+						hyperv1.NTOMirroredConfigLabel:      cm.Labels[hyperv1.NTOMirroredConfigLabel],
 					}, map[string]string{
-						npconst.KubeletConfigConfigMapLabel: "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
 						hyperv1.NodePoolLabel:               np.Name,
-						npconst.NTOMirroredConfigLabel:      "true",
+						hyperv1.NTOMirroredConfigLabel:      "true",
 					}); diff != "" {
 						return false, fmt.Sprintf("incorrect labels: %v", diff), nil
 					}
@@ -775,7 +775,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
-						npconst.KubeletConfigConfigMapLabel: "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
 						hyperv1.NodePoolLabel:               np.Name,
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))

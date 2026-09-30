@@ -5,6 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	supportpki "github.com/openshift/hypershift/support/pki"
@@ -32,7 +33,7 @@ func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.Own
 }
 
 func ReconcileKASServerPrivateCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	svc := manifests.KubeAPIServerService(secret.Namespace)
+	svc := cpomanifests.KubeAPIServerService(secret.Namespace)
 	dnsNames := []string{
 		svc.Name,
 		fmt.Sprintf("%s.%s.svc", svc.Name, svc.Namespace),
@@ -138,9 +139,9 @@ func generateKubeConfig(url string, crtBytes, keyBytes, caBytes []byte) ([]byte,
 
 func inClusterKASURL(platformType hyperv1.PlatformType) string {
 	if platformType == hyperv1.IBMCloudPlatform {
-		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
+		return fmt.Sprintf("https://%s:%d", cpomanifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
 	}
-	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCPort)
+	return fmt.Sprintf("https://%s:%d", cpomanifests.KubeAPIServerServiceName, config.KASSVCPort)
 }
 
 // AddBracketsIfIPv6 function is needed to build the serverAPI url for every kubeconfig created.

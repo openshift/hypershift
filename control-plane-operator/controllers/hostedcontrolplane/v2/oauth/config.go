@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -46,7 +46,7 @@ func getOAuthServiceDNS(namespace string) string {
 	if namespace == "" {
 		return ""
 	}
-	return manifests.OauthServerService("").Name + "." + namespace + ".svc.cluster.local"
+	return cpomanifests.OauthServerService("").Name + "." + namespace + ".svc.cluster.local"
 }
 
 func adaptAuditConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {

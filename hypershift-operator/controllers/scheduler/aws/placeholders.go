@@ -10,6 +10,7 @@ import (
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	pkgscheduler "github.com/openshift/hypershift/pkg/scheduler"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -347,7 +348,7 @@ func (r *placeholderUpdater) reconcile(
 			if selector := nodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution; selector != nil {
 				for _, term := range selector.NodeSelectorTerms {
 					for _, expression := range term.MatchExpressions {
-						if expression.Key == OSDFleetManagerPairedNodesLabel && expression.Operator == corev1.NodeSelectorOpNotIn {
+						if expression.Key == pkgscheduler.OSDFleetManagerPairedNodesLabel && expression.Operator == corev1.NodeSelectorOpNotIn {
 							existingPairLabels.Insert(expression.Values...)
 						}
 					}
@@ -390,7 +391,7 @@ func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNode
 				// if it were to scale down, since keeping those warm does not help us start new clusters more quickly
 				corev1applyconfigurations.NodeSelectorTerm().WithMatchExpressions(
 					corev1applyconfigurations.NodeSelectorRequirement().
-						WithKey(OSDFleetManagerPairedNodesLabel).
+						WithKey(pkgscheduler.OSDFleetManagerPairedNodesLabel).
 						WithOperator(corev1.NodeSelectorOpNotIn).
 						WithValues(pairedNodes...),
 				),
@@ -428,7 +429,7 @@ func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNode
 									WithKey(PlaceholderLabel).
 									WithOperator(metav1.LabelSelectorOpIn).
 									WithValues(strconv.Itoa(placeholderIndex)),
-							)).WithTopologyKey(OSDFleetManagerPairedNodesLabel),
+							)).WithTopologyKey(pkgscheduler.OSDFleetManagerPairedNodesLabel),
 						)).
 						WithPodAntiAffinity(corev1applyconfigurations.PodAntiAffinity().WithRequiredDuringSchedulingIgnoredDuringExecution(
 							// placeholder pods must land in different zones
@@ -449,19 +450,19 @@ func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNode
 									WithKey(PlaceholderLabel).
 									WithOperator(metav1.LabelSelectorOpNotIn).
 									WithValues(strconv.Itoa(placeholderIndex)),
-							)).WithTopologyKey(OSDFleetManagerPairedNodesLabel),
+							)).WithTopologyKey(pkgscheduler.OSDFleetManagerPairedNodesLabel),
 						)).
 						WithNodeAffinity(nodeAffinity),
 					).
 					// placeholder pods must tolerate landing on a request-serving node
 					WithTolerations(corev1applyconfigurations.Toleration().
-						WithKey(ControlPlaneServingComponentTaint).
+						WithKey(pkgscheduler.ControlPlaneServingComponentTaint).
 						WithOperator(corev1.TolerationOpEqual).
 						WithValue("true").
 						WithEffect(corev1.TaintEffectNoSchedule),
 					).
 					WithTolerations(corev1applyconfigurations.Toleration().
-						WithKey(ControlPlaneTaint).
+						WithKey(pkgscheduler.ControlPlaneTaint).
 						WithOperator(corev1.TolerationOpEqual).
 						WithValue("true").
 						WithEffect(corev1.TaintEffectNoSchedule),

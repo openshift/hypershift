@@ -15,9 +15,10 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
+	kasconst "github.com/openshift/hypershift/pkg/kas"
+	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -96,18 +97,18 @@ var initialObjects = []client.Object{
 	manifests.NamespaceKubeSystem(),
 	manifests.OpenShiftUserCABundle(),
 	&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
-	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameConfig),
-	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameMirror),
-	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameICSP),
-	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameInfra),
-	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameNTOMirroredConfigs),
-	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameConfig)),
-	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameMirror)),
-	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameICSP)),
-	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameInfra)),
-	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameNTOMirroredConfigs)),
-	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameRBAC),
-	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameRBAC)),
+	manifests.ValidatingAdmissionPolicy(kasconst.AdmissionPolicyNameConfig),
+	manifests.ValidatingAdmissionPolicy(kasconst.AdmissionPolicyNameMirror),
+	manifests.ValidatingAdmissionPolicy(kasconst.AdmissionPolicyNameICSP),
+	manifests.ValidatingAdmissionPolicy(kasconst.AdmissionPolicyNameInfra),
+	manifests.ValidatingAdmissionPolicy(kasconst.AdmissionPolicyNameNTOMirroredConfigs),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kasconst.AdmissionPolicyNameConfig)),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kasconst.AdmissionPolicyNameMirror)),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kasconst.AdmissionPolicyNameICSP)),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kasconst.AdmissionPolicyNameInfra)),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kasconst.AdmissionPolicyNameNTOMirroredConfigs)),
+	manifests.ValidatingAdmissionPolicy(kasconst.AdmissionPolicyNameRBAC),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kasconst.AdmissionPolicyNameRBAC)),
 
 	&operatorsv1alpha1.CatalogSource{ObjectMeta: metav1.ObjectMeta{Name: "redhat-marketplace", Namespace: "openshift-marketplace"}},
 	fakeOperatorHub(),
@@ -545,7 +546,7 @@ func fakeOpenShiftOAuthAPIServerService() *corev1.Service {
 }
 
 func fakeKubeadminPasswordSecret() *corev1.Secret {
-	s := manifests.KubeadminPasswordSecret("bar")
+	s := hccomanifests.KubeadminPasswordSecret("bar")
 	s.Data = map[string][]byte{"password": []byte("test")}
 	return s
 }
@@ -621,13 +622,13 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			},
 			inputObjects: []client.Object{
 				&corev1.Secret{
-					ObjectMeta: manifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
+					ObjectMeta: hccomanifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
 					Data: map[string][]byte{
 						"password": []byte(`adminpass`),
 					},
 				},
 				&appsv1.Deployment{
-					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+					ObjectMeta: hccomanifests.OAuthDeployment(testNamespace).ObjectMeta,
 				},
 			},
 			expectKubeadminPasswordHashSecretToExist: true,
@@ -641,13 +642,13 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			},
 			inputObjects: []client.Object{
 				&corev1.Secret{
-					ObjectMeta: manifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
+					ObjectMeta: hccomanifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
 					Data: map[string][]byte{
 						"password": []byte(`adminpass`),
 					},
 				},
 				&appsv1.Deployment{
-					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+					ObjectMeta: hccomanifests.OAuthDeployment(testNamespace).ObjectMeta,
 				},
 			},
 			existingHashSecret: &corev1.Secret{
@@ -667,13 +668,13 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			},
 			inputObjects: []client.Object{
 				&corev1.Secret{
-					ObjectMeta: manifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
+					ObjectMeta: hccomanifests.KubeadminPasswordSecret(testNamespace).ObjectMeta,
 					Data: map[string][]byte{
 						"password": []byte(`adminpass`),
 					},
 				},
 				&appsv1.Deployment{
-					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+					ObjectMeta: hccomanifests.OAuthDeployment(testNamespace).ObjectMeta,
 				},
 			},
 			existingHashSecret: &corev1.Secret{
@@ -697,7 +698,7 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			},
 			inputObjects: []client.Object{
 				&appsv1.Deployment{
-					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+					ObjectMeta: hccomanifests.OAuthDeployment(testNamespace).ObjectMeta,
 				},
 			},
 			expectKubeadminPasswordHashSecretToExist: false,
@@ -727,7 +728,7 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 				if test.expectHashPreserved {
 					g.Expect(actualKubeAdminSecret.Data["kubeadmin"]).To(Equal(test.existingHashSecret.Data["kubeadmin"]))
 				}
-				passwordSecret := manifests.KubeadminPasswordSecret(testNamespace)
+				passwordSecret := hccomanifests.KubeadminPasswordSecret(testNamespace)
 				err = r.cpClient.Get(t.Context(), client.ObjectKeyFromObject(passwordSecret), passwordSecret)
 				g.Expect(err).To(BeNil())
 				g.Expect(bcrypt.CompareHashAndPassword(
@@ -739,7 +740,7 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
-			actualOauthDeployment := manifests.OAuthDeployment(testNamespace)
+			actualOauthDeployment := hccomanifests.OAuthDeployment(testNamespace)
 			err = r.cpClient.Get(t.Context(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
 			g.Expect(err).To(BeNil())
 		})

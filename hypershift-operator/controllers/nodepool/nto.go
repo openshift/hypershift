@@ -12,6 +12,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	npconstants "github.com/openshift/hypershift/pkg/nodepool"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
@@ -192,7 +193,7 @@ func reconcilePerformanceProfileConfigMap(performanceProfileConfigMap *corev1.Co
 	if err := reconcileNodeTuningConfigMap(performanceProfileConfigMap, nodePool, performanceProfileConfig); err != nil {
 		return err
 	}
-	performanceProfileConfigMap.Labels[PerformanceProfileConfigMapLabel] = "true"
+	performanceProfileConfigMap.Labels[npconstants.PerformanceProfileConfigMapLabel] = "true"
 	return nil
 }
 
@@ -358,8 +359,8 @@ func (r *NodePoolReconciler) SetPerformanceProfileConditions(ctx context.Context
 	cmList := &corev1.ConfigMapList{}
 	if err := r.Client.List(ctx, cmList, &client.ListOptions{
 		LabelSelector: labels.SelectorFromSet(map[string]string{
-			NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
-			hyperv1.NodePoolLabel:                            nodePool.Name}),
+			npconstants.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
+			hyperv1.NodePoolLabel: nodePool.Name}),
 		Namespace: controlPlaneNamespace,
 	}); err != nil {
 		return err
@@ -554,8 +555,8 @@ func (r *NodePoolReconciler) ntoReconcile(ctx context.Context, nodePool *hyperv1
 		// at this point in time, we no longer know the name of the ConfigMap in the HCP NS
 		// so, we remove it by listing by a label unique to PerformanceProfile
 		if err := deleteConfigByLabel(ctx, r.Client, map[string]string{
-			PerformanceProfileConfigMapLabel: "true",
-			hyperv1.NodePoolLabel:            nodePool.Name,
+			npconstants.PerformanceProfileConfigMapLabel: "true",
+			hyperv1.NodePoolLabel:                        nodePool.Name,
 		}, controlPlaneNamespace); err != nil {
 			return fmt.Errorf("failed to delete performanceprofileConfig ConfigMap: %w", err)
 		}
@@ -567,8 +568,8 @@ func (r *NodePoolReconciler) ntoReconcile(ctx context.Context, nodePool *hyperv1
 		if err := r.List(ctx, existingPerformanceProfileConfigMapList, &client.ListOptions{
 			Namespace: controlPlaneNamespace,
 			LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
-				PerformanceProfileConfigMapLabel: "true",
-				hyperv1.NodePoolLabel:            nodePool.Name}),
+				npconstants.PerformanceProfileConfigMapLabel: "true",
+				hyperv1.NodePoolLabel:                        nodePool.Name}),
 		}); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}

@@ -115,7 +115,7 @@ func (mc *MirrorConfigsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 			list := &corev1.ConfigMapList{}
 			err := mc.hostedClusterClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 				crclient.MatchingLabels(map[string]string{
-					npconst.KubeletConfigConfigMapLabel: "true",
+					hyperv1.KubeletConfigConfigMapLabel: "true",
 					hyperv1.NodePoolLabel:               nodePool.Name,
 				}))
 			configMaps := make([]*corev1.ConfigMap, len(list.Items))
@@ -139,13 +139,13 @@ func (mc *MirrorConfigsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 			},
 			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
 				if diff := cmp.Diff(map[string]string{
-					npconst.KubeletConfigConfigMapLabel: configMap.Labels[npconst.KubeletConfigConfigMapLabel],
+					hyperv1.KubeletConfigConfigMapLabel: configMap.Labels[hyperv1.KubeletConfigConfigMapLabel],
 					hyperv1.NodePoolLabel:               configMap.Labels[hyperv1.NodePoolLabel],
-					npconst.NTOMirroredConfigLabel:      configMap.Labels[npconst.NTOMirroredConfigLabel],
+					hyperv1.NTOMirroredConfigLabel:      configMap.Labels[hyperv1.NTOMirroredConfigLabel],
 				}, map[string]string{
-					npconst.KubeletConfigConfigMapLabel: "true",
+					hyperv1.KubeletConfigConfigMapLabel: "true",
 					hyperv1.NodePoolLabel:               nodePool.Name,
-					npconst.NTOMirroredConfigLabel:      "true",
+					hyperv1.NTOMirroredConfigLabel:      "true",
 				}); diff != "" {
 					return false, fmt.Sprintf("incorrect labels: %v", diff), nil
 				}
@@ -164,7 +164,7 @@ func (mc *MirrorConfigsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 			list := &corev1.ConfigMapList{}
 			err := mc.hostedClusterClient.List(ctx, list, crclient.InNamespace(configManagedNamespace), crclient.MatchingLabels(map[string]string{
-				npconst.KubeletConfigConfigMapLabel: "true",
+				hyperv1.KubeletConfigConfigMapLabel: "true",
 				hyperv1.NodePoolLabel:               nodePool.Name,
 			}))
 			configMaps := make([]*corev1.ConfigMap, len(list.Items))

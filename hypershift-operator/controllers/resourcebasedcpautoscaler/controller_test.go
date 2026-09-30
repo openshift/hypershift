@@ -9,8 +9,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	controlplaneautoscalermanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneautoscaler"
+	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	corev1 "k8s.io/api/core/v1"
@@ -62,7 +62,7 @@ func TestReconcile(t *testing.T) {
 		return hc
 	}
 	defaultVPA := func() *vpaautoscalingv1.VerticalPodAutoscaler {
-		cpNamespace := manifests.HostedControlPlaneNamespace(defaultHC().Namespace, defaultHC().Name)
+		cpNamespace := pkgmanifests.HostedControlPlaneNamespace(defaultHC().Namespace, defaultHC().Name)
 		vpa := controlplaneautoscalermanifests.KubeAPIServerVerticalPodAutoscaler(cpNamespace)
 		return vpa
 	}

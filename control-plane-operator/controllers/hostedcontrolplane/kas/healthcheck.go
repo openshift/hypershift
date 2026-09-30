@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/netutil"
 
@@ -42,7 +42,7 @@ func GetHealthcheckEndpointForRoute(externalRoute *routev1.Route, hcp *hyperv1.H
 		hcp.Spec.Networking.APIServer != nil && len(hcp.Spec.Networking.APIServer.AllowedCIDRBlocks) > 0 {
 		// When there's AllowedCIDRBlocks input, we have no guarantees the healthcheck can roundtrip through the haproxy load balancer.
 		// Hence we use KubeAPIServerService as a best effort.
-		endpoint = manifests.KubeAPIServerService("").Name
+		endpoint = cpomanifests.KubeAPIServerService("").Name
 		port = config.KASSVCPort
 	}
 

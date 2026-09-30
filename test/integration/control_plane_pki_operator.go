@@ -12,10 +12,17 @@ import (
 	"time"
 
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	certificatesv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
+	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
+	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/test/e2e/util"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"github.com/openshift/hypershift/test/integration/framework"
+
 	authenticationv1 "k8s.io/api/authentication/v1"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -27,14 +34,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	corev1Client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
-	controllerruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
-	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-	"github.com/openshift/hypershift/test/integration/framework"
+	controllerruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx context.Context, hostedCluster *hypershiftv1beta1.HostedCluster, mgmt, guest *framework.Clients) {
@@ -50,7 +51,7 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 		}
 		// control-plane-pki-operator is only available in 4.15 and later
 		e2eutil.AtLeast(t, e2eutil.Version415)
-		hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		hostedControlPlaneNamespace := pkgmanifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		for _, testCase := range []struct {
 			clientCertificate *corev1.Secret
@@ -109,7 +110,7 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 			_, sreKey, _, _ := framework.CertKeyRequest(t, certificates.SREBreakGlassSigner)
 			validateCertificateAuth(t, ctx, guest.Cfg, sreSignedCrt, sreKey, func(s string) bool {
 				return s == framework.CommonNameFor(certificates.SREBreakGlassSigner)
-			}, mgmt.KubeClient.CoreV1().Secrets(manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)))
+			}, mgmt.KubeClient.CoreV1().Secrets(pkgmanifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)))
 		})
 	})
 }
@@ -167,7 +168,7 @@ func validateCertificateAuth(t *testing.T, ctx context.Context, root *rest.Confi
 }
 
 func validateInvalidCN(t *testing.T, ctx context.Context, hostedCluster *hypershiftv1beta1.HostedCluster, mgmt, guest *framework.Clients, signer certificates.SignerClass) {
-	hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	hostedControlPlaneNamespace := pkgmanifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	_, _, _, wrongCsr := framework.CertKeyRequest(t, signer)
 	signerName := certificates.SignerNameForHC(hostedCluster, signer)
 	wrongCSRName := base36sum224(append(append([]byte(hostedControlPlaneNamespace), []byte(signer)...), []byte(t.Name())...))
@@ -203,7 +204,7 @@ func validateInvalidCN(t *testing.T, ctx context.Context, hostedCluster *hypersh
 }
 
 func validateCSRFlow(t *testing.T, ctx context.Context, hostedCluster *hypershiftv1beta1.HostedCluster, mgmt, guest *framework.Clients, signer certificates.SignerClass) []byte {
-	hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	hostedControlPlaneNamespace := pkgmanifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	_, key, csr, _ := framework.CertKeyRequest(t, signer)
 	signerName := certificates.SignerNameForHC(hostedCluster, signer)
 	csrName := base36sum224(append(append([]byte(hostedControlPlaneNamespace), []byte(signer)...), []byte(t.Name())...))
@@ -246,7 +247,7 @@ func validateCSRFlow(t *testing.T, ctx context.Context, hostedCluster *hypershif
 
 	validateCertificateAuth(t, ctx, guest.Cfg, signedCrt, key, func(s string) bool {
 		return s == framework.CommonNameFor(signer)
-	}, mgmt.KubeClient.CoreV1().Secrets(manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)))
+	}, mgmt.KubeClient.CoreV1().Secrets(pkgmanifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)))
 
 	return signedCrt
 }
@@ -256,7 +257,7 @@ func validateRevocation(t *testing.T, ctx context.Context, hostedCluster *hypers
 		t.Fatalf("programmer error: zero-length signed cert but we haven't failed yet!")
 	}
 
-	hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	hostedControlPlaneNamespace := pkgmanifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	_, key, _, _ := framework.CertKeyRequest(t, signer)
 	crrName := base36sum224(append(append([]byte(hostedControlPlaneNamespace), []byte(signer)...), []byte(t.Name())...))
 	t.Logf("creating CRR %s/%s to trigger signer certificate revocation", hostedControlPlaneNamespace, crrName)

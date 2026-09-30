@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/thirdparty/kubernetes/pkg/credentialprovider"
 	"github.com/openshift/hypershift/support/upsert"
@@ -104,7 +105,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 
 	if !exists || additionalPullSecret.Data == nil {
 		// Delete global pull secret if it exists
-		secret := manifests.GlobalPullSecret()
+		secret := hccomanifests.GlobalPullSecret()
 		if err := r.kubeSystemSecretClient.Delete(ctx, secret); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to delete global pull secret: %w", err)
@@ -112,7 +113,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		}
 
 		// Create/Update original pull secret in the DataPlane's kube-system namespace
-		originalSecret := manifests.OriginalPullSecret()
+		originalSecret := hccomanifests.OriginalPullSecret()
 		if _, err := r.CreateOrUpdate(ctx, r.kubeSystemSecretClient, originalSecret, func() error {
 			originalSecret.Data = map[string][]byte{
 				corev1.DockerConfigJsonKey: originalPullSecretBytes,
@@ -130,7 +131,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		}
 
 		// Reconcile DaemonSet with only original pull secret (global-pull-secret will be optional and empty)
-		daemonSet := manifests.GlobalPullSecretDaemonSet()
+		daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
 		if err := reconcileDaemonSet(ctx, daemonSet, "", originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
 			return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 		}
@@ -150,7 +151,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	}
 
 	// Create original pull secret in the DataPlane's kube-system namespace
-	originalSecret := manifests.OriginalPullSecret()
+	originalSecret := hccomanifests.OriginalPullSecret()
 	if _, err := r.CreateOrUpdate(ctx, r.kubeSystemSecretClient, originalSecret, func() error {
 		originalSecret.Data = map[string][]byte{
 			corev1.DockerConfigJsonKey: originalPullSecretBytes,
@@ -161,7 +162,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	}
 
 	// Create global pull secret in the DataPlane
-	secret := manifests.GlobalPullSecret()
+	secret := hccomanifests.GlobalPullSecret()
 	if _, err := r.CreateOrUpdate(ctx, r.kubeSystemSecretClient, secret, func() error {
 		secret.Data = map[string][]byte{
 			corev1.DockerConfigJsonKey: globalPullSecretBytes,
@@ -177,7 +178,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 
 	// Generate a hash of the global pull secret content to trigger pod recreation when content changes
 	configSeed := util.HashSimple(globalPullSecretBytes)
-	daemonSet := manifests.GlobalPullSecretDaemonSet()
+	daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
 	if err := reconcileDaemonSet(ctx, daemonSet, secret.Name, originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
 		return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 	}
@@ -360,7 +361,7 @@ func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullS
 }
 
 func additionalPullSecretExists(ctx context.Context, c crclient.Client) (bool, *corev1.Secret, error) {
-	additionalPullSecret := manifests.AdditionalPullSecret()
+	additionalPullSecret := hccomanifests.AdditionalPullSecret()
 	if err := c.Get(ctx, crclient.ObjectKeyFromObject(additionalPullSecret), additionalPullSecret); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil, nil

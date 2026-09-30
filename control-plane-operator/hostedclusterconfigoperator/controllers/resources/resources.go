@@ -19,7 +19,6 @@ import (
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	cpoauth "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
@@ -45,6 +44,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	metricsproxy "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
+	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
+	pkgoauth "github.com/openshift/hypershift/pkg/oauth"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -920,7 +921,7 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 		}
 
 		log.Info("reconciling oauth challenging client")
-		oauthChallengingClient := manifests.OAuthServerChallengingClient()
+		oauthChallengingClient := hccomanifests.OAuthServerChallengingClient()
 		if _, err := r.CreateOrUpdate(ctx, r.client, oauthChallengingClient, func() error {
 			return oauth.ReconcileChallengingClient(oauthChallengingClient, r.oauthAddress, r.oauthPort)
 		}); err != nil {
@@ -1429,7 +1430,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	log := ctrl.LoggerFrom(ctx)
 	var errs []error
 	p := ingress.NewIngressParams(hcp)
-	ingressController := manifests.IngressDefaultIngressController()
+	ingressController := hccomanifests.IngressDefaultIngressController()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
 		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate, p.AWSNLB, p.LoadBalancerScope, p.LoadBalancerIP, p.EndpointPublishingStrategy)
 	}); err != nil {
@@ -1511,17 +1512,17 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		}
 
 		// Manifests for infra/mgmt cluster passthrough service
-		cpService := manifests.IngressDefaultIngressPassthroughService(namespace)
+		cpService := hccomanifests.IngressDefaultIngressPassthroughService(namespace)
 
 		cpService.Name = fmt.Sprintf("%s-%s",
-			manifests.IngressDefaultIngressPassthroughServiceName,
+			hccomanifests.IngressDefaultIngressPassthroughServiceName,
 			hcp.Spec.Platform.Kubevirt.GenerateID)
 
 		// Manifests for infra/mgmt cluster passthrough routes
-		cpPassthroughRoute := manifests.IngressDefaultIngressPassthroughRoute(namespace)
+		cpPassthroughRoute := hccomanifests.IngressDefaultIngressPassthroughRoute(namespace)
 
 		cpPassthroughRoute.Name = fmt.Sprintf("%s-%s",
-			manifests.IngressDefaultIngressPassthroughRouteName,
+			hccomanifests.IngressDefaultIngressPassthroughRouteName,
 			hcp.Spec.Platform.Kubevirt.GenerateID)
 
 		if _, err := r.CreateOrUpdate(ctx, r.kubevirtInfraClient, cpService, func() error {
@@ -1670,7 +1671,7 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent service account: %w", err))
 	}
 
-	agentDaemonset := manifests.KonnectivityAgentDaemonSet()
+	agentDaemonset := hccomanifests.KonnectivityAgentDaemonSet()
 	if _, err := r.CreateOrUpdate(ctx, r.client, agentDaemonset, func() error {
 		konnectivity.ReconcileAgentDaemonSet(agentDaemonset, p, hcp.Spec.Platform, proxy.Status)
 		return nil
@@ -2084,7 +2085,7 @@ func (r *reconciler) reconcileOpenshiftOAuthAPIServerEndpoints(ctx context.Conte
 }
 
 func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	kubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcp.Namespace)
+	kubeadminPasswordSecret := hccomanifests.KubeadminPasswordSecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
 		if apierrors.IsNotFound(err) {
 			// kubeAdminPasswordHash should not exist when a user specifies an explicit oauth config
@@ -2105,7 +2106,7 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 		if kubeadminPasswordSecret.Annotations == nil {
 			kubeadminPasswordSecret.Annotations = map[string]string{}
 		}
-		kubeadminPasswordSecret.Annotations[cpoauth.KubeadminSecretHashAnnotation] = string(kubeadminPasswordHashSecret.Data["kubeadmin"])
+		kubeadminPasswordSecret.Annotations[pkgoauth.KubeadminSecretHashAnnotation] = string(kubeadminPasswordHashSecret.Data["kubeadmin"])
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to annotate kubeadmin-password secret in hcp namespace: %w", err)
@@ -3237,14 +3238,14 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 			} else {
 				namespace = hcp.Namespace
 			}
-			cpService := manifests.IngressDefaultIngressPassthroughService(namespace)
+			cpService := hccomanifests.IngressDefaultIngressPassthroughService(namespace)
 			cpService.Name = fmt.Sprintf("%s-%s",
-				manifests.IngressDefaultIngressPassthroughServiceName,
+				hccomanifests.IngressDefaultIngressPassthroughServiceName,
 				hcp.Spec.Platform.Kubevirt.GenerateID)
 
-			cpPassthroughRoute := manifests.IngressDefaultIngressPassthroughRoute(namespace)
+			cpPassthroughRoute := hccomanifests.IngressDefaultIngressPassthroughRoute(namespace)
 			cpPassthroughRoute.Name = fmt.Sprintf("%s-%s",
-				manifests.IngressDefaultIngressPassthroughRouteName,
+				hccomanifests.IngressDefaultIngressPassthroughRouteName,
 				hcp.Spec.Platform.Kubevirt.GenerateID)
 
 			err := r.kubevirtInfraClient.Delete(ctx, cpService)

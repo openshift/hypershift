@@ -7,7 +7,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
+	pkgoauth "github.com/openshift/hypershift/pkg/oauth"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
@@ -30,8 +31,6 @@ const (
 	oauthLoginTemplateVolumeName     = "login-template"
 	oauthProvidersTemplateVolumeName = "providers-template"
 	auditWebhookConfigFileVolumeName = "oauth-audit-webhook"
-
-	KubeadminSecretHashAnnotation = "hypershift.openshift.io/kubeadmin-secret-hash"
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -54,7 +53,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 				},
 			})
 		}
-		noProxy := []string{manifests.KubeAPIServerService("").Name, config.AuditWebhookService, getOAuthServiceDNS(cpContext.HCP.Namespace)}
+		noProxy := []string{cpomanifests.KubeAPIServerService("").Name, config.AuditWebhookService, getOAuthServiceDNS(cpContext.HCP.Namespace)}
 		if cpContext.HCP.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 			noProxy = append(noProxy, "iam.cloud.ibm.com", "iam.test.cloud.ibm.com")
 		}
@@ -111,12 +110,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get kubeadmin password secret: %w", err)
 		}
-		delete(deployment.Spec.Template.ObjectMeta.Annotations, KubeadminSecretHashAnnotation)
+		delete(deployment.Spec.Template.ObjectMeta.Annotations, pkgoauth.KubeadminSecretHashAnnotation)
 	} else {
 		if deployment.Spec.Template.ObjectMeta.Annotations == nil {
 			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 		}
-		deployment.Spec.Template.ObjectMeta.Annotations[KubeadminSecretHashAnnotation] = kubeadminPasswordSecret.Annotations[KubeadminSecretHashAnnotation]
+		deployment.Spec.Template.ObjectMeta.Annotations[pkgoauth.KubeadminSecretHashAnnotation] = kubeadminPasswordSecret.Annotations[pkgoauth.KubeadminSecretHashAnnotation]
 	}
 
 	return nil

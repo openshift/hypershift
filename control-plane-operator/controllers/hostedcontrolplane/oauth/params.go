@@ -6,7 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/podspec"
 
@@ -65,7 +65,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 		AvailabilityProberImage: releaseImageProvider.GetImage(podspec.AvailabilityProberImageName),
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 		ProxyImage:              releaseImageProvider.GetImage("socks5-proxy"),
-		OAuthNoProxy:            []string{manifests.KubeAPIServerService("").Name, config.AuditWebhookService},
+		OAuthNoProxy:            []string{cpomanifests.KubeAPIServerService("").Name, config.AuditWebhookService},
 	}
 	if hcp.Spec.Configuration != nil {
 		p.APIServer = hcp.Spec.Configuration.APIServer
