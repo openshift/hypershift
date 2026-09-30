@@ -14,6 +14,7 @@ func TestRun(t *testing.T) {
 	legacyFixtures := []string{
 		"a/legacy/production_test.go|TestReconcileErrors",
 		"a/legacyambiguous/production_test.go|TestWorkflow",
+		"a/externallegacy/internal_test.go|TestValidateErrors",
 	}
 	for _, fixture := range legacyFixtures {
 		legacyExceptions.Insert(fixture)
@@ -63,6 +64,12 @@ func TestRun(t *testing.T) {
 	})
 	t.Run("When a new test reuses a removed baseline path and name, it should still report the violation", func(t *testing.T) {
 		analysistest.Run(t, testdata, Analyzer, "support/util")
+	})
+	t.Run("When an internal scenario has an explicit exception, it should allow an external canonical test", func(t *testing.T) {
+		analysistest.Run(t, testdata, Analyzer, "a/externalexception")
+	})
+	t.Run("When an internal scenario is only baselined, it should still reject an additional external test", func(t *testing.T) {
+		analysistest.Run(t, testdata, Analyzer, "a/externallegacy")
 	})
 }
 

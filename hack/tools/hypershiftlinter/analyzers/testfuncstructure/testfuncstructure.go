@@ -654,6 +654,9 @@ func reportGroup(pass *analysis.Pass, tests []*testFunction) {
 	}
 	if primary != nil && !shouldSuppress(pass, primary) {
 		for _, test := range tests[1:] {
+			if test.imported && test.suppressed {
+				continue
+			}
 			if !test.imported && !isLegacyException(pass, test) {
 				continue
 			}
