@@ -1,4 +1,4 @@
-package split
+package split // want package:"testfuncstructure production symbols"
 
 func Reconcile() {}
 

@@ -87,6 +87,12 @@ take precedence over scenario suffixes, so `TestReconcileErrors` maps to a real
 `ReconcileErrors` function before it can be treated as another `Reconcile`
 scenario.
 
+External tests are matched to the actual package-under-test import path, not
+another dependency with the same package name. Analysis facts carry production
+declaration provenance and internal-test mappings into the external test
+variant. This excludes exported test helpers and generated methods from the
+production index and enforces the one-test limit across both package variants.
+
 The analyzer is enabled by both the root and `api/` module lint configurations.
 
 When several top-level tests map to one production symbol, consolidate their
@@ -116,6 +122,10 @@ enforced, including a new canonical declaration added beside a baselined split
 test. Remove an entry when its test is renamed or consolidated. An accepted
 limitation is that an existing declaration remains exempt while its baseline
 entry exists, even if its body changes.
+
+The linter test suite checks that every baseline entry names an existing test
+declaration. Delete obsolete entries when tests are moved, renamed, or removed;
+otherwise `make test-linter` fails.
 
 ## Status-writing enforcement and migration exceptions
 

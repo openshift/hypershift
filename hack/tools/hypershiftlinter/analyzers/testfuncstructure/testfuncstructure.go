@@ -14,13 +14,16 @@ import (
 
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/pathutil"
 
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	"golang.org/x/tools/go/analysis"
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "testfuncstructure",
-	Doc:  "checks that unit tests map one-to-one to production functions and methods",
-	Run:  run,
+	Name:      "testfuncstructure",
+	Doc:       "checks that unit tests map one-to-one to production functions and methods",
+	Run:       run,
+	FactTypes: []analysis.Fact{new(productionMetadata)},
 }
 
 type productionSymbol struct {
@@ -39,6 +42,9 @@ type testFunction struct {
 	decl       *ast.FuncDecl
 	filename   string
 	name       string
+	namePos    token.Pos
+	nameEnd    token.Pos
+	imported   bool
 	suppressed bool
 	resolution resolution
 }
@@ -67,13 +73,7 @@ type symbolMatch struct {
 	priority  int
 }
 
-var excludedBuildTags = map[string]struct{}{
-	"e2e":         {},
-	"e2ev2":       {},
-	"envtest":     {},
-	"integration": {},
-	"reqserving":  {},
-}
+var excludedBuildTags = sets.New("e2e", "e2ev2", "envtest", "integration", "reqserving")
 
 func run(pass *analysis.Pass) (any, error) {
 	symbols := collectProductionSymbols(pass)
@@ -100,6 +100,9 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 		}
 	}
+	for _, test := range collectImportedTests(pass, symbolsByID) {
+		groups[test.resolution.target.id] = append(groups[test.resolution.target.id], test)
+	}
 
 	groupIDs := make([]string, 0, len(groups))
 	for id := range groups {
@@ -109,6 +112,9 @@ func run(pass *analysis.Pass) (any, error) {
 	for _, id := range groupIDs {
 		reportGroup(pass, groups[id])
 	}
+	if !strings.HasSuffix(pass.Pkg.Name(), "_test") && len(symbols) > 0 {
+		exportProductionMetadata(pass, symbols, groups)
+	}
 
 	return nil, nil
 }
@@ -116,7 +122,16 @@ func run(pass *analysis.Pass) (any, error) {
 func collectProductionSymbols(pass *analysis.Pass) []*productionSymbol {
 	seen := map[string]*productionSymbol{}
 	if target := externalPackageUnderTest(pass); target != nil {
-		collectExportedSymbols(target, seen)
+		var metadata productionMetadata
+		if pass.ImportPackageFact(target, &metadata) {
+			collectExportedSymbols(target, seen)
+			productionIDs := sets.New(metadata.SymbolIDs...)
+			for id := range seen {
+				if !productionIDs.Has(id) {
+					delete(seen, id)
+				}
+			}
+		}
 	} else {
 		for _, file := range pass.Files {
 			filename := pass.Fset.File(file.Pos()).Name()
@@ -153,18 +168,10 @@ func externalPackageUnderTest(pass *analysis.Pass) *types.Package {
 
 	name := strings.TrimSuffix(pass.Pkg.Name(), "_test")
 	wantPath := strings.TrimSuffix(pass.Pkg.Path(), "_test")
-	var candidates []*types.Package
 	for _, imported := range pass.Pkg.Imports() {
-		if imported.Name() != name {
-			continue
-		}
-		if imported.Path() == wantPath {
+		if imported.Name() == name && imported.Path() == wantPath {
 			return imported
 		}
-		candidates = append(candidates, imported)
-	}
-	if len(candidates) == 1 {
-		return candidates[0]
 	}
 	return nil
 }
@@ -224,25 +231,8 @@ func addProductionSymbol(seen map[string]*productionSymbol, fn *types.Func) {
 		id:            id,
 		display:       display,
 		canonicalTest: canonical,
-		variants:      deduplicateVariants(variants),
+		variants:      variants,
 	}
-}
-
-func deduplicateVariants(variants []testNameVariant) []testNameVariant {
-	result := make([]testNameVariant, 0, len(variants))
-	for _, candidate := range variants {
-		duplicate := false
-		for _, existing := range result {
-			if candidate.name == existing.name {
-				duplicate = true
-				break
-			}
-		}
-		if !duplicate {
-			result = append(result, candidate)
-		}
-	}
-	return result
 }
 
 func receiverName(fn *types.Func) string {
@@ -293,6 +283,8 @@ func collectTests(pass *analysis.Pass) []*testFunction {
 				decl:       fn,
 				filename:   filename,
 				name:       fn.Name.Name,
+				namePos:    fn.Name.Pos(),
+				nameEnd:    fn.Name.End(),
 				suppressed: hasNoLintDirective(fn),
 			})
 		}
@@ -301,7 +293,7 @@ func collectTests(pass *analysis.Pass) []*testFunction {
 		if result := strings.Compare(a.filename, b.filename); result != 0 {
 			return result
 		}
-		return cmpPos(a.decl.Pos(), b.decl.Pos())
+		return cmpPos(a.namePos, b.namePos)
 	})
 	return tests
 }
@@ -350,24 +342,20 @@ func hasExcludedBuildTag(file *ast.File) bool {
 }
 
 func requiresExcludedBuildTag(expression constraint.Expr) bool {
-	otherTags := map[string]struct{}{}
+	otherTags := sets.New[string]()
 	collectOtherBuildTags(expression, otherTags)
 	if len(otherTags) > 16 {
 		return false
 	}
 
-	tags := make([]string, 0, len(otherTags))
-	for tag := range otherTags {
-		tags = append(tags, tag)
-	}
-	slices.Sort(tags)
+	tags := sets.List(otherTags)
 	for assignment := range 1 << len(tags) {
 		values := make(map[string]bool, len(tags))
 		for index, tag := range tags {
 			values[tag] = assignment&(1<<index) != 0
 		}
 		if expression.Eval(func(tag string) bool {
-			if _, excluded := excludedBuildTags[tag]; excluded {
+			if excludedBuildTags.Has(tag) {
 				return false
 			}
 			return values[tag]
@@ -378,11 +366,11 @@ func requiresExcludedBuildTag(expression constraint.Expr) bool {
 	return true
 }
 
-func collectOtherBuildTags(expression constraint.Expr, tags map[string]struct{}) {
+func collectOtherBuildTags(expression constraint.Expr, tags sets.Set[string]) {
 	switch expression := expression.(type) {
 	case *constraint.TagExpr:
-		if _, excluded := excludedBuildTags[expression.Tag]; !excluded {
-			tags[expression.Tag] = struct{}{}
+		if !excludedBuildTags.Has(expression.Tag) {
+			tags.Insert(expression.Tag)
 		}
 	case *constraint.NotExpr:
 		collectOtherBuildTags(expression.X, tags)
@@ -550,15 +538,14 @@ func betterMatch(candidate, current symbolMatch) bool {
 	return candidate.priority > current.priority
 }
 
-func resolveMatches(matches []symbolMatch, called map[string]struct{}) resolution {
+func resolveMatches(matches []symbolMatch, called sets.Set[string]) resolution {
 	if len(matches) == 1 {
 		match := matches[0]
 		return resolution{kind: match.kind, target: match.symbol, priority: match.priority}
 	}
 
 	calledMatches := slices.DeleteFunc(slices.Clone(matches), func(match symbolMatch) bool {
-		_, ok := called[match.symbol.id]
-		return !ok
+		return !called.Has(match.symbol.id)
 	})
 	if len(calledMatches) == 1 {
 		match := calledMatches[0]
@@ -575,8 +562,8 @@ func resolveMatches(matches []symbolMatch, called map[string]struct{}) resolutio
 	return resolution{kind: resolutionAmbiguous, candidates: candidates}
 }
 
-func calledProductionSymbols(pass *analysis.Pass, test *ast.FuncDecl, symbolsByID map[string]*productionSymbol) map[string]struct{} {
-	called := map[string]struct{}{}
+func calledProductionSymbols(pass *analysis.Pass, test *ast.FuncDecl, symbolsByID map[string]*productionSymbol) sets.Set[string] {
+	called := sets.New[string]()
 	ast.Inspect(test.Body, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
@@ -588,7 +575,7 @@ func calledProductionSymbols(pass *analysis.Pass, test *ast.FuncDecl, symbolsByI
 		}
 		id := symbolID(fn)
 		if _, ok := symbolsByID[id]; ok {
-			called[id] = struct{}{}
+			called.Insert(id)
 		}
 		return true
 	})
@@ -627,8 +614,8 @@ func reportAmbiguous(pass *analysis.Pass, test *testFunction) {
 		names = append(names, candidate.display)
 	}
 	pass.Report(analysis.Diagnostic{
-		Pos:     test.decl.Name.Pos(),
-		End:     test.decl.Name.End(),
+		Pos:     test.namePos,
+		End:     test.nameEnd,
 		Message: fmt.Sprintf("test function %q does not map unambiguously to one production function (candidates: %s); use the canonical Test<FunctionName> or Test<Receiver>_<Method> form, or add a documented //nolint:hypershiftlinter exception", test.name, strings.Join(names, ", ")),
 	})
 }
@@ -646,10 +633,16 @@ func reportGroup(pass *analysis.Pass, tests []*testFunction) {
 		if a.resolution.priority != b.resolution.priority {
 			return b.resolution.priority - a.resolution.priority
 		}
+		if a.imported != b.imported {
+			if a.imported {
+				return -1
+			}
+			return 1
+		}
 		if result := strings.Compare(a.filename, b.filename); result != 0 {
 			return result
 		}
-		return cmpPos(a.decl.Pos(), b.decl.Pos())
+		return cmpPos(a.namePos, b.namePos)
 	})
 
 	symbol := tests[0].resolution.target
@@ -659,20 +652,20 @@ func reportGroup(pass *analysis.Pass, tests []*testFunction) {
 		primary = tests[0]
 		preferred = primary.name
 	}
-	if primary != nil && !isLegacyException(pass, primary) && !primary.suppressed {
+	if primary != nil && !shouldSuppress(pass, primary) {
 		for _, test := range tests[1:] {
-			if !isLegacyException(pass, test) {
+			if !test.imported && !isLegacyException(pass, test) {
 				continue
 			}
+			kind := "legacy"
+			if test.imported {
+				kind = "internal"
+			}
 			pass.Report(analysis.Diagnostic{
-				Pos:     primary.decl.Name.Pos(),
-				End:     primary.decl.Name.End(),
-				Message: fmt.Sprintf("test function %q adds another top-level test for %s while legacy test %q still exists; consolidate both under %q using table-driven cases or t.Run subtests", primary.name, symbol.display, test.name, preferred),
-				Related: []analysis.RelatedInformation{{
-					Pos:     test.decl.Name.Pos(),
-					End:     test.decl.Name.End(),
-					Message: fmt.Sprintf("legacy top-level test %q", test.name),
-				}},
+				Pos:     primary.namePos,
+				End:     primary.nameEnd,
+				Message: fmt.Sprintf("test function %q adds another top-level test for %s while %s test %q still exists; consolidate both under %q using table-driven cases or t.Run subtests", primary.name, symbol.display, kind, test.name, preferred),
+				Related: relatedTest(test, fmt.Sprintf("%s top-level test %q", kind, test.name)),
 			})
 			break
 		}
@@ -703,31 +696,37 @@ func reportGroup(pass *analysis.Pass, tests []*testFunction) {
 		}
 
 		diagnostic := analysis.Diagnostic{
-			Pos:     test.decl.Name.Pos(),
-			End:     test.decl.Name.End(),
+			Pos:     test.namePos,
+			End:     test.nameEnd,
 			Message: message,
 		}
 		if primary != nil && primary != test {
-			diagnostic.Related = []analysis.RelatedInformation{{
-				Pos:     primary.decl.Name.Pos(),
-				End:     primary.decl.Name.End(),
-				Message: fmt.Sprintf("existing top-level test %q", primary.name),
-			}}
+			diagnostic.Related = relatedTest(primary, fmt.Sprintf("existing top-level test %q", primary.name))
 		}
 		pass.Report(diagnostic)
 	}
 }
 
 func shouldSuppress(pass *analysis.Pass, test *testFunction) bool {
-	if test.suppressed {
+	if test.imported || test.suppressed {
 		return true
 	}
 	return isLegacyException(pass, test)
 }
 
+func relatedTest(test *testFunction, message string) []analysis.RelatedInformation {
+	if !test.namePos.IsValid() {
+		return nil
+	}
+	return []analysis.RelatedInformation{{
+		Pos:     test.namePos,
+		End:     test.nameEnd,
+		Message: message,
+	}}
+}
+
 func isLegacyException(pass *analysis.Pass, test *testFunction) bool {
-	_, ok := legacyExceptions[legacyKey(pass, test)]
-	return ok
+	return legacyExceptions.Has(legacyKey(pass, test))
 }
 
 func legacyKey(pass *analysis.Pass, test *testFunction) string {

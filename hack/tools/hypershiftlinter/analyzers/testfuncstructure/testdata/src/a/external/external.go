@@ -1,4 +1,4 @@
-package external
+package external // want package:"testfuncstructure production symbols"
 
 func Validate() {}
 
