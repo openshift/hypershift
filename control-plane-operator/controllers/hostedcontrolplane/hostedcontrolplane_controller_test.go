@@ -4757,6 +4757,227 @@ func TestReconcileDeletion(t *testing.T) {
 	}
 }
 
+func TestReconcileDeletionAWSEndpointServices(t *testing.T) {
+	const hoFinalizer = "hypershift.openshift.io/hypershift-operator-finalizer"
+
+	newEndpointService := func(name string, deletionTimestamp *metav1.Time, finalizers ...string) *hyperv1.AWSEndpointService {
+		return &hyperv1.AWSEndpointService{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              name,
+				Namespace:         "test-ns",
+				DeletionTimestamp: deletionTimestamp,
+				Finalizers:        finalizers,
+			},
+		}
+	}
+
+	tests := []struct {
+		name              string
+		platformType      hyperv1.PlatformType
+		conditions        []metav1.Condition
+		endpointServices  []*hyperv1.AWSEndpointService
+		listErr           bool
+		deleteErr         bool
+		wantErr           bool
+		wantRequeue       bool
+		wantFinalizerKept bool
+		wantDeletionOn    map[string]bool
+	}{
+		{
+			name:              "When there are no AWSEndpointServices, it should remove the HCP finalizer",
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+		},
+		{
+			name: "When an AWSEndpointService is not being deleted, it should delete it and requeue",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer, hoFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+			wantDeletionOn:    map[string]bool{"private-router": true},
+		},
+		{
+			name: "When an AWSEndpointService still has the CPO finalizer within the timeout, it should wait",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+		},
+		{
+			name: "When an AWSEndpointService only has the hypershift-operator finalizer, it should not wait for it",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), hoFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+		},
+		{
+			name: "When the CPO finalizer is still present after the timeout, it should proceed with deletion",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", ptr.To(metav1.NewTime(time.Now().Add(-11*time.Minute))), awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+		},
+		{
+			name: "When ValidAWSIdentityProvider is False, it should skip AWSEndpointService cleanup",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
+			},
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+			wantDeletionOn:    map[string]bool{"private-router": false},
+		},
+		{
+			name: "When ValidAWSIdentityProvider is Unknown, it should still delete AWSEndpointServices",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionUnknown, Reason: hyperv1.StatusUnknownReason},
+			},
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+			wantDeletionOn:    map[string]bool{"private-router": true},
+		},
+		{
+			name: "When there are multiple AWSEndpointServices and one is still pending, it should wait",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("ep-a", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), hoFinalizer),
+				newEndpointService("ep-b", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+		},
+		{
+			name:         "When the platform is not AWS, it should not touch AWSEndpointServices",
+			platformType: hyperv1.NonePlatform,
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+			wantDeletionOn:    map[string]bool{"private-router": false},
+		},
+		{
+			name: "When listing AWSEndpointServices fails, it should return an error and keep the finalizer",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			listErr:           true,
+			wantErr:           true,
+			wantFinalizerKept: true,
+		},
+		{
+			name: "When deleting an AWSEndpointService fails, it should return an error and keep the finalizer",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			deleteErr:         true,
+			wantErr:           true,
+			wantFinalizerKept: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			platformSpec := hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{},
+			}
+			if tt.platformType != "" {
+				platformSpec = hyperv1.PlatformSpec{Type: tt.platformType}
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  "test-ns",
+					Finalizers: []string{finalizer},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID:  "test-infra",
+					Platform: platformSpec,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: tt.conditions,
+				},
+			}
+
+			objects := []client.Object{hcp}
+			for _, ep := range tt.endpointServices {
+				objects = append(objects, ep)
+			}
+
+			clientBuilder := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{})
+			if tt.listErr {
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+						if _, ok := list.(*hyperv1.AWSEndpointServiceList); ok {
+							return fmt.Errorf("simulated list error")
+						}
+						return c.List(ctx, list, opts...)
+					},
+				})
+			}
+			if tt.deleteErr {
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						if _, ok := obj.(*hyperv1.AWSEndpointService); ok {
+							return fmt.Errorf("simulated delete error")
+						}
+						return c.Delete(ctx, obj, opts...)
+					},
+				})
+			}
+			fakeClient := clientBuilder.Build()
+
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+			// Re-read from fake client so the object has a ResourceVersion.
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.Log.WithName("test"),
+			}
+
+			result, err := r.reconcileDeletion(ctx, hcp)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tt.wantRequeue {
+				g.Expect(result.RequeueAfter).To(Equal(awsEndpointServiceDeletionRequeueInterval))
+			} else {
+				g.Expect(result.RequeueAfter).To(BeZero())
+			}
+
+			updated := &hyperv1.HostedControlPlane{}
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+			g.Expect(controllerutil.ContainsFinalizer(updated, finalizer)).To(Equal(tt.wantFinalizerKept))
+
+			for name, wantDeleting := range tt.wantDeletionOn {
+				ep := &hyperv1.AWSEndpointService{}
+				g.Expect(fakeClient.Get(ctx, client.ObjectKey{Namespace: "test-ns", Name: name}, ep)).To(Succeed())
+				g.Expect(!ep.DeletionTimestamp.IsZero()).To(Equal(wantDeleting), "AWSEndpointService %s deletion state", name)
+			}
+		})
+	}
+}
+
 func TestReconcileDefaultSecurityGroup(t *testing.T) {
 	tests := []struct {
 		name           string

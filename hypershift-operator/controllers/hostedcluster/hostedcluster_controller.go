@@ -3850,9 +3850,18 @@ func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.
 	return nil
 }
 
-// deleteAWSEndpointServices loops over AWSEndpointServiceList items and sends a delete request for each.
-// If the HC has no valid aws credentials it removes the CPO finalizer for each AWSEndpointService.
-// It returns true if len(awsEndpointServiceList.Items) != 0.
+// deleteAWSEndpointServices deletes the AWSEndpointServices in the control plane namespace and
+// returns true while any still exist.
+//
+// The control-plane-operator deletes AWSEndpointServices and waits for its VPC endpoint cleanup
+// while the HostedControlPlane is being deleted (HostedControlPlaneReconciler.deleteAWSEndpointServices),
+// because that cleanup needs KAS-minted credentials. By the time this runs the HostedControlPlane is
+// gone, so the control-plane-operator can no longer clean up. A control-plane-operator finalizer
+// still present here means the control-plane-operator gave up (timeout or invalid credentials) or is
+// an older version without that step; it is removed so deletion can proceed.
+//
+// The hypershift-operator finalizer (VPC endpoint service cleanup) does not depend on the
+// HostedControlPlane and is always awaited.
 func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, namespace string) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
@@ -3861,6 +3870,9 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 	}
 	for _, ep := range awsEndpointServiceList.Items {
 		if ep.DeletionTimestamp != nil {
+			// ValidAWSIdentityProvider is copied from the HostedControlPlane, which no longer exists at
+			// this point, so the status is normally Unknown and the finalizer is removed immediately.
+			// The grace period only applies if credentials are still reported as valid.
 			if platformaws.GetCredentialStatus(hc) == platformaws.CredentialStatusValid && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
 				continue
 			}
@@ -3872,8 +3884,8 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 				if err := c.Update(ctx, &ep); err != nil {
 					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
 				}
+				log.Info("Removed CPO finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
 			}
-			log.Info("Removed CPO finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
 			continue
 		}
 
