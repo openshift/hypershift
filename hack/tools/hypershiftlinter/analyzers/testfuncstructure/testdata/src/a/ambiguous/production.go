@@ -1,4 +1,4 @@
-package ambiguous
+package ambiguous // want package:"testfuncstructure production symbols"
 
 type First struct{}
 

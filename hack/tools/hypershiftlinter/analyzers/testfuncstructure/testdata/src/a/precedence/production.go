@@ -1,4 +1,4 @@
-package precedence
+package precedence // want package:"testfuncstructure production symbols"
 
 func Reconcile() {}
 

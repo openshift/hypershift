@@ -47,6 +47,8 @@ Do not use generic or disconnected test function names like `TestNodePoolFeature
 
 Each production function or method must map to at most one top-level unit test function. If a function is complex enough to warrant many test cases, use table-driven tests or `t.Run` subtests within a single test function, with the "When...it should..." naming for each case.
 
+This limit includes tests in both the production package and its external `<package>_test` package.
+
 Prefer `Test<ReceiverType>_<MethodName>` for method tests so methods with common names such as `Reconcile`, `Validate`, and `Run` map unambiguously:
 
 ```go
