@@ -15,11 +15,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-const (
-	// nthTaintPrefix is the prefix used by aws-node-termination-handler for taints
-	// applied to nodes that receive spot interruption or rebalance recommendation events.
-	nthTaintPrefix = "aws-node-termination-handler/"
+var terminationTaintPrefixes = []string{
+	"aws-node-termination-handler/",
+	"gcp-node-termination-handler/",
+}
 
+const (
 	// interruptibleInstanceLabel is the label applied to CAPI Machines backed by spot instances.
 	interruptibleInstanceLabel = "hypershift.openshift.io/interruptible-instance"
 
@@ -43,7 +44,7 @@ func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return ctrl.Result{}, fmt.Errorf("failed to get Node: %w", err)
 	}
 
-	taintKey := nthTaintKey(node)
+	taintKey := terminationTaintKey(node)
 	if taintKey == "" {
 		return ctrl.Result{}, nil
 	}
@@ -90,11 +91,13 @@ func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	return ctrl.Result{}, nil
 }
 
-// nthTaintKey returns the first taint key with the node-termination-handler prefix, or empty string if none found.
-func nthTaintKey(node *corev1.Node) string {
+// terminationTaintKey returns the first supported node termination handler taint key, or empty string if none found.
+func terminationTaintKey(node *corev1.Node) string {
 	for _, taint := range node.Spec.Taints {
-		if strings.HasPrefix(taint.Key, nthTaintPrefix) {
-			return taint.Key
+		for _, prefix := range terminationTaintPrefixes {
+			if strings.HasPrefix(taint.Key, prefix) {
+				return taint.Key
+			}
 		}
 	}
 	return ""

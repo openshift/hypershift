@@ -20,6 +20,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	endpointresolver "github.com/openshift/hypershift/control-plane-operator/endpoint-resolver"
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
+	gcpnodeterminationhandler "github.com/openshift/hypershift/control-plane-operator/gcp-node-termination-handler"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	metricsproxy "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
@@ -129,6 +130,8 @@ func commandFor(name string) *cobra.Command {
 		cmd = endpointresolver.NewStartCommand()
 	case "metrics-proxy":
 		cmd = metricsproxy.NewStartCommand()
+	case "gcp-node-termination-handler":
+		cmd = gcpnodeterminationhandler.NewStartCommand()
 	default:
 		// for the default case, there is no need
 		// to convert flags, return immediately
@@ -186,6 +189,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(syncglobalpullsecret.NewRunCommand())
 	cmd.AddCommand(endpointresolver.NewStartCommand())
 	cmd.AddCommand(metricsproxy.NewStartCommand())
+	cmd.AddCommand(gcpnodeterminationhandler.NewStartCommand())
 	return cmd
 }
 

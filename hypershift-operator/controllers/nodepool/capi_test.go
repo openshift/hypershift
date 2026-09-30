@@ -1949,7 +1949,7 @@ func TestCAPIReconcile(t *testing.T) {
 				}
 
 				// Check spot MHC and interruptible label
-				if isSpotEnabled(tt.nodePool) {
+				if isInterruptibleInstanceEnabled(tt.nodePool) {
 					// Spot MHC should exist
 					spotMHC := &capiv1.MachineHealthCheck{}
 					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName() + "-spot"}, spotMHC)
