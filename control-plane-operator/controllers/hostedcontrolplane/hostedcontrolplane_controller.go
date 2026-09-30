@@ -239,7 +239,6 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		kcmv2.NewComponent(),
 		schedulerv2.NewComponent(),
 		oapiv2.NewComponent(),
-		routerv2.NewComponent(),
 		oauthapiv2.NewComponent(),
 		autoscalerv2.NewComponent(),
 		cvov2.NewComponent(r.EnableCVOManagementClusterMetricsAccess),
@@ -266,6 +265,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		konnectivityv2.NewComponent(),
 		ignitionserverv2.NewComponent(r.ReleaseProvider, r.DefaultIngressDomain),
 		ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
+		routerv2.NewComponent(),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
