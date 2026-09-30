@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	routerutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router/util"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -220,9 +221,10 @@ func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1
 	}
 	if serviceStrategy.Type == hyperv1.LoadBalancer && netutil.IsPublicHCP(hcp) && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
 		hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
-		// For Azure or Kubevirt on Azure we currently hardcode 7443 for the SVC LB as 6443 collides with public LB rule for the management cluster.
-		// https://bugzilla.redhat.com/show_bug.cgi?id=2060650
-		// TODO(alberto): explore exposing multiple Azure frontend IPs on the load balancer.
+		// For Azure or KubeVirt on Azure, the default port is 7443 for backward compatibility
+		// with existing clusters. New clusters get a dedicated Azure Public IP (via azure-pip-name
+		// annotation set by ReconcileService on CREATE), which allows standard port 6443.
+		// See https://bugzilla.redhat.com/show_bug.cgi?id=2060650
 		kasSVCPort = config.KASSVCLBAzurePort
 		apiServerService = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
 	}
@@ -546,12 +548,16 @@ func (r *Reconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *h
 	}
 	if serviceStrategy.Type == hyperv1.LoadBalancer && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
 		hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
-		// Azure uses port 7443 for KAS LB because port 6443 collides with the management cluster's KAS.
-		kasSVCLBPort = config.KASSVCLBAzurePort
 		if netutil.IsPublicHCP(hcp) {
 			// Public Azure clusters use a dedicated kube-apiserverlb service.
-			// Private-only clusters use kube-apiserver-private (already set above).
 			svc = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
+			// Default to 7443 for backward compatibility; overridden to 6443
+			// after the Get if the Service has the azure-pip-name annotation.
+			kasSVCLBPort = config.KASSVCLBAzurePort
+		} else {
+			// Private Azure clusters use the kube-apiserver-private ILB on port
+			// 7443 until a dedicated ILB frontend is implemented (Phase 2).
+			kasSVCLBPort = config.KASSVCLBAzurePort
 		}
 	}
 
@@ -562,6 +568,12 @@ func (r *Reconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *h
 		}
 		err = fmt.Errorf("failed to get kube apiserver service: %w", err)
 		return
+	}
+
+	// If the Service has the azure-pip-name annotation, it was created with a dedicated
+	// Public IP and uses the standard port 6443 instead of the legacy 7443.
+	if _, hasPIP := svc.Annotations[azureutil.PIPNameAnnotation]; hasPIP {
+		kasSVCLBPort = config.KASSVCPort
 	}
 
 	return kas.ReconcileServiceStatus(svc, serviceStrategy, kasSVCLBPort, events.NewMessageCollector(ctx, r.Client))
