@@ -2,6 +2,7 @@ package etcd
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -133,11 +134,12 @@ func adaptStatefulSetForShard(cpContext component.WorkloadContext, sts *appsv1.S
 		name := fmt.Sprintf("%s-%d", shardName, i)
 		members = append(members, fmt.Sprintf("%s=https://%s.%s.%s.svc:2380", name, name, discoveryService, hcp.Namespace))
 	}
+	initialCluster := strings.Join(members, ",")
 
 	podspec.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "ETCD_INITIAL_CLUSTER",
-			Value: strings.Join(members, ","),
+			Value: initialCluster,
 		})
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "ETCD_INITIAL_ADVERTISE_PEER_URLS",
@@ -257,9 +259,15 @@ fi
 	// on EmptyDir shards, but a manual patch or upgrade could bypass admission.
 	snapshotRestored := meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
 	if shard.RestoreSnapshotURL != "" && !snapshotRestored && shard.Storage.Type != hyperv1.EmptyDirEtcdShardStorage {
-		sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers,
-			buildEtcdInitContainer(shard.RestoreSnapshotURL),
-		)
+		etcdInit := buildEtcdInitContainer(shard.RestoreSnapshotURL, hcp.Namespace, initialCluster, discoveryService)
+		insertIdx := len(sts.Spec.Template.Spec.InitContainers)
+		for i, c := range sts.Spec.Template.Spec.InitContainers {
+			if c.Name == "reset-member" {
+				insertIdx = i
+				break
+			}
+		}
+		sts.Spec.Template.Spec.InitContainers = slices.Insert(sts.Spec.Template.Spec.InitContainers, insertIdx, etcdInit)
 	}
 
 	adaptShardStorage(sts, shard, hcp)
