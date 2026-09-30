@@ -176,6 +176,136 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 	}
 }
 
+func TestReconcileCombinedPullSecret(t *testing.T) {
+	t.Parallel()
+
+	validPullSecret := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)
+	mergedData := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"},"custom.io":{"auth":"Y3VzdG9t"}}}`)
+	targetNamespace := "test-ns"
+
+	tests := []struct {
+		name             string
+		existingObjects  []client.Object
+		interceptorFuncs *interceptor.Funcs
+		expectErr        bool
+		errContains      string
+		expectedData     []byte
+	}{
+		{
+			name: "When combined-pull-secret is absent, it should create it from pull-secret",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+			},
+			expectedData: validPullSecret,
+		},
+		{
+			name: "When combined-pull-secret already has data, it should preserve it",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: targetNamespace},
+					Type:       corev1.SecretTypeDockerConfigJson,
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: mergedData},
+				},
+			},
+			expectedData: mergedData,
+		},
+		{
+			name: "When combined-pull-secret exists with empty data, it should seed from pull-secret",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: targetNamespace},
+					Type:       corev1.SecretTypeDockerConfigJson,
+					Data:       map[string][]byte{},
+				},
+			},
+			expectedData: validPullSecret,
+		},
+		{
+			name:        "When pull-secret is missing, it should return an error",
+			expectErr:   true,
+			errContains: "failed to get pull-secret",
+		},
+		{
+			name: "When pull-secret is missing .dockerconfigjson key, it should return an error",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{},
+				},
+			},
+			expectErr:   true,
+			errContains: ".dockerconfigjson",
+		},
+		{
+			name: "When createOrUpdate fails for combined-pull-secret, it should return an error",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+					if s, ok := obj.(*corev1.Secret); ok && s.Name == "combined-pull-secret" {
+						return fmt.Errorf("forbidden")
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			},
+			expectErr:   true,
+			errContains: "failed to reconcile combined-pull-secret",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: targetNamespace,
+				},
+			}
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.existingObjects...)
+			if tc.interceptorFuncs != nil {
+				builder = builder.WithInterceptorFuncs(*tc.interceptorFuncs)
+			}
+			fakeClient := builder.Build()
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(t.Context()),
+			}
+
+			err := r.reconcileCombinedPullSecret(t.Context(), hcp, controllerutil.CreateOrUpdate)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			combinedSecret := common.CombinedPullSecret(targetNamespace)
+			g.Expect(fakeClient.Get(t.Context(), client.ObjectKeyFromObject(combinedSecret), combinedSecret)).To(Succeed())
+			g.Expect(combinedSecret.Type).To(Equal(corev1.SecretTypeDockerConfigJson))
+			g.Expect(combinedSecret.Data[corev1.DockerConfigJsonKey]).To(Equal(tc.expectedData))
+		})
+	}
+}
+
 func TestReconcileIgnitionServer(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
@@ -686,7 +816,10 @@ func TestEventHandling(t *testing.T) {
 	t.Parallel()
 
 	hcp := sampleHCP(t)
-	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"},
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{}`)},
+	}
 	etcdEncryptionKey := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "etcd-encryption-key"},
 		Data:       map[string][]byte{"key": []byte("very-secret")},
@@ -790,6 +923,85 @@ func TestEventHandling(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileFailsWhenCombinedPullSecretCreateFails(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	hcp := sampleHCP(t)
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"},
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{}`)},
+	}
+	etcdEncryptionKey := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "etcd-encryption-key"},
+		Data:       map[string][]byte{"key": []byte("very-secret")},
+	}
+	fakeNodeTuningOperator := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "node-tuning-operator",
+			Namespace: "bar",
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "None",
+		},
+	}
+	fakeNodeTuningOperatorTLS := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "node-tuning-operator-tls"},
+		Data:       map[string][]byte{"key": []byte("very-secret")},
+	}
+
+	c := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcp, pullSecret, etcdEncryptionKey, fakeNodeTuningOperator, fakeNodeTuningOperatorTLS).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if s, ok := obj.(*corev1.Secret); ok && s.Name == "combined-pull-secret" {
+					return fmt.Errorf("forbidden")
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	readyInfraStatus := infra.InfrastructureStatus{
+		APIHost:          "foo",
+		APIPort:          1,
+		OAuthHost:        "foo",
+		OAuthPort:        1,
+		KonnectivityHost: "foo",
+		KonnectivityPort: 1,
+	}
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().Return(map[string]string{"registry": "override"}).AnyTimes()
+	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+	mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")).AnyTimes()
+
+	r := &HostedControlPlaneReconciler{
+		Client:                        c,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
+		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
+		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
+		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
+			return readyInfraStatus, nil
+		},
+		SetDefaultSecurityContext: false,
+		ec2Client:                 mockEC2,
+	}
+	r.setup(controllerutil.CreateOrUpdate)
+
+	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(hcp)})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to reconcile combined pull secret"))
 }
 
 type createTrackingClient struct {
@@ -1597,8 +1809,15 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 			corev1.DockerConfigJsonKey: []byte(`{}`),
 		},
 	}
+	combinedPullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: "hcp-namespace"},
+		Type:       corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{}`),
+		},
+	}
 
-	fakeComponents = append(fakeComponents, pullSecret.DeepCopy())
+	fakeComponents = append(fakeComponents, pullSecret.DeepCopy(), combinedPullSecret.DeepCopy())
 
 	return fakeComponents
 }
