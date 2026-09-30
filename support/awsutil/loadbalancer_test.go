@@ -734,6 +734,11 @@ func TestIsNotFound(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "When AWS reports a lowercase not-found code, it should treat the error as not found",
+			err:  &smithy.GenericAPIError{Code: "targetgroupnotfound"},
+			want: true,
+		},
+		{
 			name: "When a not-found API error is wrapped, it should still be recognized",
 			err:  errors.Join(&smithy.GenericAPIError{Code: "TargetGroupNotFound"}),
 			want: true,
@@ -764,6 +769,95 @@ func TestIsNotFound(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if got := isNotFound(test.err); got != test.want {
 				t.Fatalf("isNotFound(%v) = %t, want %t", test.err, got, test.want)
+			}
+		})
+	}
+}
+
+func TestDeleteRecordedClassicLoadBalancerRejectsVPCDrift(t *testing.T) {
+	tests := []struct {
+		name        string
+		identityVPC string
+		selectorVPC string
+		observedVPC string
+	}{
+		{
+			name:        "When the recorded VPC differs from the current selector, it should not delete the load balancer",
+			identityVPC: "vpc-recorded",
+			selectorVPC: "vpc-current",
+			observedVPC: "vpc-recorded",
+		},
+		{
+			name:        "When AWS reports a different VPC than the recorded identity, it should not delete the load balancer",
+			identityVPC: "vpc-current",
+			selectorVPC: "vpc-current",
+			observedVPC: "vpc-other",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			client := awsapi.NewMockELBAPI(ctrl)
+			client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancing.DescribeLoadBalancersInput{
+				LoadBalancerNames: []string{"cluster-lb"},
+			}, gomock.Any()).Return(&elasticloadbalancing.DescribeLoadBalancersOutput{
+				LoadBalancerDescriptions: []elbtypes.LoadBalancerDescription{{LoadBalancerName: aws.String("cluster-lb"), VPCId: aws.String(test.observedVPC)}},
+			}, nil)
+
+			err := deleteRecordedClassicLoadBalancer(context.Background(), client,
+				LoadBalancerSelector{VPCID: test.selectorVPC, InfraID: "infra-id"},
+				LoadBalancerIdentity{Name: "cluster-lb", Type: ClassicLoadBalancerResource, VPCID: test.identityVPC}, logr.Discard())
+			if !errors.Is(err, ErrLoadBalancerOwnershipUnverified) {
+				t.Fatalf("expected ownership verification error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestDeleteRecordedV2LoadBalancerRejectsVPCDrift(t *testing.T) {
+	tests := []struct {
+		name        string
+		identityVPC string
+		selectorVPC string
+		observedVPC string
+	}{
+		{
+			name:        "When the recorded VPC differs from the current selector, it should not delete the load balancer",
+			identityVPC: "vpc-recorded",
+			selectorVPC: "vpc-current",
+			observedVPC: "vpc-recorded",
+		},
+		{
+			name:        "When AWS reports a different VPC than the recorded identity, it should not delete the load balancer",
+			identityVPC: "vpc-current",
+			selectorVPC: "vpc-current",
+			observedVPC: "vpc-other",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			client := awsapi.NewMockELBV2API(ctrl)
+			client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
+				LoadBalancerArns: []string{"arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/cluster-lb/abc"},
+			}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{
+				LoadBalancers: []elbv2types.LoadBalancer{{
+					LoadBalancerArn:  aws.String("arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/cluster-lb/abc"),
+					LoadBalancerName: aws.String("cluster-lb"),
+					VpcId:            aws.String(test.observedVPC),
+				}},
+			}, nil)
+
+			err := deleteRecordedV2LoadBalancer(context.Background(), client,
+				LoadBalancerSelector{VPCID: test.selectorVPC, InfraID: "infra-id"},
+				LoadBalancerIdentity{
+					Name: "cluster-lb", Type: V2LoadBalancerResource,
+					ARN: "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/cluster-lb/abc", VPCID: test.identityVPC,
+				}, logr.Discard())
+			if !errors.Is(err, ErrLoadBalancerOwnershipUnverified) {
+				t.Fatalf("expected ownership verification error, got %v", err)
 			}
 		})
 	}
