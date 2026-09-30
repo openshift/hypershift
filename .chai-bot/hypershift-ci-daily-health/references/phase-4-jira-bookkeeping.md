@@ -1,26 +1,30 @@
-# Phase 3 — Jira bookkeeping (after approval)
+# Phase 4 — Jira bookkeeping (after approval)
 
 The work of this phase is the **Jira bookkeeping** — executing the approved changes; the Slack
-reply just reports the result. Post it **only after a human approves** the Phase 2 proposal.
-Skip if nothing is approved. Before this phase you have written nothing to Jira (propose →
-approve → execute).
+reply just reports the result. Post it **only after a human approves** the Phase 2 (candidate)
+and Phase 3 (periodics-health) proposals. Skip if nothing is approved. Before this phase you have
+written nothing to Jira (propose → approve → execute).
 
 ## Workflow
 
-1. **Execute only the approved Jira changes.** Build the hierarchy `epic (dev cycle) → CNTRLPLANE
-   story → CNTRLPLANE sub-task (per job/test) → linked OCPBUGS (per defect)`:
+1. **Execute the approved blocker/flake changes.** Build the hierarchy `epic (dev cycle) →
+   CNTRLPLANE story → CNTRLPLANE sub-task (per job/test) → linked OCPBUGS (per defect)`:
    - find or open the **current dev-cycle epic**;
    - find or open the per-release release-blocker / per-branch merge-queue / per-dev-cycle flake
      **CNTRLPLANE story** under it;
    - open a **CNTRLPLANE sub-task per job** (per test for flakes), created **unassigned**;
    - link **one OCPBUGS per distinct defect** from the affected job's sub-task (dedup a shared
      defect across jobs — one OCPBUGS linked from each).
-2. **Post one reply** reporting the writes as a **nested tree that mirrors the hierarchy**
-   (story → sub-task → linked defect(s)), per the template below.
-3. **Post an updated Action Items list.** End the reply with a fresh `Action Items (updated)`
-   section reflecting the post-approval state — completed items led by `:check:`, still-open
-   human items as plain bullets. You **MUST NOT** edit the Phase 1 message in place; the current
-   worklist is re-posted here.
+2. **Apply the approved periodics-health lifecycle** (from Phase 3) under the per-release
+   periodics-health story: **open** restore sub-tasks (newly breached; link the OCPBUGS cause
+   where known), **nudge**, **escalate** to fix-or-retire, and **close** recovered ones.
+3. **Post one reply** reporting the writes: the blocker/flake **nested tree** (story → sub-task →
+   linked defect(s)) plus a **Periodics Health** group with the lifecycle outcomes, per the
+   template below.
+4. **Post an updated Team Action Items list.** End the reply with a fresh `Team Action Items
+   (updated)` section reflecting the post-approval state — completed items led by `:check:`,
+   still-open human items as plain bullets. You **MUST NOT** edit the Phase 1 message in place;
+   the current worklist is re-posted here.
 
 ## Message format
 
@@ -35,7 +39,8 @@ ID **inside** the label: `[[CNTRLPLANE-…] <short title>](url)` / `[[OCPBUGS-�
 | Release blockers (per release) | `:openshift:` |
 | Merge-queue blockers (per branch) | `:pr-open:` |
 | Flaky tests (per dev cycle) | `:snowflake:` |
-| Action Items (updated) | `:done-circle-check:` |
+| Periodics Health (SLO lifecycle) | `:thermometer:` |
+| Team Action Items (updated) | `:done-circle-check:` |
 
 ### Template
 
@@ -58,7 +63,12 @@ ID **inside** the label: `[[CNTRLPLANE-…] <short title>](url)` / `[[OCPBUGS-�
   * [[CNTRLPLANE-…] <test>](https://issues.redhat.com/browse/CNTRLPLANE-…)
     * [[OCPBUGS-…] <signature>](https://issues.redhat.com/browse/OCPBUGS-…)
 
-*:done-circle-check: Action Items (updated)*
+*:thermometer: Periodics Health*
+* *OCP <release>*
+  * :new: opened [[CNTRLPLANE-…] restore <periodic>](https://issues.redhat.com/browse/CNTRLPLANE-…) (cause [[OCPBUGS-…]](https://issues.redhat.com/browse/OCPBUGS-…))
+  * :green-up-arrow: closed [[CNTRLPLANE-…] restore <periodic>](https://issues.redhat.com/browse/CNTRLPLANE-…) — recovered
+
+*:done-circle-check: Team Action Items (updated)*
 * :check: <what was opened — brief> (links above).
 * <still-open human item, e.g. declare/handle the incident>.
 ```
@@ -94,8 +104,16 @@ ID **inside** the label: `[[CNTRLPLANE-…] <short title>](url)` / `[[OCPBUGS-�
   * [[CNTRLPLANE-11031] Build image hypershift-cli from the repository](https://issues.redhat.com/browse/CNTRLPLANE-11031)
     * [[OCPBUGS-88830] CI registry 500 on manifest push](https://issues.redhat.com/browse/OCPBUGS-88830)
 
-*:done-circle-check: Action Items (updated)*
+*:thermometer: Periodics Health*
+* *OCP 4.21*
+  * :new: opened [[CNTRLPLANE-12101] restore e2e-azure](https://issues.redhat.com/browse/CNTRLPLANE-12101)
+  * :hourglass: escalated [[CNTRLPLANE-12010] restore e2e-metal](https://issues.redhat.com/browse/CNTRLPLANE-12010) — fix-or-retire
+* *OCP 5.1*
+  * :green-up-arrow: closed [[CNTRLPLANE-11990] restore e2e-aws-conformance](https://issues.redhat.com/browse/CNTRLPLANE-11990) — recovered
+
+*:done-circle-check: Team Action Items (updated)*
 * :check: Opened OCPBUGS + CNTRLPLANE for the 4.20 and 4.22 release blockers and the main / release-4.20 merge-queue breaks (links above).
 * Declare and handle the incident for 4.20, 4.22, and release-4.20 (human).
+* Decide fix-or-retire for e2e-metal (4.21) (human).
 * Assign the new CNTRLPLANE sub-tasks (RITS).
 ```

@@ -34,7 +34,7 @@ verdict, no count‑by‑verdict, no cause. You **MUST** defer all triage to Pha
    ```
 5. **Compose and post** the parent message per the template below, and **attach
    `/tmp/hcih-report.html`** to it. Produce every section, in order; do not mix periodics and
-   presubmits. The only candidate line allowed in Action Items is "Triage replies for the N
+   presubmits. The only candidate line allowed in Team Action Items is "Triage replies for the N
    candidates follow in‑thread"; any "Approve opening OCPBUGS/CNTRLPLANE" item covers **only**
    the permafailing blockers.
 
@@ -51,13 +51,17 @@ release, `Confirmed` / `Candidate`) use **bold + indentation**, no emoji. Legend
 | Release Blockers (blocking periodics) | `:openshift:` |
 | Merge Queue Blockers (required PR checks) | `:pr-open:` |
 | Incident | `:rotating_light:` |
-| Action Items | `:done-circle-check:` |
+| Team Action Items | `:done-circle-check:` |
 
 Inline status shortcodes — Overall + Trend only, trailing the text: `:red_circle:` blockers ·
 `:green-up-arrow:` improving · `:down-arrow-red:` degrading · `:check:` stable. The
 Unknown-scope line uses `:warning:`. Release Blockers group **per release**; Merge Queue
 Blockers split into `Confirmed` (permafailing) and `Candidate` (listed for Phase 2), each
 grouped by branch with plain-text job names — **no verdicts on candidates**.
+
+The *Team Action Items* are the **human / RITS worklist** — what the *team* must do next
+(declare the incident, assign owners, approve opening issues). They are **not your (the bot's)
+tasks**; you only compile and post them.
 
 ### Template
 
@@ -86,7 +90,7 @@ HTML report attached.
 * <plain-language line: which releases/branches are blocked, and why>.
 * No tracking stories yet; I will open the per-release release-blocker stories on approval.
 
-*:done-circle-check: Action Items*
+*:done-circle-check: Team Action Items*
 * <human worklist item>
 
 :warning: _Scope: Unknown — <n> coverage gaps; see attached report._
@@ -126,7 +130,7 @@ HTML report attached.
 * 4.20 and 4.22 release payloads are blocked — each has a blocking periodic permafailing > 2 days.
 * No tracking stories yet; I will open the per-release release-blocker stories on approval.
 
-*:done-circle-check: Action Items*
+*:done-circle-check: Team Action Items*
 * Declare and handle the proposed incident.
 * Approve opening OCPBUGS + CNTRLPLANE for e2e-aks (4.20) and e2e-v2-aws (4.22).
 * Triage replies for the 8 candidates follow in-thread.

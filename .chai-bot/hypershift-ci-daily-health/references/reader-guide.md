@@ -18,7 +18,7 @@ chaibot composes it from the companion's deterministic data plus its Jira lookup
 - **Proposed Incident** — the single incident chaibot proposes: branches/releases
   blocked > 2 days. **You** declare it, open the bridge, and post situational awareness —
   chaibot never does.
-- **Action Items** — your worklist: handle the incident, ensure active owners for ≤ 2-day
+- **Team Action Items** — your worklist: handle the incident, ensure active owners for ≤ 2-day
   blockers, and any stale-tracker nudges.
 - An **HTML trend report** (per-periodic pass-rate charts) is **attached as a file** so you
   can see the shape without opening the thread.
@@ -47,12 +47,17 @@ First reply is *Merge Queue Candidates Triage* — the candidates grouped by bra
 by a verdict emoji (🔴 real break · 🌊 flaky · ⚪ false alarm) with its evidence in sub-bullets
 (signature · scale · Jira action · run link). **Full evidence lives in the Jira issue**, not the
 channel. chaibot proposes the Jira changes; after your approval it opens/links the CNTRLPLANE
-sub-tasks + OCPBUGS defects and posts a *Jira Updated* reply with an updated Action Items list.
+sub-tasks + OCPBUGS defects and posts a *Jira Updated* reply with an updated Team Action Items list.
+
+A *Periodics Health — SLO* reply then surfaces the **diff** for below-SLO periodics that aren't
+already blocking: newly breached / deteriorating / at fix-or-retire / recovered, each proposing a
+Jira lifecycle action (open / nudge / escalate / close). Approved changes are applied in the
+*Jira Updated* reply, which also carries a Periodics Health group.
 
 ## Jira
 
 Four `rits-work` stories on the Hosted Control Plane component (per-release
-release-blocker, per-branch merge-queue, per-release flake, per-release job-health). Each
+release-blocker, per-branch merge-queue, per-dev-cycle flake, per-release periodics-health). Each
 confirmed blocker/flake has an OCPBUGS defect bug and a CNTRLPLANE subtask (the next
 action), created unassigned for RITS to pick up. Jira is the durable state store — blocked
 durations and the fix-or-retire clock are read from it. Tuning thresholds is a one-file PR

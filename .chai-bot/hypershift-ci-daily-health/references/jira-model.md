@@ -25,12 +25,14 @@ Epic (per dev cycle) → Story (per release / per branch) → Sub-task (per job)
     *is* the branch-blocked span that drives the incident.
   - **flake**, one **per dev cycle** (under the epic) — a sub-task **per flaky test** (from
     `alerts`), ranked by a **weight**; the sub-task lists the jobs/branches where it flakes. No incident.
-  - **job-health**, one **per release** — jobs below the SLO (Axis B, fix-or-retire), incl. non-blocking degraded.
+  - **periodics-health**, one **per release** — **periodics** below the SLO (Axis B) that are
+    **not** already flagged as release blockers; a sub-task per periodic, lifecycle-managed
+    (open → nudge → fix-or-retire → close). Presubmit SLO health is out of scope for now.
 - **Sub-task — CNTRLPLANE, one per job**, under its story: one sub-task per permafailing
   periodic job (release-blocker), per permafailing presubmit job (merge-queue), per flaky test
-  (flake), or per below-SLO job (job-health). Created **unassigned** — RITS assigns via the
+  (flake), or per below-SLO periodic (periodics-health). Created **unassigned** — RITS assigns via the
   thread; act as a nudge (surface a high-priority sub-task open 1–2 days with no assignee /
-  no progress in Action Items).
+  no progress in Team Action Items).
 - **OCPBUGS — one per distinct defect**: the defect record (symptom, verified signature,
   evidence, component). Each is **linked from the sub-task(s)** of the job(s) it affects. A
   job with several defects → its sub-task links several OCPBUGS; one defect hitting several
@@ -54,8 +56,11 @@ permafailing presubmit) → each linked to m OCPBUGS.
   lists jobs+branches + a weight. No incident.
 - **Presubmit candidate → false alarm:** no writes; one-line note. (Nothing is "recorded"
   in the ephemeral data doc; any suppression that must persist lives in Jira.)
-- **Below SLO (Axis B):** subtask under the per-release job-health story; escalate to
-  fix-or-retire once that subtask has aged past `[job_health].fix_or_retire_horizon_days`.
+- **Below SLO (Axis B) — periodics:** a **periodics-health** sub-task under the per-release story
+  (Phase 3), diff-driven: **open** when newly breached (link the OCPBUGS cause), **nudge** when
+  deteriorating, **escalate** to fix-or-retire once aged past
+  `[job_health].fix_or_retire_horizon_days` with no progress, and **close** when recovered above
+  SLO. Excludes periodics already flagged as release blockers; presubmit SLO health is out of scope.
 
 ## Incident criteria (one incident covering all blockers; you only propose)
 

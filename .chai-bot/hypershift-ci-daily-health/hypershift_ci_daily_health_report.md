@@ -54,7 +54,8 @@ template and a filled example. Open that file and follow it exactly.
 
 ### Phase 1 — Parent report
 Report the companion's deterministic verdicts — release blockers, merge-queue blockers, the
-proposed incident, and action items — with **minimal judgment**; you MUST NOT triage candidates
+proposed incident, and the Team Action Items (the human / RITS worklist, never your own tasks)
+— with **minimal judgment**; you MUST NOT triage candidates
 here. You MUST follow `.chai-bot/hypershift-ci-daily-health/references/phase-1-parent-report.md`.
 
 ### Phase 2 — Candidate triage
@@ -62,9 +63,15 @@ Open the Prow run logs and triage each presubmit candidate (real break / flaky /
 then propose the Jira changes. You MUST follow
 `.chai-bot/hypershift-ci-daily-health/references/phase-2-candidate-triage.md`.
 
-### Phase 3 — Jira bookkeeping (after approval)
-After a human approves, execute the approved Jira changes and report the result with links.
-You MUST follow `.chai-bot/hypershift-ci-daily-health/references/phase-3-jira-bookkeeping.md`.
+### Phase 3 — Periodics Health (SLO)
+Diff the below-SLO **periodics** (excluding the flagged release blockers) against Jira and
+propose the SLO lifecycle actions (open / nudge / escalate to fix-or-retire / close). You MUST
+follow `.chai-bot/hypershift-ci-daily-health/references/phase-3-periodics-health.md`.
+
+### Phase 4 — Jira bookkeeping (after approval)
+After a human approves, execute the approved candidate **and** periodics-health changes and
+report them with links. You MUST follow
+`.chai-bot/hypershift-ci-daily-health/references/phase-4-jira-bookkeeping.md`.
 
 ## The classification model (summary)
 
@@ -109,7 +116,7 @@ Summarized here; the full model is in `.chai-bot/hypershift-ci-daily-health/refe
 **CNTRLPLANE is the tracking spine; OCPBUGS are linked defect records.** The hierarchy is
 `epic (per dev cycle) → story (per release / per branch) → sub-task (per job) → linked OCPBUGS
 (per defect)`. All four `rits-work` CNTRLPLANE stories — per-release release-blocker, per-branch
-merge-queue, per-dev-cycle flake, per-release job-health — live under the **current dev-cycle
+merge-queue, per-dev-cycle flake, per-release periodics-health — live under the **current dev-cycle
 epic** (find or open it first). Each permafailing job gets **one CNTRLPLANE sub-task** under its
 story, created **unassigned**, linked to **one OCPBUGS per distinct defect** (a defect hitting
 several jobs = one OCPBUGS linked from each job's sub-task). You MUST propose exactly one
@@ -130,7 +137,8 @@ incident covering all blocked releases/branches:
 You SHOULD consult these as needed:
 - `.chai-bot/hypershift-ci-daily-health/references/phase-1-parent-report.md` — Phase 1 workflow + parent report format + example.
 - `.chai-bot/hypershift-ci-daily-health/references/phase-2-candidate-triage.md` — Phase 2 workflow + triage reply format + example.
-- `.chai-bot/hypershift-ci-daily-health/references/phase-3-jira-bookkeeping.md` — Phase 3 workflow + Jira bookkeeping format + example.
+- `.chai-bot/hypershift-ci-daily-health/references/phase-3-periodics-health.md` — Phase 3 workflow + Periodics Health (SLO) format + example.
+- `.chai-bot/hypershift-ci-daily-health/references/phase-4-jira-bookkeeping.md` — Phase 4 workflow + Jira bookkeeping format + example.
 - `.chai-bot/hypershift-ci-daily-health/references/data-sources.md` — the public sources and their authority.
 - `.chai-bot/hypershift-ci-daily-health/references/classification.md` — the two axes, the full decision tree and knobs.
 - `.chai-bot/hypershift-ci-daily-health/references/jira-model.md` — epic/story/sub-task/OCPBUGS hierarchy, incident criteria.

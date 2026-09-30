@@ -47,7 +47,8 @@ blocker. Live payload phase is context and MUST NOT drive the classification.
 Applies to **every** job (periodic or presubmit, blocking or not), independent of Axis A.
 
 - **SLO:** `rate` (= passes/total, infra counted) `< slo_pass_rate_percent` (80%) ⇒
-  **below SLO** ⇒ tracked under job-health (fix-or-retire). `rate ≥ SLO` = meeting its SLO
+  **below SLO** ⇒ tracked for restoration (periodics → the per-release periodics-health story;
+  fix-or-retire). `rate ≥ SLO` = meeting its SLO
   = "healthy". Sustained below SLO past `fix_or_retire_horizon_days` (21, chaibot's knob,
   measured from the Jira subtask age) with no progress becomes a "fix or retire" decision.
 - **Trend:** week-over-week `rate` vs `prev`, **confidence-aware**: either window `< N_min`

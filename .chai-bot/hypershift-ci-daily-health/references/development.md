@@ -22,7 +22,7 @@ The skill lives under `.chai-bot/hypershift-ci-daily-health/`, with the prompt
 - `assets/` — the editable HTML report + inline-SVG chart template (`report.html.tmpl`),
   filled with `string.Template`. The Slack text is composed by chaibot, not templated here.
 - `references/` — the per-phase workflow+format files (`phase-1-parent-report`,
-  `phase-2-candidate-triage`, `phase-3-jira-bookkeeping`) plus long-form docs (data-sources,
+  `phase-2-candidate-triage`, `phase-3-periodics-health`, `phase-4-jira-bookkeeping`) plus long-form docs (data-sources,
   classification, jira-model, diagnostic-hints, reader-guide, and this development guide).
 
 ## Data sources — the dashboard is the source of truth

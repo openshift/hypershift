@@ -1131,6 +1131,11 @@ class Collector:
             for row in presubmits[branch]
             if row["permafail"]["class"] == "permafailing"
         ]
+        # Jobs already flagged as permafailing blockers (release or merge-queue) are tracked
+        # there, not under periodics-health; mark them so chaibot excludes them deterministically.
+        flagged_blocker_ids = {b["job_id"] for b in release_blockers} | {
+            b["job_id"] for b in merge_queue_blockers
+        }
         job_health: list[dict[str, Any]] = []
         for branch in branches:
             for row in presubmits[branch]:
@@ -1142,6 +1147,8 @@ class Collector:
                             "kind": "presubmit",
                             "branch_or_release": branch,
                             "rate": row["slo"].get("rate"),
+                            "trend": (row["slo"].get("trend") or {}).get("classification"),
+                            "flagged_blocker": row["job_id"] in flagged_blocker_ids,
                         }
                     )
         for p in periodics:
@@ -1153,6 +1160,8 @@ class Collector:
                         "kind": "periodic",
                         "branch_or_release": p["release"],
                         "rate": p["slo"].get("rate"),
+                        "trend": (p["slo"].get("trend") or {}).get("classification"),
+                        "flagged_blocker": p["job_id"] in flagged_blocker_ids,
                     }
                 )
         flaky_tests = self._flaky_tests(data)

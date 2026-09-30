@@ -205,6 +205,23 @@ def test_below_slo_excludes_no_data_and_null_rate_jobs():
     assert "e2e-veto" not in below  # release-branch presubmit with no dashboard data
 
 
+def test_job_health_entries_carry_trend_and_flagged_blocker():
+    doc = collect_fixture()
+    jh = doc["job_health_below_slo"]
+    assert jh, "fixture should surface below-SLO jobs"
+    flagged_ids = {b["job_id"] for b in doc["incident_set"]["release_blockers"]} | {
+        b["job_id"] for b in doc["incident_set"]["merge_queue_blockers"]
+    }
+    for entry in jh:
+        assert "trend" in entry and "flagged_blocker" in entry
+        assert entry["trend"] is None or isinstance(entry["trend"], str)
+        # flagged_blocker == membership in the permafailing-blocker set, so chaibot can exclude
+        # already-flagged jobs from periodics-health deterministically (no LLM join needed).
+        assert entry["flagged_blocker"] == (entry["job_id"] in flagged_ids)
+    by_name = {e["name"]: e for e in jh}
+    assert by_name["e2e-perma-aws"]["flagged_blocker"] is True
+
+
 def test_flaky_tests_come_from_alerts():
     flaky = collect_fixture()["flaky_tests"]
     assert len(flaky) == 1 and "Teardown" in flaky[0]["test_name"]
