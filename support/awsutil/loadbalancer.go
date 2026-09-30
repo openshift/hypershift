@@ -1109,8 +1109,8 @@ func isNotFound(err error) bool {
 	if err == nil || !errors.As(err, &apiErr) {
 		return false
 	}
-	switch apiErr.ErrorCode() {
-	case "LoadBalancerNotFound", "TargetGroupNotFound", "ListenerNotFound":
+	switch strings.ToLower(apiErr.ErrorCode()) {
+	case "loadbalancernotfound", "targetgroupnotfound", "listenernotfound":
 		return true
 	default:
 		return false

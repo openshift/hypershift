@@ -250,6 +250,7 @@ func recordCloudResourceCleanupFailure(err error, component cloudResourceCleanup
 	}
 	if component == cloudResourceCleanupComponentAWSLoadBalancers {
 		if errors.Is(err, awsutil.ErrLoadBalancerOwnershipUnverified) {
+			// Ownership failures are surfaced as pending cleanup by the candidate-verification path.
 			return
 		}
 		summary.awsOtherFailures++
@@ -368,11 +369,16 @@ func (r *reconciler) prepareAWSLoadBalancerCleanupState(ctx context.Context, hcp
 	}
 	progress, configMap, exists, err := r.loadAWSLoadBalancerCleanupProgress(ctx, hcp)
 	if err != nil {
-		return nil, newSafeLoadBalancerCleanupError("failed to load AWS load balancer cleanup progress", err)
+		return nil, err
 	}
 	state.progress = progress
 	state.progressConfigMap = configMap
 	state.progressExists = exists
+	ownerReferenceChanged, err := ensureAWSLoadBalancerProgressOwnerReference(configMap, hcp)
+	if err != nil {
+		return nil, err
+	}
+	state.progressChanged = ownerReferenceChanged
 	if hcp.Spec.Platform.AWS != nil {
 		state.awsRegion = hcp.Spec.Platform.AWS.Region
 		if hcp.Spec.Platform.AWS.CloudProviderConfig != nil {
@@ -386,9 +392,6 @@ func (r *reconciler) prepareAWSLoadBalancerCleanupState(ctx context.Context, hcp
 	}
 	if err := recordAWSLoadBalancerServiceCandidates(state); err != nil {
 		return nil, err
-	}
-	if progress.VPCID != "" && state.selector.VPCID != "" && progress.VPCID != state.selector.VPCID {
-		return nil, newSafeLoadBalancerCleanupError("AWS VPC configuration changed while load balancer cleanup was in progress", nil)
 	}
 	if progress.VPCID == "" && state.selector.VPCID != "" {
 		progress.VPCID = state.selector.VPCID
@@ -494,10 +497,14 @@ func (r *reconciler) cleanupAWSLoadBalancersWithoutCandidates(ctx context.Contex
 
 func (r *reconciler) cleanupAWSLoadBalancersWithoutVPC(ctx context.Context, state *awsLoadBalancerCleanupState) (bool, error) {
 	fallbackKeys := serviceKeysForLoadBalancerServices(state.services, state.servicesWithNames, state.servicesWithLoadBalancerClass, state.servicesWithoutNames)
-	if _, err := r.requestLoadBalancerServiceDeletion(ctx, fallbackKeys, fallbackKeys); err != nil {
-		return false, newSafeLoadBalancerCleanupError("failed to request Kubernetes load balancer Service cleanup while AWS ownership remains unverified", err)
+	_, serviceCleanupErr := r.requestLoadBalancerServiceDeletion(ctx, fallbackKeys, fallbackKeys)
+	vpcMissingMessage := "AWS VPC configuration is missing; Kubernetes cleanup was requested, but AWS load balancer ownership cannot be verified and AWS resources may remain"
+	if serviceCleanupErr != nil {
+		serviceCleanupMessage := "AWS VPC configuration is missing; Kubernetes Service cleanup also failed, AWS ownership cannot be verified, and AWS resources may remain"
+		cause := errors.Join(errors.New(vpcMissingMessage), serviceCleanupErr)
+		return false, newSafeLoadBalancerCleanupError(serviceCleanupMessage, cause)
 	}
-	return false, newSafeLoadBalancerCleanupError("AWS VPC configuration is missing; Kubernetes cleanup was requested, but AWS load balancer ownership cannot be verified and AWS resources may remain", nil)
+	return false, newSafeLoadBalancerCleanupError(vpcMissingMessage, nil)
 }
 
 func (r *reconciler) ensureAWSLoadBalancerClients(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -794,10 +801,10 @@ func (r *reconciler) ensureAWSLoadBalancersRemovedWithHook(ctx context.Context, 
 
 func (r *reconciler) loadAWSLoadBalancerCleanupProgress(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*awsLoadBalancerCleanupProgress, *corev1.ConfigMap, bool, error) {
 	if hcp.UID == "" {
-		return nil, nil, false, fmt.Errorf("HostedControlPlane UID is required")
+		return nil, nil, false, newSafeLoadBalancerCleanupError("HostedControlPlane UID is required to load AWS load balancer cleanup progress", nil)
 	}
 	if r.cpClient == nil {
-		return nil, nil, false, fmt.Errorf("management-cluster client is unavailable")
+		return nil, nil, false, newSafeLoadBalancerCleanupError("management-cluster client is unavailable for AWS load balancer cleanup progress", nil)
 	}
 	progressReader := r.cpAPIReader
 	if progressReader == nil {
@@ -812,24 +819,61 @@ func (r *reconciler) loadAWSLoadBalancerCleanupProgress(ctx context.Context, hcp
 			}
 			return &awsLoadBalancerCleanupProgress{HCPUID: hcp.UID, InfraID: hcp.Spec.InfraID, Region: region, Services: map[string]awsLoadBalancerServiceProof{}}, configMap, false, nil
 		}
-		return nil, nil, false, err
+		return nil, nil, false, newSafeLoadBalancerCleanupError("failed to read AWS load balancer cleanup progress from management cluster", err)
 	}
 	serialized := configMap.Data[awsLoadBalancerProgressDataKey]
 	progress := &awsLoadBalancerCleanupProgress{}
-	if serialized == "" || json.Unmarshal([]byte(serialized), progress) != nil {
-		return nil, nil, false, fmt.Errorf("AWS load balancer cleanup progress is invalid")
+	if serialized == "" {
+		return nil, nil, false, newSafeLoadBalancerCleanupError(fmt.Sprintf("progress ConfigMap has no data for key %q", awsLoadBalancerProgressDataKey), nil)
+	}
+	if err := json.Unmarshal([]byte(serialized), progress); err != nil {
+		return nil, nil, false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress is invalid", fmt.Errorf("failed to unmarshal progress ConfigMap data: %w", err))
 	}
 	region := ""
 	if hcp.Spec.Platform.AWS != nil {
 		region = hcp.Spec.Platform.AWS.Region
 	}
-	if progress.HCPUID != hcp.UID || progress.InfraID != hcp.Spec.InfraID || (progress.Region != "" && progress.Region != region) || (progress.VPCID != "" && hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.CloudProviderConfig != nil && progress.VPCID != hcp.Spec.Platform.AWS.CloudProviderConfig.VPC) {
-		return nil, nil, false, fmt.Errorf("AWS load balancer cleanup progress does not match the HostedControlPlane")
+	if progress.HCPUID != hcp.UID {
+		return nil, nil, false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress UID does not match the HostedControlPlane", nil)
+	}
+	if progress.InfraID != hcp.Spec.InfraID {
+		return nil, nil, false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress InfraID does not match the HostedControlPlane", nil)
+	}
+	if progress.Region != "" && progress.Region != region {
+		return nil, nil, false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress AWS region does not match the HostedControlPlane", nil)
+	}
+	if progress.VPCID != "" && hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.CloudProviderConfig != nil && progress.VPCID != hcp.Spec.Platform.AWS.CloudProviderConfig.VPC {
+		return nil, nil, false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress VPC ID does not match the HostedControlPlane", nil)
 	}
 	if progress.Services == nil {
 		progress.Services = map[string]awsLoadBalancerServiceProof{}
 	}
 	return progress, configMap, true, nil
+}
+
+func ensureAWSLoadBalancerProgressOwnerReference(configMap *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	if len(configMap.OwnerReferences) > 1 || (len(configMap.OwnerReferences) == 1 && configMap.OwnerReferences[0].UID != hcp.UID) {
+		return false, newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress ConfigMap has an unexpected owner", nil)
+	}
+
+	controller := true
+	blockOwnerDeletion := false
+	expected := metav1.OwnerReference{
+		APIVersion:         hyperv1.GroupVersion.String(),
+		Kind:               "HostedControlPlane",
+		Name:               hcp.Name,
+		UID:                hcp.UID,
+		Controller:         &controller,
+		BlockOwnerDeletion: &blockOwnerDeletion,
+	}
+	if len(configMap.OwnerReferences) == 1 {
+		current := configMap.OwnerReferences[0]
+		if current.APIVersion == expected.APIVersion && current.Kind == expected.Kind && current.Name == expected.Name && current.UID == expected.UID && current.Controller != nil && *current.Controller && current.BlockOwnerDeletion != nil && !*current.BlockOwnerDeletion {
+			return false, nil
+		}
+	}
+	configMap.OwnerReferences = []metav1.OwnerReference{expected}
+	return true, nil
 }
 
 func (r *reconciler) saveAWSLoadBalancerCleanupProgress(ctx context.Context, configMap *corev1.ConfigMap, exists bool, progress *awsLoadBalancerCleanupProgress) error {
