@@ -43,11 +43,11 @@ label.
 
 ## The thread
 
-First reply is *Merge Queue Candidates Triage* — the candidates grouped by branch, one line
-per job with a verdict emoji (🔴 real break · 🌊 flaky · ⚪ false alarm), a one-line signature,
-and a run link. Concise: one line per actionable item, linking out to its Jira issue. **Full
-evidence lives in the Jira issue**, not the channel. chaibot proposes Jira changes and, after
-your approval, creates/links the bugs and subtasks and confirms with links.
+First reply is *Merge Queue Candidates Triage* — the candidates grouped by branch, each job led
+by a verdict emoji (🔴 real break · 🌊 flaky · ⚪ false alarm) with its evidence in sub-bullets
+(signature · scale · Jira action · run link). **Full evidence lives in the Jira issue**, not the
+channel. chaibot proposes the Jira changes; after your approval it opens/links the CNTRLPLANE
+sub-tasks + OCPBUGS defects and posts a *Jira Updated* reply with an updated Action Items list.
 
 ## Jira
 
