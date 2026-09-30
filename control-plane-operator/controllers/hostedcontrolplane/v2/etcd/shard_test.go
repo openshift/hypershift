@@ -580,21 +580,30 @@ func TestAdaptStatefulSetForShard_RestoreInitContainer(t *testing.T) {
 		err := adaptStatefulSetForShard(baseCPContext(nil), sts, shard)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		var hasEtcdInit bool
-		for _, c := range sts.Spec.Template.Spec.InitContainers {
-			if c.Name == "etcd-init" {
-				hasEtcdInit = true
-				// Verify the restore URL env var
-				var foundURL bool
-				for _, env := range c.Env {
-					if env.Name == "RESTORE_URL_ETCD" && env.Value == "https://example.com/events-snapshot.db" {
-						foundURL = true
-					}
-				}
-				g.Expect(foundURL).To(BeTrue(), "etcd-init should have RESTORE_URL_ETCD env var")
+		var etcdInit *corev1.Container
+		etcdInitIndex := -1
+		resetMemberIndex := -1
+		for i := range sts.Spec.Template.Spec.InitContainers {
+			container := &sts.Spec.Template.Spec.InitContainers[i]
+			switch container.Name {
+			case "etcd-init":
+				etcdInit = container
+				etcdInitIndex = i
+			case "reset-member":
+				resetMemberIndex = i
 			}
 		}
-		g.Expect(hasEtcdInit).To(BeTrue(), "etcd-init container should be injected")
+		g.Expect(etcdInit).ToNot(BeNil(), "etcd-init container should be injected")
+		g.Expect(resetMemberIndex).To(BeNumerically(">", etcdInitIndex), "etcd-init should run before reset-member")
+
+		envValues := map[string]string{}
+		for _, env := range etcdInit.Env {
+			envValues[env.Name] = env.Value
+		}
+		g.Expect(envValues).To(HaveKeyWithValue("RESTORE_URL_ETCD", "https://example.com/events-snapshot.db"))
+		g.Expect(envValues).To(HaveKeyWithValue("HCP_NAMESPACE", "test-ns"))
+		g.Expect(envValues).To(HaveKeyWithValue("ETCD_INITIAL_CLUSTER", "etcd-events-0=https://etcd-events-0.etcd-discovery-events.test-ns.svc:2380"))
+		g.Expect(envValues).To(HaveKeyWithValue("ETCD_DISCOVERY_SERVICE", "etcd-discovery-events"))
 	})
 
 	t.Run("When EtcdSnapshotRestored is True it should not inject etcd-init", func(t *testing.T) {
