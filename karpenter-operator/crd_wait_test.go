@@ -9,6 +9,8 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsscheme "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,7 +29,7 @@ func TestWaitForKarpenterCRDs(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := waitForKarpenterCRDs(t.Context(), crdTestConfig(server.URL))
+	err := waitForKarpenterCRDs(t.Context(), crdTestConfig(server.URL), hyperv1.AWSPlatform)
 	g.Expect(err).NotTo(HaveOccurred())
 }
 

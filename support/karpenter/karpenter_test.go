@@ -122,10 +122,16 @@ func TestSupportedArchitectures(t *testing.T) {
 			expectedError: nil,
 		},
 		{
-			name:          "When platform is Azure, it should return unsupported platform error",
+			name:          "When platform is Azure, it should return AMD64 architecture",
 			platform:      hyperv1.AzurePlatform,
+			expected:      []string{hyperv1.ArchitectureAMD64},
+			expectedError: nil,
+		},
+		{
+			name:          "When platform is unsupported, it should return unsupported platform error",
+			platform:      hyperv1.KubevirtPlatform,
 			expected:      nil,
-			expectedError: fmt.Errorf("unsupported platform: Azure"),
+			expectedError: fmt.Errorf("unsupported platform: KubeVirt"),
 		},
 	}
 

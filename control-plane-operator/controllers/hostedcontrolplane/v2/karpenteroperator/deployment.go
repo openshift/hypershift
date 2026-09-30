@@ -141,8 +141,9 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 		}
 		extraEnvVars = append(extraEnvVars,
 			corev1.EnvVar{
-				Name:  KarpenterImageAzureEnvVar,
-				Value: cpContext.ReleaseImageProvider.GetImage(karpenterutil.KarpenterProviderAzureImageName),
+				Name: KarpenterImageAzureEnvVar,
+				// Value: cpContext.ReleaseImageProvider.GetImage(karpenterutil.KarpenterProviderAzureImageName),
+				Value: "quay.io/macao/karpenter-provider-azure:latest",
 			},
 			corev1.EnvVar{
 				Name:  "AZURE_CLIENT_ID",

@@ -97,6 +97,8 @@ func SupportedArchitectures(platform hyperv1.PlatformType) ([]string, error) {
 	switch platform {
 	case hyperv1.AWSPlatform:
 		return []string{hyperv1.ArchitectureAMD64, hyperv1.ArchitectureARM64}, nil
+	case hyperv1.AzurePlatform:
+		return []string{hyperv1.ArchitectureAMD64}, nil
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", platform)
 	}
@@ -140,6 +142,28 @@ func ArchToAMILabelKey(arch string) string {
 		return hyperkarpenterv1.UserDataAMILabel
 	}
 	return fmt.Sprintf("%s-%s", hyperkarpenterv1.UserDataAMILabel, arch)
+}
+
+// AzureMarketplaceImageFromSecretLabels extracts the Azure Marketplace image components
+// from a userData secret's labels. Returns nil if any required component is missing.
+func AzureMarketplaceImageFromSecretLabels(labels map[string]string) (publisher, offer, sku, version string, ok bool) {
+	publisher = labels[hyperkarpenterv1.UserDataAzureMarketplacePublisherLabel]
+	offer = labels[hyperkarpenterv1.UserDataAzureMarketplaceOfferLabel]
+	sku = labels[hyperkarpenterv1.UserDataAzureMarketplaceSKULabel]
+	version = labels[hyperkarpenterv1.UserDataAzureMarketplaceVersionLabel]
+	if publisher == "" || offer == "" || sku == "" || version == "" {
+		return "", "", "", "", false
+	}
+	return publisher, offer, sku, version, true
+}
+
+// SetAzureMarketplaceImageLabels writes the Azure Marketplace image components
+// as labels on the given map.
+func SetAzureMarketplaceImageLabels(labels map[string]string, publisher, offer, sku, version string) {
+	labels[hyperkarpenterv1.UserDataAzureMarketplacePublisherLabel] = publisher
+	labels[hyperkarpenterv1.UserDataAzureMarketplaceOfferLabel] = offer
+	labels[hyperkarpenterv1.UserDataAzureMarketplaceSKULabel] = sku
+	labels[hyperkarpenterv1.UserDataAzureMarketplaceVersionLabel] = version
 }
 
 const EnableStandaloneKarpenterOperatorEnvVar = "ENABLE_STANDALONE_KARPENTER_OPERATOR"

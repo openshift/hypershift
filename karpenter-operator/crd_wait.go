@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -13,16 +15,27 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// standaloneKarpenterCRDNames lists CRDs adapter consumes but standalone operator owns.
-var standaloneKarpenterCRDNames = []string{
-	"nodepools.karpenter.sh",
-	"nodeclaims.karpenter.sh",
-	"ec2nodeclasses.karpenter.k8s.aws",
+// standaloneKarpenterCRDNames returns the CRD names the adapter waits for,
+// based on the platform.
+func standaloneKarpenterCRDNames(platform hyperv1.PlatformType) []string {
+	common := []string{
+		"nodepools.karpenter.sh",
+		"nodeclaims.karpenter.sh",
+	}
+	switch platform {
+	case hyperv1.AWSPlatform:
+		return append(common, "ec2nodeclasses.karpenter.k8s.aws")
+	case hyperv1.AzurePlatform:
+		return append(common, "aksnodeclasses.karpenter.azure.com")
+	default:
+		return common
+	}
 }
 
 // waitForKarpenterCRDs waits for CRDs owned by standalone operator before adapter registers typed watches.
-func waitForKarpenterCRDs(ctx context.Context, cfg *rest.Config) error {
-	setupLog.Info("waiting for standalone Karpenter CRDs to become established", "crds", standaloneKarpenterCRDNames)
+func waitForKarpenterCRDs(ctx context.Context, cfg *rest.Config, platform hyperv1.PlatformType) error {
+	crdNames := standaloneKarpenterCRDNames(platform)
+	setupLog.Info("waiting for standalone Karpenter CRDs to become established", "crds", crdNames)
 
 	clientset, err := apiextensionsclientset.NewForConfig(cfg)
 	if err != nil {
@@ -33,7 +46,7 @@ func waitForKarpenterCRDs(ctx context.Context, cfg *rest.Config) error {
 	defer cancel()
 
 	err = wait.PollUntilContextCancel(waitCtx, 100*time.Millisecond, true, func(ctx context.Context) (bool, error) {
-		for _, name := range standaloneKarpenterCRDNames {
+		for _, name := range crdNames {
 			crd, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Get(ctx, name, metav1.GetOptions{})
 			if apierrors.IsNotFound(err) || isTransientAPIError(err) {
 				return false, nil
