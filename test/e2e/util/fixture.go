@@ -24,6 +24,8 @@ import (
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 	resourcegroupstaggingapitypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 
@@ -258,12 +260,17 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 	}
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
+		guestResourcesDeleted := validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.Credentials.AWSCredentialsFile, createOpts.AWSPlatform.Region)
+		vpcEndpointsDeleted := validateAWSVPCEndpointsDeletedFunc(ctx, t, hc, createOpts.AWSPlatform.Credentials.AWSCredentialsFile, createOpts.AWSPlatform.Region)
 		opts.AWSPlatform = core.AWSPlatformDestroyOptions{
-			BaseDomain:       createOpts.BaseDomain,
-			Credentials:      createOpts.AWSPlatform.Credentials,
-			PreserveIAM:      false,
-			Region:           createOpts.AWSPlatform.Region,
-			PostDeleteAction: validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.Credentials.AWSCredentialsFile, createOpts.AWSPlatform.Region),
+			BaseDomain:  createOpts.BaseDomain,
+			Credentials: createOpts.AWSPlatform.Credentials,
+			PreserveIAM: false,
+			Region:      createOpts.AWSPlatform.Region,
+			PostDeleteAction: func() {
+				guestResourcesDeleted()
+				vpcEndpointsDeleted()
+			},
 		}
 		return aws.DestroyCluster(ctx, opts)
 	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
@@ -362,6 +369,58 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 						awssdk.ToString(lastOutput.ResourceTagMappingList[i].ResourceARN), resourceTags(lastOutput.ResourceTagMappingList[i].Tags), resourceARN.Service)
 				}
 			}
+		}
+	}
+}
+
+// validateAWSVPCEndpointsDeletedFunc checks that the VPC endpoints the control-plane-operator
+// created for a private cluster were removed during HostedCluster deletion.
+func validateAWSVPCEndpointsDeletedFunc(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, awsCreds, awsRegion string) func() {
+	awsSpec := hc.Spec.Platform.AWS
+	if awsSpec == nil || awsSpec.EndpointAccess == hyperv1.Public || awsSpec.SharedVPC != nil ||
+		awsSpec.CloudProviderConfig == nil || awsSpec.CloudProviderConfig.VPC == "" {
+		return func() {}
+	}
+	if IsLessThan(Version51) {
+		return func() {
+			t.Log("SKIPPED: skipping VPC endpoint cleanup validation for OCP < 5.1")
+		}
+	}
+	vpcID := awsSpec.CloudProviderConfig.VPC
+
+	return func() {
+		awsSession := awsutil.NewSession(ctx, "e2e-vpce-cleanup-validation", awsCreds, "", "", awsRegion)
+		awsConfig := awsutil.NewConfig()
+		ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+			o.Retryer = awsConfig()
+		})
+
+		var remaining []string
+		err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+			output, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{
+				Filters: []ec2types.Filter{
+					{Name: awssdk.String("vpc-id"), Values: []string{vpcID}},
+					{Name: awssdk.String("tag-key"), Values: []string{"AWSEndpointService"}},
+				},
+			})
+			if err != nil {
+				if ctx.Err() != nil {
+					return false, ctx.Err()
+				}
+				t.Logf("DescribeVpcEndpoints returned an error, retrying: %v", err)
+				return false, nil
+			}
+			remaining = nil
+			for _, ep := range output.VpcEndpoints {
+				if ep.State == ec2types.StateDeleting || ep.State == ec2types.StateDeleted {
+					continue
+				}
+				remaining = append(remaining, fmt.Sprintf("%s=%s", awssdk.ToString(ep.VpcEndpointId), ep.State))
+			}
+			return len(remaining) == 0, nil
+		})
+		if err != nil {
+			t.Errorf("VPC endpoints were not deleted during HostedCluster deletion (vpc %s): %v, last seen: %v", vpcID, err, remaining)
 		}
 	}
 }
