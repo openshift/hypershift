@@ -577,6 +577,9 @@ func getAvailableCandidates(nodes []*corev1.Node, targetConfig string, capacity 
 	}
 
 	// TODO(jerzhang): do some ordering here
+	if capacity > len(candidateNodes) {
+		capacity = len(candidateNodes)
+	}
 	return candidateNodes[:capacity]
 }
 
