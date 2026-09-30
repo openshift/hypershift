@@ -24,20 +24,29 @@ import (
 // EffectsApplyConfiguration represents a declarative configuration of the Effects type for use
 // with apply.
 type EffectsApplyConfiguration struct {
-	KASGoMemLimit                   *string                             `json:"kasGoMemLimit,omitempty"`
-	ControlPlanePriorityClassName   *string                             `json:"controlPlanePriorityClassName,omitempty"`
-	EtcdPriorityClassName           *string                             `json:"etcdPriorityClassName,omitempty"`
-	APICriticalPriorityClassName    *string                             `json:"APICriticalPriorityClassName,omitempty"`
-	ResourceRequests                []ResourceRequestApplyConfiguration `json:"resourceRequests,omitempty"`
-	MachineHealthCheckTimeout       *v1.Duration                        `json:"machineHealthCheckTimeout,omitempty"`
-	MaximumRequestsInflight         *int                                `json:"maximumRequestsInflight,omitempty"`
-	MaximumMutatingRequestsInflight *int                                `json:"maximumMutatingRequestsInflight,omitempty"`
+	ContainerResourcePolicy         *ContainerResourcePolicyApplyConfiguration `json:"containerResourcePolicy,omitempty"`
+	KASGoMemLimit                   *string                                    `json:"kasGoMemLimit,omitempty"`
+	ControlPlanePriorityClassName   *string                                    `json:"controlPlanePriorityClassName,omitempty"`
+	EtcdPriorityClassName           *string                                    `json:"etcdPriorityClassName,omitempty"`
+	APICriticalPriorityClassName    *string                                    `json:"APICriticalPriorityClassName,omitempty"`
+	ResourceRequests                []ResourceRequestApplyConfiguration        `json:"resourceRequests,omitempty"`
+	MachineHealthCheckTimeout       *v1.Duration                               `json:"machineHealthCheckTimeout,omitempty"`
+	MaximumRequestsInflight         *int                                       `json:"maximumRequestsInflight,omitempty"`
+	MaximumMutatingRequestsInflight *int                                       `json:"maximumMutatingRequestsInflight,omitempty"`
 }
 
 // EffectsApplyConfiguration constructs a declarative configuration of the Effects type for use with
 // apply.
 func Effects() *EffectsApplyConfiguration {
 	return &EffectsApplyConfiguration{}
+}
+
+// WithContainerResourcePolicy sets the ContainerResourcePolicy field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ContainerResourcePolicy field is set to the value of the last call.
+func (b *EffectsApplyConfiguration) WithContainerResourcePolicy(value *ContainerResourcePolicyApplyConfiguration) *EffectsApplyConfiguration {
+	b.ContainerResourcePolicy = value
+	return b
 }
 
 // WithKASGoMemLimit sets the KASGoMemLimit field in the declarative configuration to the given value

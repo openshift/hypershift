@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -34,6 +35,15 @@ func setHostedClusterSchedulingAnnotations(hc *hyperv1.HostedCluster, size strin
 	sizeConfig := SizeConfiguration(config, size)
 	if sizeConfig == nil {
 		return nil, fmt.Errorf("could not find size configuration for size %s", size)
+	}
+	if sizeConfig.Effects != nil && !sizeConfig.Effects.ContainerResourcePolicy.DefaultRequests.CPU.IsZero() {
+		policy, err := json.Marshal(sizeConfig.Effects.ContainerResourcePolicy)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal container resource policy: %w", err)
+		}
+		hc.Annotations[hyperv1.ContainerResourcePolicyAnnotation] = string(policy)
+	} else {
+		delete(hc.Annotations, hyperv1.ContainerResourcePolicyAnnotation)
 	}
 
 	goMemLimit := ""

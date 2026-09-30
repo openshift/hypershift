@@ -273,6 +273,10 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 // update reconciles component workload and related manifests
 func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 	hcp := cpContext.HCP
+	// Validate the entire policy before applying any associated resources.
+	if err := ApplyContainerResourcePolicy(c.Name(), &corev1.PodTemplateSpec{}, hcp.Annotations); err != nil {
+		return err
+	}
 	ownerRef := config.OwnerRefFrom(hcp)
 	// reconcile resources such as ConfigMaps and Secrets first, as the deployment might depend on them.
 	if err := assets.ForEachManifest(c.AssetDirName(), func(manifestName string) error {
@@ -367,7 +371,8 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 		existingResources[container.Name] = container.Resources
 	}
 
-	if err := c.setDefaultOptions(cpContext, workloadObj, existingResources); err != nil {
+	_, previousPolicy := oldPodTemplateSpec.Annotations[containerResourcePolicyHashAnnotation]
+	if err := c.setDefaultOptions(cpContext, workloadObj, existingResources, previousPolicy); err != nil {
 		return err
 	}
 

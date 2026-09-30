@@ -11,6 +11,7 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -71,6 +72,14 @@ func (r *HostedClusterReconciler) handleExistingEtcdRecoveryJob(ctx context.Cont
 	hcpNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
 	if !jobStatus.finished {
+		desired := &corev1.PodTemplateSpec{}
+		if err := controlplanecomponent.ApplyContainerResourcePolicy("etcd-recovery", desired, hcluster.Annotations); err != nil {
+			return true, err
+		}
+		const policyHashAnnotation = "hypershift.openshift.io/container-resource-policy-hash"
+		if recoveryJob.Spec.Template.Annotations[policyHashAnnotation] != desired.Annotations[policyHashAnnotation] {
+			return true, fmt.Errorf("unfinished etcd recovery job %s/%s has a different container resource policy; its pod template is immutable and requires manual intervention", recoveryJob.Namespace, recoveryJob.Name)
+		}
 		log.Info("waiting for etcd recovery job to complete")
 		return true, nil
 	}
@@ -215,6 +224,9 @@ func (r *HostedClusterReconciler) findFailingEtcdPod(ctx context.Context, log lo
 }
 
 func (r *HostedClusterReconciler) createEtcdRecoveryResources(ctx context.Context, hcluster *hyperv1.HostedCluster, hcpNS string, recoveryJob *batchv1.Job, createOrUpdate upsert.CreateOrUpdateFN) error {
+	if err := controlplanecomponent.ApplyContainerResourcePolicy("etcd-recovery", &corev1.PodTemplateSpec{}, hcluster.Annotations); err != nil {
+		return err
+	}
 	recoveryRole := etcdrecoverymanifests.EtcdRecoveryRole(hcpNS)
 	if _, err := createOrUpdate(ctx, r.Client, recoveryRole, func() error {
 		r.reconcileEtcdRecoveryRole(recoveryRole)
@@ -348,6 +360,8 @@ func (r *HostedClusterReconciler) reconcileEtcdRecoveryRoleBinding(roleBinding *
 }
 
 func (r *HostedClusterReconciler) reconcileEtcdRecoveryJob(job *batchv1.Job, hc *hyperv1.HostedCluster) error {
+	original := job
+	job = job.DeepCopy()
 	if job.Labels == nil {
 		job.Labels = map[string]string{}
 	}
@@ -433,5 +447,9 @@ func (r *HostedClusterReconciler) reconcileEtcdRecoveryJob(job *batchv1.Job, hc 
 		},
 	}
 
+	if err := controlplanecomponent.ApplyContainerResourcePolicy("etcd-recovery", &job.Spec.Template, hc.Annotations); err != nil {
+		return err
+	}
+	*original = *job
 	return nil
 }

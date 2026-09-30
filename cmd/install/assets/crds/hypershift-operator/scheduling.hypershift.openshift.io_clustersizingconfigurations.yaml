@@ -160,6 +160,169 @@ spec:
                             APICriticalPriorityClassName is the priority class for pods in the API request serving path.
                             This includes Kube API Server, OpenShift APIServer, etc.
                           type: string
+                        containerResourcePolicy:
+                          description: |-
+                            containerResourcePolicy is an experimental, explicitly enabled policy for control plane
+                            container requests and Go runtime settings. When omitted, legacy sizing is unchanged.
+                            When enabled, it takes precedence over resourceRequests and kasGoMemLimit.
+                          properties:
+                            containers:
+                              description: |-
+                                containers specifies overrides identified by component workload name and container name.
+                                An override applies to either a regular or init container with that name.
+                              items:
+                                description: ContainerResources overrides the resource
+                                  policy for one named container in a component workload.
+                                properties:
+                                  container:
+                                    description: container is the exact name of a
+                                      regular or init container in the workload.
+                                    maxLength: 63
+                                    minLength: 1
+                                    type: string
+                                  goMaxProcs:
+                                    description: |-
+                                      goMaxProcs overrides GOMAXPROCS for this container. When omitted, the existing
+                                      manifest or Go runtime default is preserved. A zero Go value means unset
+                                      and is omitted from JSON; explicitly supplied values must be between 1 and 1024.
+                                    format: int32
+                                    maximum: 1024
+                                    minimum: 1
+                                    type: integer
+                                  goMemoryLimitPercent:
+                                    description: |-
+                                      goMemoryLimitPercent overrides the policy percentage. Zero disables GOMEMLIMIT
+                                      management for this container, for example for a non-Go binary. When omitted,
+                                      the policy percentage applies.
+                                    format: int32
+                                    maximum: 100
+                                    minimum: 0
+                                    type: integer
+                                  requests:
+                                    description: requests replaces both default CPU
+                                      and memory requests for this container.
+                                    properties:
+                                      cpu:
+                                        anyOf:
+                                        - type: integer
+                                        - type: string
+                                        description: cpu is the CPU request for the
+                                          container.
+                                        maxLength: 64
+                                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                        type: string
+                                        x-kubernetes-int-or-string: true
+                                        x-kubernetes-validations:
+                                        - message: cpu must be a positive quantity
+                                          rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                                      memory:
+                                        anyOf:
+                                        - type: integer
+                                        - type: string
+                                        description: memory is the memory request
+                                          for the container.
+                                        maxLength: 64
+                                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                        type: string
+                                        x-kubernetes-int-or-string: true
+                                        x-kubernetes-validations:
+                                        - message: memory must be a positive quantity
+                                          rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                                    required:
+                                    - cpu
+                                    - memory
+                                    type: object
+                                  workload:
+                                    description: workload is the exact component workload
+                                      name, not a workload kind or generated pod name.
+                                    maxLength: 253
+                                    minLength: 1
+                                    type: string
+                                required:
+                                - container
+                                - requests
+                                - workload
+                                type: object
+                              maxItems: 256
+                              minItems: 1
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - workload
+                              - container
+                              x-kubernetes-list-type: map
+                            cpuLimitPolicy:
+                              description: |-
+                                cpuLimitPolicy controls CPU limits for every projected regular and init container.
+                                None removes CPU limits. EqualsRequest sets CPU limits equal to CPU requests.
+                                When omitted, CPU limits are removed as with None.
+                              enum:
+                              - None
+                              - EqualsRequest
+                              type: string
+                            defaultRequests:
+                              description: defaultRequests specifies CPU and memory
+                                requests for containers without an override.
+                              properties:
+                                cpu:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: cpu is the CPU request for the container.
+                                  maxLength: 64
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  type: string
+                                  x-kubernetes-int-or-string: true
+                                  x-kubernetes-validations:
+                                  - message: cpu must be a positive quantity
+                                    rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                                memory:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: memory is the memory request for the
+                                    container.
+                                  maxLength: 64
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  type: string
+                                  x-kubernetes-int-or-string: true
+                                  x-kubernetes-validations:
+                                  - message: memory must be a positive quantity
+                                    rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                              required:
+                              - cpu
+                              - memory
+                              type: object
+                            goMemoryLimitPercent:
+                              description: goMemoryLimitPercent specifies GOMEMLIMIT
+                                as a percentage of the memory request.
+                              format: int32
+                              maximum: 100
+                              minimum: 1
+                              type: integer
+                            memoryLimitMultiplier:
+                              description: |-
+                                memoryLimitMultiplier specifies the memory limit as a multiple of the memory request.
+                                Mutually exclusive with memoryLimitPercent.
+                              format: int32
+                              maximum: 16
+                              minimum: 1
+                              type: integer
+                            memoryLimitPercent:
+                              description: |-
+                                memoryLimitPercent specifies the memory limit as a percentage of the request,
+                                rounded up to whole MiB. Mutually exclusive with memoryLimitMultiplier.
+                              format: int32
+                              maximum: 1600
+                              minimum: 100
+                              type: integer
+                          required:
+                          - defaultRequests
+                          - goMemoryLimitPercent
+                          type: object
+                          x-kubernetes-validations:
+                          - message: exactly one of memoryLimitMultiplier or memoryLimitPercent
+                              is required
+                            rule: has(self.memoryLimitMultiplier) != has(self.memoryLimitPercent)
                         controlPlanePriorityClassName:
                           description: ControlPlanePriorityClassName is the priority
                             class to use for most control plane pods
@@ -253,6 +416,7 @@ spec:
                   - criteria
                   - name
                   type: object
+                maxItems: 64
                 type: array
                 x-kubernetes-list-map-keys:
                 - name

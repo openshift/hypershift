@@ -802,6 +802,31 @@ func TestApplyNonOvercommitableResourceLimits(t *testing.T) {
 	}
 }
 
+func TestRestoreGeneratedResources(t *testing.T) {
+	t.Run("When generated resources are absent, it should remove policy values and preserve custom resources", func(t *testing.T) {
+		g := NewWithT(t)
+		resources := corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m"), aroSwiftNICResource: resource.MustParse("1")},
+			Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi"), corev1.ResourceEphemeralStorage: resource.MustParse("2Gi")},
+		}
+		restoreGeneratedResources(&resources, corev1.ResourceRequirements{})
+		g.Expect(resources).To(Equal(corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{aroSwiftNICResource: resource.MustParse("1")},
+			Limits:   corev1.ResourceList{corev1.ResourceEphemeralStorage: resource.MustParse("2Gi")},
+		}))
+	})
+	t.Run("When existing resource maps are nil, it should restore generated requests and limits", func(t *testing.T) {
+		g := NewWithT(t)
+		resources := corev1.ResourceRequirements{}
+		generated := corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+			Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("256Mi")},
+		}
+		restoreGeneratedResources(&resources, generated)
+		g.Expect(resources).To(Equal(generated))
+	})
+}
+
 func TestSetDefaultOptions(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := hyperv1.AddToScheme(scheme); err != nil {
@@ -830,7 +855,7 @@ func TestSetDefaultOptions(t *testing.T) {
 			SetDefaultSecurityContext: true,
 			DefaultSecurityContextUID: int64(1002),
 			Client:                    fake.NewClientBuilder().WithScheme(scheme).Build(),
-		}, workloadObject, nil)
+		}, workloadObject, nil, false)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.RunAsUser).To(Equal(ptr.To(int64(1002))))
 		g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.FSGroup).To(Equal(ptr.To(int64(1002))))
@@ -845,6 +870,7 @@ func TestSetDefaultOptions(t *testing.T) {
 		annotations        map[string]string
 		containerResources corev1.ResourceRequirements
 		existingResources  map[string]corev1.ResourceRequirements
+		previousPolicy     bool
 		expectedResources  corev1.ResourceRequirements
 	}{
 		{
@@ -876,6 +902,24 @@ func TestSetDefaultOptions(t *testing.T) {
 					corev1.ResourceCPU:    resource.MustParse("2"),
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				},
+			},
+		},
+		{
+			name:           "When the previous policy is removed, it should restore manifest CPU and memory while preserving custom resources",
+			previousPolicy: true,
+			containerResources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("256Mi")},
+				Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("1Gi")},
+			},
+			existingResources: map[string]corev1.ResourceRequirements{
+				"kube-apiserver": {
+					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m"), corev1.ResourceMemory: resource.MustParse("1700Mi"), aroSwiftNICResource: resource.MustParse("1")},
+					Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("4Gi"), aroSwiftNICResource: resource.MustParse("1"), corev1.ResourceEphemeralStorage: resource.MustParse("2Gi")},
+				},
+			},
+			expectedResources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("256Mi"), aroSwiftNICResource: resource.MustParse("1")},
+				Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceMemory: resource.MustParse("1Gi"), aroSwiftNICResource: resource.MustParse("1"), corev1.ResourceEphemeralStorage: resource.MustParse("2Gi")},
 			},
 		},
 		{
@@ -930,7 +974,7 @@ func TestSetDefaultOptions(t *testing.T) {
 				HCP:                  hcp,
 				Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
 				ReleaseImageProvider: releaseProvider,
-			}, deployment, test.existingResources)
+			}, deployment, test.existingResources, test.previousPolicy)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Resources).To(Equal(test.expectedResources))
@@ -983,7 +1027,7 @@ func TestSetDefaultOptions(t *testing.T) {
 				HCP:                  hcp,
 				Client:               fake.NewClientBuilder().WithScheme(scheme).Build(),
 				ReleaseImageProvider: releaseProvider,
-			}, deployment, nil)
+			}, deployment, nil, false)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			if test.expectSet {
