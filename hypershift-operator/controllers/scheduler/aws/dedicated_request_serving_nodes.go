@@ -3,7 +3,6 @@ package scheduler
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -300,16 +299,10 @@ func (r *DedicatedServingComponentScheduler) labelAndTaintNodes(ctx context.Cont
 func (r *DedicatedServingComponentScheduler) updateHostedClusterAnnotations(ctx context.Context, hcluster *hyperv1.HostedCluster, nodesToUse map[string]*corev1.Node) error {
 	log := ctrl.LoggerFrom(ctx)
 	nodeGoMemLimit := ""
-	lbSubnets := ""
 	pairLabel := ""
 	for _, node := range nodesToUse {
 		if node.Labels[schedulerutil.GoMemLimitLabel] != "" && nodeGoMemLimit == "" {
 			nodeGoMemLimit = node.Labels[schedulerutil.GoMemLimitLabel]
-		}
-		if node.Labels[schedulerutil.LBSubnetsLabel] != "" && lbSubnets == "" {
-			lbSubnets = node.Labels[schedulerutil.LBSubnetsLabel]
-			// If subnets are separated by periods, replace them with commas
-			lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
 		}
 		if node.Labels[OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
 			pairLabel = node.Labels[OSDFleetManagerPairedNodesLabel]
@@ -322,13 +315,14 @@ func (r *DedicatedServingComponentScheduler) updateHostedClusterAnnotations(ctx 
 	if nodeGoMemLimit != "" {
 		hcluster.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] = nodeGoMemLimit
 	}
-	if lbSubnets != "" {
-		hcluster.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation] = lbSubnets
-	}
 	if pairLabel != "" {
 		hcluster.Annotations[hyperv1.AWSLoadBalancerTargetNodesAnnotation] =
 			fmt.Sprintf("%s=%s", OSDFleetManagerPairedNodesLabel, pairLabel)
 	}
+	// Prune the deprecated, non-functional aws-load-balancer-subnets annotation. Setting
+	// subnets on the private load balancer causes private link creation failures, so it is
+	// no longer written; delete any value left behind by previous operator versions.
+	delete(hcluster.Annotations, hyperv1.AWSLoadBalancerSubnetsAnnotation)
 	if err := r.Patch(ctx, hcluster, client.MergeFrom(originalHcluster)); err != nil {
 		return fmt.Errorf("failed to update hostedcluster annotation: %w", err)
 	}

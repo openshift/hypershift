@@ -2871,6 +2871,8 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.KubeAPIServerGOGCAnnotation,
 		hyperv1.KubeAPIServerGOMemoryLimitAnnotation,
 		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
+		// Deprecated and no longer written by the scheduler. Kept here so the mirror
+		// keeps pruning any stale value from existing HCPs once the HC no longer has it.
 		hyperv1.AWSLoadBalancerSubnetsAnnotation,
 		hyperv1.AWSLoadBalancerTargetNodesAnnotation,
 		hyperv1.AWSLoadBalancerHealthProbeModeAnnotation,
