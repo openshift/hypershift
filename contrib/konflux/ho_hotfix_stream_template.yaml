@@ -1,7 +1,7 @@
 apiVersion: projctl.konflux.dev/v1beta1
 kind: ProjectDevelopmentStreamTemplate
 metadata:
-  name: hypershift-ho-template
+  name: hypershift-ho-hotfix-template
 spec:
   project: crt-redhat-acm-tenant
   variables:
@@ -15,7 +15,7 @@ spec:
   - apiVersion: appstudio.redhat.com/v1alpha1
     kind: Application
     metadata:
-      name: hypershift-operator-hotfix-{{.versionName}}"
+      name: hypershift-operator-hotfix-{{.versionName}}
     spec:
       displayName: "hypershift-operator-hotfix-{{.versionName}}"
 
