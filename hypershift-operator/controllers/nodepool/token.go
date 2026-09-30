@@ -203,6 +203,8 @@ func (t *Token) cleanupOutdated(ctx context.Context) error {
 		if err == nil {
 			if err := t.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to delete user data Secret: %w", err)
+			} else if err == nil {
+				ctrl.LoggerFrom(ctx).Info("Deleted outdated Secret", "secret", client.ObjectKeyFromObject(userDataSecret).String(), "nodePool", client.ObjectKeyFromObject(t.nodePool).String())
 			}
 		}
 	}

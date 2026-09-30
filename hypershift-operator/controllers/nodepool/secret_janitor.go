@@ -132,7 +132,11 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 
 	// synchronously deleting the ignition token is unsafe; we need to clean up tokens by annotating them to expire
 	synchronousCleanup := func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
-		return c.Delete(ctx, secret)
+		if err := c.Delete(ctx, secret); err != nil {
+			return err
+		}
+		ctrl.LoggerFrom(ctx).Info("Deleted secret", "secret", client.ObjectKeyFromObject(secret).String())
+		return nil
 	}
 	type nodePoolSecret struct {
 		expectedName   string
