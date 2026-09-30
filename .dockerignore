@@ -6,3 +6,4 @@ contrib/
 .tekton/
 .ci-operator.yaml
 .ko.yaml
+/console/

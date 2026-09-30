@@ -1,0 +1,37 @@
+# NodePool for pat-console.
+# Modeled on clusters-patmarti-102447/patmarti-102447-nodepool-1.
+# replicas: 0 for now (scale up manually when needed).
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: pat-console-nodepool-1
+  namespace: clusters-pat-console
+  labels:
+    gcp.managed.openshift.io/cluster-id: pat-console
+    gcp.managed.openshift.io/nodepool-id: pat-console-nodepool-1
+spec:
+  arch: amd64
+  clusterName: pat-console
+  management:
+    autoRepair: true
+    replace:
+      rollingUpdate:
+        maxSurge: 1
+        maxUnavailable: 0
+      strategy: RollingUpdate
+    upgradeType: Replace
+  platform:
+    gcp:
+      bootDisk:
+        diskSizeGB: 100
+        diskType: pd-balanced
+      machineType: n2-standard-4
+      provisioningModel: Standard
+      subnet: patmart-b3bb-subnet
+      zone: us-central1-a
+    type: GCP
+  # Must match the HostedCluster control-plane release (see hostedcluster.yaml:
+  # 4.23.0-ec.0, digest 14350234...). NodePool release must not exceed the CP.
+  release:
+    image: quay.io/openshift-release-dev/ocp-release@sha256:14350234fcd6c464fbf37c07679b653567b2d250be0d18132b79a621f164d719
+  replicas: 4

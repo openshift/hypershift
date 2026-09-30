@@ -240,6 +240,25 @@ done`, payloadDir, featureSet))
 	if !oauthEnabled {
 		stmts = append(stmts, fmt.Sprintf("rm -f %s", path.Join(payloadDir, "release-manifests", "0000_50_console-operator_01-oauth.yaml")))
 	}
+	// Console control-plane-side study (GCP-1219): on GCP the console runs
+	// control-plane-side, so land all console scaffolding (CRDs, namespaces,
+	// RBAC, SAs, config CRs) in the guest via the Console capability but keep the
+	// console-operator itself OUT of the guest. Strip the operator Deployment (the
+	// ibm-cloud-managed variant is the one that ships in the hosted/hypershift
+	// cluster profile) and its ClusterOperator: with the operator stripped, a
+	// shipped-but-never-updated ClusterOperator/console (no Available=True
+	// condition) would make the guest CVO block on ClusterOperatorNotAvailable
+	// during rollout and every upgrade, so it must be omitted too (same treatment
+	// as the management-side olm/marketplace ClusterOperator). All other platforms
+	// keep the console-operator running in the guest as usual.
+	if platformType == hyperv1.GCPPlatform {
+		for _, manifest := range []string{
+			"0000_50_console-operator_07-operator-ibm-cloud-managed.yaml",
+			"0000_50_console-operator_95-clusteroperator.yaml",
+		} {
+			stmts = append(stmts, fmt.Sprintf("rm -f %s", path.Join(payloadDir, "release-manifests", manifest)))
+		}
+	}
 	toRemove := resourcesToRemove(platformType)
 	if len(toRemove) > 0 {
 		// NOTE: the name of the cleanup file indicates the CVO runlevel for the cleanup.

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/console"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
@@ -107,7 +108,74 @@ func (r *Reconciler) ReconcileInfrastructure(ctx context.Context, hcp *hyperv1.H
 	if err := r.reconcileHCPRouterServices(ctx, hcp, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile HCP router services: %w", err)
 	}
+	// Phase 1 control-plane-side console spike (GCP only). Not gated by the
+	// console capability yet — the spike runs the console regardless
+	// (capability gate is Phase 2).
+	if hcp.Spec.Platform.Type == hyperv1.GCPPlatform {
+		if err := r.reconcileConsoleRoutes(ctx, hcp, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile console routes: %w", err)
+		}
+	}
 
+	return nil
+}
+
+// reconcileConsoleRoutes reconciles the public/private passthrough Routes for
+// the control-plane-side console and CLI-downloads server, mirroring the KAS
+// public/private route model (see the console package doc). The user-facing
+// hosts are derived from the APIServer host.
+func (r *Reconciler) reconcileConsoleRoutes(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
+	apiHost := console.APIServerHost(hcp)
+	if apiHost == "" {
+		// No Route-based APIServer host (e.g. LoadBalancer strategy); nothing to derive from.
+		return nil
+	}
+	owner := config.OwnerRefFrom(hcp)
+	isPublic := netutil.IsPublicHCP(hcp)
+
+	for _, cfg := range []struct {
+		label         string
+		serviceName   string
+		publicRoute   *routev1.Route
+		privateRoute  *routev1.Route
+	}{
+		{
+			label:        "console",
+			serviceName:  console.ConsoleServiceName,
+			publicRoute:  manifests.ConsoleRoute(hcp.Namespace),
+			privateRoute: manifests.ConsolePrivateRoute(hcp.Namespace),
+		},
+		{
+			label:        "downloads",
+			serviceName:  console.DownloadsServiceName,
+			publicRoute:  manifests.DownloadsRoute(hcp.Namespace),
+			privateRoute: manifests.DownloadsPrivateRoute(hcp.Namespace),
+		},
+	} {
+		host, err := console.HostForService(apiHost, cfg.label)
+		if err != nil {
+			return err
+		}
+		if isPublic {
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, cfg.privateRoute); err != nil {
+				return err
+			}
+			if _, err := createOrUpdate(ctx, r.Client, cfg.publicRoute, func() error {
+				return console.ReconcileExternalPublicRoute(cfg.publicRoute, owner, host, cfg.serviceName)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile %s public route: %w", cfg.label, err)
+			}
+		} else {
+			if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, cfg.publicRoute); err != nil {
+				return err
+			}
+			if _, err := createOrUpdate(ctx, r.Client, cfg.privateRoute, func() error {
+				return console.ReconcileExternalPrivateRoute(cfg.privateRoute, owner, host, cfg.serviceName)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile %s private route: %w", cfg.label, err)
+			}
+		}
+	}
 	return nil
 }
 

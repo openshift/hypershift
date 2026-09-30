@@ -9,6 +9,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/console"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/netutil"
@@ -456,7 +457,24 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 // reconcileExternalServices creates external-dns services for private clusters with external names
 // This enables external-dns to create DNS records for private PSC endpoints with custom hostnames
 func (r *GCPPrivateServiceConnectReconciler) reconcileExternalServices(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) { //nolint:unparam // result kept for interface/API consistency
-	if isPublic, externalNames := netutil.IsPublicHCP(hcp), hcpExternalNamesGCP(hcp); !isPublic && len(externalNames) > 0 {
+	externalNames := hcpExternalNamesGCP(hcp)
+	// Phase 1 console spike (GCP): "console"/"downloads" aren't HyperShift
+	// service types, so hcpExternalNamesGCP can't derive them from a
+	// ServicePublishingStrategy. Derive their hosts from the APIServer host the
+	// same way CPO's console route reconciler does (api.<domain> ->
+	// console.<domain> / downloads.<domain>) so external-dns publishes their
+	// records to the PSC endpoint under Private.
+	if apiHost := console.APIServerHost(hcp); apiHost != "" {
+		for _, label := range []string{"console", "downloads"} {
+			host, err := console.HostForService(apiHost, label)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to derive %s host: %w", label, err)
+			}
+			externalNames[label] = host
+		}
+	}
+
+	if isPublic := netutil.IsPublicHCP(hcp); !isPublic && len(externalNames) > 0 {
 		// Only if not public and external names are configured, create services of type ExternalName so external-dns
 		// can create records for them
 		var errs []error
@@ -467,6 +485,10 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileExternalServices(ctx conte
 				svc = manifests.KubeAPIServerExternalPrivateService(hcp.Namespace)
 			case "oauth":
 				svc = manifests.OauthServerExternalPrivateService(hcp.Namespace)
+			case "console":
+				svc = manifests.ConsoleExternalPrivateService(hcp.Namespace)
+			case "downloads":
+				svc = manifests.DownloadsExternalPrivateService(hcp.Namespace)
 			}
 			if _, err := r.CreateOrUpdate(ctx, r, svc, func() error {
 				log.Info("Reconciling external name service for GCP PSC", "service", svc.Name, "externalName", externalName)

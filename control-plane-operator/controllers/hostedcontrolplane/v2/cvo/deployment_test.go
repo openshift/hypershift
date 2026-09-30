@@ -130,6 +130,32 @@ func TestPreparePayloadScript(t *testing.T) {
 				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_olm_00-packageserver.pdb.yaml"))
 			},
 		},
+		{
+			// Console control-plane-side study (GCP-1219): on GCP the
+			// console-operator runs control-plane-side, so its guest Deployment and
+			// ClusterOperator are stripped from the CVO payload while all other
+			// console scaffolding (CRDs, namespaces, RBAC) stays.
+			name:         "When platform is GCP, it should omit the console-operator Deployment and ClusterOperator manifests",
+			platformType: hyperv1.GCPPlatform,
+			oauthEnabled: true,
+			featureSet:   configv1.Default,
+			assertions: func(g Gomega, script string) {
+				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_console-operator_07-operator-ibm-cloud-managed.yaml"))
+				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_console-operator_95-clusteroperator.yaml"))
+			},
+		},
+		{
+			// On all non-GCP platforms the console-operator keeps running in the
+			// guest, so its manifests must NOT be stripped.
+			name:         "When platform is AWS, it should NOT omit the console-operator Deployment or ClusterOperator manifests",
+			platformType: hyperv1.AWSPlatform,
+			oauthEnabled: true,
+			featureSet:   configv1.Default,
+			assertions: func(g Gomega, script string) {
+				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_console-operator_07-operator-ibm-cloud-managed.yaml"))
+				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_console-operator_95-clusteroperator.yaml"))
+			},
+		},
 	}
 
 	for _, tt := range tests {

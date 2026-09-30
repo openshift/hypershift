@@ -1,0 +1,668 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Layer 2 of 3 — see ../README.md.
+#
+# Generic (cluster-agnostic) template: turns the upstream ../origin assets
+# into what Phase 1's core console needs when run control-plane-side, with NO
+# console-operator (see CONSOLE_CONTROL_PLANE_DOCS/CONSOLE_CONTROL_PLANE_PROGRESS.md
+# and CONSOLE_CONTROL_PLANE_STUDY.md §20). Every patch below exists because
+# the operator would otherwise be doing that work at runtime; there is no
+# HyperShift-specific customization beyond "what the operator used to inject".
+#
+# Deliberately NOT modified vs. origin (kept as-is; listed so the "diff" is
+# complete, not just what changed):
+#   - restricted-PSS securityContext (pod + container) — origin already ships
+#     it; Phase 1 needs zero changes here (CONSOLE_CONTROL_PLANE_STUDY.md §20).
+#   - `target.workload.openshift.io/management` pod annotation — this is
+#     exactly the workload-partitioning annotation every other HCP-namespace
+#     operator in this repo's live clusters already carries (verified:
+#     cluster-network-operator, dns-operator, etc.) — correct for our new
+#     topology unchanged.
+#   - probes, container port, resources, `openshift.io/required-scc`
+#     annotation (inert outside OCP's SCC admission, harmless to leave).
+#
+# No `namespace:` field here — the per-cluster overlay sets it (and must also
+# patch the off-cluster-endpoint arg / HCPRouteLabel value to match, since
+# kustomize's namespace transformer does not rewrite string args).
+#
+# ClusterIssuer defaults to `public-issuer`; override in the per-cluster
+# overlay if a different issuer is used for a given management cluster.
+
+resources:
+  # The whole ../origin layer (both the console and downloads operands). We
+  # patch individual resources below by kind+name, so pulling origin in as a
+  # single unit is equivalent to — and less surprising than — listing every
+  # file. This also pulls in both operands' ServiceAccounts
+  # (origin/serviceaccount.yaml + origin/downloads-serviceaccount.yaml), which
+  # we then $patch: delete below — neither the console bridge nor the
+  # download-server makes mgmt-side API calls, so both pods run under the
+  # namespace `default` SA (which also carries the pull secret they need).
+  - ../origin
+  - secret-oidc-client.yaml # OIDC client secret for the bridge (mounted as a file)
+  - secret-session.yaml # session cookie keys for oidc (mounted as files)
+  - certificate.yaml # new; no upstream analog (no service-ca operator on GKE)
+
+patches:
+  # Drop the console ServiceAccount pulled in via ../origin (see note above).
+  - target:
+      kind: ServiceAccount
+      name: console
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: console
+
+  # Drop the downloads ServiceAccount too — the download-server makes no API
+  # calls and nothing binds RBAC to it. Removing it makes the pod fall back to
+  # the namespace `default` SA, which HyperShift provisions with
+  # imagePullSecrets: [pull-secret] — so the pod can pull the ocp-v4.0-art-dev
+  # images with no extra wiring (the custom `downloads` SA had no pull secret,
+  # which caused 401 ErrImagePull). See the downloads Deployment patch below.
+  - target:
+      kind: ServiceAccount
+      name: downloads
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: downloads
+
+  - target:
+      kind: Deployment
+      name: console
+    patch: |
+      # -- Fields the operator would set dynamically; static here since there's no operator --
+      # replicas: 2 — multi-replica works because of TWO things together:
+      #   1. the patched bridge requests a refresh token for OIDC
+      #      (access_type=offline + prompt=consent, pkg/auth/oauth2/auth.go
+      #      LoginFunc), and
+      #   2. POD_NAME (below) makes session cookies pod-specific.
+      # When a request is load-balanced to a replica with no in-memory session,
+      # the OIDC login path (pkg/auth/oauth2/auth_oidc.go getLoginState) reads the
+      # refresh-token cookie and does a SILENT back-channel token refresh to
+      # rebuild the session on that pod — no interactive login / consent redirect.
+      # (Our HCP router is SNI-passthrough so it can't do HAProxy cookie affinity,
+      # and Service sessionAffinity:ClientIP is useless — the router dials the
+      # Service fresh so it only sees the router pod IP; the refresh-token cookie is
+      # what makes replicas work without affinity.) Google does not honor the
+      # `offline_access` scope, hence the request-param approach.
+      - op: add
+        path: /spec/replicas
+        value: 2
+
+      # -- The HCP router's egress NetworkPolicy (CPO-managed, `private-router`)
+      #    only allows unrestricted egress to pods carrying this label (KAS,
+      #    OAuth, ignition, konnectivity) or DNS; its 0.0.0.0/0 egress rule
+      #    does NOT cover intra-cluster pod IPs on GKE Dataplane V2 (Cilium
+      #    treats ipBlock CIDRs as external-only). Without this label the
+      #    router pod cannot reach the console pod at all (silent connection
+      #    timeout, no TCP RST). This HC has no dedicated-request-serving-node
+      #    topology enabled, so the label has no other scheduling effect here. --
+      - op: add
+        path: /spec/template/metadata/labels/hypershift.openshift.io~1request-serving-component
+        value: "true"
+
+      # -- Fields specific to guest clusters' master nodes; meaningless on the
+      #    management cluster where this pod now runs --
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: remove
+        path: /spec/template/spec/tolerations
+
+      # -- Upstream's default OCP priority class; HCP-namespace convention on
+      #    the management cluster is `hypershift-control-plane` (verified:
+      #    every other operator Deployment in a live HCP namespace uses it) --
+      - op: replace
+        path: /spec/template/spec/priorityClassName
+        value: hypershift-control-plane
+
+      # -- No mgmt-side ServiceAccount needed (see note above) --
+      - op: remove
+        path: /spec/template/spec/serviceAccountName
+      - op: remove
+        path: /spec/template/spec/serviceAccount
+      - op: add
+        path: /spec/template/spec/automountServiceAccountToken
+        value: false
+
+      # -- Replace the operator's `--config=console-config.yaml` file-based
+      #    wiring (no operator to generate that ConfigMap) with explicit
+      #    bridge CLI flags for off-cluster mode + static-token auth. --
+      # `${IMAGE}` is upstream's own placeholder, substituted by the
+      # operator's Go code at runtime — kustomize's `images:` transformer
+      # can't match it (fails image-ref parsing on `$`/`{`/`}`, silent
+      # no-op, same gotcha as the base rewrite below). Patch it directly to
+      # a transform-friendly placeholder instead; the per-cluster overlay's
+      # `images:` transform targets this name.
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: REPLACE_CONSOLE_IMAGE_REGISTRY:REPLACE_CONSOLE_IMAGE_TAG
+
+      - op: replace
+        path: /spec/template/spec/containers/0/command
+        value: [/opt/bridge/bin/bridge]
+      - op: add
+        path: /spec/template/spec/containers/0/args
+        value:
+          - -listen=https://0.0.0.0:8443
+          - -base-address=https://REPLACE_CONSOLE_HOST
+          - -public-dir=/opt/bridge/static
+          # ---- off-cluster: guest KAS in-namespace, verified via root-ca.
+          #      -ca-file is honored by the k8s resource proxy TLS trust via
+          #      the patched bridge (custom image in the per-cluster overlay's
+          #      images: transform; upstream fix pending). No skip-verify. ----
+          - -k8s-mode=off-cluster
+          - -k8s-mode-off-cluster-endpoint=https://kube-apiserver.REPLACE_HCP_NAMESPACE.svc:6443
+          - -ca-file=/var/run/guest-ca/ca.crt
+          - -k8s-public-endpoint=https://REPLACE_API_DOMAIN:6443
+          # ---- per-user login via external OIDC (Google). The client id is
+          #      per-cluster (patched by the overlay); the secret is mounted
+          #      from a file. Normally the console-operator would wire these
+          #      from console-config.yaml + the guest-synced client secret;
+          #      with no operator we pass them as flags. ----
+          - -user-auth=oidc
+          - -user-auth-oidc-issuer-url=https://accounts.google.com
+          - -user-auth-oidc-client-id=REPLACE_CONSOLE_OIDC_CLIENT_ID
+          - -user-auth-oidc-client-secret-file=/var/oidc/clientSecret
+          # Request the email (+profile) scopes so the ID token carries the
+          # `email` claim the guest KAS maps to username; with only the default
+          # `openid` scope Google omits `email` and KAS rejects the token
+          # ("oidc: parse username claims email: claim not present").
+          - -user-auth-oidc-token-scopes=email,profile
+          # Session cookie keys (required for oidc — the bridge stores the ID
+          # token in an encrypted+signed session cookie). Normally generated by
+          # console-operator; here mounted from a per-cluster secret.
+          - -cookie-encryption-key-file=/var/session/encryptionKey
+          - -cookie-authentication-key-file=/var/session/authenticationKey
+          # ---- TLS at the pod (router is passthrough) ----
+          - -tls-cert-file=/var/serving-cert/tls.crt
+          - -tls-key-file=/var/serving-cert/tls.key
+          # ---- APPENDED, not inserted mid-list: the per-cluster overlay's
+          #      Deployment patches target earlier args by numeric index
+          #      (args/1, args/4, args/6) — inserting anywhere before them
+          #      would silently shift those indices (hit this exact bug once
+          #      already: a mid-list insert here left a stale duplicate
+          #      REPLACE_API_DOMAIN arg and silently dropped a flag). ----
+          # Masthead/title branding. The bridge compiles in `okd` as its
+          # default (cmd/bridge/main.go: -branding default "okd"); on a real
+          # OCP cluster the console-operator overrides this to `ocp` via
+          # console-config.yaml (operator build tag `ocp` ->
+          # configmap/brand_ocp.go DEFAULT_BRAND = "ocp"). With no operator
+          # here we must set it explicitly or the UI shows the OKD logo even
+          # though the image is the genuine OCP release-payload console.
+          # (Appended, not inserted, for the same arg-index reason as above.)
+          - -branding=ocp
+          # ---- Phase 2: monitoring (Observe -> Metrics / Alerts). ----
+          # The guest Thanos/Alertmanager are ClusterIP Services on the guest
+          # service network, unreachable from this control-plane-side pod
+          # directly. The konnectivity-proxy-socks5 sidecar (added below) tunnels
+          # to them; the HTTP(S)_PROXY env on this container (added below) routes
+          # these proxy dials through it, while NO_PROXY keeps the in-namespace
+          # KAS dial direct. The bridge only builds the Thanos/Alertmanager
+          # proxies in off-cluster mode when these flags are set
+          # (cmd/bridge/main.go: fK8sModeOffClusterThanos / *Alertmanager).
+          # Ports per the thanos-querier/alertmanager-main Service (9091 = all
+          # Thanos endpoints, gated by cluster-monitoring-view; 9094 = the
+          # Alertmanager web port). The bridge appends /api to each URL.
+          - -k8s-mode-off-cluster-thanos=https://thanos-querier.openshift-monitoring.svc:9091
+          - -k8s-mode-off-cluster-alertmanager=https://alertmanager-main.openshift-monitoring.svc:9094
+          # Thanos/Alertmanager present service-serving certs signed by the
+          # service-ca (openshift-service-serving-signer), a DIFFERENT CA from
+          # the KAS -ca-file (root-ca). The stock off-cluster bridge trusts only
+          # -ca-file for every proxy; the patched image adds -service-ca-file
+          # support to the off-cluster branch (mirrors in-cluster), keeping
+          # -ca-file for KAS. Mounted from the HCP-namespace service-serving-ca
+          # ConfigMap (volume added below). Inert on the stock bridge, so safe if
+          # the image is ever reverted.
+          - -service-ca-file=/var/run/service-ca/service-ca.crt
+          # ---- Phase 3: dynamic plugin enablement (monitoring-plugin). ----
+          # The Console capability is on, so CMO ships the monitoring-plugin
+          # workload + its ConsolePlugin CR in the guest (Observe ->
+          # Alerting/Dashboards/Targets UI). Enabling/wiring a plugin is normally
+          # the console-operator's job (it writes the enabled set into the console
+          # config); with no operator here we pass -plugins directly. The bridge
+          # dials the plugin's guest ClusterIP Service, so it rides the same
+          # konnectivity socks5 tunnel as Thanos/Alertmanager and presents a
+          # service-ca-signed cert (covered by -service-ca-file above). Trailing
+          # dot on the FQDN avoids the NO_PROXY suffix-match excluding it from the
+          # proxy. Format: -plugins=<name>=<url>.
+          - -plugins=monitoring-plugin=https://monitoring-plugin.openshift-monitoring.svc.cluster.local.:9443
+          # ---- Phase 3: service-account identity for the bridge's OWN backend
+          # calls (dashboards ConfigMaps in openshift-config-managed, plugin
+          # metrics). With -user-auth=oidc, USER requests proxy with the logged-in
+          # user's token, but the bridge's internal K8s calls need a service
+          # account. Without this they go as system:anonymous -> 403 (Dashboards
+          # "console service account cannot list resource: 403 Forbidden"). The
+          # token is minted for the guest `console` ServiceAccount by the
+          # token-minter sidecar below (which also creates that SA — normally the
+          # console-operator's job). The guest ClusterRoleBinding/console +
+          # RoleBinding/console-configmap-reader (shipped by the Console
+          # capability CVO manifests) already bind that SA. Bridge flag:
+          # InternalProxiedK8SClientConfig.BearerTokenFile (cmd/bridge/main.go).
+          - -k8s-mode-off-cluster-service-account-bearer-token-file=/var/run/console-sa/token
+
+      # -- Volumes/mounts the operator would otherwise inject: the console's own
+      #    serving cert, the guest KAS's serving CA, and the OIDC client secret
+      #    (mounted as a file for -user-auth-oidc-client-secret-file). --
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts
+        value:
+          - { name: serving-cert, mountPath: /var/serving-cert, readOnly: true }
+          - { name: guest-ca, mountPath: /var/run/guest-ca, readOnly: true }
+          - { name: oidc-client-secret, mountPath: /var/oidc, readOnly: true }
+          - { name: session-keys, mountPath: /var/session, readOnly: true }
+          # Phase 2: service-serving CA for the Thanos/Alertmanager proxies
+          # (-service-ca-file above). Key service-ca.crt.
+          - { name: service-ca, mountPath: /var/run/service-ca, readOnly: true }
+          # Phase 3: guest `console` SA token minted by the token-minter sidecar
+          # (-k8s-mode-off-cluster-service-account-bearer-token-file above).
+          # Shared in-memory emptyDir; the sidecar writes token, the bridge reads.
+          - { name: console-sa-token, mountPath: /var/run/console-sa, readOnly: true }
+
+      # ---- Phase 2: konnectivity socks5 proxy env for this bridge container ----
+      # Routes the Thanos/Alertmanager proxy dials through the socks5 sidecar
+      # (added below) into the guest service network. NO_PROXY keeps the guest
+      # KAS in-namespace ClusterIP dial DIRECT (not tunneled) so resource
+      # browsing + the pod terminal — which go via KAS — are unaffected. The
+      # bridge's service proxies honor these env vars for non-websocket requests
+      # (pkg/proxy/proxy.go: Proxy: http.ProxyFromEnvironment).
+      - op: add
+        path: /spec/template/spec/containers/0/env
+        value:
+          - { name: HTTP_PROXY, value: "socks5://127.0.0.1:8090" }
+          - { name: HTTPS_PROXY, value: "socks5://127.0.0.1:8090" }
+          - { name: NO_PROXY, value: "kube-apiserver.REPLACE_HCP_NAMESPACE.svc,localhost,127.0.0.1" }
+          # POD_NAME — operator-parity (the console-operator injects it via the
+          # downward API: "console distinguishes cookie sessions by pod names in
+          # OIDC envs", console-operator deployment.go). The bridge names its
+          # session cookie per-pod (SessionCookieName() = <cookie>-$POD_NAME,
+          # pkg/auth/sessions/combined_sessions.go) and expires other pods'
+          # cookies. REQUIRED for multi-replica (replicas:2 above): together with
+          # the refresh-token cookie it lets a request on any replica rebuild the
+          # session via a silent token refresh. Without it both pods share one
+          # empty-suffix cookie name and the cross-pod hygiene is defeated.
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.name
+
+      # ---- Phase 2: konnectivity socks5 sidecar ----
+      # Tunnels the bridge's HTTP(S)_PROXY traffic into the guest service network
+      # via the reverse konnectivity tunnel, resolving guest Service -> ClusterIP
+      # from the guest API (via KUBECONFIG). Shape mirrors the framework's
+      # InjectKonnectivityContainer({Mode: Socks5}) (support/controlplane-component/
+      # konnectivity-container.go), copied verbatim from the live per-HCP
+      # catalog-operator sidecar: same command/args/env/mounts. --prefer-ipv4 is
+      # set because this HCP is single-stack IPv4 (the framework forces it there).
+      # Image is a transform-friendly placeholder rewritten by the overlay's
+      # images: transform to the CPO image (which ships the control-plane-operator
+      # binary with the konnectivity-socks5-proxy subcommand).
+      #
+      # Kept as a REGULAR container (not a native init-sidecar) to match the
+      # framework: InjectKonnectivityContainer always appends to podSpec.Containers
+      # regardless of K8s version (support/controlplane-component/
+      # konnectivity-container.go), which is why every live socks5 consumer on
+      # this MC (catalog-operator, olm-operator, openshift-apiserver, ...) runs it
+      # as a MAIN container too. The bridge tolerates a brief proxy-not-ready
+      # window at startup and recovers.
+      - op: add
+        path: /spec/template/spec/containers/-
+        value:
+          name: konnectivity-proxy-socks5
+          image: REPLACE_CPO_IMAGE_REGISTRY:REPLACE_CPO_IMAGE_TAG
+          command: [/usr/bin/control-plane-operator, konnectivity-socks5-proxy]
+          args: [run, --prefer-ipv4=true]
+          env:
+            - name: KUBECONFIG
+              value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
+          resources:
+            requests:
+              cpu: 10m
+              memory: 30Mi
+          volumeMounts:
+            - { name: konnectivity-kubeconfig, mountPath: /etc/kubernetes/secrets/kubeconfig }
+            - { name: konnectivity-proxy-cert, mountPath: /etc/konnectivity/proxy-client }
+            - { name: konnectivity-proxy-ca, mountPath: /etc/konnectivity/proxy-ca }
+            - { name: konnectivity-tmp, mountPath: /tmp }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          terminationMessagePolicy: FallbackToLogsOnError
+
+      # ---- Phase 3: console SA token-minter sidecar ----
+      # Mints a token for the guest `console` ServiceAccount (creating the SA if
+      # absent — normally the console-operator's job) and continuously refreshes
+      # it to a shared emptyDir the bridge reads via
+      # -k8s-mode-off-cluster-service-account-bearer-token-file. This gives the
+      # bridge's OWN backend calls (Dashboards, plugin metrics) a real identity
+      # instead of system:anonymous. Shape mirrors the framework's
+      # InjectTokenMinterContainer(KubeAPIServerToken) (support/controlplane-
+      # component/token-minter-container.go): audience = the HCP IssuerURL (guest
+      # KAS accepts SA tokens with that audience), reaching the guest via the same
+      # service-network-admin-kubeconfig the socks5 sidecar mounts (server
+      # https://kube-apiserver:6443, in-namespace, no tunnel). Uses --kubeconfig
+      # (mounted file) not --kubeconfig-secret-name, so no mgmt-side secret-read
+      # RBAC is needed (same as the live ovnkube-control-plane minter).
+      #
+      # Native sidecar: initContainer with restartPolicy=Always (K8s >= 1.29),
+      # matching the framework's InjectTokenMinterContainer path and the live
+      # gcp-cloud-controller-manager cloud-token-minter. Unlike konnectivity, the
+      # token-minter DOES use the native-sidecar shape. The startupProbe blocks
+      # the bridge until the token file exists (test -f), so the bridge never
+      # makes a backend call without an identity. Probe mirrors the live
+      # gcp-cloud-controller-manager cloud-token-minter verbatim.
+      - op: add
+        path: /spec/template/spec/initContainers
+        value:
+        - name: console-sa-token-minter
+          image: REPLACE_CPO_IMAGE_REGISTRY:REPLACE_CPO_IMAGE_TAG
+          restartPolicy: Always
+          command: [/usr/bin/control-plane-operator, token-minter]
+          args:
+            - --service-account-namespace=openshift-console
+            - --service-account-name=console
+            # Guest KAS accepts SA tokens whose audience is the cluster issuer.
+            # Concrete value set per-cluster in the pat-console overlay.
+            - --token-audience=REPLACE_ISSUER_URL
+            - --token-file=/var/run/console-sa/token
+            - --kubeconfig=/etc/kubernetes/secrets/kubeconfig/kubeconfig
+          startupProbe:
+            exec: { command: [test, -f, /var/run/console-sa/token] }
+            periodSeconds: 1
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 30Mi
+          volumeMounts:
+            - { name: console-sa-token, mountPath: /var/run/console-sa }
+            - { name: konnectivity-kubeconfig, mountPath: /etc/kubernetes/secrets/kubeconfig }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          terminationMessagePolicy: FallbackToLogsOnError
+
+      - op: add
+        path: /spec/template/spec/volumes
+        value:
+          - name: serving-cert
+            secret:
+              secretName: console-serving-cert # or a reused wildcard secret; patched by the per-cluster overlay if needed
+              defaultMode: 416
+          - name: guest-ca
+            configMap:
+              name: root-ca # guest KAS serving CA (key ca.crt)
+              items: [{ key: ca.crt, path: ca.crt }]
+          - name: oidc-client-secret
+            secret:
+              secretName: console-oidc-client-secret # key: clientSecret
+              defaultMode: 416
+          - name: session-keys
+            secret:
+              secretName: console-session # keys: encryptionKey (32B), authenticationKey (64B)
+              defaultMode: 416
+          # Phase 2: service-serving CA for the Thanos/Alertmanager proxies.
+          # This HCP-namespace ConfigMap holds the service-ca
+          # (openshift-service-serving-signer) under key service-ca.crt.
+          - name: service-ca
+            configMap:
+              name: service-serving-ca
+              items: [{ key: service-ca.crt, path: service-ca.crt }]
+          # ---- Phase 2: konnectivity socks5 sidecar volumes ----
+          # Guest admin kubeconfig the sidecar's resolver uses to look up guest
+          # Service -> ClusterIP (reachable via the in-namespace KAS ClusterIP).
+          - name: konnectivity-kubeconfig
+            secret:
+              secretName: service-network-admin-kubeconfig
+              defaultMode: 416
+          # Konnectivity client cert (tls.crt/tls.key at the sidecar's default
+          # -tls-cert-path/-tls-key-path under /etc/konnectivity/proxy-client).
+          - name: konnectivity-proxy-cert
+            secret:
+              secretName: konnectivity-client
+              defaultMode: 416
+          # Konnectivity CA (ca.crt at the sidecar's default -ca-cert-path under
+          # /etc/konnectivity/proxy-ca).
+          - name: konnectivity-proxy-ca
+            configMap:
+              name: konnectivity-ca-bundle
+          # Writable /tmp for the sidecar (readOnlyRootFilesystem: true).
+          - name: konnectivity-tmp
+            emptyDir: {}
+          # Phase 3: shared in-memory token file (minter writes, bridge reads).
+          - name: console-sa-token
+            emptyDir: { medium: Memory }
+
+  - target:
+      kind: Service
+      name: console
+    patch: |
+      # No service-ca operator on GKE (see certificate.yaml); this annotation
+      # has no effect there.
+      - op: remove
+        path: /metadata/annotations
+      # MUST equal the CPO router's hardcoded console backend port
+      # (v2/router/config.go: `case manifests.ConsoleRoute("").Name` ->
+      # DestinationPort: 8443, dialed directly against this Service's
+      # ClusterIP:port — upstream's 443->8443 mapping would leave nothing
+      # listening on ClusterIP:8443).
+      - op: replace
+        path: /spec/ports/0/port
+        value: 8443
+
+  # CPO owns the console/downloads Routes (creates the public or -private
+  # variant per endpointAccess, derives the host from the APIServer host, and
+  # under Private the matching ExternalName service for external-dns).
+  - target:
+      kind: Route
+      name: console
+    patch: |
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: console
+
+  # ======================================================================
+  # downloads operand — split-cluster adaptations
+  #
+  # The download-server container is kept VERBATIM from ../origin (plain
+  # HTTP:8080). The only structural change is a TLS-terminating oauth-proxy
+  # sidecar on 8443 forwarding to 127.0.0.1:8080, because the HCP HAProxy
+  # router is SNI passthrough only (mode tcp) and cannot perform the upstream
+  # downloads Route's `edge` TLS termination. Auth is disabled in Phase 1, so
+  # the sidecar bypasses all auth (-skip-auth-regex='^/').
+  # ======================================================================
+  - target:
+      kind: Deployment
+      name: downloads
+    patch: |
+      # -- Fields the operator would set dynamically; static here since there's no operator --
+      - op: add
+        path: /spec/replicas
+        value: 2
+
+      # -- Same HCP-router egress NetworkPolicy requirement as the console
+      #    Deployment: the router pod can only reach pods carrying this label
+      #    (see the console patch above for the full rationale). --
+      - op: add
+        path: /spec/template/metadata/labels/hypershift.openshift.io~1request-serving-component
+        value: "true"
+
+      # -- Guest master-node scheduling fields; meaningless on the mgmt cluster --
+      - op: remove
+        path: /spec/template/spec/nodeSelector
+      - op: remove
+        path: /spec/template/spec/tolerations
+
+      # -- HCP-namespace priority-class convention (see console patch) --
+      - op: replace
+        path: /spec/template/spec/priorityClassName
+        value: hypershift-control-plane
+
+      # -- Drop the upstream `downloads` ServiceAccount: the download-server is
+      #    a plain static file server that makes ZERO Kubernetes API calls, and
+      #    no RBAC anywhere references this SA (the operator creates it purely
+      #    as ceremony, same generic controller as the console SA). Falling
+      #    back to the namespace `default` SA — exactly like the console pod —
+      #    also means the pod inherits `default`'s imagePullSecrets
+      #    ([pull-secret]) needed to pull the ocp-v4.0-art-dev images.
+      #    Otherwise the custom `downloads` SA has no pull secret -> 401. --
+      - op: remove
+        path: /spec/template/spec/serviceAccountName
+      - op: remove
+        path: /spec/template/spec/serviceAccount
+
+      # -- Pin the download-server container image. NOTE this is NOT the
+      #    console image: upstream sets the download-server container to
+      #    DOWNLOADS_IMAGE (subresource/deployment/deployment.go
+      #    withDownloadsContainerImage), which the operator manifests map to
+      #    the release payload's `cli-artifacts` tag — that image ships the oc
+      #    binaries at /usr/share/openshift/... that the server symlinks.
+      #    (Using the console image gives 404s on every binary.) Distinct
+      #    placeholder so the overlay's images: transform can point it at the
+      #    cli-artifacts digest. Upstream's ${IMAGE} literal can't be matched
+      #    by the transformer, so patch it directly here (same gotcha as
+      #    console). --
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: REPLACE_DOWNLOADS_IMAGE_REGISTRY:REPLACE_DOWNLOADS_IMAGE_TAG
+
+      # -- cli-artifacts defaults to running as root, but the pod
+      #    securityContext sets runAsNonRoot: true — so, like the tls-proxy
+      #    sidecar, the download-server container needs an explicit non-root
+      #    UID or the kubelet rejects it (CreateContainerConfigError). This
+      #    wasn't needed while (wrongly) using the console image, which
+      #    declares a non-root USER. --
+      - op: add
+        path: /spec/template/spec/containers/0/securityContext/runAsNonRoot
+        value: true
+      - op: add
+        path: /spec/template/spec/containers/0/securityContext/runAsUser
+        value: 1001
+
+      # -- Ephemeral-storage sizing. On startup the download-server generates a
+      #    .tar AND .zip for every oc binary (4 arch x linux/mac/windows, each
+      #    binary ~139 MB) into /tmp (emptyDir) — observed ~3.2 GB. Upstream
+      #    sets no ephemeral-storage request, so GKE Autopilot injects a 1Gi
+      #    default limit; the pod blows past it as the async archive threads
+      #    finish and Autopilot EVICTS it (clean SIGTERM -> the script's handler
+      #    exits 0 -> pod shows Completed), then the Deployment recreates it and
+      #    the cycle repeats — a continuous evict/replace loop, NOT node churn.
+      #    Set an explicit request/limit with headroom over the observed 3.2 GB. --
+      - op: add
+        path: /spec/template/spec/containers/0/resources/requests/ephemeral-storage
+        value: 6Gi
+      - op: add
+        path: /spec/template/spec/containers/0/resources/limits
+        value:
+          ephemeral-storage: 6Gi
+
+      # -- TLS-terminating sidecar: oauth-proxy in pure-passthrough mode
+      #    (auth disabled in Phase 1). Serves HTTPS:8443 -> http://127.0.0.1:8080.
+      #    Image is a transform-friendly placeholder rewritten by the overlay. --
+      - op: add
+        path: /spec/template/spec/containers/-
+        value:
+          name: tls-proxy
+          image: REPLACE_OAUTH_PROXY_IMAGE_REGISTRY:REPLACE_OAUTH_PROXY_IMAGE_TAG
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          args:
+            - -provider=openshift
+            - -https-address=:8443
+            - -http-address=
+            - -upstream=http://127.0.0.1:8080
+            - -tls-cert=/var/serving-cert/tls.crt
+            - -tls-key=/var/serving-cert/tls.key
+            # Auth is disabled in Phase 1: bypass authentication for every
+            # path so the proxy is a pure TLS terminator.
+            - -skip-auth-regex=^/
+            # oauth-proxy's config validation requires client-id/client-secret/
+            # cookie-secret up front for -provider=openshift, EVEN with
+            # -skip-auth-regex=^/ (every request bypasses auth, so these are
+            # never actually used to talk to an OAuth server or sign a cookie).
+            # Throwaway values just satisfy the validator; cookie-secret is
+            # patched to a real 32-byte value by the per-cluster overlay.
+            - -client-id=unused
+            - -client-secret=unused
+            - -cookie-secret=REPLACE_UNUSED_COOKIE_SECRET
+          volumeMounts:
+            - name: serving-cert
+              mountPath: /var/serving-cert
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 50Mi
+          securityContext:
+            # The oauth-proxy image defaults to running as root, but the pod
+            # securityContext (inherited verbatim from upstream) sets
+            # runAsNonRoot: true — so the sidecar must declare an explicit
+            # non-root UID or the kubelet refuses it (CreateContainerConfigError:
+            # "container has runAsNonRoot and image will run as root"). The
+            # download-server container doesn't need this: its image already
+            # declares a non-root USER. 1001 is arbitrary/high, fine under the
+            # namespace's restricted PSS on GKE (no OCP SCC uid-range here).
+            runAsNonRoot: true
+            runAsUser: 1001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          terminationMessagePolicy: FallbackToLogsOnError
+
+      # -- Serving-cert volume for the sidecar (reuses the same secret as
+      #    console; per-cluster overlay patches secretName to the wildcard). --
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: serving-cert
+          secret:
+            secretName: console-serving-cert
+            defaultMode: 416
+
+  - target:
+      kind: Service
+      name: downloads
+    patch: |
+      # Expose 8443 (the sidecar) instead of upstream's 80->8080. The CPO
+      # router's downloads backend dials this Service's ClusterIP:8443
+      # directly (v2/router/config.go: DownloadsRoute case -> DestinationPort
+      # 8443).
+      - op: replace
+        path: /spec/ports/0/name
+        value: https
+      - op: replace
+        path: /spec/ports/0/port
+        value: 8443
+      - op: replace
+        path: /spec/ports/0/targetPort
+        value: 8443
+
+  - target:
+      kind: Route
+      name: downloads
+    patch: |
+      $patch: delete
+      apiVersion: route.openshift.io/v1
+      kind: Route
+      metadata:
+        name: downloads

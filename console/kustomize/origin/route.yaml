@@ -1,0 +1,22 @@
+# Default 'console' route manifest.
+# The 'console' route will be pointing to the 'console' service.
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: console
+  namespace: openshift-console
+  annotations:
+    haproxy.router.openshift.io/timeout: 5m
+  labels:
+    app: console
+spec:
+  to:
+    kind: Service
+    name: console
+    weight: 100
+  port:
+    targetPort: https
+  tls:
+    termination: reencrypt
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

@@ -137,6 +137,54 @@ func MetricsProxyRoute(ns string) *routev1.Route {
 	}
 }
 
+// Console/downloads passthrough Routes for the Phase 1 control-plane-side
+// console (GCP only). CPO owns these, mirroring the KAS public/private route
+// model: the public route (external-dns -> public LB) exists under
+// Public/PublicAndPrivate; the -private route (labeled route-visibility=private
+// so external-dns ignores it, leaving the ExternalName service to own the
+// record -> PSC endpoint) exists under Private. Both target the same
+// user-facing host and the same in-namespace Service.
+
+// ConsoleRoute is the public console passthrough Route.
+func ConsoleRoute(ns string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "console",
+			Namespace: ns,
+		},
+	}
+}
+
+// ConsolePrivateRoute is the private console passthrough Route (Private mode).
+func ConsolePrivateRoute(ns string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "console-private",
+			Namespace: ns,
+		},
+	}
+}
+
+// DownloadsRoute is the public downloads passthrough Route.
+func DownloadsRoute(ns string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "downloads",
+			Namespace: ns,
+		},
+	}
+}
+
+// DownloadsPrivateRoute is the private downloads passthrough Route (Private mode).
+func DownloadsPrivateRoute(ns string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "downloads-private",
+			Namespace: ns,
+		},
+	}
+}
+
 func RouterPodDisruptionBudget(ns string) *policyv1.PodDisruptionBudget {
 	return &policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{

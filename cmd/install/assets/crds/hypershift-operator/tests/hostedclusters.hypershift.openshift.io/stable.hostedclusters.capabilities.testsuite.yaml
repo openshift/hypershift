@@ -416,6 +416,47 @@ tests:
             route: {}
     expectedError: "Ingress capability can only be disabled if Console capability is also disabled"
 
+  - name: When Ingress capability is disabled but Console capability is enabled on GCP it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities:
+          enabled:
+          - Console
+          disabled:
+          - Ingress
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
   - name: When both Ingress and Console capabilities are disabled it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
