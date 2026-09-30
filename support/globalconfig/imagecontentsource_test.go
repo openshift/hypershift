@@ -8,7 +8,6 @@ import (
 
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -210,12 +209,12 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 		idms               *configv1.ImageDigestMirrorSetList
 		icsp               *operatorv1alpha1.ImageContentSourcePolicyList
 		expectedRelease    *releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator
-		expectedMetadata   *imageregistry.RegistryClientImageMetadataProvider
+		expectedOverrides  map[string][]string
 		expectedError      error
 		expectedErrorMatch string
 	}{
 		{
-			name: "Test with ICSP and IDMS capabilities",
+			name: "When ICSP and IDMS are supported, it should initialize both providers with merged mirrors",
 			capChecker: &capabilities.MockCapabilityChecker{
 				MockHas: func(capability ...capabilities.CapabilityType) bool {
 					return slices.Contains(capability, capabilities.CapabilityICSP) || slices.Contains(capability, capabilities.CapabilityIDMS)
@@ -238,49 +237,29 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 						"registry2": "override2",
 					},
 				},
-				OpenShiftImageRegistryOverrides: map[string][]string{
-					"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
-					"registry2": {"mirror1", "mirror2"},
-					"registry1.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror1.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror1.sample.com/samplens/sampleimage@sha256:123456",
-					},
-					"registry2.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror2.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror2.sample.com/samplens/sampleimage@sha256:123456",
-					},
-					"registry3.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
-					},
-				},
 			},
-			expectedMetadata: &imageregistry.RegistryClientImageMetadataProvider{
-				OpenShiftImageRegistryOverrides: map[string][]string{
-					"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
-					"registry2": {"mirror1", "mirror2"},
-					"registry1.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror1.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror1.sample.com/samplens/sampleimage@sha256:123456",
-					},
-					"registry2.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror2.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror2.sample.com/samplens/sampleimage@sha256:123456",
-					},
-					"registry3.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
-					},
+			expectedOverrides: map[string][]string{
+				"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
+				"registry2": {"mirror1", "mirror2"},
+				"registry1.sample.com/samplens/sampleimage@sha256:123456": {
+					"mirror1.sample.com/samplens/sampleimage@sha256:123456",
+					"mirror1.sample.com/samplens/sampleimage@sha256:123456",
+				},
+				"registry2.sample.com/samplens/sampleimage@sha256:123456": {
+					"mirror2.sample.com/samplens/sampleimage@sha256:123456",
+					"mirror2.sample.com/samplens/sampleimage@sha256:123456",
+				},
+				"registry3.sample.com/samplens/sampleimage@sha256:123456": {
+					"mirror3.sample.com/samplens/sampleimage@sha256:123456",
+					"mirror3.sample.com/samplens/sampleimage@sha256:123456",
+					"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
+					"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
 				},
 			},
 			expectedError: nil,
 		},
 		{
-			name: "Test without ICSP and IDMS capabilities",
+			name: "When ICSP and IDMS are unsupported, it should initialize both providers without mirrors",
 			capChecker: &capabilities.MockCapabilityChecker{
 				MockHas: func(capability ...capabilities.CapabilityType) bool {
 					return false
@@ -301,10 +280,6 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 						"registry2": "override2",
 					},
 				},
-				OpenShiftImageRegistryOverrides: nil,
-			},
-			expectedMetadata: &imageregistry.RegistryClientImageMetadataProvider{
-				OpenShiftImageRegistryOverrides: nil,
 			},
 			expectedError: nil,
 		},
@@ -343,10 +318,53 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 			}
 
 			// Check release provider
-			g.Expect(provider.GetReleaseProvider()).To(Equal(tc.expectedRelease))
+			g.Expect(provider.ReleaseProvider.Delegate).To(Equal(tc.expectedRelease.Delegate))
+			g.Expect(provider.GetReleaseProvider().GetOpenShiftImageRegistryOverrides()).To(Equal(tc.expectedOverrides))
 
 			// Check image metadata provider
-			g.Expect(provider.GetMetadataProvider()).To(Equal(tc.expectedMetadata))
+			g.Expect(provider.GetMetadataProvider()).To(BeIdenticalTo(provider.MetadataProvider))
+			g.Expect(provider.MetadataProvider.GetOpenShiftImageRegistryOverrides()).To(Equal(tc.expectedOverrides))
 		})
 	}
+}
+
+func TestCommonRegistryProvider_Reconcile(t *testing.T) {
+	t.Run("When ICSP and IDMS capabilities are present, it should publish one merged snapshot to both providers", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx := t.Context()
+		idms := createFakeIDMS()
+		icsp := createFakeICSP()
+		var objects []client.Object
+		for i := range idms.Items {
+			objects = append(objects, &idms.Items[i])
+		}
+		for i := range icsp.Items {
+			objects = append(objects, &icsp.Items[i])
+		}
+
+		client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+		capChecker := &capabilities.MockCapabilityChecker{
+			MockHas: func(capability ...capabilities.CapabilityType) bool {
+				return slices.Contains(capability, capabilities.CapabilityICSP) || slices.Contains(capability, capabilities.CapabilityIDMS)
+			},
+		}
+		provider, err := NewCommonRegistryProvider(ctx, capChecker, client, nil)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(provider.Reconcile(ctx, client)).To(Succeed())
+		expected := map[string][]string{
+			"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
+			"registry2": {"mirror1", "mirror2"},
+			"registry1.sample.com/samplens/sampleimage@sha256:123456": {"mirror1.sample.com/samplens/sampleimage@sha256:123456", "mirror1.sample.com/samplens/sampleimage@sha256:123456"},
+			"registry2.sample.com/samplens/sampleimage@sha256:123456": {"mirror2.sample.com/samplens/sampleimage@sha256:123456", "mirror2.sample.com/samplens/sampleimage@sha256:123456"},
+			"registry3.sample.com/samplens/sampleimage@sha256:123456": {
+				"mirror3.sample.com/samplens/sampleimage@sha256:123456",
+				"mirror3.sample.com/samplens/sampleimage@sha256:123456",
+				"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
+				"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
+			},
+		}
+		g.Expect(provider.ReleaseProvider.GetOpenShiftImageRegistryOverrides()).To(Equal(expected))
+		g.Expect(provider.MetadataProvider.GetOpenShiftImageRegistryOverrides()).To(Equal(expected))
+	})
 }
