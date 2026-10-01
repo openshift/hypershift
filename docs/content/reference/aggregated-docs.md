@@ -25702,25 +25702,37 @@ permission to use it at admission time.
 
 Keys and values must each be 1–63 characters long and begin and end with an
 ASCII letter or digit. Keys may also contain `.`, `_`, and `-`; values accept
-additional punctuation and spaces. When omitted, no tags are configured. If
-present, the list must contain 1–50 entries. **Each short key must be unique
-across the entire list, even when the tags have different parents.** Thus an
-organization and project tag with the same short key cannot both be configured
-with the current guest Infrastructure API. The exact accepted characters are
-enforced by the HostedCluster API. Google Cloud's per-resource 50-tag limit may
-also include tags attached by other components; HyperShift does not add its own
-tags through this field.
+additional punctuation and spaces. When omitted, no tags are applied through
+this setting. If present, the list must contain 1–50 entries. **Each short key
+must be unique across the entire list, even when the tags have different
+parents.** Thus an organization and project tag with the same short key cannot
+both be configured with the current guest Infrastructure API. The HostedCluster
+API enforces the accepted characters.
 
-HyperShift copies these tags to the guest cluster's
-`Infrastructure/cluster.status.platformStatus.gcp.resourceTags`, using the
-explicit or project-derived `parentID`. Guest components such as the GCP PD CSI
-driver and image registry operator consume that field for newly created
-persistent disks and the registry bucket. The supported guest Infrastructure
-field is available in default OpenShift releases from 4.17 onward; older
-default guest CRDs can silently prune it. HyperShift does not create
-TagKeys or TagValues, and this propagation does **not** create TagBindings for
-management-side resources created by HyperShift or CAPG. Those bindings are
-separate future work.
+The configured tags currently apply to these resources:
+
+| Tagged resource | When tagging is attempted |
+| --- | --- |
+| GCP PD CSI persistent disks for guest PersistentVolumes | When a new disk is provisioned |
+| Image registry bucket | During bucket setup, when the image registry is enabled |
+
+They are **not** applied by this setting to worker VMs or their boot disks,
+Private Service Connect forwarding rules or IP addresses, firewall rules, DNS
+resources, or other GCP resources created by HyperShift or CAPG. Broader
+management-side resource tagging is separate work. HyperShift does not create
+TagKeys or TagValues.
+
+HyperShift does not add a separate system Resource Manager tag to the two
+supported resource types, so it does not reserve a slot for one in the
+`resourceTags` list. Google Cloud allows at most 50 tags attached to each
+resource; tags attached by other actors also use that limit. Accepting 50
+entries in the HostedCluster API therefore does not guarantee that all 50 can
+be applied to a target resource. See Google Cloud tag
+limits.
+
+HyperShift passes these tags to the guest cluster for the two components above.
+The required guest configuration is available in default OpenShift releases
+from 4.17 onward; older default guest CRDs can silently discard it.
 
 Configure tags when creating the HostedCluster: `resourceTags` cannot be added,
 removed, or changed afterward. This installation-time restriction is temporary
@@ -49755,23 +49767,28 @@ For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/la
 </td>
 <td>
 <em>(Optional)</em>
-<p>resourceTags are pre-existing, project- or organization-defined Google
-Cloud Resource Manager tags. HyperShift copies them to the guest Infrastructure
-status, where the GCP PD CSI driver and image registry operator can apply
-them to resources they create. This does not tag GCP resources created by
-HyperShift or CAPG on the management side. HyperShift does not create
-TagKeys, TagValues, or management-side TagBindings.
-The parentID of a tag defaults to the GCP platform project if omitted.
-Every short key must be unique across the list, even when parentIDs differ,
-because the guest Infrastructure API identifies tags by short key only.
-Admission validates tag syntax but does not verify that tags exist or that
-guest service accounts can use them. HyperShift does not report a dedicated
-tag-validation condition or block HostedCluster reconciliation for such
-runtime failures; the guest components report failures when applying tags.</p>
+<p>resourceTags are pre-existing Google Cloud Resource Manager tags to apply
+to newly provisioned GCP PD CSI persistent disks and, when enabled, the
+image registry bucket. They are not applied to worker VMs, boot disks,
+Private Service Connect resources, firewall rules, DNS resources, or other
+GCP resources created by HyperShift or CAPG.</p>
+<p>When omitted, no tags are applied through this setting. When specified,
+the list must contain 1 to 50 entries, and each short key must be unique
+across the list, even when the tags have different parents. A tag&rsquo;s
+parentID defaults to the HostedCluster&rsquo;s GCP project if omitted.
+HyperShift does not add a separate system Resource Manager tag to these
+disks or the bucket, so it does not reserve a slot in this list. Google
+Cloud&rsquo;s per-resource limit also includes tags attached by other actors;
+accepting 50 entries does not guarantee all tags can be applied.</p>
+<p>The referenced tags must already exist and the guest service accounts
+must have permission to use them. Admission does not verify either.
+HyperShift does not report a dedicated tag-validation condition or block
+HostedCluster reconciliation for such runtime failures; the guest
+components report failures when applying tags.</p>
 <p>Tags may only be configured during installation. Unlike resourceLabels,
 this field cannot be added, removed, or changed after creation because the
-guest Infrastructure API is also immutable. This restriction may be relaxed
-once update reconciliation is implemented.</p>
+guest cluster also treats configured tags as immutable. This restriction
+may be relaxed once update reconciliation is implemented.</p>
 </td>
 </tr>
 <tr>
@@ -50104,11 +50121,9 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 <a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
 </p>
 <p>
-<p>GCPResourceTag identifies a pre-existing Google Cloud Resource Manager tag.
-The TagKey and TagValue must be defined in the customer project or an
-organization. HyperShift propagates these tags to the guest Infrastructure
-status for guest consumers;
-it does not create TagBindings for management-side resources.
+<p>GCPResourceTag selects a pre-existing Google Cloud Resource Manager tag by
+its parent, short key, and short value. The tag must be defined in the
+HostedCluster project or an organization before the cluster is created.
 See <a href="https://cloud.google.com/resource-manager/docs/tags/tags-overview">https://cloud.google.com/resource-manager/docs/tags/tags-overview</a>.</p>
 </p>
 <table>
