@@ -2,12 +2,14 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	configv1 "github.com/openshift/api/config/v1"
+	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 )
 
 func TestTLSArgs(t *testing.T) {
@@ -20,6 +22,17 @@ func TestTLSArgs(t *testing.T) {
 		ciphers := OpenSSLToIANACipherSuites(profile.Ciphers)
 		if len(ciphers) > 0 {
 			args = append(args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(ciphers, ",")))
+		}
+		curveIDs, unrecognizedGroups := libgocrypto.TLSGroupsToCurveIDs(profile.Groups)
+		if len(unrecognizedGroups) != 0 {
+			t.Fatalf("unexpected unrecognized groups in %s profile: %v", profileType, unrecognizedGroups)
+		}
+		curvePreferences := make([]string, 0, len(curveIDs))
+		for _, curveID := range curveIDs {
+			curvePreferences = append(curvePreferences, strconv.Itoa(int(curveID)))
+		}
+		if len(curvePreferences) > 0 {
+			args = append(args, fmt.Sprintf("--tls-curve-preferences=%s", strings.Join(curvePreferences, ",")))
 		}
 		return args
 	}
@@ -37,14 +50,14 @@ func TestTLSArgs(t *testing.T) {
 			expectedArgs: buildExpectedArgs(configv1.TLSProfileIntermediateType),
 		},
 		{
-			name: "When using Modern profile it should return only min-version",
+			name: "When using Modern profile it should return TLS settings including groups",
 			profile: &configv1.TLSSecurityProfile{
 				Type: configv1.TLSProfileModernType,
 			},
 			expectedArgs: buildExpectedArgs(configv1.TLSProfileModernType),
 		},
 		{
-			name: "When using Intermediate profile it should return min-version and cipher-suites",
+			name: "When using Intermediate profile it should return TLS settings including groups",
 			profile: &configv1.TLSSecurityProfile{
 				Type: configv1.TLSProfileIntermediateType,
 			},
@@ -73,12 +86,44 @@ func TestTLSArgs(t *testing.T) {
 			},
 		},
 		{
+			name: "When using Custom profile with groups it should return curve preferences",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Groups: []configv1.TLSGroup{
+							configv1.TLSGroupX25519,
+							configv1.TLSGroupSecP256r1,
+						},
+					},
+				},
+			},
+			expectedArgs: []string{
+				"--tls-min-version=VersionTLS12",
+				"--tls-curve-preferences=29,23",
+			},
+		},
+		{
 			name: "When TLS profile is Custom with nil Custom field, it should return error",
 			profile: &configv1.TLSSecurityProfile{
 				Type: configv1.TLSProfileCustomType,
 			},
 			expectError:       true,
 			expectedErrSubstr: "Custom but Custom field is nil",
+		},
+		{
+			name: "When Custom profile contains an unknown group, it should return error",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						Groups: []configv1.TLSGroup{"unknown"},
+					},
+				},
+			},
+			expectError:       true,
+			expectedErrSubstr: "unrecognized TLS groups",
 		},
 		{
 			name: "When using Old profile it should return min-version and cipher-suites",

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 01f976afcc5357164bfea66ffb12a3852dd62aadc3f599b85e0c12a6479d9031
+    hypershift.openshift.io/desired-state-hash: 47c329ca58541e348dd4e22b6537cbd1f49927954d212c1c112581c364ede888
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: powervs-cloud-controller-manager
@@ -74,6 +74,7 @@ spec:
         - --kubeconfig=/etc/kubernetes/kubeconfig
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --tls-curve-preferences=4588,29,23,24
         command:
         - /bin/ibm-cloud-controller-manager
         env:

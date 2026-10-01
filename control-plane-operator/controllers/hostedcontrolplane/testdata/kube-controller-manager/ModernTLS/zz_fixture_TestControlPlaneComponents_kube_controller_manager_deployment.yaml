@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: a33d8f8397fe193005151a0898be481e62e42b578ddab540a134275ccb881a8d
+    hypershift.openshift.io/desired-state-hash: d86fa27b45d93c1892530c8c976d452e33eba1d26a4c765e16687d91b2f1f8db
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-controller-manager
@@ -116,6 +116,7 @@ spec:
         - --allocate-node-cidrs=false
         - --node-monitor-grace-period=50s
         - --tls-min-version=VersionTLS13
+        - --tls-curve-preferences=4588,29,23,24
         - --feature-gates=AWSEFSDriverVolumeMetrics=true
         - --feature-gates=AdditionalRoutingCapabilities=true
         - --feature-gates=AdminNetworkPolicy=true

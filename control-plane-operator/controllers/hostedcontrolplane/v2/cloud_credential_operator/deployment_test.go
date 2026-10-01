@@ -274,6 +274,7 @@ func TestAdaptDeploymentTLS(t *testing.T) {
 			expectedArgs: append(baseArgs,
 				"--tls-min-version=VersionTLS12",
 				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+				"--tls-curve-preferences=4588,29,23,24",
 			),
 		},
 		{
@@ -285,6 +286,7 @@ func TestAdaptDeploymentTLS(t *testing.T) {
 			expectedArgs: append(baseArgs,
 				"--tls-min-version=VersionTLS12",
 				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+				"--tls-curve-preferences=4588,29,23,24",
 			),
 		},
 		{
@@ -293,7 +295,7 @@ func TestAdaptDeploymentTLS(t *testing.T) {
 			tlsProfile: &configv1.TLSSecurityProfile{
 				Type: configv1.TLSProfileModernType,
 			},
-			expectedArgs: append(baseArgs, "--tls-min-version=VersionTLS13"),
+			expectedArgs: append(baseArgs, "--tls-min-version=VersionTLS13", "--tls-curve-preferences=4588,29,23,24"),
 		},
 		{
 			name:           "When using Custom TLS profile it should append custom TLS args for 4.23+",
@@ -334,6 +336,7 @@ func TestAdaptDeploymentTLS(t *testing.T) {
 			expectedArgs: append(baseArgs,
 				"--tls-min-version=VersionTLS12",
 				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+				"--tls-curve-preferences=4588,29,23,24",
 			),
 		},
 		{
@@ -342,7 +345,7 @@ func TestAdaptDeploymentTLS(t *testing.T) {
 			tlsProfile: &configv1.TLSSecurityProfile{
 				Type: configv1.TLSProfileModernType,
 			},
-			expectedArgs: append(baseArgs, "--tls-min-version=VersionTLS13"),
+			expectedArgs: append(baseArgs, "--tls-min-version=VersionTLS13", "--tls-curve-preferences=4588,29,23,24"),
 		},
 		{
 			name:           "When using Old TLS profile it should append old TLS args for 4.23+",
@@ -353,6 +356,7 @@ func TestAdaptDeploymentTLS(t *testing.T) {
 			expectedArgs: append(baseArgs,
 				"--tls-min-version=VersionTLS10",
 				"--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
+				"--tls-curve-preferences=4588,29,23,24",
 			),
 		},
 		{
