@@ -1,14 +1,29 @@
 package azure
 
 import (
+	"context"
+
 	hypershiftazure "github.com/openshift/hypershift/cmd/infra/azure"
 	"github.com/openshift/hypershift/cmd/log"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
 
+// createInfraFunc creates the Azure infrastructure described by opts. It is a
+// parameter of newCreateCommand so tests can exercise the command's control
+// flow -- flag binding, validation ordering and error propagation -- without
+// reaching Azure.
+type createInfraFunc func(ctx context.Context, opts *hypershiftazure.CreateInfraOptions, l logr.Logger) (*hypershiftazure.CreateInfraOutput, error)
+
 // NewCreateCommand creates the Azure infrastructure create command for the product CLI
 func NewCreateCommand() *cobra.Command {
+	return newCreateCommand(func(ctx context.Context, opts *hypershiftazure.CreateInfraOptions, l logr.Logger) (*hypershiftazure.CreateInfraOutput, error) {
+		return opts.Run(ctx, l)
+	})
+}
+
+func newCreateCommand(createInfra createInfraFunc) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "azure",
 		Short:        "Creates Azure infrastructure resources for a HostedCluster",
@@ -27,7 +42,7 @@ func NewCreateCommand() *cobra.Command {
 		if err := opts.Validate(); err != nil {
 			return err
 		}
-		if _, err := opts.Run(cmd.Context(), l); err != nil {
+		if _, err := createInfra(cmd.Context(), opts, l); err != nil {
 			l.Error(err, "Failed to create infrastructure")
 			return err
 		}
