@@ -32,6 +32,7 @@ import (
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // RunCommandInPod returns an error rather than failing directly, allowing callers inside Eventually() to retry.
@@ -96,6 +97,50 @@ func ValidateMetricPresence(metricFamilies map[string]*dto.MetricFamily, query, 
 		return fmt.Errorf("expected 0 results for metric %q, found %d", metricName, len(labelPairs))
 	}
 	return nil
+}
+
+// RunCommandInPodByLabel finds the first pod with app:<component> label in the
+// given namespace and runs the command in it. It preserves the label-based pod
+// lookup semantics of the v1 RunCommandInPod helper.
+func RunCommandInPodByLabel(ctx context.Context, crClient crclient.Client, namespace, component, containerName string, command ...string) (string, error) {
+	podList := &corev1.PodList{}
+	if err := crClient.List(ctx, podList, crclient.InNamespace(namespace), crclient.MatchingLabels{"app": component}); err != nil {
+		return "", fmt.Errorf("failed to list pods for component %q: %w", component, err)
+	}
+	if len(podList.Items) == 0 {
+		return "", fmt.Errorf("no pods found for component %q in namespace %q", component, namespace)
+	}
+	restConfig, err := GetConfig()
+	if err != nil {
+		return "", fmt.Errorf("failed to get REST config: %w", err)
+	}
+	kubeClient, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to create kubernetes client: %w", err)
+	}
+	return RunCommandInPod(ctx, kubeClient, restConfig, namespace, podList.Items[0].Name, containerName, command...)
+}
+
+// GetMetricsFromPodByLabel finds the first pod with app:<component> label in
+// the given namespace and fetches Prometheus metrics from the specified port.
+// It preserves the label-based pod lookup semantics of the v1 GetMetricsFromPod helper.
+func GetMetricsFromPodByLabel(ctx context.Context, crClient crclient.Client, namespace, component, containerName string, port int) (map[string]*dto.MetricFamily, error) {
+	podList := &corev1.PodList{}
+	if err := crClient.List(ctx, podList, crclient.InNamespace(namespace), crclient.MatchingLabels{"app": component}); err != nil {
+		return nil, fmt.Errorf("failed to list pods for component %q: %w", component, err)
+	}
+	if len(podList.Items) == 0 {
+		return nil, fmt.Errorf("no pods found for component %q in namespace %q", component, namespace)
+	}
+	restConfig, err := GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get REST config: %w", err)
+	}
+	kubeClient, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
+	}
+	return GetMetricsFromPod(ctx, kubeClient, restConfig, namespace, podList.Items[0].Name, containerName, port)
 }
 
 func extractMetricLabels(metricFamilies map[string]*dto.MetricFamily, metric, labelKey, labelValue string) []*dto.LabelPair {

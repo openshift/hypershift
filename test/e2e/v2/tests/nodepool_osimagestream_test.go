@@ -27,7 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -100,7 +100,7 @@ func NodePoolOSImageStreamRHEL10RuncRejectionTest(getTestCtx internal.TestContex
 
 		hc, err := testCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred())
-		testCtx.SkipIfVersionBelow(e2eutil.Version50)
+		testCtx.SkipIfVersionBelow(v2util.Version50)
 
 		ctx := testCtx.Context
 
@@ -110,7 +110,7 @@ func NodePoolOSImageStreamRHEL10RuncRejectionTest(getTestCtx internal.TestContex
 		// Create a ConfigMap with a ContainerRuntimeConfig that sets defaultRuntime to runc.
 		runcConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      e2eutil.SimpleNameGenerator.GenerateName(hc.Name + "-runc-ctrcfg-"),
+				Name:      v2util.SimpleNameGenerator.GenerateName(hc.Name + "-runc-ctrcfg-"),
 				Namespace: hc.Namespace,
 			},
 			Data: map[string]string{
@@ -159,8 +159,8 @@ spec:
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolValidMachineConfigConditionType,
 					Status: metav1.ConditionFalse,
 					Reason: hyperv1.NodePoolValidationFailedReason,
@@ -184,7 +184,7 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 		Expect(err).NotTo(HaveOccurred())
 		// CI always targets OCP 5.0+, but guard defensively in case
 		// the test is ever run against an older cluster.
-		testCtx.SkipIfVersionBelow(e2eutil.Version50)
+		testCtx.SkipIfVersionBelow(v2util.Version50)
 		ctx := testCtx.Context
 
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
@@ -210,7 +210,7 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
+			[]v2util.Predicate[*hyperv1.NodePool]{
 				nodesInfoPopulatedPredicate(),
 			},
 			v2util.WithTimeout(10*time.Minute),
@@ -229,7 +229,7 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
+			[]v2util.Predicate[*hyperv1.NodePool]{
 				osImageStreamSetPredicate(),
 			},
 			v2util.WithTimeout(10*time.Minute),
@@ -300,7 +300,7 @@ func verifyNodeOSMatchesStream(testCtx *internal.TestContext, np *hyperv1.NodePo
 			err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 			return pool, err
 		},
-		[]e2eutil.Predicate[*hyperv1.NodePool]{allNodesReadyPredicate()},
+		[]v2util.Predicate[*hyperv1.NodePool]{allNodesReadyPredicate()},
 		v2util.WithTimeout(45*time.Minute),
 		v2util.WithInterval(30*time.Second),
 	)).To(Succeed())
@@ -342,7 +342,7 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 		Expect(err).NotTo(HaveOccurred())
 
 		// rhel-10 osImageStream is only supported on OCP 5+
-		testCtx.SkipIfVersionBelow(e2eutil.Version50)
+		testCtx.SkipIfVersionBelow(v2util.Version50)
 
 		ctx := testCtx.Context
 
@@ -359,7 +359,7 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
+			[]v2util.Predicate[*hyperv1.NodePool]{
 				osImageStreamSetPredicate(),
 			},
 			v2util.WithTimeout(10*time.Minute),
@@ -408,7 +408,7 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 // status.nodesInfo.nodeVersions has at least one entry with a non-zero ready count.
 // This confirms that CAPI Machines have NodeInfo populated (the controller uses
 // the same Machine list and NodeInfo check for both nodesInfo and osImageStream).
-func nodesInfoPopulatedPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
+func nodesInfoPopulatedPredicate() v2util.Predicate[*hyperv1.NodePool] {
 	return func(pool *hyperv1.NodePool) (bool, string, error) {
 		versions := pool.Status.NodesInfo.NodeVersions
 		if len(versions) == 0 {
@@ -429,7 +429,7 @@ func nodesInfoPopulatedPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
 
 // allNodesReadyPredicate returns a predicate that validates that all of a NodePool's
 // expected replicas are ready, as reported by status.nodesInfo.nodeVersions.
-func allNodesReadyPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
+func allNodesReadyPredicate() v2util.Predicate[*hyperv1.NodePool] {
 	return func(pool *hyperv1.NodePool) (bool, string, error) {
 		var expected int32
 		if pool.Spec.Replicas != nil {
@@ -457,7 +457,7 @@ func allNodesReadyPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
 
 // osImageStreamSetPredicate returns a predicate that validates that a NodePool's
 // status.osImageStream.name is set to a recognized RHEL stream value.
-func osImageStreamSetPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
+func osImageStreamSetPredicate() v2util.Predicate[*hyperv1.NodePool] {
 	return func(pool *hyperv1.NodePool) (bool, string, error) {
 		name := pool.Status.OSImageStream.Name
 		if name == "" {
@@ -474,7 +474,7 @@ func osImageStreamSetPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
 
 // conditionMessageContains returns a predicate that checks whether a NodePool
 // condition of the given type has a message containing the specified substring.
-func conditionMessageContains(condType string, substring string) e2eutil.Predicate[*hyperv1.NodePool] {
+func conditionMessageContains(condType string, substring string) v2util.Predicate[*hyperv1.NodePool] {
 	return func(pool *hyperv1.NodePool) (bool, string, error) {
 		for _, cond := range pool.Status.Conditions {
 			if cond.Type == condType {
@@ -529,7 +529,7 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
+			[]v2util.Predicate[*hyperv1.NodePool]{
 				osImageStreamSetPredicate(),
 			},
 			v2util.WithTimeout(10*time.Minute),
@@ -563,7 +563,7 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
+			[]v2util.Predicate[*hyperv1.NodePool]{
 				func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
 					hash, ok := pool.Annotations[nodePoolAnnotationCurrentConfig]
 					if !ok || hash == "" {
@@ -640,8 +640,8 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
 					Status: metav1.ConditionFalse,
 				}),
@@ -672,8 +672,8 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(expectedStream),
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.OSImageStreamPredicate(expectedStream),
 			},
 			v2util.WithTimeout(10*time.Minute),
 			v2util.WithInterval(15*time.Second),
@@ -750,8 +750,8 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
 			},
 			v2util.WithTimeout(10*time.Minute),
 			v2util.WithInterval(15*time.Second),
@@ -769,8 +769,8 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
 					Status: metav1.ConditionFalse,
 				}),
@@ -800,8 +800,8 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL10),
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL10),
 			},
 			v2util.WithTimeout(10*time.Minute),
 			v2util.WithInterval(15*time.Second),
@@ -878,8 +878,8 @@ func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContext
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
 			},
 			v2util.WithTimeout(10*time.Minute),
 			v2util.WithInterval(15*time.Second),
@@ -897,8 +897,8 @@ func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContext
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
 					Status: metav1.ConditionFalse,
 				}),
@@ -928,8 +928,8 @@ func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContext
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
 			},
 			v2util.WithTimeout(10*time.Minute),
 			v2util.WithInterval(15*time.Second),

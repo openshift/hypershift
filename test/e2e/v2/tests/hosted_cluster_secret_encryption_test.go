@@ -18,14 +18,13 @@ package tests
 
 import (
 	"fmt"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -94,7 +93,7 @@ func KMSFunctionalValidationTest(getTestCtx internal.TestContextGetter) {
 			testCtx := getTestCtx()
 			ctx := testCtx.Context
 
-			testCtx.SkipIfVersionBelow(e2eutil.Version417)
+			testCtx.SkipIfVersionBelow(v2util.Version417)
 
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -133,8 +132,8 @@ func KMSFunctionalValidationTest(getTestCtx internal.TestContextGetter) {
 				secretEtcdKey,
 			}
 
-			output, err := e2eutil.RunCommandInPod(ctx, testCtx.MgmtClient, "etcd",
-				testCtx.ControlPlaneNamespace, command, "etcd", 5*time.Minute)
+			output, err := v2util.RunCommandInPodByLabel(ctx, testCtx.MgmtClient,
+				testCtx.ControlPlaneNamespace, "etcd", "etcd", command...)
 			Expect(err).NotTo(HaveOccurred(), "failed to execute etcdctl command")
 			Expect(output).NotTo(BeEmpty(), "etcdctl returned empty output for key %s", secretEtcdKey)
 			Expect(output).To(ContainSubstring("k8s:enc:kms:v2"),

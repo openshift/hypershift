@@ -31,7 +31,6 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -151,7 +150,7 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 
 		mcConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      e2eutil.SimpleNameGenerator.GenerateName("custom-mc-"),
+				Name:      v2util.SimpleNameGenerator.GenerateName("custom-mc-"),
 				Namespace: hc.Namespace,
 			},
 			Data: map[string]string{"config": string(serializedMC)},
@@ -225,7 +224,7 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 
 		tuningCM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      e2eutil.SimpleNameGenerator.GenerateName("hugepages-tuned-"),
+				Name:      v2util.SimpleNameGenerator.GenerateName("hugepages-tuned-"),
 				Namespace: hc.Namespace,
 			},
 			Data: map[string]string{tuningConfigKey: hugepagesTunedYAML},
@@ -289,7 +288,7 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 
 		tuningCM := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      e2eutil.SimpleNameGenerator.GenerateName("hugepages-inplace-"),
+				Name:      v2util.SimpleNameGenerator.GenerateName("hugepages-inplace-"),
 				Namespace: hc.Namespace,
 			},
 			Data: map[string]string{tuningConfigKey: hugepagesTunedYAML},
@@ -376,8 +375,8 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
 					Status: metav1.ConditionTrue,
 				}),
@@ -392,8 +391,8 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
 					Status: metav1.ConditionFalse,
 				}),
@@ -457,8 +456,8 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
 					Status: metav1.ConditionTrue,
 				}),
@@ -473,8 +472,8 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
 					Status: metav1.ConditionFalse,
 				}),
@@ -553,8 +552,8 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
 					Status: metav1.ConditionTrue,
 				}),
@@ -570,8 +569,8 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
 					Status: metav1.ConditionFalse,
 				}),
@@ -673,7 +672,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 
 		hc, err := testCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred())
-		testCtx.SkipIfVersionBelow(e2eutil.Version418)
+		testCtx.SkipIfVersionBelow(v2util.Version418)
 
 		hcClient, err := testCtx.GetHostedClusterClient(hc)
 		Expect(err).NotTo(HaveOccurred())
@@ -699,7 +698,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 
 		kcConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      e2eutil.SimpleNameGenerator.GenerateName("kc-test-"),
+				Name:      v2util.SimpleNameGenerator.GenerateName("kc-test-"),
 				Namespace: np.Namespace,
 			},
 			Data: map[string]string{configKey: kubeletConfig1YAML},
@@ -731,13 +730,13 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				}
 				return configMaps, err
 			},
-			[]e2eutil.Predicate[[]*corev1.ConfigMap]{
+			[]v2util.Predicate[[]*corev1.ConfigMap]{
 				func(configMaps []*corev1.ConfigMap) (done bool, reasons string, err error) {
 					want, got := 1, len(configMaps)
 					return want == got, fmt.Sprintf("expected %d KubeletConfig ConfigMaps, got %d", want, got), nil
 				},
 			},
-			[]e2eutil.Predicate[*corev1.ConfigMap]{
+			[]v2util.Predicate[*corev1.ConfigMap]{
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
 					want := netutil.ShortenName(kcConfigMap.Name, np.Name, npconst.QualifiedNameMaxLength)
 					if want != cm.Name {
@@ -785,7 +784,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				}
 				return configMaps, err
 			},
-			[]e2eutil.Predicate[[]*corev1.ConfigMap]{
+			[]v2util.Predicate[[]*corev1.ConfigMap]{
 				func(configMaps []*corev1.ConfigMap) (done bool, reasons string, err error) {
 					want, got := 1, len(configMaps)
 					return want == got, fmt.Sprintf("expected %d KubeletConfig ConfigMaps, got %d", want, got), nil
@@ -807,7 +806,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 
 		hc, err := testCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred())
-		version := testCtx.SkipIfVersionBelow(e2eutil.Version418)
+		version := testCtx.SkipIfVersionBelow(v2util.Version418)
 
 		hcClient, err := testCtx.GetHostedClusterClient(hc)
 		Expect(err).NotTo(HaveOccurred())
@@ -840,7 +839,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 		// Create additional trust bundle ConfigMap
 		trustBundle := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      e2eutil.SimpleNameGenerator.GenerateName("trust-bundle-"),
+				Name:      v2util.SimpleNameGenerator.GenerateName("trust-bundle-"),
 				Namespace: hc.Namespace,
 			},
 			Data: map[string]string{"ca-bundle.crt": "dummy"},
@@ -881,8 +880,8 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingConfigConditionType,
 					Status: metav1.ConditionTrue,
 				}),
@@ -896,12 +895,12 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingConfigConditionType,
 					Status: metav1.ConditionFalse,
 				}),
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolAllNodesHealthyConditionType,
 					Status: metav1.ConditionTrue,
 				}),
@@ -922,7 +921,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 				err := hcClient.Get(ctx, crclient.ObjectKeyFromObject(userCAConfigMap), cm)
 				return cm, err
 			},
-			[]e2eutil.Predicate[*corev1.ConfigMap]{
+			[]v2util.Predicate[*corev1.ConfigMap]{
 				func(obj *corev1.ConfigMap) (bool, string, error) { return true, "exists", nil },
 			},
 			v2util.WithInterval(defaultPollInterval), v2util.WithTimeout(guestUserCABundlePropagationTimeout),
@@ -948,7 +947,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(cpoDeployment), deploy)
 				return deploy, err
 			},
-			[]e2eutil.Predicate[*appsv1.Deployment]{
+			[]v2util.Predicate[*appsv1.Deployment]{
 				func(obj *appsv1.Deployment) (bool, string, error) {
 					for _, volume := range obj.Spec.Template.Spec.Volumes {
 						if volume.ConfigMap != nil && volume.ConfigMap.Name == "trusted-ca" {
@@ -971,8 +970,8 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingConfigConditionType,
 					Status: metav1.ConditionTrue,
 				}),
@@ -986,12 +985,12 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]v2util.Predicate[*hyperv1.NodePool]{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingConfigConditionType,
 					Status: metav1.ConditionFalse,
 				}),
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+				v2util.ConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolAllNodesHealthyConditionType,
 					Status: metav1.ConditionTrue,
 				}),
@@ -1000,7 +999,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 		)).To(Succeed())
 
 		// Verify user-ca-bundle is deleted from the hosted cluster (4.22+)
-		if version.GE(e2eutil.Version422) {
+		if version.GE(v2util.Version422) {
 			Expect(v2util.EventuallyNotFound(ctx, hcClient, userCAConfigMap,
 				v2util.WithInterval(10*time.Second), v2util.WithTimeout(5*time.Minute),
 			)).To(Succeed())
@@ -1043,7 +1042,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 
 		ppConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      e2eutil.SimpleNameGenerator.GenerateName("pp-test-"),
+				Name:      v2util.SimpleNameGenerator.GenerateName("pp-test-"),
 				Namespace: np.Namespace,
 			},
 			Data: map[string]string{tuningConfigKey: performanceProfileYAML},
@@ -1076,13 +1075,13 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 				}
 				return configMaps, err
 			},
-			[]e2eutil.Predicate[[]*corev1.ConfigMap]{
+			[]v2util.Predicate[[]*corev1.ConfigMap]{
 				func(configMaps []*corev1.ConfigMap) (done bool, reasons string, err error) {
 					want, got := 1, len(configMaps)
 					return want == got, fmt.Sprintf("expected %d PerformanceProfile ConfigMaps, got %d", want, got), nil
 				},
 			},
-			[]e2eutil.Predicate[*corev1.ConfigMap]{
+			[]v2util.Predicate[*corev1.ConfigMap]{
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
 					want := netutil.ShortenName(ppConfigMap.Name, np.Name, npconst.QualifiedNameMaxLength)
 					if want != cm.Name {
@@ -1108,7 +1107,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 		)).To(Succeed())
 
 		// Verify status ConfigMap (4.17+)
-		if testCtx.VersionAtLeast(e2eutil.Version417) {
+		if testCtx.VersionAtLeast(v2util.Version417) {
 			Expect(v2util.EventuallyObjects(ctx, "PerformanceProfile status ConfigMap to exist",
 				func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 					list := &corev1.ConfigMapList{}
@@ -1122,13 +1121,13 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 					}
 					return configMaps, err
 				},
-				[]e2eutil.Predicate[[]*corev1.ConfigMap]{
+				[]v2util.Predicate[[]*corev1.ConfigMap]{
 					func(configMaps []*corev1.ConfigMap) (done bool, reasons string, err error) {
 						want, got := 1, len(configMaps)
 						return want == got, fmt.Sprintf("expected %d status ConfigMaps, got %d", want, got), nil
 					},
 				},
-				[]e2eutil.Predicate[*corev1.ConfigMap]{
+				[]v2util.Predicate[*corev1.ConfigMap]{
 					func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
 						want := fmt.Sprintf("status-%s", netutil.ShortenName(ppConfigMap.Name, np.Name, npconst.QualifiedNameMaxLength))
 						if want != cm.Name {
@@ -1162,7 +1161,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 				}
 				return configMaps, err
 			},
-			[]e2eutil.Predicate[[]*corev1.ConfigMap]{
+			[]v2util.Predicate[[]*corev1.ConfigMap]{
 				func(configMaps []*corev1.ConfigMap) (done bool, reasons string, err error) {
 					want, got := 0, len(configMaps)
 					return want == got, fmt.Sprintf("expected %d PerformanceProfile ConfigMaps, got %d", want, got), nil
@@ -1272,7 +1271,7 @@ func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 func buildTestNodePool(template *hyperv1.NodePool, namePrefix string, mutate func(*hyperv1.NodePool)) *hyperv1.NodePool {
 	GinkgoHelper()
 
-	name := e2eutil.SimpleNameGenerator.GenerateName(template.Spec.ClusterName + "-" + namePrefix + "-")
+	name := v2util.SimpleNameGenerator.GenerateName(template.Spec.ClusterName + "-" + namePrefix + "-")
 	np := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -1293,7 +1292,7 @@ func buildTestNodePool(template *hyperv1.NodePool, namePrefix string, mutate fun
 func buildMachineConfigVerificationDaemonSet(np *hyperv1.NodePool) *appsv1.DaemonSet {
 	GinkgoHelper()
 
-	dsName := e2eutil.SimpleNameGenerator.GenerateName("mc-verify-")
+	dsName := v2util.SimpleNameGenerator.GenerateName("mc-verify-")
 	ds := &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      dsName,
@@ -1364,7 +1363,7 @@ func buildMachineConfigVerificationDaemonSet(np *hyperv1.NodePool) *appsv1.Daemo
 func buildNTOVerificationDaemonSet(np *hyperv1.NodePool) *appsv1.DaemonSet {
 	GinkgoHelper()
 
-	dsName := e2eutil.SimpleNameGenerator.GenerateName("nto-verify-")
+	dsName := v2util.SimpleNameGenerator.GenerateName("nto-verify-")
 	ds := &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      dsName,
@@ -1455,7 +1454,7 @@ func waitForDaemonSetRollout(ctx context.Context, client crclient.Client, ds *ap
 			}
 			return readyPods, err
 		},
-		[]e2eutil.Predicate[[]*corev1.Pod]{
+		[]v2util.Predicate[[]*corev1.Pod]{
 			func(readyPods []*corev1.Pod) (done bool, reasons string, err error) {
 				want, got := expectedCount, len(readyPods)
 				return want == got, fmt.Sprintf("expected %d ready Pods, got %d", want, got), nil

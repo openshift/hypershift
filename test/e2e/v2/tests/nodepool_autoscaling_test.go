@@ -26,7 +26,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -117,7 +116,7 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 
 		hc, err := testCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred())
-		testCtx.SkipIfVersionBelow(e2eutil.Version420)
+		testCtx.SkipIfVersionBelow(v2util.Version420)
 
 		hcClient, err := testCtx.GetHostedClusterClient(hc)
 		Expect(err).NotTo(HaveOccurred())
@@ -191,7 +190,7 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(dep), dep)
 				return dep, err
 			},
-			[]e2eutil.Predicate[*appsv1.Deployment]{func(dep *appsv1.Deployment) (bool, string, error) {
+			[]v2util.Predicate[*appsv1.Deployment]{func(dep *appsv1.Deployment) (bool, string, error) {
 				for _, arg := range dep.Spec.Template.Spec.Containers[0].Args {
 					if strings.Contains(arg, balancingLabel) {
 						return dep.Status.ReadyReplicas > 0, fmt.Sprintf("ready replicas: %d", dep.Status.ReadyReplicas), nil
@@ -289,7 +288,7 @@ func getDefaultNodePool(ctx context.Context, client crclient.Client, hc *hyperv1
 func buildAutoscalingNodePool(template *hyperv1.NodePool, min, max int32, nodeLabels map[string]string) *hyperv1.NodePool {
 	GinkgoHelper()
 
-	name := e2eutil.SimpleNameGenerator.GenerateName(template.Spec.ClusterName + "-auto-")
+	name := v2util.SimpleNameGenerator.GenerateName(template.Spec.ClusterName + "-auto-")
 	np := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -325,7 +324,7 @@ func buildAutoscalingNodePool(template *hyperv1.NodePool, min, max int32, nodeLa
 func newAutoscalingWorkload(njobs int32, memoryRequest resource.Quantity, nodeSelector map[string]string) *batchv1.Job {
 	GinkgoHelper()
 
-	name := e2eutil.SimpleNameGenerator.GenerateName("autoscaling-workload-")
+	name := v2util.SimpleNameGenerator.GenerateName("autoscaling-workload-")
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

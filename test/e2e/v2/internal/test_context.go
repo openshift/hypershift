@@ -32,7 +32,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	supportforwarder "github.com/openshift/hypershift/support/forwarder"
 	"github.com/openshift/hypershift/support/netutil"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -286,7 +286,7 @@ func (tc *TestContext) GetHostedClusterClientViaPortForward(hc *hyperv1.HostedCl
 	listener.Close()
 
 	// 4. Set up the port-forward.
-	mgmtRESTConfig, err := e2eutil.GetConfig()
+	mgmtRESTConfig, err := v2util.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get management cluster REST config: %w", err)
 	}
@@ -417,7 +417,7 @@ func SetTestContext(ctx *TestContext) {
 // It reads E2E_HOSTED_CLUSTER_NAME and E2E_HOSTED_CLUSTER_NAMESPACE from the environment.
 // If these are not set, it creates a basic context with only the management client.
 func SetupTestContextFromEnv(ctx context.Context) (*TestContext, error) {
-	mgmtClient, err := e2eutil.GetClient()
+	mgmtClient, err := v2util.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get management client: %w", err)
 	}

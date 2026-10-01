@@ -33,8 +33,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	kauthnv1 "k8s.io/api/authentication/v1"
@@ -277,7 +277,7 @@ func ExternalOIDCKASConfigTest(getTestCtx internal.TestContextGetter) {
 func ExternalOIDCKeycloakAuthTest(getTestCtx internal.TestContextGetter) {
 	Context("Keycloak Authentication and Claims", Label("external-oidc"), Ordered, func() {
 		var selfSubjectReview *kauthnv1.SelfSubjectReview
-		var extOIDCConfig *e2eutil.ExtOIDCConfig
+		var extOIDCConfig *v2util.ExtOIDCConfig
 
 		BeforeAll(func() {
 			tc := getTestCtx()
@@ -308,8 +308,8 @@ func ExternalOIDCKeycloakAuthTest(getTestCtx internal.TestContextGetter) {
 			Expect(consoleClientID).NotTo(BeEmpty(),
 				"console client ID not found in OIDCProviders[0].OIDCClients for %s/%s", hc.Namespace, hc.Name)
 
-			extOIDCConfig = &e2eutil.ExtOIDCConfig{
-				ExternalOIDCProvider: e2eutil.ProviderKeycloak,
+			extOIDCConfig = &v2util.ExtOIDCConfig{
+				ExternalOIDCProvider: v2util.ProviderKeycloak,
 				CliClientID:          cliClientID,
 				ConsoleClientID:      consoleClientID,
 				IssuerURL:            provider.Issuer.URL,
@@ -371,7 +371,7 @@ func ExternalOIDCKeycloakAuthTest(getTestCtx internal.TestContextGetter) {
 
 // obtainKeycloakIDToken requests an ID token from Keycloak via the resource owner password grant.
 // It picks a random test user from the configured test users string and returns the raw ID token.
-func obtainKeycloakIDToken(config *e2eutil.ExtOIDCConfig) string {
+func obtainKeycloakIDToken(config *v2util.ExtOIDCConfig) string {
 	re := regexp.MustCompile(`([^:,]+):([^,]+)`)
 	testUsers := re.FindAllStringSubmatch(config.TestUsers, -1)
 	Expect(testUsers).NotTo(BeEmpty(), "no test users found in config")

@@ -28,7 +28,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -513,7 +513,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 			// Setup management cluster REST config and kubernetes client for pod exec
 			var err error
-			mgmtRestConfig, err = e2eutil.GetConfig()
+			mgmtRestConfig, err = v2util.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "failed to get management cluster REST config")
 			mgmtKubeClient, err = kubernetes.NewForConfig(mgmtRestConfig)
 			Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes client")

@@ -28,8 +28,8 @@ import (
 	"github.com/openshift/hypershift/cmd/oadp"
 	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/supportedversion"
-	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/backuprestore"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	corev1 "k8s.io/api/core/v1"
@@ -113,7 +113,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 		testCtx            *internal.TestContext
 		backupName         string
 		scheduleName       string
-		expectedConditions []util.Condition
+		expectedConditions []v2util.Condition
 	)
 
 	BeforeAll(func() {
@@ -331,7 +331,7 @@ func validateBeforeEach(testCtx *internal.TestContext) {
 
 // validatePreBackupControlPlane validates that deployments, statefulsets, and NodePool conditions
 // are healthy before a backup. It returns the expected conditions for later post-restore validation.
-func validatePreBackupControlPlane(testCtx *internal.TestContext, excludeWorkloads []string) []util.Condition {
+func validatePreBackupControlPlane(testCtx *internal.TestContext, excludeWorkloads []string) []v2util.Condition {
 	err := internal.WaitForControlPlaneDeploymentsReadiness(testCtx, 5*time.Minute, excludeWorkloads)
 	Expect(err).NotTo(HaveOccurred())
 	err = internal.WaitForControlPlaneStatefulSetsReadiness(testCtx, 5*time.Minute, excludeWorkloads)
@@ -343,13 +343,13 @@ func validatePreBackupControlPlane(testCtx *internal.TestContext, excludeWorkloa
 
 	latestVersion, err := supportedversion.GetLatestSupportedOCPVersion(testCtx.Context, testCtx.MgmtClient)
 	Expect(err).NotTo(HaveOccurred())
-	if latestVersion.LT(util.Version421) {
+	if latestVersion.LT(v2util.Version421) {
 		delete(npConditions, hyperv1.NodePoolSupportedVersionSkewConditionType)
 	}
 
-	var expectedConditions []util.Condition
+	var expectedConditions []v2util.Condition
 	for conditionType, conditionStatus := range npConditions {
-		expectedConditions = append(expectedConditions, util.Condition{
+		expectedConditions = append(expectedConditions, v2util.Condition{
 			Type:   conditionType,
 			Status: metav1.ConditionStatus(conditionStatus),
 		})
@@ -376,7 +376,7 @@ func executeRestore(testCtx *internal.TestContext, restoreOpts *backuprestore.OA
 // validatePostRestoreControlPlane waits for statefulsets and deployments to become ready after a
 // restore, and optionally validates NodePool conditions. Set skipNodePoolValidation to true when
 // NodePool validation is not applicable (e.g. Agent platform workaround).
-func validatePostRestoreControlPlane(testCtx *internal.TestContext, excludeWorkloads []string, expectedConditions []util.Condition, skipNodePoolValidation bool) {
+func validatePostRestoreControlPlane(testCtx *internal.TestContext, excludeWorkloads []string, expectedConditions []v2util.Condition, skipNodePoolValidation bool) {
 	By("Waiting for control plane statefulsets to be ready")
 	err := internal.WaitForControlPlaneStatefulSetsReadiness(testCtx, backuprestore.RestoreTimeout, excludeWorkloads)
 	Expect(err).NotTo(HaveOccurred())
@@ -401,7 +401,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 		testCtx            *internal.TestContext
 		backupName         string
 		snapshotURL        string
-		expectedConditions []util.Condition
+		expectedConditions []v2util.Condition
 	)
 
 	BeforeAll(func() {
@@ -612,7 +612,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 		// function captures logs before that window closes.
 		It("should have etcd-init container logs showing successful snapshot restore", func() {
 			By("Polling for etcd-init container completion and verifying restore logs")
-			restConfig, err := util.GetConfig()
+			restConfig, err := v2util.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "failed to get REST config for pod log access")
 			kubeClient, err := kubernetes.NewForConfig(restConfig)
 			Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset")
