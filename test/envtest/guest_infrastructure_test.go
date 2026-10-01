@@ -68,7 +68,6 @@ var _ = Describe("Guest Infrastructure GCP resourceTags lifecycle", func() {
 
 		infra := &configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
 		Expect(guestClient.Create(ctx, infra)).To(Succeed())
-		infra.Status.Platform = configv1.GCPPlatformType
 		infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
 		infra.Status.PlatformStatus = &configv1.PlatformStatus{
 			Type: configv1.GCPPlatformType,
@@ -130,7 +129,6 @@ var _ = Describe("Guest Infrastructure GCP resourceTags lifecycle", func() {
 		}, "30s", "100ms").Should(BeTrue())
 		withoutTags := &configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
 		Expect(guestClient.Create(ctx, withoutTags)).To(Succeed())
-		withoutTags.Status.Platform = configv1.GCPPlatformType
 		withoutTags.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
 		withoutTags.Status.PlatformStatus = &configv1.PlatformStatus{
 			Type: configv1.GCPPlatformType,
