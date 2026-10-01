@@ -1,0 +1,28 @@
+name: Create Tag
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - releases/tags.yaml
+
+jobs:
+  create-tag:
+    uses: openshift/hypershift/.github/workflows/create-tag-reusable.yaml@main
+    permissions:
+      contents: write
+    secrets: inherit
+
+  create-release:
+    needs: create-tag
+    if: needs.create-tag.outputs.created-tags != '[]'
+    strategy:
+      matrix:
+        tag: ${{ fromJson(needs.create-tag.outputs.created-tags) }}
+    uses: openshift/hypershift/.github/workflows/create-release-reusable.yaml@main
+    with:
+      tag-name: ${{ matrix.tag }}
+    permissions:
+      contents: write
+    secrets: inherit
