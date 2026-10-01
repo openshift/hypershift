@@ -14,11 +14,11 @@ func TestAnalyzer(t *testing.T) {
 		pattern string
 	}{
 		{
-			name:    "When symbols are in the allowlist, it should produce no diagnostics",
+			name:    "When v2 code has no v1 util imports, it should produce no diagnostics",
 			pattern: "test/e2e/v2/good",
 		},
 		{
-			name:    "When symbols are not in the allowlist, it should produce diagnostics including for aliased imports",
+			name:    "When v2 code references v1 util symbols, it should produce diagnostics including for aliased imports",
 			pattern: "test/e2e/v2/bad",
 		},
 	}
@@ -40,16 +40,16 @@ func TestIsAllowed(t *testing.T) {
 		want       bool
 	}{
 		{
-			name:       "When symbol is explicitly allowlisted, it should be allowed",
+			name:       "When allowlist is empty, no symbol from v1 util should be allowed",
 			pkgPath:    utilPkg,
 			symbolName: "GetConfig",
-			want:       true,
+			want:       false,
 		},
 		{
-			name:       "When symbol has Version prefix, it should be allowed via wildcard",
+			name:       "When allowlist is empty, Version-prefixed symbols are also disallowed",
 			pkgPath:    utilPkg,
 			symbolName: "VersionFuture",
-			want:       true,
+			want:       false,
 		},
 		{
 			name:       "When symbol is not in the allowlist, it should not be allowed",
