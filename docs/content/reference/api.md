@@ -1269,6 +1269,8 @@ map[string]string
 <p>nodeLabels propagates a list of labels to Nodes.
 Labels are re-synced additively whenever the desired state changes;
 labels set by other controllers (kubelet, autoscaler) are preserved.
+Removing a label from this map does NOT remove it from existing Nodes;
+only new values or key additions are propagated.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -1285,7 +1287,9 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 <em>(Optional)</em>
 <p>taints if specified, propagates a list of taints to Nodes.
 Taints are re-synced whenever the desired state changes.
-These taints are additive to the ones applied by other controllers.</p>
+These taints are additive to the ones applied by other controllers.
+Removing a taint from this list does NOT remove it from existing Nodes;
+only new taints are added and existing taint values are updated.</p>
 </td>
 </tr>
 <tr>
@@ -15078,6 +15082,8 @@ map[string]string
 <p>nodeLabels propagates a list of labels to Nodes.
 Labels are re-synced additively whenever the desired state changes;
 labels set by other controllers (kubelet, autoscaler) are preserved.
+Removing a label from this map does NOT remove it from existing Nodes;
+only new values or key additions are propagated.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -15094,7 +15100,9 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 <em>(Optional)</em>
 <p>taints if specified, propagates a list of taints to Nodes.
 Taints are re-synced whenever the desired state changes.
-These taints are additive to the ones applied by other controllers.</p>
+These taints are additive to the ones applied by other controllers.
+Removing a taint from this list does NOT remove it from existing Nodes;
+only new taints are added and existing taint values are updated.</p>
 </td>
 </tr>
 <tr>
