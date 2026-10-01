@@ -1,7 +1,6 @@
 package node
 
 import (
-	"context"
 	"encoding/json"
 	"maps"
 	"testing"
@@ -9,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -18,7 +18,6 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -82,7 +81,7 @@ func TestNodePoolNameFromMachine(t *testing.T) {
 		expectError          bool
 	}{
 		{
-			name: "When nodePoolAnnotation does not exist in Machine it should fail",
+			name: "When nodePoolAnnotation does not exist in Machine, it should fail",
 			machine: &capiv1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "no-annotation",
@@ -92,7 +91,7 @@ func TestNodePoolNameFromMachine(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name: "When nodePoolAnnotation is empty it should fail",
+			name: "When nodePoolAnnotation is empty, it should fail",
 			machine: &capiv1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "empty-annotation",
@@ -105,7 +104,7 @@ func TestNodePoolNameFromMachine(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name: "When nodePoolAnnotation exists it should return the NodePool Name",
+			name: "When nodePoolAnnotation exists, it should return the NodePool Name",
 			machine: &capiv1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "has-annotation",
@@ -158,7 +157,7 @@ func TestComputeSyncHash(t *testing.T) {
 		verify func(g Gomega, hash string, err error)
 	}{
 		{
-			name:   "When labels and taints are empty it should return a stable hash",
+			name:   "When labels and taints are empty, it should return a stable hash",
 			labels: map[string]string{},
 			taints: []corev1.Taint{},
 			verify: func(g Gomega, hash string, err error) {
@@ -170,7 +169,7 @@ func TestComputeSyncHash(t *testing.T) {
 			},
 		},
 		{
-			name:   "When labels are nil it should return a stable hash",
+			name:   "When labels are nil, it should return a stable hash",
 			labels: nil,
 			taints: nil,
 			verify: func(g Gomega, hash string, err error) {
@@ -179,7 +178,7 @@ func TestComputeSyncHash(t *testing.T) {
 			},
 		},
 		{
-			name: "When labels are provided it should produce a deterministic hash",
+			name: "When labels are provided, it should produce a deterministic hash",
 			labels: map[string]string{
 				"foo": "bar",
 				"baz": "qux",
@@ -193,7 +192,7 @@ func TestComputeSyncHash(t *testing.T) {
 			},
 		},
 		{
-			name:   "When taints are provided it should produce a deterministic hash",
+			name:   "When taints are provided, it should produce a deterministic hash",
 			labels: map[string]string{},
 			taints: []corev1.Taint{
 				{Key: "key1", Value: "val1", Effect: corev1.TaintEffectNoSchedule},
@@ -210,7 +209,7 @@ func TestComputeSyncHash(t *testing.T) {
 			},
 		},
 		{
-			name: "When labels differ it should produce different hashes",
+			name: "When labels differ, it should produce different hashes",
 			labels: map[string]string{
 				"foo": "bar",
 			},
@@ -223,7 +222,7 @@ func TestComputeSyncHash(t *testing.T) {
 			},
 		},
 		{
-			name:   "When taints differ it should produce different hashes",
+			name:   "When taints differ, it should produce different hashes",
 			labels: map[string]string{},
 			taints: []corev1.Taint{
 				{Key: "key1", Value: "val1", Effect: corev1.TaintEffectNoSchedule},
@@ -238,7 +237,7 @@ func TestComputeSyncHash(t *testing.T) {
 			},
 		},
 		{
-			name: "When a new label is added it should produce a different hash",
+			name: "When a new label is added, it should produce a different hash",
 			labels: map[string]string{
 				"existing": "label",
 			},
@@ -276,7 +275,7 @@ func TestLabelsHaveSynced(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "When annotation matches expected hash it should return true",
+			name: "When annotation matches expected hash, it should return true",
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -287,7 +286,7 @@ func TestLabelsHaveSynced(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "When annotation has different hash it should return false",
+			name: "When annotation has different hash, it should return false",
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -298,7 +297,7 @@ func TestLabelsHaveSynced(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When annotation has legacy value true it should return false",
+			name: "When annotation has legacy value true, it should return false",
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -309,7 +308,7 @@ func TestLabelsHaveSynced(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When annotation is empty string it should return false",
+			name: "When annotation is empty string, it should return false",
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -320,7 +319,7 @@ func TestLabelsHaveSynced(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When annotation does not exist it should return false",
+			name: "When annotation does not exist, it should return false",
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{},
@@ -329,7 +328,7 @@ func TestLabelsHaveSynced(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When annotations map is nil it should return false",
+			name: "When annotations map is nil, it should return false",
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{},
 			},
@@ -356,13 +355,13 @@ func TestMergeTaints(t *testing.T) {
 		expected []corev1.Taint
 	}{
 		{
-			name:     "When both slices are empty it should return empty",
+			name:     "When both slices are empty, it should return empty",
 			existing: []corev1.Taint{},
 			desired:  []corev1.Taint{},
 			expected: []corev1.Taint{},
 		},
 		{
-			name:     "When existing is nil it should return desired",
+			name:     "When existing is nil, it should return desired",
 			existing: nil,
 			desired: []corev1.Taint{
 				{Key: "key1", Value: "val1", Effect: corev1.TaintEffectNoSchedule},
@@ -372,7 +371,7 @@ func TestMergeTaints(t *testing.T) {
 			},
 		},
 		{
-			name: "When desired is empty it should return existing unchanged",
+			name: "When desired is empty, it should return existing unchanged",
 			existing: []corev1.Taint{
 				{Key: "key1", Value: "val1", Effect: corev1.TaintEffectNoSchedule},
 			},
@@ -382,7 +381,7 @@ func TestMergeTaints(t *testing.T) {
 			},
 		},
 		{
-			name: "When desired has new taints it should append them",
+			name: "When desired has new taints, it should append them",
 			existing: []corev1.Taint{
 				{Key: "key1", Value: "val1", Effect: corev1.TaintEffectNoSchedule},
 			},
@@ -395,7 +394,7 @@ func TestMergeTaints(t *testing.T) {
 			},
 		},
 		{
-			name: "When desired has duplicate taints it should not duplicate them",
+			name: "When desired has duplicate taints, it should not duplicate them",
 			existing: []corev1.Taint{
 				{Key: "key1", Value: "val1", Effect: corev1.TaintEffectNoSchedule},
 			},
@@ -407,7 +406,7 @@ func TestMergeTaints(t *testing.T) {
 			},
 		},
 		{
-			name: "When desired has same key but different effect it should add it",
+			name: "When desired has same key but different effect, it should add it",
 			existing: []corev1.Taint{
 				{Key: "key1", Value: "val1", Effect: corev1.TaintEffectNoSchedule},
 			},
@@ -420,7 +419,19 @@ func TestMergeTaints(t *testing.T) {
 			},
 		},
 		{
-			name: "When desired has mix of new and existing taints it should only add new ones",
+			name: "When desired has same key+effect but different value, it should replace existing",
+			existing: []corev1.Taint{
+				{Key: "key1", Value: "old-val", Effect: corev1.TaintEffectNoSchedule},
+			},
+			desired: []corev1.Taint{
+				{Key: "key1", Value: "new-val", Effect: corev1.TaintEffectNoSchedule},
+			},
+			expected: []corev1.Taint{
+				{Key: "key1", Value: "new-val", Effect: corev1.TaintEffectNoSchedule},
+			},
+		},
+		{
+			name: "When desired has mix of new and existing taints, it should only add new ones",
 			existing: []corev1.Taint{
 				{Key: "key1", Value: "val1", Effect: corev1.TaintEffectNoSchedule},
 				{Key: "key2", Value: "val2", Effect: corev1.TaintEffectNoExecute},
@@ -460,7 +471,7 @@ func TestReconcile(t *testing.T) {
 		verify         func(g Gomega, node *corev1.Node)
 	}{
 		{
-			name: "When labels have not been synced it should sync labels and taints and set hash annotation",
+			name: "When labels have not been synced, it should sync labels and taints and set hash annotation",
 			node: newTestNode(nil, map[string]string{}),
 			machine: newTestMachine(
 				map[string]string{nodePoolAnnotationTaints: taintsJSON([]corev1.Taint{{Key: "key1", Value: "val1", Effect: corev1.TaintEffectNoSchedule}})},
@@ -475,7 +486,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When labels have legacy value true it should re-sync and update to hash",
+			name: "When labels have legacy value true, it should re-sync and update to hash",
 			node: newTestNode(
 				map[string]string{labelsSyncedAnnotation: "true"},
 				map[string]string{hyperv1.NodePoolLabel: "test-nodepool"},
@@ -491,7 +502,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When hash matches it should not modify the node",
+			name: "When hash matches, it should not modify the node",
 			node: func() *corev1.Node {
 				labels := map[string]string{hyperv1.NodePoolLabel: "test-nodepool"}
 				hash, _ := computeSyncHash(labels, []corev1.Taint{})
@@ -506,7 +517,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When hash mismatches due to new Machine label it should re-sync",
+			name: "When hash mismatches due to new Machine label, it should re-sync",
 			node: func() *corev1.Node {
 				oldLabels := map[string]string{hyperv1.NodePoolLabel: "test-nodepool"}
 				oldHash, _ := computeSyncHash(oldLabels, []corev1.Taint{})
@@ -528,7 +539,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When re-syncing with existing taints it should not duplicate them",
+			name: "When re-syncing with existing taints, it should not duplicate them",
 			node: newTestNode(
 				map[string]string{labelsSyncedAnnotation: "true"},
 				map[string]string{},
@@ -549,7 +560,7 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name:    "When Machine has no taints annotation it should sync labels without error",
+			name:    "When Machine has no taints annotation, it should sync labels without error",
 			node:    newTestNode(nil, map[string]string{}),
 			machine: newTestMachine(nil, map[string]string{managedLabel(testGlobalPSLabel): "true"}),
 			verify: func(g Gomega, node *corev1.Node) {
@@ -559,13 +570,56 @@ func TestReconcile(t *testing.T) {
 			},
 		},
 		{
-			name: "When Machine has invalid taints JSON it should return an error",
+			name: "When Machine has invalid taints JSON, it should return an error",
 			node: newTestNode(nil, map[string]string{}),
 			machine: newTestMachine(
 				map[string]string{nodePoolAnnotationTaints: "not-valid-json"},
 				map[string]string{},
 			),
 			expectError: true,
+		},
+		{
+			name: "When Node is missing MachineAnnotation, reconcile should not error and leave node untouched",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: testNodeName,
+					Annotations: map[string]string{
+						capiv1.ClusterNamespaceAnnotation: testMachineNamespace,
+					},
+				},
+			},
+			machine: newTestMachine(nil, map[string]string{}),
+			verify: func(g Gomega, node *corev1.Node) {
+				g.Expect(node.Annotations).NotTo(HaveKey(labelsSyncedAnnotation))
+			},
+		},
+		{
+			name: "When Node is missing ClusterNamespaceAnnotation, reconcile should not error and leave node untouched",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: testNodeName,
+					Annotations: map[string]string{
+						capiv1.MachineAnnotation: testMachineName,
+					},
+				},
+			},
+			machine: newTestMachine(nil, map[string]string{}),
+			verify: func(g Gomega, node *corev1.Node) {
+				g.Expect(node.Annotations).NotTo(HaveKey(labelsSyncedAnnotation))
+			},
+		},
+		{
+			name: "When Machine does not exist, reconcile should not error and leave node untouched",
+			node: newTestNode(nil, map[string]string{}),
+			machine: &capiv1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testMachineNamespace,
+					Name:      "nonexistent-machine",
+				},
+			},
+			verify: func(g Gomega, node *corev1.Node) {
+				g.Expect(node.Annotations).NotTo(HaveKey(labelsSyncedAnnotation))
+			},
 		},
 	}
 
@@ -580,7 +634,7 @@ func TestReconcile(t *testing.T) {
 			r := &reconciler{
 				client:                 mgmtClient,
 				guestClusterClient:     guestClient,
-				CreateOrUpdateProvider: &simpleCreateOrUpdate{},
+				CreateOrUpdateProvider: upsert.New(false),
 			}
 
 			result, err := r.Reconcile(t.Context(), reconcile.Request{
@@ -606,19 +660,3 @@ func TestReconcile(t *testing.T) {
 	}
 }
 
-// simpleCreateOrUpdate implements CreateOrUpdateProvider with a
-// get-mutate-update cycle for unit tests without server-side apply.
-type simpleCreateOrUpdate struct{}
-
-func (s *simpleCreateOrUpdate) CreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
-	if err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
-		return controllerutil.OperationResultNone, err
-	}
-	if err := f(); err != nil {
-		return controllerutil.OperationResultNone, err
-	}
-	if err := c.Update(ctx, obj); err != nil {
-		return controllerutil.OperationResultNone, err
-	}
-	return controllerutil.OperationResultUpdated, nil
-}

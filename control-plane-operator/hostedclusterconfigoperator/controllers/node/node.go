@@ -2,6 +2,8 @@ package node
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -189,22 +191,35 @@ func computeSyncHash(labels map[string]string, taints []corev1.Taint) (string, e
 		return strings.Compare(taintEntryKey(a), taintEntryKey(b))
 	})
 
-	return supportutil.HashStruct(state)
+	data, err := json.Marshal(state)
+	if err != nil {
+		return "", err
+	}
+	// 16 hex chars = 64 bits — local SHA-256 instead of supportutil.HashStruct
+	// (FNV-1a 32-bit) to avoid collisions on this sync gate.
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:8]), nil
 }
 
 func taintEntryKey(t taintEntry) string {
 	return fmt.Sprintf("%s=%s:%s", t.Key, t.Value, t.Effect)
 }
 
+// mergeTaints merges desired taints into existing, deduplicating by (key, effect)
+// per K8s apiserver validation. If a desired taint matches an existing one by
+// (key, effect) but has a different value, the desired value wins.
 func mergeTaints(existing, desired []corev1.Taint) []corev1.Taint {
-	seen := make(map[string]struct{}, len(existing))
-	for _, t := range existing {
-		seen[taintKey(t)] = struct{}{}
+	idx := make(map[string]int, len(existing))
+	for i, t := range existing {
+		idx[taintKey(t)] = i
 	}
 	merged := make([]corev1.Taint, len(existing), len(existing)+len(desired))
 	copy(merged, existing)
 	for _, t := range desired {
-		if _, ok := seen[taintKey(t)]; !ok {
+		if i, ok := idx[taintKey(t)]; ok {
+			merged[i] = t
+		} else {
+			idx[taintKey(t)] = len(merged)
 			merged = append(merged, t)
 		}
 	}
@@ -212,7 +227,7 @@ func mergeTaints(existing, desired []corev1.Taint) []corev1.Taint {
 }
 
 func taintKey(t corev1.Taint) string {
-	return fmt.Sprintf("%s=%s:%s", t.Key, t.Value, t.Effect)
+	return fmt.Sprintf("%s:%s", t.Key, t.Effect)
 }
 
 func nodePoolNameFromMachine(machine *capiv1.Machine) (string, error) {
