@@ -50,7 +50,6 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -323,19 +322,6 @@ func extractAccessToken(resp *http.Response) (string, error) {
 	return fragments["access_token"][0], nil
 }
 
-// getMgmtConfig returns a REST config for the management cluster with client-side
-// throttling disabled and a generous request timeout, matching the v1 GetConfig helper.
-func getMgmtConfig() (*restclient.Config, error) {
-	cfg, err := ctrl.GetConfig()
-	if err != nil {
-		return nil, err
-	}
-	cfg.QPS = -1
-	cfg.Burst = -1
-	cfg.Timeout = 5 * time.Minute
-	return cfg, nil
-}
-
 // guestRestConfig polls until the HostedCluster publishes its kubeconfig and returns
 // a REST config pointing at the guest KAS. Client-side throttling is disabled.
 func guestRestConfig(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (*restclient.Config, error) {
@@ -493,7 +479,7 @@ func WaitForOAuthLoadBalancerEndpoint(ctx context.Context, client crclient.Clien
 // After establishing the tunnel, it polls /healthz to confirm the OAuth server is ready.
 // The port-forward is torn down via DeferCleanup.
 func SetupOAuthPortForwardTransport(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, oauthHost string) (http.RoundTripper, error) {
-	mgmtConfig, err := getMgmtConfig()
+	mgmtConfig, err := GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get management cluster REST config: %w", err)
 	}
@@ -582,7 +568,7 @@ func SetupOAuthPortForwardTransport(ctx context.Context, mgmtClient crclient.Cli
 // set to the original KAS hostname so the certificate SAN check passes over the localhost
 // tunnel address. The port-forward is torn down via DeferCleanup.
 func SetupGuestKASPortForwardConfig(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) (*restclient.Config, error) {
-	mgmtConfig, err := getMgmtConfig()
+	mgmtConfig, err := GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get management cluster REST config: %w", err)
 	}

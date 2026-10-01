@@ -184,3 +184,15 @@ func WaitForNReadyNodesWithOptions(ctx context.Context, client crclient.Client, 
 	)
 	return nodes.Items, err
 }
+
+// OSImageStreamPredicate returns a predicate that validates that a NodePool's
+// status.osImageStream.name matches the expected value.
+func OSImageStreamPredicate(expected string) Predicate[*hyperv1.NodePool] {
+	return func(pool *hyperv1.NodePool) (bool, string, error) {
+		actual := pool.Status.OSImageStream.Name
+		if actual == expected {
+			return true, fmt.Sprintf("status.osImageStream.name is %s", expected), nil
+		}
+		return false, fmt.Sprintf("status.osImageStream.name is %s, want %s", actual, expected), nil
+	}
+}

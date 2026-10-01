@@ -23,16 +23,23 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	"github.com/openshift/hypershift/support/util"
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/smithy-go"
+
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // CreateTestSubnet creates a small (/28) subnet in the given VPC in the specified AZ,
@@ -179,6 +186,147 @@ func networkRange(network *net.IPNet) (uint32, uint32) {
 	ones, bits := network.Mask.Size()
 	size := uint32(1) << uint(bits-ones)
 	return start, start + size - 1
+}
+
+// GetDefaultSecurityGroup retrieves a security group by ID.
+func GetDefaultSecurityGroup(ctx context.Context, awsCreds, awsRegion, sgID string) (*ec2types.SecurityGroup, error) {
+	awsSession := awsutil.NewSession(ctx, "e2e-ec2", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfig()
+	ec2Client := ec2v2.NewFromConfig(*awsSession, func(o *ec2v2.Options) {
+		o.Retryer = awsConfig()
+	})
+
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(ctx, &ec2v2.DescribeSecurityGroupsInput{
+		GroupIds: []string{sgID},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get security group: %w", err)
+	}
+	if len(describeSGResult.SecurityGroups) == 0 {
+		return nil, fmt.Errorf("no security group found with ID %s", sgID)
+	}
+	return &describeSGResult.SecurityGroups[0], nil
+}
+
+func getIAMClient(ctx context.Context, awsCreds, awsRegion string) *iam.Client {
+	awsSession := awsutil.NewSession(ctx, "e2e-iam", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfig()
+	return iam.NewFromConfig(*awsSession, func(o *iam.Options) {
+		o.Retryer = awsConfig()
+	})
+}
+
+// PutRolePolicy attaches an inline policy to an IAM role and returns a cleanup function
+// that deletes the policy. The caller is responsible for calling the cleanup function.
+func PutRolePolicy(ctx context.Context, awsCreds, awsRegion, roleARN string, policy string) (func() error, error) {
+	iamClient := getIAMClient(ctx, awsCreds, awsRegion)
+	roleName := roleARN[strings.LastIndex(roleARN, "/")+1:]
+	policyName := util.HashSimple(policy)
+
+	_, err := iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
+		RoleName:       awsv2.String(roleName),
+		PolicyName:     awsv2.String(policyName),
+		PolicyDocument: awsv2.String(policy),
+	})
+	if err != nil {
+		var nse *iamtypes.NoSuchEntityException
+		if errors.As(err, &nse) {
+			return nil, fmt.Errorf("role %s doesn't exist", roleARN)
+		}
+		return nil, fmt.Errorf("failed to put role policy: %w", err)
+	}
+
+	cleanupFunc := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		_, err := iamClient.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
+			RoleName:   awsv2.String(roleName),
+			PolicyName: awsv2.String(policyName),
+		})
+		if err != nil {
+			var nse *iamtypes.NoSuchEntityException
+			if errors.As(err, &nse) {
+				return nil
+			}
+			return fmt.Errorf("failed to delete role policy: %w", err)
+		}
+		return nil
+	}
+
+	return cleanupFunc, nil
+}
+
+// CreateCapacityReservation creates an EC2 capacity reservation and returns its ID and a cleanup
+// function that cancels the reservation. The caller is responsible for calling the cleanup function.
+func CreateCapacityReservation(ctx context.Context, awsCreds, awsRegion, instanceType, availabilityZone string, instanceCount int32, infraID, clusterName string, additionalTags map[string]string) (string, func() error, error) {
+	awsSession := awsutil.NewSession(ctx, "e2e-capacity-reservation", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfig()
+	ec2Client := ec2v2.NewFromConfig(*awsSession, func(o *ec2v2.Options) {
+		o.Retryer = awsConfig()
+	})
+
+	crTags := []ec2types.Tag{
+		{Key: awsv2.String(supportawsutil.HypershiftInfraIDTagKey), Value: awsv2.String(infraID)},
+		{Key: awsv2.String(supportawsutil.HypershiftClusterNameTagKey), Value: awsv2.String(clusterName)},
+	}
+	for k, v := range additionalTags {
+		crTags = append(crTags, ec2types.Tag{Key: awsv2.String(k), Value: awsv2.String(v)})
+	}
+	result, err := ec2Client.CreateCapacityReservation(ctx, &ec2v2.CreateCapacityReservationInput{
+		InstanceType:          awsv2.String(instanceType),
+		InstancePlatform:      ec2types.CapacityReservationInstancePlatformLinuxUnix,
+		AvailabilityZone:      awsv2.String(availabilityZone),
+		InstanceCount:         awsv2.Int32(instanceCount),
+		InstanceMatchCriteria: ec2types.InstanceMatchCriteriaTargeted,
+		EndDateType:           ec2types.EndDateTypeLimited,
+		EndDate:               awsv2.Time(time.Now().Add(2 * time.Hour)),
+		TagSpecifications: []ec2types.TagSpecification{
+			{
+				ResourceType: ec2types.ResourceTypeCapacityReservation,
+				Tags:         crTags,
+			},
+		},
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create capacity reservation: %w", err)
+	}
+
+	crID := awsv2.ToString(result.CapacityReservation.CapacityReservationId)
+
+	if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 3*time.Minute, true, func(ctx context.Context) (bool, error) {
+		desc, err := ec2Client.DescribeCapacityReservations(ctx, &ec2v2.DescribeCapacityReservationsInput{
+			CapacityReservationIds: []string{crID},
+		})
+		if err != nil {
+			return false, nil //nolint:nilerr
+		}
+		if len(desc.CapacityReservations) == 0 {
+			return false, nil
+		}
+		switch desc.CapacityReservations[0].State {
+		case ec2types.CapacityReservationStateActive:
+			return true, nil
+		case ec2types.CapacityReservationStateFailed, ec2types.CapacityReservationStateCancelled, ec2types.CapacityReservationStateExpired:
+			return false, fmt.Errorf("capacity reservation %s entered terminal state %q", crID, desc.CapacityReservations[0].State)
+		}
+		return false, nil
+	}); err != nil {
+		return "", nil, fmt.Errorf("waiting for capacity reservation %s to become active: %w", crID, err)
+	}
+
+	cleanupFunc := func() error {
+		cancelCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		_, err := ec2Client.CancelCapacityReservation(cancelCtx, &ec2v2.CancelCapacityReservationInput{
+			CapacityReservationId: awsv2.String(crID),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to cancel capacity reservation %s: %w", crID, err)
+		}
+		return nil
+	}
+
+	return crID, cleanupFunc, nil
 }
 
 func E2ETagsFromEnvironment() map[string]string {
