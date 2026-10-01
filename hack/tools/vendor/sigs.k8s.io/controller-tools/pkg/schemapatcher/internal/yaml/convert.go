@@ -20,13 +20,13 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // ToYAML converts some object that serializes to JSON into a YAML node tree.
 // It's useful since it pays attention to JSON tags, unlike yaml.Unmarshal or
 // yaml.Node.Decode.
-func ToYAML(rawObj interface{}) (*yaml.Node, error) {
+func ToYAML(rawObj any) (*yaml.Node, error) {
 	if rawObj == nil {
 		return &yaml.Node{Kind: yaml.ScalarNode, Value: "null", Tag: "!!null"}, nil
 	}
