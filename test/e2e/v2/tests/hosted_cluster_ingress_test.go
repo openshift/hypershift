@@ -32,7 +32,7 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/capabilities"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -99,7 +99,7 @@ func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGet
 	When("hosted cluster has IngressOperator EndpointPublishingStrategy configured", func() {
 		It("should reflect the custom strategy in the hosted cluster IngressController", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version421)
+			tc.SkipIfVersionBelow(v2util.Version421)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 

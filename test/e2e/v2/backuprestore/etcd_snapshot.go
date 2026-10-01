@@ -9,12 +9,11 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -227,7 +226,7 @@ func VerifyEtcdClusterHealth(ctx context.Context, logger logr.Logger, mgmtClient
 		fmt.Sprintf("/usr/bin/etcdctl --cacert=/etc/etcd/tls/etcd-ca/ca.crt --cert=/etc/etcd/tls/server/server.crt --key=/etc/etcd/tls/server/server.key --endpoints=%s member list -w json 2>/dev/null", ep),
 	}
 
-	stdout, err := e2eutil.RunCommandInPod(ctx, mgmtClient, "etcd", cpNamespace, command, "etcd", 5*time.Minute)
+	stdout, err := v2util.RunCommandInPodByLabel(ctx, mgmtClient, cpNamespace, "etcd", "etcd", command...)
 	if err != nil {
 		return fmt.Errorf("failed to run etcdctl member list: %w", err)
 	}

@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -307,8 +306,8 @@ func (a *AzurePlatformConfig) postCreateExternalOIDC(ctx context.Context, cl crc
 		return fmt.Errorf("creating console client secret: %w", err)
 	}
 
-	extOIDCConfig := &e2eutil.ExtOIDCConfig{
-		ExternalOIDCProvider:     e2eutil.ProviderKeycloak,
+	extOIDCConfig := &v2util.ExtOIDCConfig{
+		ExternalOIDCProvider:     v2util.ProviderKeycloak,
 		OIDCProviderName:         "keycloak oidc server",
 		CliClientID:              kcConfig.CLIClientID,
 		ConsoleClientID:          kcConfig.ConsoleClientID,

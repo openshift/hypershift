@@ -31,7 +31,7 @@ import (
 	kasconst "github.com/openshift/hypershift/pkg/kas"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	suppconfig "github.com/openshift/hypershift/support/config"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -111,7 +111,7 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 
 		BeforeAll(func() {
 			tc = getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version418)
+			tc.SkipIfVersionBelow(v2util.Version418)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			if !netutil.IsPublicHC(hc) {
@@ -136,7 +136,7 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 					kasconst.AdmissionPolicyNameInfra,
 					kasconst.AdmissionPolicyNameNTOMirroredConfigs,
 				}
-				if tc.VersionAtLeast(e2eutil.Version51) {
+				if tc.VersionAtLeast(v2util.Version51) {
 					requiredVAPs = append(requiredVAPs, kasconst.AdmissionPolicyNameRBAC)
 				}
 				vapNames := make([]string, 0, len(vapList.Items))
@@ -172,7 +172,7 @@ func EnsureAdmissionPoliciesTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("should deny unauthorized deletion of kas-bootstrap RBAC bindings via VAPs", func() {
-			tc.SkipIfVersionBelow(e2eutil.Version51)
+			tc.SkipIfVersionBelow(v2util.Version51)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			// The admin kubeconfig authenticates as system:admin, which the policy whitelists so
@@ -283,7 +283,7 @@ func EnsureNetworkPoliciesTest(getTestCtx internal.TestContextGetter) {
 		It("should block egress traffic from non-privileged pods to the management KAS", func() {
 			tc := getTestCtx()
 
-			mgmtRestConfig, err := e2eutil.GetConfig()
+			mgmtRestConfig, err := v2util.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "should be able to load management cluster REST config")
 			clientset, err := kubernetes.NewForConfig(mgmtRestConfig)
 			Expect(err).NotTo(HaveOccurred(), "should be able to create kubernetes clientset")

@@ -28,7 +28,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	"github.com/openshift/hypershift/support/netutil"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -47,7 +46,7 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 	When("an additional pull secret is created in the hosted cluster", Label("Informing"), func() {
 		It("should propagate it through the global pull secret pipeline and clean up on deletion", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version420)
+			tc.SkipIfVersionBelow(v2util.Version420)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform, hyperv1.AzurePlatform)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -71,7 +70,7 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 			var updatedPullSecretData = []byte(`{"auths": {"registry.example.com": {"auth": "dXNlcjpwYXNzd29yZA=="}}}`)
 
 			By("verifying in-place management-cluster pull secret propagation without rollout")
-			if tc.VersionAtLeast(e2eutil.Version422) {
+			if tc.VersionAtLeast(v2util.Version422) {
 				verifyPullSecretPropagation(tc, hc, np, hcClient, nodeCount)
 			}
 

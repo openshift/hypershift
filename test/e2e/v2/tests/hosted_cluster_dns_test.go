@@ -22,8 +22,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/netutil"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 )
 
 // RegisterHostedClusterDNSTests registers DNS-related hosted cluster tests.
@@ -37,7 +37,7 @@ func EnsureKubeAPIDNSNameTests(getTestCtx internal.TestContextGetter) {
 	When("KubeAPIDNSName and custom certificate are configured", func() {
 		PIt("should make KAS reachable via the custom DNS endpoint", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version419)
+			tc.SkipIfVersionBelow(v2util.Version419)
 			tc.SkipIfPlatform(hyperv1.KubevirtPlatform)
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -52,7 +52,7 @@ func EnsureKubeAPIDNSNameTests(getTestCtx internal.TestContextGetter) {
 			}
 
 			// The full implementation would:
-			// 1. Generate a custom TLS cert via e2eutil.GenerateCustomCertificate()
+			// 1. Generate a custom TLS cert via v2util.GenerateCustomCertificate()
 			// 2. Create a cert secret in the HCP namespace
 			// 3. Update HC with KubeAPIDNSName and custom serving cert reference
 			// 4. Wait for custom kubeconfig status to appear (30-min timeout)
@@ -67,7 +67,7 @@ func EnsureKubeAPIDNSNameTests(getTestCtx internal.TestContextGetter) {
 
 		PIt("should keep KAS reachable via the internal SVC URL", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version419)
+			tc.SkipIfVersionBelow(v2util.Version419)
 			tc.SkipIfPlatform(hyperv1.KubevirtPlatform)
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())

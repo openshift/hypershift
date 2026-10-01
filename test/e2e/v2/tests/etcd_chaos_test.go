@@ -30,7 +30,7 @@ import (
 
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	etcdrecoverymanifests "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -106,7 +106,7 @@ func EtcdSingleMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&randomPod), pod)
 				return pod, err
 			},
-			[]e2eutil.Predicate[*corev1.Pod]{func(pod *corev1.Pod) (bool, string, error) {
+			[]v2util.Predicate[*corev1.Pod]{func(pod *corev1.Pod) (bool, string, error) {
 				return originalUID != pod.UID, fmt.Sprintf("pod UID %s", pod.UID), nil
 			}},
 			v2util.WithInterval(5*time.Second),
@@ -229,7 +229,7 @@ func EtcdKillAllMembersTest(getTestCtx internal.TestContextGetter) {
 				return items, err
 			},
 			[]v2util.Predicate[[]*corev1.Pod](nil),
-			[]e2eutil.Predicate[*corev1.Pod]{func(pod *corev1.Pod) (bool, string, error) {
+			[]v2util.Predicate[*corev1.Pod]{func(pod *corev1.Pod) (bool, string, error) {
 				for _, previousPod := range etcdPods.Items {
 					if previousPod.Namespace == pod.Namespace && previousPod.Name == pod.Name {
 						return previousPod.UID != pod.UID, fmt.Sprintf("pod UID %s", pod.UID), nil
@@ -272,7 +272,7 @@ func EtcdSingleMemberCorruptionTest(getTestCtx internal.TestContextGetter) {
 		command := `rm -rf /var/lib/data/member`
 
 		GinkgoWriter.Printf("Destroying data directory on etcd pod: %s\n", pod.Name)
-		_, err := e2eutil.RunCommandInPod(ctx, testCtx.MgmtClient, "etcd", pod.Namespace, []string{"/bin/sh", "-c", command}, "etcd", 5*time.Minute)
+		_, err := v2util.RunCommandInPodByLabel(ctx, testCtx.MgmtClient, pod.Namespace, "etcd", "etcd", "/bin/sh", "-c", command)
 		Expect(err).NotTo(HaveOccurred(), "failed to destroy data directory on etcd pod %s", pod.Name)
 
 		// Etcd recovery job should be created.
@@ -283,7 +283,7 @@ func EtcdSingleMemberCorruptionTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(recoveryJob), recoveryJob)
 				return recoveryJob, err
 			},
-			[]e2eutil.Predicate[*batchv1.Job]{func(job *batchv1.Job) (bool, string, error) {
+			[]v2util.Predicate[*batchv1.Job]{func(job *batchv1.Job) (bool, string, error) {
 				got := job.Status.Active
 				return got == 1, fmt.Sprintf("wanted status active to be 1, got %d", got), nil
 			}},
@@ -319,7 +319,7 @@ func EtcdMissingMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		GinkgoWriter.Printf("Discovering member ID for: %s\n", pod.Name)
-		memberID, err := e2eutil.RunCommandInPod(ctx, testCtx.MgmtClient, "etcd", pod.Namespace, discoverCommand, "etcd", 5*time.Minute)
+		memberID, err := v2util.RunCommandInPodByLabel(ctx, testCtx.MgmtClient, pod.Namespace, "etcd", "etcd", discoverCommand...)
 		Expect(err).NotTo(HaveOccurred(), "failed to discover etcd member ID for %s", pod.Name)
 		memberID = strings.TrimSpace(memberID)
 		Expect(memberID).NotTo(BeEmpty(), "member ID should not be empty for %s", pod.Name)
@@ -335,7 +335,7 @@ func EtcdMissingMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		GinkgoWriter.Printf("Removing etcd member %s (ID: %s)\n", pod.Name, memberID)
-		cmdStdout, err := e2eutil.RunCommandInPod(ctx, testCtx.MgmtClient, "etcd", pod.Namespace, removeCommand, "etcd", 5*time.Minute)
+		cmdStdout, err := v2util.RunCommandInPodByLabel(ctx, testCtx.MgmtClient, pod.Namespace, "etcd", "etcd", removeCommand...)
 		Expect(err).NotTo(HaveOccurred(), "failed to remove etcd member %s", pod.Name)
 		Expect(cmdStdout).NotTo(ContainSubstring("Error:"), "failed to remove etcd member %s", pod.Name)
 
@@ -350,7 +350,7 @@ func EtcdMissingMemberRecoveryTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(recoveryJob), recoveryJob)
 				return recoveryJob, err
 			},
-			[]e2eutil.Predicate[*batchv1.Job]{func(job *batchv1.Job) (bool, string, error) {
+			[]v2util.Predicate[*batchv1.Job]{func(job *batchv1.Job) (bool, string, error) {
 				got := job.Status.Active
 				return got == 1, fmt.Sprintf("wanted status active to be 1, got %d", got), nil
 			}},
@@ -390,7 +390,7 @@ func waitForEtcdConvergence(ctx context.Context, client crclient.Client, cpNames
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(sts), sts)
 			return sts, err
 		},
-		[]e2eutil.Predicate[*appsv1.StatefulSet]{func(sts *appsv1.StatefulSet) (bool, string, error) {
+		[]v2util.Predicate[*appsv1.StatefulSet]{func(sts *appsv1.StatefulSet) (bool, string, error) {
 			got := sts.Status.ReadyReplicas
 			return expectedReplicas != 0 && expectedReplicas == got, fmt.Sprintf("wanted %d ready replicas, got %d", expectedReplicas, got), nil
 		}},
@@ -419,7 +419,7 @@ func createMarkerConfigMap(ctx context.Context, client crclient.Client) *corev1.
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "default",
-			Name:      e2eutil.SimpleNameGenerator.GenerateName("marker-"),
+			Name:      v2util.SimpleNameGenerator.GenerateName("marker-"),
 		},
 		Data: map[string]string{"value": string(value)},
 	}
@@ -444,7 +444,7 @@ func verifyMarkerSurvived(ctx context.Context, client crclient.Client, expected 
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(expected), actual)
 			return actual, err
 		},
-		[]e2eutil.Predicate[*corev1.ConfigMap]{func(configMap *corev1.ConfigMap) (bool, string, error) {
+		[]v2util.Predicate[*corev1.ConfigMap]{func(configMap *corev1.ConfigMap) (bool, string, error) {
 			diff := cmp.Diff(expected.Data, configMap.Data)
 			return diff == "", fmt.Sprintf("incorrect data: %v", diff), nil
 		}},

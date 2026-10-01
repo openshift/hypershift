@@ -13,7 +13,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -44,9 +43,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift] Karpenter",
 			// tested against a 4.22 hosted cluster, set RUN_KARPENTER_TESTS=true to
 			// lower the gate to 4.22.
 			if internal.GetEnvVarValue("RUN_KARPENTER_TESTS") == "true" {
-				testCtx.SkipIfVersionBelow(e2eutil.Version422)
+				testCtx.SkipIfVersionBelow(v2util.Version422)
 			} else {
-				testCtx.SkipIfVersionBelow(e2eutil.Version423)
+				testCtx.SkipIfVersionBelow(v2util.Version423)
 			}
 		})
 
@@ -399,7 +398,7 @@ func expectControlPlaneRolloutWithoutDrift(
 			}
 			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodeClaim %s", nodeClaims.Items[i].Name)
 
-			conditions, err := e2eutil.Conditions(nc)
+			conditions, err := v2util.Conditions(nc)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to read conditions for NodeClaim %s", nodeClaims.Items[i].Name)
 			for _, c := range conditions {
 				if c.Type == karpenterv1.ConditionTypeDrifted && c.Status == metav1.ConditionTrue {

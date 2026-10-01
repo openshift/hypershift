@@ -31,7 +31,7 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 	dto "github.com/prometheus/client_model/go"
@@ -98,9 +98,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift] Karpenter",
 			// tested against a 4.22 hosted cluster, set RUN_KARPENTER_TESTS=true to
 			// lower the gate to 4.22.
 			if internal.GetEnvVarValue("RUN_KARPENTER_TESTS") == "true" {
-				testCtx.SkipIfVersionBelow(e2eutil.Version422)
+				testCtx.SkipIfVersionBelow(v2util.Version422)
 			} else {
-				testCtx.SkipIfVersionBelow(e2eutil.Version423)
+				testCtx.SkipIfVersionBelow(v2util.Version423)
 			}
 		})
 
@@ -136,12 +136,12 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 			karpenterNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 
 			err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
-				kmf, err := e2eutil.GetMetricsFromPod(ctx, tc.MgmtClient, cpconst.KarpenterComponentName, cpconst.KarpenterComponentName, karpenterNamespace, "8080")
+				kmf, err := v2util.GetMetricsFromPodByLabel(ctx, tc.MgmtClient, karpenterNamespace, cpconst.KarpenterComponentName, cpconst.KarpenterComponentName, 8080)
 				if err != nil {
 					GinkgoWriter.Printf("unable to get karpenter metrics: %v", err)
 					return false, nil
 				}
-				komf, err := e2eutil.GetMetricsFromPod(ctx, tc.MgmtClient, cpconst.KarpenterOperatorComponentName, cpconst.KarpenterOperatorComponentName, karpenterNamespace, "8080")
+				komf, err := v2util.GetMetricsFromPodByLabel(ctx, tc.MgmtClient, karpenterNamespace, cpconst.KarpenterOperatorComponentName, cpconst.KarpenterOperatorComponentName, 8080)
 				if err != nil {
 					GinkgoWriter.Printf("unable to get karpenter metrics: %v", err)
 					return false, nil
@@ -216,7 +216,7 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: karpenterassets.EC2NodeClassDefault}, nc)
 					return nc, err
 				},
-				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+				[]v2util.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
 					func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (bool, string, error) {
 						if len(nc.Spec.SubnetSelectorTerms) == 0 {
 							return false, "SubnetSelectorTerms is empty", nil
@@ -263,7 +263,7 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: karpenterassets.EC2NodeClassDefault}, nc)
 					return nc, err
 				},
-				[]e2eutil.Predicate[*awskarpenterv1.EC2NodeClass]{
+				[]v2util.Predicate[*awskarpenterv1.EC2NodeClass]{
 					func(nc *awskarpenterv1.EC2NodeClass) (bool, string, error) {
 						if len(nc.Spec.AMISelectorTerms) == 0 {
 							return false, "AMISelectorTerms is empty", nil
@@ -324,8 +324,8 @@ func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 					err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), obj)
 					return obj, err
 				},
-				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
-					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+				[]v2util.Predicate[*hyperv1.HostedCluster]{
+					v2util.ConditionPredicate[*hyperv1.HostedCluster](v2util.Condition{
 						Type:   string(hyperv1.AutoNodeEnabled),
 						Status: metav1.ConditionTrue,
 						Reason: hyperv1.AsExpectedReason,
@@ -588,13 +588,13 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: "default"}, nc)
 					return nc, err
 				},
-				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+				[]v2util.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+					v2util.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](v2util.Condition{
 						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
 						Status: metav1.ConditionTrue,
 						Reason: "VersionNotSpecified",
 					}),
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+					v2util.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](v2util.Condition{
 						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
 						Status: metav1.ConditionTrue,
 						Reason: "VersionNotSpecified",
@@ -653,13 +653,13 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, result)
 					return result, err
 				},
-				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+				[]v2util.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+					v2util.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](v2util.Condition{
 						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
 						Status: metav1.ConditionTrue,
 						Reason: "VersionResolved",
 					}),
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+					v2util.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](v2util.Condition{
 						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
 						Status: metav1.ConditionTrue,
 						Reason: "AsExpected",
@@ -683,7 +683,7 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, ec2NodeClass)
 					return ec2NodeClass, err
 				},
-				[]e2eutil.Predicate[*awskarpenterv1.EC2NodeClass]{
+				[]v2util.Predicate[*awskarpenterv1.EC2NodeClass]{
 					func(ec2nc *awskarpenterv1.EC2NodeClass) (bool, string, error) {
 						if ec2nc.Spec.MetadataOptions == nil {
 							return false, "MetadataOptions is nil", nil
@@ -849,13 +849,13 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: skewNC.Name}, result)
 					return result, err
 				},
-				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+				[]v2util.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+					v2util.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](v2util.Condition{
 						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
 						Status: metav1.ConditionTrue,
 						Reason: "VersionResolved",
 					}),
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+					v2util.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](v2util.Condition{
 						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
 						Status: metav1.ConditionFalse,
 						Reason: "UnsupportedSkew",
@@ -915,9 +915,9 @@ func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
 			// We need a real reservation because karpenter 1.8 runs with ReservedCapacity=true by default,
 			// so selector terms that match nothing would cause CapacityReservationsReady=False on the
 			// EC2NodeClass and block provisioning.
-			crID, cleanupCR, err := e2eutil.CreateCapacityReservation(
+			crID, cleanupCR, err := v2util.CreateCapacityReservation(
 				ctx, awsCredsFile, awsRegion, "t3.xlarge", targetAZ, 1,
-				hc.Spec.InfraID, hc.Name, e2eutil.E2ETagsFromEnvironment(),
+				hc.Spec.InfraID, hc.Name, v2util.E2ETagsFromEnvironment(),
 			)
 			Expect(err).NotTo(HaveOccurred(), "failed to create capacity reservation")
 			DeferCleanup(func() {
@@ -949,7 +949,7 @@ func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
 					ec2nc := &awskarpenterv1.EC2NodeClass{}
 					return ec2nc, hcClient.Get(ctx, crclient.ObjectKey{Name: "capacity-reservation-test"}, ec2nc)
 				},
-				[]e2eutil.Predicate[*awskarpenterv1.EC2NodeClass]{
+				[]v2util.Predicate[*awskarpenterv1.EC2NodeClass]{
 					func(ec2nc *awskarpenterv1.EC2NodeClass) (bool, string, error) {
 						if len(ec2nc.Spec.CapacityReservationSelectorTerms) == 1 &&
 							ec2nc.Spec.CapacityReservationSelectorTerms[0].ID == crID {
@@ -968,7 +968,7 @@ func KarpenterCapacityReservationTest(getTestCtx internal.TestContextGetter) {
 					updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					return updated, hcClient.Get(ctx, crclient.ObjectKey{Name: "capacity-reservation-test"}, updated)
 				},
-				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+				[]v2util.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
 					func(updated *hyperkarpenterv1.OpenshiftEC2NodeClass) (bool, string, error) {
 						if len(updated.Status.CapacityReservations) > 0 && updated.Status.CapacityReservations[0].ID == crID {
 							return true, "", nil
@@ -1378,7 +1378,7 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 					err := tc.MgmtClient.Get(ctx, crclient.ObjectKey{Name: kubeletCMName, Namespace: hcpNamespace}, cm)
 					return cm, err
 				},
-				[]e2eutil.Predicate[*corev1.ConfigMap]{
+				[]v2util.Predicate[*corev1.ConfigMap]{
 					func(cm *corev1.ConfigMap) (bool, string, error) {
 						if cm.Labels[karpenterutil.KarpenterNodeClassKubeletConfigLabel] != "true" {
 							return false, fmt.Sprintf("missing label %s=true", karpenterutil.KarpenterNodeClassKubeletConfigLabel), nil
@@ -1408,7 +1408,7 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, updated)
 					return updated, err
 				},
-				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+				[]v2util.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
 					func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (bool, string, error) {
 						v := nc.GetAnnotations()["hypershift.openshift.io/nodeClassCurrentConfigVersion"]
 						if v == "" {
@@ -1432,8 +1432,8 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 					err := hcClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, updated)
 					return updated, err
 				},
-				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
-					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+				[]v2util.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+					v2util.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](v2util.Condition{
 						Type:   "Ready",
 						Status: metav1.ConditionTrue,
 					}),
@@ -1570,8 +1570,8 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 					err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), obj)
 					return obj, err
 				},
-				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
-					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+				[]v2util.Predicate[*hyperv1.HostedCluster]{
+					v2util.ConditionPredicate[*hyperv1.HostedCluster](v2util.Condition{
 						Type:   string(hyperv1.AutoNodeEnabled),
 						Status: metav1.ConditionFalse,
 						Reason: hyperv1.AutoNodeNotConfiguredReason,
@@ -1590,7 +1590,7 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 			// The progressing state can be shorter than the polling interval, so accept either
 			// the transient state or the final state here. The final state is checked below.
 			autoNodeProgressingOrReady := func(obj *hyperv1.HostedCluster) (bool, string, error) {
-				conditions, err := e2eutil.Conditions(obj)
+				conditions, err := v2util.Conditions(obj)
 				if err != nil {
 					return false, "", err
 				}
@@ -1616,7 +1616,7 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 					err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), obj)
 					return obj, err
 				},
-				[]e2eutil.Predicate[*hyperv1.HostedCluster]{autoNodeProgressingOrReady},
+				[]v2util.Predicate[*hyperv1.HostedCluster]{autoNodeProgressingOrReady},
 				v2util.WithTimeout(2*time.Minute),
 			)).To(Succeed())
 
@@ -1628,8 +1628,8 @@ func KarpenterAutoNodeLifecycleTest(getTestCtx internal.TestContextGetter) {
 					err := tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), obj)
 					return obj, err
 				},
-				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
-					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+				[]v2util.Predicate[*hyperv1.HostedCluster]{
+					v2util.ConditionPredicate[*hyperv1.HostedCluster](v2util.Condition{
 						Type:   string(hyperv1.AutoNodeEnabled),
 						Status: metav1.ConditionTrue,
 						Reason: hyperv1.AsExpectedReason,
@@ -1866,13 +1866,13 @@ func waitForReadyKarpenterPods(ctx context.Context, client crclient.Client, incl
 			}
 			return items, err
 		},
-		[]e2eutil.Predicate[[]*corev1.Pod]{
+		[]v2util.Predicate[[]*corev1.Pod]{
 			func(pods []*corev1.Pod) (bool, string, error) {
 				return len(pods) == numPods, fmt.Sprintf("expected %d pods, got %d", numPods, len(pods)), nil
 			},
 		},
-		[]e2eutil.Predicate[*corev1.Pod]{
-			e2eutil.ConditionPredicate[*corev1.Pod](e2eutil.Condition{
+		[]v2util.Predicate[*corev1.Pod]{
+			v2util.ConditionPredicate[*corev1.Pod](v2util.Condition{
 				Type:   string(corev1.PodScheduled),
 				Status: metav1.ConditionTrue,
 			}),
@@ -1922,7 +1922,7 @@ func waitForAutoNodeStatusVCPUs(ctx context.Context, mgtClient crclient.Client, 
 			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
 			return hc, err
 		},
-		[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+		[]v2util.Predicate[*hyperv1.HostedCluster]{
 			func(hc *hyperv1.HostedCluster) (bool, string, error) {
 				if hc.Status.AutoNode.VCPUs == nil {
 					return false, "AutoNode.VCPUs is nil", nil
@@ -1959,7 +1959,7 @@ func waitForBillingMetricVCPUs(ctx context.Context, mgtClient crclient.Client, h
 }
 
 func getVCPUsMetric(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) (int32, bool) {
-	mf, err := e2eutil.GetMetricsFromPod(ctx, mgtClient, "operator", "operator", "hypershift", "9000")
+	mf, err := v2util.GetMetricsFromPodByLabel(ctx, mgtClient, "hypershift", "operator", "operator", 9000)
 	if err != nil {
 		return 0, false
 	}

@@ -26,7 +26,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -60,7 +59,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 	When("[Feature:AWSSecurityGroups] a day-2 resource tag is added to the HostedCluster spec", func() {
 		It("should apply the tag to the default worker security group via AWS API", Label("AWS"), func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version420)
+			tc.SkipIfVersionBelow(v2util.Version420)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -95,7 +94,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 			Expect(hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN).NotTo(BeEmpty(),
 				"HostedCluster should have ControlPlaneOperatorARN set")
 
-			cleanup, err := e2eutil.PutRolePolicy(tc.Context, awsCredsFile, region,
+			cleanup, err := v2util.PutRolePolicy(tc.Context, awsCredsFile, region,
 				hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
 			Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
 			DeferCleanup(func() {
@@ -137,7 +136,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			Eventually(func(g Gomega) {
-				sg, err := e2eutil.GetDefaultSecurityGroup(tc.Context, awsCredsFile, region, sgID)
+				sg, err := v2util.GetDefaultSecurityGroup(tc.Context, awsCredsFile, region, sgID)
 				g.Expect(err).NotTo(HaveOccurred(), "failed to get default security group")
 				g.Expect(sg.Tags).To(ContainElement(ec2types.Tag{
 					Key:   aws.String(day2TagKey),
@@ -214,7 +213,7 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 	Context("[Feature:AWSNLB] AWS CCM NLB Security Group", Label("AWS", "CCM"), func() {
 		BeforeEach(func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version423)
+			tc.SkipIfVersionBelow(v2util.Version423)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 		})
 
@@ -484,7 +483,7 @@ func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContex
 	When("[Feature:AWSSecurityGroups] a day-2 resource tag with spaces is added to the HostedCluster spec", func() {
 		It("should apply the tag with spaces to the default worker security group via AWS API", Label("AWS"), func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version420)
+			tc.SkipIfVersionBelow(v2util.Version420)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
@@ -519,7 +518,7 @@ func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContex
 			Expect(hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN).NotTo(BeEmpty(),
 				"HostedCluster should have ControlPlaneOperatorARN set")
 
-			cleanup, err := e2eutil.PutRolePolicy(tc.Context, awsCredsFile, region,
+			cleanup, err := v2util.PutRolePolicy(tc.Context, awsCredsFile, region,
 				hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
 			Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
 			DeferCleanup(func() {
@@ -565,7 +564,7 @@ func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContex
 			})
 
 			Eventually(func(g Gomega) {
-				sg, err := e2eutil.GetDefaultSecurityGroup(tc.Context, awsCredsFile, region, sgID)
+				sg, err := v2util.GetDefaultSecurityGroup(tc.Context, awsCredsFile, region, sgID)
 				g.Expect(err).NotTo(HaveOccurred(), "failed to get default security group")
 				g.Expect(sg.Tags).To(ContainElement(ec2types.Tag{
 					Key:   aws.String(day2TagKey),

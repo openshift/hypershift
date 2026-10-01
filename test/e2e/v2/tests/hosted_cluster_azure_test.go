@@ -32,7 +32,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/netutil"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -60,7 +60,7 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 			testCtx := getTestCtx()
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			testCtx.SkipIfVersionBelow(e2eutil.Version420)
+			testCtx.SkipIfVersionBelow(v2util.Version420)
 			_, err = testCtx.WaitForHostedClusterKubeConfig(hc)
 			Expect(err).NotTo(HaveOccurred())
 			hostedClusterClient, err := testCtx.GetHostedClusterClient(hc)
@@ -83,7 +83,7 @@ func AzurePublicClusterTest(getTestCtx internal.TestContextGetter) {
 			testCtx := getTestCtx()
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			testCtx.SkipIfVersionBelow(e2eutil.Version421)
+			testCtx.SkipIfVersionBelow(v2util.Version421)
 			_, err = testCtx.WaitForHostedClusterKubeConfig(hc)
 			Expect(err).NotTo(HaveOccurred())
 			hostedClusterClient, err := testCtx.GetHostedClusterClient(hc)
@@ -128,7 +128,7 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
 					return svc, err
 				},
-				[]e2eutil.Predicate[*corev1.Service]{
+				[]v2util.Predicate[*corev1.Service]{
 					func(svc *corev1.Service) (done bool, reasons string, err error) {
 						val, ok := svc.Annotations[azureutil.InternalLoadBalancerAnnotation]
 						if !ok || val != azureutil.InternalLoadBalancerValue {
@@ -148,7 +148,7 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 				func(ctx context.Context) ([]*hyperv1.AzurePrivateLinkService, error) {
 					return listPLS(ctx, testCtx.MgmtClient, controlPlaneNamespace)
 				},
-				[]e2eutil.Predicate[[]*hyperv1.AzurePrivateLinkService]{
+				[]v2util.Predicate[[]*hyperv1.AzurePrivateLinkService]{
 					func(items []*hyperv1.AzurePrivateLinkService) (done bool, reasons string, err error) {
 						if len(items) == 0 {
 							return false, "no AzurePrivateLinkService CRs found in HCP namespace", nil
@@ -173,7 +173,7 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 				func(ctx context.Context) ([]*hyperv1.AzurePrivateLinkService, error) {
 					return listPLS(ctx, testCtx.MgmtClient, controlPlaneNamespace)
 				},
-				[]e2eutil.Predicate[[]*hyperv1.AzurePrivateLinkService]{
+				[]v2util.Predicate[[]*hyperv1.AzurePrivateLinkService]{
 					func(items []*hyperv1.AzurePrivateLinkService) (done bool, reasons string, err error) {
 						if len(items) == 0 {
 							return false, "no AzurePrivateLinkService CRs found", nil
@@ -198,7 +198,7 @@ func AzurePrivateTopologyTest(getTestCtx internal.TestContextGetter) {
 				func(ctx context.Context) ([]*hyperv1.AzurePrivateLinkService, error) {
 					return listPLS(ctx, testCtx.MgmtClient, controlPlaneNamespace)
 				},
-				[]e2eutil.Predicate[[]*hyperv1.AzurePrivateLinkService]{
+				[]v2util.Predicate[[]*hyperv1.AzurePrivateLinkService]{
 					func(items []*hyperv1.AzurePrivateLinkService) (done bool, reasons string, err error) {
 						if len(items) == 0 {
 							return false, "no AzurePrivateLinkService CRs found", nil
@@ -266,7 +266,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
 					return svc, err
 				},
-				[]e2eutil.Predicate[*corev1.Service]{
+				[]v2util.Predicate[*corev1.Service]{
 					serviceTypePredicate(corev1.ServiceTypeExternalName),
 				},
 				v2util.WithTimeout(2*time.Minute),
@@ -278,7 +278,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
 					return svc, err
 				},
-				[]e2eutil.Predicate[*corev1.Service]{
+				[]v2util.Predicate[*corev1.Service]{
 					serviceTypePredicate(corev1.ServiceTypeExternalName),
 				},
 				v2util.WithTimeout(2*time.Minute),
@@ -295,7 +295,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(route), route)
 					return route, err
 				},
-				[]e2eutil.Predicate[*routev1.Route]{
+				[]v2util.Predicate[*routev1.Route]{
 					routeHasHostPredicate(),
 				},
 				v2util.WithTimeout(10*time.Minute),
@@ -313,7 +313,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(route), route)
 					return route, err
 				},
-				[]e2eutil.Predicate[*routev1.Route]{
+				[]v2util.Predicate[*routev1.Route]{
 					routeHasHostPredicate(),
 				},
 				v2util.WithTimeout(10*time.Minute),
@@ -331,7 +331,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
 					return svc, err
 				},
-				[]e2eutil.Predicate[*corev1.Service]{
+				[]v2util.Predicate[*corev1.Service]{
 					serviceTypePredicate(corev1.ServiceTypeLoadBalancer),
 				},
 				v2util.WithTimeout(10*time.Minute),
@@ -341,7 +341,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 				func(ctx context.Context) ([]*hyperv1.AzurePrivateLinkService, error) {
 					return listPLS(ctx, testCtx.MgmtClient, controlPlaneNamespace)
 				},
-				[]e2eutil.Predicate[[]*hyperv1.AzurePrivateLinkService]{
+				[]v2util.Predicate[[]*hyperv1.AzurePrivateLinkService]{
 					plsExistsPredicate(),
 				},
 				[]v2util.Predicate[*hyperv1.AzurePrivateLinkService](nil),
@@ -379,7 +379,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(route), route)
 					return route, err
 				},
-				[]e2eutil.Predicate[*routev1.Route]{
+				[]v2util.Predicate[*routev1.Route]{
 					routeHasHostPredicate(),
 				},
 				v2util.WithTimeout(10*time.Minute),
@@ -397,7 +397,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(route), route)
 					return route, err
 				},
-				[]e2eutil.Predicate[*routev1.Route]{
+				[]v2util.Predicate[*routev1.Route]{
 					routeHasHostPredicate(),
 				},
 				v2util.WithTimeout(10*time.Minute),
@@ -419,7 +419,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 				func(ctx context.Context) ([]*hyperv1.AzurePrivateLinkService, error) {
 					return listPLS(ctx, testCtx.MgmtClient, controlPlaneNamespace)
 				},
-				[]e2eutil.Predicate[[]*hyperv1.AzurePrivateLinkService]{
+				[]v2util.Predicate[[]*hyperv1.AzurePrivateLinkService]{
 					plsExistsPredicate(),
 				},
 				[]v2util.Predicate[*hyperv1.AzurePrivateLinkService](nil),
@@ -432,7 +432,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
 					return svc, err
 				},
-				[]e2eutil.Predicate[*corev1.Service]{
+				[]v2util.Predicate[*corev1.Service]{
 					serviceTypePredicate(corev1.ServiceTypeExternalName),
 				},
 				v2util.WithTimeout(10*time.Minute),
@@ -444,7 +444,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
 					return svc, err
 				},
-				[]e2eutil.Predicate[*corev1.Service]{
+				[]v2util.Predicate[*corev1.Service]{
 					serviceTypePredicate(corev1.ServiceTypeExternalName),
 				},
 				v2util.WithTimeout(10*time.Minute),
@@ -465,7 +465,7 @@ func AzureEndpointAccessTransitionTest(getTestCtx internal.TestContextGetter) {
 					}, freshHC)
 					return freshHC, err
 				},
-				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+				[]v2util.Predicate[*hyperv1.HostedCluster]{
 					func(hc *hyperv1.HostedCluster) (done bool, reasons string, err error) {
 						for _, cond := range hc.Status.Conditions {
 							if cond.Type == string(hyperv1.HostedClusterAvailable) {
@@ -510,7 +510,7 @@ func listPLS(ctx context.Context, client crclient.Client, namespace string) ([]*
 	return items, nil
 }
 
-func routeHasHostPredicate() e2eutil.Predicate[*routev1.Route] {
+func routeHasHostPredicate() v2util.Predicate[*routev1.Route] {
 	return func(route *routev1.Route) (done bool, reasons string, err error) {
 		if route.Spec.Host != "" {
 			return true, fmt.Sprintf("route has host %q", route.Spec.Host), nil
@@ -530,7 +530,7 @@ func expectDeleted(ctx context.Context, client crclient.Client, obj crclient.Obj
 	return fmt.Errorf("%T %s/%s still exists", obj, obj.GetNamespace(), obj.GetName())
 }
 
-func serviceTypePredicate(expected corev1.ServiceType) e2eutil.Predicate[*corev1.Service] {
+func serviceTypePredicate(expected corev1.ServiceType) v2util.Predicate[*corev1.Service] {
 	return func(svc *corev1.Service) (done bool, reasons string, err error) {
 		if svc.Spec.Type == expected {
 			return true, fmt.Sprintf("service type is %s", expected), nil
@@ -539,7 +539,7 @@ func serviceTypePredicate(expected corev1.ServiceType) e2eutil.Predicate[*corev1
 	}
 }
 
-func plsExistsPredicate() e2eutil.Predicate[[]*hyperv1.AzurePrivateLinkService] {
+func plsExistsPredicate() v2util.Predicate[[]*hyperv1.AzurePrivateLinkService] {
 	return func(items []*hyperv1.AzurePrivateLinkService) (done bool, reasons string, err error) {
 		if len(items) == 0 {
 			return false, "no AzurePrivateLinkService CRs found", nil
@@ -658,7 +658,7 @@ func AzureOAuthLoadBalancerTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
 					return svc, err
 				},
-				[]e2eutil.Predicate[*corev1.Service]{
+				[]v2util.Predicate[*corev1.Service]{
 					func(svc *corev1.Service) (done bool, reasons string, err error) {
 						if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
 							return false, fmt.Sprintf("expected Service type LoadBalancer, got %s", svc.Spec.Type), nil
@@ -754,7 +754,7 @@ func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
 					return svc, err
 				},
-				[]e2eutil.Predicate[*corev1.Service]{
+				[]v2util.Predicate[*corev1.Service]{
 					func(svc *corev1.Service) (done bool, reasons string, err error) {
 						val, ok := svc.Annotations[azureutil.InternalLoadBalancerAnnotation]
 						if !ok || val != azureutil.InternalLoadBalancerValue {
@@ -807,8 +807,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Azure", Label
 
 // oauthServiceLBPredicates returns predicates that verify the oauth-openshift Service
 // is type LoadBalancer and has an allocated ingress endpoint (IP or Hostname).
-func oauthServiceLBPredicates() []e2eutil.Predicate[*corev1.Service] {
-	return []e2eutil.Predicate[*corev1.Service]{
+func oauthServiceLBPredicates() []v2util.Predicate[*corev1.Service] {
+	return []v2util.Predicate[*corev1.Service]{
 		func(svc *corev1.Service) (done bool, reasons string, err error) {
 			if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
 				return false, fmt.Sprintf("expected Service type LoadBalancer, got %s", svc.Spec.Type), nil
