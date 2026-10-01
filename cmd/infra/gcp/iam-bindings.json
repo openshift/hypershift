@@ -57,7 +57,10 @@
       "name": "image-registry",
       "displayName": "HyperShift Image Registry Operator",
       "description": "Service account for Image Registry Operator GCS storage operations",
-      "roles": ["roles/storage.admin"],
+      "roles": [
+        "roles/storage.admin",
+        "roles/resourcemanager.tagUser"
+      ],
       "k8sServiceAccounts": [
         {"namespace": "openshift-image-registry", "name": "cluster-image-registry-operator"},
         {"namespace": "openshift-image-registry", "name": "registry"}

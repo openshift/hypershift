@@ -140,7 +140,15 @@ Google Cloud Tag User on the tag value and target resource, plus the applicable
 resource-specific TagBinding permissions. This configuration has been checked
 against the guest schema and the consumers' read paths, not end-to-end against
 organization tags and IAM. HyperShift does not currently report a dedicated
-condition for missing or inaccessible TagKeys or TagValues.
+condition for missing or inaccessible TagKeys or TagValues, or for missing tag
+permissions. The `ValidGCPCredentials` and `ValidGCPWorkloadIdentity` conditions
+do not validate the guest storage and image-registry identities' tag access.
+Such failures do not block HyperShift's HostedCluster reconciliation, but they
+can prevent the guest components from creating a tagged registry bucket or
+persistent disk. Check the guest image-registry operator's status and logs, or
+the GCP PD CSI controller logs and affected PVC events, for runtime errors.
+See [Create GCP IAM Resources](gcp/create-gcp-iam.md#resource-tag-permissions)
+for the required grants and how to apply them to existing clusters.
 
 ## CAPG Integration
 

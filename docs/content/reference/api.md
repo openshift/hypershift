@@ -8544,7 +8544,11 @@ HyperShift or CAPG on the management side. HyperShift does not create
 TagKeys, TagValues, or management-side TagBindings.
 The parentID of a tag defaults to the GCP platform project if omitted.
 Every short key must be unique across the list, even when parentIDs differ,
-because the guest Infrastructure API identifies tags by short key only.</p>
+because the guest Infrastructure API identifies tags by short key only.
+Admission validates tag syntax but does not verify that tags exist or that
+guest service accounts can use them. HyperShift does not report a dedicated
+tag-validation condition or block HostedCluster reconciliation for such
+runtime failures; the guest components report failures when applying tags.</p>
 <p>Tags may only be configured during installation. Unlike resourceLabels,
 this field cannot be added, removed, or changed after creation because the
 guest Infrastructure API is also immutable. This restriction may be relaxed
@@ -9078,6 +9082,7 @@ GCPServiceAccountEmail
 that manages GCS storage for the internal container image registry.
 This GSA requires the following IAM roles:
 - roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
+- roles/resourcemanager.tagUser (Tag User - for applying resource tags to the bucket)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
