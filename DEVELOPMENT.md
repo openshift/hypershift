@@ -141,7 +141,7 @@ Use the `git-commit-format` skill for full details and examples.
 
 ### Restructuring Commits Before PR Submission
 
-Before creating a PR or after addressing review comments, use the `restructure-commits` skill to reorganize all branch commits into logical, component-based commits. This ensures every PR has a clean, reviewable commit history grouped by architectural boundary.
+Before creating a PR or after addressing review comments, follow [`skills/restructure-commits/SKILL.md`](skills/restructure-commits/SKILL.md) to reorganize all branch commits into logical, component-based commits. Any agent or human can follow it; its ownership rules are generated into `ownership.json` by `make update`, and `make verify-commit-layout BASE=<merge-base>` must pass before pushing.
 
 ## Pull Requests
 
@@ -149,7 +149,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guidelines. Key
 
 ### Before Creating a PR
 
-1. Use the `restructure-commits` skill to organize commits by component (see [Restructuring Commits](#restructuring-commits-before-pr-submission) above)
+1. Follow the restructure-commits procedure to organize commits by component (see [Restructuring Commits](#restructuring-commits-before-pr-submission) above)
 2. Run `make pre-commit` to build, compile e2e tests, run verification (formatting, linting, gitlint), and run unit tests
 
 ### PR Title
@@ -168,7 +168,7 @@ Follow the template in `.github/PULL_REQUEST_TEMPLATE.md`.
 
 ### After Review Comments
 
-After addressing review feedback, use the `restructure-commits` skill again to reorganize commits before force-pushing. This keeps the commit history clean for subsequent review rounds.
+After addressing review feedback, follow the restructure-commits procedure again to reorganize commits before force-pushing. This keeps the commit history clean for subsequent review rounds.
 
 ## Code Conventions
 
