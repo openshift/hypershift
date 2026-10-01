@@ -10,8 +10,10 @@ import (
 // readable by clients built against the earlier API-only version of the type.
 type gcpResourceTagNMinus1 struct {
 	// key is the tag's short key in the previous wire representation.
+	// +kubebuilder:validation:MaxLength=63
 	Key string `json:"key,omitempty"`
 	// value is the tag's short value in the previous wire representation.
+	// +kubebuilder:validation:MaxLength=63
 	Value string `json:"value,omitempty"`
 }
 

@@ -61,7 +61,7 @@ type GCPResourceTag struct {
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=32
-	// +kubebuilder:validation:Pattern=`(^[1-9][0-9]{0,31}$)|(^[a-z][a-z0-9-]{4,28}[a-z0-9]$)`
+	// +kubebuilder:validation:XValidation:rule="self.matches('(^[1-9][0-9]{0,31}$)|(^[a-z][a-z0-9-]{4,28}[a-z0-9]$)')",message="parentID must be a numeric organization ID or a valid GCP project ID"
 	ParentID string `json:"parentID,omitempty"`
 
 	// key is the short name of the pre-existing Resource Manager TagKey.
@@ -72,7 +72,7 @@ type GCPResourceTag struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9]([0-9A-Za-z_.-]{0,61}[a-zA-Z0-9])?$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-zA-Z0-9]([0-9A-Za-z_.-]{0,61}[a-zA-Z0-9])?$')",message="key must start and end with an ASCII letter or digit and contain only supported tag key characters"
 	Key string `json:"key,omitempty"`
 
 	// value is the short name of the pre-existing Resource Manager TagValue for
@@ -84,7 +84,7 @@ type GCPResourceTag struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9]([0-9A-Za-z_.@%=+:,*#&()\[\]{}\-\s]{0,61}[a-zA-Z0-9])?$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-zA-Z0-9]([0-9A-Za-z_.@%=+:,*#&()\\\\[\\\\]{}\\\\-\\\\s]{0,61}[a-zA-Z0-9])?$')",message="value must start and end with an ASCII letter or digit and contain only supported tag value characters"
 	Value string `json:"value,omitempty"`
 }
 
