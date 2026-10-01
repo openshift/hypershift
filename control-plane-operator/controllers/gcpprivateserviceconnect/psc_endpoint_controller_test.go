@@ -1611,136 +1611,140 @@ func TestHandleOrphanedHCPFinalizer(t *testing.T) {
 }
 
 func TestHandlePSCCRDeletion(t *testing.T) {
-	t.Run("When builder is initialized but HCP is deleted, it should remove PSC finalizer (Issue #6 fix)", func(t *testing.T) {
-		scheme := newGCPPSCTestScheme(t)
-		psc := newTestGCPPSC("test-psc", "test-ns", false)
-		psc.Finalizers = []string{pscEndpointFinalizer, "other-finalizer"}
-		now := metav1.Now()
-		psc.DeletionTimestamp = &now
-
-		// No HCP object - simulates HCP already deleted
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc).Build()
-		r := &GCPPrivateServiceConnectReconciler{
-			Client: fakeClient,
-			gcpClientBuilder: gcpClientBuilder{
-				initialized:     true, // Builder WAS initialized during normal reconciliation
-				customerProject: "test-project",
-				region:          "us-central1",
-			},
+	// clientErr is a factory that always fails to build a GCP client, simulating
+	// unavailable credentials.
+	clientErr := func(*testing.T) func(context.Context) (*compute.Service, error) {
+		return func(context.Context) (*compute.Service, error) {
+			return nil, errors.New("credentials unavailable")
 		}
+	}
 
-		result, err := r.handlePSCCRDeletion(t.Context(), psc, testr.New(t))
-		require.NoError(t, err)
-		assert.Equal(t, ctrl.Result{}, result)
+	tests := []struct {
+		name string
+		// builderInitialized reflects whether the in-memory client builder was already
+		// initialized from a prior reconcile (true) or is cold, e.g. after a controller
+		// restart (false).
+		builderInitialized bool
+		// createHCP controls whether the owning HCP still exists. When false, the HCP is
+		// absent, exercising the orphaned-finalizer removal path.
+		createHCP bool
+		// clientFactory injects the GCP client; nil means none is needed (orphan path).
+		clientFactory func(*testing.T) func(context.Context) (*compute.Service, error)
+		// patchConflict makes PSC finalizer patches return a conflict error.
+		patchConflict           bool
+		expectErr               bool
+		expectRequeueAfter      time.Duration
+		expectFinalizerRetained bool
+	}{
+		{
+			name:               "When builder is initialized but HCP is deleted, it should remove PSC finalizer (Issue #6 fix)",
+			builderInitialized: true,
+		},
+		{
+			name: "When builder is NOT initialized and HCP is deleted, it should remove PSC finalizer",
+		},
+		{
+			name:               "When HCP exists, it should proceed with normal cleanup",
+			builderInitialized: true,
+			createHCP:          true,
+			clientFactory:      successfulGCPClientFactory,
+		},
+		{
+			name:                    "When the GCP client cannot be created, it should error and retain the finalizer",
+			builderInitialized:      true,
+			createHCP:               true,
+			clientFactory:           clientErr,
+			expectErr:               true,
+			expectFinalizerRetained: true,
+		},
+		{
+			name:                    "When removing the orphaned finalizer conflicts, it should requeue and retain the finalizer",
+			builderInitialized:      true,
+			patchConflict:           true,
+			expectRequeueAfter:      time.Second,
+			expectFinalizerRetained: true,
+		},
+		{
+			name:                    "When removing the finalizer after cleanup conflicts, it should requeue and retain the finalizer",
+			builderInitialized:      true,
+			createHCP:               true,
+			clientFactory:           successfulGCPClientFactory,
+			patchConflict:           true,
+			expectRequeueAfter:      time.Second,
+			expectFinalizerRetained: true,
+		},
+	}
 
-		// PSC finalizer should be removed despite builder being initialized
-		updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
-		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
-		assert.NotContains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
-		assert.Contains(t, updatedPSC.Finalizers, "other-finalizer") // Other finalizer remains
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := newGCPPSCTestScheme(t)
+			psc := newTestGCPPSC("test-psc", "test-ns", false)
+			psc.Finalizers = []string{pscEndpointFinalizer, "other-finalizer"}
+			psc.Status.EndpointIP = "10.0.0.10"
+			now := metav1.Now()
+			psc.DeletionTimestamp = &now
 
-	t.Run("When builder is NOT initialized and HCP is deleted, it should remove PSC finalizer", func(t *testing.T) {
-		scheme := newGCPPSCTestScheme(t)
-		psc := newTestGCPPSC("test-psc", "test-ns", false)
-		psc.Finalizers = []string{pscEndpointFinalizer, "other-finalizer"}
-		now := metav1.Now()
-		psc.DeletionTimestamp = &now
+			var hcp *hyperv1.HostedControlPlane
+			objs := []client.Object{psc}
+			if tt.createHCP {
+				hcp = newTestGCPHCP("test-hcp", "test-ns")
+				objs = append(objs, hcp)
+			}
 
-		// No HCP object - simulates HCP already deleted
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc).Build()
-		r := &GCPPrivateServiceConnectReconciler{
-			Client: fakeClient,
-			gcpClientBuilder: gcpClientBuilder{
-				initialized: false, // Builder not initialized (e.g., controller restart)
-			},
-		}
+			clientBuilder := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...)
+			if tt.patchConflict {
+				conflictErr := apierrors.NewConflict(hyperv1.Resource("gcpprivateserviceconnects"), psc.Name, errors.New("conflict"))
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+						if _, ok := obj.(*hyperv1.GCPPrivateServiceConnect); ok {
+							return conflictErr
+						}
+						return c.Patch(ctx, obj, patch, opts...)
+					},
+				})
+			}
+			fakeClient := clientBuilder.Build()
 
-		result, err := r.handlePSCCRDeletion(t.Context(), psc, testr.New(t))
-		require.NoError(t, err)
-		assert.Equal(t, ctrl.Result{}, result)
+			builder := gcpClientBuilder{}
+			if tt.builderInitialized {
+				builder.initialized = true
+				builder.customerProject = "test-project"
+				builder.region = "us-central1"
+			}
+			if tt.clientFactory != nil {
+				builder.newClient = tt.clientFactory(t)
+			}
+			r := &GCPPrivateServiceConnectReconciler{Client: fakeClient, gcpClientBuilder: builder}
 
-		// PSC finalizer should be removed
-		updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
-		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
-		assert.NotContains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
-		assert.Contains(t, updatedPSC.Finalizers, "other-finalizer") // Other finalizer remains
-	})
+			result, err := r.handlePSCCRDeletion(t.Context(), psc, testr.New(t))
+			if tt.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tt.expectRequeueAfter, result.RequeueAfter)
 
-	t.Run("When HCP exists, it should proceed with normal cleanup", func(t *testing.T) {
-		scheme := newGCPPSCTestScheme(t)
-		psc := newTestGCPPSC("test-psc", "test-ns", false)
-		psc.Finalizers = []string{pscEndpointFinalizer, "other-finalizer"}
-		psc.Status.EndpointIP = "10.0.0.10"
-		now := metav1.Now()
-		psc.DeletionTimestamp = &now
+			updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+			require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
+			if tt.expectFinalizerRetained {
+				assert.Contains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
+			} else {
+				assert.NotContains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
+			}
+			assert.Contains(t, updatedPSC.Finalizers, "other-finalizer") // Unrelated finalizer always remains
 
-		hcp := newTestGCPHCP("test-hcp", "test-ns")
-
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp).Build()
-		r := &GCPPrivateServiceConnectReconciler{
-			Client: fakeClient,
-			gcpClientBuilder: gcpClientBuilder{
-				initialized:     true,
-				customerProject: "test-project",
-				region:          "us-central1",
-				newClient:       testGCPClientFactory(t, http.StatusOK, "DONE"), // Operation completes immediately
-			},
-		}
-
-		result, err := r.handlePSCCRDeletion(t.Context(), psc, testr.New(t))
-		require.NoError(t, err)
-		// Should complete cleanup and remove finalizer
-		assert.Equal(t, ctrl.Result{}, result)
-
-		updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
-		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
-		assert.NotContains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
-		assert.Contains(t, updatedPSC.Finalizers, "other-finalizer") // Other finalizer remains
-
-		// PSC-before-HCP ordering guard: cleaning up the PSC must not delete the HCP or
-		// mark it for deletion. Re-fetch and assert it still exists, untouched. Without
-		// this, the finalizer-only assertions above would still pass if HCP deletion were
-		// (incorrectly) requested during PSC cleanup.
-		updatedHCP := &hyperv1.HostedControlPlane{}
-		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP),
-			"HCP must still exist after PSC cleanup")
-		assert.True(t, updatedHCP.DeletionTimestamp.IsZero(),
-			"HCP must not be marked for deletion by PSC cleanup")
-	})
-
-	t.Run("When the GCP client cannot be created, it should error and retain the finalizer", func(t *testing.T) {
-		scheme := newGCPPSCTestScheme(t)
-		psc := newTestGCPPSC("test-psc", "test-ns", false)
-		psc.Finalizers = []string{pscEndpointFinalizer, "other-finalizer"}
-		now := metav1.Now()
-		psc.DeletionTimestamp = &now
-
-		hcp := newTestGCPHCP("test-hcp", "test-ns")
-
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp).Build()
-		r := &GCPPrivateServiceConnectReconciler{
-			Client: fakeClient,
-			gcpClientBuilder: gcpClientBuilder{
-				initialized:     true,
-				customerProject: "test-project",
-				region:          "us-central1",
-				newClient: func(context.Context) (*compute.Service, error) {
-					return nil, errors.New("credentials unavailable")
-				},
-			},
-		}
-
-		result, err := r.handlePSCCRDeletion(t.Context(), psc, testr.New(t))
-		require.Error(t, err)
-		assert.Equal(t, ctrl.Result{}, result)
-
-		// Finalizer must be retained so cleanup is retried once credentials are ready.
-		updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
-		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
-		assert.Contains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
-		assert.Contains(t, updatedPSC.Finalizers, "other-finalizer")
-	})
+			// PSC-before-HCP ordering guard: cleaning up the PSC must never delete the HCP
+			// or mark it for deletion. Without this, the finalizer assertions above would
+			// still pass even if HCP deletion were (incorrectly) requested during cleanup.
+			if tt.createHCP {
+				updatedHCP := &hyperv1.HostedControlPlane{}
+				require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP),
+					"HCP must still exist after PSC cleanup")
+				assert.True(t, updatedHCP.DeletionTimestamp.IsZero(),
+					"HCP must not be marked for deletion by PSC cleanup")
+			}
+		})
+	}
 }
 
 func TestReconcileDelete(t *testing.T) {

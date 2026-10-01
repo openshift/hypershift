@@ -279,8 +279,14 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 			log.Info("WIF token not yet accessible, waiting before adding finalizer")
 			return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 		}
+		original := gcpPSC.DeepCopy()
 		controllerutil.AddFinalizer(gcpPSC, pscEndpointFinalizer)
-		return ctrl.Result{}, r.Update(ctx, gcpPSC)
+		err := r.Patch(ctx, gcpPSC, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+		if apierrors.IsConflict(err) {
+			log.V(1).Info("Conflict adding CR finalizer, will retry")
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		return ctrl.Result{}, err
 	}
 
 	// 6. Initialize client builder with HCP configuration
@@ -368,8 +374,14 @@ func (r *GCPPrivateServiceConnectReconciler) handlePSCCRDeletion(
 		if apierrors.IsNotFound(err) {
 			// HCP is gone - remove orphaned PSC finalizer to allow GC
 			log.Info("HCP not found during PSC deletion, removing orphaned finalizer")
+			original := gcpPSC.DeepCopy()
 			controllerutil.RemoveFinalizer(gcpPSC, pscEndpointFinalizer)
-			if err := r.Update(ctx, gcpPSC); err != nil {
+			err := r.Patch(ctx, gcpPSC, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+			if apierrors.IsConflict(err) {
+				log.V(1).Info("Conflict removing orphaned finalizer, will retry")
+				return ctrl.Result{RequeueAfter: time.Second}, nil
+			}
+			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to remove orphaned finalizer: %w", err)
 			}
 			return ctrl.Result{}, nil
@@ -399,8 +411,14 @@ func (r *GCPPrivateServiceConnectReconciler) handlePSCCRDeletion(
 
 	// Cleanup succeeded - remove finalizer
 	if controllerutil.ContainsFinalizer(gcpPSC, pscEndpointFinalizer) {
+		original := gcpPSC.DeepCopy()
 		controllerutil.RemoveFinalizer(gcpPSC, pscEndpointFinalizer)
-		if err := r.Update(ctx, gcpPSC); err != nil {
+		err := r.Patch(ctx, gcpPSC, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+		if apierrors.IsConflict(err) {
+			log.V(1).Info("Conflict removing finalizer, will retry")
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
 		}
 	}
