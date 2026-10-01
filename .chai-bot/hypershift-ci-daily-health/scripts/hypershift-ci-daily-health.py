@@ -827,7 +827,7 @@ def classify_periodic_sparkline(
       r >= V_periodic AND span >= D_periodic hours -> permafailing
       otherwise (with testable history)            -> not_permafailing
     Fail-safe: a missing/empty sparkline, a sparkline whose length does not match its
-    slot timestamps, unparseable slots, or no testable history -> unknown (never green).
+    slot timestamps, unparsable slots, or no testable history -> unknown (never green).
     """
     unknown = {
         "classification": "unknown",
