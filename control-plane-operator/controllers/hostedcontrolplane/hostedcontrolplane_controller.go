@@ -156,6 +156,8 @@ const (
 
 	cpoAzureCredentials = "CPOAzureCredentials"
 	kmsAzureCredentials = "KMSAzureCredentials"
+
+	azureKMSValidationTimeout = 30 * time.Second
 )
 
 type HostedControlPlaneReconciler struct {
@@ -193,6 +195,7 @@ type HostedControlPlaneReconciler struct {
 	ImageMetadataProvider                   util.ImageMetadataProvider
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
+	newAzureKMSCredential                   func(context.Context, string, ...dataplane.Option) (azcore.TokenCredential, error)
 	clock                                   clock.Clock
 }
 
@@ -3269,9 +3272,8 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		if hyperazureutil.IsPrivateKeyVault(hcp) {
 			transport, err := r.privateRouterKeyVaultTransport(ctx, hcp)
 			if err != nil {
-				// The router Service or its ClusterIP is not there yet, which
-				// is expected early in provisioning. Report Unknown and let the
-				// next reconcile retry instead of claiming the vault is bad.
+				// The relay may still be provisioning. Report Unknown and let
+				// the next reconcile retry until the router is available.
 				meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
 					Type:               string(hyperv1.ValidAzureKMSConfig),
 					ObservedGeneration: hcp.Generation,
@@ -3281,6 +3283,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 				})
 				return
 			}
+			defer transport.CloseIdleConnections()
 			keysTransport = transport
 		}
 
@@ -3297,7 +3300,11 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 					fmt.Sprintf("failed to get Azure cloud configuration: %v", err))
 				return
 			}
-			cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}))
+			newCredential := r.newAzureKMSCredential
+			if newCredential == nil {
+				newCredential = dataplane.NewUserAssignedIdentityCredential
+			}
+			cred, err = newCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}))
 			if err != nil {
 				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
 					fmt.Sprintf("failed to obtain azure client credentials: %v", err))
@@ -3374,7 +3381,11 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		Algorithm: ptr.To(azkeys.EncryptionAlgorithmRSAOAEP256),
 		Value:     []byte("text"),
 	}
-	if _, err := keysClient.Encrypt(ctx, azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
+	// Bound authentication, HTTP requests and retries without cancelling the
+	// cached credential's background reloader or the rest of reconciliation.
+	probeCtx, cancel := context.WithTimeout(ctx, azureKMSValidationTimeout)
+	defer cancel()
+	if _, err := keysClient.Encrypt(probeCtx, azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
 		condition = metav1.Condition{
 			Type:               string(hyperv1.ValidAzureKMSConfig),
 			ObservedGeneration: hcp.Generation,
@@ -3396,10 +3407,9 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 // the hostAlias on the KAS deployment). This resolves that same relay for the
 // CPO's own client.
 //
-// Returns an error while the router Service has not been reconciled or has not
-// been assigned a ClusterIP yet; callers should treat that as "cannot tell yet"
-// rather than a validation failure.
-func (r *HostedControlPlaneReconciler) privateRouterKeyVaultTransport(ctx context.Context, hcp *hyperv1.HostedControlPlane) (policy.Transporter, error) {
+// Returns an error while the router Service or Deployment is unavailable;
+// callers should treat that as "cannot tell yet" rather than a validation failure.
+func (r *HostedControlPlaneReconciler) privateRouterKeyVaultTransport(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*http.Client, error) {
 	keyVaultFQDN, err := hyperazureutil.GetKeyVaultFQDN(hcp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Key Vault FQDN: %w", err)
@@ -3426,6 +3436,16 @@ func (r *HostedControlPlaneReconciler) privateRouterKeyVaultTransport(ctx contex
 	}
 	if relayPort == 0 {
 		return nil, fmt.Errorf("private-router service %s/%s has no https port", routerService.Namespace, routerService.Name)
+	}
+
+	routerDeployment := manifests.RouterDeployment(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(routerDeployment), routerDeployment); err != nil {
+		return nil, fmt.Errorf("failed to get router deployment: %w", err)
+	}
+	// An available replica is sufficient to attempt the probe. Requiring a
+	// completed rollout would unnecessarily skip validation during updates.
+	if routerDeployment.Status.AvailableReplicas == 0 {
+		return nil, fmt.Errorf("router deployment %s/%s has no available replicas", routerDeployment.Namespace, routerDeployment.Name)
 	}
 
 	relayAddress := net.JoinHostPort(clusterIP, strconv.Itoa(int(relayPort)))
