@@ -1,0 +1,125 @@
+name: Rehearse Release Workflows
+
+# Manual trigger for testing release workflow changes on any branch.
+# The reusable workflows are pinned to @main, so PR CI cannot exercise
+# changes to them. This workflow inlines the same steps so they run
+# from the branch code.
+#
+# Usage:
+#   gh workflow run rehearse-release-workflows.yaml --ref <branch>
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'fix/release-workflow-*'
+    paths:
+      - '.github/workflows/*release*'
+      - '.github/workflows/*tag*'
+
+permissions:
+  contents: read
+
+jobs:
+  rehearse-validate:
+    name: "Rehearse: Validate Tag Request"
+    runs-on: arc-runner-set
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install yq
+        env:
+          INSTALL_DIR: ${{ runner.temp }}/bin
+        run: |
+          YQ_VERSION="v4.44.6"
+          case "$(uname -m)" in
+            x86_64)  YQ_ARCH="amd64"; YQ_SHA256="0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598" ;;
+            aarch64) YQ_ARCH="arm64"; YQ_SHA256="9477ac3cc447b6c083986129e35af8122eb2b938fe55c9c3e40436fb966e5813" ;;
+            *) echo "::error::Unsupported architecture: $(uname -m)"; exit 1 ;;
+          esac
+          mkdir -p "$INSTALL_DIR"
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${YQ_ARCH}" -o "${INSTALL_DIR}/yq"
+          echo "${YQ_SHA256}  ${INSTALL_DIR}/yq" | sha256sum -c -
+          chmod +x "${INSTALL_DIR}/yq"
+          echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+      - name: Validate (dry-run)
+        run: |
+          set -euo pipefail
+
+          echo "## Rehearse: Validate Tag Request" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Environment:"
+          echo "  HOME=${HOME:-<unset>}"
+          echo "  USER=$(id)"
+          echo "  yq=$(command -v yq) ($(yq --version))"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          tag_count=$(yq '.tags | length' releases/tags.yaml)
+          echo "Tags in manifest: $tag_count"
+          echo "- Tags in manifest: **$tag_count**" >> "$GITHUB_STEP_SUMMARY"
+
+          for i in $(seq 0 $((tag_count - 1))); do
+            name=$(yq ".tags[$i].name" releases/tags.yaml)
+            commit=$(yq ".tags[$i].commit" releases/tags.yaml)
+            echo "  [$i] $name -> $commit"
+          done
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Install and parsing steps succeeded." >> "$GITHUB_STEP_SUMMARY"
+
+  rehearse-release:
+    name: "Rehearse: Create Release tooling"
+    runs-on: arc-runner-set
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install git-cliff
+        env:
+          INSTALL_DIR: ${{ runner.temp }}/bin
+          GIT_CLIFF_VERSION: "2.7.0"
+        run: |
+          case "$(uname -m)" in
+            x86_64)  CLIFF_ARCH="x86_64";  CLIFF_SHA256="d9705c9f43bd74e2d10ca7df10b624bbe6f15bd4774f6c1e012db5be276f91f7" ;;
+            aarch64) CLIFF_ARCH="aarch64"; CLIFF_SHA256="545eb07f032882250db0b699cd62a078e12a8025bda1fe250a30efe9230a619d" ;;
+            *) echo "::error::Unsupported architecture: $(uname -m)"; exit 1 ;;
+          esac
+          curl -fsSL "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-${CLIFF_ARCH}-unknown-linux-gnu.tar.gz" \
+            -o /tmp/git-cliff.tar.gz
+          echo "${CLIFF_SHA256}  /tmp/git-cliff.tar.gz" | sha256sum -c -
+          tar xzf /tmp/git-cliff.tar.gz -C /tmp
+          mkdir -p "$INSTALL_DIR"
+          mv "/tmp/git-cliff-${GIT_CLIFF_VERSION}/git-cliff" "${INSTALL_DIR}/git-cliff"
+          chmod +x "${INSTALL_DIR}/git-cliff"
+          echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+      - name: Generate release notes (dry-run)
+        run: |
+          set -euo pipefail
+
+          echo "## Rehearse: Create Release" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Environment:"
+          echo "  HOME=${HOME:-<unset>}"
+          echo "  USER=$(id)"
+          echo "  git-cliff=$(command -v git-cliff) ($(git-cliff --version))"
+
+          latest_tag=$(git tag --sort=-v:refname | head -1 || true)
+          if [ -n "$latest_tag" ]; then
+            echo "Generating sample release notes since $latest_tag..."
+            git cliff "${latest_tag}..HEAD" --tag "vREHEARSAL" -o /tmp/release-notes.md
+            echo "--- Release notes preview (first 50 lines) ---"
+            head -50 /tmp/release-notes.md
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Release notes generation succeeded." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No existing tags found; skipping release notes generation."
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No existing tags; release notes generation skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi

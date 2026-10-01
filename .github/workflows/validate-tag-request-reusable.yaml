@@ -17,14 +17,20 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Install yq
+        env:
+          INSTALL_DIR: ${{ runner.temp }}/bin
         run: |
           YQ_VERSION="v4.44.6"
-          YQ_SHA256="0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598"
-          mkdir -p "${HOME}/.local/bin"
-          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o "${HOME}/.local/bin/yq"
-          echo "${YQ_SHA256}  ${HOME}/.local/bin/yq" | sha256sum -c -
-          chmod +x "${HOME}/.local/bin/yq"
-          echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+          case "$(uname -m)" in
+            x86_64)  YQ_ARCH="amd64"; YQ_SHA256="0c2b24e645b57d8e7c0566d18643a6d4f5580feeea3878127354a46f2a1e4598" ;;
+            aarch64) YQ_ARCH="arm64"; YQ_SHA256="9477ac3cc447b6c083986129e35af8122eb2b938fe55c9c3e40436fb966e5813" ;;
+            *) echo "::error::Unsupported architecture: $(uname -m)"; exit 1 ;;
+          esac
+          mkdir -p "$INSTALL_DIR"
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${YQ_ARCH}" -o "${INSTALL_DIR}/yq"
+          echo "${YQ_SHA256}  ${INSTALL_DIR}/yq" | sha256sum -c -
+          chmod +x "${INSTALL_DIR}/yq"
+          echo "$INSTALL_DIR" >> "$GITHUB_PATH"
       - name: Validate new tag entries
         run: |
           set -euo pipefail
