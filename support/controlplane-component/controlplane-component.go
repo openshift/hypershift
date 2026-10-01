@@ -10,11 +10,11 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -48,7 +48,7 @@ type ControlPlaneContext struct {
 	// UserReleaseImageProvider contains the version and component images related to data-plane release image.
 	UserReleaseImageProvider imageprovider.ReleaseImageProvider
 	// ImageMetadataProvider returns metadata for a given release image using the given pull secret.
-	ImageMetadataProvider util.ImageMetadataProvider
+	ImageMetadataProvider imageregistry.ImageMetadataProvider
 
 	// InfraStatus contains all the information about the Hosted cluster's infra services.
 	InfraStatus infra.InfrastructureStatus
@@ -88,7 +88,7 @@ type WorkloadContext struct {
 	HCP                      *hyperv1.HostedControlPlane
 	ReleaseImageProvider     imageprovider.ReleaseImageProvider
 	UserReleaseImageProvider imageprovider.ReleaseImageProvider
-	ImageMetadataProvider    util.ImageMetadataProvider
+	ImageMetadataProvider    imageregistry.ImageMetadataProvider
 
 	InfraStatus               infra.InfrastructureStatus
 	SetDefaultSecurityContext bool

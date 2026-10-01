@@ -9,11 +9,11 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
-	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -88,7 +88,7 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) []corev1.EnvVar {
 		{Name: "TOKEN_AUDIENCE", Value: hcp.Spec.IssuerURL},
 
 		{Name: "RELEASE_VERSION", Value: cpContext.UserReleaseImageProvider.Version()},
-		{Name: "OPENSHIFT_RELEASE_IMAGE", Value: util.HCPControlPlaneReleaseImage(hcp)},
+		{Name: "OPENSHIFT_RELEASE_IMAGE", Value: imageregistry.HCPControlPlaneReleaseImage(hcp)},
 		{Name: "APISERVER_OVERRIDE_HOST", Value: apiServerAddress}, // We need to pass this down to networking components on the nodes
 		{Name: "APISERVER_OVERRIDE_PORT", Value: fmt.Sprint(apiServerPort)},
 

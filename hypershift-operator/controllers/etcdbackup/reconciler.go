@@ -10,9 +10,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	supportconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -877,14 +877,14 @@ func (r *HCPEtcdBackupReconciler) createBackupJob(ctx context.Context, backup *h
 	}
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
 
-	releaseImage := hyperutil.HCPControlPlaneReleaseImage(hcp)
+	releaseImage := imageregistry.HCPControlPlaneReleaseImage(hcp)
 
 	cpoImage, err := r.resolveControlPlaneOperatorImage(ctx, hcp, releaseImage, pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to resolve CPO image: %w", err)
 	}
 
-	etcdImage, err := hyperutil.GetPayloadImageFromRelease(ctx, r.ReleaseProvider, releaseImage, "etcd", pullSecretBytes)
+	etcdImage, err := imageregistry.GetPayloadImageFromRelease(ctx, r.ReleaseProvider, releaseImage, "etcd", pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to resolve etcd image: %w", err)
 	}

@@ -14,12 +14,12 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -59,7 +59,7 @@ type KarpenterIgnitionReconciler struct {
 	GuestClient             client.Client
 	ReleaseProvider         releaseinfo.Provider
 	VersionResolver         releaseinfo.VersionResolver
-	ImageMetadataProvider   supportutil.ImageMetadataProvider
+	ImageMetadataProvider   imageregistry.ImageMetadataProvider
 	HypershiftOperatorImage string
 	IgnitionEndpoint        string
 	Namespace               string

@@ -8,8 +8,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -210,7 +210,7 @@ func getImageContentSourcePolicies(ctx context.Context, client crclient.Client) 
 // RegistryProvider is an interface for release and metadata providers to enable the reconcilliation
 // of those providers
 type RegistryProvider interface {
-	GetMetadataProvider() hyperutil.ImageMetadataProvider
+	GetMetadataProvider() imageregistry.ImageMetadataProvider
 	GetReleaseProvider() releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
 	Reconcile(context.Context, crclient.Client) error
 }
@@ -218,7 +218,7 @@ type RegistryProvider interface {
 // CommonRegistryProvider is the default RegistyProvider implementation
 type CommonRegistryProvider struct {
 	capChecker       capabilities.CapabiltyChecker
-	MetadataProvider *hyperutil.RegistryClientImageMetadataProvider
+	MetadataProvider *imageregistry.RegistryClientImageMetadataProvider
 	ReleaseProvider  *releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator
 }
 
@@ -248,7 +248,7 @@ func NewCommonRegistryProvider(ctx context.Context, capChecker capabilities.Capa
 		OpenShiftImageRegistryOverrides: imageRegistryMirrors,
 	}
 
-	metadataProvider := &hyperutil.RegistryClientImageMetadataProvider{
+	metadataProvider := &imageregistry.RegistryClientImageMetadataProvider{
 		OpenShiftImageRegistryOverrides: imageRegistryMirrors,
 	}
 
@@ -262,7 +262,7 @@ func NewCommonRegistryProvider(ctx context.Context, capChecker capabilities.Capa
 }
 
 // GetMetadataProvider returns the image metadata provider for the registry provider
-func (rp CommonRegistryProvider) GetMetadataProvider() hyperutil.ImageMetadataProvider {
+func (rp CommonRegistryProvider) GetMetadataProvider() imageregistry.ImageMetadataProvider {
 	return rp.MetadataProvider
 }
 

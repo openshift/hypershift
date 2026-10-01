@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
@@ -46,7 +47,6 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 	syncfgconfigmap "github.com/openshift/hypershift/sync-fg-configmap"
 	syncglobalpullsecret "github.com/openshift/hypershift/sync-global-pullsecret"
 	tokenminter "github.com/openshift/hypershift/token-minter"
@@ -268,7 +268,7 @@ func buildImageRegistryOverrides(registryOverrides map[string]string) map[string
 
 	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
 	if ok {
-		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+		imageRegistryOverrides = imageregistry.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
 	}
 
 	if len(registryOverrides) > 0 {
@@ -508,7 +508,7 @@ func NewStartCommand() *cobra.Command {
 
 		cpReleaseProvider, userReleaseProvider := buildReleaseProviders(componentImages, registryOverrides, imageRegistryOverrides)
 
-		imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+		imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		}
 

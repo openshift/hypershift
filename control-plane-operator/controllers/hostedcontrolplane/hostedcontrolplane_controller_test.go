@@ -38,6 +38,7 @@ import (
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -47,7 +48,6 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -5336,7 +5336,7 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 }
 
 // Compile-time assertion that fakeVersionImageMetadataProvider satisfies the interface.
-var _ util.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
+var _ imageregistry.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
 
 // Compile-time assertion for clock interface used by tests.
 var _ clock.Clock = &testingclock.FakeClock{}
