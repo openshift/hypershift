@@ -92,6 +92,8 @@ oc patch hostedcluster -n <HOSTED_CLUSTER_NAMESPACE> <HOSTED_CLUSTER_NAME> --typ
 | `maxPodGracePeriod` | int | 600 | Maximum seconds to wait for graceful pod termination before scaling down. |
 | `maxNodeProvisionTime` | string | 15m | Maximum time to wait for a node to provision, in Go duration format (e.g., `15m`, `20m`). |
 | `podPriorityThreshold` | int | -10 | Pods with priority below this threshold won't trigger scale-up. |
+| `kubeClientQPS` | int | 5 | Maximum queries-per-second the autoscaler may send to the kube-apiserver (`--kube-client-qps`). Must be between -1 and 1000. `-1` disables client-side rate limiting; `0` uses the client-go default QPS of 5; `1000` is the maximum. When omitted, the flag is not set. |
+| `kubeClientBurst` | int | 10 | Maximum burst of queries to the kube-apiserver (`--kube-client-burst`). Must be between 1 and 2000. `1` is the minimum; `2000` is the maximum. When omitted, the flag is not set. |
 
 !!! note
     Defaults listed in the configuration reference tables represent the cluster autoscaler's effective behavior when the field is omitted. The only API-enforced default is `scaling`, which defaults to `ScaleUpAndScaleDown`.
