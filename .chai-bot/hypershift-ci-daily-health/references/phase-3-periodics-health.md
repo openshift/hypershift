@@ -1,10 +1,5 @@
 # Phase 3 — Periodics Health (SLO)
 
-The work of this phase is **driving SLO restoration for periodics** — the release-payload
-periodics below the SLO that are **not** already flagged as permafailing release blockers (those
-are Phase 1's job). The Slack reply is **diff-only**: it surfaces just what *changed* since the
-tracked state and proposes the Jira lifecycle actions. Skip if there is nothing to surface.
-
 **Scope:** every **periodic** in `job_health_below_slo` (`kind == periodic`) **except** those in
 the Phase-1 flagged blocker set (the permafailing release blockers — they're tracked there).
 Presubmit SLO health is out of scope for this phase.

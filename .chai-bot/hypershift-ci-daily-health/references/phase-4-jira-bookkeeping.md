@@ -1,10 +1,5 @@
 # Phase 4 — Jira bookkeeping (after approval)
 
-The work of this phase is the **Jira bookkeeping** — executing the approved changes; the Slack
-reply just reports the result. Post it **only after a human approves** the Phase 2 (candidate)
-and Phase 3 (periodics-health) proposals. Skip if nothing is approved. Before this phase you have
-written nothing to Jira (propose → approve → execute).
-
 ## Workflow
 
 1. **Execute the approved blocker/flake changes.** Build the hierarchy `epic (dev cycle) →

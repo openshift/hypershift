@@ -1,10 +1,5 @@
 # Phase 1 — Parent report
 
-**One Slack message: the parent report**, posted with **minimal LLM judgment** — it carries the
-companion's deterministic verdicts and the incident proposal for permafailing blockers, nothing
-more. It is the thread parent for Phases 2–3, and MUST be the report itself (never a
-"collecting…" / "trends collected" placeholder).
-
 You **MUST NOT** triage presubmit candidates, open run logs, assert failure causes, or classify
 anything here. Candidates are **listed** (a deterministic classification), never judged — no
 verdict, no count‑by‑verdict, no cause. You **MUST** defer all triage to Phase 2.

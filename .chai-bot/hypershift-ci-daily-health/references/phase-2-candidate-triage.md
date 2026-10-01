@@ -1,9 +1,5 @@
 # Phase 2 — Candidate triage
 
-**One Slack thread reply** that triages every `presubmit_candidates` entry and proposes the
-per‑candidate Jira changes. This is where the **heavy LLM judgment** lives. Skip this phase only
-if `presubmit_candidates` is empty. Post it only **after** the Phase 1 parent is up.
-
 ## Workflow
 
 1. **Open the run logs.** For each candidate, open the companion-provided canonical Prow run
