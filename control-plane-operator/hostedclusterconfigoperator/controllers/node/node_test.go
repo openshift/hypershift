@@ -420,6 +420,18 @@ func TestMergeTaints(t *testing.T) {
 			},
 		},
 		{
+			name: "When desired has same key+effect but different value it should replace existing",
+			existing: []corev1.Taint{
+				{Key: "key1", Value: "old-val", Effect: corev1.TaintEffectNoSchedule},
+			},
+			desired: []corev1.Taint{
+				{Key: "key1", Value: "new-val", Effect: corev1.TaintEffectNoSchedule},
+			},
+			expected: []corev1.Taint{
+				{Key: "key1", Value: "new-val", Effect: corev1.TaintEffectNoSchedule},
+			},
+		},
+		{
 			name: "When desired has mix of new and existing taints it should only add new ones",
 			existing: []corev1.Taint{
 				{Key: "key1", Value: "val1", Effect: corev1.TaintEffectNoSchedule},
