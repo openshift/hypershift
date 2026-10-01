@@ -9,7 +9,9 @@ import (
 // Validation changed, but the GCPResourceTag wire representation must remain
 // readable by clients built against the earlier API-only version of the type.
 type gcpResourceTagNMinus1 struct {
-	Key   string `json:"key,omitempty"`
+	// key is the tag's short key in the previous wire representation.
+	Key string `json:"key,omitempty"`
+	// value is the tag's short value in the previous wire representation.
 	Value string `json:"value,omitempty"`
 }
 

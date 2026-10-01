@@ -1373,7 +1373,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "key in body should match"
+    expectedError: "key must start and end with an ASCII letter or digit and contain only supported tag key characters"
 
   - name: When a GCP resourceTag value contains an invalid character it should fail
     initial: |
@@ -1432,7 +1432,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "value in body should match"
+    expectedError: "value must start and end with an ASCII letter or digit and contain only supported tag value characters"
 
   - name: When a GCP resourceTag value does not start with a letter or number it should fail
     initial: |
@@ -1491,7 +1491,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "value in body should match"
+    expectedError: "value must start and end with an ASCII letter or digit and contain only supported tag value characters"
 
   - name: When a GCP resourceTag key contains a single quote it should fail
     initial: |
@@ -1550,7 +1550,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "key in body should match"
+    expectedError: "key must start and end with an ASCII letter or digit and contain only supported tag key characters"
 
   - name: When a GCP resourceTag key contains a double quote it should fail
     initial: |
@@ -1609,7 +1609,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "key in body should match"
+    expectedError: "key must start and end with an ASCII letter or digit and contain only supported tag key characters"
 
   - name: When a GCP resourceTag key contains a backslash it should fail
     initial: |
@@ -1668,7 +1668,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "key in body should match"
+    expectedError: "key must start and end with an ASCII letter or digit and contain only supported tag key characters"
 
   - name: When a GCP resourceTag value contains a single quote it should fail
     initial: |
@@ -1727,7 +1727,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "value in body should match"
+    expectedError: "value must start and end with an ASCII letter or digit and contain only supported tag value characters"
 
   - name: When a GCP resourceTag value contains a double quote it should fail
     initial: |
@@ -1786,7 +1786,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "value in body should match"
+    expectedError: "value must start and end with an ASCII letter or digit and contain only supported tag value characters"
 
   - name: When a GCP resourceTag value contains a backslash it should fail
     initial: |
@@ -1845,7 +1845,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "value in body should match"
+    expectedError: "value must start and end with an ASCII letter or digit and contain only supported tag value characters"
 
   - name: When GCP resourceTags contain duplicate keys it should fail
     initial: |
@@ -2141,7 +2141,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "key in body should match"
+    expectedError: "key must start and end with an ASCII letter or digit and contain only supported tag key characters"
 
   - name: When a GCP resourceTag value starts with a non-ASCII character it should fail
     initial: |
@@ -2200,7 +2200,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "value in body should match"
+    expectedError: "value must start and end with an ASCII letter or digit and contain only supported tag value characters"
 
   - name: When GCP resourceTags contain 51 entries it should fail
     initial: |
@@ -2838,7 +2838,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "parentID in body should match"
+    expectedError: "parentID must be a numeric organization ID or a valid GCP project ID"
 
   - name: When GCP resourceTags set an empty parentID it should fail
     initial: |

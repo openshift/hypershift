@@ -8297,8 +8297,11 @@ spec:
                                 '_', or '-' between them.
                               maxLength: 63
                               minLength: 1
-                              pattern: ^[a-zA-Z0-9]([0-9A-Za-z_.-]{0,61}[a-zA-Z0-9])?$
                               type: string
+                              x-kubernetes-validations:
+                              - message: key must start and end with an ASCII letter
+                                  or digit and contain only supported tag key characters
+                                rule: self.matches('^[a-zA-Z0-9]([0-9A-Za-z_.-]{0,61}[a-zA-Z0-9])?$')
                             parentID:
                               description: |-
                                 parentID identifies the project or organization that defines the TagKey.
@@ -8308,8 +8311,11 @@ spec:
                                 need permission to use them.
                               maxLength: 32
                               minLength: 1
-                              pattern: (^[1-9][0-9]{0,31}$)|(^[a-z][a-z0-9-]{4,28}[a-z0-9]$)
                               type: string
+                              x-kubernetes-validations:
+                              - message: parentID must be a numeric organization ID
+                                  or a valid GCP project ID
+                                rule: self.matches('(^[1-9][0-9]{0,31}$)|(^[a-z][a-z0-9-]{4,28}[a-z0-9]$)')
                             value:
                               description: |-
                                 value is the short name of the pre-existing Resource Manager TagValue for
@@ -8319,8 +8325,11 @@ spec:
                                 whitespace between them.
                               maxLength: 63
                               minLength: 1
-                              pattern: ^[a-zA-Z0-9]([0-9A-Za-z_.@%=+:,*#&()\[\]{}\-\s]{0,61}[a-zA-Z0-9])?$
                               type: string
+                              x-kubernetes-validations:
+                              - message: value must start and end with an ASCII letter
+                                  or digit and contain only supported tag value characters
+                                rule: self.matches('^[a-zA-Z0-9]([0-9A-Za-z_.@%=+:,*#&()\\[\\]{}\\-\\s]{0,61}[a-zA-Z0-9])?$')
                           required:
                           - key
                           - value
