@@ -20,6 +20,8 @@ func TestGCPResourceTagSerializationCompatibility(t *testing.T) {
 	}{
 		{name: "When a tag is empty, it should round-trip across versions"},
 		{name: "When a tag has a key and value, it should round-trip across versions", tag: GCPResourceTag{Key: "Environment", Value: "production"}},
+		{name: "When a tag has the current project as parentID, old clients should retain key and value", tag: GCPResourceTag{ParentID: "customer-project", Key: "Environment", Value: "production"}},
+		{name: "When a tag has an organization parentID, old clients should retain key and value", tag: GCPResourceTag{ParentID: "123456789012", Key: "Environment", Value: "production"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			currentJSON, err := json.Marshal(tc.tag)
@@ -41,8 +43,16 @@ func TestGCPResourceTagSerializationCompatibility(t *testing.T) {
 			if err := json.Unmarshal(oldJSON, &current); err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(current, tc.tag) {
-				t.Fatalf("current client read %+v, want %+v", current, tc.tag)
+			wantFromOld := GCPResourceTag{Key: tc.tag.Key, Value: tc.tag.Value}
+			if !reflect.DeepEqual(current, wantFromOld) {
+				t.Fatalf("current client read %+v from old data, want %+v", current, wantFromOld)
+			}
+			var currentRoundTrip GCPResourceTag
+			if err := json.Unmarshal(currentJSON, &currentRoundTrip); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(currentRoundTrip, tc.tag) {
+				t.Fatalf("current client read %+v, want %+v", currentRoundTrip, tc.tag)
 			}
 		})
 	}

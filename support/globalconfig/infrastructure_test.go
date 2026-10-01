@@ -377,7 +377,7 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		{
-			name:       "When GCP platform has resource tags, it should copy all tags with the project as parentID",
+			name:       "When GCP platform has resource tags, it should derive omitted parentIDs and preserve explicit parents",
 			inputInfra: InfrastructureConfig(),
 			inputHCP: func() *hyperv1.HostedControlPlane {
 				hcp := baseHCP(hyperv1.GCPPlatform)
@@ -386,7 +386,8 @@ func TestReconcileInfrastructure(t *testing.T) {
 					Region:  "us-central1",
 					ResourceTags: []hyperv1.GCPResourceTag{
 						{Key: "Environment", Value: "production"},
-						{Key: "cost-center", Value: "platform-123"},
+						{ParentID: "customer-project", Key: "team", Value: "platform-123"},
+						{ParentID: "123456789012", Key: "cost-center", Value: "shared"},
 						{Key: "kubernetes-io", Value: "customer-defined"},
 					},
 				}
@@ -395,7 +396,8 @@ func TestReconcileInfrastructure(t *testing.T) {
 			verify: func(g Gomega, infra *configv1.Infrastructure) {
 				g.Expect(infra.Status.PlatformStatus.GCP.ResourceTags).To(Equal([]configv1.GCPResourceTag{
 					{ParentID: "customer-project", Key: "Environment", Value: "production"},
-					{ParentID: "customer-project", Key: "cost-center", Value: "platform-123"},
+					{ParentID: "customer-project", Key: "team", Value: "platform-123"},
+					{ParentID: "123456789012", Key: "cost-center", Value: "shared"},
 					{ParentID: "customer-project", Key: "kubernetes-io", Value: "customer-defined"},
 				}))
 			},

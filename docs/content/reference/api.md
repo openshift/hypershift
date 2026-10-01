@@ -8536,12 +8536,15 @@ For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/la
 </td>
 <td>
 <em>(Optional)</em>
-<p>resourceTags are pre-existing, project-defined Google Cloud Resource
-Manager tags. HyperShift copies them to the guest cluster&rsquo;s Infrastructure
+<p>resourceTags are pre-existing, project- or organization-defined Google
+Cloud Resource Manager tags. HyperShift copies them to the guest Infrastructure
 status, where the GCP PD CSI driver and image registry operator can apply
 them to resources they create. This does not tag GCP resources created by
 HyperShift or CAPG on the management side. HyperShift does not create
-TagKeys, TagValues, or management-side TagBindings.</p>
+TagKeys, TagValues, or management-side TagBindings.
+The parentID of a tag defaults to the GCP platform project if omitted.
+Every short key must be unique across the list, even when parentIDs differ,
+because the guest Infrastructure API identifies tags by short key only.</p>
 <p>Tags may only be configured during installation. Unlike resourceLabels,
 this field cannot be added, removed, or changed after creation because the
 guest Infrastructure API is also immutable. This restriction may be relaxed
@@ -8879,8 +8882,9 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 </p>
 <p>
 <p>GCPResourceTag identifies a pre-existing Google Cloud Resource Manager tag.
-The TagKey and TagValue must be defined in the customer project. HyperShift
-propagates these tags to the guest Infrastructure status for guest consumers;
+The TagKey and TagValue must be defined in the customer project or an
+organization. HyperShift propagates these tags to the guest Infrastructure
+status for guest consumers;
 it does not create TagBindings for management-side resources.
 See <a href="https://cloud.google.com/resource-manager/docs/tags/tags-overview">https://cloud.google.com/resource-manager/docs/tags/tags-overview</a>.</p>
 </p>
@@ -8894,6 +8898,22 @@ See <a href="https://cloud.google.com/resource-manager/docs/tags/tags-overview">
 <tbody>
 <tr>
 <td>
+<code>parentID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>parentID identifies the project or organization that defines the TagKey.
+When omitted, the GCP platform project is used. An explicit project ID
+must equal that project; a numeric organization ID is also allowed.
+The referenced TagKey and TagValue must already exist, and guest consumers
+need permission to use them.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>key</code></br>
 <em>
 string
@@ -8901,8 +8921,7 @@ string
 </td>
 <td>
 <p>key is the short name of the pre-existing Resource Manager TagKey.
-TagKeys must be defined in the customer project identified by the GCP
-platform configuration. A key is 1-63 characters, begins and ends with
+A key is 1-63 characters, begins and ends with
 an ASCII alphanumeric character, and may contain letters, digits, &lsquo;.&rsquo;,
 &lsquo;_&rsquo;, or &lsquo;-&rsquo; between them.</p>
 </td>

@@ -48,14 +48,26 @@ type GCPResourceLabel struct {
 }
 
 // GCPResourceTag identifies a pre-existing Google Cloud Resource Manager tag.
-// The TagKey and TagValue must be defined in the customer project. HyperShift
-// propagates these tags to the guest Infrastructure status for guest consumers;
+// The TagKey and TagValue must be defined in the customer project or an
+// organization. HyperShift propagates these tags to the guest Infrastructure
+// status for guest consumers;
 // it does not create TagBindings for management-side resources.
 // See https://cloud.google.com/resource-manager/docs/tags/tags-overview.
 type GCPResourceTag struct {
+	// parentID identifies the project or organization that defines the TagKey.
+	// When omitted, the GCP platform project is used. An explicit project ID
+	// must equal that project; a numeric organization ID is also allowed.
+	// The referenced TagKey and TagValue must already exist, and guest consumers
+	// need permission to use them.
+	//
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=32
+	// +kubebuilder:validation:Pattern=`(^[1-9][0-9]{0,31}$)|(^[a-z][a-z0-9-]{4,28}[a-z0-9]$)`
+	ParentID string `json:"parentID,omitempty"`
+
 	// key is the short name of the pre-existing Resource Manager TagKey.
-	// TagKeys must be defined in the customer project identified by the GCP
-	// platform configuration. A key is 1-63 characters, begins and ends with
+	// A key is 1-63 characters, begins and ends with
 	// an ASCII alphanumeric character, and may contain letters, digits, '.',
 	// '_', or '-' between them.
 	//
@@ -139,6 +151,8 @@ type GCPNetworkConfig struct {
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.imageRegistry.contains('@') && self.workloadIdentity.serviceAccountsEmails.imageRegistry.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="imageRegistry service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.network.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="network service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="has(self.resourceTags) == has(oldSelf.resourceTags)",message="resourceTags may only be configured during installation"
+// +kubebuilder:validation:XValidation:rule="!has(self.resourceTags) || self.resourceTags.all(t, self.resourceTags.exists_one(u, u.key == t.key))",message="resourceTags keys must be unique across all parents"
+// +kubebuilder:validation:XValidation:rule="!has(self.resourceTags) || self.resourceTags.all(t, !has(t.parentID) || t.parentID.matches('^[1-9][0-9]{0,31}$') || t.parentID == self.project)",message="resourceTags parentID must be an organization ID or the GCP platform project"
 type GCPPlatformSpec struct {
 	// project is the GCP project ID.
 	// A valid project ID must satisfy the following rules:
@@ -193,12 +207,15 @@ type GCPPlatformSpec struct {
 	// +kubebuilder:validation:MaxItems=60
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
 
-	// resourceTags are pre-existing, project-defined Google Cloud Resource
-	// Manager tags. HyperShift copies them to the guest cluster's Infrastructure
+	// resourceTags are pre-existing, project- or organization-defined Google
+	// Cloud Resource Manager tags. HyperShift copies them to the guest Infrastructure
 	// status, where the GCP PD CSI driver and image registry operator can apply
 	// them to resources they create. This does not tag GCP resources created by
 	// HyperShift or CAPG on the management side. HyperShift does not create
 	// TagKeys, TagValues, or management-side TagBindings.
+	// The parentID of a tag defaults to the GCP platform project if omitted.
+	// Every short key must be unique across the list, even when parentIDs differ,
+	// because the guest Infrastructure API identifies tags by short key only.
 	//
 	// Tags may only be configured during installation. Unlike resourceLabels,
 	// this field cannot be added, removed, or changed after creation because the
@@ -206,8 +223,7 @@ type GCPPlatformSpec struct {
 	// once update reconciliation is implemented.
 	//
 	// +optional
-	// +listType=map
-	// +listMapKey=key
+	// +listType=atomic
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=50
 	// +immutable

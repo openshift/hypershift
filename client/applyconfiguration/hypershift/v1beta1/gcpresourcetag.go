@@ -20,14 +20,23 @@ package v1beta1
 // GCPResourceTagApplyConfiguration represents a declarative configuration of the GCPResourceTag type for use
 // with apply.
 type GCPResourceTagApplyConfiguration struct {
-	Key   *string `json:"key,omitempty"`
-	Value *string `json:"value,omitempty"`
+	ParentID *string `json:"parentID,omitempty"`
+	Key      *string `json:"key,omitempty"`
+	Value    *string `json:"value,omitempty"`
 }
 
 // GCPResourceTagApplyConfiguration constructs a declarative configuration of the GCPResourceTag type for use with
 // apply.
 func GCPResourceTag() *GCPResourceTagApplyConfiguration {
 	return &GCPResourceTagApplyConfiguration{}
+}
+
+// WithParentID sets the ParentID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ParentID field is set to the value of the last call.
+func (b *GCPResourceTagApplyConfiguration) WithParentID(value string) *GCPResourceTagApplyConfiguration {
+	b.ParentID = &value
+	return b
 }
 
 // WithKey sets the Key field in the declarative configuration to the given value

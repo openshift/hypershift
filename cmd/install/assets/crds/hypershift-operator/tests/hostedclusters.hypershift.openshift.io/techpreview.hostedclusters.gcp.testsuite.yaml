@@ -1906,7 +1906,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "Duplicate value"
+    expectedError: "resourceTags keys must be unique across all parents"
 
   - name: When GCP resourceTags contain 63-character keys and values it should succeed
     initial: |
@@ -2476,6 +2476,617 @@ tests:
             type: Route
             route: {}
 
+  - name: When GCP resourceTags set the own project as parentID it should succeed
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - parentID: my-project-123
+                key: environment
+                value: production
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When GCP resourceTags set an organization parentID it should succeed
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - parentID: "123456789012"
+                key: cost-center
+                value: shared
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When GCP resourceTags have distinct keys across omitted, project, and organization parents it should succeed
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - key: environment
+                value: production
+              - parentID: my-project-123
+                key: team
+                value: platform
+              - parentID: "123456789012"
+                key: cost-center
+                value: shared
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When GCP resourceTags have distinct keys across organizations it should succeed
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - parentID: "123456789012"
+                key: team
+                value: platform
+              - parentID: "987654321098"
+                key: cost-center
+                value: shared
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When GCP resourceTags set a foreign project parentID it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - parentID: another-project
+                key: environment
+                value: production
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "resourceTags parentID must be an organization ID or the GCP platform project"
+
+  - name: When GCP resourceTags set a malformed parentID it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - parentID: Not-A-Project
+                key: environment
+                value: production
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "parentID in body should match"
+
+  - name: When GCP resourceTags set an empty parentID it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - parentID: ""
+                key: environment
+                value: production
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "parentID in body should be at least 1 chars long"
+
+  - name: When GCP resourceTags repeat a key with omitted and explicit project parents it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - key: environment
+                value: production
+              - parentID: my-project-123
+                key: environment
+                value: development
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "resourceTags keys must be unique across all parents"
+
+  - name: When GCP resourceTags repeat a key across project and organization parents it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - key: environment
+                value: production
+              - parentID: "123456789012"
+                key: environment
+                value: shared
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "resourceTags keys must be unique across all parents"
+
+  - name: When GCP resourceTags repeat a key across organizations it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - parentID: "123456789012"
+                key: environment
+                value: production
+              - parentID: "987654321098"
+                key: environment
+                value: shared
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "resourceTags keys must be unique across all parents"
+
   onUpdate:
   # --- GCP resourceTags installation-time immutability ---
   - name: When GCP resourceTags are changed it should reject the update
@@ -2565,6 +3176,241 @@ tests:
             resourceTags:
               - key: environment
                 value: staging
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "resourceTags are immutable"
+
+  - name: When GCP resourceTag parentID changes it should reject the update
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - key: environment
+                value: production
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - parentID: "123456789012"
+                key: environment
+                value: production
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "resourceTags are immutable"
+
+  - name: When GCP resourceTags are reordered it should reject the update
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - key: environment
+                value: production
+              - key: team
+                value: platform
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+            resourceTags:
+              - key: team
+                value: platform
+              - key: environment
+                value: production
         pullSecret:
           name: secret
         release:

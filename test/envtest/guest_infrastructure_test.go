@@ -77,9 +77,20 @@ var _ = Describe("Guest Infrastructure GCP resourceTags lifecycle", func() {
 				Region:    "us-central1",
 				ResourceTags: []configv1.GCPResourceTag{
 					{ParentID: "customer-project", Key: "environment", Value: "production"},
+					{ParentID: "123456789012", Key: "environment", Value: "shared"},
 				},
 			},
 		}
+		By("Rejecting duplicate short keys from different parents in the initial status co-write")
+		err = guestClient.Status().Update(ctx, infra)
+		Expect(apierrors.IsInvalid(err)).To(BeTrue(), "expected an invalid duplicate-key status update, got %v", err)
+		cause, found := apierrors.StatusCause(err, metav1.CauseTypeFieldValueDuplicate)
+		Expect(found).To(BeTrue())
+		Expect(cause.Field).To(Equal("status.platformStatus.gcp.resourceTags[1]"))
+		Expect(cause.Message).To(ContainSubstring(`{"key":"environment"}`))
+
+		By("Accepting a project tag and an organization tag with distinct short keys")
+		infra.Status.PlatformStatus.GCP.ResourceTags[1].Key = "cost-center"
 		Expect(guestClient.Status().Update(ctx, infra)).To(Succeed())
 
 		unchanged := &configv1.Infrastructure{}
@@ -94,10 +105,12 @@ var _ = Describe("Guest Infrastructure GCP resourceTags lifecycle", func() {
 		}{
 			{"When a tag is added, it should reject the update", []configv1.GCPResourceTag{
 				{ParentID: "customer-project", Key: "environment", Value: "production"},
+				{ParentID: "123456789012", Key: "cost-center", Value: "shared"},
 				{ParentID: "customer-project", Key: "team", Value: "platform"},
 			}, "resourceTags are immutable"},
 			{"When a tag value changes, it should reject the update", []configv1.GCPResourceTag{
 				{ParentID: "customer-project", Key: "environment", Value: "staging"},
+				{ParentID: "123456789012", Key: "cost-center", Value: "shared"},
 			}, "resourceTags are immutable"},
 			{"When a tag is removed, it should reject the update", nil, "resourceTags may only be configured during installation"},
 		} {
