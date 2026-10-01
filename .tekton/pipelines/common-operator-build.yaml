@@ -154,6 +154,18 @@ spec:
       value: $(params.image-expires-after)
     - name: COMMIT_SHA
       value: $(tasks.clone-repository.results.commit)
+    # COMMIT_SHA above only reaches the image as a label. Containerfiles that
+    # record their own provenance - the operator writes the commit into
+    # release-manifests/image-references so that oc adm release info --changelog
+    # can resolve a commit range - need it as a build arg instead. The clone
+    # result is the resolved sha of the revision that triggered the build, not
+    # the branch head at build time. Build args a Containerfile does not declare
+    # are only warned about, so this is safe for every component sharing this
+    # pipeline.
+    - name: BUILD_ARGS
+      value:
+      - COMMIT_HASH=$(tasks.clone-repository.results.commit)
+      - RELEASE_IMAGE_REFERENCE=$(params.output-image)
     - name: SOURCE_ARTIFACT
       value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
     - name: CACHI2_ARTIFACT

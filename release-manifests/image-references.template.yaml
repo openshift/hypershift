@@ -1,0 +1,27 @@
+# Baked into the HyperShift Operator image as /release-manifests/image-references.
+#
+# oc adm release info --changelog generates its log from the per-tag
+# io.openshift.build.* annotations below: it clones source-location and runs
+# git log over the range between the commit.id values of the two builds being
+# compared. Values are quoted because a sha that happens to look numeric is
+# otherwise coerced by the YAML parser, which silently drops the tag out of the
+# changelog.
+#
+# The build-specific __PLACEHOLDER__ values are substituted by
+# Containerfile.operator.
+kind: ImageStream
+apiVersion: image.openshift.io/v1
+metadata:
+  name: hypershift
+spec:
+  tags:
+  # from.name is only read when both builds report the same commit.id, but a
+  # tag without a DockerImage reference is dropped from the diff entirely, so
+  # it has to be set.
+  - name: hypershift-operator
+    annotations:
+      io.openshift.build.source-location: "https://github.com/openshift/hypershift"
+      io.openshift.build.commit.id: "__COMMIT_HASH__"
+    from:
+      kind: DockerImage
+      name: "__RELEASE_IMAGE_REFERENCE__"
