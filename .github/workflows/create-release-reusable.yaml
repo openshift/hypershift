@@ -38,8 +38,10 @@ jobs:
             -o /tmp/git-cliff.tar.gz
           echo "${GIT_CLIFF_SHA256}  /tmp/git-cliff.tar.gz" | sha256sum -c -
           tar xzf /tmp/git-cliff.tar.gz -C /tmp
-          mv "/tmp/git-cliff-${GIT_CLIFF_VERSION}/git-cliff" /usr/local/bin/git-cliff
-          chmod +x /usr/local/bin/git-cliff
+          mkdir -p "${HOME}/.local/bin"
+          mv "/tmp/git-cliff-${GIT_CLIFF_VERSION}/git-cliff" "${HOME}/.local/bin/git-cliff"
+          chmod +x "${HOME}/.local/bin/git-cliff"
+          echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
       - name: Generate release notes
         env:
           TAG_NAME: ${{ inputs.tag-name }}
