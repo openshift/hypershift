@@ -3,7 +3,6 @@ package e2eutilallowlist
 import (
 	"fmt"
 	"go/ast"
-	"strings"
 
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/pathutil"
 
@@ -12,91 +11,13 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "e2eutilallowlist",
-	Doc:  "restricts test/e2e/v2 files to a allowlist of approved symbols from test/e2e/util",
+	Doc:  "forbids all references to test/e2e/util from test/e2e/v2; all v1 symbols have been ported to test/e2e/v2/util",
 	Run:  run,
 }
 
-// allowlist maps package path to set of allowed symbol names.
-var allowlist = map[string]map[string]bool{
-	"github.com/openshift/hypershift/test/e2e/util": {
-		// Condition/predicate helpers
-		"Condition":                    true,
-		"ConditionPredicate":           true,
-		"Conditions":                   true,
-		"WithPredicates":               true,
-		"EventuallyNotFound":           true,
-		"EventuallyObject":             true,
-		"EventuallyObjects":            true,
-		"Matches":                      true,
-		"MatchesLeaderElectionFailure": true,
-		"OSImageStreamPredicate":       true,
-		"Predicate":                    true,
-		"Reason":                       true,
-		"Status":                       true,
-		"String":                       true,
-		"Type":                         true,
-		"WithClientOptions":            true,
-		"WithGuestConfig":              true,
-		"WithInterval":                 true,
-		"WithTimeout":                  true,
-		"WithTransport":                true,
-		"WithTransportFactory":         true,
-
-		// Client helpers
-		"GetClient":    true,
-		"GetConfig":    true,
-		"UpdateObject": true,
-
-		// Wait/rollout helpers
-		"WaitForControlPlaneComponentRollout":             true,
-		"WaitForControlPlaneRollout":                      true,
-		"WaitForDataPlaneRollout":                         true,
-		"WaitForGuestKubeConfig":                          true,
-		"WaitForNReadyNodesWithOptions":                   true,
-		"WaitForNodePoolConfigUpdateCompleteWithPlatform": true,
-		"WaitForOAuthLoadBalancerEndpoint":                true,
-		"WaitForReadyNodesByNodePool":                     true,
-		"WaitForReadyNodesByLabels":                       true,
-
-		// Port-forward/transport helpers
-		"SetupGuestKASPortForwardConfig": true,
-		"SetupOAuthPortForwardTransport": true,
-
-		// Cloud provider helpers
-		"GetDefaultSecurityGroup": true,
-		"PutRolePolicy":           true,
-
-		// Utility helpers
-		"ExtractVersionFromReleaseImage": true,
-		"GenerateName":                   true,
-		"HasFieldInCRDSchema":            true,
-		"RunCommandInPod":                true,
-		"SimpleNameGenerator":            true,
-
-		// Validation helpers
-		"ValidateAzureWorkloadIdentityWebhookMutation":     true,
-		"ValidateIngressOperatorConfiguration":             true,
-		"ValidateKubeAPIServerAllowedCIDRs":                true,
-		"ValidateOAuthIdentityProviderFlow":                true,
-		"ValidateOAuthWithIdentityProviderViaLoadBalancer": true,
-
-		// OIDC helpers
-		"CliClientID":              true,
-		"ConsoleClientID":          true,
-		"ConsoleClientSecretName":  true,
-		"ConsoleClientSecretValue": true,
-		"ExtOIDCConfig":            true,
-		"ExternalOIDCProvider":     true,
-		"GetAuthenticationConfig":  true,
-		"GroupPrefix":              true,
-		"IssuerCAConfigmapName":    true,
-		"IssuerURL":                true,
-		"OIDCProviderName":         true,
-		"ProviderKeycloak":         true,
-		"TestUsers":                true,
-		"UserPrefix":               true,
-	},
-}
+// allowlist is intentionally empty: all v1 e2e/util symbols have been ported
+// into test/e2e/v2/util. No reference from v2 code to test/e2e/util is allowed.
+var allowlist = map[string]map[string]bool{}
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, file := range pass.Files {
@@ -129,7 +50,7 @@ func run(pass *analysis.Pass) (any, error) {
 
 			pkgPath := obj.Pkg().Path()
 			const utilPkgPath = "github.com/openshift/hypershift/test/e2e/util"
-			if pkgPath != utilPkgPath && !strings.HasPrefix(pkgPath, utilPkgPath+"/") {
+			if pkgPath != utilPkgPath {
 				return true
 			}
 
@@ -160,17 +81,5 @@ func isAllowed(pkgPath string, symbolName string) bool {
 	if !ok {
 		return false
 	}
-
-	// Explicit match
-	if allowed[symbolName] {
-		return true
-	}
-
-	// Allow Version* prefix for future version constants
-	if pkgPath == "github.com/openshift/hypershift/test/e2e/util" &&
-		strings.HasPrefix(symbolName, "Version") {
-		return true
-	}
-
-	return false
+	return allowed[symbolName]
 }
