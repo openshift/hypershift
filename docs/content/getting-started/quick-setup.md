@@ -21,7 +21,7 @@ you should adjust to your own environment.
         make build
         sudo install -m 0755 bin/hypershift /usr/local/bin/hypershift
         ```
-2. Admin access to an OpenShift cluster (version 4.12+) specified by the `KUBECONFIG` environment variable.
+2. Admin access to an OpenShift management cluster (version 4.21+) specified by the `KUBECONFIG` environment variable. See [management-cluster version requirements](../reference/versioning-support.md#management-cluster).
 3. The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`). 
 4. A valid [pull secret](https://cloud.redhat.com/openshift/install/aws/installer-provisioned) file for the `quay.io/openshift-release-dev` repository. 
 5. AWS credentials with [permissions](../reference/infrastructure/aws.md) to create infrastructure for the cluster. You will need:

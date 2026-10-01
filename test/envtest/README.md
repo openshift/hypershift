@@ -3,8 +3,11 @@
 This directory contains YAML-driven integration tests that validate HyperShift CRD schemas
 (including CEL validation rules) using [envtest](https://book.kubebuilder.io/reference/envtest).
 
-Tests run against multiple Kubernetes and OCP API server versions to catch compatibility issues
-across releases.
+Tests run against multiple Kubernetes and OCP management API server versions to catch
+compatibility issues across releases. Coverage starts at the upstream management-cluster
+minimum of OCP 4.21 / Kubernetes 1.34. These versions do not define the supported
+HostedCluster or NodePool payload versions; see the
+[versioning policy](../../docs/content/reference/versioning-support.md#management-cluster).
 
 ## Directory layout
 
@@ -45,16 +48,16 @@ suites, err = LoadTestSuiteSpecs(assetsDir, karpenterDir)
 # Run against all supported OCP and vanilla Kubernetes versions
 make test-envtest-api-all
 
-# Run only OCP versions (4.17–5.0; 5.0 is dual-versioned with 4.23 on Kubernetes 1.36)
+# Run only OCP versions (4.21–5.0; 5.0 is dual-versioned with 4.23 on Kubernetes 1.36)
 make test-envtest-ocp
 
-# Run only vanilla Kubernetes versions (1.31–1.36)
+# Run only vanilla Kubernetes versions (1.34–1.36)
 make test-envtest-kube
 
 # Run against a single version
 make test-envtest-ocp ENVTEST_OCP_K8S_VERSIONS="1.34.1"
 
-# These tests also run as part of `make test`
+# These tagged tests require the explicit envtest targets; `make test` does not run them.
 ```
 
 ### Parallel execution
