@@ -537,7 +537,7 @@ endif
 test-envtest-api-all: test-envtest-ocp test-envtest-kube ## Run all envtest API tests (ENVTEST_JOBS=0|N|MAX)
 
 .PHONY: e2e
-e2e: reqserving-e2e e2ev2 e2ev2-create-guests e2ev2-run-tests e2ev2-destroy-guests e2ev2-dump-guests backuprestore-e2e
+e2e: reqserving-e2e e2ev2 e2ev2-create-guests e2ev2-run-tests e2ev2-destroy-guests e2ev2-dump-guests backuprestore-e2e cloudtrail-check
 	$(GO_E2E_RECIPE) -o bin/test-e2e ./test/e2e
 	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
@@ -567,6 +567,10 @@ e2ev2-destroy-guests:
 .PHONY: e2ev2-dump-guests
 e2ev2-dump-guests:
 	$(GO_BUILD_RECIPE) -tags e2ev2 -o bin/dump-guests ./test/e2e/v2/cmd/dump-guests
+
+.PHONY: cloudtrail-check
+cloudtrail-check:
+	$(GO_BUILD_RECIPE) -o bin/cloudtrail-check ./cmd/cloudtrail-check
 
 .PHONY: backuprestore-e2e
 backuprestore-e2e:

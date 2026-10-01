@@ -24,6 +24,7 @@ COPY --from=builder /hypershift/bin/create-guests /hypershift/bin/create-guests
 COPY --from=builder /hypershift/bin/run-tests /hypershift/bin/run-tests
 COPY --from=builder /hypershift/bin/destroy-guests /hypershift/bin/destroy-guests
 COPY --from=builder /hypershift/bin/dump-guests /hypershift/bin/dump-guests
+COPY --from=builder /hypershift/bin/cloudtrail-check /hypershift/bin/cloudtrail-check
 COPY --from=builder /hypershift/hack/ci-test-e2e.sh /hypershift/hack/ci-test-e2e.sh
 COPY --from=builder /hypershift/hack/run-reqserving-e2e.sh /hypershift/hack/run-reqserving-e2e.sh
 
