@@ -88,6 +88,68 @@ func TestExpectedHCConditions(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
+		name              string
+		managedIdentities bool
+		access            hyperv1.AzureKeyVaultAccessType
+		status            metav1.ConditionStatus
+		reason, message   string
+		expected          metav1.ConditionStatus
+	}{
+		{
+			name:              "When an older ARO CPO explicitly skips private vault validation, it should accept the legacy Unknown condition",
+			managedIdentities: true, access: hyperv1.AzureKeyVaultPrivate,
+			status: metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason,
+			message: "Private Key Vault endpoint is not reachable from the management cluster", expected: metav1.ConditionUnknown,
+		},
+		{
+			name:              "When the new validator is waiting for its router, it should still require True",
+			managedIdentities: true, access: hyperv1.AzureKeyVaultPrivate,
+			status: metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason,
+			message: "Private Key Vault cannot be validated yet: router has no available replicas", expected: metav1.ConditionTrue,
+		},
+		{
+			name:              "When the validation error contains the legacy message, it should still require True",
+			managedIdentities: true, access: hyperv1.AzureKeyVaultPrivate,
+			status: metav1.ConditionFalse, reason: hyperv1.AzureErrorReason,
+			message: "Private Key Vault endpoint is not reachable from the management cluster", expected: metav1.ConditionTrue,
+		},
+		{
+			name:              "When the legacy text has a different reason, it should still require True",
+			managedIdentities: true, access: hyperv1.AzureKeyVaultPrivate,
+			status: metav1.ConditionUnknown, reason: hyperv1.AzureErrorReason,
+			message: "Private Key Vault endpoint is not reachable from the management cluster", expected: metav1.ConditionTrue,
+		},
+		{
+			name:              "When a public vault has a stale legacy condition, it should still require True",
+			managedIdentities: true, access: hyperv1.AzureKeyVaultPublic,
+			status: metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason,
+			message: "Private Key Vault endpoint is not reachable from the management cluster", expected: metav1.ConditionTrue,
+		},
+		{
+			name:   "When a self-managed cluster has the legacy condition, it should still require True",
+			access: hyperv1.AzureKeyVaultPrivate,
+			status: metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason,
+			message: "Private Key Vault endpoint is not reachable from the management cluster", expected: metav1.ConditionTrue,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hc := newAzureHC(tc.managedIdentities, &hyperv1.KMSSpec{
+				Provider: hyperv1.AZURE,
+				Azure:    &hyperv1.AzureKMSSpec{KeyVaultAccess: tc.access},
+			})
+			hc.Status.Conditions = []metav1.Condition{{
+				Type: string(hyperv1.ValidAzureKMSConfig), Status: tc.status, Reason: tc.reason, Message: tc.message,
+			}}
+			g.Expect(ExpectedHCConditions(hc)[hyperv1.ValidAzureKMSConfig]).To(Equal(tc.expected))
+			// A new CPO's first status update must remove the exception even
+			// when the OpenShift version is unchanged (e.g. an image override).
+			hc.Status.Conditions[0].Message = "Private Key Vault cannot be validated yet: waiting for router"
+			g.Expect(ExpectedHCConditions(hc)[hyperv1.ValidAzureKMSConfig]).To(Equal(metav1.ConditionTrue))
+		})
+	}
+
+	for _, tc := range []struct {
 		name, version string
 		expected      metav1.ConditionStatus
 	}{
