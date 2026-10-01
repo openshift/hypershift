@@ -735,20 +735,20 @@ func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
 		It("should create oauth-openshift Service as LoadBalancer with an allocated endpoint", Label(internal.InformingLabel), func() {
 			ctx := testCtx.Context
 
-			e2eutil.EventuallyObject(GinkgoTB(), ctx, "oauth-openshift Service is LoadBalancer with endpoint",
+			Expect(v2util.EventuallyObject(ctx, "oauth-openshift Service is LoadBalancer with endpoint",
 				func(ctx context.Context) (*corev1.Service, error) {
 					svc := hcpmanifests.OauthServerService(controlPlaneNamespace)
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
 					return svc, err
 				},
 				oauthServiceLBPredicates(),
-				e2eutil.WithTimeout(10*time.Minute),
-			)
+				v2util.WithTimeout(10*time.Minute),
+			)).To(Succeed())
 		})
 
 		It("should have Azure internal LB annotation on oauth-openshift Service", Label(internal.InformingLabel), func() {
 			ctx := testCtx.Context
-			e2eutil.EventuallyObject(GinkgoTB(), ctx, "oauth-openshift Service has Azure internal LB annotation",
+			Expect(v2util.EventuallyObject(ctx, "oauth-openshift Service has Azure internal LB annotation",
 				func(ctx context.Context) (*corev1.Service, error) {
 					svc := hcpmanifests.OauthServerService(controlPlaneNamespace)
 					err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svc), svc)
@@ -764,20 +764,23 @@ func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
 						return true, "oauth-openshift Service has internal LB annotation", nil
 					},
 				},
-				e2eutil.WithTimeout(10*time.Minute),
-			)
+				v2util.WithTimeout(10*time.Minute),
+			)).To(Succeed())
 		})
 
 		It("should complete OAuth token flow through LoadBalancer endpoint", Label(internal.InformingLabel), func() {
 			ctx := testCtx.Context
-			oauthHost := e2eutil.WaitForOAuthLoadBalancerEndpoint(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
-			pfTransport := e2eutil.SetupOAuthPortForwardTransport(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost)
-			kasConfig := e2eutil.SetupGuestKASPortForwardConfig(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
-			e2eutil.ValidateOAuthIdentityProviderFlow(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost,
-				e2eutil.WithTransport(pfTransport), e2eutil.WithGuestConfig(kasConfig),
-				e2eutil.WithTransportFactory(func() http.RoundTripper {
-					return e2eutil.SetupOAuthPortForwardTransport(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost)
-				}))
+			oauthHost, err := v2util.WaitForOAuthLoadBalancerEndpoint(ctx, testCtx.MgmtClient, hc)
+			Expect(err).NotTo(HaveOccurred())
+			pfTransport, err := v2util.SetupOAuthPortForwardTransport(ctx, testCtx.MgmtClient, hc, oauthHost)
+			Expect(err).NotTo(HaveOccurred())
+			kasConfig, err := v2util.SetupGuestKASPortForwardConfig(ctx, testCtx.MgmtClient, hc)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(v2util.ValidateOAuthIdentityProviderFlow(ctx, testCtx.MgmtClient, hc, oauthHost,
+				pfTransport, kasConfig,
+				func(ctx context.Context) (http.RoundTripper, error) {
+					return v2util.SetupOAuthPortForwardTransport(ctx, testCtx.MgmtClient, hc, oauthHost)
+				})).To(Succeed())
 		})
 	})
 }

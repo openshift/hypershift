@@ -102,6 +102,7 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			}
 
 			By("Waiting for Hypershift NodePool workers to be ready on the hosted cluster")
+			Expect(hypershiftNodePoolList.Items).NotTo(BeEmpty(), "expected at least one NodePool in namespace %s", hc.Namespace)
 			for i := range hypershiftNodePoolList.Items {
 				np := &hypershiftNodePoolList.Items[i]
 				if np.Spec.ClusterName != hc.Name {
