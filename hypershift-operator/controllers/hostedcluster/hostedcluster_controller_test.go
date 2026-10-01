@@ -8361,6 +8361,12 @@ func TestDelete_WhenGCPPSCExists_ItShouldDeleteAndWaitForCleanup(t *testing.T) {
 	g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(psc), updatedPSC)).To(Succeed(), "PSC CR should still exist while being deleted")
 	g.Expect(updatedPSC.DeletionTimestamp).ToNot(BeNil(), "PSC CR should be marked for deletion")
 	g.Expect(updatedPSC.Finalizers).To(ContainElement("hypershift.openshift.io/gcp-psc-customer"), "PSC finalizer should remain to allow CPO to clean up GCP resources")
+
+	// The core ordering guarantee: the HCP must not be deleted until PSC cleanup finishes.
+	// Without this assertion the test would still pass even if HCP deletion were requested early.
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(hcp), updatedHCP)).To(Succeed(), "HCP should still exist while PSC cleanup is pending")
+	g.Expect(updatedHCP.DeletionTimestamp).To(BeNil(), "HCP deletion must not be requested before PSC cleanup completes")
 }
 
 func TestKasServingCertHashFromEndpoint(t *testing.T) {

@@ -2,6 +2,7 @@ package gcpprivateserviceconnect
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,6 +33,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/compute/v1"
+	dns "google.golang.org/api/dns/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
@@ -1550,6 +1552,62 @@ func TestHandleOrphanedHCPFinalizer(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, ctrl.Result{}, result)
 	})
+
+	t.Run("When PSC CRs are still present, it drives cleanup instead of only requeuing", func(t *testing.T) {
+		scheme := newGCPPSCTestScheme(t)
+		hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{hcpGCPPSCFinalizerName})
+		psc := newTestGCPPSC("test-psc", "test-ns", true)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp, psc).Build()
+		r := &GCPPrivateServiceConnectReconciler{
+			Client: fakeClient,
+			gcpClientBuilder: gcpClientBuilder{
+				initialized:     true,
+				customerProject: "customer-project",
+				region:          "us-central1",
+				newClient:       successfulGCPClientFactory(t),
+			},
+		}
+
+		// A successful cleanup run removes the PSC finalizer and then the HCP finalizer,
+		// rather than leaving the deleting HCP stranded behind a passive requeue.
+		result, err := r.handleOrphanedHCPFinalizer(t.Context(), "test-ns", testr.New(t))
+		require.NoError(t, err)
+		assert.Zero(t, result.RequeueAfter)
+
+		updatedHCP := &hyperv1.HostedControlPlane{}
+		assert.True(t, apierrors.IsNotFound(fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP)),
+			"HCP finalizer should be removed and HCP garbage-collected once its PSC CRs are cleaned up")
+		updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
+		assert.NotContains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
+	})
+
+	t.Run("When PSC cleanup is still in progress, it requeues and retains both finalizers", func(t *testing.T) {
+		scheme := newGCPPSCTestScheme(t)
+		hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{hcpGCPPSCFinalizerName})
+		psc := newTestGCPPSC("test-psc", "test-ns", true)
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp, psc).Build()
+		r := &GCPPrivateServiceConnectReconciler{
+			Client: fakeClient,
+			gcpClientBuilder: gcpClientBuilder{
+				initialized:     true,
+				customerProject: "customer-project",
+				region:          "us-central1",
+				newClient:       testGCPClientFactory(t, http.StatusOK, "PENDING"),
+			},
+		}
+
+		result, err := r.handleOrphanedHCPFinalizer(t.Context(), "test-ns", testr.New(t))
+		require.NoError(t, err)
+		assert.Equal(t, pscEndpointDeletionRequeueDuration, result.RequeueAfter)
+
+		updatedHCP := &hyperv1.HostedControlPlane{}
+		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
+		assert.Contains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName)
+		updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
+		assert.Contains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
+	})
 }
 
 func TestHandlePSCCRDeletion(t *testing.T) {
@@ -1639,6 +1697,16 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
 		assert.NotContains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
 		assert.Contains(t, updatedPSC.Finalizers, "other-finalizer") // Other finalizer remains
+
+		// PSC-before-HCP ordering guard: cleaning up the PSC must not delete the HCP or
+		// mark it for deletion. Re-fetch and assert it still exists, untouched. Without
+		// this, the finalizer-only assertions above would still pass if HCP deletion were
+		// (incorrectly) requested during PSC cleanup.
+		updatedHCP := &hyperv1.HostedControlPlane{}
+		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP),
+			"HCP must still exist after PSC cleanup")
+		assert.True(t, updatedHCP.DeletionTimestamp.IsZero(),
+			"HCP must not be marked for deletion by PSC cleanup")
 	})
 
 	t.Run("When the GCP client cannot be created, it should error and retain the finalizer", func(t *testing.T) {
@@ -1701,7 +1769,7 @@ func TestReconcileDelete(t *testing.T) {
 			},
 		}
 
-		completed, err := r.reconcileDelete(t.Context(), psc, svc, testr.New(t))
+		completed, err := r.reconcileDelete(t.Context(), psc, hcp, svc, testr.New(t))
 		require.NoError(t, err)
 		assert.True(t, completed, "cleanup should be considered complete when nothing was provisioned")
 		assert.False(t, called, "no GCP API calls should be made when ServiceAttachmentName is empty")
@@ -1723,42 +1791,247 @@ func TestDNSZonesToDelete(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		psc      *hyperv1.GCPPrivateServiceConnect
-		hcp      *hyperv1.HostedControlPlane
-		expected []string
+		name          string
+		psc           *hyperv1.GCPPrivateServiceConnect
+		hcp           *hyperv1.HostedControlPlane
+		expectedZones []string
 	}{
 		{
-			name:     "When status has no zones but HCP is present, it should fall back to deterministic names",
-			psc:      pscWithStatusZones(),
-			hcp:      hcpWithDomain("example.com"),
-			expected: []string{"example-com-private", "example-com-public", "test-hcp-hypershift-local"},
+			name:          "When status has no zones but HCP is present, deterministic names are inferred",
+			psc:           pscWithStatusZones(),
+			hcp:           hcpWithDomain("example.com"),
+			expectedZones: []string{"example-com-private", "example-com-public", "test-hcp-hypershift-local"},
 		},
 		{
-			name:     "When status records zones, it should union them with deterministic names",
-			psc:      pscWithStatusZones("leftover-zone"),
-			hcp:      hcpWithDomain("example.com"),
-			expected: []string{"example-com-private", "example-com-public", "leftover-zone", "test-hcp-hypershift-local"},
+			name:          "When status records a deterministic name, it is de-duplicated against the inferred names",
+			psc:           pscWithStatusZones("test-hcp-hypershift-local"),
+			hcp:           hcpWithDomain("example.com"),
+			expectedZones: []string{"example-com-private", "example-com-public", "test-hcp-hypershift-local"},
 		},
 		{
-			name:     "When there is no HCP and status is empty, it should yield nothing",
-			psc:      pscWithStatusZones(),
-			hcp:      nil,
-			expected: []string{},
+			name:          "When status records a zone with no deterministic overlap, it is unioned with all inferred names",
+			psc:           pscWithStatusZones("leftover-zone"),
+			hcp:           hcpWithDomain("example.com"),
+			expectedZones: []string{"example-com-private", "example-com-public", "leftover-zone", "test-hcp-hypershift-local"},
 		},
 		{
-			name:     "When the HCP has no base domain and status is empty, it should yield nothing",
-			psc:      pscWithStatusZones(),
-			hcp:      hcpWithDomain(""),
-			expected: []string{},
+			name:          "When there is no HCP and status is empty, it should yield nothing",
+			psc:           pscWithStatusZones(),
+			hcp:           nil,
+			expectedZones: nil,
+		},
+		{
+			name:          "When the HCP has no base domain, only status-recorded names are returned",
+			psc:           pscWithStatusZones("leftover-zone"),
+			hcp:           hcpWithDomain(""),
+			expectedZones: []string{"leftover-zone"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, dnsZonesToDelete(tt.psc, tt.hcp))
+			assert.ElementsMatch(t, tt.expectedZones, dnsZonesToDelete(tt.psc, tt.hcp))
 		})
 	}
+}
+
+func TestCleanupDNSOwnershipGate(t *testing.T) {
+	ownedLabel := func(infraID string) map[string]string {
+		return map[string]string{gcpDNSZoneOwnerLabelKey: dnsZoneOwnerID(infraID)}
+	}
+
+	t.Run("It deletes an inferred zone only when its ownership label matches the cluster InfraID", func(t *testing.T) {
+		scheme := newGCPPSCTestScheme(t)
+		hcp := newTestGCPHCP("test-hcp", "test-ns")
+		hcp.Spec.DNS.BaseDomain = "example.com"
+		hcp.Spec.InfraID = "my-infra"
+		psc := newTestGCPPSC("test-psc", "test-ns", false) // no recorded status zones -> all names inferred
+
+		existing := map[string]*dns.ManagedZone{
+			"test-hcp-hypershift-local": {Name: "test-hcp-hypershift-local", Labels: ownedLabel("my-infra")}, // owned by us
+			"example-com-public":        {Name: "example-com-public", Labels: ownedLabel("another-cluster")}, // owned by another cluster
+			"example-com-private":       {Name: "example-com-private"},                                       // predates the label
+		}
+		var deletes []string
+		r := &GCPPrivateServiceConnectReconciler{
+			Client:           fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp, psc).Build(),
+			gcpClientBuilder: gcpClientBuilder{initialized: true, customerProject: "customer-project"},
+			dnsClientFactory: func(context.Context) (*dns.Service, error) { return fakeDNSService(t, existing, &deletes), nil },
+		}
+
+		require.NoError(t, r.cleanupDNS(t.Context(), psc, hcp))
+		assert.ElementsMatch(t, []string{"test-hcp-hypershift-local"}, deletes,
+			"only the inferred zone whose ownership label matches this cluster's InfraID should be deleted")
+	})
+
+	t.Run("It skips every zone when the cluster has no InfraID to prove ownership", func(t *testing.T) {
+		scheme := newGCPPSCTestScheme(t)
+		hcp := newTestGCPHCP("test-hcp", "test-ns")
+		hcp.Spec.DNS.BaseDomain = "example.com"
+		hcp.Spec.InfraID = "" // cannot prove ownership
+
+		psc := newTestGCPPSC("test-psc", "test-ns", false)
+		existing := map[string]*dns.ManagedZone{
+			"test-hcp-hypershift-local": {Name: "test-hcp-hypershift-local", Labels: map[string]string{gcpDNSZoneOwnerLabelKey: ""}},
+		}
+		var deletes []string
+		r := &GCPPrivateServiceConnectReconciler{
+			Client:           fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp, psc).Build(),
+			gcpClientBuilder: gcpClientBuilder{initialized: true, customerProject: "customer-project"},
+			dnsClientFactory: func(context.Context) (*dns.Service, error) { return fakeDNSService(t, existing, &deletes), nil },
+		}
+
+		require.NoError(t, r.cleanupDNS(t.Context(), psc, hcp))
+		assert.Empty(t, deletes, "no zone should be deleted without an ownership marker")
+	})
+
+	t.Run("It gates status-recorded zones on ownership too, closing the adopted-zone deletion path", func(t *testing.T) {
+		scheme := newGCPPSCTestScheme(t)
+		hcp := newTestGCPHCP("test-hcp", "test-ns")
+		hcp.Spec.DNS.BaseDomain = "" // no deterministic/inferred names, only the recorded ones
+		hcp.Spec.InfraID = "my-infra"
+
+		psc := newTestGCPPSC("test-psc", "test-ns", false)
+		psc.Status.DNSZones = []hyperv1.DNSZoneStatus{{Name: "owned-recorded-zone"}, {Name: "foreign-recorded-zone"}}
+
+		// Both names are recorded in status, but only one actually carries our ownership
+		// label. A foreign-labeled zone that somehow landed in status (e.g. a stale/restored
+		// object) must NOT be deleted -- status no longer grants a deletion bypass.
+		existing := map[string]*dns.ManagedZone{
+			"owned-recorded-zone":   {Name: "owned-recorded-zone", Labels: ownedLabel("my-infra")},
+			"foreign-recorded-zone": {Name: "foreign-recorded-zone", Labels: ownedLabel("another-cluster")},
+		}
+		var deletes []string
+		r := &GCPPrivateServiceConnectReconciler{
+			Client:           fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp, psc).Build(),
+			gcpClientBuilder: gcpClientBuilder{initialized: true, customerProject: "customer-project"},
+			dnsClientFactory: func(context.Context) (*dns.Service, error) { return fakeDNSService(t, existing, &deletes), nil },
+		}
+
+		require.NoError(t, r.cleanupDNS(t.Context(), psc, hcp))
+		assert.ElementsMatch(t, []string{"owned-recorded-zone"}, deletes,
+			"only the status-recorded zone that carries our ownership label should be deleted")
+	})
+}
+
+// TestCreateZoneStampsOwnerLabel is the creation-side counterpart to TestCleanupDNSOwnershipGate:
+// it proves createZone stamps the ownership label when it actually creates a zone, and that the
+// adoption branch returns the pre-existing zone without creating or re-stamping. The shared
+// fakeDNSService only models Get/Delete, so this test uses a transport that also captures the
+// create (POST) body.
+func TestCreateZoneStampsOwnerLabel(t *testing.T) {
+	hcp := newTestGCPHCP("test-hcp", "test-ns")
+	hcp.Spec.InfraID = "my-infra"
+	ownerLabels := dnsZoneOwnerLabels(hcp)
+	require.NotEmpty(t, ownerLabels[gcpDNSZoneOwnerLabelKey], "test setup: owner labels must be populated")
+
+	jsonResp := func(r *http.Request, code int, body string) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: code,
+			Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    r,
+		}, nil
+	}
+
+	t.Run("When the zone does not exist, it stamps the ownership label on the created zone", func(t *testing.T) {
+		var created *dns.ManagedZone
+		httpClient := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			switch r.Method {
+			case http.MethodGet:
+				// Zone does not exist yet -> drives createZone down the create path.
+				return jsonResp(r, http.StatusNotFound, `{"error":{"code":404,"message":"not found"}}`)
+			case http.MethodPost:
+				body, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				created = &dns.ManagedZone{}
+				require.NoError(t, json.Unmarshal(body, created))
+				return jsonResp(r, http.StatusOK, string(body)) // echo the created zone back
+			}
+			return jsonResp(r, http.StatusOK, "{}")
+		})}
+		svc, err := dns.NewService(t.Context(), option.WithHTTPClient(httpClient), option.WithoutAuthentication())
+		require.NoError(t, err)
+
+		zone, err := createZone(t.Context(), svc, "customer-project",
+			"test-hcp-hypershift-local", "test-hcp.hypershift.local", "private", "https://example/network", ownerLabels)
+		require.NoError(t, err)
+		require.NotNil(t, created, "a create (POST) request should have been made")
+		assert.Equal(t, ownerLabels, created.Labels, "createZone must stamp the ownership label on the new zone")
+		assert.Equal(t, ownerLabels, zone.Labels, "the returned zone should carry the stamped label")
+	})
+
+	t.Run("When the zone already exists, it adopts without creating or re-stamping", func(t *testing.T) {
+		existing := &dns.ManagedZone{Name: "test-hcp-hypershift-local", DnsName: "test-hcp.hypershift.local."} // no labels
+		var postCalled bool
+		httpClient := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			switch r.Method {
+			case http.MethodGet:
+				body, err := json.Marshal(existing)
+				require.NoError(t, err)
+				return jsonResp(r, http.StatusOK, string(body))
+			case http.MethodPost:
+				postCalled = true
+				return jsonResp(r, http.StatusOK, "{}")
+			}
+			return jsonResp(r, http.StatusOK, "{}")
+		})}
+		svc, err := dns.NewService(t.Context(), option.WithHTTPClient(httpClient), option.WithoutAuthentication())
+		require.NoError(t, err)
+
+		zone, err := createZone(t.Context(), svc, "customer-project",
+			"test-hcp-hypershift-local", "test-hcp.hypershift.local", "private", "https://example/network", ownerLabels)
+		require.NoError(t, err)
+		assert.False(t, postCalled, "an existing zone must be adopted without a create call")
+		assert.Empty(t, zone.Labels, "adoption must not re-stamp the existing (unlabeled) zone")
+	})
+}
+
+// fakeDNSService returns a Cloud DNS client backed by an in-memory transport. Zones present
+// in existing respond to Get with their labels; DELETE requests on any zone are appended to
+// recordedDeletes. Record listing and change creation succeed trivially so deleteZone completes.
+func fakeDNSService(t *testing.T, existing map[string]*dns.ManagedZone, recordedDeletes *[]string) *dns.Service {
+	t.Helper()
+	jsonResp := func(r *http.Request, code int, body string) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: code,
+			Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    r,
+		}, nil
+	}
+	httpClient := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		const marker = "/managedZones/"
+		idx := strings.Index(r.URL.Path, marker)
+		if idx == -1 {
+			return jsonResp(r, http.StatusOK, "{}")
+		}
+		rest := r.URL.Path[idx+len(marker):]
+		switch {
+		case strings.HasSuffix(rest, "/rrsets") && r.Method == http.MethodGet:
+			return jsonResp(r, http.StatusOK, `{"rrsets":[]}`)
+		case strings.HasSuffix(rest, "/changes") && r.Method == http.MethodPost:
+			return jsonResp(r, http.StatusOK, "{}")
+		case r.Method == http.MethodGet:
+			zone, ok := existing[rest]
+			if !ok {
+				return jsonResp(r, http.StatusNotFound, `{"error":{"code":404,"message":"not found"}}`)
+			}
+			body, err := json.Marshal(zone)
+			require.NoError(t, err)
+			return jsonResp(r, http.StatusOK, string(body))
+		case r.Method == http.MethodDelete:
+			*recordedDeletes = append(*recordedDeletes, rest)
+			return jsonResp(r, http.StatusOK, "{}")
+		}
+		return jsonResp(r, http.StatusOK, "{}")
+	})}
+
+	svc, err := dns.NewService(t.Context(), option.WithHTTPClient(httpClient), option.WithoutAuthentication())
+	require.NoError(t, err)
+	return svc
 }
 
 func newGCPPSCTestScheme(t *testing.T) *runtime.Scheme {

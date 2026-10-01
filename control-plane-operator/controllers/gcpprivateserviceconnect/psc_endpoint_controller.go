@@ -36,6 +36,7 @@ import (
 	"github.com/go-logr/logr"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/compute/v1"
+	dns "google.golang.org/api/dns/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
@@ -128,6 +129,10 @@ type GCPPrivateServiceConnectReconciler struct {
 	// dnsReconciler is overridden by unit tests to avoid requiring GCP credentials.
 	// Production reconciliation always uses reconcileDNS.
 	dnsReconciler func(context.Context, *hyperv1.GCPPrivateServiceConnect, *hyperv1.HostedControlPlane, logr.Logger) (ctrl.Result, error)
+
+	// dnsClientFactory is overridden by unit tests to inject a fake Cloud DNS client and
+	// avoid requiring GCP credentials. Production cleanup always uses newDNSClient.
+	dnsClientFactory func(context.Context) (*dns.Service, error)
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -355,11 +360,9 @@ func (r *GCPPrivateServiceConnectReconciler) handlePSCCRDeletion(
 		return ctrl.Result{}, nil
 	}
 
-	// FIX for Issue #6: ALWAYS check if HCP exists first, regardless of builder state.
-	// This is critical because:
-	// 1. If builder was initialized during normal reconciliation, it stays initialized in memory
-	// 2. If HCP is then deleted, the old code would skip this check and try to use stale credentials
-	// 3. This would cause the PSC finalizer to get stuck when GCP client creation fails
+	// Always verify the HCP exists before using the builder. Once initialized, the
+	// builder persists in memory, so after the HCP is deleted we'd otherwise reuse
+	// stale credentials — failing GCP client creation and wedging the PSC finalizer.
 	hcp, err := r.getHostedControlPlane(ctx, gcpPSC)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -386,7 +389,7 @@ func (r *GCPPrivateServiceConnectReconciler) handlePSCCRDeletion(
 		return ctrl.Result{}, fmt.Errorf("failed to get GCP client: %w", err)
 	}
 
-	completed, err := r.reconcileDelete(ctx, gcpPSC, customerGCPClient, log)
+	completed, err := r.reconcileDelete(ctx, gcpPSC, hcp, customerGCPClient, log)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
 	}
@@ -538,14 +541,18 @@ func (r *GCPPrivateServiceConnectReconciler) handleOrphanedHCPFinalizer(
 			continue
 		}
 
-		// Ensure there are no additional PSC CRs, wait for cleanup to finish
+		// If PSC CRs still exist, drive their cleanup directly instead of only requeuing
+		// this synthetic request: the synthetic request has no independent retry source,
+		// so passively waiting could stall HCP deletion. reconcileHCPDeletion cleans up
+		// each PSC's GCP resources, removes their finalizers, and requeues while in
+		// progress before finally removing the HCP finalizer.
 		var pscList hyperv1.GCPPrivateServiceConnectList
 		if err := r.List(ctx, &pscList, client.InNamespace(namespace)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to list PSC CRs before removing HCP finalizer: %w", err)
 		}
 		if len(pscList.Items) > 0 {
-			log.Info("PSC CRs still present, not removing HCP finalizer yet", "count", len(pscList.Items))
-			return ctrl.Result{RequeueAfter: pscEndpointDeletionRequeueDuration}, nil
+			log.Info("PSC CRs still present, running HCP deletion cleanup", "count", len(pscList.Items))
+			return r.reconcileHCPDeletion(ctx, hcp, log)
 		}
 
 		log.Info("Found deleting HCP with finalizer but no PSC CRs, removing finalizer",
@@ -599,7 +606,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileHCPDeletion(
 		}
 
 		// Delete GCP resources (forwarding rule, IP, DNS zones)
-		completed, err := r.reconcileDelete(ctx, psc, customerGCPClient, log)
+		completed, err := r.reconcileDelete(ctx, psc, hcp, customerGCPClient, log)
 		if err != nil {
 			log.Error(err, "Failed to clean up GCP resources, will retry")
 			return ctrl.Result{}, err // Fail fast, retry on next reconcile
@@ -737,14 +744,15 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileDNS(ctx context.Context, g
 	return ctrl.Result{}, nil
 }
 
-// cleanupDNS cleans up DNS zones and DNSEndpoint using zone names stored in PSC status
-func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) error {
+// cleanupDNS cleans up DNS zones and the DNSEndpoint during deletion. The HCP is
+// passed in by the caller (already fetched on the deletion path) rather than re-fetched
+// here: a re-fetch failure while status has no zones would silently yield an empty zone
+// list and let the finalizers release while zones leak.
+func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// Clean up DNSEndpoint first (even if we don't have zone info)
-	hcp, err := r.getHostedControlPlane(ctx, gcpPSC)
-	if err == nil {
-		// Delete DNSEndpoint if it exists
+	// Clean up DNSEndpoint first (best effort, even if we don't have zone info)
+	if hcp != nil {
 		dnsEndpoint := &unstructured.Unstructured{}
 		dnsEndpoint.SetGroupVersionKind(dnsEndpointGVK)
 		dnsEndpoint.SetName(dnsEndpointName(hcp.Name))
@@ -758,9 +766,11 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 		}
 	}
 
-	// Prefer recorded status zones, falling back to deterministic names to catch partial provisioning
-	zonesToDelete := dnsZonesToDelete(gcpPSC, hcp)
-	if len(zonesToDelete) == 0 {
+	// Candidate zones are the names recorded in status plus the deterministic names inferred
+	// from the (non-unique) cluster name / base domain. Every deletion is ownership-gated
+	// below, so status-recorded names get no special trust.
+	zones := dnsZonesToDelete(gcpPSC, hcp)
+	if len(zones) == 0 {
 		return nil // No DNS zones to clean up
 	}
 
@@ -772,14 +782,42 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 	customerProject := r.gcpClientBuilder.customerProject
 
 	// Create DNS client for cleanup operations
-	svc, err := newDNSClient(ctx)
+	newDNS := newDNSClient
+	if r.dnsClientFactory != nil {
+		newDNS = r.dnsClientFactory
+	}
+	svc, err := newDNS(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create DNS client for cleanup: %w", err)
 	}
 
-	// Delete all zones (they are always managed by the operator)
+	// Zone names are non-unique within a shared GCP project, so every deletion is gated on
+	// the ownership label. A zone with a missing or different owner is left in place and
+	// reported for manual cleanup rather than risk deleting another cluster's zone.
+	var ownerID string
+	if hcp != nil {
+		ownerID = dnsZoneOwnerID(hcp.Spec.InfraID)
+	}
+
 	var errs []error
-	for _, zoneName := range zonesToDelete {
+	for _, zoneName := range zones {
+		if ownerID == "" {
+			log.Info("Skipping DNS zone deletion: no cluster ownership marker available", "zone", zoneName)
+			continue
+		}
+		zone, err := getZone(ctx, svc, customerProject, zoneName)
+		if err != nil {
+			if isNotFound(err) {
+				continue // Nothing to delete
+			}
+			errs = append(errs, fmt.Errorf("failed to get DNS zone %s for ownership check: %w", zoneName, err))
+			continue
+		}
+		if zone.Labels[gcpDNSZoneOwnerLabelKey] != ownerID {
+			log.Info("Skipping DNS zone not owned by this cluster; manual cleanup required",
+				"zone", zoneName, "expectedOwner", ownerID, "actualOwner", zone.Labels[gcpDNSZoneOwnerLabelKey])
+			continue
+		}
 		if err := deleteZone(ctx, svc, customerProject, zoneName); err != nil {
 			errs = append(errs, fmt.Errorf("failed to delete DNS zone %s: %w", zoneName, err))
 		}
@@ -792,31 +830,36 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 	return nil
 }
 
-// dnsZonesToDelete returns the DNS zone names to clean up during deletion.
-// It prefers zones recorded in status but always includes the deterministic
-// names so a zone created before its status write (partial provisioning) is
-// still cleaned up. The result is de-duplicated and sorted.
+// dnsZonesToDelete returns the candidate DNS zone names to clean up during deletion:
+// the names recorded in status after successful creation, plus the deterministic names
+// inferred from the cluster name / base domain (to catch a zone created before its status
+// write during partial provisioning). Zone names share a non-unique naming scheme with
+// other clusters in the same GCP project, so the caller must verify cluster ownership
+// before deleting any of them — status-recorded names get no special trust.
+//
+// The result is de-duplicated and sorted.
 func dnsZonesToDelete(gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane) []string {
-	set := map[string]struct{}{}
+	names := map[string]struct{}{}
 	for _, z := range gcpPSC.Status.DNSZones {
 		if z.Name != "" {
-			set[z.Name] = struct{}{}
-		}
-	}
-	if hcp != nil && hcp.Spec.DNS.BaseDomain != "" {
-		if names, err := generateZoneNames(hcp.Name, hcp.Spec.DNS.BaseDomain); err == nil {
-			set[names.hypershiftLocalZoneName] = struct{}{}
-			set[names.publicIngressZoneName] = struct{}{}
-			set[names.privateIngressZoneName] = struct{}{}
+			names[z.Name] = struct{}{}
 		}
 	}
 
-	out := make([]string, 0, len(set))
-	for name := range set {
-		out = append(out, name)
+	if hcp != nil && hcp.Spec.DNS.BaseDomain != "" {
+		if generated, err := generateZoneNames(hcp.Name, hcp.Spec.DNS.BaseDomain); err == nil {
+			for _, name := range []string{generated.hypershiftLocalZoneName, generated.publicIngressZoneName, generated.privateIngressZoneName} {
+				names[name] = struct{}{}
+			}
+		}
 	}
-	sort.Strings(out)
-	return out
+
+	zones := make([]string, 0, len(names))
+	for name := range names {
+		zones = append(zones, name)
+	}
+	sort.Strings(zones)
+	return zones
 }
 
 // reconcileExternalServices creates external-dns services for private clusters with external names
@@ -1128,13 +1171,13 @@ func (r *GCPPrivateServiceConnectReconciler) updateStatusFromEndpoint(ctx contex
 
 // reconcileDelete handles cleanup when the CR is being deleted.
 // For each resource: delete, check operation status/error, then verify resource is gone.
-func (r *GCPPrivateServiceConnectReconciler) reconcileDelete(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, customerGCPClient *compute.Service, log logr.Logger) (bool, error) {
+func (r *GCPPrivateServiceConnectReconciler) reconcileDelete(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, customerGCPClient *compute.Service, log logr.Logger) (bool, error) {
 	customerProject := r.gcpClientBuilder.customerProject
 	region := r.gcpClientBuilder.region
 
 	// Clean up DNS zones and records using zone names from PSC status (following AWS blocking pattern)
 	log.Info("Cleaning up DNS zones and records")
-	if dnsErr := r.cleanupDNS(ctx, gcpPSC); dnsErr != nil {
+	if dnsErr := r.cleanupDNS(ctx, gcpPSC, hcp); dnsErr != nil {
 		log.Error(dnsErr, "failed to clean up DNS zones")
 		return false, fmt.Errorf("failed to clean up DNS zones: %w", dnsErr)
 	}
