@@ -1,0 +1,17 @@
+name: Unit Tests (Restructure Commits)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'skills/restructure-commits/**'
+      - 'Makefile'
+      - '.github/workflows/test-commit-layout.yaml'
+      - '.github/workflows/test-commit-layout-reusable.yaml'
+
+jobs:
+  test-commit-layout:
+    uses: openshift/hypershift/.github/workflows/test-commit-layout-reusable.yaml@main
+    permissions:
+      contents: read
