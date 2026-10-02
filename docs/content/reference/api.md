@@ -5196,7 +5196,7 @@ needing to authenticate with Azure&rsquo;s API.</p>
 <tbody>
 <tr>
 <td>
-<code>imageRegistry</code></br>
+<code>imageRegistry,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
 WorkloadIdentity
@@ -5204,8 +5204,10 @@ WorkloadIdentity
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>imageRegistry is the client ID of a federated managed identity, associated with cluster-image-registry-operator, used in
-workload identity authentication.</p>
+workload identity authentication.
+This field is required when the ImageRegistry capability is enabled.</p>
 </td>
 </tr>
 <tr>
@@ -6994,7 +6996,7 @@ ManagedIdentity
 </tr>
 <tr>
 <td>
-<code>imageRegistry</code></br>
+<code>imageRegistry,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
 ManagedIdentity
@@ -7003,7 +7005,8 @@ ManagedIdentity
 </td>
 <td>
 <em>(Optional)</em>
-<p>imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.</p>
+<p>imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.
+This field is required when the ImageRegistry capability is enabled.</p>
 </td>
 </tr>
 <tr>
@@ -7384,8 +7387,9 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
-registry controller.</p>
+registry controller. This field is required when the ImageRegistry capability is enabled.</p>
 </td>
 </tr>
 <tr>

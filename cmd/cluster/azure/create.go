@@ -416,33 +416,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		cluster.Spec.Platform.Azure.Topology = hyperv1.AzureTopologyPublic
 	}
 
-	// Configure authentication based on whether workload identities or managed identities are provided
-	if o.infra.WorkloadIdentities != nil {
-		// Self-managed Azure with workload identities
-		cluster.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
-			AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
-			WorkloadIdentities:            o.infra.WorkloadIdentities,
-		}
-	} else {
-		// Managed Azure with managed identities
-		cluster.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
-			AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
-			ManagedIdentities:             o.infra.ControlPlaneMIs,
-		}
-
-		if o.infra.ControlPlaneMIs != nil {
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
-
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
-			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
-		}
-	}
+	o.applyAzureAuthenticationConfig(cluster)
 
 	if o.encryptionKey != nil {
 		azureKMSSpec := &hyperv1.AzureKMSSpec{
@@ -542,6 +516,48 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	}
 
 	return nil
+}
+
+// applyAzureAuthenticationConfig configures authentication based on whether workload identities or managed identities are provided.
+func (o *CreateOptions) applyAzureAuthenticationConfig(cluster *hyperv1.HostedCluster) {
+	imageRegistryEnabled := cluster.Spec.Capabilities == nil || !slices.Contains(cluster.Spec.Capabilities.Disabled, hyperv1.ImageRegistryCapability)
+	if o.infra.WorkloadIdentities != nil {
+		workloadIdentities := o.infra.WorkloadIdentities.DeepCopy()
+		if !imageRegistryEnabled {
+			workloadIdentities.ImageRegistry = hyperv1.WorkloadIdentity{}
+		}
+		cluster.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
+			AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+			WorkloadIdentities:            workloadIdentities,
+		}
+		return
+	}
+
+	managedIdentities := o.infra.ControlPlaneMIs.DeepCopy()
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
+		AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+		ManagedIdentities:             managedIdentities,
+	}
+	if managedIdentities == nil {
+		return
+	}
+
+	managedIdentities.DataPlane = o.infra.DataPlaneIdentities
+	if !imageRegistryEnabled {
+		managedIdentities.ControlPlane.ImageRegistry = hyperv1.ManagedIdentity{}
+		managedIdentities.DataPlane.ImageRegistryMSIClientID = ""
+	}
+
+	managedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
+	managedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
+	managedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
+	if managedIdentities.ControlPlane.ImageRegistry.CredentialsSecretName != "" {
+		managedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
+	}
+	managedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
+	managedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
+	managedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
+	managedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
 }
 
 // GenerateNodePools generates the initial nodepool(s) for the Azure HostedCluster create cluster command

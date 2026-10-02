@@ -85,7 +85,7 @@ ccoctl azure create-oidc-issuer \
 
 ### Workload Identities
 
-Self-managed Azure requires 7 managed identities with federated credentials for OpenShift components:
+By default, `hypershift create iam azure` creates 8 managed identities with federated credentials for OpenShift components:
 
 | Identity | Operator | Service Accounts | Azure Role |
 |----------|----------|------------------|------------|
@@ -96,6 +96,14 @@ Self-managed Azure requires 7 managed identities with federated credentials for 
 | **Cloud Provider** | Azure Cloud Provider | `azure-cloud-provider` | Cloud Provider Role (`a1f96423-95ce-4224-ab27-4e3dc72facd4`) |
 | **Node Pool Management** | Cluster API Provider Azure | `capi-provider` | Contributor (`b24988ac-6180-42a0-ab88-20f7382dd24c`) |
 | **Network** | Cloud Network Config Controller | `cloud-network-config-controller` | Network Role (`be7a6435-15ae-4171-8f30-4a343eff9e8f`) |
+| **Control Plane Operator** | Control Plane Operator | `control-plane-operator` | Contributor (`b24988ac-6180-42a0-ab88-20f7382dd24c`) |
+
+The Image Registry identity is conditional. When the HostedCluster disables the
+`ImageRegistry` capability, `hypershift create iam azure --disable-cluster-capabilities ImageRegistry`
+creates 7 identities by omitting that managed identity and its federated credentials. Use the same
+flag with the infra and cluster creation commands so RBAC assignment and admission requirements
+remain aligned. The Control Plane Operator identity is always created; public clusters do not use
+it, but private clusters use it for Azure Private Link Service operations.
 
 Each identity is configured with:
 
@@ -247,7 +255,7 @@ Self-managed Azure deployments use multiple resource groups with different lifec
 ```
 Persistent Resource Group (e.g., os4-common)
 ├── OIDC Issuer Storage Account
-├── Workload Identities (7 managed identities)
+├── Workload Identities (8 by default; 7 when ImageRegistry is disabled)
 ├── Federated Identity Credentials
 └── DNS Zones (optional, for External DNS)
 ```

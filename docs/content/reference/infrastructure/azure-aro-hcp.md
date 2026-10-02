@@ -112,6 +112,10 @@ The control plane identities are provided in a JSON file with the following form
 }
 ```
 
+The control-plane `imageRegistry` identity and data-plane `imageRegistryMSIClientID` are
+required when the `ImageRegistry` capability is enabled. When it is disabled, both fields may
+be omitted and HyperShift skips their Azure role assignments and runtime registry resources.
+
 ### Data Plane Identities
 
 Data plane identities are Azure managed identities with federated credentials for components running on worker nodes. Each managed identity is assigned an Azure built-in role that grants the specific permissions required by that component:
