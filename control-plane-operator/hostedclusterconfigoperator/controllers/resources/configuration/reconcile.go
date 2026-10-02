@@ -12,14 +12,18 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 type ReconcileParams struct {
-	ClusterID     string
-	UpdateService configv1.URL
-	Channel       string
-	Capabilities  *hyperv1.Capabilities
-	Versions      map[string]string
+	ClusterID                  string
+	UpdateService              configv1.URL
+	Channel                    string
+	Capabilities               *hyperv1.Capabilities
+	Versions                   map[string]string
+	FeatureSet                 configv1.FeatureSet
+	ControlPlaneReleaseVersion semver.Version
 }
 type Stage int
 

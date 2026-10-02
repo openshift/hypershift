@@ -29,6 +29,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+
+	"github.com/blang/semver"
 )
 
 func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -49,14 +51,16 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		deployment.Spec.Template.Spec.ServiceAccountName = ComponentName
 	}
 
-	featureSet := configv1.Default
-	if cpContext.HCP.Spec.Configuration != nil && cpContext.HCP.Spec.Configuration.FeatureGate != nil {
-		featureSet = cpContext.HCP.Spec.Configuration.FeatureGate.FeatureSet
+	featureSet := cpContext.HCP.Spec.Configuration.GetFeatureGateSelection().FeatureSet
+	featureSetForPayloadFilter := featureSet
+	if featureSetForPayloadFilter == "" {
+		// Explicitly set to `Default` as that is how the annotation value is represented in the manifests.
+		featureSetForPayloadFilter = "Default"
 	}
 
-	if featureSet == "" {
-		// Explicitly set to `Default` as that is how the annotation value is represented in the manifests.
-		featureSet = "Default"
+	releaseVersion, err := semver.Parse(cpContext.ReleaseImageProvider.Version())
+	if err != nil {
+		return fmt.Errorf("failed to parse control plane release version: %w", err)
 	}
 
 	// The CVO prepare-payload script needs the ReleaseImage digest for disconnected environments
@@ -68,7 +72,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 	podspec.UpdateContainer("prepare-payload", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Args = []string{
 			"-c",
-			preparePayloadScript(cpContext.HCP.Spec.Platform.Type, reconcilerpolicy.HCPOAuthEnabled(cpContext.HCP), featureSet),
+			preparePayloadScript(cpContext.HCP.Spec.Platform.Type, reconcilerpolicy.HCPOAuthEnabled(cpContext.HCP), featureSetForPayloadFilter),
 		}
 		c.Image = controlPlaneReleaseImage
 	})
@@ -90,7 +94,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 	}
 	cv.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 		BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
-		AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(cpContext.HCP.Spec.Capabilities),
+		AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(cpContext.HCP.Spec.Capabilities, featureSet, releaseVersion),
 	}
 	clusterVersionJSON, err := json.Marshal(cv)
 	if err != nil {

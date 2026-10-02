@@ -5,10 +5,13 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	"github.com/blang/semver"
 )
 
 // IsNodeTuningCapabilityEnabled returns true if the NodeTuning capability is enabled, or false if disabled.
@@ -62,16 +65,29 @@ func IsImageRegistryCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
 	return enabled
 }
 
+// SupportsCompatibilityRequirements reports whether the release payload includes
+// the CRD compatibility checker for the supplied feature set.
+func SupportsCompatibilityRequirements(featureSet configv1.FeatureSet, releaseVersion semver.Version) bool {
+	if featureSet != configv1.TechPreviewNoUpgrade && featureSet != configv1.DevPreviewNoUpgrade {
+		return false
+	}
+
+	return releaseVersion.Major > config.Version510.Major ||
+		(releaseVersion.Major == config.Version510.Major && releaseVersion.Minor >= config.Version510.Minor)
+}
+
 // CalculateEnabledCapabilities returns the net enabled capabilities, by
-// using the default set of capabilities (minus baremetal, ClusterAPI, and
-// CompatibilityRequirements capabilities) and the explicitly enabled and
-// disabled capabilities, in alphabetical order.
-func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities) []configv1.ClusterVersionCapability {
+// using the default set of capabilities (minus baremetal and ClusterAPI
+// capabilities) and the explicitly enabled and disabled capabilities, in
+// alphabetical order.
+func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities, featureSet configv1.FeatureSet, releaseVersion semver.Version) []configv1.ClusterVersionCapability {
 	vCurrent := configv1.ClusterVersionCapabilitySets[configv1.ClusterVersionCapabilitySetCurrent]
 	netCaps := sets.New[configv1.ClusterVersionCapability](vCurrent...)
 	netCaps.Delete(configv1.ClusterVersionCapabilityBaremetal)
 	netCaps.Delete(configv1.ClusterVersionCapabilityClusterAPI)
-	netCaps.Delete(configv1.ClusterVersionCapabilityCompatibilityRequirements)
+	if !SupportsCompatibilityRequirements(featureSet, releaseVersion) {
+		netCaps.Delete(configv1.ClusterVersionCapabilityCompatibilityRequirements)
+	}
 
 	if capabilities != nil && len(capabilities.Disabled) > 0 {
 		disabledCaps := make([]configv1.ClusterVersionCapability, len(capabilities.Disabled))

@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -19,10 +20,62 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/blang/semver"
 )
 
 func TestReconcileClusterVersion(t *testing.T) {
 	t.Parallel()
+	for _, test := range []struct {
+		name          string
+		featureSet    configv1.FeatureSet
+		version       semver.Version
+		knownCaps     []configv1.ClusterVersionCapability
+		expectEnabled bool
+	}{
+		{
+			name:       "When a 5.1 dev preview cluster has no known capabilities, it should enable compatibility requirements",
+			featureSet: configv1.DevPreviewNoUpgrade, version: config.Version510, expectEnabled: true,
+		},
+		{
+			name:       "When a 5.1 tech preview cluster knows compatibility requirements, it should enable the capability",
+			featureSet: configv1.TechPreviewNoUpgrade, version: config.Version510,
+			knownCaps: []configv1.ClusterVersionCapability{configv1.ClusterVersionCapabilityCompatibilityRequirements}, expectEnabled: true,
+		},
+		{
+			name:       "When the guest CVO does not know compatibility requirements, it should filter out the capability",
+			featureSet: configv1.TechPreviewNoUpgrade, version: config.Version510,
+			knownCaps: []configv1.ClusterVersionCapability{configv1.ClusterVersionCapabilityBuild},
+		},
+		{
+			name:    "When the feature set is default, it should not enable compatibility requirements",
+			version: config.Version510,
+		},
+		{
+			name:       "When a preview cluster uses an older release, it should not enable compatibility requirements",
+			featureSet: configv1.TechPreviewNoUpgrade, version: semver.MustParse("5.0.0"),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			clusterVersion := &configv1.ClusterVersion{
+				ObjectMeta: metav1.ObjectMeta{Name: "version"},
+				Status: configv1.ClusterVersionStatus{
+					Capabilities: configv1.ClusterVersionCapabilitiesStatus{KnownCapabilities: test.knownCaps},
+				},
+			}
+			guest := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(clusterVersion).Build()
+			params := ReconcileParams{ClusterID: "test-cluster-id", FeatureSet: test.featureSet, ControlPlaneReleaseVersion: test.version}
+			g.Expect(reconcileClusterVersion(t.Context(), guest, controllerutil.CreateOrUpdate, params)).To(Succeed())
+			g.Expect(guest.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)).To(Succeed())
+			if test.expectEnabled {
+				g.Expect(clusterVersion.Spec.Capabilities.AdditionalEnabledCapabilities).To(ContainElement(configv1.ClusterVersionCapabilityCompatibilityRequirements))
+			} else {
+				g.Expect(clusterVersion.Spec.Capabilities.AdditionalEnabledCapabilities).NotTo(ContainElement(configv1.ClusterVersionCapabilityCompatibilityRequirements))
+			}
+		})
+	}
 	t.Run("When the cluster version is absent, it should create owned fields and preserve error identity", func(t *testing.T) {
 		assert := NewWithT(t)
 		guest := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
