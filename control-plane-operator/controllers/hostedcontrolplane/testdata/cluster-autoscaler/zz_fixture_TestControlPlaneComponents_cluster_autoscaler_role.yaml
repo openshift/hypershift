@@ -2,7 +2,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 04a709a2cc57ef5a6ccaf70ee850a5295e55377db981b9f88c5cd9d08c95a201
+    hypershift.openshift.io/desired-state-hash: fcdb4699c712445bb150eaba4b0fb939cee9554ac80db0dc706ec510cb42b4f0
   name: cluster-autoscaler
   namespace: hcp-namespace
   ownerReferences:
@@ -33,6 +33,7 @@ rules:
   verbs:
   - get
   - list
+  - watch
 - apiGroups:
   - capi-provider.agent-install.openshift.io
   resources:
