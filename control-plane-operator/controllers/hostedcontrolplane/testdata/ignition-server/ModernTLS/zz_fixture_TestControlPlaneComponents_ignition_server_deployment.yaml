@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 94a640e26d4ce01fe2e8ca8faee7b937b51054f34fc73944cd88faf9875503ea
+    hypershift.openshift.io/desired-state-hash: 558fda3e7f9809ebe21266d34c140df67d073da997a2c72637eebfde761b5eef
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ignition-server
@@ -184,15 +184,20 @@ spec:
             status:
               featureGates: null
         image: cluster-config-api
+        imagePullPolicy: IfNotPresent
         name: fetch-feature-gate
         resources:
           requests:
             cpu: 10m
             memory: 40Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /shared
           name: shared
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       serviceAccount: ignition-server
       serviceAccountName: ignition-server

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: ff7dd5a42ae867ebd56597981f4752ab789e5c98abadfd7f45c4b9d7af40273b
+    hypershift.openshift.io/desired-state-hash: df9ac4aea859138d6bba24c0fa78bc2809cdd4491c6d866bbaf3a080c8838421
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-apiserver
@@ -247,6 +247,7 @@ spec:
         - name: KUBECONFIG
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
+        imagePullPolicy: IfNotPresent
         name: konnectivity-proxy-https
         resources:
           requests:
@@ -284,8 +285,12 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
       - command:
         - /bin/bash
         - -c
@@ -319,11 +324,14 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /run/ca-trust-generated
           name: oas-trust-anchor
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-api-critical
       terminationGracePeriodSeconds: 120
       tolerations:

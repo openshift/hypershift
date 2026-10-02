@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: e30d681220c5e039a6d3093f7ac80b28a826f60e51a4695b7583928dceeef095
+    hypershift.openshift.io/desired-state-hash: 0f0a19e48e9c6a22adc09a5e5a51cd3af94c7406800add20dcb1260553d4717f
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: hosted-cluster-config-operator
@@ -174,10 +174,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       schedulerName: default-scheduler
       serviceAccount: hosted-cluster-config-operator

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 7ecf32185aab85efdb5d06990aad5dd9173904392aded02bb0297b6167ee56f4
+    hypershift.openshift.io/desired-state-hash: 38623d3143f8fb2e905f6c8f131ee77f8b3058b31affa4bc0fb297f766266436
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: hosted-cluster-config-operator
@@ -183,11 +183,14 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       schedulerName: default-scheduler
       serviceAccount: hosted-cluster-config-operator
