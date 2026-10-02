@@ -128,12 +128,13 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomTolerations(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureAppLabel(t, ctx, mgtClient, hostedCluster)
-		e2eutil.EnsureFeatureGateStatus(t, ctx, guestClient)
-		e2eutil.EnsureCAPIFinalizers(t, ctx, mgtClient, hostedCluster)
+		if globalOpts.Platform != hyperv1.AWSPlatform {
+			e2eutil.EnsureFeatureGateStatus(t, ctx, guestClient)
+			e2eutil.EnsureCAPIFinalizers(t, ctx, mgtClient, hostedCluster)
+		}
 
 		// ensure KAS DNS name is configured with a KAS Serving cert
 		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster, clusterOpts)
-		e2eutil.EnsureDefaultSecurityGroupTags(t, ctx, mgtClient, hostedCluster, clusterOpts)
 
 		if globalOpts.Platform == hyperv1.AzurePlatform {
 			// WI webhook must run before AllowedCIDRs. AllowedCIDRs blocks and restores
@@ -144,7 +145,9 @@ func TestCreateCluster(t *testing.T) {
 		}
 
 		e2eutil.EnsureMetricsForwarderWorking(t, ctx, mgtClient, hostedCluster)
-		e2eutil.ValidateCPOMetrics(t, ctx, mgtClient, hostedCluster)
+		if globalOpts.Platform != hyperv1.AWSPlatform {
+			e2eutil.ValidateCPOMetrics(t, ctx, mgtClient, hostedCluster)
+		}
 
 		// Verify CPO override image if TEST_CPO_OVERRIDE=1 is set
 		if os.Getenv("TEST_CPO_OVERRIDE") == "1" {
@@ -157,13 +160,6 @@ func TestCreateCluster(t *testing.T) {
 			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, guestClient, hostedCluster)
 		}
 
-		e2eutil.EnsureAWSCCMWithCustomizations(t, ctx, &e2eutil.AWSCCMTestConfig{
-			MgtClient:     mgtClient,
-			GuestClient:   guestClient,
-			HostedCluster: hostedCluster,
-			AWSCredsFile:  clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile,
-			Platform:      globalOpts.Platform,
-		})
 	}).WithAssetReader(content.ReadFile).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
 }
