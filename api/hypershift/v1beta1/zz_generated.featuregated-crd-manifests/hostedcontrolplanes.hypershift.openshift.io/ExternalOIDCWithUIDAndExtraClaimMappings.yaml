@@ -3310,6 +3310,26 @@ spec:
                                   rule: self.matches('^[0-9]{1,3}\\..*') && int(self.split('/')[0].split('.')[0])
                                     > 0
                             type: object
+                          mtu:
+                            description: |-
+                              mtu is the MTU to use for the tunnel interface on hosted cluster nodes.
+                              This must be 100 bytes smaller than the uplink MTU.
+                              When unset, the cluster-network-operator will determine the MTU automatically
+                              based on the infrastructure (e.g., for commercial AWS regions, it defaults
+                              to 8901 based on the 9001 uplink MTU minus 100 bytes overhead).
+                              Some non-commercial AWS regions do not support 9001 uplink MTU,
+                              requiring this field to be explicitly set to a lower value.
+                              The maximum is 9216, which is the standard jumbo frame upper limit
+                              supported by datacenter and cloud network interfaces.
+                              The minimum is 576, which is the minimum IPv4 MTU per RFC 791.
+                              This field is immutable once set.
+                            format: int32
+                            maximum: 9216
+                            minimum: 576
+                            type: integer
+                            x-kubernetes-validations:
+                            - message: mtu is immutable once set
+                              rule: self == oldSelf
                         type: object
                         x-kubernetes-validations:
                         - message: internalJoinSubnet and internalTransitSwitchSubnet
@@ -3317,6 +3337,8 @@ spec:
                           rule: '!has(self.ipv4) || !has(self.ipv4.internalJoinSubnet)
                             || !has(self.ipv4.internalTransitSwitchSubnet) || self.ipv4.internalJoinSubnet
                             != self.ipv4.internalTransitSwitchSubnet'
+                        - message: mtu is immutable once set and cannot be removed
+                          rule: '!has(oldSelf.mtu) || has(self.mtu)'
                     type: object
                   ingressOperator:
                     description: |-
