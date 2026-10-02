@@ -6,12 +6,14 @@ on:
       - main
     paths:
       - releases/tags.yaml
+  workflow_dispatch: {}
 
 jobs:
   create-tag:
+    if: github.ref == 'refs/heads/main'
     uses: openshift/hypershift/.github/workflows/create-tag-reusable.yaml@main
     permissions:
-      contents: write
+      contents: read
     secrets: inherit
 
   create-release:
