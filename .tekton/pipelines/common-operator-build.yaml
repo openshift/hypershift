@@ -166,6 +166,19 @@ spec:
       value:
       - COMMIT_HASH=$(tasks.clone-repository.results.commit)
       - RELEASE_IMAGE_REFERENCE=$(params.output-image)
+      # Seconds since the Unix epoch, for the creationTimestamp the changelog
+      # header prints. Passed as a build arg rather than through the task's
+      # SOURCE_DATE_EPOCH param because that param also hands buildah
+      # --source-date-epoch, which would restamp the image created time of every
+      # component sharing this pipeline - a wider change than this needs. The
+      # two are consistent if that param is ever set: buildah supplies the same
+      # build arg under the same name.
+      #
+      # The result is used in preference to reading the commit date inside the
+      # build because on PR builds the clone task merges the target branch, so
+      # the checkout HEAD is a merge commit dated at clone time. The task
+      # captures the pre-merge timestamp.
+      - SOURCE_DATE_EPOCH=$(tasks.clone-repository.results.commit-timestamp)
     - name: SOURCE_ARTIFACT
       value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
     - name: CACHI2_ARTIFACT
