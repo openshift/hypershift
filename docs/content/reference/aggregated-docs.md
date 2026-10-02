@@ -42038,6 +42038,9 @@ ClusterConfiguration
 <p>configuration specifies configuration for individual OCP components in the
 cluster, represented as embedded resources that correspond to the openshift
 configuration API.</p>
+<p>serviceAccountIssuer is ignored; use spec.issuerURL instead.
+Declare this validation on the HostedCluster-specific field so it does not
+also constrain ClusterConfiguration when it is used by HostedControlPlane.</p>
 </td>
 </tr>
 <tr>
@@ -51332,6 +51335,9 @@ ClusterConfiguration
 <p>configuration specifies configuration for individual OCP components in the
 cluster, represented as embedded resources that correspond to the openshift
 configuration API.</p>
+<p>serviceAccountIssuer is ignored; use spec.issuerURL instead.
+Declare this validation on the HostedCluster-specific field so it does not
+also constrain ClusterConfiguration when it is used by HostedControlPlane.</p>
 </td>
 </tr>
 <tr>

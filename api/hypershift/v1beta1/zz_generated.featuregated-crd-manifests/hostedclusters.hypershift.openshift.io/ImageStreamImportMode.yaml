@@ -558,6 +558,10 @@ spec:
                   configuration specifies configuration for individual OCP components in the
                   cluster, represented as embedded resources that correspond to the openshift
                   configuration API.
+
+                  serviceAccountIssuer is ignored; use spec.issuerURL instead.
+                  Declare this validation on the HostedCluster-specific field so it does not
+                  also constrain ClusterConfiguration when it is used by HostedControlPlane.
                 properties:
                   apiServer:
                     description: |-
@@ -2599,6 +2603,15 @@ spec:
                         type: string
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - fieldPath: .authentication.serviceAccountIssuer
+                  message: serviceAccountIssuer is ignored by HyperShift; set spec.issuerURL
+                    instead and leave this field unset
+                  optionalOldSelf: true
+                  rule: '!has(self.authentication) || !has(self.authentication.serviceAccountIssuer)
+                    || self.authentication.serviceAccountIssuer == '''' || (oldSelf.hasValue()
+                    && has(oldSelf.value().authentication) && has(oldSelf.value().authentication.serviceAccountIssuer)
+                    && self.authentication.serviceAccountIssuer == oldSelf.value().authentication.serviceAccountIssuer)'
               controlPlaneRelease:
                 description: |-
                   controlPlaneRelease is like spec.release but only for the components running on the management cluster.
