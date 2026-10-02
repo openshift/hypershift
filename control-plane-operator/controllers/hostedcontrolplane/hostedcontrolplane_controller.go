@@ -154,6 +154,17 @@ const (
 
 	resourceDeletionTimeout = 10 * time.Minute
 
+	// awsEndpointServiceCPOFinalizer is the finalizer the awsprivatelink controller adds to
+	// AWSEndpointServices; it is removed once the VPC endpoint in the guest VPC is deleted.
+	awsEndpointServiceCPOFinalizer = "hypershift.openshift.io/control-plane-operator-finalizer"
+
+	// awsEndpointServiceDeletionTimeout bounds how long HCP deletion waits for VPC
+	// endpoint cleanup. It matches the hypershift-operator's awsEndpointDeletionGracePeriod,
+	// whose fallback removes the finalizer once it elapses.
+	awsEndpointServiceDeletionTimeout = 10 * time.Minute
+
+	awsEndpointServiceDeletionRequeueInterval = 10 * time.Second
+
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
 
@@ -426,6 +437,16 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 		}
 		if !done {
 			return ctrl.Result{RequeueAfter: time.Minute}, nil
+		}
+	}
+
+	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
+		done, err := r.deleteAWSEndpointServices(ctx, hostedControlPlane)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete AWSEndpointServices: %w", err)
+		}
+		if !done {
+			return ctrl.Result{RequeueAfter: awsEndpointServiceDeletionRequeueInterval}, nil
 		}
 	}
 
@@ -2824,6 +2845,60 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 		}
 	}
 	return false, nil
+}
+
+// deleteAWSEndpointServices deletes the AWSEndpointServices in the HCP namespace and reports
+// whether HCP deletion may proceed. It runs while the HCP (and therefore KAS, token-minter
+// credentials and SharedVPC role configuration) still exists, so the awsprivatelink controller
+// can remove the VPC endpoint in the guest VPC before the control plane is torn down.
+// Only the control-plane-operator finalizer is awaited; the hypershift-operator finalizer does
+// not depend on the HCP and is awaited by the HostedCluster controller. If cleanup does not finish
+// within awsEndpointServiceDeletionTimeout (or credentials are invalid), HCP deletion proceeds and
+// the HostedCluster controller's deleteAWSEndpointServices removes the leftover finalizer.
+func (r *HostedControlPlaneReconciler) deleteAWSEndpointServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	// The hypershift-operator gates its cleanup on GetCredentialStatus, which needs both
+	// ValidOIDCConfiguration and ValidAWSIdentityProvider. We only have ValidAWSIdentityProvider on
+	// the HCP (ValidOIDCConfiguration is a HostedCluster-level condition), so we key off that alone,
+	// like the other HCP credential checks here (hasValidCloudCredentials, security group creation).
+	// Skip only when it is explicitly False; Unknown or missing still tries, since cleanup is best effort.
+	if cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider)); cond != nil && cond.Status == metav1.ConditionFalse {
+		log.Info("Skipping AWSEndpointService cleanup because the AWS identity provider is invalid", "reason", cond.Reason)
+		return true, nil
+	}
+
+	awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
+	if err := r.List(ctx, awsEndpointServiceList, client.InNamespace(hcp.Namespace)); err != nil {
+		return false, fmt.Errorf("failed to list AWSEndpointServices: %w", err)
+	}
+
+	done := true
+	for i := range awsEndpointServiceList.Items {
+		awsEndpointService := &awsEndpointServiceList.Items[i]
+		if awsEndpointService.DeletionTimestamp.IsZero() {
+			log.Info("Deleting AWSEndpointService", "name", awsEndpointService.Name)
+			if err := r.Delete(ctx, awsEndpointService); err != nil && !apierrors.IsNotFound(err) {
+				return false, fmt.Errorf("failed to delete AWSEndpointService %s: %w", awsEndpointService.Name, err)
+			}
+			done = false
+			continue
+		}
+		if !controllerutil.ContainsFinalizer(awsEndpointService, awsEndpointServiceCPOFinalizer) {
+			continue
+		}
+		if elapsed := time.Since(awsEndpointService.DeletionTimestamp.Time); elapsed > awsEndpointServiceDeletionTimeout {
+			log.Error(fmt.Errorf("timed out after %s", duration.ShortHumanDuration(elapsed)),
+				"AWSEndpointService cleanup incomplete, VPC endpoint may be leaked; continuing HCP deletion",
+				"name", awsEndpointService.Name)
+			continue
+		}
+		done = false
+	}
+	if !done {
+		log.Info("Waiting for AWSEndpointService cleanup")
+	}
+	return done, nil
 }
 
 func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
