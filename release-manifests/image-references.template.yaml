@@ -13,6 +13,11 @@ kind: ImageStream
 apiVersion: image.openshift.io/v1
 metadata:
   name: hypershift
+  # Printed as the "Created" line in the changelog header. Unset it and the diff
+  # renders the zero time, 0001-01-01. oc adm release new would set this; nothing
+  # runs it for a Layered release, so the build has to. It is the commit time
+  # rather than the build time so that rebuilding a commit reproduces the file.
+  creationTimestamp: "__CREATION_TIMESTAMP__"
 spec:
   tags:
   # from.name is only read when both builds report the same commit.id, but a
