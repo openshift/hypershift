@@ -422,6 +422,45 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		},
 	}
 
+	machinesWithExtraInternalIPs := []capiv1.Machine{
+		{
+			TypeMeta:   machineTypeMeta,
+			ObjectMeta: worker1Meta,
+			Spec: capiv1.MachineSpec{
+				InfrastructureRef: corev1.ObjectReference{
+					Name: vmWorker1Meta.Name,
+				},
+			},
+			Status: capiv1.MachineStatus{
+				Phase: string(capiv1.MachinePhaseRunning),
+				Addresses: []capiv1.MachineAddress{
+					{Type: capiv1.MachineInternalIP, Address: "192.168.1.3"},
+					{Type: capiv1.MachineInternalIP, Address: "10.8.20.2"},
+					{Type: capiv1.MachineInternalIP, Address: "2001:db8:a0b:12f0::3"},
+					{Type: capiv1.MachineInternalIP, Address: "fd00:10:8::3"},
+				},
+			},
+		},
+		{
+			TypeMeta:   machineTypeMeta,
+			ObjectMeta: worker2Meta,
+			Spec: capiv1.MachineSpec{
+				InfrastructureRef: corev1.ObjectReference{
+					Name: vmWorker2Meta.Name,
+				},
+			},
+			Status: capiv1.MachineStatus{
+				Phase: string(capiv1.MachinePhaseRunning),
+				Addresses: []capiv1.MachineAddress{
+					{Type: capiv1.MachineInternalIP, Address: "192.168.1.4"},
+					{Type: capiv1.MachineInternalIP, Address: "10.8.0.2"},
+					{Type: capiv1.MachineInternalIP, Address: "2001:db8:a0b:12f0::4"},
+					{Type: capiv1.MachineInternalIP, Address: "fd00:10:8::4"},
+				},
+			},
+		},
+	}
+
 	testCases := []struct {
 		name                          string
 		machines                      []capiv1.Machine
@@ -492,6 +531,24 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 				kccmEndpointSliceIPv4(machinesWithLinkLocalAddresses[1], pairOfVirtualMachines[1]),
 				kccmEndpointSliceIPv6(machinesWithLinkLocalAddresses[0], pairOfVirtualMachines[0]),
 				kccmEndpointSliceIPv6(machinesWithLinkLocalAddresses[1], pairOfVirtualMachines[1]),
+			},
+			hcp: kubevirtHCP,
+		},
+		{
+			name:             "When machines have multiple same-family InternalIPs it should use only the first per family",
+			machines:         machinesWithExtraInternalIPs,
+			virtualMachines:  pairOfVirtualMachines,
+			services:         []corev1.Service{defaultIngressService, kccmService},
+			expectedServices: []corev1.Service{defaultIngressService, kccmService},
+			expectedIngressEndpointSlices: []discoveryv1.EndpointSlice{
+				defaultIngressEndpointSliceIPv4(machinesWithExtraInternalIPs[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv4(machinesWithExtraInternalIPs[1], pairOfVirtualMachines[1]),
+				defaultIngressEndpointSliceIPv6(machinesWithExtraInternalIPs[0], pairOfVirtualMachines[0]),
+				defaultIngressEndpointSliceIPv6(machinesWithExtraInternalIPs[1], pairOfVirtualMachines[1]),
+				kccmEndpointSliceIPv4(machinesWithExtraInternalIPs[0], pairOfVirtualMachines[0]),
+				kccmEndpointSliceIPv4(machinesWithExtraInternalIPs[1], pairOfVirtualMachines[1]),
+				kccmEndpointSliceIPv6(machinesWithExtraInternalIPs[0], pairOfVirtualMachines[0]),
+				kccmEndpointSliceIPv6(machinesWithExtraInternalIPs[1], pairOfVirtualMachines[1]),
 			},
 			hcp: kubevirtHCP,
 		},
