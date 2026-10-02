@@ -1,0 +1,29 @@
+  apiVersion: apiextensions.k8s.io/v1
+  name: "NodePool GCP validation"
+  crdName: nodepools.hypershift.openshift.io
+  version: v1beta1
+  featureGates:
+    - GCPPlatform
+  tests:
+    onCreate:
+    - name: when autoScaling min=0 on GCP platform it should pass
+      initial: |
+        apiVersion: hypershift.openshift.io/v1beta1
+        kind: NodePool
+        spec:
+          arch: amd64
+          clusterName: some-cluster
+          management:
+            autoRepair: false
+            upgradeType: Replace
+          release:
+            image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+          autoScaling:
+            min: 0
+            max: 3
+          platform:
+            gcp:
+              machineType: n2-standard-4
+              subnet: test-subnet
+              zone: us-central1-a
+            type: GCP

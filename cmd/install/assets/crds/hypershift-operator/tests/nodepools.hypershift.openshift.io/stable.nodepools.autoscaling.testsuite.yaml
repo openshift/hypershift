@@ -76,7 +76,7 @@ tests:
           agent: {}
           type: Agent
 
-    expectedError: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS and Azure platforms"
+    expectedError: "Scale-from-zero (autoScaling.min=0) is currently supported for AWS, Azure and GCP platforms"
 
   - name: when autoScaling min=0 on KubeVirt platform it should fail
     initial: |
@@ -100,7 +100,7 @@ tests:
               persistent:
                 size: 32Gi
           type: KubeVirt
-    expectedError: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS and Azure platforms"
+    expectedError: "Scale-from-zero (autoScaling.min=0) is currently supported for AWS, Azure and GCP platforms"
 
   - name: when autoScaling min=1 on Azure platform it should pass
     initial: |
