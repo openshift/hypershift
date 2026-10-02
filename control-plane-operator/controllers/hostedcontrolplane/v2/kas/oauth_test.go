@@ -65,7 +65,7 @@ func TestAdaptOauthMetadata(t *testing.T) {
 			wantToken:  "https://[fd2e:6f44:5dd8:c956::14]:32047/oauth/token",
 		},
 		{
-			name: "When OAuth host is a hostname, it should leave issuer URLs unbracketed",
+			name: "When OAuth host is a hostname on port 443, it should leave issuer URLs unbracketed and omit the port",
 			cfg: &corev1.ConfigMap{
 				Data: map[string]string{
 					OauthMetadataConfigKey: `{}`,
@@ -73,9 +73,9 @@ func TestAdaptOauthMetadata(t *testing.T) {
 			},
 			oauthHost:  "oauth.example.com",
 			oauthPort:  443,
-			wantIssuer: "https://oauth.example.com:443",
-			wantAuthz:  "https://oauth.example.com:443/oauth/authorize",
-			wantToken:  "https://oauth.example.com:443/oauth/token",
+			wantIssuer: "https://oauth.example.com",
+			wantAuthz:  "https://oauth.example.com/oauth/authorize",
+			wantToken:  "https://oauth.example.com/oauth/token",
 		},
 	}
 
