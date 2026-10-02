@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 9dc15fba8b7768bf1022f38f84f9fdf43efef88123716a9adf709536ed87280a
+    hypershift.openshift.io/desired-state-hash: ad97059a05f9d68c342410f9cdb1e075f97a73c41414a3b719c0017595703c98
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-apiserver
@@ -345,7 +345,7 @@ spec:
           items:
           - key: .dockerconfigjson
             path: config.json
-          secretName: pull-secret
+          secretName: combined-pull-secret
       - name: konnectivity-proxy-cert
         secret:
           defaultMode: 416
