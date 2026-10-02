@@ -262,15 +262,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile AutoNode status: %w", err)
 	}
 
+	// Standalone operator owns provider deployment, upstream CRDs, and the default NodeClass.
+	if r.StandaloneAdapter {
+		return ctrl.Result{}, nil
+	}
+
 	if hcp.Annotations[hyperkarpenterv1.KarpenterCoreE2EOverrideAnnotation] != "true" {
 		if err := r.reconcileOpenshiftEC2NodeClassDefault(ctx, hcp); err != nil {
 			return ctrl.Result{}, err
 		}
-	}
-
-	// Standalone operator owns provider deployment and upstream CRDs so we can skip everything below.
-	if r.StandaloneAdapter {
-		return ctrl.Result{}, nil
 	}
 
 	// Setup for ControlPlaneContext and the Karpenter control plane v2 component.
