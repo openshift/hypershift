@@ -3584,6 +3584,142 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			},
 		},
 		{
+			name: "When the deprecated OVNSbDb and OIDC service entries are present, it should set the condition to True with DeprecatedConfigurationInUse reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 6,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service:                   hyperv1.OVNSbDb,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.None},
+						},
+						{
+							Service:                   hyperv1.OIDC,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.None},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.DeprecatedConfigurationInUseReason,
+				Message:            `The deprecated spec.services entry "OVNSbDb" is present; remove this entry because the service is no longer used; The deprecated spec.services entry "OIDC" is present; remove this entry because the service is no longer used`,
+				ObservedGeneration: 6,
+			},
+		},
+		{
+			name: "When the deprecated multiArch field is true, it should set the condition to True with DeprecatedConfigurationInUse reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 8,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							MultiArch: true,
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.DeprecatedConfigurationInUseReason,
+				Message:            "The deprecated spec.platform.aws.multiArch field is set to true; remove it because it is no longer used",
+				ObservedGeneration: 8,
+			},
+		},
+		{
+			name: "When the deprecated AESCBC backup key is present, it should set the condition to True with DeprecatedConfigurationInUse reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 9,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.AESCBC,
+						AESCBC: &hyperv1.AESCBCSpec{
+							ActiveKey: corev1.LocalObjectReference{Name: "active-key"},
+							BackupKey: &corev1.LocalObjectReference{Name: "backup-key"},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.DeprecatedConfigurationInUseReason,
+				Message:            "The deprecated spec.secretEncryption.aescbc.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after status.secretEncryption.activeKey is set",
+				ObservedGeneration: 9,
+			},
+		},
+		{
+			name: "When the deprecated AWS KMS backup key is present, it should set the condition to True with DeprecatedConfigurationInUse reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 10,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.KMS,
+						KMS: &hyperv1.KMSSpec{
+							Provider: hyperv1.AWS,
+							AWS: &hyperv1.AWSKMSSpec{
+								ActiveKey: hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789012:key/active"},
+								BackupKey: &hyperv1.AWSKMSKeyEntry{ARN: "arn:aws:kms:us-east-1:123456789012:key/backup"},
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.DeprecatedConfigurationInUseReason,
+				Message:            "The deprecated spec.secretEncryption.kms.aws.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after status.secretEncryption.activeKey is set",
+				ObservedGeneration: 10,
+			},
+		},
+		{
+			name: "When the deprecated Azure KMS backup key is present, it should set the condition to True with DeprecatedConfigurationInUse reason",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation: 11,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.KMS,
+						KMS: &hyperv1.KMSSpec{
+							Provider: hyperv1.AZURE,
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									KeyVaultName: "encryption-vault",
+									KeyName:      "active-key",
+									KeyVersion:   "active-version",
+								},
+								BackupKey: &hyperv1.AzureKMSKey{
+									KeyVaultName: "encryption-vault",
+									KeyName:      "backup-key",
+									KeyVersion:   "backup-version",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.DeprecatedConfigurationInUseReason,
+				Message:            "The deprecated spec.secretEncryption.kms.azure.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after status.secretEncryption.activeKey is set",
+				ObservedGeneration: 11,
+			},
+		},
+		{
 			name: "When neither the logLevel field nor the deprecated annotation is set, it should set the condition to False with AsExpected reason",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
@@ -3611,6 +3747,9 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			g.Expect(cond.Status).To(Equal(tc.expectedCondition.Status))
 			g.Expect(cond.Reason).To(Equal(tc.expectedCondition.Reason))
 			g.Expect(cond.ObservedGeneration).To(Equal(tc.expectedCondition.ObservedGeneration))
+			if tc.expectedCondition.Message != "" {
+				g.Expect(cond.Message).To(Equal(tc.expectedCondition.Message))
+			}
 		})
 	}
 }
