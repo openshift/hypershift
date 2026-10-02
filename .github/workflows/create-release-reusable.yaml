@@ -71,13 +71,12 @@ jobs:
             -o "hypershift-${TAG_NAME}-source.tar.gz" "$TAG_NAME"
           sha256sum "hypershift-${TAG_NAME}-source.tar.gz" \
             > "hypershift-${TAG_NAME}-source.tar.gz.sha256"
-      - name: Create draft GitHub Release
+      - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ inputs.tag-name }}
         run: |
           gh release create "$TAG_NAME" \
-            --draft \
             --title "$TAG_NAME" \
             --notes-file /tmp/release-notes.md \
             --verify-tag \
@@ -86,4 +85,4 @@ jobs:
 
           echo "## Create Release" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Draft release **${TAG_NAME}** created." >> "$GITHUB_STEP_SUMMARY"
+          echo "Release **${TAG_NAME}** created." >> "$GITHUB_STEP_SUMMARY"
