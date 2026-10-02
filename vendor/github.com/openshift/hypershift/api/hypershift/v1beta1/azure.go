@@ -364,6 +364,8 @@ type AzureNodePoolOSDisk struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.topology) || !has(oldSelf.topology) || (self.topology == 'Public') == (oldSelf.topology == 'Public')",message="transitions between Public and non-Public topology are not supported"
 // +kubebuilder:validation:XValidation:rule="has(self.topology) && (self.topology == 'Private' || self.topology == 'PublicAndPrivate') ? has(self.private) : !has(self.private)",message="private is required when topology is Private or PublicAndPrivate, and forbidden otherwise"
 // +kubebuilder:validation:XValidation:rule="!has(self.private) || self.private.type != 'PrivateLink' || self.azureAuthenticationConfig.azureAuthenticationConfigType != 'WorkloadIdentities' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)",message="workloadIdentities.controlPlaneOperator is required when Private Link is configured with WorkloadIdentities authentication"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.outboundType) || has(self.outboundType)",message="outboundType cannot be removed once set"
+// +kubebuilder:validation:XValidation:rule="!has(self.outboundType) || !has(oldSelf.outboundType) || self.outboundType == oldSelf.outboundType",message="outboundType is immutable once set"
 type AzurePlatformSpec struct {
 	// cloud is the Azure cloud environment identifier.
 	//
@@ -501,6 +503,17 @@ type AzurePlatformSpec struct {
 	//
 	// +optional
 	Private AzurePrivateSpec `json:"private,omitzero"`
+
+	// outboundType specifies the outbound connectivity method for worker node traffic leaving the cluster.
+	// - LoadBalancer: outbound traffic uses an Azure Load Balancer with outbound rules.
+	// - UserDefinedRouting: outbound traffic is managed by the customer's egress mechanism (e.g. NAT gateway,
+	//   virtual appliance). The customer must configure egress on their subnets before cluster creation.
+	//   HyperShift disables outbound SNAT on the Load Balancer when this is set.
+	// When omitted, defaults to LoadBalancer behavior.
+	// Once set, this field is immutable.
+	//
+	// +optional
+	OutboundType AzureOutboundType `json:"outboundType,omitempty"`
 }
 
 // objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
@@ -719,6 +732,18 @@ const (
 	AzureTopologyPublicAndPrivate AzureTopologyType = "PublicAndPrivate"
 	// AzureTopologyPrivate indicates the API server is accessible only via a private endpoint.
 	AzureTopologyPrivate AzureTopologyType = "Private"
+)
+
+// AzureOutboundType specifies the outbound connectivity method for worker nodes.
+// +kubebuilder:validation:Enum=LoadBalancer;UserDefinedRouting
+type AzureOutboundType string
+
+const (
+	// AzureOutboundTypeLoadBalancer uses an Azure Load Balancer with outbound rules for egress.
+	AzureOutboundTypeLoadBalancer AzureOutboundType = "LoadBalancer"
+	// AzureOutboundTypeUserDefinedRouting delegates outbound connectivity to the customer's egress mechanism.
+	// HyperShift disables Load Balancer outbound SNAT when this type is set.
+	AzureOutboundTypeUserDefinedRouting AzureOutboundType = "UserDefinedRouting"
 )
 
 // AzurePrivateType specifies the type of private connectivity mechanism used for the Azure

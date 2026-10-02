@@ -138,7 +138,7 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 		CloudProviderBackoff:         true,
 		CloudProviderBackoffDuration: 6,
 		LoadBalancerSku:              "standard",
-		DisableOutboundSNAT:          true,
+		DisableOutboundSNAT:          azureplatform.OutboundType != hyperv1.AzureOutboundTypeUserDefinedRouting,
 		ClusterServiceLoadBalancerHealthProbeMode: probeMode,
 		UseInstanceMetadata:                       true,
 	}
