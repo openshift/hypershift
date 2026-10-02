@@ -4094,11 +4094,6 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 
 	// Cleanup Platform specifics.
 
-	if err = p.DeleteCredentials(ctx, r.Client, hc,
-		controlPlaneNamespace); err != nil {
-		return false, err
-	}
-
 	if hc.Spec.Platform.Type == hyperv1.AWSPlatform {
 		exists, err := deleteAWSEndpointServices(ctx, r.Client, hc, controlPlaneNamespace)
 		if err != nil {
@@ -4173,6 +4168,11 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	if exists {
 		log.Info("Waiting for hostedcontrolplane deletion", "controlPlaneNamespace", controlPlaneNamespace)
 		return false, nil
+	}
+
+	if err = p.DeleteCredentials(ctx, r.Client, hc,
+		controlPlaneNamespace); err != nil {
+		return false, err
 	}
 
 	if err := r.cleanupOIDCBucketData(ctx, log, hc); err != nil {

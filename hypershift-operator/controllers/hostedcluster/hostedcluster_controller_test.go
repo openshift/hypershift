@@ -9523,6 +9523,70 @@ func TestDestroyGracePeriod(t *testing.T) {
 	}
 }
 
+func TestDeleteDefersGCPCredentialCleanupUntilHCPDeleted(t *testing.T) {
+	g := NewWithT(t)
+	const (
+		hostedClusterNamespace = "test-ns"
+		hostedClusterName      = "test-cluster"
+	)
+	controlPlaneNamespace := hcpmanifests.HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName)
+
+	deletionTimestamp := metav1.Now()
+	hostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              hostedClusterName,
+			Namespace:         hostedClusterNamespace,
+			DeletionTimestamp: &deletionTimestamp,
+			Finalizers:        []string{HostedClusterFinalizer},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.GCPPlatform,
+				GCP:  &hyperv1.GCPPlatformSpec{},
+			},
+		},
+	}
+	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hostedClusterName)
+	hcp.DeletionTimestamp = &deletionTimestamp
+	hcp.Finalizers = []string{"test.finalizer"}
+	credentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Name:      "control-plane-operator-creds",
+		Namespace: controlPlaneNamespace,
+	}}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcp, credentialSecret).
+		Build()
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+	}
+
+	completed, err := r.delete(t.Context(), hostedCluster)
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(completed).To(BeFalse(), "deletion should wait for the HCP finalizer")
+	remainingSecret := &corev1.Secret{}
+	g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(credentialSecret), remainingSecret)).ToNot(HaveOccurred(),
+		"the CPO credential Secret must remain available until HCP deletion completes")
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(hcp), updatedHCP)).ToNot(HaveOccurred())
+	g.Expect(updatedHCP.DeletionTimestamp).ToNot(BeNil(), "the HCP deletion should be in progress")
+
+	updatedHCP.Finalizers = nil
+	g.Expect(fakeClient.Update(t.Context(), updatedHCP)).ToNot(HaveOccurred())
+	hcpGetErr := fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(hcp), &hyperv1.HostedControlPlane{})
+	g.Expect(errors2.IsNotFound(hcpGetErr)).To(BeTrue(), "the HCP should be gone before credential cleanup proceeds")
+
+	completed, err = r.delete(t.Context(), hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(completed).To(BeTrue())
+	secretGetErr := fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(credentialSecret), &corev1.Secret{})
+	g.Expect(errors2.IsNotFound(secretGetErr)).To(BeTrue(), "the CPO credential Secret should be removed after HCP deletion completes")
+}
+
 func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 	const hcpDeprecationMessage = "The deprecated annotation is set; migrate to the field"
 
