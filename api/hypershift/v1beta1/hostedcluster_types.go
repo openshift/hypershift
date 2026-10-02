@@ -2766,6 +2766,10 @@ type PlatformStatus struct {
 	// aws contains platform-specific status for AWS
 	// +optional
 	AWS *AWSPlatformStatus `json:"aws,omitempty"`
+
+	// azure contains platform-specific status for Azure
+	// +optional
+	Azure AzurePlatformStatus `json:"azure,omitzero,omitempty"`
 }
 
 // ClusterVersionStatus reports the status of the cluster versioning,

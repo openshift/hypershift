@@ -136,6 +136,7 @@ type AzureVMImage struct {
 	// +optional
 	// +unionMember
 	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
 	ImageID *string `json:"imageID,omitempty"`
 
 	// azureMarketplace contains the Azure Marketplace image info to use to boot the Azure VMs from.
@@ -1049,4 +1050,222 @@ type AzureAuthenticationConfiguration struct {
 	// This is required for self-managed Azure.
 	// +optional
 	WorkloadIdentities *AzureWorkloadIdentities `json:"workloadIdentities,omitempty"`
+}
+
+// AzurePlatformStatus contains status specific to the Azure platform.
+// It reflects the identity configuration that the control plane operator has applied,
+// enabling consumers to observe which identities are actively in use without
+// re-deriving them from spec.
+//
+// Note: this reflects configuration applied by the control plane operator, not a
+// guarantee that pods are running with these credentials. Pod-level confirmation
+// requires watching SecretProviderClassPodStatus objects (for ManagedIdentities) or
+// Deployment rollout status (for WorkloadIdentities).
+//
+// +kubebuilder:validation:MinProperties=1
+type AzurePlatformStatus struct {
+	// managedIdentities reflects the credential secret names of the managed identities
+	// currently applied by the control plane operator to control plane and data plane
+	// components. Populated when the Azure authentication mode is ManagedIdentities.
+	//
+	// +optional
+	ManagedIdentities AzureManagedIdentitiesStatus `json:"managedIdentities,omitzero,omitempty"`
+
+	// workloadIdentities reflects the client IDs of the federated workload identities
+	// currently applied by the control plane operator. Populated when the Azure
+	// authentication mode is WorkloadIdentities.
+	//
+	// +optional
+	WorkloadIdentities AzureWorkloadIdentitiesStatus `json:"workloadIdentities,omitzero,omitempty"`
+}
+
+// AzureManagedIdentitiesStatus reflects the active managed identity credential references
+// for control plane and data plane components.
+//
+// +kubebuilder:validation:MinProperties=1
+type AzureManagedIdentitiesStatus struct {
+	// controlPlane contains the Key Vault credential secret names of the managed identities
+	// currently applied to control plane components.
+	//
+	// +optional
+	ControlPlane AzureControlPlaneManagedIdentitiesStatus `json:"controlPlane,omitzero,omitempty"`
+
+	// dataPlane contains the MSI client IDs of the managed identities currently applied
+	// to data plane components via the ignition configuration.
+	//
+	// +optional
+	DataPlane AzureDataPlaneManagedIdentitiesStatus `json:"dataPlane,omitzero,omitempty"`
+}
+
+// AzureControlPlaneManagedIdentitiesStatus reflects the active Key Vault credential secret
+// names for each control plane managed identity. Each field holds the credentialsSecretName
+// value that the control plane operator is currently using for that component; this value
+// changes when a managed identity rotation is applied.
+//
+// +kubebuilder:validation:MinProperties=1
+type AzureControlPlaneManagedIdentitiesStatus struct {
+	// cloudProvider is the Key Vault secret name of the managed identity currently applied
+	// to the Azure cloud provider (cloud controller manager).
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=127
+	// +kubebuilder:validation:MinLength=1
+	CloudProvider string `json:"cloudProvider,omitempty"`
+
+	// nodePoolManagement is the Key Vault secret name of the managed identity currently
+	// applied to the node pool management operator.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=127
+	// +kubebuilder:validation:MinLength=1
+	NodePoolManagement string `json:"nodePoolManagement,omitempty"`
+
+	// controlPlaneOperator is the Key Vault secret name of the managed identity currently
+	// applied to the control plane operator.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=127
+	// +kubebuilder:validation:MinLength=1
+	ControlPlaneOperator string `json:"controlPlaneOperator,omitempty"`
+
+	// imageRegistry is the Key Vault secret name of the managed identity currently
+	// applied to the image registry operator.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=127
+	// +kubebuilder:validation:MinLength=1
+	ImageRegistry string `json:"imageRegistry,omitempty"`
+
+	// ingress is the Key Vault secret name of the managed identity currently
+	// applied to the ingress operator.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=127
+	// +kubebuilder:validation:MinLength=1
+	Ingress string `json:"ingress,omitempty"`
+
+	// network is the Key Vault secret name of the managed identity currently
+	// applied to the network operator.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=127
+	// +kubebuilder:validation:MinLength=1
+	Network string `json:"network,omitempty"`
+
+	// disk is the Key Vault secret name of the managed identity currently
+	// applied to the Azure disk CSI driver.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=127
+	// +kubebuilder:validation:MinLength=1
+	Disk string `json:"disk,omitempty"`
+
+	// file is the Key Vault secret name of the managed identity currently
+	// applied to the Azure file CSI driver.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=127
+	// +kubebuilder:validation:MinLength=1
+	File string `json:"file,omitempty"`
+}
+
+// AzureDataPlaneManagedIdentitiesStatus reflects the active MSI client IDs for data plane
+// managed identities. These values are included in the ignition configuration applied to
+// worker nodes.
+//
+// +kubebuilder:validation:MinProperties=1
+type AzureDataPlaneManagedIdentitiesStatus struct {
+	// imageRegistryClientID is the MSI client ID currently applied to the image registry
+	// controller running on the data plane.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
+	ImageRegistryClientID string `json:"imageRegistryClientID,omitempty"`
+
+	// diskClientID is the MSI client ID currently applied to the CSI disk driver running
+	// on the data plane.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
+	DiskClientID string `json:"diskClientID,omitempty"`
+
+	// fileClientID is the MSI client ID currently applied to the CSI file driver running
+	// on the data plane.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
+	FileClientID string `json:"fileClientID,omitempty"`
+}
+
+// AzureWorkloadIdentitiesStatus reflects the active client IDs for federated workload
+// identities currently applied by the control plane operator.
+//
+// +kubebuilder:validation:MinProperties=1
+type AzureWorkloadIdentitiesStatus struct {
+	// cloudProvider is the client ID of the workload identity currently applied to the
+	// Azure cloud provider (cloud controller manager).
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
+	CloudProvider string `json:"cloudProvider,omitempty"`
+
+	// nodePoolManagement is the client ID of the workload identity currently applied to
+	// the node pool management operator.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
+	NodePoolManagement string `json:"nodePoolManagement,omitempty"`
+
+	// controlPlaneOperator is the client ID of the workload identity currently applied to
+	// the control plane operator.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
+	ControlPlaneOperator string `json:"controlPlaneOperator,omitempty"`
+
+	// imageRegistry is the client ID of the workload identity currently applied to the
+	// image registry operator.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
+	ImageRegistry string `json:"imageRegistry,omitempty"`
+
+	// ingress is the client ID of the workload identity currently applied to the ingress
+	// operator.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
+	Ingress string `json:"ingress,omitempty"`
+
+	// network is the client ID of the workload identity currently applied to the network
+	// operator.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
+	Network string `json:"network,omitempty"`
+
+	// disk is the client ID of the workload identity currently applied to the Azure disk
+	// CSI driver.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
+	Disk string `json:"disk,omitempty"`
+
+	// file is the client ID of the workload identity currently applied to the Azure file
+	// CSI driver.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=1
+	File string `json:"file,omitempty"`
 }

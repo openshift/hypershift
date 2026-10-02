@@ -117,10 +117,16 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureContainerRegistryConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureContainerRegistryCredentialConfig"):
 		return &hypershiftv1beta1.AzureContainerRegistryCredentialConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureControlPlaneManagedIdentitiesStatus"):
+		return &hypershiftv1beta1.AzureControlPlaneManagedIdentitiesStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureDataPlaneManagedIdentitiesStatus"):
+		return &hypershiftv1beta1.AzureDataPlaneManagedIdentitiesStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
 		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
 		return &hypershiftv1beta1.AzureKMSSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureManagedIdentitiesStatus"):
+		return &hypershiftv1beta1.AzureManagedIdentitiesStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureMarketplaceImage"):
 		return &hypershiftv1beta1.AzureMarketplaceImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureNodePoolOSDisk"):
@@ -129,6 +135,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &hypershiftv1beta1.AzurePlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzurePlatformStatus"):
+		return &hypershiftv1beta1.AzurePlatformStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateLinkService"):
 		return &hypershiftv1beta1.AzurePrivateLinkServiceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateLinkServiceSpec"):
@@ -147,6 +155,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureVMImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureWorkloadIdentities"):
 		return &hypershiftv1beta1.AzureWorkloadIdentitiesApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureWorkloadIdentitiesStatus"):
+		return &hypershiftv1beta1.AzureWorkloadIdentitiesStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Capabilities"):
 		return &hypershiftv1beta1.CapabilitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("CapacityReservationOptions"):
