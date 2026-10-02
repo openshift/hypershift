@@ -1472,6 +1472,32 @@ The release process is managed via GitHub Actions workflows triggered by changes
     - Builds a source tarball with SHA256 checksum
     - Creates a **draft** GitHub Release
 
+#### Rehearsing workflow changes
+
+The release workflows use reusable workflow files pinned to `@main`. Because GitHub Actions resolves reusable workflows from the default branch, changes to workflow YAML cannot be tested via normal PR CI.
+
+A dedicated **Rehearse Release Workflows** (`rehearse-release-workflows.yaml`) workflow exists to solve this. It inlines the same install and validation steps so they run from the branch code. There are two ways to trigger it:
+
+**Automatic** — push to a branch named `fix/release-workflow-*` that modifies any
+`*release*` or `*tag*` workflow file:
+
+```bash
+git checkout -b fix/release-workflow-my-change
+# ... edit workflow files ...
+git push origin fix/release-workflow-my-change
+# The rehearsal workflow triggers automatically and results appear in the Actions tab.
+```
+
+**Manual** — once the rehearsal workflow exists on `main`, trigger it on any branch:
+
+```bash
+gh workflow run rehearse-release-workflows.yaml --ref my-branch
+```
+
+The rehearsal is read-only (`permissions: contents: read`) — it installs tools,
+parses `releases/tags.yaml`, and generates sample release notes, but never creates
+tags or releases.
+
 #### Legacy manual flow
 
 For cases where the automated flow is not available:

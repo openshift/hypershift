@@ -31,17 +31,22 @@ jobs:
           fi
       - name: Install git-cliff
         env:
+          INSTALL_DIR: ${{ runner.temp }}/bin
           GIT_CLIFF_VERSION: "2.7.0"
-          GIT_CLIFF_SHA256: "d9705c9f43bd74e2d10ca7df10b624bbe6f15bd4774f6c1e012db5be276f91f7"
         run: |
-          curl -fsSL "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+          case "$(uname -m)" in
+            x86_64)  CLIFF_ARCH="x86_64";  CLIFF_SHA256="d9705c9f43bd74e2d10ca7df10b624bbe6f15bd4774f6c1e012db5be276f91f7" ;;
+            aarch64) CLIFF_ARCH="aarch64"; CLIFF_SHA256="545eb07f032882250db0b699cd62a078e12a8025bda1fe250a30efe9230a619d" ;;
+            *) echo "::error::Unsupported architecture: $(uname -m)"; exit 1 ;;
+          esac
+          curl -fsSL "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-${CLIFF_ARCH}-unknown-linux-gnu.tar.gz" \
             -o /tmp/git-cliff.tar.gz
-          echo "${GIT_CLIFF_SHA256}  /tmp/git-cliff.tar.gz" | sha256sum -c -
+          echo "${CLIFF_SHA256}  /tmp/git-cliff.tar.gz" | sha256sum -c -
           tar xzf /tmp/git-cliff.tar.gz -C /tmp
-          mkdir -p "${HOME}/.local/bin"
-          mv "/tmp/git-cliff-${GIT_CLIFF_VERSION}/git-cliff" "${HOME}/.local/bin/git-cliff"
-          chmod +x "${HOME}/.local/bin/git-cliff"
-          echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+          mkdir -p "$INSTALL_DIR"
+          mv "/tmp/git-cliff-${GIT_CLIFF_VERSION}/git-cliff" "${INSTALL_DIR}/git-cliff"
+          chmod +x "${INSTALL_DIR}/git-cliff"
+          echo "$INSTALL_DIR" >> "$GITHUB_PATH"
       - name: Generate release notes
         env:
           TAG_NAME: ${{ inputs.tag-name }}
