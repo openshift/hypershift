@@ -89,7 +89,7 @@ jobs:
             git push origin "$name"
             echo "Tag '$name' created and pushed."
             created=$((created + 1))
-            created_tags=$(echo "$created_tags" | yq -o=json ". + [\"$name\"]")
+            created_tags=$(echo "$created_tags" | yq -o=json -I=0 ". + [\"$name\"]")
           done
 
           echo "created-tags=${created_tags}" >> "$GITHUB_OUTPUT"
