@@ -8,7 +8,7 @@ on:
         value: ${{ jobs.create-tag.outputs.created-tags }}
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   create-tag:
@@ -37,9 +37,17 @@ jobs:
           echo "${YQ_SHA256}  ${INSTALL_DIR}/yq" | sha256sum -c -
           chmod +x "${INSTALL_DIR}/yq"
           echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.JIRA_SOLVE_CI_APP_ID }}
+          private-key: ${{ secrets.JIRA_SOLVE_CI_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
       - name: Configure git
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
         run: |
           git config user.name "github-actions[bot]"
