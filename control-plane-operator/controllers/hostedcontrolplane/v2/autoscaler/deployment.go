@@ -38,6 +38,8 @@ const (
 	ScaleDownUnneededTimeArg         AutoscalerArg = "--scale-down-unneeded-time"
 	ScaleDownUtilizationThresholdArg AutoscalerArg = "--scale-down-utilization-threshold"
 	MaxFreeDifferenceRatioArg        AutoscalerArg = "--max-free-difference-ratio"
+	KubeClientQPSArg                 AutoscalerArg = "--kube-client-qps"
+	KubeClientBurstArg               AutoscalerArg = "--kube-client-burst"
 )
 
 // Constants for expander flags
@@ -115,6 +117,15 @@ func autoscalerArgs(options *hyperv1.ClusterAutoscaling, platformType hyperv1.Pl
 
 	if options.PodPriorityThreshold != nil {
 		args = append(args, ExpendablePodsPriorityCutoffArg.Value(*options.PodPriorityThreshold))
+	}
+
+	if options.KubeClientQPS != nil {
+		// Upstream --kube-client-qps is a float; convert from the int32 API field.
+		args = append(args, KubeClientQPSArg.Value(float32(*options.KubeClientQPS)))
+	}
+
+	if options.KubeClientBurst != 0 {
+		args = append(args, KubeClientBurstArg.Value(options.KubeClientBurst))
 	}
 
 	for _, ignoredLabel := range options.BalancingIgnoredLabels {
