@@ -55,12 +55,19 @@ func (f *Filter) getOrCompile(componentName string) *regexp.Regexp {
 	}
 	f.mu.RUnlock()
 
-	regexStr := getKeepRegexForComponent(componentName, f.metricsSet)
-	if regexStr == "" {
+	regexStr, hasConfig := getFilterRegexForComponent(componentName, f.metricsSet)
+	if !hasConfig {
 		f.mu.Lock()
 		f.cache[componentName] = nil
 		f.mu.Unlock()
 		return nil
+	}
+	if regexStr == "" {
+		// Component has a drop-all rule: block everything.
+		f.mu.Lock()
+		f.cache[componentName] = matchNothing
+		f.mu.Unlock()
+		return matchNothing
 	}
 
 	compiled, err := regexp.Compile("^(" + regexStr + ")$")
@@ -79,14 +86,26 @@ func (f *Filter) getOrCompile(componentName string) *regexp.Regexp {
 	return compiled
 }
 
-func getKeepRegexForComponent(componentName string, metricsSet metrics.MetricsSet) string {
+// getFilterRegexForComponent returns the keep regex for a component and whether
+// any relabel config exists. When a drop-all rule is found (regex matches
+// everything), it returns ("", true) to signal that all metrics should be
+// blocked. Selective drop rules are not supported by this filter and are
+// treated as having no config.
+func getFilterRegexForComponent(componentName string, metricsSet metrics.MetricsSet) (string, bool) {
 	configs := getRelabelConfigsForComponent(componentName, metricsSet)
 	for _, rc := range configs {
 		if rc.Action == "keep" {
-			return rc.Regex
+			return rc.Regex, true
+		}
+		if rc.Action == "drop" && isDropAllRegex(rc.Regex) {
+			return "", true
 		}
 	}
-	return ""
+	return "", false
+}
+
+func isDropAllRegex(regex string) bool {
+	return regex == ".*" || regex == "(.*)"
 }
 
 func getRelabelConfigsForComponent(componentName string, metricsSet metrics.MetricsSet) []prometheusoperatorv1.RelabelConfig {
@@ -97,6 +116,8 @@ func getRelabelConfigsForComponent(componentName string, metricsSet metrics.Metr
 		return metrics.EtcdRelabelConfigs(metricsSet)
 	case "kube-controller-manager":
 		return metrics.KCMRelabelConfigs(metricsSet)
+	case "kube-scheduler":
+		return metrics.SchedulerRelabelConfigs(metricsSet)
 	case "openshift-apiserver":
 		return metrics.OpenShiftAPIServerRelabelConfigs(metricsSet)
 	case "openshift-controller-manager":
