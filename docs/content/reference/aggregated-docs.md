@@ -2374,6 +2374,8 @@ The Global Pull Secret functionality enables Hosted Cluster administrators to in
 
 The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
 
+The OpenShift API Server mounts `combined-pull-secret` for ImageStream imports. The Control Plane Operator creates this secret from the HostedControlPlane pull secret before reconciling components; HCCO then updates it with merged credentials when an additional pull secret exists, or with the original credentials when it does not.
+
 !!! note
 
     This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
@@ -2725,6 +2727,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -6359,6 +6362,8 @@ The Global Pull Secret functionality enables Hosted Cluster administrators to in
 
 The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
 
+The OpenShift API Server mounts `combined-pull-secret` for ImageStream imports. The Control Plane Operator creates this secret from the HostedControlPlane pull secret before reconciling components; HCCO then updates it with merged credentials when an additional pull secret exists, or with the original credentials when it does not.
+
 !!! note
 
     This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
@@ -6710,6 +6715,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -9583,6 +9589,8 @@ The Global Pull Secret functionality enables Hosted Cluster administrators to in
 
 The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
 
+The OpenShift API Server mounts `combined-pull-secret` for ImageStream imports. The Control Plane Operator creates this secret from the HostedControlPlane pull secret before reconciling components; HCCO then updates it with merged credentials when an additional pull secret exists, or with the original credentials when it does not.
+
 !!! note
 
     This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
@@ -9934,6 +9942,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -11544,6 +11553,8 @@ The Global Pull Secret functionality enables Hosted Cluster administrators to in
 
 The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
 
+The OpenShift API Server mounts `combined-pull-secret` for ImageStream imports. The Control Plane Operator creates this secret from the HostedControlPlane pull secret before reconciling components; HCCO then updates it with merged credentials when an additional pull secret exists, or with the original credentials when it does not.
+
 !!! note
 
     This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
@@ -11895,6 +11906,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -18936,6 +18948,8 @@ The Global Pull Secret functionality enables Hosted Cluster administrators to in
 
 The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
 
+The OpenShift API Server mounts `combined-pull-secret` for ImageStream imports. The Control Plane Operator creates this secret from the HostedControlPlane pull secret before reconciling components; HCCO then updates it with merged credentials when an additional pull secret exists, or with the original credentials when it does not.
+
 !!! note
 
     This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
@@ -19287,6 +19301,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -20367,6 +20382,8 @@ The Global Pull Secret functionality enables Hosted Cluster administrators to in
 
 The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
 
+The OpenShift API Server mounts `combined-pull-secret` for ImageStream imports. The Control Plane Operator creates this secret from the HostedControlPlane pull secret before reconciling components; HCCO then updates it with merged credentials when an additional pull secret exists, or with the original credentials when it does not.
+
 !!! note
 
     This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
@@ -20718,6 +20735,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -20989,6 +21007,8 @@ The Global Pull Secret functionality enables Hosted Cluster administrators to in
 
 The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
 
+The OpenShift API Server mounts `combined-pull-secret` for ImageStream imports. The Control Plane Operator creates this secret from the HostedControlPlane pull secret before reconciling components; HCCO then updates it with merged credentials when an additional pull secret exists, or with the original credentials when it does not.
+
 !!! note
 
     This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
@@ -21340,6 +21360,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -22581,6 +22602,8 @@ The Global Pull Secret functionality enables Hosted Cluster administrators to in
 
 The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
 
+The OpenShift API Server mounts `combined-pull-secret` for ImageStream imports. The Control Plane Operator creates this secret from the HostedControlPlane pull secret before reconciling components; HCCO then updates it with merged credentials when an additional pull secret exists, or with the original credentials when it does not.
+
 !!! note
 
     This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
@@ -22932,6 +22955,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
