@@ -21,8 +21,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -96,7 +96,8 @@ func NodePoolArm64CreateTest(getTestCtx internal.TestContextGetter) {
 		}
 		GinkgoWriter.Printf("Verified ARM64 NodePool %s created with correct architecture settings\n", np.Name)
 		// Wait for the ARM64 node to become ready
-		nodes := e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		nodes, err := v2util.WaitForReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
+		Expect(err).NotTo(HaveOccurred(), "failed waiting for the ARM64 node to become ready")
 		Expect(nodes).To(HaveLen(1), "expected exactly 1 ARM64 node for NodePool %s", np.Name)
 		// Verify the node has the correct ARM64 architecture label
 		node := nodes[0]

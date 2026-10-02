@@ -25,8 +25,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/pkg/manifests"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -129,7 +129,7 @@ func ensureMachineDeploymentGeneration(
 func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should upgrade the control plane from N-1 to latest", func() {
 		testCtx := getTestCtx()
-		testCtx.SkipIfVersionBelow(e2eutil.Version422)
+		testCtx.SkipIfVersionBelow(v2util.Version422)
 
 		ctx := testCtx.Context
 		By("Fetching the HostedCluster before upgrade")
@@ -146,7 +146,7 @@ func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 		}
 
 		By(fmt.Sprintf("Requesting control plane upgrade from version %s to image %s", startingVersion, latestImage))
-		err = e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+		err = v2util.UpdateObject(ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.Release.Image = latestImage
 			if obj.Annotations == nil {
 				obj.Annotations = make(map[string]string)

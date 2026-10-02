@@ -21,20 +21,20 @@ import (
 	"strings"
 
 	"github.com/onsi/gomega"
-	"github.com/openshift/hypershift/test/e2e/util"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ValidateConditions validates that all expected conditions match the actual conditions.
 // It cycles through each expected condition and verifies that a matching condition exists
 // in the actual conditions list. Uses Gomega assertions to report failures.
-func ValidateConditions(g gomega.Gomega, object client.Object, expectedConditions []util.Condition) {
-	actualConditions, err := util.Conditions(object)
+func ValidateConditions(g gomega.Gomega, object client.Object, expectedConditions []v2util.Condition) {
+	actualConditions, err := v2util.Conditions(object)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	for _, expectedCondition := range expectedConditions {
 		var found bool
-		var actualCondition util.Condition
+		var actualCondition v2util.Condition
 
 		// Find the condition with matching Type
 		for _, condition := range actualConditions {

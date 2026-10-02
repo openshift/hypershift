@@ -24,8 +24,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	corev1 "k8s.io/api/core/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -45,7 +45,7 @@ func VerifyCPOOverrideImageTest(getTestCtx internal.TestContextGetter) {
 			releaseImage := hc.Spec.Release.Image
 			Expect(releaseImage).NotTo(BeEmpty(), "HostedCluster release image should be set")
 
-			version := e2eutil.ExtractVersionFromReleaseImage(releaseImage)
+			version := v2util.ExtractVersionFromReleaseImage(releaseImage)
 			Expect(version).NotTo(BeEmpty(), "could not extract version from release image %s", releaseImage)
 
 			platform := string(hc.Spec.Platform.Type)

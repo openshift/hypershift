@@ -28,8 +28,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	"github.com/openshift/hypershift/support/netutil"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -46,7 +46,7 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 	When("an additional pull secret is created in the hosted cluster", Label("Informing"), func() {
 		It("should propagate it through the global pull secret pipeline and clean up on deletion", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version420)
+			tc.SkipIfVersionBelow(v2util.Version420)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform, hyperv1.AzurePlatform)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -70,7 +70,7 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 			var updatedPullSecretData = []byte(`{"auths": {"registry.example.com": {"auth": "dXNlcjpwYXNzd29yZA=="}}}`)
 
 			By("verifying in-place management-cluster pull secret propagation without rollout")
-			if tc.VersionAtLeast(e2eutil.Version422) {
+			if tc.VersionAtLeast(v2util.Version422) {
 				verifyPullSecretPropagation(tc, hc, np, hcClient, nodeCount)
 			}
 
@@ -174,7 +174,8 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 				"failed to update additional-pull-secret with valid data")
 
 			By("waiting for nodes to stabilize after pull secret update")
-			e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), tc.Context, hcClient, np, hc.Spec.Platform.Type)
+			_, err = v2util.WaitForReadyNodesByNodePool(tc.Context, hcClient, np, hc.Spec.Platform.Type)
+			Expect(err).NotTo(HaveOccurred(), "failed waiting for nodes after pull secret update")
 
 			By("verifying GlobalPullSecret is updated in the hosted cluster")
 			Eventually(func(g Gomega) {
@@ -244,7 +245,8 @@ func EnsureGlobalPullSecretTest(getTestCtx internal.TestContextGetter) {
 			}, 30*time.Second, 5*time.Second).Should(Succeed())
 
 			By("waiting for nodes to stabilize after pull secret deletion")
-			e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), tc.Context, hcClient, np, hc.Spec.Platform.Type)
+			_, err = v2util.WaitForReadyNodesByNodePool(tc.Context, hcClient, np, hc.Spec.Platform.Type)
+			Expect(err).NotTo(HaveOccurred(), "failed waiting for nodes after pull secret deletion")
 
 			By("verifying global-pull-secret-syncer DaemonSet is ready after cleanup")
 			Eventually(func(g Gomega) {

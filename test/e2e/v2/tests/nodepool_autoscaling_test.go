@@ -26,8 +26,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -68,12 +68,13 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, autoscalingNP)
 		})
 
-		npLabelSelector := e2eutil.WithClientOptions(crclient.MatchingLabelsSelector{
+		npLabelSelector := v2util.WithClientOptions(crclient.MatchingLabelsSelector{
 			Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: autoscalingNP.Name}),
 		})
 
 		// Wait for NodePool to be ready with 1 node (min replicas)
-		nodes := e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, hcClient, 1, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
+		nodes, err := v2util.WaitForNReadyNodesWithOptions(ctx, hcClient, 1, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
+		Expect(err).NotTo(HaveOccurred(), "failed waiting for initial autoscaling NodePool node")
 		Expect(nodes).To(HaveLen(1), "should have exactly 1 node initially")
 
 		// Get node capacity for workload sizing
@@ -94,13 +95,15 @@ func AutoscalingScaleUpDownTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		// Wait for scale-up to 3 nodes
-		e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, hcClient, 3, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
+		_, err = v2util.WaitForNReadyNodesWithOptions(ctx, hcClient, 3, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
+		Expect(err).NotTo(HaveOccurred(), "failed waiting for autoscaling NodePool scale-up")
 
 		// Delete workload to trigger scale-down
 		cleanupWorkload(ctx, hcClient, workload)
 
 		// Wait for scale-down to 1 node (min replicas)
-		e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, hcClient, 1, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
+		_, err = v2util.WaitForNReadyNodesWithOptions(ctx, hcClient, 1, hc.Spec.Platform.Type, fmt.Sprintf("for NodePool %s", autoscalingNP.Name), npLabelSelector)
+		Expect(err).NotTo(HaveOccurred(), "failed waiting for autoscaling NodePool scale-down")
 	})
 }
 
@@ -113,7 +116,7 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 
 		hc, err := testCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred())
-		testCtx.SkipIfVersionBelow(e2eutil.Version420)
+		testCtx.SkipIfVersionBelow(v2util.Version420)
 
 		hcClient, err := testCtx.GetHostedClusterClient(hc)
 		Expect(err).NotTo(HaveOccurred())
@@ -179,7 +182,7 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 
 		// The autoscaler is enabled only when an autoscaling NodePool exists.
 		// Create the NodePools before waiting for the configured deployment.
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, "autoscaler deployment to have balancing config",
+		Expect(v2util.EventuallyObject(ctx, "autoscaler deployment to have balancing config",
 			func(ctx context.Context) (*appsv1.Deployment, error) {
 				dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
 					Namespace: cpNamespace, Name: "cluster-autoscaler",
@@ -187,7 +190,7 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(dep), dep)
 				return dep, err
 			},
-			[]e2eutil.Predicate[*appsv1.Deployment]{func(dep *appsv1.Deployment) (bool, string, error) {
+			[]v2util.Predicate[*appsv1.Deployment]{func(dep *appsv1.Deployment) (bool, string, error) {
 				for _, arg := range dep.Spec.Template.Spec.Containers[0].Args {
 					if strings.Contains(arg, balancingLabel) {
 						return dep.Status.ReadyReplicas > 0, fmt.Sprintf("ready replicas: %d", dep.Status.ReadyReplicas), nil
@@ -195,20 +198,22 @@ func AutoscalingBalancingTest(getTestCtx internal.TestContextGetter) {
 				}
 				return false, "balancing-ignore-label not found in autoscaler args", nil
 			}},
-			e2eutil.WithInterval(10*time.Second),
-			e2eutil.WithTimeout(5*time.Minute),
-		)
+			v2util.WithInterval(10*time.Second),
+			v2util.WithTimeout(5*time.Minute),
+		)).To(Succeed())
 
-		np1LabelSelector := e2eutil.WithClientOptions(crclient.MatchingLabelsSelector{
+		np1LabelSelector := v2util.WithClientOptions(crclient.MatchingLabelsSelector{
 			Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: autoscalingNP1.Name}),
 		})
-		np2LabelSelector := e2eutil.WithClientOptions(crclient.MatchingLabelsSelector{
+		np2LabelSelector := v2util.WithClientOptions(crclient.MatchingLabelsSelector{
 			Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: autoscalingNP2.Name}),
 		})
 
 		// Wait for initial nodes (1 per NodePool at min replicas)
-		nodes := e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, hcClient, 1, hc.Spec.Platform.Type, "for NP1", np1LabelSelector)
-		e2eutil.WaitForNReadyNodesWithOptions(GinkgoTB(), ctx, hcClient, 1, hc.Spec.Platform.Type, "for NP2", np2LabelSelector)
+		nodes, err := v2util.WaitForNReadyNodesWithOptions(ctx, hcClient, 1, hc.Spec.Platform.Type, "for NP1", np1LabelSelector)
+		Expect(err).NotTo(HaveOccurred(), "failed waiting for first autoscaling NodePool")
+		_, err = v2util.WaitForNReadyNodesWithOptions(ctx, hcClient, 1, hc.Spec.Platform.Type, "for NP2", np2LabelSelector)
+		Expect(err).NotTo(HaveOccurred(), "failed waiting for second autoscaling NodePool")
 
 		// Get node capacity for workload sizing
 		memCapacity := nodes[0].Status.Allocatable[corev1.ResourceMemory]
@@ -283,7 +288,7 @@ func getDefaultNodePool(ctx context.Context, client crclient.Client, hc *hyperv1
 func buildAutoscalingNodePool(template *hyperv1.NodePool, min, max int32, nodeLabels map[string]string) *hyperv1.NodePool {
 	GinkgoHelper()
 
-	name := e2eutil.SimpleNameGenerator.GenerateName(template.Spec.ClusterName + "-auto-")
+	name := v2util.SimpleNameGenerator.GenerateName(template.Spec.ClusterName + "-auto-")
 	np := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -319,7 +324,7 @@ func buildAutoscalingNodePool(template *hyperv1.NodePool, min, max int32, nodeLa
 func newAutoscalingWorkload(njobs int32, memoryRequest resource.Quantity, nodeSelector map[string]string) *batchv1.Job {
 	GinkgoHelper()
 
-	name := e2eutil.SimpleNameGenerator.GenerateName("autoscaling-workload-")
+	name := v2util.SimpleNameGenerator.GenerateName("autoscaling-workload-")
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -382,10 +387,10 @@ func cleanupNodePool(ctx context.Context, client crclient.Client, np *hyperv1.No
 	}
 	GinkgoWriter.Printf("Deleting NodePool %s\n", np.Name)
 
-	e2eutil.EventuallyNotFound(GinkgoTB(), ctx, client, np,
-		e2eutil.WithTimeout(nodePoolUpgradeTimeout(np.Spec.Platform.Type)),
-		e2eutil.WithInterval(15*time.Second),
-	)
+	Expect(v2util.EventuallyNotFound(ctx, client, np,
+		v2util.WithTimeout(nodePoolUpgradeTimeout(np.Spec.Platform.Type)),
+		v2util.WithInterval(15*time.Second),
+	)).To(Succeed())
 }
 
 // cleanupWorkload deletes a Job workload if it exists
