@@ -1,0 +1,39 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  creationTimestamp: "2026-09-11T14:50:34Z"
+  generation: 1
+  name: create-cluster-km2vj
+  namespace: e2e-clusters-f92vm
+spec:
+  clusterName: create-cluster-km2vj
+  replicas: 2
+  platform:
+    type: AWS
+    aws:
+      instanceType: m5.large
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64
+status:
+  replicas: 2
+  conditions:
+  - lastTransitionTime: "2026-09-11T14:51:40Z"
+    reason: AsExpected
+    status: "True"
+    type: ValidMachineTemplate
+  - lastTransitionTime: "2026-09-11T14:56:12Z"
+    reason: AsExpected
+    status: "True"
+    type: ReachedIgnitionEndpoint
+  - lastTransitionTime: "2026-09-11T14:55:04Z"
+    reason: AsExpected
+    status: "True"
+    type: AllMachinesReady
+  - lastTransitionTime: "2026-09-11T15:01:22Z"
+    reason: AsExpected
+    status: "True"
+    type: AllNodesHealthy
+  - lastTransitionTime: "2026-09-11T15:01:34Z"
+    reason: AsExpected
+    status: "True"
+    type: Ready
