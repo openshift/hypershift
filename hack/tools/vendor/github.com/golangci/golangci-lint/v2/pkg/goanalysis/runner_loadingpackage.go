@@ -296,7 +296,7 @@ func (lp *loadingPackage) loadWithFacts(loadMode LoadMode) error {
 		// Try load cached facts for it.
 
 		for _, act := range lp.actions {
-			if !act.loadCachedFacts() {
+			if !act.loadActionCachedFacts(false) {
 				// Cached facts loading failed: analyze later the action from source.
 				act.needAnalyzeSource = true
 				factsCacheDebugf("Loading of facts for already loaded %s failed, analyze it from source later", act)
@@ -349,7 +349,7 @@ func (lp *loadingPackage) loadImportedPackageWithFacts(loadMode LoadMode) error 
 
 	needLoadFromSource := false
 	for _, act := range lp.actions {
-		if act.loadCachedFacts() {
+		if act.loadActionCachedFacts(false) {
 			continue
 		}
 
@@ -369,7 +369,34 @@ func (lp *loadingPackage) loadImportedPackageWithFacts(loadMode LoadMode) error 
 		if loadMode >= LoadModeTypesInfo {
 			pkg.Types = types.NewPackage(pkg.PkgPath, pkg.Name)
 		}
-		return lp.loadFromSource(loadMode)
+
+		if err := lp.loadFromSource(loadMode); err != nil {
+			return err
+		}
+
+		// As `pkg.Types` has been reassigned (pointer), the facts are related to discarded types.
+		// The fact references need to be updated to use the new types.
+		if loadMode >= LoadModeTypesInfo {
+			for _, act := range lp.actions {
+				// If the action needs an analysis from source, the existing types related to cache are not used.
+				if act.needAnalyzeSource {
+					continue
+				}
+
+				// Resets the current facts and reload them from cache with the updated types.
+				if act.loadActionCachedFacts(true) {
+					continue
+				}
+
+				// This should not happen because the facts has been already successfully loaded in the initial facts loading.
+				// But it can happen if the cache is corrupted.
+				factsCacheDebugf("Reloading of facts for %s failed, analyze it from source later", act)
+				act.needAnalyzeSource = true
+				act.markDepsForAnalyzingSource()
+			}
+		}
+
+		return nil
 	}
 
 	return nil
@@ -531,8 +558,8 @@ func sizeOfReflectValueTreeBytes(rv reflect.Value, visitedPtrs map[uintptr]struc
 		return sizeOfReflectValueTreeBytes(rv.Elem(), visitedPtrs)
 	case reflect.Struct:
 		ret := 0
-		for i := range rv.NumField() {
-			ret += sizeOfReflectValueTreeBytes(rv.Field(i), visitedPtrs)
+		for _, field := range rv.Fields() {
+			ret += sizeOfReflectValueTreeBytes(field, visitedPtrs)
 		}
 		return ret
 	case reflect.Slice, reflect.Array, reflect.Chan:

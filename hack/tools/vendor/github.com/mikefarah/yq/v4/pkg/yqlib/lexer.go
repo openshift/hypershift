@@ -31,24 +31,25 @@ type token struct {
 }
 
 func (t *token) toString(detail bool) string {
-	if t.TokenType == operationToken {
+	switch t.TokenType {
+	case operationToken:
 		if detail {
 			return fmt.Sprintf("%v (%v)", t.Operation.toString(), t.Operation.OperationType.Precedence)
 		}
 		return t.Operation.toString()
-	} else if t.TokenType == openBracket {
+	case openBracket:
 		return "("
-	} else if t.TokenType == closeBracket {
+	case closeBracket:
 		return ")"
-	} else if t.TokenType == openCollect {
+	case openCollect:
 		return "["
-	} else if t.TokenType == closeCollect {
+	case closeCollect:
 		return "]"
-	} else if t.TokenType == openCollectObject {
+	case openCollectObject:
 		return "{"
-	} else if t.TokenType == closeCollectObject {
+	case closeCollectObject:
 		return "}"
-	} else if t.TokenType == traverseArrayCollect {
+	case traverseArrayCollect:
 		return ".["
 
 	}
@@ -60,7 +61,7 @@ func unwrap(value string) string {
 }
 
 func extractNumberParameter(value string) (int, error) {
-	parameterParser := regexp.MustCompile(`.*\(([0-9]+)\)`)
+	parameterParser := regexp.MustCompile(`.*\((-?[0-9]+)\)`)
 	matches := parameterParser.FindStringSubmatch(value)
 	var indent, errParsingInt = parseInt(matches[1])
 	if errParsingInt != nil {
@@ -104,7 +105,7 @@ func handleToken(tokens []*token, index int, postProcessedTokens []*token) (toke
 	skipNextToken = false
 	currentToken := tokens[index]
 
-	log.Debug("processing %v", currentToken.toString(true))
+	log.Debugf("processing %v", currentToken.toString(true))
 
 	if currentToken.TokenType == traverseArrayCollect {
 		// `.[exp]`` works by creating a traversal array of [self, exp] and piping that into the traverse array operator
@@ -128,6 +129,11 @@ func handleToken(tokens []*token, index int, postProcessedTokens []*token) (toke
 		// check the previous token is '[', means we are slice, but dont have a first number
 		if index > 0 && tokens[index-1].TokenType == traverseArrayCollect {
 			log.Debugf("previous token is : traverseArrayOpType")
+			// need to put the number 0 before this token, as that is implied
+			postProcessedTokens = append(postProcessedTokens, &token{TokenType: operationToken, Operation: createValueOperation(0, "0")})
+		} else if index >= 2 && tokens[index-1].TokenType == openCollect &&
+			(tokens[index-2].TokenType == operationToken || tokens[index-2].TokenType == closeCollect || tokens[index-2].TokenType == closeCollectObject) {
+			log.Debugf("previous token is : openCollect following a traversal, implying 0 start")
 			// need to put the number 0 before this token, as that is implied
 			postProcessedTokens = append(postProcessedTokens, &token{TokenType: operationToken, Operation: createValueOperation(0, "0")})
 		}

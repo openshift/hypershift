@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"go/token"
+	"path"
 	"regexp"
 	"slices"
 	"strings"
@@ -16,18 +17,20 @@ import (
 )
 
 const (
-	reasonExclude          = "exclude directive is not allowed"
-	reasonGoDebug          = "godebug directive is not allowed"
-	reasonGoVersion        = "go directive (%s) doesn't match the pattern '%s'"
-	reasonIgnore           = "ignore directive is not allowed"
-	reasonReplace          = "replacement are not allowed"
-	reasonReplaceDuplicate = "multiple replacement of the same module"
-	reasonReplaceIdentical = "the original module and the replacement are identical"
-	reasonReplaceLocal     = "local replacement are not allowed"
-	reasonRetract          = "a comment is mandatory to explain why the version has been retracted"
-	reasonTool             = "tool directive is not allowed"
-	reasonToolchain        = "toolchain directive is not allowed"
-	reasonToolchainPattern = "toolchain directive (%s) doesn't match the pattern '%s'"
+	reasonExclude                    = "exclude directive is not allowed"
+	reasonGoDebug                    = "godebug directive is not allowed"
+	reasonGoVersion                  = "go directive (%s) doesn't match the pattern '%s'"
+	reasonIgnore                     = "ignore directive is not allowed"
+	reasonIgnoredByDefaultHiddenDirs = "files/directories starting with '.' and '_' are ignored by default"
+	reasonIgnoredByDefaultDir        = "directories named '%s' are ignored by default"
+	reasonReplace                    = "replacement are not allowed"
+	reasonReplaceDuplicate           = "multiple replacement of the same module"
+	reasonReplaceIdentical           = "the original module and the replacement are identical"
+	reasonReplaceLocal               = "local replacement are not allowed"
+	reasonRetract                    = "a comment is mandatory to explain why the version has been retracted"
+	reasonTool                       = "tool directive is not allowed"
+	reasonToolchain                  = "toolchain directive is not allowed"
+	reasonToolchainPattern           = "toolchain directive (%s) doesn't match the pattern '%s'"
 )
 
 // Result the analysis result.
@@ -52,6 +55,7 @@ func (r Result) String() string {
 
 // Options the analyzer options.
 type Options struct {
+	ReplaceAllowAll           bool
 	ReplaceAllowList          []string
 	ReplaceAllowLocal         bool
 	ExcludeForbidden          bool
@@ -197,11 +201,27 @@ func checkExcludeDirectives(file *modfile.File, opts Options) []Result {
 }
 
 func checkIgnoreDirectives(file *modfile.File, opts Options) []Result {
-	if !opts.IgnoreForbidden {
-		return nil
+	var results []Result
+
+	for _, value := range file.Ignore {
+		for pathElement := range strings.SplitSeq(path.Clean(value.Path), "/") {
+			if pathElement == "." {
+				continue
+			}
+
+			switch {
+			case pathElement == "vendor" || pathElement == "testdata":
+				results = append(results, NewResult(file, value.Syntax, fmt.Sprintf(reasonIgnoredByDefaultDir, pathElement)))
+
+			case strings.HasPrefix(pathElement, ".") || strings.HasPrefix(pathElement, "_"):
+				results = append(results, NewResult(file, value.Syntax, reasonIgnoredByDefaultHiddenDirs))
+			}
+		}
 	}
 
-	var results []Result
+	if !opts.IgnoreForbidden {
+		return results
+	}
 
 	for _, exclude := range file.Ignore {
 		results = append(results, NewResult(file, exclude.Syntax, reasonIgnore))
@@ -252,6 +272,10 @@ func checkReplaceDirectives(file *modfile.File, opts Options) []Result {
 }
 
 func checkReplaceDirective(opts Options, r *modfile.Replace) string {
+	if opts.ReplaceAllowAll {
+		return ""
+	}
+
 	if isLocal(r) {
 		if opts.ReplaceAllowLocal {
 			return ""
