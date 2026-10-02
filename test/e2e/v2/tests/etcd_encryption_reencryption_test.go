@@ -43,6 +43,11 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// kasMaxAllowedRestarts is the restart ceiling checked after re-encryption completes.
+// One restart is expected (KAS rolls out with the updated EncryptionConfiguration); 2
+// allows a single transient failure on top of that without masking a true crash loop.
+const kasMaxAllowedRestarts = int32(2)
+
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdEncryptionReencryption] Etcd Encryption Re-encryption",
 	Label("etcd-encryption-reencryption"), func() {
 		var testCtx *internal.TestContext
@@ -144,7 +149,7 @@ func verifyKASHealth(ctx context.Context, mgmtClient crclient.Client, controlPla
 					g.Expect(cs.State.Waiting.Reason).NotTo(Equal("CrashLoopBackOff"),
 						"KAS pod %s container %s is in CrashLoopBackOff", pod.Name, cs.Name)
 				}
-				g.Expect(cs.RestartCount).To(BeNumerically("<=", int32(2)),
+				g.Expect(cs.RestartCount).To(BeNumerically("<=", kasMaxAllowedRestarts),
 					"KAS pod %s container %s has %d restarts", pod.Name, cs.Name, cs.RestartCount)
 			}
 		}
