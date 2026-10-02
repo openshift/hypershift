@@ -7,4 +7,7 @@
 #   name:        Semver tag (e.g. v0.1.47). Must not already exist.
 #   commit:      Full 40-char SHA from the main branch.
 #   description: Short description for the GitHub Release body.
-tags: []
+tags:
+  - name: v0.1.86
+    commit: d1dff02f69933e960f17bdcb57e66e278106e07d
+    description: HyperShift Operator v0.1.86 release
