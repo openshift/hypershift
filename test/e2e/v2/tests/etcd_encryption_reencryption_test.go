@@ -182,11 +182,11 @@ func verifyKASLogsNoDecryptionErrors(ctx context.Context, controlPlaneNamespace 
 			})
 			logStream, err := req.Stream(ctx)
 			if err != nil {
-				// Previous-container logs are absent when the pod has not restarted — skip silently.
-				if !previous {
-					GinkgoWriter.Printf("WARNING: failed to get logs for KAS pod %s: %v\n", pod.Name, err)
+				if previous {
+					// Previous-container logs are absent when the pod has not restarted — skip silently.
+					continue
 				}
-				continue
+				Expect(err).NotTo(HaveOccurred(), "failed to stream current logs for KAS pod %s", pod.Name)
 			}
 			logBytes, err := io.ReadAll(logStream)
 			logStream.Close()
