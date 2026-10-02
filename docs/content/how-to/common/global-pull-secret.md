@@ -8,6 +8,8 @@ The implementation uses a DaemonSet that updates kubelet pull credentials on the
 
 When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
+The OpenShift API Server mounts `combined-pull-secret` for ImageStream imports. The Control Plane Operator creates this secret from the HostedControlPlane pull secret before reconciling components; HCCO then updates it with merged credentials when an additional pull secret exists, or with the original credentials when it does not.
+
 !!! note
 
     This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on [eligible nodes](#platform-and-nodepool-eligibility). Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
