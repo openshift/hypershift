@@ -377,6 +377,56 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		{
+			name:       "When GCP platform has resource tags, it should derive omitted parentIDs and preserve explicit parents",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.GCPPlatform)
+				hcp.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+					Project: "customer-project",
+					Region:  "us-central1",
+					ResourceTags: []hyperv1.GCPResourceTag{
+						{Key: "Environment", Value: "production"},
+						{ParentID: "customer-project", Key: "team", Value: "platform-123"},
+						{ParentID: "123456789012", Key: "cost-center", Value: "shared"},
+						{Key: "kubernetes-io", Value: "customer-defined"},
+					},
+				}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Status.PlatformStatus.GCP.ResourceTags).To(Equal([]configv1.GCPResourceTag{
+					{ParentID: "customer-project", Key: "Environment", Value: "production"},
+					{ParentID: "customer-project", Key: "team", Value: "platform-123"},
+					{ParentID: "123456789012", Key: "cost-center", Value: "shared"},
+					{ParentID: "customer-project", Key: "kubernetes-io", Value: "customer-defined"},
+				}))
+			},
+		},
+		{
+			name:       "When GCP platform has no resource tags, it should leave guest tags omitted",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.GCPPlatform)
+				hcp.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{Project: "customer-project", ResourceTags: []hyperv1.GCPResourceTag{}}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Status.PlatformStatus.GCP.ResourceTags).To(BeNil())
+			},
+		},
+		{
+			name:       "When GCP resource tags are omitted, it should leave guest tags omitted",
+			inputInfra: InfrastructureConfig(),
+			inputHCP: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP(hyperv1.GCPPlatform)
+				hcp.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{Project: "customer-project"}
+				return hcp
+			}(),
+			verify: func(g Gomega, infra *configv1.Infrastructure) {
+				g.Expect(infra.Status.PlatformStatus.GCP.ResourceTags).To(BeNil())
+			},
+		},
+		{
 			name: "When GCP PlatformStatus is already initialized, it should update existing fields from HCP spec",
 			inputInfra: func() *configv1.Infrastructure {
 				infra := InfrastructureConfig()

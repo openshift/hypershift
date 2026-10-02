@@ -8381,6 +8381,92 @@ spec:
                         x-kubernetes-list-map-keys:
                         - key
                         x-kubernetes-list-type: map
+                      resourceTags:
+                        description: |-
+                          resourceTags are pre-existing Google Cloud Resource Manager tags to apply
+                          to newly provisioned GCP PD CSI persistent disks and, when enabled, the
+                          image registry bucket. They are not applied to worker VMs, boot disks,
+                          Private Service Connect resources, firewall rules, DNS resources, or other
+                          GCP resources created by HyperShift or CAPG.
+
+                          When omitted, no tags are applied through this setting. When specified,
+                          the list must contain 1 to 50 entries, and each short key must be unique
+                          across the list, even when the tags have different parents. A tag's
+                          parentID defaults to the HostedCluster's GCP project if omitted.
+                          HyperShift does not add a separate system Resource Manager tag to these
+                          disks or the bucket, so it does not reserve a slot in this list. Google
+                          Cloud's per-resource limit also includes tags attached by other actors;
+                          accepting 50 entries does not guarantee all tags can be applied.
+
+                          The referenced tags must already exist and the guest service accounts
+                          must have permission to use them. Admission does not verify either.
+                          HyperShift does not report a dedicated tag-validation condition or block
+                          HostedCluster reconciliation for such runtime failures; the guest
+                          components report failures when applying tags.
+
+                          Tags may only be configured during installation. Unlike resourceLabels,
+                          this field cannot be added, removed, or changed after creation because the
+                          guest cluster also treats configured tags as immutable. This restriction
+                          may be relaxed once update reconciliation is implemented.
+                        items:
+                          description: |-
+                            GCPResourceTag selects a pre-existing Google Cloud Resource Manager tag by
+                            its parent, short key, and short value. The tag must be defined in the
+                            HostedCluster project or an organization before the cluster is created.
+                            See https://cloud.google.com/resource-manager/docs/tags/tags-overview.
+                          properties:
+                            key:
+                              description: |-
+                                key is the short name of the pre-existing Resource Manager TagKey.
+                                A key is 1-63 characters, begins and ends with
+                                an ASCII alphanumeric character, and may contain letters, digits, '.',
+                                '_', or '-' between them.
+                              maxLength: 63
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: key must start and end with an ASCII letter
+                                  or digit and contain only supported tag key characters
+                                rule: self.matches('^[a-zA-Z0-9]([0-9A-Za-z_.-]{0,61}[a-zA-Z0-9])?$')
+                            parentID:
+                              description: |-
+                                parentID identifies the project or organization that defines the TagKey.
+                                When omitted, the GCP platform project is used. An explicit project ID
+                                must equal that project; a numeric organization ID is also allowed.
+                                The referenced TagKey and TagValue must already exist, and guest consumers
+                                need permission to use them.
+                              maxLength: 32
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: parentID must be a numeric organization ID
+                                  or a valid GCP project ID
+                                rule: self.matches('(^[1-9][0-9]{0,31}$)|(^[a-z][a-z0-9-]{4,28}[a-z0-9]$)')
+                            value:
+                              description: |-
+                                value is the short name of the pre-existing Resource Manager TagValue for
+                                key. Exactly one value for a TagKey can be attached to a resource. A value
+                                is 1-63 characters, begins and ends with an ASCII alphanumeric character,
+                                and may contain ASCII letters and digits, `_-.@%=+:,*#&()[]{}`, and
+                                whitespace between them.
+                              maxLength: 63
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: value must start and end with an ASCII letter
+                                  or digit and contain only supported tag value characters
+                                rule: self.matches('^[a-zA-Z0-9]([0-9A-Za-z_.@%=+:,*#&()\\[\\]{}\\-\\s]{0,61}[a-zA-Z0-9])?$')
+                          required:
+                          - key
+                          - value
+                          type: object
+                        maxItems: 50
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-type: atomic
+                        x-kubernetes-validations:
+                        - message: resourceTags are immutable
+                          rule: self == oldSelf
                       workloadIdentity:
                         description: |-
                           workloadIdentity configures Workload Identity Federation for the cluster.
@@ -8520,6 +8606,7 @@ spec:
                                   that manages GCS storage for the internal container image registry.
                                   This GSA requires the following IAM roles:
                                   - roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
+                                  - roles/resourcemanager.tagUser (Tag User - for applying resource tags to the bucket)
                                   See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
                                   Format: service-account-name@project-id.iam.gserviceaccount.com
 
@@ -8654,6 +8741,16 @@ spec:
                     - message: network service account must belong to the same project
                       rule: self.workloadIdentity.serviceAccountsEmails.network.endsWith('@'
                         + self.project + '.iam.gserviceaccount.com')
+                    - message: resourceTags may only be configured during installation
+                      rule: has(self.resourceTags) == has(oldSelf.resourceTags)
+                    - message: resourceTags keys must be unique across all parents
+                      rule: '!has(self.resourceTags) || self.resourceTags.all(t, self.resourceTags.exists_one(u,
+                        u.key == t.key))'
+                    - message: resourceTags parentID must be an organization ID or
+                        the GCP platform project
+                      rule: '!has(self.resourceTags) || self.resourceTags.all(t, !has(t.parentID)
+                        || t.parentID.matches(''^[1-9][0-9]{0,31}$'') || t.parentID
+                        == self.project)'
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:

@@ -8527,6 +8527,41 @@ For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/la
 </tr>
 <tr>
 <td>
+<code>resourceTags</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceTag">
+[]GCPResourceTag
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>resourceTags are pre-existing Google Cloud Resource Manager tags to apply
+to newly provisioned GCP PD CSI persistent disks and, when enabled, the
+image registry bucket. They are not applied to worker VMs, boot disks,
+Private Service Connect resources, firewall rules, DNS resources, or other
+GCP resources created by HyperShift or CAPG.</p>
+<p>When omitted, no tags are applied through this setting. When specified,
+the list must contain 1 to 50 entries, and each short key must be unique
+across the list, even when the tags have different parents. A tag&rsquo;s
+parentID defaults to the HostedCluster&rsquo;s GCP project if omitted.
+HyperShift does not add a separate system Resource Manager tag to these
+disks or the bucket, so it does not reserve a slot in this list. Google
+Cloud&rsquo;s per-resource limit also includes tags attached by other actors;
+accepting 50 entries does not guarantee all tags can be applied.</p>
+<p>The referenced tags must already exist and the guest service accounts
+must have permission to use them. Admission does not verify either.
+HyperShift does not report a dedicated tag-validation condition or block
+HostedCluster reconciliation for such runtime failures; the guest
+components report failures when applying tags.</p>
+<p>Tags may only be configured during installation. Unlike resourceLabels,
+this field cannot be added, removed, or changed after creation because the
+guest cluster also treats configured tags as immutable. This restriction
+may be relaxed once update reconciliation is implemented.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>workloadIdentity,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig">
@@ -8849,6 +8884,72 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 </tr>
 </tbody>
 </table>
+###GCPResourceTag { #hypershift.openshift.io/v1beta1.GCPResourceTag }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPResourceTag selects a pre-existing Google Cloud Resource Manager tag by
+its parent, short key, and short value. The tag must be defined in the
+HostedCluster project or an organization before the cluster is created.
+See <a href="https://cloud.google.com/resource-manager/docs/tags/tags-overview">https://cloud.google.com/resource-manager/docs/tags/tags-overview</a>.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>parentID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>parentID identifies the project or organization that defines the TagKey.
+When omitted, the GCP platform project is used. An explicit project ID
+must equal that project; a numeric organization ID is also allowed.
+The referenced TagKey and TagValue must already exist, and guest consumers
+need permission to use them.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>key</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>key is the short name of the pre-existing Resource Manager TagKey.
+A key is 1-63 characters, begins and ends with
+an ASCII alphanumeric character, and may contain letters, digits, &lsquo;.&rsquo;,
+&lsquo;_&rsquo;, or &lsquo;-&rsquo; between them.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>value</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>value is the short name of the pre-existing Resource Manager TagValue for
+key. Exactly one value for a TagKey can be attached to a resource. A value
+is 1-63 characters, begins and ends with an ASCII alphanumeric character,
+and may contain ASCII letters and digits, <code>_-.@%=+:,*#&amp;()[]{}</code>, and
+whitespace between them.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###GCPServiceAccountEmail { #hypershift.openshift.io/v1beta1.GCPServiceAccountEmail }
 <p>
 (<em>Appears on:</em>
@@ -8984,6 +9085,7 @@ GCPServiceAccountEmail
 that manages GCS storage for the internal container image registry.
 This GSA requires the following IAM roles:
 - roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
+- roles/resourcemanager.tagUser (Tag User - for applying resource tags to the bucket)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
