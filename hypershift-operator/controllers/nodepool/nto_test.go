@@ -2,10 +2,12 @@ package nodepool
 
 import (
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	npconstants "github.com/openshift/hypershift/pkg/nodepool"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -904,7 +906,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 	}
 }
 
-func TestSetPerformanceProfileStatus(t *testing.T) {
+func TestSetPerformanceProfileConditions(t *testing.T) {
 	controlPlaneNamespace := "clusters-hostedcluster01"
 	userClustersNamespace := "clusters"
 	nodePoolName := "hostedcluster01"
@@ -912,13 +914,21 @@ func TestSetPerformanceProfileStatus(t *testing.T) {
 	testCases := []struct {
 		name                         string
 		PerformanceProfileStatusCM   *corev1.ConfigMap
+		initialConditions            []hyperv1.NodePoolCondition
 		wantConditions               map[string]hyperv1.NodePoolCondition
 		hasPerformanceProfileApplied bool
 	}{
 
 		{
-			name:                         "When no performance profile is applied, it should not set performance profile conditions",
-			PerformanceProfileStatusCM:   &corev1.ConfigMap{},
+			name:                       "When no performance profile status ConfigMap exists, it should leave existing performance profile conditions unchanged",
+			PerformanceProfileStatusCM: &corev1.ConfigMap{},
+			initialConditions: []hyperv1.NodePoolCondition{{
+				Type:               hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             "ExistingReason",
+				Message:            "Existing message",
+				ObservedGeneration: 1,
+			}},
 			wantConditions:               map[string]hyperv1.NodePoolCondition{},
 			hasPerformanceProfileApplied: false,
 		},
@@ -1108,6 +1118,9 @@ func TestSetPerformanceProfileStatus(t *testing.T) {
 				Spec: hyperv1.NodePoolSpec{
 					ClusterName: nodePoolName,
 				},
+				Status: hyperv1.NodePoolStatus{
+					Conditions: append([]hyperv1.NodePoolCondition(nil), tc.initialConditions...),
+				},
 			}
 			performanceProfileConditions := []string{
 				hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType,
@@ -1128,12 +1141,9 @@ func TestSetPerformanceProfileStatus(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// In case there is no performance profile applied, no configmap with status is expected.
-			// Therefore, we expect the nodepool conditions to have no performance profile conditions.
+			// Therefore, we expect existing performance profile conditions to remain unchanged.
 			if !tc.hasPerformanceProfileApplied {
-				for _, NodePoolCondition := range performanceProfileConditions {
-					cond := FindStatusCondition(nodePool.Status.Conditions, NodePoolCondition)
-					g.Expect(cond).To(BeNil())
-				}
+				g.Expect(nodePool.Status.Conditions).To(Equal(tc.initialConditions))
 				return
 			}
 
@@ -1145,6 +1155,209 @@ func TestSetPerformanceProfileStatus(t *testing.T) {
 				g.Expect(gotCondition.Message).To(Equal(wantCondition.Message), "got condition %s message equals to %s, want %s", gotCondition.Type, gotCondition.Message, wantCondition.Message)
 				g.Expect(gotCondition.Reason).To(Equal(wantCondition.Reason), "got condition %s reason equals to %s, want %s", gotCondition.Type, gotCondition.Reason, wantCondition.Reason)
 			}
+		})
+	}
+
+	fixedTransitionTime := metav1.NewTime(time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC))
+	newStatusConfigMap := func(name, status string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: controlPlaneNamespace,
+				Labels: map[string]string{
+					npconstants.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
+					hyperv1.NodePoolLabel: nodePoolName,
+				},
+			},
+			Data: map[string]string{"status": status},
+		}
+	}
+	newNodePool := func(generation int64, conditions ...hyperv1.NodePoolCondition) *hyperv1.NodePool {
+		return &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       nodePoolName,
+				Namespace:  userClustersNamespace,
+				Generation: generation,
+			},
+			Spec: hyperv1.NodePoolSpec{ClusterName: nodePoolName},
+			Status: hyperv1.NodePoolStatus{
+				Conditions: append([]hyperv1.NodePoolCondition(nil), conditions...),
+			},
+		}
+	}
+	newReconciler := func(configMaps ...*corev1.ConfigMap) NodePoolReconciler {
+		objects := make([]client.Object, 0, len(configMaps))
+		for _, configMap := range configMaps {
+			objects = append(objects, configMap)
+		}
+		return NodePoolReconciler{Client: fake.NewClientBuilder().WithObjects(objects...).Build()}
+	}
+
+	availableType := hyperv1.NodePoolPerformanceProfileTuningAvailableConditionType
+	progressingType := hyperv1.NodePoolPerformanceProfileTuningProgressingConditionType
+	upgradeableType := hyperv1.NodePoolPerformanceProfileTuningUpgradeableConditionType
+	degradedType := hyperv1.NodePoolPerformanceProfileTuningDegradedConditionType
+	healthyStatus := makePerformanceProfileStatusAsString(
+		withCondition(crconditionsv1.Condition{
+			Type:    crconditionsv1.ConditionAvailable,
+			Status:  corev1.ConditionTrue,
+			Reason:  "AsExpected",
+			Message: "Performance profile is available",
+		}),
+		withCondition(crconditionsv1.Condition{
+			Type:    crconditionsv1.ConditionProgressing,
+			Status:  corev1.ConditionFalse,
+			Reason:  "AsExpected",
+			Message: "Performance profile is not progressing",
+		}),
+		withCondition(crconditionsv1.Condition{
+			Type:    crconditionsv1.ConditionUpgradeable,
+			Status:  corev1.ConditionTrue,
+			Reason:  "AsExpected",
+			Message: "Performance profile is upgradeable",
+		}),
+		withCondition(crconditionsv1.Condition{
+			Type:    crconditionsv1.ConditionDegraded,
+			Status:  corev1.ConditionFalse,
+			Reason:  "AsExpected",
+			Message: "Performance profile is not degraded",
+		}),
+	)
+
+	t.Run("When healthy status follows stale unhealthy status at the same generation, it should refresh all four conditions", func(t *testing.T) {
+		g := NewWithT(t)
+		staleMessage := "runtimeclasses.node.k8s.io performance-test-profile already exists"
+		nodePool := newNodePool(2,
+			hyperv1.NodePoolCondition{Type: availableType, Status: corev1.ConditionFalse, Reason: "ComponentCreationFailed", Message: staleMessage, ObservedGeneration: 2, LastTransitionTime: fixedTransitionTime},
+			hyperv1.NodePoolCondition{Type: progressingType, Status: corev1.ConditionFalse, Reason: "ComponentCreationFailed", Message: staleMessage, ObservedGeneration: 2, LastTransitionTime: fixedTransitionTime},
+			hyperv1.NodePoolCondition{Type: upgradeableType, Status: corev1.ConditionFalse, Reason: "ComponentCreationFailed", Message: staleMessage, ObservedGeneration: 2, LastTransitionTime: fixedTransitionTime},
+			hyperv1.NodePoolCondition{Type: degradedType, Status: corev1.ConditionTrue, Reason: "ComponentCreationFailed", Message: staleMessage, ObservedGeneration: 2, LastTransitionTime: fixedTransitionTime},
+		)
+		r := newReconciler(newStatusConfigMap("performance-test-profile-status", healthyStatus))
+
+		g.Expect(r.SetPerformanceProfileConditions(t.Context(), logr.Discard(), nodePool, controlPlaneNamespace, false)).To(Succeed())
+
+		expected := map[string]hyperv1.NodePoolCondition{
+			availableType:   {Status: corev1.ConditionTrue, Reason: "AsExpected", Message: "Performance profile is available", ObservedGeneration: 2},
+			progressingType: {Status: corev1.ConditionFalse, Reason: "AsExpected", Message: "Performance profile is not progressing", ObservedGeneration: 2},
+			upgradeableType: {Status: corev1.ConditionTrue, Reason: "AsExpected", Message: "Performance profile is upgradeable", ObservedGeneration: 2},
+			degradedType:    {Status: corev1.ConditionFalse, Reason: "AsExpected", Message: "Performance profile is not degraded", ObservedGeneration: 2},
+		}
+		for conditionType, want := range expected {
+			got := FindStatusCondition(nodePool.Status.Conditions, conditionType)
+			g.Expect(got).NotTo(BeNil())
+			g.Expect(got.Status).To(Equal(want.Status), "condition %s status", conditionType)
+			g.Expect(got.Reason).To(Equal(want.Reason), "condition %s reason", conditionType)
+			g.Expect(got.Message).To(Equal(want.Message), "condition %s message", conditionType)
+			g.Expect(got.ObservedGeneration).To(Equal(want.ObservedGeneration), "condition %s observed generation", conditionType)
+		}
+		for _, conditionType := range []string{availableType, upgradeableType, degradedType} {
+			got := FindStatusCondition(nodePool.Status.Conditions, conditionType)
+			g.Expect(got.LastTransitionTime.IsZero()).To(BeFalse(), "condition %s transition time should be set", conditionType)
+			g.Expect(got.LastTransitionTime).NotTo(Equal(fixedTransitionTime), "condition %s transition time should advance", conditionType)
+		}
+		g.Expect(FindStatusCondition(nodePool.Status.Conditions, progressingType).LastTransitionTime).To(Equal(fixedTransitionTime))
+	})
+
+	t.Run("When reason and message change without status changing, it should preserve LastTransitionTime", func(t *testing.T) {
+		g := NewWithT(t)
+		nodePool := newNodePool(2, hyperv1.NodePoolCondition{
+			Type:               availableType,
+			Status:             corev1.ConditionTrue,
+			Reason:             "PreviousReason",
+			Message:            "Previous message",
+			ObservedGeneration: 2,
+			LastTransitionTime: fixedTransitionTime,
+		})
+		r := newReconciler(newStatusConfigMap("performance-test-profile-status", healthyStatus))
+
+		g.Expect(r.SetPerformanceProfileConditions(t.Context(), logr.Discard(), nodePool, controlPlaneNamespace, false)).To(Succeed())
+
+		got := FindStatusCondition(nodePool.Status.Conditions, availableType)
+		g.Expect(got).NotTo(BeNil())
+		g.Expect(got.Reason).To(Equal("AsExpected"))
+		g.Expect(got.Message).To(Equal("Performance profile is available"))
+		g.Expect(got.LastTransitionTime).To(Equal(fixedTransitionTime))
+	})
+
+	t.Run("When identical status is applied repeatedly, it should remain idempotent", func(t *testing.T) {
+		g := NewWithT(t)
+		nodePool := newNodePool(2)
+		r := newReconciler(newStatusConfigMap("performance-test-profile-status", healthyStatus))
+
+		g.Expect(r.SetPerformanceProfileConditions(t.Context(), logr.Discard(), nodePool, controlPlaneNamespace, false)).To(Succeed())
+		afterFirstCall := append([]hyperv1.NodePoolCondition(nil), nodePool.Status.Conditions...)
+		g.Expect(r.SetPerformanceProfileConditions(t.Context(), logr.Discard(), nodePool, controlPlaneNamespace, false)).To(Succeed())
+
+		g.Expect(nodePool.Status.Conditions).To(Equal(afterFirstCall))
+		g.Expect(nodePool.Status.Conditions).To(HaveLen(4))
+	})
+
+	t.Run("When NodePool generation advances, it should update observed generation and current fields", func(t *testing.T) {
+		g := NewWithT(t)
+		nodePool := newNodePool(2, hyperv1.NodePoolCondition{
+			Type:               availableType,
+			Status:             corev1.ConditionTrue,
+			Reason:             "PreviousReason",
+			Message:            "Previous message",
+			ObservedGeneration: 1,
+			LastTransitionTime: fixedTransitionTime,
+		})
+		r := newReconciler(newStatusConfigMap("performance-test-profile-status", healthyStatus))
+
+		g.Expect(r.SetPerformanceProfileConditions(t.Context(), logr.Discard(), nodePool, controlPlaneNamespace, false)).To(Succeed())
+
+		got := FindStatusCondition(nodePool.Status.Conditions, availableType)
+		g.Expect(got).NotTo(BeNil())
+		g.Expect(got.ObservedGeneration).To(Equal(int64(2)))
+		g.Expect(got.Reason).To(Equal("AsExpected"))
+		g.Expect(got.Message).To(Equal("Performance profile is available"))
+		g.Expect(got.LastTransitionTime).To(Equal(fixedTransitionTime))
+	})
+
+	errorCases := []struct {
+		name       string
+		configMaps []*corev1.ConfigMap
+		wantError  string
+	}{
+		{
+			name:       "When status data is absent, it should return the existing error without partial mutation",
+			configMaps: []*corev1.ConfigMap{newStatusConfigMap("performance-test-profile-status", healthyStatus)},
+			wantError:  "status not found",
+		},
+		{
+			name:       "When status data is malformed, it should return the existing error without partial mutation",
+			configMaps: []*corev1.ConfigMap{newStatusConfigMap("performance-test-profile-status", "conditions: [")},
+			wantError:  "failed to decode",
+		},
+		{
+			name: "When multiple matching status ConfigMaps exist, it should return the existing ambiguity error without mutation",
+			configMaps: []*corev1.ConfigMap{
+				newStatusConfigMap("performance-test-profile-status-1", healthyStatus),
+				newStatusConfigMap("performance-test-profile-status-2", healthyStatus),
+			},
+			wantError: "more than one PerformanceProfile ConfigMap",
+		},
+	}
+	delete(errorCases[0].configMaps[0].Data, "status")
+	for _, tc := range errorCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			initialConditions := []hyperv1.NodePoolCondition{{
+				Type:               availableType,
+				Status:             corev1.ConditionFalse,
+				Reason:             "ExistingReason",
+				Message:            "Existing message",
+				ObservedGeneration: 2,
+				LastTransitionTime: fixedTransitionTime,
+			}}
+			nodePool := newNodePool(2, initialConditions...)
+			r := newReconciler(tc.configMaps...)
+
+			err := r.SetPerformanceProfileConditions(t.Context(), logr.Discard(), nodePool, controlPlaneNamespace, false)
+
+			g.Expect(err).To(MatchError(ContainSubstring(tc.wantError)))
+			g.Expect(nodePool.Status.Conditions).To(Equal(initialConditions))
 		})
 	}
 }
