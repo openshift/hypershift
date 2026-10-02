@@ -1533,6 +1533,28 @@ type ClusterAutoscaling struct {
 	//
 	// +optional
 	Expanders []ExpanderString `json:"expanders,omitempty"`
+
+	// kubeClientQPS sets the "--kube-client-qps" flag on cluster-autoscaler.
+	// Controls the maximum queries-per-second the autoscaler may send to the
+	// kube-apiserver. Valid values are -1 through 1000.
+	// When set to -1, client-side rate limiting is disabled.
+	// When set to 0, the flag is passed but client-go applies its default QPS of 5.
+	// When omitted, the flag is not set and the autoscaler uses its default (5).
+	//
+	// +kubebuilder:validation:Minimum=-1
+	// +kubebuilder:validation:Maximum=1000
+	// +optional
+	KubeClientQPS *int32 `json:"kubeClientQPS,omitempty"`
+
+	// kubeClientBurst sets the "--kube-client-burst" flag on cluster-autoscaler.
+	// Controls the maximum burst of queries to the kube-apiserver.
+	// Valid values are 1 through 2000.
+	// When omitted, the flag is not set and the autoscaler uses its default (10).
+	//
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2000
+	// +optional
+	KubeClientBurst int32 `json:"kubeClientBurst,omitempty"`
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance

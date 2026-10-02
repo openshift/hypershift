@@ -60,6 +60,7 @@ nav:
   - how-to/index.md
   - how-to/feature-gates.md
   - how-to/audit-log-persistence.md
+  - how-to/autoscaling.md
   - 'Configure OCP components':
     - how-to/configure-ocp-components/index.md
     - how-to/configure-ocp-components/kubeapi-server.md

@@ -574,6 +574,10 @@ linters:
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field KubeClientBurst should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
         text: 'optionalfields: field ControlPlaneEndpoint should be a pointer'
       - linters:
           - kubeapilinter
