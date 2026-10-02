@@ -17,24 +17,18 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/goplsexport"
 	"golang.org/x/tools/internal/stdlib"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 )
 
-var stditeratorsAnalyzer = &analysis.Analyzer{
+var StdIteratorsAnalyzer = &analysis.Analyzer{
 	Name: "stditerators",
 	Doc:  analyzerutil.MustExtractDoc(doc, "stditerators"),
 	Requires: []*analysis.Analyzer{
 		typeindexanalyzer.Analyzer,
 	},
 	Run: stditerators,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stditerators",
-}
-
-func init() {
-	// Export to gopls until this is a published modernizer.
-	goplsexport.StdIteratorsModernizer = stditeratorsAnalyzer
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_stditerators",
 }
 
 // stditeratorsTable records std types that have legacy T.{Len,At}
