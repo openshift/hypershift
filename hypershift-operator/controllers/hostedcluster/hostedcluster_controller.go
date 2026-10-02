@@ -1930,11 +1930,11 @@ func (r *HostedClusterReconciler) reconcilePullSecretSync(
 		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
 	}
 	dst := controlplaneoperator.PullSecret(controlPlaneNamespace)
+	srcData, srcHasData := src.Data[".dockerconfigjson"]
+	if !srcHasData {
+		return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+	}
 	_, err := createOrUpdate(ctx, r.Client, dst, func() error {
-		srcData, srcHasData := src.Data[".dockerconfigjson"]
-		if !srcHasData {
-			return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
-		}
 		dst.Type = corev1.SecretTypeDockerConfigJson
 		if dst.Data == nil {
 			dst.Data = map[string][]byte{}
@@ -1942,7 +1942,10 @@ func (r *HostedClusterReconciler) reconcilePullSecretSync(
 		dst.Data[".dockerconfigjson"] = srcData
 		return nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // reconcileSecretEncryptionSync syncs secret encryption configuration from the
