@@ -1350,6 +1350,12 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		return fmt.Errorf("failed to reconcile default security group: %w", err)
 	}
 
+	// Ensure combined-pull-secret exists before CPOv2 components (e.g. OAPI) reconcile.
+	r.Log.Info("Reconciling combined pull secret")
+	if err := r.reconcileCombinedPullSecret(ctx, hcp, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile combined pull secret: %w", err)
+	}
+
 	cpContext := component.ControlPlaneContext{
 		Context:                        ctx,
 		Client:                         r.Client,
@@ -1425,6 +1431,38 @@ func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Co
 		return reconcileKubeadminPasswordSecret(kubeadminPasswordSecret, hcp, &kubeadminPassword)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kubeadminPasswordSecret: %w", err)
+	}
+	return nil
+}
+
+// reconcileCombinedPullSecret ensures combined-pull-secret exists in the HCP
+// namespace before CPOv2 components reconcile. It seeds the secret from
+// pull-secret only when the secret is missing or has no data, so HCCO-merged
+// credentials are never overwritten. This handles upgrade skew where an older
+// HyperShift Operator has not created the secret; HCCO takes ownership for
+// ongoing updates (merging additional registry credentials).
+func (r *HostedControlPlaneReconciler) reconcileCombinedPullSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull-secret for combined-pull-secret bootstrap: %w", err)
+	}
+	pullSecretData, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return fmt.Errorf("pull-secret %q is missing .dockerconfigjson key", pullSecret.Name)
+	}
+
+	combinedSecret := common.CombinedPullSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, combinedSecret, func() error {
+		if len(combinedSecret.Data[corev1.DockerConfigJsonKey]) > 0 {
+			return nil
+		}
+		combinedSecret.Type = corev1.SecretTypeDockerConfigJson
+		combinedSecret.Data = map[string][]byte{
+			corev1.DockerConfigJsonKey: pullSecretData,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile combined-pull-secret: %w", err)
 	}
 	return nil
 }

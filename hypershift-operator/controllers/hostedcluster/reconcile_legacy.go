@@ -1212,16 +1212,6 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile pull secret: %w", err)
 		}
-		// Bootstrap the combined-pull-secret with original data if it doesn't exist yet.
-		// HCCO takes ownership after initial creation, merging additional credentials.
-		combinedDst := controlplaneoperator.CombinedPullSecret(controlPlaneNamespace.Name)
-		combinedDst.Type = corev1.SecretTypeDockerConfigJson
-		combinedDst.Data = map[string][]byte{
-			".dockerconfigjson": srcData,
-		}
-		if err := r.Client.Create(ctx, combinedDst); err != nil && !apierrors.IsAlreadyExists(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to bootstrap combined pull secret: %w", err)
-		}
 	}
 
 	// Reconcile the HostedControlPlane Secret Encryption Info
