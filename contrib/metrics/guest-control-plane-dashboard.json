@@ -509,12 +509,12 @@
       "nullPointMode": "null",
       "targets": [
         {
-          "expr": "sum(rate(scheduler_e2e_scheduling_duration_seconds_count{job=\"kube-controller-manager\"}[$__rate_interval]))",
+          "expr": "sum(rate(scheduler_scheduling_attempt_duration_seconds_count{job=\"kube-scheduler\"}[$__rate_interval]))",
           "legendFormat": "scheduling attempts/s",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(scheduler_schedule_attempts_total{job=\"kube-controller-manager\"}[$__rate_interval])) by (result)",
+          "expr": "sum(rate(scheduler_schedule_attempts_total{job=\"kube-scheduler\"}[$__rate_interval])) by (result)",
           "legendFormat": "{{ result }}",
           "refId": "B"
         }
@@ -547,7 +547,7 @@
       "nullPointMode": "null",
       "targets": [
         {
-          "expr": "sum(rate(scheduler_pending_pods{job=\"kube-controller-manager\"}[$__rate_interval])) by (queue)",
+          "expr": "sum(scheduler_pending_pods{job=\"kube-scheduler\"}) by (queue)",
           "legendFormat": "pending ({{ queue }})",
           "refId": "A"
         }
