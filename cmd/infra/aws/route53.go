@@ -182,21 +182,46 @@ func (o *DestroyInfraOptions) DestroyDNS(ctx context.Context, client awsapi.ROUT
 }
 
 func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, listClient, recordsClient awsapi.ROUTE53API, vpcID string) []error {
-	var output *route53.ListHostedZonesByVPCOutput
-	if err := retryRoute53WithBackoff(ctx, func() (err error) {
-		output, err = listClient.ListHostedZonesByVPC(ctx, &route53.ListHostedZonesByVPCInput{VPCId: aws.String(vpcID), VPCRegion: route53types.VPCRegion(o.Region)})
-		return err
-	}); err != nil {
-		return []error{fmt.Errorf("failed to list hosted zones for vpc %s: %w", vpcID, err)}
-	}
-
 	var errs []error
-	for _, zone := range output.HostedZoneSummaries {
-		id := cleanZoneID(aws.ToString(zone.HostedZoneId))
-		if err := deleteZone(ctx, id, recordsClient, o.Log); err != nil {
-			return []error{fmt.Errorf("failed to delete private hosted zones for vpc %s: %w", vpcID, err)}
+	var nextToken *string
+
+	for {
+		var output *route53.ListHostedZonesByVPCOutput
+		if err := retryRoute53WithBackoff(ctx, func() (err error) {
+			output, err = listClient.ListHostedZonesByVPC(ctx, &route53.ListHostedZonesByVPCInput{
+				VPCId:     aws.String(vpcID),
+				VPCRegion: route53types.VPCRegion(o.Region),
+				NextToken: nextToken,
+			})
+			return err
+		}); err != nil {
+			return append(errs, fmt.Errorf("failed to list hosted zones for vpc %s: %w", vpcID, err))
 		}
-		o.Log.Info("Deleted private hosted zone", "id", id, "name", aws.ToString(zone.Name))
+
+		for _, zone := range output.HostedZoneSummaries {
+			// ListHostedZonesByVPC returns every private hosted zone associated
+			// with the VPC, including zones owned by AWS services (for example the
+			// EFS-managed zone). Those are not ours to delete, so skip any zone
+			// that reports an owning service.
+			if zone.Owner != nil && aws.ToString(zone.Owner.OwningService) != "" {
+				o.Log.Info("Skipping service-owned hosted zone",
+					"id", cleanZoneID(aws.ToString(zone.HostedZoneId)),
+					"name", aws.ToString(zone.Name),
+					"service", aws.ToString(zone.Owner.OwningService))
+				continue
+			}
+			id := cleanZoneID(aws.ToString(zone.HostedZoneId))
+			if err := deleteZone(ctx, id, recordsClient, o.Log); err != nil {
+				errs = append(errs, fmt.Errorf("failed to delete private hosted zone %s for vpc %s: %w", id, vpcID, err))
+				continue
+			}
+			o.Log.Info("Deleted private hosted zone", "id", id, "name", aws.ToString(zone.Name))
+		}
+
+		if aws.ToString(output.NextToken) == "" {
+			break
+		}
+		nextToken = output.NextToken
 	}
 
 	return errs
