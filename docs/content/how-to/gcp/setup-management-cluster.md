@@ -208,7 +208,7 @@ Create a role with minimal PSC permissions:
 gcloud iam roles create hypershiftPSCOperator \
   --project="${CP_PROJECT_ID}" \
   --title="HyperShift PSC Operator" \
-  --permissions=compute.forwardingRules.list,compute.forwardingRules.use,compute.serviceAttachments.create,compute.serviceAttachments.delete,compute.serviceAttachments.get,compute.serviceAttachments.list,compute.subnetworks.list,compute.subnetworks.use,compute.regionOperations.get
+  --permissions=compute.forwardingRules.list,compute.forwardingRules.setLabels,compute.forwardingRules.use,compute.serviceAttachments.create,compute.serviceAttachments.delete,compute.serviceAttachments.get,compute.serviceAttachments.list,compute.subnetworks.list,compute.subnetworks.use,compute.regionOperations.get
 ```
 
 ### Bind Role and Configure WIF
