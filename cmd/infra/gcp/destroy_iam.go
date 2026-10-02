@@ -85,6 +85,6 @@ func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context, logger logr.Logger) 
 		return fmt.Errorf("failed to delete workload identity pool: %w", err)
 	}
 
-	logger.Info("Destroyed GCP IAM infrastructure", "infraID", o.InfraID, "projectID", o.ProjectID)
+	logger.Info("Successfully destroyed GCP IAM resources")
 	return nil
 }
