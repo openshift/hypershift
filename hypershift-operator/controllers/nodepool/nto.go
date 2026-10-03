@@ -394,12 +394,7 @@ func (r *NodePoolReconciler) SetPerformanceProfileConditions(ctx context.Context
 			Message:            performanceProfileCondition.Message,
 			ObservedGeneration: nodePool.Generation,
 		}
-		oldCondition := FindStatusCondition(nodePool.Status.Conditions, condition.Type)
-
-		// Will set the condition only if it was not set previously, or has changed
-		if oldCondition == nil || oldCondition.ObservedGeneration != condition.ObservedGeneration {
-			SetStatusCondition(&nodePool.Status.Conditions, condition)
-		}
+		SetStatusCondition(&nodePool.Status.Conditions, condition)
 	}
 	return nil
 }
