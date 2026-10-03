@@ -1,0 +1,500 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedControlPlane component route label persistence"
+crdName: hostedcontrolplanes.hypershift.openshift.io
+version: v1beta1
+# Intentionally omit featureGates: run against every generated schema, including Default and TechPreview.
+tests:
+  onCreate:
+    - name: "persists labels on create and keeps the other route unchanged"
+      initial: &hostedcontrolplanes_create_labels |-
+        apiVersion: hypershift.openshift.io/v1beta1
+        kind: HostedControlPlane
+        metadata:
+          name: route-labels-shared
+          namespace: default
+        spec:
+          capabilities: {}
+          controllerAvailabilityPolicy: HighlyAvailable
+          dns:
+            baseDomain: example.com
+          etcd:
+            managed:
+              storage:
+                persistentVolume:
+                  size: 8Gi
+                type: PersistentVolume
+            managementType: Managed
+          infraID: route-labels-test
+          infrastructureAvailabilityPolicy: SingleReplica
+          issuerURL: https://kubernetes.default.svc
+          olmCatalogPlacement: management
+          platform:
+            type: AWS
+          pullSecret:
+            name: secret
+          releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+          services:
+          - service: APIServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: OAuthServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Konnectivity
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Ignition
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          sshKey:
+            name: ssh-key
+          configuration:
+            ingress:
+              componentRoutes:
+              - name: console
+                namespace: openshift-console
+                hostname: console.apps.example.com
+                labels:
+                  example.io/team: "frontend"
+              - name: oauth
+                namespace: openshift-authentication
+                hostname: oauth.apps.example.com
+      expected: *hostedcontrolplanes_create_labels
+
+    - name: "allows omitted labels and keeps route hostnames"
+      initial: &hostedcontrolplanes_create_no_labels |-
+        apiVersion: hypershift.openshift.io/v1beta1
+        kind: HostedControlPlane
+        metadata:
+          name: route-labels-omitted
+          namespace: default
+        spec:
+          capabilities: {}
+          controllerAvailabilityPolicy: HighlyAvailable
+          dns:
+            baseDomain: example.com
+          etcd:
+            managed:
+              storage:
+                persistentVolume:
+                  size: 8Gi
+                type: PersistentVolume
+            managementType: Managed
+          infraID: route-labels-test
+          infrastructureAvailabilityPolicy: SingleReplica
+          issuerURL: https://kubernetes.default.svc
+          olmCatalogPlacement: management
+          platform:
+            type: AWS
+          pullSecret:
+            name: secret
+          releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+          services:
+          - service: APIServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: OAuthServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Konnectivity
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Ignition
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          sshKey:
+            name: ssh-key
+          configuration:
+            ingress:
+              componentRoutes:
+              - name: console
+                namespace: openshift-console
+                hostname: console.apps.example.com
+              - name: oauth
+                namespace: openshift-authentication
+                hostname: oauth.apps.example.com
+      expected: *hostedcontrolplanes_create_no_labels
+
+    - name: "rejects reserved label prefixes"
+      initial: &hostedcontrolplanes_reserved |-
+        apiVersion: hypershift.openshift.io/v1beta1
+        kind: HostedControlPlane
+        metadata:
+          name: route-labels-reserved
+          namespace: default
+        spec:
+          capabilities: {}
+          controllerAvailabilityPolicy: HighlyAvailable
+          dns:
+            baseDomain: example.com
+          etcd:
+            managed:
+              storage:
+                persistentVolume:
+                  size: 8Gi
+                type: PersistentVolume
+            managementType: Managed
+          infraID: route-labels-test
+          infrastructureAvailabilityPolicy: SingleReplica
+          issuerURL: https://kubernetes.default.svc
+          olmCatalogPlacement: management
+          platform:
+            type: AWS
+          pullSecret:
+            name: secret
+          releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+          services:
+          - service: APIServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: OAuthServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Konnectivity
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Ignition
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          sshKey:
+            name: ssh-key
+          configuration:
+            ingress:
+              componentRoutes:
+              - name: console
+                namespace: openshift-console
+                hostname: console.apps.example.com
+                labels:
+                  openshift.io/managed-by: "console"
+              - name: oauth
+                namespace: openshift-authentication
+                hostname: oauth.apps.example.com
+      expectedError: "prefixed label keys are reserved and may not be used"
+
+    - name: "rejects invalid label values"
+      initial: &hostedcontrolplanes_invalid_value |-
+        apiVersion: hypershift.openshift.io/v1beta1
+        kind: HostedControlPlane
+        metadata:
+          name: route-labels-invalid-value
+          namespace: default
+        spec:
+          capabilities: {}
+          controllerAvailabilityPolicy: HighlyAvailable
+          dns:
+            baseDomain: example.com
+          etcd:
+            managed:
+              storage:
+                persistentVolume:
+                  size: 8Gi
+                type: PersistentVolume
+            managementType: Managed
+          infraID: route-labels-test
+          infrastructureAvailabilityPolicy: SingleReplica
+          issuerURL: https://kubernetes.default.svc
+          olmCatalogPlacement: management
+          platform:
+            type: AWS
+          pullSecret:
+            name: secret
+          releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+          services:
+          - service: APIServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: OAuthServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Konnectivity
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Ignition
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          sshKey:
+            name: ssh-key
+          configuration:
+            ingress:
+              componentRoutes:
+              - name: console
+                namespace: openshift-console
+                hostname: console.apps.example.com
+                labels:
+                  example.io/team: "bad value"
+              - name: oauth
+                namespace: openshift-authentication
+                hostname: oauth.apps.example.com
+      expectedError: "label values must be valid Kubernetes label values"
+
+    - name: "rejects more than eight labels"
+      initial: &hostedcontrolplanes_too_many |-
+        apiVersion: hypershift.openshift.io/v1beta1
+        kind: HostedControlPlane
+        metadata:
+          name: route-labels-too-many
+          namespace: default
+        spec:
+          capabilities: {}
+          controllerAvailabilityPolicy: HighlyAvailable
+          dns:
+            baseDomain: example.com
+          etcd:
+            managed:
+              storage:
+                persistentVolume:
+                  size: 8Gi
+                type: PersistentVolume
+            managementType: Managed
+          infraID: route-labels-test
+          infrastructureAvailabilityPolicy: SingleReplica
+          issuerURL: https://kubernetes.default.svc
+          olmCatalogPlacement: management
+          platform:
+            type: AWS
+          pullSecret:
+            name: secret
+          releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+          services:
+          - service: APIServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: OAuthServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Konnectivity
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Ignition
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          sshKey:
+            name: ssh-key
+          configuration:
+            ingress:
+              componentRoutes:
+              - name: console
+                namespace: openshift-console
+                hostname: console.apps.example.com
+                labels:
+                  example.io/key-1: "value"
+                  example.io/key-2: "value"
+                  example.io/key-3: "value"
+                  example.io/key-4: "value"
+                  example.io/key-5: "value"
+                  example.io/key-6: "value"
+                  example.io/key-7: "value"
+                  example.io/key-8: "value"
+                  example.io/key-9: "value"
+              - name: oauth
+                namespace: openshift-authentication
+                hostname: oauth.apps.example.com
+      expectedError: "must have at most 8"
+
+    - name: "rejects an explicitly empty labels map"
+      initial: &hostedcontrolplanes_empty |-
+        apiVersion: hypershift.openshift.io/v1beta1
+        kind: HostedControlPlane
+        metadata:
+          name: route-labels-empty
+          namespace: default
+        spec:
+          capabilities: {}
+          controllerAvailabilityPolicy: HighlyAvailable
+          dns:
+            baseDomain: example.com
+          etcd:
+            managed:
+              storage:
+                persistentVolume:
+                  size: 8Gi
+                type: PersistentVolume
+            managementType: Managed
+          infraID: route-labels-test
+          infrastructureAvailabilityPolicy: SingleReplica
+          issuerURL: https://kubernetes.default.svc
+          olmCatalogPlacement: management
+          platform:
+            type: AWS
+          pullSecret:
+            name: secret
+          releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+          services:
+          - service: APIServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: OAuthServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Konnectivity
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Ignition
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          sshKey:
+            name: ssh-key
+          configuration:
+            ingress:
+              componentRoutes:
+              - name: console
+                namespace: openshift-console
+                hostname: console.apps.example.com
+                labels: {}
+              - name: oauth
+                namespace: openshift-authentication
+                hostname: oauth.apps.example.com
+      expectedError: "at least 1 properties"
+
+  onUpdate:
+    - name: "persists labels added after creation"
+      initial: *hostedcontrolplanes_create_no_labels
+      updated: *hostedcontrolplanes_create_labels
+      expected: *hostedcontrolplanes_create_labels
+
+    - name: "updates label values and removes stale keys"
+      initial: &hostedcontrolplanes_change_before |-
+        apiVersion: hypershift.openshift.io/v1beta1
+        kind: HostedControlPlane
+        metadata:
+          name: route-labels-change
+          namespace: default
+        spec:
+          capabilities: {}
+          controllerAvailabilityPolicy: HighlyAvailable
+          dns:
+            baseDomain: example.com
+          etcd:
+            managed:
+              storage:
+                persistentVolume:
+                  size: 8Gi
+                type: PersistentVolume
+            managementType: Managed
+          infraID: route-labels-test
+          infrastructureAvailabilityPolicy: SingleReplica
+          issuerURL: https://kubernetes.default.svc
+          olmCatalogPlacement: management
+          platform:
+            type: AWS
+          pullSecret:
+            name: secret
+          releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+          services:
+          - service: APIServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: OAuthServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Konnectivity
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Ignition
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          sshKey:
+            name: ssh-key
+          configuration:
+            ingress:
+              componentRoutes:
+              - name: console
+                namespace: openshift-console
+                hostname: console.apps.example.com
+                labels:
+                  example.io/team: "frontend"
+                  example.io/owner: "old-owner"
+              - name: oauth
+                namespace: openshift-authentication
+                hostname: oauth.apps.example.com
+      updated: &hostedcontrolplanes_change_after |-
+        apiVersion: hypershift.openshift.io/v1beta1
+        kind: HostedControlPlane
+        metadata:
+          name: route-labels-change
+          namespace: default
+        spec:
+          capabilities: {}
+          controllerAvailabilityPolicy: HighlyAvailable
+          dns:
+            baseDomain: example.com
+          etcd:
+            managed:
+              storage:
+                persistentVolume:
+                  size: 8Gi
+                type: PersistentVolume
+            managementType: Managed
+          infraID: route-labels-test
+          infrastructureAvailabilityPolicy: SingleReplica
+          issuerURL: https://kubernetes.default.svc
+          olmCatalogPlacement: management
+          platform:
+            type: AWS
+          pullSecret:
+            name: secret
+          releaseImage: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+          services:
+          - service: APIServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: OAuthServer
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Konnectivity
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          - service: Ignition
+            servicePublishingStrategy:
+              route: {}
+              type: Route
+          sshKey:
+            name: ssh-key
+          configuration:
+            ingress:
+              componentRoutes:
+              - name: console
+                namespace: openshift-console
+                hostname: console.apps.example.com
+                labels:
+                  example.io/team: "backend"
+              - name: oauth
+                namespace: openshift-authentication
+                hostname: oauth.apps.example.com
+      expected: *hostedcontrolplanes_change_after
+
+    - name: "removes labels after creation without changing routes"
+      initial: *hostedcontrolplanes_change_before
+      updated: *hostedcontrolplanes_create_no_labels
+      expected: *hostedcontrolplanes_create_no_labels
