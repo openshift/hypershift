@@ -1,6 +1,11 @@
 package upsert
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,15 +16,217 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 func TestApplyManifest(t *testing.T) {
+	testApplyManifestRejectedWrites(t)
+	testApplyManifestSuccessfulWrites(t)
+	testApplyManifestMetadataWrites(t)
+	testApplyManifestExisting(t)
+}
+
+func testApplyManifestRejectedWrites(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		updateError error
+	}{
+		{
+			name:        "conflicting updates",
+			updateError: apierrors.NewConflict(schema.GroupResource{Resource: "configmaps"}, "test", fmt.Errorf("conflict")),
+		},
+		{
+			name:        "other rejected updates",
+			updateError: apierrors.NewForbidden(schema.GroupResource{Resource: "configmaps"}, "test", fmt.Errorf("forbidden")),
+		},
+	} {
+		t.Run("When "+testCase.name+" exceed the threshold, it should count only successful writes", func(t *testing.T) {
+			var logs bytes.Buffer
+			detector := newUpdateLoopDetector()
+			detector.log = zap.New(zap.WriteTo(&logs), zap.JSONEncoder())
+			provider := &applyProvider{loopDetector: detector}
+			client := &updateResultClient{
+				Client:            fake.NewClientBuilder().WithObjects(&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "test"}}).Build(),
+				remainingFailures: updateLoopThreshold(&corev1.ConfigMap{}) + 2,
+				updateError:       testCase.updateError,
+			}
+			manifest := func(value string) *corev1.ConfigMap {
+				return &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "test"}, Data: map[string]string{"value": value}}
+			}
+			key := crclient.ObjectKey{Name: "test"}
+			cacheKey := detector.keyFor(manifest("changed"), key)
+
+			for attempt := 0; attempt < updateLoopThreshold(manifest("changed"))+2; attempt++ {
+				result, err := provider.ApplyManifest(t.Context(), client, manifest("changed"))
+				if result != controllerutil.OperationResultNone || !errors.Is(err, testCase.updateError) {
+					t.Fatalf("rejected update %d: got result %q, error %v", attempt, result, err)
+				}
+			}
+			if count := detector.updateEventCount[cacheKey]; count != 0 {
+				t.Errorf("rejected updates counted as writes: %d", count)
+			}
+			if logs.Len() != 0 {
+				t.Errorf("rejected updates logged a warning: %s", logs.String())
+			}
+
+			result, err := provider.ApplyManifest(t.Context(), client, manifest("changed"))
+			if err != nil || result != controllerutil.OperationResultUpdated {
+				t.Fatalf("successful update: got result %q, error %v", result, err)
+			}
+			if count := detector.updateEventCount[cacheKey]; count != 1 {
+				t.Errorf("expected one successful write, got %d", count)
+			}
+			result, err = provider.ApplyManifest(t.Context(), client, manifest("changed"))
+			if err != nil || result != controllerutil.OperationResultNone {
+				t.Fatalf("no-op update: got result %q, error %v", result, err)
+			}
+			if !detector.hasNoOpUpdate.Has(cacheKey) {
+				t.Error("no-op did not mark the object as settled")
+			}
+			result, err = provider.ApplyManifest(t.Context(), client, manifest("changed-again"))
+			if err != nil || result != controllerutil.OperationResultUpdated {
+				t.Fatalf("update after no-op: got result %q, error %v", result, err)
+			}
+			if count := detector.updateEventCount[cacheKey]; count != 1 {
+				t.Errorf("update after no-op changed the count to %d", count)
+			}
+			if logs.Len() != 0 {
+				t.Errorf("unexpected warning after a no-op: %s", logs.String())
+			}
+		})
+	}
+}
+
+func testApplyManifestSuccessfulWrites(t *testing.T) {
+	t.Run("When successful writes reach the threshold, it should log the requested change", func(t *testing.T) {
+		var logs bytes.Buffer
+		detector := newUpdateLoopDetector()
+		detector.log = zap.New(zap.WriteTo(&logs), zap.JSONEncoder())
+		provider := &applyProvider{loopDetector: detector}
+		client := &updateResultClient{
+			Client:            fake.NewClientBuilder().WithObjects(&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "test"}}).Build(),
+			mutateAfterUpdate: true,
+		}
+		key := crclient.ObjectKey{Name: "test"}
+		cacheKey := detector.keyFor(&corev1.ConfigMap{}, key)
+
+		for attempt := 1; attempt <= updateLoopThreshold(&corev1.ConfigMap{}); attempt++ {
+			manifest := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Data:       map[string]string{"value": fmt.Sprintf("value-%d", attempt)},
+			}
+			result, err := provider.ApplyManifest(t.Context(), client, manifest)
+			if err != nil || result != controllerutil.OperationResultUpdated {
+				t.Fatalf("update %d: got result %q, error %v", attempt, result, err)
+			}
+			if count := detector.updateEventCount[cacheKey]; count != attempt {
+				t.Errorf("update %d: expected count %d, got %d", attempt, attempt, count)
+			}
+			if attempt < updateLoopThreshold(manifest) && logs.Len() != 0 {
+				t.Fatalf("warning before threshold: %s", logs.String())
+			}
+		}
+
+		var warning struct {
+			Message     string `json:"msg"`
+			Diff        string `json:"diff"`
+			UpdateCount int    `json:"updateCount"`
+		}
+		if err := json.Unmarshal(logs.Bytes(), &warning); err != nil {
+			t.Fatalf("decode warning: %v; log: %s", err, logs.String())
+		}
+		if warning.Message != LoopDetectorWarningMessage || warning.UpdateCount != updateLoopThreshold(&corev1.ConfigMap{}) {
+			t.Errorf("unexpected warning: %+v", warning)
+		}
+		if !strings.Contains(warning.Diff, "value-9") || !strings.Contains(warning.Diff, "value-10") || strings.Contains(warning.Diff, "api-side-mutation") {
+			t.Errorf("warning diff does not describe the requested change: %s", warning.Diff)
+		}
+	})
+}
+
+func testApplyManifestMetadataWrites(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		initial       *corev1.ConfigMap
+		manifest      func(int) *corev1.ConfigMap
+		previousValue string
+		currentValue  string
+	}{
+		{
+			name: "annotation changes",
+			initial: &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+				Name: "test", Annotations: map[string]string{"requested-metadata": "annotation-0"},
+			}},
+			manifest: func(attempt int) *corev1.ConfigMap {
+				return &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+					Name: "test", Annotations: map[string]string{"requested-metadata": fmt.Sprintf("annotation-%d", attempt)},
+				}}
+			},
+			previousValue: "annotation-9",
+			currentValue:  "annotation-10",
+		},
+		{
+			name: "label removal",
+			initial: &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+				Name: "test", Labels: map[string]string{"requested-metadata": "label-0"},
+			}},
+			manifest: func(attempt int) *corev1.ConfigMap {
+				value := fmt.Sprintf("label-%d", attempt)
+				if attempt == updateLoopThreshold(&corev1.ConfigMap{}) {
+					value = netutil.RemoveLabelMarker
+				}
+				return &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+					Name: "test", Labels: map[string]string{"requested-metadata": value},
+				}}
+			},
+			previousValue: "label-9",
+		},
+	} {
+		t.Run("When metadata-only "+testCase.name+" reach the threshold, it should log the original metadata change", func(t *testing.T) {
+			var logs bytes.Buffer
+			detector := newUpdateLoopDetector()
+			detector.log = zap.New(zap.WriteTo(&logs), zap.JSONEncoder())
+			provider := &applyProvider{loopDetector: detector}
+			client := fake.NewClientBuilder().WithObjects(testCase.initial).Build()
+			cacheKey := detector.keyFor(testCase.initial, crclient.ObjectKey{Name: "test"})
+
+			for attempt := 1; attempt <= updateLoopThreshold(testCase.initial); attempt++ {
+				result, err := provider.ApplyManifest(t.Context(), client, testCase.manifest(attempt))
+				if err != nil || result != controllerutil.OperationResultUpdated {
+					t.Fatalf("update %d: got result %q, error %v", attempt, result, err)
+				}
+				if attempt < updateLoopThreshold(testCase.initial) && logs.Len() != 0 {
+					t.Fatalf("warning before threshold: %s", logs.String())
+				}
+			}
+			if count := detector.updateEventCount[cacheKey]; count != updateLoopThreshold(testCase.initial) {
+				t.Errorf("expected %d successful writes, got %d", updateLoopThreshold(testCase.initial), count)
+			}
+			var warning struct {
+				Message string `json:"msg"`
+				Diff    string `json:"diff"`
+			}
+			if err := json.Unmarshal(logs.Bytes(), &warning); err != nil {
+				t.Fatalf("decode warning: %v; log: %s", err, logs.String())
+			}
+			if warning.Message != LoopDetectorWarningMessage || !strings.Contains(warning.Diff, testCase.previousValue) ||
+				(testCase.currentValue != "" && !strings.Contains(warning.Diff, testCase.currentValue)) {
+				t.Errorf("warning diff does not describe the metadata change: %s", warning.Diff)
+			}
+		})
+	}
+}
+
+func testApplyManifestExisting(t *testing.T) {
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-dep",
