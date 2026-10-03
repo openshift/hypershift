@@ -12,6 +12,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/blang/semver"
 )
 
 func TestApplyAzureWorkloadIdentityWebhookContainer(t *testing.T) {
@@ -369,7 +371,7 @@ func TestApplyAzureWorkloadIdentityWebhookContainer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			podSpec := &corev1.PodSpec{}
-			err := applyAzureWorkloadIdentityWebhookContainer(podSpec, tc.hcp)
+			err := applyAzureWorkloadIdentityWebhookContainer(podSpec, tc.hcp, semver.MustParse("4.22.0"))
 			g.Expect(err).To(BeNil())
 			tc.validatePod(g, podSpec)
 		})

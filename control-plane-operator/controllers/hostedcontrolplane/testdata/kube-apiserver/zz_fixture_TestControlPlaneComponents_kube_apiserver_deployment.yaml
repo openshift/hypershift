@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: a12a8fec89319ac09d4d325cd610ef12573e8de0db86a8f4726d662a121c49c2
+    hypershift.openshift.io/desired-state-hash: af33ec4a231f1732f137a752c3a93dfdc7bbf79828598613bcbe893d4bacd96e
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -234,7 +234,6 @@ spec:
         - 30s
         - --server-count
         - "3"
-        - --tls-min-version=VersionTLS12
         - --cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         command:
         - /usr/bin/proxy-server
@@ -327,8 +326,6 @@ spec:
         - --tls-cert=/var/run/app/certs/tls.crt
         - --tls-key=/var/run/app/certs/tls.key
         - --token-audience=openshift
-        - --tls-min-version=VersionTLS12
-        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         image: aws-pod-identity-webhook
         imagePullPolicy: IfNotPresent
         name: aws-pod-identity-webhook

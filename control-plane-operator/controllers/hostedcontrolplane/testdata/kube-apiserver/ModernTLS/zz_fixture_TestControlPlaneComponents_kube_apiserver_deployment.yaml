@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: aa002a20e51608264ac0da9bb982da2883cf8a95a53266ec219d9361edbea95c
+    hypershift.openshift.io/desired-state-hash: d0e51256a1eec62bbce8dfe90fcc3fb3be712dd734ee680abcfa21d9b0c43dc4
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -234,7 +234,6 @@ spec:
         - 30s
         - --server-count
         - "3"
-        - --tls-min-version=VersionTLS13
         command:
         - /usr/bin/proxy-server
         image: apiserver-network-proxy
@@ -326,7 +325,6 @@ spec:
         - --tls-cert=/var/run/app/certs/tls.crt
         - --tls-key=/var/run/app/certs/tls.key
         - --token-audience=openshift
-        - --tls-min-version=VersionTLS13
         image: aws-pod-identity-webhook
         imagePullPolicy: IfNotPresent
         name: aws-pod-identity-webhook

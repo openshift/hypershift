@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: df6148036ab90734cd9f0fa75bea03751f4576a60c0de24120583abedc59f98d
+    hypershift.openshift.io/desired-state-hash: cfd17b8322ec3388c39a7ad288a67f918881bb6dcf35b74331b951c0011402ec
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -241,7 +241,6 @@ spec:
         - 30s
         - --server-count
         - "3"
-        - --tls-min-version=VersionTLS12
         - --cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         command:
         - /usr/bin/proxy-server
@@ -337,8 +336,6 @@ spec:
             --kubeconfig=/var/run/app/kubeconfig/kubeconfig \
             --metrics-addr=:9441 \
             --log-level=info \
-            --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 \
-            --tls-min-version=VersionTLS12 \
             --disable-cert-rotation
         command:
         - /bin/sh

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: c81b372f98e2b1cd6fc3942fb3ccdf8688abec87daa1b39e68f4ef534e3dbc3a
+    hypershift.openshift.io/desired-state-hash: f2ebda3157c0fe597ce2cb0aff5d4b57fc2e7e9a4aae58b5e68d538aa1d2cfe2
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-version-operator
@@ -78,7 +78,6 @@ spec:
         - --serving-key-file=/etc/kubernetes/certs/server/tls.key
         - --hypershift=true
         - --v=4
-        - --tls-min-version=VersionTLS13
         command:
         - cluster-version-operator
         env:

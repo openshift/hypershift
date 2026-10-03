@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: e528a24489e4cd3138d70174d985add43cbd869bf05dbb9b985c07a75eeec634
+    hypershift.openshift.io/desired-state-hash: 181b201ac4496d58f7e938ff1e9406aee3d8a46dfb8f421f606662d87f8d64d6
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: machine-approver
@@ -74,8 +74,6 @@ spec:
         - --workload-cluster-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --disable-status-controller
         - --machine-namespace=hcp-namespace
-        - --tls-min-version=VersionTLS12
-        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         command:
         - /usr/bin/machine-approver
         image: cluster-machine-approver
