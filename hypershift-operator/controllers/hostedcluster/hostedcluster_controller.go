@@ -2877,6 +2877,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperkarpenterv1.KarpenterProviderAWSImage,
 		hyperkarpenterv1.KarpenterOperatorImage,
 		hyperv1.KubeAPIServerGoAwayChance,
+		hyperv1.KubeAPIServerEventTTLMinutes,
 		hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration,
 		hyperv1.HostedClusterRestoredFromBackupAnnotation,
 		// TODO: Remove this once the input is in the HostedCluster AWS API.
@@ -4435,6 +4436,11 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err...)
 	}
 
+	// CRD CEL rules cannot read metadata.annotations, so the event-ttl range is enforced here.
+	if err := validateEventTTL(hc); err != nil {
+		errs = append(errs, err)
+	}
+
 	if err := r.validateOCPConfigurations(ctx, hc, r.Client); err != nil {
 		errs = append(errs, err)
 	}
@@ -4455,6 +4461,29 @@ func validateLabels(hc *hyperv1.HostedCluster) []error {
 	}
 
 	return errs
+}
+
+// validateEventTTL checks the hypershift.openshift.io/event-ttl-minutes annotation. The value must
+// be an integer number of minutes within the range the enhancement defines; anything else is
+// surfaced on the ValidHostedClusterConfiguration condition rather than silently ignored, because
+// the control plane operator falls back to the 3h default for values it cannot use.
+func validateEventTTL(hc *hyperv1.HostedCluster) error {
+	// An empty value means the same as an absent annotation, matching how the control plane
+	// operator reads it and how the other kube-apiserver tuning annotations behave.
+	value := hc.Annotations[hyperv1.KubeAPIServerEventTTLMinutes]
+	if value == "" {
+		return nil
+	}
+
+	minutes, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("invalid %s annotation %q: must be an integer number of minutes", hyperv1.KubeAPIServerEventTTLMinutes, value)
+	}
+	if minutes < hyperv1.MinEventTTLMinutes || minutes > hyperv1.MaxEventTTLMinutes {
+		return fmt.Errorf("invalid %s annotation %q: must be between %d and %d minutes", hyperv1.KubeAPIServerEventTTLMinutes, value, hyperv1.MinEventTTLMinutes, hyperv1.MaxEventTTLMinutes)
+	}
+
+	return nil
 }
 
 func (r *HostedClusterReconciler) validateUserCAConfigMaps(ctx context.Context, hc *hyperv1.HostedCluster) []error {

@@ -2,6 +2,7 @@ package kas
 
 import (
 	"fmt"
+	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
@@ -24,6 +25,7 @@ const (
 	defaultMaxRequestsInflight         = 3000
 	defaultMaxMutatingRequestsInflight = 1000
 	defaultGoAwayChance                = 0.001
+	defaultEventTTL                    = "3h"
 )
 
 type KubeAPIServerConfigParams struct {
@@ -54,6 +56,7 @@ type KubeAPIServerConfigParams struct {
 	MaxRequestsInflight              string
 	MaxMutatingRequestsInflight      string
 	GoAwayChance                     string
+	EventTTL                         string
 }
 
 func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
@@ -147,6 +150,11 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 		kasConfig.GoAwayChance = hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]
 	}
 
+	kasConfig.EventTTL = defaultEventTTL
+	if eventTTL, ok := eventTTLFromAnnotation(hcp.Annotations[hyperv1.KubeAPIServerEventTTLMinutes]); ok {
+		kasConfig.EventTTL = eventTTL
+	}
+
 	if maxTokenExpiration := hcp.Annotations[hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration]; maxTokenExpiration != "" {
 		kasConfig.ServiceAccountMaxTokenExpiration = maxTokenExpiration
 	}
@@ -156,6 +164,22 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 	}
 
 	return kasConfig
+}
+
+// eventTTLFromAnnotation converts the hypershift.openshift.io/event-ttl-minutes annotation value
+// into an --event-ttl duration. It reports false when the annotation is unset or does not hold an
+// integer within [MinEventTTLMinutes, MaxEventTTLMinutes], so the caller keeps the default. The
+// HostedCluster controller rejects invalid values up front; this check keeps a value that slipped
+// past it from rendering a kube-apiserver flag that would fail to parse at startup.
+func eventTTLFromAnnotation(value string) (string, bool) {
+	if value == "" {
+		return "", false
+	}
+	minutes, err := strconv.Atoi(value)
+	if err != nil || minutes < hyperv1.MinEventTTLMinutes || minutes > hyperv1.MaxEventTTLMinutes {
+		return "", false
+	}
+	return fmt.Sprintf("%dm", minutes), true
 }
 
 func tlsSecurityProfile(configuration *hyperv1.ClusterConfiguration) *configv1.TLSSecurityProfile {

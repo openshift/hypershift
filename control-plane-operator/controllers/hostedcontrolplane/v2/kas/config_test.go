@@ -480,6 +480,17 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
+			name: "When event TTL is configured, it should set event-ttl argument",
+			params: KubeAPIServerConfigParams{
+				EventTTL: "60m",
+			},
+			expected: modifyKasConfig(defaultKASConfig(),
+				func(kasc *kcpv1.KubeAPIServerConfig) {
+					kasc.APIServerArguments["event-ttl"] = kcpv1.Arguments{"60m"}
+				},
+			),
+		},
+		{
 			name: "When max mutating requests in flight is configured, it should set the argument",
 			params: KubeAPIServerConfigParams{
 				MaxMutatingRequestsInflight: "20",
@@ -766,7 +777,7 @@ func defaultKASConfig() *kcpv1.KubeAPIServerConfig {
 			"etcd-keyfile":              {"/etc/kubernetes/certs/etcd/etcd-client.key"},
 			"etcd-prefix":               {"kubernetes.io"},
 			"etcd-servers":              {""},
-			"event-ttl":                 {"3h"},
+			"event-ttl":                 {""},
 			"feature-gates": {
 				"StructuredAuthenticationConfiguration=true",
 				"ValidatingAdmissionPolicy=true",
