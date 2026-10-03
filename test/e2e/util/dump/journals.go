@@ -198,7 +198,7 @@ func findMachineIPs(ctx context.Context, hc *hyperv1.HostedCluster, awsCreds str
 	result, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 		Filters: []ec2types.Filter{
 			{
-				Name:   aws.String("tag:kubernetes.io/cluster/" + hc.Spec.InfraID),
+				Name:   aws.String("tag:" + supportawsutil.ClusterTag(hc.Spec.InfraID)),
 				Values: []string{"owned"},
 			},
 		},

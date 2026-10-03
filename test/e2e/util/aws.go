@@ -217,7 +217,7 @@ func CreateTestSubnet(ctx context.Context, t testing.TB, client *ec2v2.Client, v
 	subnetName := fmt.Sprintf("%s-karpenter-test-subnet", infraID)
 	subnetTags := []ec2types.Tag{
 		{Key: awsv2.String("Name"), Value: awsv2.String(subnetName)},
-		{Key: awsv2.String(fmt.Sprintf("kubernetes.io/cluster/%s", infraID)), Value: awsv2.String("owned")},
+		{Key: awsv2.String(supportawsutil.ClusterTag(infraID)), Value: awsv2.String("owned")},
 		{Key: awsv2.String(supportawsutil.HypershiftInfraIDTagKey), Value: awsv2.String(infraID)},
 		{Key: awsv2.String(supportawsutil.HypershiftClusterNameTagKey), Value: awsv2.String(clusterName)},
 	}
