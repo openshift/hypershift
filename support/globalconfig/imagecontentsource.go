@@ -245,12 +245,11 @@ func NewCommonRegistryProvider(ctx context.Context, capChecker capabilities.Capa
 			},
 			RegistryOverrides: registryOverrides,
 		},
-		OpenShiftImageRegistryOverrides: imageRegistryMirrors,
 	}
+	releaseProvider.SetOpenShiftImageRegistryOverrides(imageRegistryMirrors)
 
-	metadataProvider := &imageregistry.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: imageRegistryMirrors,
-	}
+	metadataProvider := &imageregistry.RegistryClientImageMetadataProvider{}
+	metadataProvider.SetOpenShiftImageRegistryOverrides(imageRegistryMirrors)
 
 	provider := CommonRegistryProvider{
 		capChecker:       capChecker,
@@ -286,8 +285,8 @@ func (rp CommonRegistryProvider) Reconcile(ctx context.Context, client crclient.
 		}
 	}
 
-	rp.ReleaseProvider.OpenShiftImageRegistryOverrides = imageRegistryMirrors
-	rp.MetadataProvider.OpenShiftImageRegistryOverrides = imageRegistryMirrors
+	rp.ReleaseProvider.SetOpenShiftImageRegistryOverrides(imageRegistryMirrors)
+	rp.MetadataProvider.SetOpenShiftImageRegistryOverrides(imageRegistryMirrors)
 
 	return nil
 }
