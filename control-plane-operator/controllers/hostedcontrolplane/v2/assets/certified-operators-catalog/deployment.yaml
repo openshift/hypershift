@@ -5,6 +5,8 @@ metadata:
   annotations:
     image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"}, {"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
 spec:
+  # Allow 20 minutes for startup plus 10 minutes for scheduling, image pulls, and init containers.
+  progressDeadlineSeconds: 1800
   selector:
     matchLabels:
       olm.catalogSource: certified-operators
@@ -34,11 +36,14 @@ spec:
               name: grpc
               protocol: TCP
           terminationMessagePath: /dev/termination-log
+          # Budget 1s to connect and 2s for the RPC, plus 2s for exec startup under CPU contention.
           readinessProbe:
             exec:
               command:
                 - grpc_health_probe
                 - '-addr=:50051'
+                - '-connect-timeout=1s'
+                - '-rpc-timeout=2s'
             initialDelaySeconds: 5
             timeoutSeconds: 5
             periodSeconds: 10
@@ -49,8 +54,10 @@ spec:
               command:
                 - grpc_health_probe
                 - '-addr=:50051'
+                - '-connect-timeout=1s'
+                - '-rpc-timeout=2s'
             initialDelaySeconds: 10
-            timeoutSeconds: 1
+            timeoutSeconds: 5
             periodSeconds: 10
             successThreshold: 1
             failureThreshold: 3
@@ -59,10 +66,12 @@ spec:
               command:
                 - grpc_health_probe
                 - '-addr=:50051'
-            timeoutSeconds: 1
+                - '-connect-timeout=1s'
+                - '-rpc-timeout=2s'
+            timeoutSeconds: 5
             periodSeconds: 10
             successThreshold: 1
-            failureThreshold: 15
+            failureThreshold: 120
           resources:
             requests:
               cpu: 10m
