@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -420,6 +421,65 @@ func TestReconcileCredentials(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileCredentialsPreservesWrappedErrors(t *testing.T) {
+	g := NewWithT(t)
+
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-ns"},
+		Spec: hyperv1.HostedClusterSpec{
+			InfraID: "test-infra-id",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					Location:          "eastus",
+					ResourceGroupName: "test-rg",
+					SubscriptionID:    "sub-123",
+					TenantID:          "tenant-456",
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+						AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+						WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+							Ingress:       hyperv1.WorkloadIdentity{ClientID: "ingress-client-id"},
+							ImageRegistry: hyperv1.WorkloadIdentity{ClientID: "registry-client-id"},
+							Network:       hyperv1.WorkloadIdentity{ClientID: "network-client-id"},
+						},
+					},
+				},
+			},
+			Capabilities: &hyperv1.Capabilities{},
+		},
+	}
+
+	ingressErr := errors.New(`secrets "azure-ingress-credentials" is forbidden: exceeded quota`)
+	registryErr := errors.New(`secrets "azure-image-registry-credentials" is forbidden: exceeded quota`)
+
+	failCreateOrUpdate := func(_ context.Context, _ client.Client, obj client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+		secret, ok := obj.(*corev1.Secret)
+		if !ok {
+			return controllerutil.OperationResultNone, fmt.Errorf("expected Secret, got %T", obj)
+		}
+		if err := mutate(); err != nil {
+			return controllerutil.OperationResultNone, err
+		}
+		switch secret.Name {
+		case "azure-ingress-credentials":
+			return controllerutil.OperationResultNone, ingressErr
+		case "azure-image-registry-credentials":
+			return controllerutil.OperationResultNone, registryErr
+		default:
+			return controllerutil.OperationResultCreated, nil
+		}
+	}
+
+	azure := New("test-utilities-image", "test-capi-image", nil)
+	err := azure.ReconcileCredentials(t.Context(), nil, failCreateOrUpdate, hc, "test-control-plane-ns")
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to reconcile Azure credentials"))
+	g.Expect(err.Error()).To(ContainSubstring("ingress credentials"))
+	g.Expect(err.Error()).To(ContainSubstring("image registry credentials"))
+	g.Expect(errors.Is(err, ingressErr)).To(BeTrue())
+	g.Expect(errors.Is(err, registryErr)).To(BeTrue())
 }
 
 func TestReconcileKMSConfigSecret(t *testing.T) {
