@@ -54,6 +54,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -153,6 +154,14 @@ var cpObjects = []client.Object{
 	fakePackageServerService(),
 }
 
+func cpObjectsWithControlPlaneReleaseImage(image string) []client.Object {
+	objects := append([]client.Object{}, cpObjects...)
+	hcp := fakeHCP()
+	hcp.Spec.ControlPlaneReleaseImage = &image
+	objects[0] = hcp
+	return objects
+}
+
 // TestReconcileErrorHandling verifies that the reconcile loop proceeds when
 // errors occur.  The test uses a fake  client with a specific list of initial
 // objects in order to establish a baseline number of expected client create
@@ -175,6 +184,8 @@ func TestReconcileErrorHandling(t *testing.T) {
 	errorExceptions := []string{
 		"global pull secret syncer signaled to shutdown",
 	}
+	cpReleaseImage := "quay.io/openshift-release-dev/ocp-release:5.1.0-x86_64"
+	cpObjects := cpObjectsWithControlPlaneReleaseImage(cpReleaseImage)
 
 	var totalCreates int
 	{
@@ -193,6 +204,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Version: "5.1.0",
 				Components: map[string]string{
 					"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
 				},
@@ -227,6 +239,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Version: "5.1.0",
 				Components: map[string]string{
 					"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
 				},
@@ -1381,7 +1394,7 @@ func TestReconcileClusterVersion(t *testing.T) {
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
-	err := r.reconcileClusterVersion(t.Context(), hcp)
+	err := r.reconcileClusterVersion(t.Context(), hcp, semver.MustParse("5.0.0"))
 	g.Expect(err).ToNot(HaveOccurred())
 	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
 	g.Expect(err).ToNot(HaveOccurred())
@@ -1462,7 +1475,7 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
-	err := r.reconcileClusterVersion(t.Context(), hcp)
+	err := r.reconcileClusterVersion(t.Context(), hcp, semver.MustParse("5.0.0"))
 	g.Expect(err).ToNot(HaveOccurred())
 	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
 	g.Expect(err).ToNot(HaveOccurred())
@@ -1540,7 +1553,7 @@ func TestReconcileClusterVersionWithEnabledCapabilities(t *testing.T) {
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
-	err := r.reconcileClusterVersion(t.Context(), hcp)
+	err := r.reconcileClusterVersion(t.Context(), hcp, semver.MustParse("5.0.0"))
 	g.Expect(err).ToNot(HaveOccurred())
 	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
 	g.Expect(err).ToNot(HaveOccurred())
@@ -1570,11 +1583,36 @@ func TestReconcileClusterVersionWithEnabledCapabilities(t *testing.T) {
 	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
 }
 
+func TestReconcileClusterVersionWithCompatibilityRequirements(t *testing.T) {
+	t.Parallel()
+	hcp := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ClusterID: "test-cluster-id",
+			Configuration: &hyperv1.ClusterConfiguration{FeatureGate: &configv1.FeatureGateSpec{
+				FeatureGateSelection: configv1.FeatureGateSelection{FeatureSet: configv1.DevPreviewNoUpgrade},
+			}},
+		},
+	}
+	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(clusterVersion).Build()
+	g := NewWithT(t)
+	r := &reconciler{client: fakeClient, CreateOrUpdateProvider: &simpleCreateOrUpdater{}}
+
+	err := r.reconcileClusterVersion(t.Context(), hcp, semver.MustParse("5.1.0"))
+	g.Expect(err).ToNot(HaveOccurred())
+	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(clusterVersion.Spec.Capabilities.AdditionalEnabledCapabilities).To(ContainElement(configv1.ClusterVersionCapabilityCompatibilityRequirements))
+}
+
 func TestReconcileClusterVersionWhenGuestCVOHasOlderCapabilities(t *testing.T) {
 	t.Parallel()
 	hcp := &hyperv1.HostedControlPlane{
 		Spec: hyperv1.HostedControlPlaneSpec{
 			ClusterID: "test-cluster-id",
+			Configuration: &hyperv1.ClusterConfiguration{FeatureGate: &configv1.FeatureGateSpec{
+				FeatureGateSelection: configv1.FeatureGateSelection{FeatureSet: configv1.TechPreviewNoUpgrade},
+			}},
 		},
 	}
 	// Simulate an older guest CVO that doesn't know about ClusterAPI or CompatibilityRequirements
@@ -1613,7 +1651,7 @@ func TestReconcileClusterVersionWhenGuestCVOHasOlderCapabilities(t *testing.T) {
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
-	err := r.reconcileClusterVersion(t.Context(), hcp)
+	err := r.reconcileClusterVersion(t.Context(), hcp, semver.MustParse("5.1.0"))
 	g.Expect(err).ToNot(HaveOccurred())
 	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
 	g.Expect(err).ToNot(HaveOccurred())

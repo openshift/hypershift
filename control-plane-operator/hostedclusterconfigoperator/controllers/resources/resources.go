@@ -415,6 +415,18 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
 	}
 
+	controlPlaneReleaseVersion := releaseImageVersion
+	if hcp.Spec.ControlPlaneReleaseImage != nil {
+		controlPlaneReleaseImage, err := r.releaseProvider.Lookup(ctx, *hcp.Spec.ControlPlaneReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to lookup control plane release image %s: %w", *hcp.Spec.ControlPlaneReleaseImage, err)
+		}
+		controlPlaneReleaseVersion, err = semver.Parse(controlPlaneReleaseImage.Version())
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to parse control plane release image version: %w", err)
+		}
+	}
+
 	// The exception for IBMCloudPlatform is due to the fact that the IBM will include new certificates for HCCO from 4.17 version
 	if !(hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && (releaseImageVersion.Major == 4 && releaseImageVersion.Minor < 17)) {
 		// Apply new ValidatingAdmissionPolicy to restrict the modification/deletion of certain
@@ -435,7 +447,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 	}
 
 	log.Info("reconciling clusterversion")
-	if err := r.reconcileClusterVersion(ctx, hcp); err != nil {
+	if err := r.reconcileClusterVersion(ctx, hcp, controlPlaneReleaseVersion); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile clusterversion: %w", err))
 	}
 
@@ -1577,11 +1589,11 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 	return utilerrors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseVersion semver.Version) error {
 	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
-		desiredCaps := capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities)
+		desiredCaps := capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities, hcp.Spec.Configuration.GetFeatureGateSelection().FeatureSet, releaseVersion)
 		desiredCaps = capabilities.FilterByKnownCapabilities(desiredCaps, clusterVersion.Status.Capabilities.KnownCapabilities)
 		clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
