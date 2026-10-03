@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -173,8 +174,12 @@ type PlatformConfig interface {
 	ClusterSpecs(releaseImage, n1Image string) []ClusterSpec
 
 	// CreateArgs returns platform-specific args for
-	// "hypershift create cluster <platform>".
-	CreateArgs() []string
+	// "<cli> create cluster <platform>". The cli argument lets platforms
+	// account for the flag differences between the developer `hypershift`
+	// CLI and the product `hcp` CLI. It returns an error when the platform
+	// cannot be driven by the given CLI, for example when credentials the
+	// product CLI requires have not been configured.
+	CreateArgs(cli CLI) ([]string, error)
 
 	// PreCreate runs platform-specific setup before clusters are
 	// created (e.g., deploying OIDC providers that must be ready
@@ -211,8 +216,10 @@ type PlatformConfig interface {
 	SetupTestEnv(sharedDir string)
 
 	// DestroyArgs returns platform-specific args for
-	// "hypershift destroy cluster <platform>".
-	DestroyArgs() []string
+	// "<cli> destroy cluster <platform>". As with CreateArgs, the cli
+	// argument selects the flag spelling and it returns an error when the
+	// platform cannot be driven by the given CLI.
+	DestroyArgs(cli CLI) ([]string, error)
 }
 
 // NewPlatformConfig creates a PlatformConfig for the given platform
@@ -224,9 +231,11 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 		return NewAzurePlatformConfig(sharedDir), nil
 	case "aws":
 		return NewAWSPlatformConfig(AWSPlatformOptions{
-			Region:    envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
-			Zones:     envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
-			ProwJobId: envOrDefault("PROW_JOB_ID", ""),
+			Region:       envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
+			Zones:        envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
+			ProwJobId:    envOrDefault("PROW_JOB_ID", ""),
+			RoleARN:      os.Getenv(awsRoleARNEnvVar),
+			STSCredsFile: os.Getenv(awsSTSCredsEnvVar),
 		}, sharedDir), nil
 	default:
 		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws)", platform)
