@@ -1183,12 +1183,16 @@ func GetIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType, use
 	}
 	var ret []hyperv1.ServicePublishingStrategyMapping
 	for service, strategy := range services {
-		ret = append(ret, hyperv1.ServicePublishingStrategyMapping{
+		mapping := hyperv1.ServicePublishingStrategyMapping{
 			Service: service,
 			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 				Type: strategy,
 			},
-		})
+		}
+		if strategy == hyperv1.Route {
+			mapping.Route = &hyperv1.RoutePublishingStrategy{}
+		}
+		ret = append(ret, mapping)
 	}
 	sort.Slice(ret, func(i, j int) bool {
 		return ret[i].Service < ret[j].Service
