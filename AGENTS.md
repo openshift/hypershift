@@ -22,6 +22,7 @@ Project documentation is published via MkDocs. The site structure and navigation
 | **E2E v2 test framework** | [test/e2e/v2/AGENTS.md](test/e2e/v2/AGENTS.md) |
 | **Envtest (CEL validation tests)** | [test/envtest/README.md](test/envtest/README.md) — YAML-driven, runs across k8s 1.31–1.37, supports feature gate filtering |
 | **CEL over webhooks** | [.claude/rules/webhook-validation.md](.claude/rules/webhook-validation.md) |
+| **Restructuring commits** | [skills/restructure-commits/SKILL.md](skills/restructure-commits/SKILL.md) — component-based commit layout; verify with `make verify-commit-layout` |
 | **Code formatting** | [DEVELOPMENT.md](DEVELOPMENT.md) — code quality commands and conventions |
 | **Unit test conventions** | [TESTING.md](TESTING.md) — naming, placement, and creation requirements |
 | **Design invariants** | [docs/content/reference/goals-and-design-invariants.md](docs/content/reference/goals-and-design-invariants.md) |

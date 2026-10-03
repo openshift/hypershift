@@ -1,0 +1,6 @@
+---
+description: restructuring, squashing, or reorganizing branch commits into component-based commits
+alwaysApply: false
+---
+
+Read and follow the canonical procedure in `../../skills/restructure-commits/SKILL.md` whenever restructuring commits.
