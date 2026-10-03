@@ -142,7 +142,7 @@ func DeployKeycloak(ctx context.Context, client crclient.Client, consoleRedirect
 	}
 
 	// Extract router CA
-	caBundle, err := extractRouterCA(ctx, client)
+	caBundle, err := ExtractRouterCA(ctx, client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract router CA: %w", err)
 	}
@@ -585,7 +585,8 @@ func getKeycloakIssuerURL(ctx context.Context, client crclient.Client) (string, 
 	return issuer.String(), nil
 }
 
-func extractRouterCA(ctx context.Context, client crclient.Client) ([]byte, error) {
+// ExtractRouterCA returns the default OpenShift router CA bundle for TLS verification.
+func ExtractRouterCA(ctx context.Context, client crclient.Client) ([]byte, error) {
 	cm := &corev1.ConfigMap{}
 	if err := client.Get(ctx, crclient.ObjectKey{
 		Namespace: "openshift-config-managed",
