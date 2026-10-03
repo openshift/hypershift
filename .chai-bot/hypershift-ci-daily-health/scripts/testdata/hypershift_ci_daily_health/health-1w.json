@@ -1,0 +1,832 @@
+{
+  "api_version": "health-report/v2",
+  "window": "1w",
+  "generated_at": "2026-09-28T12:05:00Z",
+  "complete": false,
+  "releases": [
+    "4.19",
+    "4.20",
+    "4.21",
+    "4.22",
+    "5.0",
+    "5.1"
+  ],
+  "data": {
+    "sparkline_slots": [
+      "2026-09-21 18:00",
+      "2026-09-22 00:00",
+      "2026-09-22 06:00",
+      "2026-09-22 12:00",
+      "2026-09-22 18:00",
+      "2026-09-23 00:00",
+      "2026-09-23 06:00",
+      "2026-09-23 12:00",
+      "2026-09-23 18:00",
+      "2026-09-24 00:00",
+      "2026-09-24 06:00",
+      "2026-09-24 12:00",
+      "2026-09-24 18:00",
+      "2026-09-25 00:00",
+      "2026-09-25 06:00",
+      "2026-09-25 12:00",
+      "2026-09-25 18:00",
+      "2026-09-26 00:00",
+      "2026-09-26 06:00",
+      "2026-09-26 12:00",
+      "2026-09-26 18:00",
+      "2026-09-27 00:00",
+      "2026-09-27 06:00",
+      "2026-09-27 12:00",
+      "2026-09-27 18:00",
+      "2026-09-28 00:00",
+      "2026-09-28 06:00",
+      "2026-09-28 12:00"
+    ],
+    "jobs": [
+      {
+        "id": "pull-ci-openshift-hypershift-main-e2e-streak",
+        "prow": "pull-ci-openshift-hypershift-main-e2e-streak",
+        "name": "e2e-streak",
+        "target_branch": "main",
+        "target_release": "5.1",
+        "role": "future",
+        "role_label": "future (5.1)",
+        "rate": 75.0,
+        "prev": 80.0,
+        "prev_runs": 20,
+        "trend": null,
+        "runs": 20,
+        "fails": 0,
+        "test_fails": 0,
+        "infra_fails": 0,
+        "spark_runs": 0,
+        "sparkline": null,
+        "sippy_ingestion_enabled": true,
+        "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-main-e2e-streak"
+      },
+      {
+        "id": "pull-ci-openshift-hypershift-release-5.0-e2e-veto",
+        "prow": "pull-ci-openshift-hypershift-release-5.0-e2e-veto",
+        "name": "e2e-veto",
+        "target_branch": "release-5.0",
+        "target_release": "5.0",
+        "role": "n-1",
+        "role_label": "n-1 (5.0)",
+        "rate": 0.0,
+        "prev": 0.0,
+        "prev_runs": 0,
+        "trend": null,
+        "runs": 0,
+        "fails": 0,
+        "test_fails": 0,
+        "infra_fails": 0,
+        "spark_runs": 0,
+        "sparkline": null,
+        "sippy_ingestion_enabled": false,
+        "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-release-5.0-e2e-veto"
+      }
+    ],
+    "payload_blocking_jobs": [
+      {
+        "id": "periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-perma-aws",
+        "prow": "periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-perma-aws",
+        "name": "e2e-perma-aws",
+        "release": "5.1",
+        "rate": 5.0,
+        "prev": 8.0,
+        "prev_runs": 20,
+        "trend": null,
+        "runs": 20,
+        "fails": 0,
+        "test_fails": 0,
+        "infra_fails": 0,
+        "spark_runs": 0,
+        "sparkline": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ]
+        ],
+        "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-perma-aws",
+        "participations": [
+          {
+            "stream_name": "5.1.0-0.ci",
+            "stream_kind": "ci",
+            "architecture": "amd64",
+            "verification_name": "hypershift-e2e",
+            "stream_sippy_url": null,
+            "release_status_url": "https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/releasestream/5.1.0-0.ci"
+          }
+        ]
+      },
+      {
+        "id": "periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-ok-aws",
+        "prow": "periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-ok-aws",
+        "name": "e2e-ok-aws",
+        "release": "5.0",
+        "rate": 95.0,
+        "prev": 96.0,
+        "prev_runs": 20,
+        "trend": null,
+        "runs": 20,
+        "fails": 0,
+        "test_fails": 0,
+        "infra_fails": 0,
+        "spark_runs": 0,
+        "sparkline": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ]
+        ],
+        "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-ok-aws",
+        "participations": [
+          {
+            "stream_name": "5.0.0-0.ci",
+            "stream_kind": "ci",
+            "architecture": "amd64",
+            "verification_name": "hypershift-e2e",
+            "stream_sippy_url": null,
+            "release_status_url": "https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/releasestream/5.0.0-0.ci"
+          }
+        ]
+      },
+      {
+        "id": "periodic-ci-openshift-hypershift-release-4.22-periodics-e2e-both",
+        "prow": "periodic-ci-openshift-hypershift-release-4.22-periodics-e2e-both",
+        "name": "e2e-both",
+        "release": "4.22",
+        "rate": 70.0,
+        "prev": 72.0,
+        "prev_runs": 20,
+        "trend": null,
+        "runs": 20,
+        "fails": 0,
+        "test_fails": 0,
+        "infra_fails": 0,
+        "spark_runs": 0,
+        "sparkline": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ]
+        ],
+        "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-4.22-periodics-e2e-both"
+      },
+      {
+        "id": "periodic-ci-openshift-hypershift-release-4.21-periodics-e2e-nulls",
+        "prow": "periodic-ci-openshift-hypershift-release-4.21-periodics-e2e-nulls",
+        "name": "e2e-nulls",
+        "release": "4.21",
+        "rate": null,
+        "prev": null,
+        "prev_runs": 0,
+        "trend": null,
+        "runs": 0,
+        "fails": 0,
+        "test_fails": 0,
+        "infra_fails": 0,
+        "spark_runs": 0,
+        "sparkline": null,
+        "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-4.21-periodics-e2e-nulls"
+      },
+      {
+        "id": "periodic-ci-openshift-hypershift-release-4.19-periodics-e2e-old",
+        "prow": "periodic-ci-openshift-hypershift-release-4.19-periodics-e2e-old",
+        "name": "e2e-old",
+        "release": "4.19",
+        "rate": 5.0,
+        "prev": 5.0,
+        "prev_runs": 20,
+        "trend": null,
+        "runs": 20,
+        "fails": 0,
+        "test_fails": 0,
+        "infra_fails": 0,
+        "spark_runs": 0,
+        "sparkline": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ]
+        ],
+        "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-4.19-periodics-e2e-old"
+      }
+    ],
+    "component_readiness_jobs": [
+      {
+        "id": "periodic-ci-openshift-hypershift-release-4.22-periodics-e2e-both",
+        "prow": "periodic-ci-openshift-hypershift-release-4.22-periodics-e2e-both",
+        "name": "e2e-both",
+        "release": "4.22",
+        "rate": 70.0,
+        "prev": 72.0,
+        "prev_runs": 20,
+        "trend": null,
+        "runs": 20,
+        "fails": 0,
+        "test_fails": 0,
+        "infra_fails": 0,
+        "spark_runs": 0,
+        "sparkline": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ]
+        ],
+        "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-4.22-periodics-e2e-both"
+      },
+      {
+        "id": "periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-cr-perma",
+        "prow": "periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-cr-perma",
+        "name": "e2e-cr-perma",
+        "release": "5.0",
+        "rate": 5.0,
+        "prev": 6.0,
+        "prev_runs": 20,
+        "trend": null,
+        "runs": 20,
+        "fails": 0,
+        "test_fails": 0,
+        "infra_fails": 0,
+        "spark_runs": 0,
+        "sparkline": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ],
+          [
+            1,
+            0,
+            1,
+            0
+          ]
+        ],
+        "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-cr-perma"
+      },
+      {
+        "id": "periodic-ci-openshift-hypershift-release-4.20-periodics-e2e-cr-ok",
+        "prow": "periodic-ci-openshift-hypershift-release-4.20-periodics-e2e-cr-ok",
+        "name": "e2e-cr-ok",
+        "release": "4.20",
+        "rate": 90.0,
+        "prev": 90.0,
+        "prev_runs": 20,
+        "trend": null,
+        "runs": 20,
+        "fails": 0,
+        "test_fails": 0,
+        "infra_fails": 0,
+        "spark_runs": 0,
+        "sparkline": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            0,
+            0
+          ]
+        ],
+        "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-4.20-periodics-e2e-cr-ok"
+      }
+    ],
+    "alerts": [
+      {
+        "test_name": "[sig-node] Teardown timed out",
+        "failure_count": 3,
+        "jobs": [
+          "e2e-perma-aws"
+        ]
+      }
+    ]
+  }
+}

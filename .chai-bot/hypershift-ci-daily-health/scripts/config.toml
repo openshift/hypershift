@@ -1,0 +1,102 @@
+# HyperShift CI daily health — single source of truth for every tunable.
+#
+# Tweak a threshold, window, criterion, URL, or limit HERE; a change is a one-file PR.
+# Read at startup by ../hypershift-ci-daily-health.py via the Python stdlib `tomllib`.
+# Knobs are split by owner: the deterministic script reads [sources], [scope],
+# [presubmit], [periodic], [trend], [job_health].slo_pass_rate_percent, and [limits].
+# The [incident] knobs, [job_health].fix_or_retire_horizon_days, and [jira] are
+# chaibot's — read from here by the prompt, not by the Jira-blind script.
+# The HTML report/chart templates live in ./assets/; longer-form docs in ./references/.
+
+schema_version = 1
+repository = "openshift/hypershift"
+
+[sources]
+# The CI Health dashboard is the primary source (it aggregates Sippy in real time) and
+# the source of truth for inventory, scope (its release list / N-x roles), pass rate,
+# week-over-week trend, the sparkline, and the payload-blocking / component-readiness /
+# alert sections. The release controller is used only for live payload phase.
+dashboard_base = "https://hypershift-ci-health.apps.rosa.hypershift-ci-2.1xls.p3.openshiftapps.com"
+release_controller_base = "https://amd64.ocp.releases.ci.openshift.org"
+multi_release_controller_base = "https://multi.ocp.releases.ci.openshift.org"
+amd64_release_status_base = "https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com"
+# Sippy: allow-listed so human-clickable Sippy links validate; the companion does NOT
+# fetch Sippy (the dashboard already aggregates it).
+sippy_runs_url = "https://sippy.dptools.openshift.org/api/jobs/runs"
+prow_host = "prow.ci.openshift.org"
+public_results_bucket = "test-platform-results-public"
+# Extra hostnames allowed for retrieval beyond those derived from the URLs above.
+extra_allowed_hosts = ["storage.googleapis.com"]
+
+[scope]
+# Supported releases = N (the dashboard's dev release) plus this many predecessors
+# (N-4 => 4). Applied to the dashboard's own ascending release list; not hardcoded.
+supported_predecessors = 4
+
+[presubmit]
+# Streak-based merge-queue classification (Design A, Axis A). r = consecutive reds since
+# the last SUCCESS; ERROR/ABORTED are neutral (skipped, tracked as infra tax).
+#   r <= post_green_red_tolerance                              -> not flagged
+#   r >= permafail_volume AND span >= permafail_duration_hours -> PERMAFAILING
+#   otherwise (above tolerance)                                -> CANDIDATE (LLM resolves)
+post_green_red_tolerance = 3     # S
+flake_horizon_hours = 24         # H — shades candidates: fresh (<H) vs persistent (>=H)
+permafail_duration_hours = 48    # D — streak wall-clock span for PERMAFAILING
+permafail_volume = 60            # V — streak red count for PERMAFAILING (busy branches)
+
+[periodic]
+# Periodic permafail (Design B, Axis A) — binary, from the ordered run list, decoupled
+# from payload/release-blocker status. Lower cadence than presubmits; no PR-head ambiguity,
+# so no candidate stage and no separate veto knob.
+#   failures since the last pass >= permafail_volume AND streak span >= permafail_duration_hours
+#     -> PERMAFAILING; anything below the volume is simply not permafailing.
+permafail_duration_hours = 48    # D
+permafail_volume = 4             # V_periodic — failures since the last pass
+flaky_threshold_percent = 80.0
+
+[trend]
+# Week-over-week trend from the dashboard (rate vs prev), Axis B. Confidence-aware:
+# call improving/degrading only when the two weekly Wilson intervals are disjoint
+# AND |trend| exceeds the change threshold; otherwise stable/insufficient.
+min_window_runs = 8              # N_min — below this per window => insufficient (no arrow)
+change_threshold_points = 10.0   # Δ — percentage points
+
+[job_health]
+# Axis B. Every job (blocking or not) must keep pass rate >= the SLO; below it is always
+# tracked (fix-or-retire). rate = passes / total runs (infra counted) — one number, also
+# the scoreboard "healthy" threshold. The script reads slo_pass_rate_percent.
+slo_pass_rate_percent = 80.0
+# chaibot's knob (read from here by the prompt; the Jira-blind script does not read it):
+# a job below SLO past this many days with no progress => fix-or-retire decision.
+fix_or_retire_horizon_days = 21
+
+[incident]
+# chaibot's knobs (read from here by the prompt; the Jira-blind script does not read them).
+# One umbrella jobs-incident. chaibot only PROPOSES it; humans declare/bridge/SA.
+# A branch (>=1 required presubmit permafailing) or release (>=1 permafailing payload-
+# blocking OR component-readiness periodic) blocked continuously > blocked_days => incident.
+# Duration = now - the unresolved per-branch/per-release story's creation time (Jira is the
+# state store). <= threshold => each blocking job must have an active major/critical bug +
+# assigned in-progress task, else chaibot surfaces it.
+blocked_days_threshold = 2
+
+[jira]
+# chaibot's knobs (read from here by the prompt; the script does not read them).
+label = "rits-work"
+component = "Hosted Control Plane"
+
+[limits]
+# Retrieval and output safety bounds.
+max_http_bytes = 8388608                 # 8 MiB
+max_history_pages = 6
+max_candidates = 100
+max_sample_runs = 6
+max_source_failures = 100
+max_workers = 8
+max_collection_requests = 500
+collection_deadline_seconds = 120.0
+max_source_jobs = 5000
+max_source_string = 2000
+max_candidate_document_bytes = 524288    # 512 KiB
+max_prow_duration_ns = 604800000000000   # 7 days
+max_metric_count = 1000000000

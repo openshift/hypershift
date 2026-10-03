@@ -1,0 +1,48 @@
+{
+  "responses": [
+    {
+      "pattern": "/_dashboard/health/windows/1w$",
+      "file": "health-1w.json"
+    },
+    {
+      "pattern": "job-history/.*/pull-ci-openshift-hypershift-main-e2e-streak(?:\\?.*)?$",
+      "file": "prow-main-streak.html"
+    },
+    {
+      "pattern": "job-history/.*/pull-ci-openshift-hypershift-release-5\\.0-e2e-veto(?:\\?.*)?$",
+      "file": "prow-release-veto.html"
+    },
+    {
+      "pattern": "/310/prowjob\\.json$",
+      "file": "prowjob-310.json"
+    },
+    {
+      "pattern": "/309/prowjob\\.json$",
+      "file": "prowjob-309.json"
+    },
+    {
+      "pattern": "/308/prowjob\\.json$",
+      "file": "prowjob-308.json"
+    },
+    {
+      "pattern": "/410/prowjob\\.json$",
+      "file": "prowjob-410.json"
+    },
+    {
+      "pattern": "/409/prowjob\\.json$",
+      "file": "prowjob-409.json"
+    },
+    {
+      "pattern": "/408/prowjob\\.json$",
+      "file": "prowjob-408.json"
+    },
+    {
+      "pattern": "/api/v1/releasestream/5\\.1\\.0-0\\.ci/tags$",
+      "file": "rc-tags-5.1.0-0.ci.json"
+    },
+    {
+      "pattern": "/api/v1/releasestream/5\\.0\\.0-0\\.ci/tags$",
+      "file": "rc-tags-5.0.0-0.ci.json"
+    }
+  ]
+}
