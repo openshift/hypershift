@@ -356,9 +356,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		r.reachedIgnitionEndpointCondition,
 		r.machineAndNodeConditions,
 		r.validPlatformConfigCondition,
-		// TODO(alberto): consider moving here:
-		// NodePoolUpdatingPlatformMachineTemplateConditionType,
-		// NodePoolAutorepairEnabledConditionType.
 	}
 	for _, f := range signalConditions {
 		result, err := f(ctx, nodePool, hcluster)
@@ -482,7 +479,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, nil
 	}
 
-	if err := capi.Reconcile(ctx); err != nil {
+	capiResult, err := capi.Reconcile(ctx)
+	if capiResult != nil {
+		for _, condition := range capiResult.Conditions {
+			SetStatusCondition(&nodePool.Status.Conditions, condition)
+		}
+	}
+	if err != nil {
 		var notReadyErr *NotReadyError
 		if coreerrors.As(err, &notReadyErr) {
 			log.Info("Waiting to create machine template", "message", err.Error())
@@ -490,7 +493,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 		return ctrl.Result{}, err
 	}
-
 	// Set scale-from-zero annotations if provider is configured and platform is supported
 	// This works for both Replace (MachineDeployment) and InPlace (MachineSet) upgrade types
 	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && r.ScaleFromZeroPlatform == nodePool.Spec.Platform.Type {
