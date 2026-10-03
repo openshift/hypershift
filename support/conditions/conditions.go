@@ -59,11 +59,23 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 		if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.Azure == nil {
 			// Azure KMS is not configured
 			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
-		} else if netutil.IsAroHCPByHC(hostedCluster) && hostedCluster.Spec.SecretEncryption.KMS.Azure.KeyVaultAccess == hyperv1.AzureKeyVaultPrivate {
-			// CPO cannot validate a private Key Vault from the management cluster.
-			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
 		} else {
+			// Private Key Vaults are validated too: the CPO reaches them
+			// through the private router rather than the public endpoint.
 			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionTrue
+			if netutil.IsAroHCPByHC(hostedCluster) && hostedCluster.Spec.SecretEncryption.KMS.Azure.KeyVaultAccess == hyperv1.AzureKeyVaultPrivate {
+				// Older CPO images explicitly skip this probe. Recognize only
+				// their legacy condition, since overrides and backports can
+				// change support without changing the control plane version.
+				// Unknown conditions from the new validator must still fail
+				// the health expectation until a probe succeeds.
+				condition := meta.FindStatusCondition(hostedCluster.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
+				if condition != nil && condition.Status == metav1.ConditionUnknown &&
+					condition.Reason == hyperv1.StatusUnknownReason &&
+					condition.Message == "Private Key Vault endpoint is not reachable from the management cluster" {
+					conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
+				}
+			}
 		}
 	case hyperv1.GCPPlatform:
 		// Only a known unsupported version relaxes runtime validation. An
