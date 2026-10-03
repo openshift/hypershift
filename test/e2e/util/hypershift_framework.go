@@ -184,7 +184,11 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 // runs before each test.
 func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {
 	h.Run("ValidateHostedCluster", func(t *testing.T) {
-		if platform != hyperv1.NonePlatform && hostedCluster.Spec.Networking.NetworkType != hyperv1.Other {
+		// Only OVNKubernetes and OpenShiftSDN are built-in; any other value (e.g. Other, Calico, Cilium)
+		// is a third-party CNI that HyperShift does not install, so nodes will not become Ready and the
+		// full cluster validation must be skipped.
+		isBuiltInNetworkType := hostedCluster.Spec.Networking.NetworkType == hyperv1.OVNKubernetes || hostedCluster.Spec.Networking.NetworkType == hyperv1.OpenShiftSDN
+		if platform != hyperv1.NonePlatform && isBuiltInNetworkType {
 			// Use !IsPublicHC to detect strictly private clusters (no public API endpoint).
 			// IsPrivateHC includes PublicAndPrivate, which has a reachable API server
 			// and should use ValidatePublicCluster.
