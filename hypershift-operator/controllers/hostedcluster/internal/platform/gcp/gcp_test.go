@@ -11,6 +11,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -191,29 +192,118 @@ func TestCAPIProviderDeploymentSpecNilGCPPlatform(t *testing.T) {
 }
 
 func TestReconcileCredentials(t *testing.T) {
-	g := NewWithT(t)
+	tests := []struct {
+		name                 string
+		mutate               func(*hyperv1.HostedCluster)
+		failOnSecret         string
+		expectReconcileError bool
+	}{
+		{
+			name: "When role service account emails are distinct, it should reconcile every credential Secret",
+		},
+		{
+			name: "When NodePool and ControlPlane share a service account email, it should reconcile every credential Secret",
+			mutate: func(hcluster *hyperv1.HostedCluster) {
+				hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane =
+					hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool
+			},
+		},
+		{
+			name: "When ImageRegistry and Network share a service account email, it should reconcile every credential Secret",
+			mutate: func(hcluster *hyperv1.HostedCluster) {
+				hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network =
+					hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry
+			},
+		},
+		{
+			name: "When three roles share a service account email, it should reconcile every credential Secret",
+			mutate: func(hcluster *hyperv1.HostedCluster) {
+				emails := &hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails
+				emails.Storage = emails.NodePool
+				emails.Network = emails.NodePool
+			},
+		},
+		{
+			name:                 "When one credential Secret upsert fails, it should continue reconciling the remaining Secrets",
+			failOnSecret:         "image-registry-creds",
+			expectReconcileError: true,
+		},
+	}
 
-	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+	expectedSecretNames := []string{
+		"node-management-creds",
+		"control-plane-operator-creds",
+		"cloud-controller-manager-creds",
+		"gcp-pd-cloud-credentials",
+		"image-registry-creds",
+		"cloud-network-config-controller-creds",
+	}
 
-	// Create a scheme with both HyperShift and CAPG types
-	scheme := runtime.NewScheme()
-	g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
-	g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
-	g.Expect(capigcp.AddToScheme(scheme)).To(Succeed())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 
-	hcluster := validHostedCluster()
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&hyperv1.HostedCluster{}).WithObjects(hcluster).Build()
+			platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
-	// Test minimal implementation returns no error
-	err := platform.ReconcileCredentials(
-		context.Background(),
-		fakeClient,
-		testSimpleCreateOrUpdate,
-		hcluster,
-		"test-control-plane-namespace",
-	)
+			// Create a scheme with both HyperShift and CAPG types.
+			scheme := runtime.NewScheme()
+			g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed(), "test case %q: add client-go scheme", tt.name)
+			g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed(), "test case %q: add HyperShift scheme", tt.name)
+			g.Expect(capigcp.AddToScheme(scheme)).To(Succeed(), "test case %q: add CAPG scheme", tt.name)
 
-	g.Expect(err).To(BeNil()) // Minimal implementation returns nil
+			hcluster := validHostedCluster()
+			if tt.mutate != nil {
+				tt.mutate(hcluster)
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&hyperv1.HostedCluster{}).WithObjects(hcluster).Build()
+			expectedEmailBySecret := map[string]string{
+				"node-management-creds":                 string(hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool),
+				"control-plane-operator-creds":          string(hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane),
+				"cloud-controller-manager-creds":        string(hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController),
+				"gcp-pd-cloud-credentials":              string(hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage),
+				"image-registry-creds":                  string(hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry),
+				"cloud-network-config-controller-creds": string(hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network),
+			}
+
+			var syncedSecretNames []string
+			credentialDataBySecret := map[string]string{}
+			createOrUpdate := func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				syncedSecretNames = append(syncedSecretNames, obj.GetName())
+				if obj.GetName() == tt.failOnSecret {
+					return controllerutil.OperationResultNone, fmt.Errorf("injected upsert failure for %s", obj.GetName())
+				}
+				result, err := testCreateOrUpdate(ctx, c, obj, f)
+				if err == nil {
+					secret := obj.(*corev1.Secret)
+					credentialDataBySecret[secret.Name] = string(secret.Data["application_default_credentials.json"])
+				}
+				return result, err
+			}
+
+			err := platform.ReconcileCredentials(
+				context.Background(),
+				fakeClient,
+				createOrUpdate,
+				hcluster,
+				"test-control-plane-namespace",
+			)
+
+			if tt.expectReconcileError {
+				g.Expect(err).To(MatchError(ContainSubstring("failed to reconcile GCP credentials")), "test case %q: reconcile error", tt.name)
+			} else {
+				g.Expect(err).To(BeNil(), "test case %q: reconcile should succeed", tt.name)
+			}
+			g.Expect(syncedSecretNames).To(ConsistOf(expectedSecretNames), "test case %q: reconciled Secret names", tt.name)
+			for secretName, expectedEmail := range expectedEmailBySecret {
+				if secretName == tt.failOnSecret {
+					g.Expect(credentialDataBySecret).ToNot(HaveKey(secretName), "test case %q: failed Secret %q should not have credential data", tt.name, secretName)
+					continue
+				}
+				g.Expect(credentialDataBySecret).To(HaveKey(secretName), "test case %q: credential data for Secret %q", tt.name, secretName)
+				g.Expect(credentialDataBySecret[secretName]).To(ContainSubstring(expectedEmail), "test case %q: Secret %q should contain expected email %q", tt.name, secretName, expectedEmail)
+			}
+		})
+	}
 }
 
 func TestReconcileCredentialsNilGCPPlatform(t *testing.T) {
