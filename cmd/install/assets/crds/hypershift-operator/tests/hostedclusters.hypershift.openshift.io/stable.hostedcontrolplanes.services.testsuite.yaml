@@ -1,0 +1,172 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedControlPlane services validation"
+crdName: hostedcontrolplanes.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  - name: When services have unique types and Route configuration it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When APIServer is missing from services it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Services list must contain an APIServer service"
+
+  - name: When duplicate service types are set it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: APIServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: 127.0.0.1
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Each service type must be unique within the Services list."
+
+  - name: When a type Route is set without route configuration it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        pullSecret:
+          name: secret
+        issuerURL: https://kubernetes.default.svc
+        sshKey:
+          name: ssh-key
+        infraID: test-infra
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "route is required when type is Route, and forbidden otherwise"
