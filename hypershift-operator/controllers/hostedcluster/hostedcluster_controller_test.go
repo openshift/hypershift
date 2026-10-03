@@ -90,6 +90,53 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+func TestValidateLabels(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels map[string]hyperv1.LabelValue
+		valid  bool
+	}{
+		{
+			name:   "When key and value are valid it should pass",
+			labels: map[string]hyperv1.LabelValue{"team": "platform"},
+			valid:  true,
+		},
+		{
+			name:   "When value is empty it should pass",
+			labels: map[string]hyperv1.LabelValue{"team": ""},
+			valid:  true,
+		},
+		{
+			name:   "When key is invalid it should return an error",
+			labels: map[string]hyperv1.LabelValue{"not/a valid key": "platform"},
+		},
+		{
+			name:   "When value is invalid it should return an error",
+			labels: map[string]hyperv1.LabelValue{"team": "invalid/value"},
+		},
+		{
+			name:   "When key is management KAS access it should return an error",
+			labels: map[string]hyperv1.LabelValue{config.NeedManagementKASAccessLabel: "true"},
+		},
+		{
+			name:   "When key is an operator network-policy selector it should return an error",
+			labels: map[string]hyperv1.LabelValue{"app": "kube-apiserver"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errs := validateLabels(&hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Labels: tt.labels}})
+			if tt.valid && len(errs) != 0 {
+				t.Fatalf("expected labels to be valid, got %v", errs)
+			}
+			if !tt.valid && len(errs) == 0 {
+				t.Fatal("expected labels to be rejected")
+			}
+		})
+	}
+}
+
 var (
 	Now   = metav1.NewTime(time.Now())
 	Later = metav1.NewTime(Now.Add(5 * time.Minute))
