@@ -215,6 +215,17 @@ func init() {
 		false,
 		"",
 	)
+	// Encryption key rotation test environment variables
+	RegisterEnvVar(
+		"E2E_AWS_KMS_KEY_ARN_ALTERNATE",
+		"Alternate AWS KMS CMK ARN for key rotation re-encryption tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_AZURE_KMS_KEY_VERSION_ALTERNATE",
+		"Alternate Azure Key Vault key version for key rotation re-encryption tests.",
+		false,
+	)
 	// External OIDC test environment variables
 	RegisterEnvVar(
 		"E2E_EXTERNAL_OIDC_CA_BUNDLE_FILE",
