@@ -10,6 +10,7 @@ import (
 
 	imageapi "github.com/openshift/api/image/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -1013,6 +1014,274 @@ func TestGcpMachineTemplateSpecWithRHELStream(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(spec).ToNot(BeNil())
 			g.Expect(*spec.Image).To(Equal(tc.expectedImage))
+		})
+	}
+}
+
+func TestNodePoolReconciler_setGCPConditions(t *testing.T) {
+	testCases := []struct {
+		name         string
+		nodePool     *hyperv1.NodePool
+		hcluster     *hyperv1.HostedCluster
+		releaseImage *releaseinfo.ReleaseImage
+		check        func(t *testing.T, nodePool *hyperv1.NodePool, err error)
+	}{
+		{
+			name: "When the NodePool is not a GCP NodePool, it should not set any GCP condition",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			check: func(t *testing.T, nodePool *hyperv1.NodePool, err error) {
+				t.Helper()
+				g := NewWithT(t)
+				g.Expect(err).ToNot(HaveOccurred())
+				cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+				g.Expect(cond).To(BeNil())
+			},
+		},
+		{
+			name: "When the NodePool has no GCP platform config, it should not set any GCP condition",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+					},
+				},
+			},
+			check: func(t *testing.T, nodePool *hyperv1.NodePool, err error) {
+				t.Helper()
+				g := NewWithT(t)
+				g.Expect(err).ToNot(HaveOccurred())
+				cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+				g.Expect(cond).To(BeNil())
+			},
+		},
+		{
+			name: "When the HostedCluster has no GCP platform config, it should return an error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP:  &hyperv1.GCPNodePoolPlatform{},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{},
+				},
+			},
+			check: func(t *testing.T, nodePool *hyperv1.NodePool, err error) {
+				t.Helper()
+				g := NewWithT(t)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal("the HostedCluster for this NodePool has no .Spec.Platform.GCP, this is unsupported"))
+
+				cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+				g.Expect(cond).To(BeNil())
+			},
+		},
+		{
+			name: "When the release image cannot be resolved, it should set ValidPlatformImage to False",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP:  &hyperv1.GCPNodePoolPlatform{},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{},
+					},
+				},
+			},
+			check: func(t *testing.T, nodePool *hyperv1.NodePool, err error) {
+				t.Helper()
+				g := NewWithT(t)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal("couldn't discover a GCP machine image for release image: couldn't discover a GCP image for release image: release image is nil, cannot determine GCP image"))
+
+				cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(corev1.ConditionFalse))
+			},
+		},
+		{
+			name: "When a custom GCP image is specified, it should set ValidPlatformImage to True",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPNodePoolPlatform{
+							Image: "i-am-a-gcp-image!",
+						},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{},
+					},
+				},
+			},
+			check: func(t *testing.T, nodePool *hyperv1.NodePool, err error) {
+				t.Helper()
+				g := NewWithT(t)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+				g.Expect(cond).ToNot(BeNil())
+				g.Expect(cond.Status).To(Equal(corev1.ConditionTrue))
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			npr := &NodePoolReconciler{}
+			err := npr.setGCPConditions(t.Context(), testCase.nodePool, testCase.hcluster, "test", testCase.releaseImage, "")
+			testCase.check(t, testCase.nodePool, err)
+		})
+	}
+}
+
+func TestValidateGCPPlatformConfig(t *testing.T) {
+	testCases := []struct {
+		name        string
+		nodePool    *hyperv1.NodePool
+		hcluster    *hyperv1.HostedCluster
+		expectError bool
+		errContains string
+	}{
+		{
+			name: "When zone is in the correct region, it should return no error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPNodePoolPlatform{
+							Zone: "us-central1-a",
+						},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{
+							Region: "us-central1",
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When zone is in a different region, it should return an error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPNodePoolPlatform{
+							Zone: "europe-west1-b",
+						},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{
+							Region: "us-central1",
+						},
+					},
+				},
+			},
+			expectError: true,
+			errContains: "not in HostedCluster region",
+		},
+		{
+			name: "When zone is empty, it should return no error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP:  &hyperv1.GCPNodePoolPlatform{},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{
+							Region: "us-central1",
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When NodePool has no GCP config, it should return an error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						GCP: &hyperv1.GCPPlatformSpec{
+							Region: "us-central1",
+						},
+					},
+				},
+			},
+			expectError: true,
+			errContains: "GCP platform configuration is required",
+		},
+		{
+			name: "When HostedCluster has no GCP config, it should return an error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPNodePoolPlatform{
+							Zone: "us-central1-a",
+						},
+					},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{},
+				},
+			},
+			expectError: true,
+			errContains: "HostedCluster has no GCP platform configuration",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			err := validateGCPPlatformConfig(tc.nodePool, tc.hcluster)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred(), "expected an error but got none")
+				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
 		})
 	}
 }

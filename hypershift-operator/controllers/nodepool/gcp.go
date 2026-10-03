@@ -3,11 +3,13 @@ package nodepool
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -15,6 +17,66 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// validateGCPPlatformConfig validates cross-field consistency between the
+// NodePool and HostedCluster GCP platform configurations.
+// Constraints expressible purely within a single object are enforced by CEL
+// markers on the API types; this function covers cross-object constraints.
+func validateGCPPlatformConfig(nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) error {
+	if nodePool.Spec.Platform.GCP == nil {
+		return fmt.Errorf("GCP platform configuration is required")
+	}
+	if hc.Spec.Platform.GCP == nil {
+		return fmt.Errorf("the HostedCluster has no GCP platform configuration")
+	}
+
+	gcpNP := nodePool.Spec.Platform.GCP
+	gcpHC := hc.Spec.Platform.GCP
+
+	// Zone must be within the HostedCluster's region.
+	// GCP zone names follow the pattern: <region>-<letter>, e.g. us-central1-a.
+	if gcpNP.Zone != "" && gcpHC.Region != "" {
+		if !strings.HasPrefix(gcpNP.Zone, gcpHC.Region+"-") {
+			return fmt.Errorf("NodePool zone %q is not in HostedCluster region %q", gcpNP.Zone, gcpHC.Region)
+		}
+	}
+
+	return nil
+}
+
+func (r *NodePoolReconciler) setGCPConditions(
+	_ context.Context, nodePool *hyperv1.NodePool,
+	hcluster *hyperv1.HostedCluster, _ string,
+	releaseImage *releaseinfo.ReleaseImage, resolvedRHELStream string,
+) error {
+	if nodePool.Spec.Platform.Type != hyperv1.GCPPlatform ||
+		nodePool.Spec.Platform.GCP == nil {
+		return nil
+	}
+	if hcluster.Spec.Platform.GCP == nil {
+		return fmt.Errorf("the HostedCluster for this NodePool has no .Spec.Platform.GCP, this is unsupported")
+	}
+
+	if img, err := resolveGCPImage(nodePool, releaseImage, resolvedRHELStream); err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidPlatformImageType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Couldn't discover a GCP machine image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return fmt.Errorf("couldn't discover a GCP machine image for release image: %w", err)
+	} else {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidPlatformImageType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            fmt.Sprintf("Bootstrap GCP machine image is %q", img),
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
+	return nil
+}
 
 // gcpMachineTemplate creates a GCPMachineTemplate for the given NodePool.
 // This follows the AWS and Azure patterns for CAPI machine template generation.
@@ -40,6 +102,13 @@ func (c *CAPI) gcpMachineTemplate(_ context.Context, templateNameGenerator func(
 		c.resolvedRHELStreamForBootImage,
 	)
 	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidMachineTemplateConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.InvalidGCPMachineTemplate,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
 		return nil, fmt.Errorf("failed to generate GCP machine template spec: %w", err)
 	}
 
@@ -72,6 +141,7 @@ func (c *CAPI) gcpMachineTemplate(_ context.Context, templateNameGenerator func(
 		},
 	}
 
+	removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineTemplateConditionType)
 	return template, nil
 }
 
