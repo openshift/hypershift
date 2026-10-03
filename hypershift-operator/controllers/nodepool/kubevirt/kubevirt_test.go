@@ -840,6 +840,182 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "When arch is s390x but gate annotation is absent, it should not set Architecture or inject NodeSelector",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					// No NodePoolSupportsKubevirtArchitectureAnnotation — gate is closed.
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureS390X,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("6Gi"),
+							coresNPOption(2),
+							imageNPOption("testimage"),
+							volumeNPOption("16Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						// Architecture and NodeSelector must be absent — gate annotation not set.
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("6Gi"),
+							cpuTmpltOpt(2),
+							storageTmpltOpt("16Gi"),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "When arch is s390x and gate annotation is set, it should set Architecture=s390x and inject kubernetes.io/arch=s390x NodeSelector",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.NodePoolSupportsKubevirtArchitectureAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureS390X,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("6Gi"),
+							coresNPOption(2),
+							imageNPOption("testimage"),
+							volumeNPOption("16Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("6Gi"),
+							cpuTmpltOpt(2),
+							storageTmpltOpt("16Gi"),
+							archTmpltOpt(hyperv1.ArchitectureS390X),
+							nodeSelectorTmpltOpt(map[string]string{
+								corev1.LabelArchStable: hyperv1.ArchitectureS390X,
+							}),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "When arch is s390x and gate annotation is set but user already pinned kubernetes.io/arch, it should not overwrite the user value",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.NodePoolSupportsKubevirtArchitectureAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureS390X,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("6Gi"),
+							coresNPOption(2),
+							imageNPOption("testimage"),
+							volumeNPOption("16Gi"),
+							nodeSelectorNPOption(map[string]string{
+								corev1.LabelArchStable: hyperv1.ArchitectureS390X,
+							}),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("6Gi"),
+							cpuTmpltOpt(2),
+							storageTmpltOpt("16Gi"),
+							archTmpltOpt(hyperv1.ArchitectureS390X),
+							nodeSelectorTmpltOpt(map[string]string{
+								corev1.LabelArchStable: hyperv1.ArchitectureS390X,
+							}),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "When arch is s390x and NodeSelector has conflicting kubernetes.io/arch=amd64, it should fail validation",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Arch:        hyperv1.ArchitectureS390X,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("6Gi"),
+							coresNPOption(2),
+							imageNPOption("testimage"),
+							volumeNPOption("16Gi"),
+							nodeSelectorNPOption(map[string]string{
+								corev1.LabelArchStable: hyperv1.ArchitectureAMD64,
+							}),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-hostedcluster", Namespace: "clusters"},
+				Spec:       hyperv1.HostedClusterSpec{InfraID: "1234"},
+			},
+			expectedValidationError: `nodePool.spec.platform.kubevirt.nodeSelector["kubernetes.io/arch"] is "amd64" but nodePool.spec.arch is "s390x": the values must match to avoid scheduling a VM on a mismatched architecture node`,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -867,6 +1043,32 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
 		})
 	}
+}
+
+func TestIsArchConflictError(t *testing.T) {
+	q := apiresource.MustParse("16Gi")
+	archErr := PlatformValidation(&hyperv1.NodePool{
+		Spec: hyperv1.NodePoolSpec{
+			Arch: hyperv1.ArchitectureS390X,
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.KubevirtPlatform,
+				Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+					RootVolume: &hyperv1.KubevirtRootVolume{
+						KubevirtVolume: hyperv1.KubevirtVolume{
+							Type:       hyperv1.KubevirtVolumeTypePersistent,
+							Persistent: &hyperv1.KubevirtPersistentVolume{Size: &q},
+						},
+					},
+					NodeSelector: map[string]string{
+						corev1.LabelArchStable: hyperv1.ArchitectureAMD64,
+					},
+				},
+			},
+		},
+	})
+	g := NewWithT(t)
+	g.Expect(IsArchConflictError(archErr)).To(BeTrue(), "expected archConflictError")
+	g.Expect(IsArchConflictError(fmt.Errorf("plain error"))).To(BeFalse(), "plain error should not match")
 }
 
 func TestCacheImage(t *testing.T) {
@@ -1691,6 +1893,27 @@ func annotationsTmpltOpt(annotations map[string]string) nodeTemplateOption {
 	}
 }
 
+// archTmpltOpt sets the VMI Architecture field — verifies Change 1.
+func archTmpltOpt(arch string) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.Architecture = arch
+	}
+}
+
+// nodeSelectorTmpltOpt sets the NodeSelector on the VMI template — verifies Change 2.
+func nodeSelectorTmpltOpt(nodeSelector map[string]string) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.NodeSelector = nodeSelector
+	}
+}
+
+// nodeSelectorNPOption sets a user-supplied NodeSelector on the KubevirtNodePoolPlatform.
+func nodeSelectorNPOption(nodeSelector map[string]string) nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		kvNodePool.NodeSelector = nodeSelector
+	}
+}
+
 func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMachineTemplateSpec {
 	runAlways := kubevirtv1.RunStrategyAlways
 
@@ -1830,6 +2053,13 @@ func TestDefaultImage(t *testing.T) {
 						},
 					},
 				},
+				hyperv1.ArchAliases[hyperv1.ArchitectureARM64]: {
+					Images: stream.Images{
+						KubeVirt: &stream.ContainerImage{
+							DigestRef: "quay.io/openshift/release@sha256:aarch641234",
+						},
+					},
+				},
 			},
 		},
 	}
@@ -1870,10 +2100,20 @@ func TestDefaultImage(t *testing.T) {
 			expectedDigest: "sha256:x86_641234",
 		},
 		{
-			name:           "When unknown architecture is used, it should fall back to x86_64 image",
-			arch:           "",
-			expectedImage:  "quay.io/openshift/release@sha256:x86_641234",
-			expectedDigest: "sha256:x86_641234",
+			name:           "When arm64 architecture is used, it should return the aarch64 image",
+			arch:           hyperv1.ArchitectureARM64,
+			expectedImage:  "quay.io/openshift/release@sha256:aarch641234",
+			expectedDigest: "sha256:aarch641234",
+		},
+		{
+			name:          "When ppc64le architecture is used, it should return an error",
+			arch:          hyperv1.ArchitecturePPC64LE,
+			expectedError: true,
+		},
+		{
+			name:          "When empty architecture is used, it should return an error",
+			arch:          "",
+			expectedError: true,
 		},
 		{
 			name:       "When named stream is used with multi-stream ReleaseImage it should resolve from the named stream",

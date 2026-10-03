@@ -93,7 +93,16 @@ type ValidatedKubevirtPlatformCreateOptions struct {
 
 // Validate validates the KubeVirt nodepool platform options.
 // This method uses the unified signature pattern defined in core.NodePoolPlatformValidator.
-func (o *RawKubevirtPlatformCreateOptions) Validate(_ context.Context, _ *core.CreateNodePoolOptions) (core.NodePoolPlatformCompleter, error) {
+func (o *RawKubevirtPlatformCreateOptions) Validate(_ context.Context, coreOpts *core.CreateNodePoolOptions) (core.NodePoolPlatformCompleter, error) {
+	// Catch the arch/NodeSelector conflict at CLI time so the user gets immediate
+	// feedback before the object is submitted to the API server.
+	if coreOpts != nil && coreOpts.Arch != "" {
+		if userArch, ok := o.VmNodeSelector[corev1.LabelArchStable]; ok && userArch != coreOpts.Arch {
+			return nil, fmt.Errorf("--vm-node-selector %s=%s conflicts with --arch %s: the values must match to avoid scheduling a VM on a mismatched architecture node",
+				corev1.LabelArchStable, userArch, coreOpts.Arch)
+		}
+	}
+
 	if o.CacheStrategyType != "" &&
 		o.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyNone) &&
 		o.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyPVC) {
