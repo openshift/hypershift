@@ -291,9 +291,14 @@ func parsePemKeypair(key, certificate []byte) (*rsa.PrivateKey, *x509.Certificat
 }
 
 func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemainingValidity time.Duration) error {
+	_, err := validateKeyPair(pemKey, pemCertificate, cfg, minimumRemainingValidity)
+	return err
+}
+
+func validateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemainingValidity time.Duration) (*x509.Certificate, error) {
 	_, cert, err := parsePemKeypair(pemKey, pemCertificate)
 	if err != nil {
-		return fmt.Errorf("failed to parse keypair: %w", err)
+		return nil, fmt.Errorf("failed to parse keypair: %w", err)
 	}
 
 	var errs []error
@@ -343,7 +348,7 @@ func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemaini
 		errs = append(errs, fmt.Errorf("actual isCA %t does not match expected %t", cert.IsCA, cfg.IsCA))
 	}
 
-	return utilerrors.NewAggregate(errs)
+	return cert, utilerrors.NewAggregate(errs)
 }
 
 // normalizedIPAddresses expands IPs to 16-byte form for comparison so 4-byte
@@ -361,8 +366,12 @@ func normalizedIPAddresses(ips []net.IP) []net.IP {
 	return normalizedIPs
 }
 
-// ReconcileSignedCert reconciles a certificate secret using the provided config. It will
-// rotate the cert if there are less than 30 days of validity left.
+// ReconcileSignedCert reconciles a certificate secret using the provided config. It
+// re-signs the leaf whenever ValidateKeyPair reports the existing certificate no longer
+// matches the desired config - a SAN (DNS or IP), subject, key-usage/EKU, or IsCA change,
+// or insufficient remaining validity (30 days by default, tunable via
+// CertificateRenewalEnvVar) - or when the existing leaf was not signed by the current CA
+// (e.g. the CA secret was regenerated since the leaf was last issued).
 func ReconcileSignedCert(
 	secret *corev1.Secret,
 	ca *corev1.Secret,
@@ -429,9 +438,10 @@ func ReconcileSignedCert(
 		minimumRemainingValidity = time.Duration(float64(certValidity) * renewalPercentage)
 	}
 
-	if err := ValidateKeyPair(secret.Data[keyKey], secret.Data[crtKey], cfg, minimumRemainingValidity); err == nil {
+	if validateSignedCert(secret.Data[keyKey], secret.Data[crtKey], cfg, minimumRemainingValidity, ca, opts) == nil {
 		return nil
 	}
+
 	certBytes, keyBytes, _, err := signCertificate(cfg, ca, opts)
 	if err != nil {
 		return fmt.Errorf("error signing cert(cn=%s,o=%v): %w", cn, org, err)
@@ -529,6 +539,24 @@ func annotateWithCA(secret, ca *corev1.Secret, opts *CAOpts) {
 		secret.Annotations = map[string]string{}
 	}
 	secret.Annotations[CAHashAnnotation] = computeCAHash(ca, opts)
+}
+
+func validateSignedCert(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemainingValidity time.Duration, ca *corev1.Secret, opts *CAOpts) error {
+	leaf, err := validateKeyPair(pemKey, pemCertificate, cfg, minimumRemainingValidity)
+	if err != nil {
+		return err
+	}
+	caCert, err := PemToCertificate(ca.Data[opts.CASignerCertMapKey])
+	if err != nil {
+		return fmt.Errorf("failed to parse CA certificate: %w", err)
+	}
+	if !bytes.Equal(leaf.RawIssuer, caCert.RawSubject) {
+		return errors.New("leaf certificate issuer does not match current CA subject")
+	}
+	if err := leaf.CheckSignatureFrom(caCert); err != nil {
+		return fmt.Errorf("leaf certificate was not signed by current CA: %w", err)
+	}
+	return nil
 }
 
 func decodeCA(ca *corev1.Secret, opts *CAOpts) (*x509.Certificate, *rsa.PrivateKey, error) {
