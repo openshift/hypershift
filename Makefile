@@ -112,11 +112,11 @@ UPSTREAM_REMOTE ?= $(shell git remote -v 2>/dev/null | grep 'openshift/hypershif
 PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(shell git rev-parse $(UPSTREAM_REMOTE)/main),$(shell git rev-parse main))
 
 .PHONY: api-lint
-api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
+api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN) $(HYPERSHIFTLINTER_PLUGIN)
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --new-from-rev=${PULL_BASE_SHA}
 
 .PHONY: api-lint-fix
-api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
+api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN) $(HYPERSHIFTLINTER_PLUGIN)
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
 
 .PHONY: precommit-api-lint-fix
@@ -149,7 +149,7 @@ hypershift-lint-all: $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
 
 .PHONY: test-linter
 test-linter:
-	cd $(TOOLS_DIR) && $(GO) test ./hypershiftlinter/analyzers/... -count=1
+	cd $(TOOLS_DIR) && $(GO) test ./hypershiftlinter/... -count=1
 
 .PHONY: verify-git-clean
 verify-git-clean:

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/hcpstatuspatch"
+	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/testfuncstructure"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -20,6 +21,19 @@ func TestBuildAnalyzers(t *testing.T) {
 		}
 		if len(got) != 1 || got[0] != hcpstatuspatch.Analyzer {
 			t.Fatalf("expected only the HC and HCP status analyzer, got %v", analyzerNames(got))
+		}
+	})
+
+	t.Run("When testfuncstructure is enabled, it should select the unit test structure analyzer", func(t *testing.T) {
+		raw := map[string]any{
+			"analyzers": map[string]any{"enable": []any{"testfuncstructure"}},
+		}
+		got, err := BuildAnalyzers(raw)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 1 || got[0] != testfuncstructure.Analyzer {
+			t.Fatalf("expected only the unit test structure analyzer, got %v", analyzerNames(got))
 		}
 	})
 }

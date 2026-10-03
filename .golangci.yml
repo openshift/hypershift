@@ -32,6 +32,7 @@ linters:
               - hcpstatuspatch
               - testcasename
               - testfuncname
+              - testfuncstructure
               - sippyannotation
               - guestcluster
               - contextbackground
