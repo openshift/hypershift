@@ -10,7 +10,11 @@ import (
 	"strings"
 	"time"
 
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -57,19 +61,52 @@ func (a *AWSPlatformConfig) DefaultBaseDomain() string {
 	return "ci.hypershift.devcluster.openshift.com"
 }
 
+// ClusterSpecs returns the AWS cluster variants to create for the e2e-v2 run,
+// one per test group. releaseImage is the current release under test; n1Image is
+// the N-1 release used as the upgrade starting point.
+//
+// Variants:
+//   - public:           default target for non-lifecycle tests.
+//   - upgrade:          starts on n1Image, upgraded to releaseImage.
+//   - karpenter:        AutoNode/Karpenter node provisioning.
+//   - karpenter-upgrade: karpenter, starting on n1Image.
+//
+// Environment inputs:
+//   - EXTRA_ARGS:                       whitespace-split, appended to every variant.
+//   - HYPERSHIFT_STORAGE_KMS_KEY_ALIAS: resolved to an ARN and passed as
+//     --initial-storage-volumes-kms-key on the public variant (for the storage-kms test).
 func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
 	// Parse EXTRA_ARGS from environment if provided
 	var extraArgs []string
 	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
 		extraArgs = strings.Fields(envArgs)
 	}
+
+	// The storage-kms test runs on the public cluster and requires the cluster
+	// to be created with a KMS key. HYPERSHIFT_STORAGE_KMS_KEY_ALIAS carries a
+	// pre-provisioned CI KMS key alias (e.g. alias/hypershift-ci), resolved here
+	// to its ARN and passed to the create command. When unset, the flag is
+	// omitted and the storage-kms test fails (hard-gated) rather than skipping.
+	var publicExtraArgs []string
+	publicExtraArgs = append(publicExtraArgs, extraArgs...)
+	publicExtraArgs = append(publicExtraArgs,
+		"--public-only",
+		"--feature-set=TechPreviewNoUpgrade",
+	)
+	if alias := os.Getenv("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS"); alias != "" {
+		arn, err := a.resolveKMSKeyARN(alias)
+		if err != nil {
+			log.Printf("WARNING: failed to resolve storage KMS key alias %q to ARN: %v; the public cluster will be created without a KMS key and the storage-kms test will fail", alias, err)
+		} else {
+			log.Printf("Resolved storage KMS key alias %q to ARN %q", alias, arn)
+			publicExtraArgs = append(publicExtraArgs, "--initial-storage-volumes-kms-key="+arn)
+		}
+	}
+
 	return []ClusterSpec{
 		{
-			Variant: "public",
-			ExtraArgs: append(extraArgs, []string{
-				"--public-only",
-				"--feature-set=TechPreviewNoUpgrade",
-			}...),
+			Variant:   "public",
+			ExtraArgs: publicExtraArgs,
 		},
 		{
 			Variant:      "upgrade",
@@ -208,6 +245,29 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 }
 
 func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {}
+
+// resolveKMSKeyARN resolves a KMS key alias (e.g. "alias/hypershift-ci") to its
+// full key ARN using DescribeKey. AWS credentials are sourced from the default
+// chain (AWS_SHARED_CREDENTIALS_FILE is exported by the create-guests CI step).
+func (a *AWSPlatformConfig) resolveKMSKeyARN(alias string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	awsConfig := awsutil.NewSession(ctx, "e2e-storage-kms", os.Getenv("AWS_SHARED_CREDENTIALS_FILE"), "", "", a.region)
+	retryer := awsutil.NewConfig()
+	kmsClient := kms.NewFromConfig(*awsConfig, func(o *kms.Options) {
+		o.Retryer = retryer()
+	})
+
+	out, err := kmsClient.DescribeKey(ctx, &kms.DescribeKeyInput{KeyId: aws.String(alias)})
+	if err != nil {
+		return "", fmt.Errorf("describing KMS key %q: %w", alias, err)
+	}
+	if out.KeyMetadata == nil || out.KeyMetadata.Arn == nil {
+		return "", fmt.Errorf("KMS key with alias %q has no ARN", alias)
+	}
+	return *out.KeyMetadata.Arn, nil
+}
 
 func (a *AWSPlatformConfig) DestroyArgs() []string {
 	baseDomain := envOrDefault("HYPERSHIFT_BASE_DOMAIN", a.DefaultBaseDomain())

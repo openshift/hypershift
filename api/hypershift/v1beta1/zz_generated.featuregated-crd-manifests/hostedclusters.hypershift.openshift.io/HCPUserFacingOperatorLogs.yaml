@@ -3560,6 +3560,65 @@ spec:
                     - message: ovnKubernetesConfig is immutable once set and cannot
                         be removed
                       rule: '!has(oldSelf.ovnKubernetesConfig) || has(self.ovnKubernetesConfig)'
+                  csiDriverOperator:
+                    description: |-
+                      csiDriverOperator configures the CSI drivers of the hosted cluster.
+                      Settings are grouped by platform.
+
+                      When omitted, the CSI drivers use their default configuration.
+                    minProperties: 1
+                    properties:
+                      aws:
+                        description: |-
+                          aws configures the AWS EBS CSI driver.
+                          It can only be set when spec.platform.type is AWS.
+
+                          When omitted, no AWS-specific CSI driver configuration is applied and the
+                          default StorageClass uses the AWS account's default EBS encryption settings.
+
+                          This field can only be set when the HostedCluster is created and cannot be
+                          added or removed afterwards.
+                        minProperties: 1
+                        properties:
+                          initialKMSKeyARN:
+                            description: |-
+                              initialKMSKeyARN is the ARN of an AWS KMS key used to encrypt volumes
+                              created by the default StorageClass. When set, new PersistentVolumes
+                              provisioned by the default StorageClass are encrypted with this key
+                              instead of the AWS account's default EBS encryption key.
+
+                              When omitted, no KMS key is configured on the default StorageClass and
+                              EBS volumes are encrypted with the AWS account's default EBS encryption
+                              key.
+
+                              The value may be either the ARN or Alias ARN of a KMS key and must follow
+                              the format arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>,
+                              where <partition> is one of aws, aws-cn, aws-us-gov, aws-iso, aws-iso-b,
+                              aws-iso-e, or aws-iso-f; <region> is the AWS region; <account-id> is the
+                              12-digit AWS account identifier; and <key-id-or-alias> is the KMS key ID
+                              or alias name. The key must be in the same region as the cluster
+                              (spec.platform.aws.region).
+
+                              When set, must be between 1 and 2048 characters.
+
+                              This field can only be set when the HostedCluster is created and is
+                              immutable afterwards. Day-2 changes to storage encryption must be made
+                              directly on the ClusterCSIDriver resource in the hosted cluster.
+
+                              The IAM role in spec.platform.aws.rolesRef.storageARN must have
+                              kms:Decrypt, kms:GenerateDataKeyWithoutPlaintext, and kms:CreateGrant
+                              permissions on the specified key.
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: 'initialKMSKeyARN must be a valid AWS KMS key
+                                ARN in the format: arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>'
+                              rule: self.matches('^arn:(aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f):kms:[a-z0-9-]+:[0-9]{12}:(key|alias)/.+$')
+                            - message: initialKMSKeyARN is immutable
+                              rule: self == oldSelf
+                        type: object
+                    type: object
                   etcd:
                     allOf:
                     - minProperties: 1
@@ -7350,6 +7409,19 @@ spec:
                 || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)
             - message: secretEncryption cannot be removed once configured
               rule: '!has(oldSelf.secretEncryption) || has(self.secretEncryption)'
+            - message: initialKMSKeyARN can only be set when the HostedCluster is
+                created and cannot be added or removed afterwards
+              rule: self.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue()
+                == oldSelf.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue()
+            - message: csiDriverOperator.aws can only be set when platform.type is
+                AWS
+              rule: '!self.?operatorConfiguration.?csiDriverOperator.?aws.hasValue()
+                || self.platform.type == ''AWS'''
+            - message: initialKMSKeyARN must be in the same region as the cluster
+                (platform.aws.region)
+              rule: '!self.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue()
+                || !has(self.platform.aws) || self.operatorConfiguration.csiDriverOperator.aws.initialKMSKeyARN.split('':'')[3]
+                == self.platform.aws.region'
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:
