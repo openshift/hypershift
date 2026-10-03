@@ -502,6 +502,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	for i, svc := range cluster.Spec.Services {
 		if svc.Service == hyperv1.OAuthServer && o.OAuthPublishingStrategy == "LoadBalancer" {
 			cluster.Spec.Services[i].ServicePublishingStrategy.Type = hyperv1.LoadBalancer
+			cluster.Spec.Services[i].Route = nil
 			break
 		}
 	}
