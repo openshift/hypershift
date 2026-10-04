@@ -41962,11 +41962,6 @@ changed.</p>
 This requires APIServer;OAuthServer;Konnectivity;Ignition.
 This field is immutable for all platforms but IBMCloud.
 Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
-<p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.platform.type == &lsquo;IBMCloud&rsquo; ? [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, and &lsquo;Konnectivity&rsquo; service types&rdquo; : [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&ldquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; has(s.servicePublishingStrategy.route) &amp;&amp; has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.route) &amp;&amp; has(y.servicePublishingStrategy.route.hostname) &amp;&amp; y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() &lt;= 1)&rdquo;,message=&ldquo;Each route publishingStrategy &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
-TODO(alberto): this breaks the cost budget for &lt; 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.</p>
 </td>
 </tr>
 <tr>
@@ -51288,11 +51283,6 @@ changed.</p>
 This requires APIServer;OAuthServer;Konnectivity;Ignition.
 This field is immutable for all platforms but IBMCloud.
 Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
-<p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.platform.type == &lsquo;IBMCloud&rsquo; ? [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, and &lsquo;Konnectivity&rsquo; service types&rdquo; : [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&ldquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; has(s.servicePublishingStrategy.route) &amp;&amp; has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.route) &amp;&amp; has(y.servicePublishingStrategy.route.hostname) &amp;&amp; y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() &lt;= 1)&rdquo;,message=&ldquo;Each route publishingStrategy &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
-TODO(alberto): this breaks the cost budget for &lt; 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.</p>
 </td>
 </tr>
 <tr>
@@ -59704,7 +59694,8 @@ RoutePublishingStrategy
 <td>
 <em>(Optional)</em>
 <p>route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
-The specifics of the setup are platform dependent.</p>
+The specifics of the setup are platform dependent.
+An empty object uses management ingress.Spec.Domain as the hostname.</p>
 </td>
 </tr>
 </tbody>

@@ -527,7 +527,11 @@ type Capabilities struct {
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
 
-// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
+// + optionalOldSelf grandfathers legacy objects. CRD ratcheting does not apply to these spec-level rules when a sibling field such as release.image changes.
+// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'APIServer') || (oldSelf.hasValue() && !oldSelf.value().services.exists(s, s.service == 'APIServer'))",message="Services list must contain an APIServer service",optionalOldSelf=true
+// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'OAuthServer') || (oldSelf.hasValue() && !oldSelf.value().services.exists(s, s.service == 'OAuthServer'))",message="Services list must contain an OAuthServer service",optionalOldSelf=true
+// +kubebuilder:validation:XValidation:rule="self.services.exists(s, s.service == 'Konnectivity') || (oldSelf.hasValue() && !oldSelf.value().services.exists(s, s.service == 'Konnectivity'))",message="Services list must contain a Konnectivity service",optionalOldSelf=true
+// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' || self.services.exists(s, s.service == 'Ignition') || (oldSelf.hasValue() && !(oldSelf.value().platform.type == 'IBMCloud' || oldSelf.value().services.exists(s, s.service == 'Ignition')))",message="Services list must contain an Ignition service",optionalOldSelf=true
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services == oldSelf.services : true`, message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("") == "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route")`,message="Azure managed platform (ARO HCP) requires OAuthServer to use Route"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("") != "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer" && (s.servicePublishingStrategy.type == "Route" || s.servicePublishingStrategy.type == "LoadBalancer"))`,message="Self-managed Azure requires OAuthServer to use Route or LoadBalancer"
@@ -672,11 +676,9 @@ type HostedClusterSpec struct {
 	//
 	// +kubebuilder:validation:MaxItems=6
 	// +kubebuilder:validation:ListType=atomic
-	// -kubebuilder:validation:XValidation:rule="self.all(s, !(s.service == 'APIServer' && s.servicePublishingStrategy.type == 'Route') || has(s.servicePublishingStrategy.route.hostname))",message="If serviceType is 'APIServer' and publishing strategy is 'Route', then hostname must be set"
-	// -kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? ['APIServer', 'OAuthServer', 'Konnectivity'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', and 'Konnectivity' service types" : ['APIServer', 'OAuthServer', 'Konnectivity', 'Ignition'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types"
-	// -kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'Route' && has(s.servicePublishingStrategy.route) && has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'Route' && (has(y.servicePublishingStrategy.route) && has(y.servicePublishingStrategy.route.hostname) && y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() <= 1)",message="Each route publishingStrategy 'hostname' must be unique within the Services list."
-	// -kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'NodePort' && has(s.servicePublishingStrategy.nodePort) && has(s.servicePublishingStrategy.nodePort.address) && has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'NodePort' && (has(y.servicePublishingStrategy.nodePort) && has(y.servicePublishingStrategy.nodePort.address) && y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address && has(y.servicePublishingStrategy.nodePort.port) && y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() <= 1)",message="Each nodePort publishingStrategy 'nodePort' and 'hostname' must be unique within the Services list."
-	// TODO(alberto): this breaks the cost budget for < 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.
+	// +kubebuilder:validation:XValidation:rule="self.all(s, self.filter(t, t.service == s.service).size() <= 1)",message="Each service type must be unique within the Services list."
+	// +kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'Route' && has(s.servicePublishingStrategy.route) && has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'Route' && (has(y.servicePublishingStrategy.route) && has(y.servicePublishingStrategy.route.hostname) && y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() <= 1)",message="Each route publishingStrategy 'hostname' must be unique within the Services list."
+	// +kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'NodePort' && has(s.servicePublishingStrategy.nodePort) && has(s.servicePublishingStrategy.nodePort.address) && has(s.servicePublishingStrategy.nodePort.port) && s.servicePublishingStrategy.nodePort.port > 0).all(x, self.filter(y, y.servicePublishingStrategy.type == 'NodePort' && (has(y.servicePublishingStrategy.nodePort) && has(y.servicePublishingStrategy.nodePort.address) && y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address && has(y.servicePublishingStrategy.nodePort.port) && y.servicePublishingStrategy.nodePort.port > 0 && y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() <= 1)",message="Each nodePort publishingStrategy address and port must be unique within the Services list."
 	// +required
 	// +immutable
 	Services []ServicePublishingStrategyMapping `json:"services"`
@@ -1025,7 +1027,7 @@ type ServicePublishingStrategyMapping struct {
 
 // ServicePublishingStrategy specifies how to publish a ServiceType.
 // +kubebuilder:validation:XValidation:rule="self.type == 'NodePort' ? has(self.nodePort) : !has(self.nodePort)",message="nodePort is required when type is NodePort, and forbidden otherwise"
-// +kubebuilder:validation:XValidation:rule="self.type == 'Route' ? !has(self.nodePort) && !has(self.loadBalancer) : !has(self.route)",message="only route is allowed when type is Route, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.type == 'Route' ? has(self.route) && !has(self.nodePort) && !has(self.loadBalancer) : !has(self.route)",message="route is required when type is Route, and forbidden otherwise"
 // +kubebuilder:validation:XValidation:rule="self.type == 'LoadBalancer' ? !has(self.nodePort) && !has(self.route) : !has(self.loadBalancer)",message="only loadBalancer is required when type is LoadBalancer, and forbidden otherwise"
 // +kubebuilder:validation:XValidation:rule="self.type == 'None' ? !has(self.nodePort) && !has(self.route) && !has(self.loadBalancer) : true",message="None does not allowed any configuration for loadBalancer, nodePort, or route"
 // +kubebuilder:validation:XValidation:rule="self.type == 'S3' ? !has(self.nodePort) && !has(self.route) && !has(self.loadBalancer) : true",message="S3 does not allowed any configuration for loadBalancer, nodePort, or route"
@@ -1048,6 +1050,7 @@ type ServicePublishingStrategy struct {
 
 	// route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
 	// The specifics of the setup are platform dependent.
+	// An empty object uses management ingress.Spec.Domain as the hostname.
 	// +optional
 	Route *RoutePublishingStrategy `json:"route,omitempty"`
 }

@@ -6763,6 +6763,7 @@ spec:
                           description: |-
                             route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
                             The specifics of the setup are platform dependent.
+                            An empty object uses management ingress.Spec.Domain as the hostname.
                           properties:
                             hostname:
                               description: |-
@@ -6794,10 +6795,10 @@ spec:
                       - message: nodePort is required when type is NodePort, and forbidden
                           otherwise
                         rule: 'self.type == ''NodePort'' ? has(self.nodePort) : !has(self.nodePort)'
-                      - message: only route is allowed when type is Route, and forbidden
+                      - message: route is required when type is Route, and forbidden
                           otherwise
-                        rule: 'self.type == ''Route'' ? !has(self.nodePort) && !has(self.loadBalancer)
-                          : !has(self.route)'
+                        rule: 'self.type == ''Route'' ? has(self.route) && !has(self.nodePort)
+                          && !has(self.loadBalancer) : !has(self.route)'
                       - message: only loadBalancer is required when type is LoadBalancer,
                           and forbidden otherwise
                         rule: 'self.type == ''LoadBalancer'' ? !has(self.nodePort)
@@ -6816,6 +6817,10 @@ spec:
                   type: object
                 maxItems: 6
                 type: array
+                x-kubernetes-validations:
+                - message: Each service type must be unique within the Services list.
+                  rule: self.all(s, self.filter(t, t.service == s.service).size()
+                    <= 1)
               sshKey:
                 description: sshKey is a reference to a secret containing the SSH
                   key for the hosted control plane.
@@ -6890,10 +6895,23 @@ spec:
             - sshKey
             type: object
             x-kubernetes-validations:
-            - message: spec.services in body should have at least 4 items or 3 for
-                IBMCloud
-              rule: 'self.platform.type == ''IBMCloud'' ? size(self.services) >= 3
-                : size(self.services) >= 4'
+            - message: Services list must contain an APIServer service
+              optionalOldSelf: true
+              rule: self.services.exists(s, s.service == 'APIServer') || (oldSelf.hasValue()
+                && !oldSelf.value().services.exists(s, s.service == 'APIServer'))
+            - message: Services list must contain an OAuthServer service
+              optionalOldSelf: true
+              rule: self.services.exists(s, s.service == 'OAuthServer') || (oldSelf.hasValue()
+                && !oldSelf.value().services.exists(s, s.service == 'OAuthServer'))
+            - message: Services list must contain a Konnectivity service
+              optionalOldSelf: true
+              rule: self.services.exists(s, s.service == 'Konnectivity') || (oldSelf.hasValue()
+                && !oldSelf.value().services.exists(s, s.service == 'Konnectivity'))
+            - message: Services list must contain an Ignition service
+              optionalOldSelf: true
+              rule: self.platform.type == 'IBMCloud' || self.services.exists(s, s.service
+                == 'Ignition') || (oldSelf.hasValue() && !(oldSelf.value().platform.type
+                == 'IBMCloud' || oldSelf.value().services.exists(s, s.service == 'Ignition')))
             - message: disableMultiNetwork can only be set to true when networkType
                 is 'Other'
               rule: '!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator)
