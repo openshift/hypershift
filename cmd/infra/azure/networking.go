@@ -2,9 +2,11 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
@@ -213,8 +216,462 @@ func NewVirtualNetworkLink(location string, vnetID string, registrationEnabled b
 	}
 }
 
+const privateDNSZoneLinkConvergenceTimeout = 2 * time.Minute
+
+var (
+	// Match only the observed adjacent operation-group clause, plus the literal ellipsis
+	// used by the sanitized Jira evidence. The pipe-delimited fields are bounded path
+	// segments, not an arbitrary prose bridge.
+	pendingVirtualNetworkLinkUpsertPattern = regexp.MustCompile(`(?i)^another operation is pending for (?:the )?requested object\. (?:\.\.\.|operation group '/operations/groups/id/\|virtualnetworklinks\|[^|']+\|[^|']+\|[^|']+\|[^|']+') already has 1 operations like '/operations/type/upsertvirtualnetworklink/id/[^']+' queued\.$`)
+	safeAzureErrorCodePattern              = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,63}$`)
+)
+
+type virtualNetworkLinkPoller interface {
+	PollUntilDone(context.Context) (armprivatedns.VirtualNetworkLink, error)
+}
+
+type virtualNetworkLinkClient interface {
+	Get(context.Context, string, string, string) (armprivatedns.VirtualNetworkLink, error)
+	BeginCreateOrUpdate(context.Context, string, string, string, armprivatedns.VirtualNetworkLink, *armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions) (virtualNetworkLinkPoller, error)
+}
+
+type azureVirtualNetworkLinkClient struct {
+	client *armprivatedns.VirtualNetworkLinksClient
+}
+
+func (c *azureVirtualNetworkLinkClient) Get(ctx context.Context, resourceGroupName, privateDNSZoneName, linkName string) (armprivatedns.VirtualNetworkLink, error) {
+	response, err := c.client.Get(ctx, resourceGroupName, privateDNSZoneName, linkName, nil)
+	return response.VirtualNetworkLink, err
+}
+
+func (c *azureVirtualNetworkLinkClient) BeginCreateOrUpdate(ctx context.Context, resourceGroupName, privateDNSZoneName, linkName string, link armprivatedns.VirtualNetworkLink, options *armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions) (virtualNetworkLinkPoller, error) {
+	poller, err := c.client.BeginCreateOrUpdate(ctx, resourceGroupName, privateDNSZoneName, linkName, link, options)
+	if err != nil {
+		return nil, err
+	}
+	return &azureVirtualNetworkLinkPoller{poller: poller}, nil
+}
+
+type azureVirtualNetworkLinkPoller struct {
+	poller *azruntime.Poller[armprivatedns.VirtualNetworkLinksClientCreateOrUpdateResponse]
+}
+
+func (p *azureVirtualNetworkLinkPoller) PollUntilDone(ctx context.Context) (armprivatedns.VirtualNetworkLink, error) {
+	response, err := p.poller.PollUntilDone(ctx, nil)
+	return response.VirtualNetworkLink, err
+}
+
+type privateDNSZoneLinkWaitConfig struct {
+	timeout time.Duration
+	backoff wait.Backoff
+}
+
+func defaultPrivateDNSZoneLinkWaitConfig() privateDNSZoneLinkWaitConfig {
+	return privateDNSZoneLinkWaitConfig{
+		timeout: privateDNSZoneLinkConvergenceTimeout,
+		backoff: wait.Backoff{
+			Duration: 2 * time.Second,
+			Factor:   2,
+			Jitter:   0.1,
+			Steps:    7,
+			Cap:      30 * time.Second,
+		},
+	}
+}
+
+type virtualNetworkLinkCompletionAuthority int
+
+const (
+	virtualNetworkLinkRecoveryRead virtualNetworkLinkCompletionAuthority = iota
+	virtualNetworkLinkSuccessfulPoller
+)
+
+type virtualNetworkLinkPropertyState string
+
+const (
+	virtualNetworkLinkPropertiesDesired      virtualNetworkLinkPropertyState = "desired"
+	virtualNetworkLinkPropertiesMissing      virtualNetworkLinkPropertyState = "missing"
+	virtualNetworkLinkPropertiesIncompatible virtualNetworkLinkPropertyState = "incompatible"
+)
+
+type virtualNetworkLinkStateStatus string
+
+const (
+	virtualNetworkLinkStatesAbsent  virtualNetworkLinkStateStatus = "absent"
+	virtualNetworkLinkStatesSuccess virtualNetworkLinkStateStatus = "success"
+	virtualNetworkLinkStatesPending virtualNetworkLinkStateStatus = "pending"
+	virtualNetworkLinkStatesFailure virtualNetworkLinkStateStatus = "failure"
+	virtualNetworkLinkStatesUnknown virtualNetworkLinkStateStatus = "unknown"
+)
+
+type virtualNetworkLinkAssessment struct {
+	properties virtualNetworkLinkPropertyState
+	states     virtualNetworkLinkStateStatus
+	reason     string
+}
+
+type sanitizedVirtualNetworkLinkCause struct {
+	phase      string
+	category   string
+	statusCode int
+	errorCode  string
+	cause      error
+}
+
+func (e *sanitizedVirtualNetworkLinkCause) Error() string {
+	if e.statusCode == 0 {
+		return fmt.Sprintf("virtual network link provider error phase=%s category=%s", e.phase, e.category)
+	}
+	return fmt.Sprintf("virtual network link provider error phase=%s category=%s status=%d code=%s", e.phase, e.category, e.statusCode, e.errorCode)
+}
+
+func (e *sanitizedVirtualNetworkLinkCause) Unwrap() error {
+	return e.cause
+}
+
+func sanitizeVirtualNetworkLinkCause(phase, category string, cause error) error {
+	if cause == nil {
+		return nil
+	}
+
+	sanitized := &sanitizedVirtualNetworkLinkCause{
+		phase:    phase,
+		category: category,
+		cause:    cause,
+	}
+	var responseError *azcore.ResponseError
+	if errors.As(cause, &responseError) {
+		sanitized.statusCode = responseError.StatusCode
+		sanitized.errorCode = "unavailable"
+		if safeAzureErrorCodePattern.MatchString(responseError.ErrorCode) {
+			sanitized.errorCode = responseError.ErrorCode
+		}
+	}
+	return sanitized
+}
+
+func assessVirtualNetworkLink(link armprivatedns.VirtualNetworkLink, desiredVNetID string) virtualNetworkLinkAssessment {
+	assessment := virtualNetworkLinkAssessment{properties: virtualNetworkLinkPropertiesDesired}
+	if link.Properties == nil {
+		assessment.properties = virtualNetworkLinkPropertiesMissing
+		assessment.reason = "desired properties are missing"
+	} else {
+		vnetIDMissing := link.Properties.VirtualNetwork == nil || link.Properties.VirtualNetwork.ID == nil
+		registrationMissing := link.Properties.RegistrationEnabled == nil
+		switch {
+		case !vnetIDMissing && !strings.EqualFold(*link.Properties.VirtualNetwork.ID, desiredVNetID):
+			assessment.properties = virtualNetworkLinkPropertiesIncompatible
+			assessment.reason = "virtual network does not match"
+		case !registrationMissing && *link.Properties.RegistrationEnabled:
+			assessment.properties = virtualNetworkLinkPropertiesIncompatible
+			assessment.reason = "registration is enabled"
+		case vnetIDMissing || registrationMissing:
+			assessment.properties = virtualNetworkLinkPropertiesMissing
+			assessment.reason = "desired properties are missing"
+		}
+	}
+
+	assessment.states = assessVirtualNetworkLinkStates(link.Properties)
+	return assessment
+}
+
+func assessVirtualNetworkLinkStates(properties *armprivatedns.VirtualNetworkLinkProperties) virtualNetworkLinkStateStatus {
+	if properties == nil {
+		return virtualNetworkLinkStatesAbsent
+	}
+
+	if properties.ProvisioningState != nil {
+		switch *properties.ProvisioningState {
+		case armprivatedns.ProvisioningStateFailed, armprivatedns.ProvisioningStateCanceled, armprivatedns.ProvisioningStateDeleting:
+			return virtualNetworkLinkStatesFailure
+		case armprivatedns.ProvisioningStateCreating, armprivatedns.ProvisioningStateUpdating, armprivatedns.ProvisioningStateSucceeded:
+		default:
+			return virtualNetworkLinkStatesUnknown
+		}
+	}
+
+	if properties.VirtualNetworkLinkState != nil {
+		switch *properties.VirtualNetworkLinkState {
+		case armprivatedns.VirtualNetworkLinkStateInProgress, armprivatedns.VirtualNetworkLinkStateCompleted:
+		default:
+			return virtualNetworkLinkStatesUnknown
+		}
+	}
+
+	if properties.ProvisioningState != nil && (*properties.ProvisioningState == armprivatedns.ProvisioningStateCreating || *properties.ProvisioningState == armprivatedns.ProvisioningStateUpdating) {
+		return virtualNetworkLinkStatesPending
+	}
+	if properties.VirtualNetworkLinkState != nil && *properties.VirtualNetworkLinkState == armprivatedns.VirtualNetworkLinkStateInProgress {
+		return virtualNetworkLinkStatesPending
+	}
+	if properties.ProvisioningState != nil && *properties.ProvisioningState == armprivatedns.ProvisioningStateSucceeded {
+		return virtualNetworkLinkStatesSuccess
+	}
+	if properties.VirtualNetworkLinkState != nil && *properties.VirtualNetworkLinkState == armprivatedns.VirtualNetworkLinkStateCompleted {
+		return virtualNetworkLinkStatesSuccess
+	}
+	return virtualNetworkLinkStatesAbsent
+}
+
+func evaluateVirtualNetworkLink(assessment virtualNetworkLinkAssessment, authority virtualNetworkLinkCompletionAuthority) (complete bool, retry bool, err error) {
+	if assessment.properties == virtualNetworkLinkPropertiesIncompatible {
+		return false, false, fmt.Errorf("virtual network link has incompatible desired properties: %s", assessment.reason)
+	}
+	if assessment.states == virtualNetworkLinkStatesFailure {
+		return false, false, fmt.Errorf("virtual network link reports a failure state")
+	}
+	if assessment.states == virtualNetworkLinkStatesUnknown {
+		return false, false, fmt.Errorf("virtual network link reports an unknown state")
+	}
+	if assessment.properties == virtualNetworkLinkPropertiesMissing || assessment.states == virtualNetworkLinkStatesPending {
+		return false, true, nil
+	}
+	if authority == virtualNetworkLinkSuccessfulPoller {
+		// A nil PollUntilDone error is the completion authority. Azure models both
+		// state fields as optional, so their absence does not contradict the poller.
+		return true, false, nil
+	}
+	if assessment.states == virtualNetworkLinkStatesSuccess {
+		// This is a conservative HyperShift recovery policy for operations without
+		// a poller, not an Azure guarantee: require at least one explicit success.
+		return true, false, nil
+	}
+	return false, true, nil
+}
+
+func isResponseStatus(err error, statusCode int) bool {
+	var responseError *azcore.ResponseError
+	return errors.As(err, &responseError) && responseError.StatusCode == statusCode
+}
+
+func isPendingVirtualNetworkLinkUpsert(err error) bool {
+	var responseError *azcore.ResponseError
+	if !errors.As(err, &responseError) || responseError.StatusCode != http.StatusConflict || !strings.EqualFold(responseError.ErrorCode, "Conflict") || responseError.RawResponse == nil {
+		return false
+	}
+
+	payload, payloadErr := azruntime.Payload(responseError.RawResponse)
+	if payloadErr != nil || len(payload) == 0 {
+		return false
+	}
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(payload, &body) != nil || !strings.EqualFold(body.Error.Code, "Conflict") || body.Error.Message == "" {
+		return false
+	}
+
+	if strings.ContainsAny(body.Error.Message, "\r\n") {
+		return false
+	}
+	normalizedMessage := strings.Join(strings.Fields(body.Error.Message), " ")
+	return pendingVirtualNetworkLinkUpsertPattern.MatchString(normalizedMessage)
+}
+
+func cappedExponentialBackoffWithContext(ctx context.Context, backoff wait.Backoff, condition wait.ConditionWithContextFunc) error {
+	delay := backoff.Duration
+	for step := 0; step < backoff.Steps; step++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		complete, err := condition(ctx)
+		if err != nil || complete {
+			return err
+		}
+		if step == backoff.Steps-1 {
+			break
+		}
+
+		waitFor := delay
+		if backoff.Jitter > 0 {
+			waitFor = wait.Jitter(waitFor, backoff.Jitter)
+		}
+		timer := time.NewTimer(waitFor)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return ctx.Err()
+		case <-timer.C:
+		}
+
+		if backoff.Factor != 0 {
+			delay = time.Duration(float64(delay) * backoff.Factor)
+		}
+		if backoff.Cap > 0 && delay > backoff.Cap {
+			delay = backoff.Cap
+		}
+	}
+	return wait.ErrorInterrupted(nil)
+}
+
+func createPrivateDNSZoneLink(ctx context.Context, client virtualNetworkLinkClient, resourceGroupName, privateDNSZoneName, linkName, vnetID string, config privateDNSZoneLinkWaitConfig) error {
+	desiredLink := NewVirtualNetworkLink(VirtualNetworkLinkLocation, vnetID, false)
+	poller, complete, err := convergePrivateDNSZoneLink(ctx, client, resourceGroupName, privateDNSZoneName, linkName, vnetID, desiredLink, config)
+	if err != nil {
+		return fmt.Errorf("failed to set up network link for private DNS zone: %w", err)
+	}
+	if complete {
+		return nil
+	}
+
+	pollResult, err := poller.PollUntilDone(ctx)
+	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			sanitizedPollErr := sanitizeVirtualNetworkLinkCause("poll", "provider", err)
+			return fmt.Errorf("failed waiting for network link for private DNS zone: %w", errors.Join(sanitizedPollErr, contextErr))
+		}
+		return recoverPrivateDNSZoneLinkAfterPollError(ctx, client, resourceGroupName, privateDNSZoneName, linkName, vnetID, err, config.timeout)
+	}
+
+	assessment := assessVirtualNetworkLink(pollResult, vnetID)
+	complete, retry, assessmentErr := evaluateVirtualNetworkLink(assessment, virtualNetworkLinkSuccessfulPoller)
+	if assessmentErr != nil {
+		return fmt.Errorf("failed validating completed network link for private DNS zone: %w", assessmentErr)
+	}
+	if complete {
+		return nil
+	}
+	if !retry {
+		return fmt.Errorf("completed network link for private DNS zone is not acceptable")
+	}
+	return waitForExistingPrivateDNSZoneLink(ctx, client, resourceGroupName, privateDNSZoneName, linkName, vnetID, virtualNetworkLinkSuccessfulPoller, config)
+}
+
+func convergePrivateDNSZoneLink(ctx context.Context, client virtualNetworkLinkClient, resourceGroupName, privateDNSZoneName, linkName, vnetID string, desiredLink armprivatedns.VirtualNetworkLink, config privateDNSZoneLinkWaitConfig) (virtualNetworkLinkPoller, bool, error) {
+	convergenceCtx, cancel := context.WithTimeout(ctx, config.timeout)
+	defer cancel()
+
+	var poller virtualNetworkLinkPoller
+	completed := false
+	lastObservation := "target not yet observed"
+	attempts := 0
+	err := cappedExponentialBackoffWithContext(convergenceCtx, config.backoff, func(callCtx context.Context) (bool, error) {
+		attempts++
+		link, getErr := client.Get(callCtx, resourceGroupName, privateDNSZoneName, linkName)
+		if getErr == nil {
+			assessment := assessVirtualNetworkLink(link, vnetID)
+			lastObservation = fmt.Sprintf("properties=%s states=%s", assessment.properties, assessment.states)
+			complete, retry, assessmentErr := evaluateVirtualNetworkLink(assessment, virtualNetworkLinkRecoveryRead)
+			if assessmentErr != nil {
+				return false, assessmentErr
+			}
+			if complete {
+				completed = true
+				return true, nil
+			}
+			return !retry, nil
+		}
+		if !isResponseStatus(getErr, http.StatusNotFound) {
+			return false, sanitizeVirtualNetworkLinkCause("convergence-get", "provider", getErr)
+		}
+
+		poller, getErr = client.BeginCreateOrUpdate(callCtx, resourceGroupName, privateDNSZoneName, linkName, desiredLink, &armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions{IfNoneMatch: ptr.To("*")})
+		if getErr == nil {
+			if poller == nil {
+				return false, fmt.Errorf("conditional network link create returned no poller")
+			}
+			return true, nil
+		}
+		if isPendingVirtualNetworkLinkUpsert(getErr) {
+			lastObservation = "pending virtual network link upsert"
+			return false, nil
+		}
+		if !isResponseStatus(getErr, http.StatusPreconditionFailed) {
+			return false, sanitizeVirtualNetworkLinkCause("conditional-create", "provider", getErr)
+		}
+
+		conditionalErr := sanitizeVirtualNetworkLinkCause("conditional-create", "precondition-failed", getErr)
+		link, getErr = client.Get(callCtx, resourceGroupName, privateDNSZoneName, linkName)
+		if getErr != nil {
+			if isResponseStatus(getErr, http.StatusNotFound) {
+				return false, fmt.Errorf("conditional create failed and network link remained absent: %w", conditionalErr)
+			}
+			verificationErr := sanitizeVirtualNetworkLinkCause("conditional-verification-get", "provider", getErr)
+			return false, fmt.Errorf("conditional create and verification failed: %w", errors.Join(conditionalErr, verificationErr))
+		}
+		assessment := assessVirtualNetworkLink(link, vnetID)
+		lastObservation = fmt.Sprintf("conditional race properties=%s states=%s", assessment.properties, assessment.states)
+		complete, retry, assessmentErr := evaluateVirtualNetworkLink(assessment, virtualNetworkLinkRecoveryRead)
+		if assessmentErr != nil {
+			return false, fmt.Errorf("conditional create found an incompatible network link: %w", errors.Join(conditionalErr, assessmentErr))
+		}
+		if complete {
+			completed = true
+			return true, nil
+		}
+		return !retry, nil
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("network link did not converge (attempts=%d category=%s): %w", attempts, lastObservation, err)
+	}
+	return poller, completed, nil
+}
+
+func waitForExistingPrivateDNSZoneLink(ctx context.Context, client virtualNetworkLinkClient, resourceGroupName, privateDNSZoneName, linkName, vnetID string, authority virtualNetworkLinkCompletionAuthority, config privateDNSZoneLinkWaitConfig) error {
+	verificationCtx, cancel := context.WithTimeout(ctx, config.timeout)
+	defer cancel()
+
+	lastObservation := "target not yet observed"
+	attempts := 0
+	err := cappedExponentialBackoffWithContext(verificationCtx, config.backoff, func(callCtx context.Context) (bool, error) {
+		attempts++
+		link, getErr := client.Get(callCtx, resourceGroupName, privateDNSZoneName, linkName)
+		if getErr != nil {
+			if isResponseStatus(getErr, http.StatusNotFound) {
+				lastObservation = "target absent"
+				return false, nil
+			}
+			return false, sanitizeVirtualNetworkLinkCause("post-poll-verification-get", "provider", getErr)
+		}
+		assessment := assessVirtualNetworkLink(link, vnetID)
+		lastObservation = fmt.Sprintf("properties=%s states=%s", assessment.properties, assessment.states)
+		complete, retry, assessmentErr := evaluateVirtualNetworkLink(assessment, authority)
+		if assessmentErr != nil {
+			return false, assessmentErr
+		}
+		return complete || !retry, nil
+	})
+	if err != nil {
+		return fmt.Errorf("network link verification did not converge (attempts=%d category=%s): %w", attempts, lastObservation, err)
+	}
+	return nil
+}
+
+func recoverPrivateDNSZoneLinkAfterPollError(ctx context.Context, client virtualNetworkLinkClient, resourceGroupName, privateDNSZoneName, linkName, vnetID string, pollErr error, timeout time.Duration) error {
+	verificationCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	link, getErr := client.Get(verificationCtx, resourceGroupName, privateDNSZoneName, linkName)
+	sanitizedPollErr := sanitizeVirtualNetworkLinkCause("poll", "provider", pollErr)
+	if getErr != nil {
+		sanitizedGetErr := sanitizeVirtualNetworkLinkCause("poll-recovery-get", "provider", getErr)
+		return fmt.Errorf("failed waiting for network link and final verification failed: %w", errors.Join(sanitizedPollErr, sanitizedGetErr))
+	}
+	assessment := assessVirtualNetworkLink(link, vnetID)
+	complete, _, assessmentErr := evaluateVirtualNetworkLink(assessment, virtualNetworkLinkRecoveryRead)
+	if complete {
+		return nil
+	}
+	if assessmentErr != nil {
+		return fmt.Errorf("failed waiting for network link; final verification rejected properties=%s states=%s: %w", assessment.properties, assessment.states, errors.Join(sanitizedPollErr, assessmentErr))
+	}
+	return fmt.Errorf("failed waiting for network link; final verification was inconclusive properties=%s states=%s: %w", assessment.properties, assessment.states, sanitizedPollErr)
+}
+
 // CreatePrivateDNSZoneLink creates the private DNS Zone network link.
-// It is idempotent: if the link already exists, it returns successfully.
+// It returns successfully for an existing compatible link only when completion is
+// established by the applicable poller or conservative recovery-state policy.
 func (n *NetworkManager) CreatePrivateDNSZoneLink(ctx context.Context, resourceGroupName string, name string, infraID string, vnetID string, privateDNSZoneName string) error {
 	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
 	if err != nil {
@@ -226,35 +683,7 @@ func (n *NetworkManager) CreatePrivateDNSZoneLink(ctx context.Context, resourceG
 	}
 
 	linkName := name + "-" + infraID
-
-	// Check if the link already exists to handle re-runs gracefully.
-	// Azure resource IDs are case-insensitive, so use case-insensitive comparison.
-	existingLink, err := privateZoneLinkClient.Get(ctx, resourceGroupName, privateDNSZoneName, linkName, nil)
-	if err == nil &&
-		existingLink.Properties != nil &&
-		existingLink.Properties.VirtualNetwork != nil &&
-		existingLink.Properties.VirtualNetwork.ID != nil &&
-		strings.EqualFold(*existingLink.Properties.VirtualNetwork.ID, vnetID) {
-		return nil
-	}
-
-	virtualNetworkLinkParams := NewVirtualNetworkLink(VirtualNetworkLinkLocation, vnetID, false)
-	networkLinkPromise, err := privateZoneLinkClient.BeginCreateOrUpdate(ctx, resourceGroupName, privateDNSZoneName, linkName, virtualNetworkLinkParams, nil)
-	if err != nil {
-		return fmt.Errorf("failed to set up network link for private DNS zone: %w", err)
-	}
-	_, err = networkLinkPromise.PollUntilDone(ctx, nil)
-	if err != nil {
-		// Handle Conflict error when the DNS zone is already linked to this VNet
-		// (e.g., via a link with a different name from a previous run).
-		var respErr *azcore.ResponseError
-		if errors.As(err, &respErr) && strings.EqualFold(respErr.ErrorCode, "Conflict") {
-			return nil
-		}
-		return fmt.Errorf("failed waiting for network link for private DNS zone: %w", err)
-	}
-
-	return nil
+	return createPrivateDNSZoneLink(ctx, &azureVirtualNetworkLinkClient{client: privateZoneLinkClient}, resourceGroupName, privateDNSZoneName, linkName, vnetID, defaultPrivateDNSZoneLinkWaitConfig())
 }
 
 // NewPublicIPAddress creates a PublicIPAddress struct configured for use with a load balancer.

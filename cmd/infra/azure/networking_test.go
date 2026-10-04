@@ -1,15 +1,24 @@
 package azure
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
+
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/ptr"
 )
 
 func TestNewVirtualNetwork(t *testing.T) {
@@ -244,4 +253,1123 @@ func TestErrorsAsAzureResponseError(t *testing.T) {
 	var respErr *azcore.ResponseError
 	g.Expect(errors.As(wrappedErr, &respErr)).To(BeTrue())
 	g.Expect(respErr.StatusCode).To(Equal(http.StatusConflict))
+}
+
+type virtualNetworkLinkGetAction func(context.Context) (armprivatedns.VirtualNetworkLink, error)
+
+type virtualNetworkLinkBeginAction func(context.Context, *armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions) (virtualNetworkLinkPoller, error)
+
+type fakeVirtualNetworkLinkClient struct {
+	mu sync.Mutex
+
+	getActions   []virtualNetworkLinkGetAction
+	beginActions []virtualNetworkLinkBeginAction
+
+	getContexts   []context.Context
+	beginContexts []context.Context
+	beginOptions  []*armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions
+}
+
+func (f *fakeVirtualNetworkLinkClient) Get(ctx context.Context, _, _, _ string) (armprivatedns.VirtualNetworkLink, error) {
+	f.mu.Lock()
+	call := len(f.getContexts)
+	f.getContexts = append(f.getContexts, ctx)
+	if call >= len(f.getActions) {
+		f.mu.Unlock()
+		return armprivatedns.VirtualNetworkLink{}, fmt.Errorf("unexpected Get call %d", call+1)
+	}
+	action := f.getActions[call]
+	f.mu.Unlock()
+	return action(ctx)
+}
+
+func (f *fakeVirtualNetworkLinkClient) BeginCreateOrUpdate(ctx context.Context, _, _, _ string, _ armprivatedns.VirtualNetworkLink, options *armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions) (virtualNetworkLinkPoller, error) {
+	f.mu.Lock()
+	call := len(f.beginContexts)
+	f.beginContexts = append(f.beginContexts, ctx)
+	var optionsCopy *armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions
+	if options != nil {
+		copied := *options
+		optionsCopy = &copied
+	}
+	f.beginOptions = append(f.beginOptions, optionsCopy)
+	if call >= len(f.beginActions) {
+		f.mu.Unlock()
+		return nil, fmt.Errorf("unexpected BeginCreateOrUpdate call %d", call+1)
+	}
+	action := f.beginActions[call]
+	f.mu.Unlock()
+	return action(ctx, options)
+}
+
+func (f *fakeVirtualNetworkLinkClient) snapshot() (getContexts, beginContexts []context.Context, beginOptions []*armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]context.Context(nil), f.getContexts...), append([]context.Context(nil), f.beginContexts...), append([]*armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions(nil), f.beginOptions...)
+}
+
+type fakeVirtualNetworkLinkPoller struct {
+	mu       sync.Mutex
+	result   armprivatedns.VirtualNetworkLink
+	err      error
+	onPoll   func(context.Context)
+	contexts []context.Context
+}
+
+type manualErrorContext struct {
+	context.Context
+	done chan struct{}
+	once sync.Once
+	mu   sync.RWMutex
+	err  error
+}
+
+func newManualErrorContext() *manualErrorContext {
+	return &manualErrorContext{Context: context.Background(), done: make(chan struct{})}
+}
+
+func (c *manualErrorContext) Done() <-chan struct{} {
+	return c.done
+}
+
+func (c *manualErrorContext) Err() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.err
+}
+
+func (c *manualErrorContext) cancel(err error) {
+	c.once.Do(func() {
+		c.mu.Lock()
+		c.err = err
+		c.mu.Unlock()
+		close(c.done)
+	})
+}
+
+func (f *fakeVirtualNetworkLinkPoller) PollUntilDone(ctx context.Context) (armprivatedns.VirtualNetworkLink, error) {
+	f.mu.Lock()
+	f.contexts = append(f.contexts, ctx)
+	onPoll := f.onPoll
+	result := f.result
+	err := f.err
+	f.mu.Unlock()
+	if onPoll != nil {
+		onPoll(ctx)
+	}
+	return result, err
+}
+
+func (f *fakeVirtualNetworkLinkPoller) pollContexts() []context.Context {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]context.Context(nil), f.contexts...)
+}
+
+func testPrivateDNSZoneLinkConfig(steps int) privateDNSZoneLinkWaitConfig {
+	return privateDNSZoneLinkWaitConfig{
+		timeout: time.Second,
+		backoff: wait.Backoff{Steps: steps},
+	}
+}
+
+func TestDefaultPrivateDNSZoneLinkWaitConfig(t *testing.T) {
+	g := NewGomegaWithT(t)
+	config := defaultPrivateDNSZoneLinkWaitConfig()
+	g.Expect(config.timeout).To(Equal(2 * time.Minute))
+	g.Expect(config.backoff.Duration).To(Equal(2 * time.Second))
+	g.Expect(config.backoff.Factor).To(Equal(2.0))
+	g.Expect(config.backoff.Jitter).To(Equal(0.1))
+	g.Expect(config.backoff.Steps).To(Equal(7))
+	g.Expect(config.backoff.Cap).To(Equal(30 * time.Second))
+}
+
+func TestCappedExponentialBackoffWithContext(t *testing.T) {
+	g := NewGomegaWithT(t)
+	attempts := 0
+	err := cappedExponentialBackoffWithContext(context.Background(), wait.Backoff{
+		Duration: time.Nanosecond,
+		Factor:   2,
+		Steps:    7,
+		Cap:      time.Nanosecond,
+	}, func(context.Context) (bool, error) {
+		attempts++
+		return false, nil
+	})
+	g.Expect(wait.Interrupted(err)).To(BeTrue())
+	g.Expect(attempts).To(Equal(7))
+}
+
+func getVirtualNetworkLink(link armprivatedns.VirtualNetworkLink) virtualNetworkLinkGetAction {
+	return func(context.Context) (armprivatedns.VirtualNetworkLink, error) {
+		return link, nil
+	}
+}
+
+func getVirtualNetworkLinkError(err error) virtualNetworkLinkGetAction {
+	return func(context.Context) (armprivatedns.VirtualNetworkLink, error) {
+		return armprivatedns.VirtualNetworkLink{}, err
+	}
+}
+
+func beginVirtualNetworkLink(poller virtualNetworkLinkPoller, err error) virtualNetworkLinkBeginAction {
+	return func(context.Context, *armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions) (virtualNetworkLinkPoller, error) {
+		return poller, err
+	}
+}
+
+func testVirtualNetworkLink(vnetID string, registrationEnabled *bool, provisioningState *armprivatedns.ProvisioningState, linkState *armprivatedns.VirtualNetworkLinkState) armprivatedns.VirtualNetworkLink {
+	return armprivatedns.VirtualNetworkLink{
+		Properties: &armprivatedns.VirtualNetworkLinkProperties{
+			VirtualNetwork:          &armprivatedns.SubResource{ID: ptr.To(vnetID)},
+			RegistrationEnabled:     registrationEnabled,
+			ProvisioningState:       provisioningState,
+			VirtualNetworkLinkState: linkState,
+		},
+	}
+}
+
+func testResponseError(statusCode int, topLevelCode, body string) *azcore.ResponseError {
+	return &azcore.ResponseError{
+		StatusCode: statusCode,
+		ErrorCode:  topLevelCode,
+		RawResponse: &http.Response{
+			StatusCode: statusCode,
+			Status:     http.StatusText(statusCode),
+			Header:     http.Header{},
+			Body:       io.NopCloser(strings.NewReader(body)),
+		},
+	}
+}
+
+func testSensitiveResponseError(t *testing.T, statusCode int, topLevelCode, marker string) *azcore.ResponseError {
+	t.Helper()
+	body := fmt.Sprintf(`{"error":{"code":"%s","message":"raw-body-%s contains /operations/type/UpsertVirtualNetworkLink/id/operation-%s"}}`, topLevelCode, marker, marker)
+	responseError := testResponseError(statusCode, topLevelCode, body)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://management.azure.com/subscriptions/"+marker+"/resourceGroups/resource-"+marker, nil)
+	if err != nil {
+		t.Fatalf("failed to construct sensitive response request: %v", err)
+	}
+	responseError.RawResponse.Request = request
+	return responseError
+}
+
+const pendingVirtualNetworkLinkUpsertBody = `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. ... already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/<REDACTED>' queued."}}`
+
+const pendingVirtualNetworkLinkUpsertStructuredBody = `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. Operation group '/operations/groups/id/|virtualNetworkLinks|<SUBSCRIPTION>|<RESOURCE_GROUP>|<DNS_ZONE>|<LINK_NAME>' already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/<OPERATION_ID>_<SUBSCRIPTION>' queued."}}`
+
+func TestEvaluateVirtualNetworkLink(t *testing.T) {
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	succeeded := armprivatedns.ProvisioningStateSucceeded
+	creating := armprivatedns.ProvisioningStateCreating
+	failed := armprivatedns.ProvisioningStateFailed
+	canceled := armprivatedns.ProvisioningStateCanceled
+	deleting := armprivatedns.ProvisioningStateDeleting
+	completed := armprivatedns.VirtualNetworkLinkStateCompleted
+	inProgress := armprivatedns.VirtualNetworkLinkStateInProgress
+	unknown := armprivatedns.ProvisioningState("FutureState")
+	unknownLinkState := armprivatedns.VirtualNetworkLinkState("FutureState")
+	missingVNetID := testVirtualNetworkLink(desiredVNetID, ptr.To(false), &succeeded, nil)
+	missingVNetID.Properties.VirtualNetwork.ID = nil
+	missingVNetIDWithEnabledRegistration := testVirtualNetworkLink(desiredVNetID, ptr.To(true), &succeeded, nil)
+	missingVNetIDWithEnabledRegistration.Properties.VirtualNetwork.ID = nil
+
+	tests := map[string]struct {
+		link      armprivatedns.VirtualNetworkLink
+		authority virtualNetworkLinkCompletionAuthority
+		complete  bool
+		retry     bool
+		wantError bool
+	}{
+		"When a successful poller returns desired properties with both optional states absent, it should succeed": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil), authority: virtualNetworkLinkSuccessfulPoller, complete: true,
+		},
+		"When a recovery read has both optional states absent, it should remain unproven": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil), authority: virtualNetworkLinkRecoveryRead, retry: true,
+		},
+		"When a recovery read has Succeeded and the other state absent, it should succeed": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), &succeeded, nil), authority: virtualNetworkLinkRecoveryRead, complete: true,
+		},
+		"When a recovery read has Completed and the other state absent, it should succeed": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, &completed), authority: virtualNetworkLinkRecoveryRead, complete: true,
+		},
+		"When both explicit states are successful, it should succeed": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), &succeeded, &completed), authority: virtualNetworkLinkRecoveryRead, complete: true,
+		},
+		"When success is mixed with pending, it should remain pending": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), &succeeded, &inProgress), authority: virtualNetworkLinkRecoveryRead, retry: true,
+		},
+		"When a provisioning state is pending, it should remain pending even with Completed": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), &creating, &completed), authority: virtualNetworkLinkRecoveryRead, retry: true,
+		},
+		"When a failure state is present, it should fail": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), &failed, &completed), authority: virtualNetworkLinkRecoveryRead, wantError: true,
+		},
+		"When a canceled state is present, it should fail": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), &canceled, &completed), authority: virtualNetworkLinkRecoveryRead, wantError: true,
+		},
+		"When a deleting state is present, it should fail": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), &deleting, &completed), authority: virtualNetworkLinkRecoveryRead, wantError: true,
+		},
+		"When an unknown state is present, it should fail closed": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), &unknown, &completed), authority: virtualNetworkLinkRecoveryRead, wantError: true,
+		},
+		"When an unknown link state is present, it should fail closed": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(false), &succeeded, &unknownLinkState), authority: virtualNetworkLinkRecoveryRead, wantError: true,
+		},
+		"When registration is missing, it should remain unproven": {
+			link: testVirtualNetworkLink(desiredVNetID, nil, &succeeded, nil), authority: virtualNetworkLinkRecoveryRead, retry: true,
+		},
+		"When the VNet ID is missing, it should remain unproven": {
+			link: missingVNetID, authority: virtualNetworkLinkRecoveryRead, retry: true,
+		},
+		"When registration is missing but the VNet differs, it should fail immediately": {
+			link: testVirtualNetworkLink("/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/other", nil, &succeeded, nil), authority: virtualNetworkLinkRecoveryRead, wantError: true,
+		},
+		"When the VNet ID is missing but registration is enabled, it should fail immediately": {
+			link: missingVNetIDWithEnabledRegistration, authority: virtualNetworkLinkRecoveryRead, wantError: true,
+		},
+		"When registration is enabled, it should fail without overwrite": {
+			link: testVirtualNetworkLink(desiredVNetID, ptr.To(true), &succeeded, &completed), authority: virtualNetworkLinkRecoveryRead, wantError: true,
+		},
+		"When the VNet differs, it should fail without overwrite": {
+			link: testVirtualNetworkLink("/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/other", ptr.To(false), &succeeded, &completed), authority: virtualNetworkLinkRecoveryRead, wantError: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			complete, retry, err := evaluateVirtualNetworkLink(assessVirtualNetworkLink(test.link, desiredVNetID), test.authority)
+			g.Expect(complete).To(Equal(test.complete))
+			g.Expect(retry).To(Equal(test.retry))
+			if test.wantError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+		})
+	}
+}
+
+func TestCreatePrivateDNSZoneLink(t *testing.T) {
+	t.Run("When an existing link is observed, it should enforce the recovery policy", testCreatePrivateDNSZoneLinkExistingLinkPolicy)
+	t.Run("When an absent link is created, it should preserve context and create-only semantics", testCreatePrivateDNSZoneLinkUsesConditionalCreateAndOriginalPollContext)
+	t.Run("When a successful poll result is incomplete, it should verify the result", testCreatePrivateDNSZoneLinkValidatesIncompleteSuccessfulPollResult)
+	t.Run("When the incident conflict is returned, it should observe a visible link without overwriting", testCreatePrivateDNSZoneLinkRecoversPendingUpsertWithoutOverwritingVisibleLink)
+	t.Run("When the incident conflict leaves the target absent, it should conditionally resubmit", testCreatePrivateDNSZoneLinkResubmitsOnlyAfterTargetRemainsAbsent)
+	t.Run("When the incident conflict never converges, it should fail at the configured bound", testCreatePrivateDNSZoneLinkPendingConflictExhaustion)
+	t.Run("When a conditional create loses a race, it should verify without overwriting", testCreatePrivateDNSZoneLinkHandlesConditionalCreateRace)
+	t.Run("When a conditional race remains pending, it should observe without overwriting", testCreatePrivateDNSZoneLinkObservesPendingConditionalRaceWithoutOverwrite)
+	t.Run("When Begin returns an unrelated error, it should fail closed", testCreatePrivateDNSZoneLinkPreservesUnrelatedBeginError)
+	t.Run("When polling ends after cancellation, it should skip recovery GET", testCreatePrivateDNSZoneLinkPollErrorCancellationSkipsRecoveryGet)
+	t.Run("When polling ends after a deadline, it should skip recovery GET", testCreatePrivateDNSZoneLinkPollErrorDeadlineSkipsRecoveryGet)
+	t.Run("When polling fails without context cancellation, it should use one conservative recovery GET", testCreatePrivateDNSZoneLinkPollErrorUsesOneConservativeRecoveryGet)
+	t.Run("When an in-flight provider call is canceled, it should stop subsequent calls", testCreatePrivateDNSZoneLinkInFlightCancellation)
+	t.Run("When cancellation occurs during backoff, it should stop subsequent calls", testCreatePrivateDNSZoneLinkCancellationDuringBackoffStopsFurtherCalls)
+	t.Run("When the convergence child deadline expires, it should preserve the deadline and stop calls", testCreatePrivateDNSZoneLinkInternalDeadlineStopsFurtherCalls)
+	t.Run("When provider failures are returned, it should sanitize text and preserve causes", testCreatePrivateDNSZoneLinkSanitizesProviderErrors)
+}
+
+func testCreatePrivateDNSZoneLinkExistingLinkPolicy(t *testing.T) {
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	succeeded := armprivatedns.ProvisioningStateSucceeded
+	creating := armprivatedns.ProvisioningStateCreating
+	missingVNetIDWithEnabledRegistration := testVirtualNetworkLink(desiredVNetID, ptr.To(true), &succeeded, nil)
+	missingVNetIDWithEnabledRegistration.Properties.VirtualNetwork.ID = nil
+	tests := map[string]struct {
+		links     []armprivatedns.VirtualNetworkLink
+		wantError bool
+	}{
+		"When an existing desired link has one explicit success state, it should succeed without a PUT": {
+			links: []armprivatedns.VirtualNetworkLink{testVirtualNetworkLink(desiredVNetID, ptr.To(false), &succeeded, nil)},
+		},
+		"When an existing desired link progresses to explicit success, it should use GET only": {
+			links: []armprivatedns.VirtualNetworkLink{
+				testVirtualNetworkLink(desiredVNetID, ptr.To(false), &creating, nil),
+				testVirtualNetworkLink(desiredVNetID, ptr.To(false), &succeeded, nil),
+			},
+		},
+		"When an existing desired link has both optional states absent, it should fail bounded": {
+			links: []armprivatedns.VirtualNetworkLink{
+				testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil),
+				testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil),
+			}, wantError: true,
+		},
+		"When an existing link is incompatible, it should fail without a PUT": {
+			links: []armprivatedns.VirtualNetworkLink{testVirtualNetworkLink("/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/other", ptr.To(false), &succeeded, nil)}, wantError: true,
+		},
+		"When registration is missing but the VNet differs, it should fail after one GET without a PUT": {
+			links: []armprivatedns.VirtualNetworkLink{testVirtualNetworkLink("/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/other", nil, &succeeded, nil)}, wantError: true,
+		},
+		"When the VNet ID is missing but registration is enabled, it should fail after one GET without a PUT": {
+			links: []armprivatedns.VirtualNetworkLink{missingVNetIDWithEnabledRegistration}, wantError: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			client := &fakeVirtualNetworkLinkClient{}
+			for _, link := range test.links {
+				client.getActions = append(client.getActions, getVirtualNetworkLink(link))
+			}
+
+			err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(len(test.links)))
+			if test.wantError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			getContexts, beginContexts, _ := client.snapshot()
+			g.Expect(getContexts).To(HaveLen(len(test.links)))
+			g.Expect(beginContexts).To(BeEmpty())
+		})
+	}
+}
+
+func testCreatePrivateDNSZoneLinkUsesConditionalCreateAndOriginalPollContext(t *testing.T) {
+	g := NewGomegaWithT(t)
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	notFound := testResponseError(http.StatusNotFound, "NotFound", ``)
+	poller := &fakeVirtualNetworkLinkPoller{result: testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil)}
+	client := &fakeVirtualNetworkLinkClient{
+		getActions:   []virtualNetworkLinkGetAction{getVirtualNetworkLinkError(notFound)},
+		beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(poller, nil)},
+	}
+	type contextKey string
+	ctx := context.WithValue(context.Background(), contextKey("key"), "value")
+
+	err := createPrivateDNSZoneLink(ctx, client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(2))
+	g.Expect(err).ToNot(HaveOccurred())
+
+	getContexts, beginContexts, beginOptions := client.snapshot()
+	g.Expect(getContexts).To(HaveLen(1))
+	g.Expect(beginContexts).To(HaveLen(1))
+	g.Expect(beginOptions).To(HaveLen(1))
+	g.Expect(beginOptions[0]).ToNot(BeNil())
+	g.Expect(beginOptions[0].IfNoneMatch).ToNot(BeNil())
+	g.Expect(*beginOptions[0].IfNoneMatch).To(Equal("*"))
+	_, hasGetDeadline := getContexts[0].Deadline()
+	_, hasBeginDeadline := beginContexts[0].Deadline()
+	g.Expect(hasGetDeadline).To(BeTrue())
+	g.Expect(hasBeginDeadline).To(BeTrue())
+	g.Expect(getContexts[0].Value(contextKey("key"))).To(Equal("value"))
+	g.Expect(beginContexts[0].Value(contextKey("key"))).To(Equal("value"))
+	g.Expect(getContexts[0] == ctx).To(BeFalse())
+	g.Expect(beginContexts[0] == ctx).To(BeFalse())
+	pollContexts := poller.pollContexts()
+	g.Expect(pollContexts).To(HaveLen(1))
+	g.Expect(pollContexts[0] == ctx).To(BeTrue())
+}
+
+func testCreatePrivateDNSZoneLinkValidatesIncompleteSuccessfulPollResult(t *testing.T) {
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	creating := armprivatedns.ProvisioningStateCreating
+	inProgress := armprivatedns.VirtualNetworkLinkStateInProgress
+	tests := map[string]struct {
+		pollResult      armprivatedns.VirtualNetworkLink
+		validationLinks []armprivatedns.VirtualNetworkLink
+		wantError       bool
+	}{
+		"When a successful poll result omits desired properties, it should verify them using bounded GETs": {
+			pollResult:      armprivatedns.VirtualNetworkLink{},
+			validationLinks: []armprivatedns.VirtualNetworkLink{testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil)},
+		},
+		"When a successful poll result still reports pending, it should verify until pending clears": {
+			pollResult:      testVirtualNetworkLink(desiredVNetID, ptr.To(false), &creating, &inProgress),
+			validationLinks: []armprivatedns.VirtualNetworkLink{testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil)},
+		},
+		"When pending never clears after successful polling, it should fail bounded": {
+			pollResult: testVirtualNetworkLink(desiredVNetID, ptr.To(false), &creating, &inProgress),
+			validationLinks: []armprivatedns.VirtualNetworkLink{
+				testVirtualNetworkLink(desiredVNetID, ptr.To(false), &creating, &inProgress),
+				testVirtualNetworkLink(desiredVNetID, ptr.To(false), &creating, &inProgress),
+			},
+			wantError: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			notFound := testResponseError(http.StatusNotFound, "NotFound", ``)
+			poller := &fakeVirtualNetworkLinkPoller{result: test.pollResult}
+			client := &fakeVirtualNetworkLinkClient{
+				getActions:   []virtualNetworkLinkGetAction{getVirtualNetworkLinkError(notFound)},
+				beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(poller, nil)},
+			}
+			for _, link := range test.validationLinks {
+				client.getActions = append(client.getActions, getVirtualNetworkLink(link))
+			}
+
+			err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(len(test.validationLinks)))
+			if test.wantError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			getContexts, beginContexts, _ := client.snapshot()
+			g.Expect(getContexts).To(HaveLen(1 + len(test.validationLinks)))
+			g.Expect(beginContexts).To(HaveLen(1))
+		})
+	}
+}
+
+func testCreatePrivateDNSZoneLinkRecoversPendingUpsertWithoutOverwritingVisibleLink(t *testing.T) {
+	g := NewGomegaWithT(t)
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	notFound := testResponseError(http.StatusNotFound, "NotFound", ``)
+	pendingConflict := testResponseError(http.StatusConflict, "Conflict", pendingVirtualNetworkLinkUpsertBody)
+	creating := armprivatedns.ProvisioningStateCreating
+	inProgress := armprivatedns.VirtualNetworkLinkStateInProgress
+	succeeded := armprivatedns.ProvisioningStateSucceeded
+	client := &fakeVirtualNetworkLinkClient{
+		getActions: []virtualNetworkLinkGetAction{
+			getVirtualNetworkLinkError(notFound),
+			getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), &creating, &inProgress)),
+			getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), &succeeded, nil)),
+		},
+		beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(nil, pendingConflict)},
+	}
+
+	err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(4))
+	g.Expect(err).ToNot(HaveOccurred())
+	getContexts, beginContexts, _ := client.snapshot()
+	g.Expect(getContexts).To(HaveLen(3))
+	g.Expect(beginContexts).To(HaveLen(1))
+}
+
+func testCreatePrivateDNSZoneLinkResubmitsOnlyAfterTargetRemainsAbsent(t *testing.T) {
+	g := NewGomegaWithT(t)
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	notFoundOne := testResponseError(http.StatusNotFound, "NotFound", ``)
+	notFoundTwo := testResponseError(http.StatusNotFound, "NotFound", ``)
+	pendingConflict := testResponseError(http.StatusConflict, "Conflict", pendingVirtualNetworkLinkUpsertBody)
+	poller := &fakeVirtualNetworkLinkPoller{result: testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil)}
+	client := &fakeVirtualNetworkLinkClient{
+		getActions: []virtualNetworkLinkGetAction{
+			getVirtualNetworkLinkError(notFoundOne),
+			getVirtualNetworkLinkError(notFoundTwo),
+		},
+		beginActions: []virtualNetworkLinkBeginAction{
+			beginVirtualNetworkLink(nil, pendingConflict),
+			beginVirtualNetworkLink(poller, nil),
+		},
+	}
+
+	err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(3))
+	g.Expect(err).ToNot(HaveOccurred())
+	_, beginContexts, options := client.snapshot()
+	g.Expect(beginContexts).To(HaveLen(2))
+	g.Expect(options).To(HaveLen(2))
+	for _, option := range options {
+		g.Expect(option).ToNot(BeNil())
+		g.Expect(option.IfNoneMatch).ToNot(BeNil())
+		g.Expect(*option.IfNoneMatch).To(Equal("*"))
+	}
+}
+
+func testCreatePrivateDNSZoneLinkPendingConflictExhaustion(t *testing.T) {
+	g := NewGomegaWithT(t)
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	client := &fakeVirtualNetworkLinkClient{}
+	for range 3 {
+		client.getActions = append(client.getActions, getVirtualNetworkLinkError(testResponseError(http.StatusNotFound, "NotFound", ``)))
+		client.beginActions = append(client.beginActions, beginVirtualNetworkLink(nil, testResponseError(http.StatusConflict, "Conflict", pendingVirtualNetworkLinkUpsertBody)))
+	}
+
+	err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(3))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(wait.Interrupted(err)).To(BeTrue())
+	g.Expect(err.Error()).To(ContainSubstring("attempts=3"))
+	g.Expect(err.Error()).To(ContainSubstring("category=pending virtual network link upsert"))
+	g.Expect(err.Error()).ToNot(ContainSubstring("/operations/type/"))
+	g.Expect(err.Error()).ToNot(ContainSubstring("REDACTED"))
+	getContexts, beginContexts, _ := client.snapshot()
+	g.Expect(getContexts).To(HaveLen(3))
+	g.Expect(beginContexts).To(HaveLen(3))
+}
+
+func testCreatePrivateDNSZoneLinkHandlesConditionalCreateRace(t *testing.T) {
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	succeeded := armprivatedns.ProvisioningStateSucceeded
+	tests := map[string]struct {
+		raceLink      armprivatedns.VirtualNetworkLink
+		raceGetErr    error
+		wantError     bool
+		wantOriginal  bool
+		wantSecondary bool
+		precondition  *azcore.ResponseError
+	}{
+		"When a compatible link wins the conditional race, it should recover": {
+			raceLink:     testVirtualNetworkLink(desiredVNetID, ptr.To(false), &succeeded, nil),
+			precondition: testResponseError(http.StatusPreconditionFailed, "PreconditionFailed", ``),
+		},
+		"When an incompatible VNet wins the conditional race, it should not overwrite it": {
+			raceLink:     testVirtualNetworkLink("/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/other", ptr.To(false), &succeeded, nil),
+			wantError:    true,
+			wantOriginal: true,
+			precondition: testResponseError(http.StatusPreconditionFailed, "PreconditionFailed", ``),
+		},
+		"When registration enabled wins the conditional race, it should not overwrite it": {
+			raceLink:     testVirtualNetworkLink(desiredVNetID, ptr.To(true), &succeeded, nil),
+			wantError:    true,
+			wantOriginal: true,
+			precondition: testResponseError(http.StatusPreconditionFailed, "PreconditionFailed", ``),
+		},
+		"When the target remains absent after the conditional response, it should preserve the original error": {
+			raceGetErr:   testResponseError(http.StatusNotFound, "NotFound", ``),
+			wantError:    true,
+			wantOriginal: true,
+			precondition: testResponseError(http.StatusPreconditionFailed, "PreconditionFailed", ``),
+		},
+		"When verification fails after the conditional response, it should preserve the original error": {
+			raceGetErr:    testResponseError(http.StatusInternalServerError, "InternalServerError", ``),
+			wantError:     true,
+			wantOriginal:  true,
+			wantSecondary: true,
+			precondition:  testResponseError(http.StatusPreconditionFailed, "PreconditionFailed", ``),
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			initialNotFound := testResponseError(http.StatusNotFound, "NotFound", ``)
+			client := &fakeVirtualNetworkLinkClient{
+				getActions: []virtualNetworkLinkGetAction{
+					getVirtualNetworkLinkError(initialNotFound),
+				},
+				beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(nil, test.precondition)},
+			}
+			if test.raceGetErr != nil {
+				client.getActions = append(client.getActions, getVirtualNetworkLinkError(test.raceGetErr))
+			} else {
+				client.getActions = append(client.getActions, getVirtualNetworkLink(test.raceLink))
+			}
+
+			err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(2))
+			if test.wantError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			if test.wantOriginal {
+				g.Expect(errors.Is(err, test.precondition)).To(BeTrue())
+			}
+			if test.wantSecondary {
+				g.Expect(errors.Is(err, test.raceGetErr)).To(BeTrue())
+			}
+			getContexts, beginContexts, _ := client.snapshot()
+			g.Expect(getContexts).To(HaveLen(2))
+			g.Expect(beginContexts).To(HaveLen(1))
+		})
+	}
+}
+
+func testCreatePrivateDNSZoneLinkObservesPendingConditionalRaceWithoutOverwrite(t *testing.T) {
+	g := NewGomegaWithT(t)
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	notFound := testResponseError(http.StatusNotFound, "NotFound", ``)
+	precondition := testResponseError(http.StatusPreconditionFailed, "PreconditionFailed", ``)
+	creating := armprivatedns.ProvisioningStateCreating
+	succeeded := armprivatedns.ProvisioningStateSucceeded
+	client := &fakeVirtualNetworkLinkClient{
+		getActions: []virtualNetworkLinkGetAction{
+			getVirtualNetworkLinkError(notFound),
+			getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), &creating, nil)),
+			getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), &succeeded, nil)),
+		},
+		beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(nil, precondition)},
+	}
+
+	err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(3))
+	g.Expect(err).ToNot(HaveOccurred())
+	getContexts, beginContexts, _ := client.snapshot()
+	g.Expect(getContexts).To(HaveLen(3))
+	g.Expect(beginContexts).To(HaveLen(1))
+}
+
+func testCreatePrivateDNSZoneLinkPreservesUnrelatedBeginError(t *testing.T) {
+	g := NewGomegaWithT(t)
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	notFound := testResponseError(http.StatusNotFound, "NotFound", ``)
+	unrelatedConflict := testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation of type 'DeleteVirtualNetworkLink' is pending for the requested object."}}`)
+	client := &fakeVirtualNetworkLinkClient{
+		getActions:   []virtualNetworkLinkGetAction{getVirtualNetworkLinkError(notFound)},
+		beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(nil, unrelatedConflict)},
+	}
+
+	err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(3))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(errors.Is(err, unrelatedConflict)).To(BeTrue())
+	getContexts, beginContexts, _ := client.snapshot()
+	g.Expect(getContexts).To(HaveLen(1))
+	g.Expect(beginContexts).To(HaveLen(1))
+}
+
+func TestIsPendingVirtualNetworkLinkUpsert(t *testing.T) {
+	tests := map[string]struct {
+		err      func() error
+		expected bool
+	}{
+		"When the structured conflict contains the exact sanitized incident response, it should match": {
+			err: func() error {
+				return fmt.Errorf("wrapped: %w", testResponseError(http.StatusConflict, "Conflict", pendingVirtualNetworkLinkUpsertBody))
+			}, expected: true,
+		},
+		"When the structured conflict contains the observed operation-group grammar, it should match": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", pendingVirtualNetworkLinkUpsertStructuredBody)
+			}, expected: true,
+		},
+		"When whitespace and case vary within the associated clauses, it should match": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "conflict", `{"error":{"code":"CONFLICT","message":"ANOTHER   OPERATION IS PENDING FOR THE REQUESTED OBJECT. OPERATION GROUP '/OPERATIONS/GROUPS/ID/|VIRTUALNETWORKLINKS|subscription|resource-group|private-zone|link' ALREADY HAS 1 OPERATIONS LIKE '/operations/type/upsertvirtualnetworklink/id/redacted' QUEUED."}}`)
+			}, expected: true,
+		},
+		"When a historical qualifier precedes the pending sentence, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Historical example says another operation is pending for requested object. Scope already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/example' queued."}}`)
+			},
+		},
+		"When newline-delimited intervening prose precedes a historical queued Upsert, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation is pending for requested object.\nThis request queues DeleteVirtualNetworkLink\nHistorical example an object already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/example' queued."}}`)
+			},
+		},
+		"When the adjacent queued clause has a delimiter-free historical qualifier, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. Historical scope already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/example' queued."}}`)
+			},
+		},
+		"When the adjacent queued clause has a delimiter-free explanatory qualifier, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. For example scope already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/example' queued."}}`)
+			},
+		},
+		"When the response body is missing, it should fail closed": {
+			err: func() error { return &azcore.ResponseError{StatusCode: http.StatusConflict, ErrorCode: "Conflict"} },
+		},
+		"When the raw response has no body, it should fail closed": {
+			err: func() error {
+				return &azcore.ResponseError{StatusCode: http.StatusConflict, ErrorCode: "Conflict", RawResponse: &http.Response{StatusCode: http.StatusConflict}}
+			},
+		},
+		"When the response body is malformed, it should fail closed": {
+			err: func() error { return testResponseError(http.StatusConflict, "Conflict", `{`) },
+		},
+		"When the nested error object is missing, it should fail closed": {
+			err: func() error { return testResponseError(http.StatusConflict, "Conflict", `{}`) },
+		},
+		"When the nested message is missing, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict"}}`)
+			},
+		},
+		"When the body code does not match, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"OtherConflict","message":"Another operation is pending for requested object. Scope already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/redacted' queued."}}`)
+			},
+		},
+		"When another operation type is queued, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. Scope already has 1 operations like '/operations/type/DeleteVirtualNetworkLink/id/redacted' queued."}}`)
+			},
+		},
+		"When the Upsert marker is in a historical clause, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. A previous response mentioned '/operations/type/UpsertVirtualNetworkLink/id/historical' as completed. Scope already has 1 operations like '/operations/type/DeleteVirtualNetworkLink/id/redacted' queued."}}`)
+			},
+		},
+		"When an unrelated clause precedes a historical queued Upsert clause, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. This request queues DeleteVirtualNetworkLink. Historical example: an object already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/example' queued during a previous retry."}}`)
+			},
+		},
+		"When the neighboring queued Upsert grammar is labeled as historical, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. Historical example: an object already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/example' queued during a previous retry."}}`)
+			},
+		},
+		"When neighboring queued Upsert grammar describes a previous retry, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. Scope already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/example' queued during a previous retry."}}`)
+			},
+		},
+		"When a semicolon separates an explanatory clause from queued Upsert grammar, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. Explanatory note; an object already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/example' queued during a previous retry."}}`)
+			},
+		},
+		"When the queued clause precedes the pending-object clause, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Scope already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/redacted' queued. Another operation is pending for requested object."}}`)
+			},
+		},
+		"When the operation path is not described as queued, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. Scope already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/redacted'."}}`)
+			},
+		},
+		"When marker words are unassociated, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "Conflict", `{"error":{"code":"Conflict","message":"Another operation is pending for requested object. UpsertVirtualNetworkLink is documented here. Different operations are queued."}}`)
+			},
+		},
+		"When the HTTP status differs, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusPreconditionFailed, "Conflict", pendingVirtualNetworkLinkUpsertBody)
+			},
+		},
+		"When the top level code differs, it should fail closed": {
+			err: func() error {
+				return testResponseError(http.StatusConflict, "OtherConflict", pendingVirtualNetworkLinkUpsertBody)
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(isPendingVirtualNetworkLinkUpsert(test.err())).To(Equal(test.expected))
+		})
+	}
+}
+
+func testCreatePrivateDNSZoneLinkPollErrorCancellationSkipsRecoveryGet(t *testing.T) {
+	g := NewGomegaWithT(t)
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	notFound := testResponseError(http.StatusNotFound, "NotFound", ``)
+	pollErr := errors.New("poll failed")
+	ctx, cancel := context.WithCancel(context.Background())
+	poller := &fakeVirtualNetworkLinkPoller{
+		err: pollErr,
+		onPoll: func(context.Context) {
+			cancel()
+		},
+	}
+	client := &fakeVirtualNetworkLinkClient{
+		getActions:   []virtualNetworkLinkGetAction{getVirtualNetworkLinkError(notFound)},
+		beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(poller, nil)},
+	}
+
+	err := createPrivateDNSZoneLink(ctx, client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(2))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(errors.Is(err, context.Canceled)).To(BeTrue())
+	g.Expect(errors.Is(err, pollErr)).To(BeTrue())
+	getContexts, _, _ := client.snapshot()
+	g.Expect(getContexts).To(HaveLen(1))
+}
+
+func testCreatePrivateDNSZoneLinkPollErrorDeadlineSkipsRecoveryGet(t *testing.T) {
+	g := NewGomegaWithT(t)
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	notFound := testResponseError(http.StatusNotFound, "NotFound", ``)
+	pollErr := errors.New("poll failed")
+	ctx := newManualErrorContext()
+	poller := &fakeVirtualNetworkLinkPoller{
+		err: pollErr,
+		onPoll: func(context.Context) {
+			ctx.cancel(context.DeadlineExceeded)
+		},
+	}
+	client := &fakeVirtualNetworkLinkClient{
+		getActions:   []virtualNetworkLinkGetAction{getVirtualNetworkLinkError(notFound)},
+		beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(poller, nil)},
+	}
+
+	err := createPrivateDNSZoneLink(ctx, client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(2))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(errors.Is(err, context.DeadlineExceeded)).To(BeTrue())
+	g.Expect(errors.Is(err, pollErr)).To(BeTrue())
+	getContexts, _, _ := client.snapshot()
+	g.Expect(getContexts).To(HaveLen(1))
+}
+
+func testCreatePrivateDNSZoneLinkPollErrorUsesOneConservativeRecoveryGet(t *testing.T) {
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	succeeded := armprivatedns.ProvisioningStateSucceeded
+	creating := armprivatedns.ProvisioningStateCreating
+	failed := armprivatedns.ProvisioningStateFailed
+	unknown := armprivatedns.ProvisioningState("FutureState")
+	pollErr := errors.New("poll failed with sensitive-operation-marker")
+	recoveryNotFound := testResponseError(http.StatusNotFound, "NotFound", ``)
+	recoveryProviderErr := testResponseError(http.StatusInternalServerError, "InternalServerError", ``)
+	tests := map[string]struct {
+		recoveryAction virtualNetworkLinkGetAction
+		recoveryCause  error
+		wantError      bool
+	}{
+		"When recovery has one explicit success state, it should recover": {
+			recoveryAction: getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), &succeeded, nil)),
+		},
+		"When recovery has both states absent, it should preserve the poll error": {
+			recoveryAction: getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil)), wantError: true,
+		},
+		"When recovery remains pending, it should preserve the poll error": {
+			recoveryAction: getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), &creating, nil)), wantError: true,
+		},
+		"When recovery reports failure, it should preserve the poll error": {
+			recoveryAction: getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), &failed, nil)), wantError: true,
+		},
+		"When recovery reports an unknown state, it should preserve the poll error": {
+			recoveryAction: getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), &unknown, nil)), wantError: true,
+		},
+		"When recovery finds incompatible properties, it should preserve the poll error": {
+			recoveryAction: getVirtualNetworkLink(testVirtualNetworkLink("/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/other", ptr.To(false), &succeeded, nil)), wantError: true,
+		},
+		"When recovery finds the target absent, it should preserve both causes": {
+			recoveryAction: getVirtualNetworkLinkError(recoveryNotFound), recoveryCause: recoveryNotFound, wantError: true,
+		},
+		"When recovery GET fails, it should preserve both causes": {
+			recoveryAction: getVirtualNetworkLinkError(recoveryProviderErr), recoveryCause: recoveryProviderErr, wantError: true,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			notFound := testResponseError(http.StatusNotFound, "NotFound", ``)
+			poller := &fakeVirtualNetworkLinkPoller{err: pollErr}
+			client := &fakeVirtualNetworkLinkClient{
+				getActions: []virtualNetworkLinkGetAction{
+					getVirtualNetworkLinkError(notFound),
+					test.recoveryAction,
+				},
+				beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(poller, nil)},
+			}
+
+			err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(2))
+			if test.wantError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(errors.Is(err, pollErr)).To(BeTrue())
+				g.Expect(err.Error()).ToNot(ContainSubstring("sensitive-operation-marker"))
+				if test.recoveryCause != nil {
+					g.Expect(errors.Is(err, test.recoveryCause)).To(BeTrue())
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			getContexts, beginContexts, _ := client.snapshot()
+			g.Expect(getContexts).To(HaveLen(2))
+			g.Expect(beginContexts).To(HaveLen(1))
+			g.Expect(poller.pollContexts()).To(HaveLen(1))
+		})
+	}
+}
+
+func testCreatePrivateDNSZoneLinkInFlightCancellation(t *testing.T) {
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	tests := map[string]struct {
+		client  func(chan struct{}) *fakeVirtualNetworkLinkClient
+		getCall int
+		begins  int
+	}{
+		"When an in-flight Get is canceled, it should stop without a Begin call": {
+			client: func(started chan struct{}) *fakeVirtualNetworkLinkClient {
+				return &fakeVirtualNetworkLinkClient{getActions: []virtualNetworkLinkGetAction{func(ctx context.Context) (armprivatedns.VirtualNetworkLink, error) {
+					close(started)
+					<-ctx.Done()
+					return armprivatedns.VirtualNetworkLink{}, ctx.Err()
+				}}}
+			}, getCall: 1,
+		},
+		"When an in-flight Begin is canceled, it should stop without polling": {
+			client: func(started chan struct{}) *fakeVirtualNetworkLinkClient {
+				return &fakeVirtualNetworkLinkClient{
+					getActions: []virtualNetworkLinkGetAction{getVirtualNetworkLinkError(testResponseError(http.StatusNotFound, "NotFound", ``))},
+					beginActions: []virtualNetworkLinkBeginAction{func(ctx context.Context, _ *armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions) (virtualNetworkLinkPoller, error) {
+						close(started)
+						<-ctx.Done()
+						return nil, ctx.Err()
+					}},
+				}
+			}, getCall: 1, begins: 1,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			started := make(chan struct{})
+			client := test.client(started)
+			ctx, cancel := context.WithCancel(context.Background())
+			result := make(chan error, 1)
+			go func() {
+				result <- createPrivateDNSZoneLink(ctx, client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(2))
+			}()
+			<-started
+			cancel()
+			err := <-result
+			g.Expect(errors.Is(err, context.Canceled)).To(BeTrue())
+			getContexts, beginContexts, _ := client.snapshot()
+			g.Expect(getContexts).To(HaveLen(test.getCall))
+			g.Expect(beginContexts).To(HaveLen(test.begins))
+		})
+	}
+}
+
+func testCreatePrivateDNSZoneLinkCancellationDuringBackoffStopsFurtherCalls(t *testing.T) {
+	g := NewGomegaWithT(t)
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	started := make(chan struct{})
+	client := &fakeVirtualNetworkLinkClient{
+		getActions: []virtualNetworkLinkGetAction{
+			func(context.Context) (armprivatedns.VirtualNetworkLink, error) {
+				close(started)
+				return testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil), nil
+			},
+			getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil)),
+		},
+	}
+	config := privateDNSZoneLinkWaitConfig{
+		timeout: time.Hour,
+		backoff: wait.Backoff{Duration: time.Hour, Steps: 2},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		result <- createPrivateDNSZoneLink(ctx, client, "resource-group", "private-zone", "link", desiredVNetID, config)
+	}()
+	<-started
+	cancel()
+	err := <-result
+	g.Expect(errors.Is(err, context.Canceled)).To(BeTrue())
+	getContexts, beginContexts, _ := client.snapshot()
+	g.Expect(getContexts).To(HaveLen(1))
+	g.Expect(beginContexts).To(BeEmpty())
+}
+
+func testCreatePrivateDNSZoneLinkInternalDeadlineStopsFurtherCalls(t *testing.T) {
+	g := NewGomegaWithT(t)
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	started := make(chan struct{})
+	client := &fakeVirtualNetworkLinkClient{
+		getActions: []virtualNetworkLinkGetAction{func(ctx context.Context) (armprivatedns.VirtualNetworkLink, error) {
+			close(started)
+			<-ctx.Done()
+			return armprivatedns.VirtualNetworkLink{}, ctx.Err()
+		}},
+	}
+	config := privateDNSZoneLinkWaitConfig{
+		timeout: 50 * time.Millisecond,
+		backoff: wait.Backoff{Duration: time.Hour, Steps: 2},
+	}
+	parent := context.Background()
+	result := make(chan error, 1)
+	go func() {
+		result <- createPrivateDNSZoneLink(parent, client, "resource-group", "private-zone", "link", desiredVNetID, config)
+	}()
+	<-started
+	err := <-result
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(errors.Is(err, context.DeadlineExceeded)).To(BeTrue())
+	g.Expect(parent.Err()).To(BeNil())
+	g.Expect(err.Error()).To(ContainSubstring("attempts=1"))
+	g.Expect(err.Error()).To(ContainSubstring("category=target not yet observed"))
+	getContexts, beginContexts, _ := client.snapshot()
+	g.Expect(getContexts).To(HaveLen(1))
+	g.Expect(beginContexts).To(BeEmpty())
+}
+
+func testCreatePrivateDNSZoneLinkSanitizesProviderErrors(t *testing.T) {
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	assertSanitized := func(t *testing.T, err error, causes []error, markers ...string) {
+		t.Helper()
+		g := NewGomegaWithT(t)
+		g.Expect(err).To(HaveOccurred())
+		for _, cause := range causes {
+			g.Expect(errors.Is(err, cause)).To(BeTrue())
+		}
+		for _, marker := range markers {
+			g.Expect(err.Error()).ToNot(ContainSubstring(marker))
+		}
+		g.Expect(err.Error()).ToNot(ContainSubstring("/subscriptions/"))
+		g.Expect(err.Error()).ToNot(ContainSubstring("/operations/type/"))
+		var responseError *azcore.ResponseError
+		g.Expect(errors.As(err, &responseError)).To(BeTrue())
+	}
+
+	t.Run("When preflight GET fails, it should redact provider response details", func(t *testing.T) {
+		marker := "PREFLIGHT_GET_SENSITIVE_MARKER"
+		cause := testSensitiveResponseError(t, http.StatusInternalServerError, "InternalServerError", marker)
+		client := &fakeVirtualNetworkLinkClient{getActions: []virtualNetworkLinkGetAction{getVirtualNetworkLinkError(cause)}}
+		err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(1))
+		assertSanitized(t, err, []error{cause}, marker, "raw-body-"+marker, "operation-"+marker)
+	})
+
+	t.Run("When conditional Begin fails, it should redact provider response details", func(t *testing.T) {
+		marker := "BEGIN_SENSITIVE_MARKER"
+		cause := testSensitiveResponseError(t, http.StatusConflict, "Conflict", marker)
+		client := &fakeVirtualNetworkLinkClient{
+			getActions:   []virtualNetworkLinkGetAction{getVirtualNetworkLinkError(testResponseError(http.StatusNotFound, "NotFound", ``))},
+			beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(nil, cause)},
+		}
+		err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(1))
+		assertSanitized(t, err, []error{cause}, marker, "raw-body-"+marker, "operation-"+marker)
+	})
+
+	t.Run("When verification after a 412 fails, it should redact both provider responses and preserve both causes", func(t *testing.T) {
+		conditionalMarker := "CONDITIONAL_SENSITIVE_MARKER"
+		verificationMarker := "VERIFICATION_SENSITIVE_MARKER"
+		conditionalCause := testSensitiveResponseError(t, http.StatusPreconditionFailed, "PreconditionFailed", conditionalMarker)
+		verificationCause := testSensitiveResponseError(t, http.StatusInternalServerError, "InternalServerError", verificationMarker)
+		client := &fakeVirtualNetworkLinkClient{
+			getActions: []virtualNetworkLinkGetAction{
+				getVirtualNetworkLinkError(testResponseError(http.StatusNotFound, "NotFound", ``)),
+				getVirtualNetworkLinkError(verificationCause),
+			},
+			beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(nil, conditionalCause)},
+		}
+		err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(1))
+		assertSanitized(t, err, []error{conditionalCause, verificationCause}, conditionalMarker, verificationMarker)
+	})
+
+	t.Run("When polling fails, it should redact the poll response and preserve its cause", func(t *testing.T) {
+		marker := "POLL_SENSITIVE_MARKER"
+		pollCause := testSensitiveResponseError(t, http.StatusInternalServerError, "InternalServerError", marker)
+		poller := &fakeVirtualNetworkLinkPoller{err: pollCause}
+		client := &fakeVirtualNetworkLinkClient{
+			getActions: []virtualNetworkLinkGetAction{
+				getVirtualNetworkLinkError(testResponseError(http.StatusNotFound, "NotFound", ``)),
+				getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), nil, nil)),
+			},
+			beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(poller, nil)},
+		}
+		err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(1))
+		assertSanitized(t, err, []error{pollCause}, marker, "raw-body-"+marker, "operation-"+marker)
+	})
+
+	t.Run("When poll recovery GET fails, it should redact both failures and preserve both causes", func(t *testing.T) {
+		marker := "POLL_RECOVERY_SENSITIVE_MARKER"
+		pollCause := errors.New("poll-" + marker)
+		recoveryCause := testSensitiveResponseError(t, http.StatusInternalServerError, "InternalServerError", marker)
+		poller := &fakeVirtualNetworkLinkPoller{err: pollCause}
+		client := &fakeVirtualNetworkLinkClient{
+			getActions: []virtualNetworkLinkGetAction{
+				getVirtualNetworkLinkError(testResponseError(http.StatusNotFound, "NotFound", ``)),
+				getVirtualNetworkLinkError(recoveryCause),
+			},
+			beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(poller, nil)},
+		}
+		err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(1))
+		assertSanitized(t, err, []error{pollCause, recoveryCause}, marker, "raw-body-"+marker, "operation-"+marker)
+	})
+
+	t.Run("When post-poll verification GET fails, it should redact provider response details", func(t *testing.T) {
+		marker := "POST_POLL_SENSITIVE_MARKER"
+		cause := testSensitiveResponseError(t, http.StatusInternalServerError, "InternalServerError", marker)
+		poller := &fakeVirtualNetworkLinkPoller{result: armprivatedns.VirtualNetworkLink{}}
+		client := &fakeVirtualNetworkLinkClient{
+			getActions: []virtualNetworkLinkGetAction{
+				getVirtualNetworkLinkError(testResponseError(http.StatusNotFound, "NotFound", ``)),
+				getVirtualNetworkLinkError(cause),
+			},
+			beginActions: []virtualNetworkLinkBeginAction{beginVirtualNetworkLink(poller, nil)},
+		}
+		err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(1))
+		assertSanitized(t, err, []error{cause}, marker, "raw-body-"+marker, "operation-"+marker)
+	})
 }
