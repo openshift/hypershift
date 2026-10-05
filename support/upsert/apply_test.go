@@ -182,7 +182,7 @@ func testApplyManifestMetadataWrites(t *testing.T) {
 			manifest: func(attempt int) *corev1.ConfigMap {
 				value := fmt.Sprintf("label-%d", attempt)
 				if attempt == updateLoopThreshold(&corev1.ConfigMap{}) {
-					value = netutil.RemoveLabelMarker
+					value = util.RemoveLabelMarker
 				}
 				return &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
 					Name: "test", Labels: map[string]string{"requested-metadata": value},
