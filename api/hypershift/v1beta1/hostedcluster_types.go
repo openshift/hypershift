@@ -407,6 +407,18 @@ const (
 	// without triggering an unexpected update of KubeVirt VMs.
 	NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-topology-spread-constraints"
 
+	// NodePoolSupportsKubevirtArchitectureAnnotation indicates that it is safe to set the VMI
+	// Architecture field and inject the kubernetes.io/arch NodeSelector on KubeVirt VMs in
+	// this NodePool without triggering an unexpected fleet-wide rolling update.
+	//
+	// Because nodePool.Spec.Arch has +kubebuilder:default:=amd64, every existing NodePool
+	// already carries Arch="amd64". Setting Architecture="amd64" on the VMI spec changes the
+	// JSON-serialised KubevirtMachineTemplateSpec, which changes the hash-derived template name
+	// and causes CAPI to replace all VMs — identical in impact to the TopologySpreadConstraints
+	// migration. The annotation is only set for new NodePools or NodePools already undergoing a
+	// version update, so idle existing NodePools are never unexpectedly disrupted.
+	NodePoolSupportsKubevirtArchitectureAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-architecture"
+
 	// IsKubeVirtRHCOSVolumeLabelName labels rhcos DataVolumes and PVCs, to be able to filter them, e.g. for backup
 	IsKubeVirtRHCOSVolumeLabelName = "hypershift.openshift.io/is-kubevirt-rhcos"
 
