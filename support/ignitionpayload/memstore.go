@@ -80,7 +80,7 @@ func (s *MemStore) ListByOwner(ctx context.Context, owner OwnerRef) (tokens []st
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []string
+	result := []string{}
 	for tok, entry := range s.entries {
 		if entry.owner == owner {
 			result = append(result, tok)
