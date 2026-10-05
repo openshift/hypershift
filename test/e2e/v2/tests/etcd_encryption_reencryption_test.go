@@ -279,7 +279,9 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 			verifyKASHealth(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 			verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
 
-			verifyConditionBubbleUp(ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
+			Eventually(func(g Gomega) {
+				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
+			}, 2*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
 }
@@ -457,7 +459,9 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			Expect(hc.Status.SecretEncryption.History).NotTo(BeEmpty(),
 				"history should have at least one entry after first rotation")
 
-			verifyConditionBubbleUp(ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
+			Eventually(func(g Gomega) {
+				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
+			}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("Performing second key rotation: alternate -> original")
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
@@ -480,17 +484,22 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			verifyKASHealth(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 			verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
 
-			verifyConditionBubbleUp(ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
+			Eventually(func(g Gomega) {
+				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
+			}, 2*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
 }
 
-func verifyConditionBubbleUp(ctx context.Context, mgmtClient crclient.Client, hcKey crclient.ObjectKey, controlPlaneNamespace string) {
+// verifyConditionBubbleUp asserts that EtcdDataEncryptionUpToDate is consistent between
+// the HostedControlPlane and the HostedCluster. HCP→HC propagation is async, so callers
+// must wrap this inside Eventually rather than calling it single-shot.
+func verifyConditionBubbleUp(g Gomega, ctx context.Context, mgmtClient crclient.Client, hcKey crclient.ObjectKey, controlPlaneNamespace string) {
 	hc := &hyperv1.HostedCluster{}
-	Expect(mgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
+	g.Expect(mgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 
 	hcp := &hyperv1.HostedControlPlane{}
-	Expect(mgmtClient.Get(ctx, crclient.ObjectKey{
+	g.Expect(mgmtClient.Get(ctx, crclient.ObjectKey{
 		Name:      hc.Name,
 		Namespace: controlPlaneNamespace,
 	}, hcp)).To(Succeed())
@@ -498,13 +507,13 @@ func verifyConditionBubbleUp(ctx context.Context, mgmtClient crclient.Client, hc
 	hcCond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
 	hcpCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
 
-	Expect(hcCond).NotTo(BeNil(),
+	g.Expect(hcCond).NotTo(BeNil(),
 		"HostedCluster %s/%s should have EtcdDataEncryptionUpToDate condition", hcKey.Namespace, hcKey.Name)
-	Expect(hcpCond).NotTo(BeNil(),
+	g.Expect(hcpCond).NotTo(BeNil(),
 		"HostedControlPlane should have EtcdDataEncryptionUpToDate condition if HostedCluster does")
-	Expect(hcCond.Status).To(Equal(hcpCond.Status),
+	g.Expect(hcCond.Status).To(Equal(hcpCond.Status),
 		"EtcdDataEncryptionUpToDate status should match between HostedCluster and HostedControlPlane")
-	Expect(hcCond.Reason).To(Equal(hcpCond.Reason),
+	g.Expect(hcCond.Reason).To(Equal(hcpCond.Reason),
 		"EtcdDataEncryptionUpToDate reason should match between HostedCluster and HostedControlPlane")
 }
 
@@ -516,26 +525,7 @@ func ConditionBubbleUpTest(getTestCtx internal.TestContextGetter) {
 			tc := getTestCtx()
 			hcKey := crclient.ObjectKey{Namespace: tc.ClusterNamespace, Name: tc.ClusterName}
 			Eventually(func(g Gomega) {
-				hc := &hyperv1.HostedCluster{}
-				g.Expect(tc.MgmtClient.Get(tc.Context, hcKey, hc)).To(Succeed())
-
-				hcp := &hyperv1.HostedControlPlane{}
-				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
-					Name:      hc.Name,
-					Namespace: tc.ControlPlaneNamespace,
-				}, hcp)).To(Succeed())
-
-				hcCond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
-				hcpCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
-
-				g.Expect(hcCond).NotTo(BeNil(),
-					"HostedCluster %s/%s should have EtcdDataEncryptionUpToDate condition", hcKey.Namespace, hcKey.Name)
-				g.Expect(hcpCond).NotTo(BeNil(),
-					"HostedControlPlane should have EtcdDataEncryptionUpToDate condition if HostedCluster does")
-				g.Expect(hcCond.Status).To(Equal(hcpCond.Status),
-					"EtcdDataEncryptionUpToDate status should match between HostedCluster and HostedControlPlane")
-				g.Expect(hcCond.Reason).To(Equal(hcpCond.Reason),
-					"EtcdDataEncryptionUpToDate reason should match between HostedCluster and HostedControlPlane")
+				verifyConditionBubbleUp(g, tc.Context, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
 			}, 2*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
