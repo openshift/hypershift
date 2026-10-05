@@ -75,18 +75,16 @@ func RegisterEtcdEncryptionReencryptionTests(getTestCtx internal.TestContextGett
 	ConditionBubbleUpTest(getTestCtx)
 }
 
-// waitForReEncryptionStarted waits until EtcdDataEncryptionUpToDate is not True,
-// which signals that a re-encryption is in progress. Using the condition rather than
-// History length avoids a ring-buffer saturation bug: History is capped at MaxItems=5,
-// so once full a length-based check never fires even though rotation succeeded.
+// waitForReEncryptionStarted waits until TargetKey.Provider is non-empty, which means
+// the reconciler has started a new rotation. TargetKey is set at the beginning of a
+// rotation and stays set until the rotation completes — it is a level trigger, not an
+// edge trigger, so it cannot be missed regardless of the poll interval.
 func waitForReEncryptionStarted(ctx context.Context, mgmtClient crclient.Client, hcKey crclient.ObjectKey, timeout time.Duration) {
 	Eventually(func(g Gomega) {
 		hc := &hyperv1.HostedCluster{}
 		g.Expect(mgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
-		cond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
-		g.Expect(cond).NotTo(BeNil(), "EtcdDataEncryptionUpToDate condition should exist after the key rotation patch")
-		g.Expect(cond.Status).NotTo(Equal(metav1.ConditionTrue),
-			"EtcdDataEncryptionUpToDate should be not-True while re-encryption is in progress")
+		g.Expect(hc.Status.SecretEncryption.TargetKey.Provider).NotTo(BeEmpty(),
+			"TargetKey.Provider should be set once rotation has started")
 	}, timeout, 5*time.Second).Should(Succeed())
 }
 
