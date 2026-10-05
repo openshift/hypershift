@@ -12,10 +12,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/certs"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
-	configv1 "github.com/openshift/api/config/v1"
 	authenticationv1alpha1 "github.com/openshift/api/authentication/v1alpha1"
+	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -67,7 +68,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 		certificateAuthority := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: issuer.Certificate().Raw})
 		caConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Name: "issuer-ca", Namespace: "test-ns"},
-			Data:       map[string]string{caBundleDataKey: string(certificateAuthority)},
+			Data:       map[string]string{certs.UserCABundleMapKey: string(certificateAuthority)},
 		}
 		authConfigMap := &corev1.ConfigMap{}
 
