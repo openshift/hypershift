@@ -547,7 +547,7 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Ignition" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires Ignition to use Route service publishing strategy"
 // +kubebuilder:validation:XValidation:rule=`has(self.issuerURL) || !has(self.serviceAccountSigningKey)`,message="If serviceAccountSigningKey is set, issuerURL must be set"
 // +kubebuilder:validation:XValidation:rule=`!self.services.exists(s, s.service == 'APIServer' && has(s.servicePublishingStrategy.loadBalancer) && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration) && has(self.configuration.apiServer) && has(self.configuration.apiServer.servingCerts) && has(self.configuration.apiServer.servingCerts.namedCertificates) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert, has(cert.names) && cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))`, message="APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]"
-// +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
+// +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || !(self.networking.networkType in ['OpenShiftSDN','OVNKubernetes'])",message="disableMultiNetwork can only be set to true when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes)"
 // +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.secretEncryption) || has(self.secretEncryption)",message="secretEncryption cannot be removed once configured"
 type HostedClusterSpec struct {
@@ -1211,7 +1211,7 @@ type DNSSpec struct {
 // TODO this is available in vanilla kube from 1.31 API servers and in Openshift from 4.16.
 // TODO(alberto): Use CEL cidr library for all these validation when all management clusters are >= 1.31.
 // +kubebuilder:validation:XValidation:rule="(!has(self.machineNetwork) && self.clusterNetwork.all(c, self.serviceNetwork.all(s, c.cidr != s.cidr)) || (has(self.machineNetwork) && (self.machineNetwork.all(m, self.clusterNetwork.all(c, m.cidr != c.cidr)) && self.machineNetwork.all(m, self.serviceNetwork.all(s, m.cidr != s.cidr)) && self.clusterNetwork.all(c, self.serviceNetwork.all(s, c.cidr != s.cidr)))))",message="CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork must be unique and non-overlapping"
-// +kubebuilder:validation:XValidation:rule="has(self.allocateNodeCIDRs) && self.allocateNodeCIDRs == 'Enabled' ? self.networkType == 'Other' : true",message="allocateNodeCIDRs can only be set to Enabled when networkType is 'Other'"
+// +kubebuilder:validation:XValidation:rule="has(self.allocateNodeCIDRs) && self.allocateNodeCIDRs == 'Enabled' ? !(self.networkType in ['OpenShiftSDN','OVNKubernetes']) : true",message="allocateNodeCIDRs can only be set to Enabled when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes)"
 type ClusterNetworking struct {
 	// machineNetwork is the list of IP address pools for machines.
 	// This might be used among other things to generate appropriate networking security groups in some clouds providers.
@@ -1249,8 +1249,16 @@ type ClusterNetworking struct {
 	ServiceNetwork []ServiceNetworkEntry `json:"serviceNetwork,omitempty"`
 
 	// networkType specifies the SDN provider used for cluster networking.
+	// OVNKubernetes is the supported built-in provider and the default.
+	// OpenShiftSDN is a legacy built-in provider usable only on OCP versions <= 4.10 or the PowerVS platform.
+	// Any other value (for example "Other", "Calico", or "Cilium") selects a third-party CNI: HyperShift does
+	// not deploy a default CNI and the cluster administrator is responsible for installing one. To run a
+	// third-party CNI, setting networkType to "Other" is recommended.
+	// This field is authoritative for the cluster network type. A networkType set within
+	// spec.configuration.network is ignored by HyperShift; only this value is propagated to the
+	// cluster-network-operator.
 	// Defaults to OVNKubernetes.
-	// This field is required and immutable.
+	// This field is immutable.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="networkType is immutable"
 	// +optional
 	// +kubebuilder:default:="OVNKubernetes"
@@ -1264,11 +1272,12 @@ type ClusterNetworking struct {
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
 
 	// allocateNodeCIDRs controls whether the kube-controller-manager manages node CIDR allocation.
-	// When using networkType=Other, it is recommended to set this field to "Enabled"
-	// if Flannel is used as the CNI, as it relies on this behavior.
+	// When using a third-party CNI (any networkType other than OpenShiftSDN or OVNKubernetes), it is
+	// recommended to set this field to "Enabled" if Flannel is used as the CNI, as it relies on this behavior.
 	// Default is "Disabled".
-	// This field can only be set to "Enabled" when NetworkType is "Other". Setting it to "Enabled"
-	// with any other NetworkType will result in a validation error during cluster creation.
+	// This field can only be set to "Enabled" when NetworkType is a third-party CNI (any value other than
+	// OpenShiftSDN or OVNKubernetes). Setting it to "Enabled" with OpenShiftSDN or OVNKubernetes will result
+	// in a validation error during cluster creation.
 	//
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="allocateNodeCIDRs is immutable and cannot be modified once set."
@@ -1343,23 +1352,42 @@ type APIServerNetworking struct {
 }
 
 // NetworkType specifies the SDN provider used for cluster networking.
+// Any string value is accepted to support third-party network providers, mirroring how the
+// cluster-network-operator treats this value. OVNKubernetes and OpenShiftSDN are the only values
+// that receive special handling by HyperShift; any other value is treated as a third-party CNI.
 //
-// +kubebuilder:validation:Enum=OpenShiftSDN;Calico;OVNKubernetes;Other
+// +kubebuilder:validation:MinLength=1
+// +kubebuilder:validation:MaxLength=255
 type NetworkType string
 
 const (
-	// OpenShiftSDN specifies OpenShiftSDN as the SDN provider
+	// OpenShiftSDN specifies OpenShiftSDN as the SDN provider.
+	// This is a legacy provider usable only on OCP versions <= 4.10 or the PowerVS platform.
 	OpenShiftSDN NetworkType = "OpenShiftSDN"
 
-	// Calico specifies Calico as the SDN provider
+	// Calico specifies Calico as the SDN provider. Calico receives no special handling from
+	// HyperShift; a HostedCluster created with this value behaves identically to "Other", a
+	// third-party CNI that HyperShift does not deploy. "Other" is the recommended value for
+	// running Calico or any other third-party CNI.
 	Calico NetworkType = "Calico"
 
-	// OVNKubernetes specifies OVN as the SDN provider
+	// OVNKubernetes specifies OVN as the SDN provider. This is the supported built-in provider.
 	OVNKubernetes NetworkType = "OVNKubernetes"
 
-	// Other specifies an undefined SDN provider
+	// Other specifies a third-party (bring-your-own) SDN provider. When set, HyperShift skips
+	// deploying a default CNI and the cluster administrator is responsible for installing one.
 	Other NetworkType = "Other"
 )
+
+// IsBuiltIn reports whether HyperShift has first-class handling for this network provider.
+// Any other value is a third-party CNI that HyperShift does not deploy.
+//
+// The equivalent predicate is duplicated in the CEL rules on HostedClusterSpec,
+// HostedControlPlaneSpec, and ClusterNetworking (the list ['OpenShiftSDN','OVNKubernetes']);
+// those copies must be kept in sync with this method by hand.
+func (t NetworkType) IsBuiltIn() bool {
+	return t == OVNKubernetes || t == OpenShiftSDN
+}
 
 // AllocateNodeCIDRsMode specifies whether the KCM manages node CIDR allocation.
 // +kubebuilder:validation:Enum=Enabled;Disabled

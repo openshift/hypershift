@@ -467,6 +467,9 @@ func TestValidate(t *testing.T) {
 		name        string
 		rawOpts     *RawCreateOptions
 		expectedErr string
+		// explicitEmptyNetworkType exercises the path where a user passes --network-type="",
+		// opting out of the default NetworkType the loop otherwise applies to mirror flag defaulting.
+		explicitEmptyNetworkType bool
 	}{
 		{
 			name: "fails with unsupported disabled capability",
@@ -657,7 +660,7 @@ func TestValidate(t *testing.T) {
 				DisableMultiNetwork: true,
 				NetworkType:         "OVNKubernetes",
 			},
-			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OVNKubernetes')",
+			expectedErr: "disableMultiNetwork is only allowed when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes) (got 'OVNKubernetes')",
 		},
 		{
 			name: "fails when disable-multi-network is true with network-type=OpenShiftSDN",
@@ -669,10 +672,33 @@ func TestValidate(t *testing.T) {
 				DisableMultiNetwork: true,
 				NetworkType:         "OpenShiftSDN",
 			},
-			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OpenShiftSDN')",
+			expectedErr: "disableMultiNetwork is only allowed when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes) (got 'OpenShiftSDN')",
 		},
 		{
-			name: "fails when disable-multi-network is true with network-type=Calico",
+			name: "fails when network-type is empty",
+			rawOpts: &RawCreateOptions{
+				Name:           "test-hc",
+				Namespace:      "test-hc",
+				PullSecretFile: pullSecretFile,
+				Arch:           "amd64",
+			},
+			explicitEmptyNetworkType: true,
+			expectedErr:              "--network-type cannot be empty",
+		},
+		{
+			name: "fails when network-type is empty with disable-multi-network",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+			},
+			explicitEmptyNetworkType: true,
+			expectedErr:              "--network-type cannot be empty",
+		},
+		{
+			name: "passes when disable-multi-network is true with a third-party network-type=Calico",
 			rawOpts: &RawCreateOptions{
 				Name:                "test-hc",
 				Namespace:           "test-hc",
@@ -681,7 +707,7 @@ func TestValidate(t *testing.T) {
 				DisableMultiNetwork: true,
 				NetworkType:         "Calico",
 			},
-			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'Calico')",
+			expectedErr: "",
 		},
 		{
 			name: "When ovn-kubernetes-mtu is set with OVNKubernetes, it should pass validation",
@@ -777,7 +803,7 @@ func TestValidate(t *testing.T) {
 				AllocateNodeCIDRs: true,
 				NetworkType:       "OVNKubernetes",
 			},
-			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'OVNKubernetes')",
+			expectedErr: "allocateNodeCIDRs is only allowed when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes) (got 'OVNKubernetes')",
 		},
 		{
 			name: "fails when allocate-node-cidrs is true with network-type=OpenShiftSDN",
@@ -789,10 +815,10 @@ func TestValidate(t *testing.T) {
 				AllocateNodeCIDRs: true,
 				NetworkType:       "OpenShiftSDN",
 			},
-			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'OpenShiftSDN')",
+			expectedErr: "allocateNodeCIDRs is only allowed when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes) (got 'OpenShiftSDN')",
 		},
 		{
-			name: "fails when allocate-node-cidrs is true with network-type=Calico",
+			name: "passes when allocate-node-cidrs is true with a third-party network-type=Calico",
 			rawOpts: &RawCreateOptions{
 				Name:              "test-hc",
 				Namespace:         "test-hc",
@@ -801,11 +827,18 @@ func TestValidate(t *testing.T) {
 				AllocateNodeCIDRs: true,
 				NetworkType:       "Calico",
 			},
-			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'Calico')",
+			expectedErr: "",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			// Mirror flag defaulting: real invocations always carry a NetworkType (the
+			// --network-type flag defaults to OVNKubernetes). Fixtures that don't exercise
+			// networking leave it unset, so apply the default here unless the case is
+			// deliberately testing an explicitly empty value.
+			if test.rawOpts.NetworkType == "" && !test.explicitEmptyNetworkType {
+				test.rawOpts.NetworkType = string(hyperv1.OVNKubernetes)
+			}
 			// avoid actual client calls in Validate
 			test.rawOpts.Render = true
 			_, err := test.rawOpts.Validate(ctx, nil)
