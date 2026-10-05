@@ -24,7 +24,7 @@ func TestRun(t *testing.T) {
 		g.Expect(os.CopyFS(root, os.DirFS("testdata/reachability"))).To(Succeed())
 		g.Expect(exec.CommandContext(t.Context(), "git", "init", "-q", root).Run()).To(Succeed())
 		g.Expect(exec.CommandContext(t.Context(), "git", "-C", root, "add", ".").Run()).To(Succeed())
-		g.Expect(exec.CommandContext(t.Context(), "git", "-C", root, "-c", "user.name=Fixture", "-c", "user.email=fixture@redhat.com", "commit", "-qm", "fixture").Run()).To(Succeed())
+		g.Expect(exec.CommandContext(t.Context(), "git", "-C", root, "-c", "commit.gpgsign=false", "-c", "user.name=Fixture", "-c", "user.email=fixture@redhat.com", "commit", "-qm", "fixture").Run()).To(Succeed())
 		artifacts := filepath.Join(t.TempDir(), "reports with spaces")
 		// A selected executable path is a literal filename, not shell syntax.
 		tool := filepath.Join(t.TempDir(), "deadcode $(touch unexpected-command)")
