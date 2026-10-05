@@ -22,6 +22,9 @@ const (
 	AnnotationOwnerNamespaceExact = "hypershift.openshift.io/ignition-payload-owner-namespace-exact"
 	AnnotationOwnerNameExact      = "hypershift.openshift.io/ignition-payload-owner-name-exact"
 	AnnotationIdentityHashExact   = "hypershift.openshift.io/ignition-payload-identity-hash-exact"
+
+	// maxLabelValueLength is the maximum length of a Kubernetes label value.
+	maxLabelValueLength = 63
 )
 
 // SecretBackedStore is a Secret-backed PayloadStore.
@@ -62,15 +65,22 @@ func (s *SecretBackedStore) Put(ctx context.Context, owner OwnerRef, token, iden
 		secret.Annotations[AnnotationOwnerNameExact] = owner.Name
 		secret.Annotations[AnnotationIdentityHashExact] = identityHash
 
-		// Store in labels when they fit (≤63 chars).
-		if len(owner.Namespace) <= 63 {
+		// Store in labels when they fit (≤maxLabelValueLength chars).
+		// Clear the label if it doesn't fit to avoid stale values on overwrite.
+		if len(owner.Namespace) <= maxLabelValueLength {
 			secret.Labels[LabelOwnerNamespace] = owner.Namespace
+		} else {
+			delete(secret.Labels, LabelOwnerNamespace)
 		}
-		if len(owner.Name) <= 63 {
+		if len(owner.Name) <= maxLabelValueLength {
 			secret.Labels[LabelOwnerName] = owner.Name
+		} else {
+			delete(secret.Labels, LabelOwnerName)
 		}
-		if len(identityHash) <= 63 {
+		if len(identityHash) <= maxLabelValueLength {
 			secret.Labels[LabelIdentityHash] = identityHash
+		} else {
+			delete(secret.Labels, LabelIdentityHash)
 		}
 		secret.Labels[LabelToken] = token
 
@@ -115,15 +125,15 @@ func (s *SecretBackedStore) FindByIdentity(ctx context.Context, owner OwnerRef, 
 
 	// Build label selector: owner namespace (if it fits) + owner name (if it fits).
 	selector := client.MatchingLabels{}
-	if len(owner.Namespace) <= 63 {
+	if len(owner.Namespace) <= maxLabelValueLength {
 		selector[LabelOwnerNamespace] = owner.Namespace
 	}
-	if len(owner.Name) <= 63 {
+	if len(owner.Name) <= maxLabelValueLength {
 		selector[LabelOwnerName] = owner.Name
 	}
 
 	// If identity fits in a label, add it to the selector.
-	if len(identityHash) <= 63 {
+	if len(identityHash) <= maxLabelValueLength {
 		selector[LabelIdentityHash] = identityHash
 	}
 
@@ -151,10 +161,10 @@ func (s *SecretBackedStore) ListByOwner(ctx context.Context, owner OwnerRef) (to
 
 	// Build label selector: owner namespace (if it fits) + owner name (if it fits).
 	selector := client.MatchingLabels{}
-	if len(owner.Namespace) <= 63 {
+	if len(owner.Namespace) <= maxLabelValueLength {
 		selector[LabelOwnerNamespace] = owner.Namespace
 	}
-	if len(owner.Name) <= 63 {
+	if len(owner.Name) <= maxLabelValueLength {
 		selector[LabelOwnerName] = owner.Name
 	}
 
@@ -165,7 +175,7 @@ func (s *SecretBackedStore) ListByOwner(ctx context.Context, owner OwnerRef) (to
 	}
 
 	// Filter client-side by exact annotation values.
-	var result []string
+	result := []string{}
 	for _, sec := range secrets.Items {
 		if sec.Annotations[AnnotationOwnerNamespaceExact] == owner.Namespace &&
 			sec.Annotations[AnnotationOwnerNameExact] == owner.Name {

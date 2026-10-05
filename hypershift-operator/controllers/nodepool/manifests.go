@@ -37,12 +37,3 @@ func PerformanceProfileConfigMap(namespace, name, nodePoolName string) *corev1.C
 // TokenSecret is a re-export for backward compatibility.
 // New code should import from support/manifests directly.
 var TokenSecret = manifests.TokenSecret
-
-func namedSecret(namespace, name string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      name,
-		},
-	}
-}
