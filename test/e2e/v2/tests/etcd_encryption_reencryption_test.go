@@ -36,7 +36,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 
@@ -200,7 +199,7 @@ func verifyKASLogsNoDecryptionErrors(ctx context.Context, controlPlaneNamespace 
 
 // rotationCase parameterizes a single key-rotation lifecycle test. The shared
 // test body (runSingleRotationTest) runs the common assertions; only the
-// per-provider skip guard, patch construction, and provider-field verification differ.
+// per-provider skip guard, key accessors, and provider-field verification differ.
 type rotationCase struct {
 	// contextLabel is the Ginkgo Context description, e.g. "[Feature:AWSKMSReencryption] AWS KMS Key Rotation".
 	contextLabel string
@@ -210,11 +209,15 @@ type rotationCase struct {
 	expectedProvider hyperv1.SecretEncryptionProvider
 	// applies returns (true, "") when this case should run, or (false, skipReason) to skip.
 	applies func(hc *hyperv1.HostedCluster, tc *internal.TestContext) (bool, string)
-	// setup prepares any provider-specific resources (registering its own DeferCleanups),
-	// then returns the rotate and restore merge-patches.
-	setup func(ctx context.Context, tc *internal.TestContext, hc *hyperv1.HostedCluster) (rotatePatch, restorePatch []byte, err error)
+	// prepare does any provider-specific setup (e.g. creating secrets), registers its own
+	// DeferCleanups, and returns the alternate key identifier to rotate to.
+	prepare func(ctx context.Context, tc *internal.TestContext, hc *hyperv1.HostedCluster) (alternate string, err error)
+	// getActiveKey extracts the current active-key identifier from the HC spec.
+	getActiveKey func(hc *hyperv1.HostedCluster) string
+	// setActiveKey mutates the HC spec's active-key field in-place.
+	setActiveKey func(hc *hyperv1.HostedCluster, value string)
 	// verifyProviderField asserts provider-specific Status fields after rotation completes.
-	verifyProviderField func(hc *hyperv1.HostedCluster)
+	verifyProviderField func(hc *hyperv1.HostedCluster, alternate string)
 }
 
 // runSingleRotationTest registers a single-rotation lifecycle test for the given rotationCase.
@@ -249,27 +252,23 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 			// Re-fetch to get a fresh resource version and current Spec before patching.
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 
-			rotatePatch, restorePatch, err := rc.setup(ctx, tc, hc)
-			Expect(err).NotTo(HaveOccurred(), "failed to prepare rotation patches")
+			alternate, err := rc.prepare(ctx, tc, hc)
+			Expect(err).NotTo(HaveOccurred(), "failed to prepare rotation")
 
-			Expect(tc.MgmtClient.Patch(ctx, hc, crclient.RawPatch(types.MergePatchType, rotatePatch))).To(Succeed())
+			original := rc.getActiveKey(hc)
 			DeferCleanup(func() {
-				hcRestore := &hyperv1.HostedCluster{
-					ObjectMeta: metav1.ObjectMeta{Name: tc.ClusterName, Namespace: tc.ClusterNamespace},
-				}
-				if err := tc.MgmtClient.Patch(tc.Context, hcRestore, crclient.RawPatch(types.MergePatchType, restorePatch)); err != nil {
-					GinkgoWriter.Printf("WARNING: failed to restore original key: %v\n", err)
-					return
-				}
-				waitForReEncryptionComplete(tc.Context, tc.MgmtClient, hcKey, 25*time.Minute)
+				rotateAndWait(tc.Context, tc, hcKey, func(hc *hyperv1.HostedCluster) {
+					rc.setActiveKey(hc, original)
+				})
 			})
 
-			waitForReEncryptionStarted(ctx, tc.MgmtClient, hcKey, 5*time.Minute)
-			waitForReEncryptionComplete(ctx, tc.MgmtClient, hcKey, 25*time.Minute)
+			rotateAndWait(ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
+				rc.setActiveKey(hc, alternate)
+			})
 
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 			verifyReEncryptionStatus(hc, rc.expectedProvider)
-			rc.verifyProviderField(hc)
+			rc.verifyProviderField(hc, alternate)
 
 			svmList, err := listStorageVersionMigrations(ctx, hostedClusterClient)
 			Expect(err).NotTo(HaveOccurred(), "failed to list StorageVersionMigration CRs")
@@ -284,6 +283,18 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 			}, 2*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
+}
+
+// rotateAndWait applies mutate to the HostedCluster spec, then waits for re-encryption
+// to start and complete. mutate must set the new active key value in-place.
+func rotateAndWait(ctx context.Context, tc *internal.TestContext, hcKey crclient.ObjectKey, mutate func(*hyperv1.HostedCluster)) {
+	hc := &hyperv1.HostedCluster{}
+	Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
+	base := hc.DeepCopy()
+	mutate(hc)
+	Expect(tc.MgmtClient.Patch(ctx, hc, crclient.MergeFrom(base))).To(Succeed())
+	waitForReEncryptionStarted(ctx, tc.MgmtClient, hcKey, 5*time.Minute)
+	waitForReEncryptionComplete(ctx, tc.MgmtClient, hcKey, 25*time.Minute)
 }
 
 // AWSKMSKeyRotationTest validates the re-encryption lifecycle after rotating the AWS KMS active key.
@@ -304,16 +315,17 @@ func AWSKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 			return true, ""
 		},
-		setup: func(_ context.Context, _ *internal.TestContext, hc *hyperv1.HostedCluster) ([]byte, []byte, error) {
-			alternateARN := internal.GetEnvVarValue("E2E_AWS_KMS_KEY_ARN_ALTERNATE")
-			originalARN := hc.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN
-			rotate := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"kms":{"aws":{"activeKey":{"arn":%q}}}}}}`, alternateARN))
-			restore := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"kms":{"aws":{"activeKey":{"arn":%q}}}}}}`, originalARN))
-			return rotate, restore, nil
+		prepare: func(_ context.Context, _ *internal.TestContext, _ *hyperv1.HostedCluster) (string, error) {
+			return internal.GetEnvVarValue("E2E_AWS_KMS_KEY_ARN_ALTERNATE"), nil
 		},
-		verifyProviderField: func(hc *hyperv1.HostedCluster) {
-			alternateARN := internal.GetEnvVarValue("E2E_AWS_KMS_KEY_ARN_ALTERNATE")
-			Expect(hc.Status.SecretEncryption.ActiveKey.AWS.ARN).To(Equal(alternateARN),
+		getActiveKey: func(hc *hyperv1.HostedCluster) string {
+			return hc.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN
+		},
+		setActiveKey: func(hc *hyperv1.HostedCluster, value string) {
+			hc.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN = value
+		},
+		verifyProviderField: func(hc *hyperv1.HostedCluster, alternate string) {
+			Expect(hc.Status.SecretEncryption.ActiveKey.AWS.ARN).To(Equal(alternate),
 				"activeKey ARN should match the alternate key")
 		},
 	})
@@ -337,16 +349,17 @@ func AzureKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 			return true, ""
 		},
-		setup: func(_ context.Context, _ *internal.TestContext, hc *hyperv1.HostedCluster) ([]byte, []byte, error) {
-			alternateVersion := internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE")
-			originalVersion := hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion
-			rotate := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"kms":{"azure":{"activeKey":{"keyVersion":%q}}}}}}`, alternateVersion))
-			restore := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"kms":{"azure":{"activeKey":{"keyVersion":%q}}}}}}`, originalVersion))
-			return rotate, restore, nil
+		prepare: func(_ context.Context, _ *internal.TestContext, _ *hyperv1.HostedCluster) (string, error) {
+			return internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE"), nil
 		},
-		verifyProviderField: func(hc *hyperv1.HostedCluster) {
-			alternateVersion := internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE")
-			Expect(hc.Status.SecretEncryption.ActiveKey.Azure.KeyVersion).To(Equal(alternateVersion),
+		getActiveKey: func(hc *hyperv1.HostedCluster) string {
+			return hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion
+		},
+		setActiveKey: func(hc *hyperv1.HostedCluster, value string) {
+			hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion = value
+		},
+		verifyProviderField: func(hc *hyperv1.HostedCluster, alternate string) {
+			Expect(hc.Status.SecretEncryption.ActiveKey.Azure.KeyVersion).To(Equal(alternate),
 				"activeKey keyVersion should match the alternate version")
 		},
 	})
@@ -364,10 +377,10 @@ func AESCBCKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 			return true, ""
 		},
-		setup: func(ctx context.Context, tc *internal.TestContext, hc *hyperv1.HostedCluster) ([]byte, []byte, error) {
+		prepare: func(ctx context.Context, tc *internal.TestContext, _ *hyperv1.HostedCluster) (string, error) {
 			keyData := make([]byte, 32)
 			if _, err := rand.Read(keyData); err != nil {
-				return nil, nil, fmt.Errorf("failed to generate random AESCBC key data: %w", err)
+				return "", fmt.Errorf("failed to generate random AESCBC key data: %w", err)
 			}
 			newKeySecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -380,22 +393,25 @@ func AESCBCKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				},
 			}
 			if err := tc.MgmtClient.Create(ctx, newKeySecret); err != nil {
-				return nil, nil, fmt.Errorf("failed to create AESCBC key secret: %w", err)
+				return "", fmt.Errorf("failed to create AESCBC key secret: %w", err)
 			}
 			DeferCleanup(func() {
 				if err := tc.MgmtClient.Delete(tc.Context, newKeySecret); err != nil && !apierrors.IsNotFound(err) {
 					GinkgoWriter.Printf("WARNING: failed to cleanup AESCBC key secret: %v\n", err)
 				}
 			})
-			originalKeyRef := hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name
-			rotate := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"aescbc":{"activeKey":{"name":%q}}}}}`, newKeySecret.Name))
-			restore := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"aescbc":{"activeKey":{"name":%q}}}}}`, originalKeyRef))
-			return rotate, restore, nil
+			return newKeySecret.Name, nil
 		},
-		verifyProviderField: func(hc *hyperv1.HostedCluster) {
+		getActiveKey: func(hc *hyperv1.HostedCluster) string {
+			return hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name
+		},
+		setActiveKey: func(hc *hyperv1.HostedCluster, value string) {
+			hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name = value
+		},
+		verifyProviderField: func(hc *hyperv1.HostedCluster, alternate string) {
 			Expect(hc.Status.SecretEncryption.ActiveKey.AESCBC).NotTo(BeNil(),
 				"activeKey AESCBC should not be nil after AESCBC key rotation")
-			Expect(hc.Status.SecretEncryption.ActiveKey.AESCBC.Secret.Name).To(Equal("e2e-aescbc-rotation-key"),
+			Expect(hc.Status.SecretEncryption.ActiveKey.AESCBC.Secret.Name).To(Equal(alternate),
 				"activeKey AESCBC secret should reference the new key")
 		},
 	})
@@ -433,25 +449,17 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			waitForReEncryptionComplete(ctx, tc.MgmtClient, hcKey, 5*time.Minute)
 
 			DeferCleanup(func() {
-				restorePatch := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"kms":{"azure":{"activeKey":{"keyVersion":%q}}}}}}`, originalVersion))
-				hcRestore := &hyperv1.HostedCluster{
-					ObjectMeta: metav1.ObjectMeta{Name: tc.ClusterName, Namespace: tc.ClusterNamespace},
-				}
-				if err := tc.MgmtClient.Patch(tc.Context, hcRestore, crclient.RawPatch(types.MergePatchType, restorePatch)); err != nil {
-					GinkgoWriter.Printf("WARNING: failed to restore original Azure key version: %v\n", err)
-					return
-				}
-				waitForReEncryptionComplete(tc.Context, tc.MgmtClient, hcKey, 25*time.Minute)
+				rotateAndWait(tc.Context, tc, hcKey, func(hc *hyperv1.HostedCluster) {
+					hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion = originalVersion
+				})
 			})
 
 			alternateVersion := internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE")
 
 			By("Performing first key rotation: original -> alternate")
-			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
-			patch1 := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"kms":{"azure":{"activeKey":{"keyVersion":%q}}}}}}`, alternateVersion))
-			Expect(tc.MgmtClient.Patch(ctx, hc, crclient.RawPatch(types.MergePatchType, patch1))).To(Succeed())
-			waitForReEncryptionStarted(ctx, tc.MgmtClient, hcKey, 5*time.Minute)
-			waitForReEncryptionComplete(ctx, tc.MgmtClient, hcKey, 25*time.Minute)
+			rotateAndWait(ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
+				hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion = alternateVersion
+			})
 
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 			Expect(hc.Status.SecretEncryption.ActiveKey.Azure.KeyVersion).To(Equal(alternateVersion),
@@ -464,11 +472,9 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("Performing second key rotation: alternate -> original")
-			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
-			patch2 := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"kms":{"azure":{"activeKey":{"keyVersion":%q}}}}}}`, originalVersion))
-			Expect(tc.MgmtClient.Patch(ctx, hc, crclient.RawPatch(types.MergePatchType, patch2))).To(Succeed())
-			waitForReEncryptionStarted(ctx, tc.MgmtClient, hcKey, 5*time.Minute)
-			waitForReEncryptionComplete(ctx, tc.MgmtClient, hcKey, 25*time.Minute)
+			rotateAndWait(ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
+				hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion = originalVersion
+			})
 
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 			verifyReEncryptionStatus(hc, hyperv1.SecretEncryptionProviderAzure)
