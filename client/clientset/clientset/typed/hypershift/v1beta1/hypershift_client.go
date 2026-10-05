@@ -33,6 +33,7 @@ type HypershiftV1beta1Interface interface {
 	HCPEtcdBackupsGetter
 	HostedClustersGetter
 	HostedControlPlanesGetter
+	IgnitionPayloadsGetter
 	NodePoolsGetter
 }
 
@@ -63,6 +64,10 @@ func (c *HypershiftV1beta1Client) HostedClusters(namespace string) HostedCluster
 
 func (c *HypershiftV1beta1Client) HostedControlPlanes(namespace string) HostedControlPlaneInterface {
 	return newHostedControlPlanes(c, namespace)
+}
+
+func (c *HypershiftV1beta1Client) IgnitionPayloads(namespace string) IgnitionPayloadInterface {
+	return newIgnitionPayloads(c, namespace)
 }
 
 func (c *HypershiftV1beta1Client) NodePools(namespace string) NodePoolInterface {

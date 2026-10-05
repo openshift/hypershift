@@ -51,6 +51,10 @@ func (c *FakeHypershiftV1beta1) HostedControlPlanes(namespace string) v1beta1.Ho
 	return newFakeHostedControlPlanes(c, namespace)
 }
 
+func (c *FakeHypershiftV1beta1) IgnitionPayloads(namespace string) v1beta1.IgnitionPayloadInterface {
+	return newFakeIgnitionPayloads(c, namespace)
+}
+
 func (c *FakeHypershiftV1beta1) NodePools(namespace string) v1beta1.NodePoolInterface {
 	return newFakeNodePools(c, namespace)
 }
