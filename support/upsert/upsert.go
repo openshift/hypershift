@@ -14,6 +14,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -140,12 +141,15 @@ func (p *createOrUpdateProvider) update(ctx context.Context, c crclient.Client, 
 		}
 		return controllerutil.OperationResultNone, nil
 	}
+	var requested runtime.Object
 	if p.loopDetector != nil {
-		p.loopDetector.recordActualUpdate(existing, obj, key)
+		requested = obj.DeepCopyObject()
 	}
-
 	if err := c.Update(ctx, obj); err != nil {
 		return controllerutil.OperationResultNone, err
+	}
+	if p.loopDetector != nil {
+		p.loopDetector.recordActualUpdate(existing, requested, key)
 	}
 
 	return controllerutil.OperationResultUpdated, nil
