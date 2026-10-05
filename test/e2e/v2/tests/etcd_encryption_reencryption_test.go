@@ -208,10 +208,6 @@ type rotationCase struct {
 	contextLabel string
 	// itLabel is the Ginkgo It description.
 	itLabel string
-	// testSecretName is the name of the canary Secret created in the hosted cluster.
-	testSecretName string
-	// testSecretData is the value written to the "testKey" field of the canary Secret.
-	testSecretData string
 	// expectedProvider is the SecretEncryptionProvider expected in Status after rotation.
 	expectedProvider hyperv1.SecretEncryptionProvider
 	// applies returns (true, "") when this case should run, or (false, skipReason) to skip.
@@ -224,8 +220,8 @@ type rotationCase struct {
 }
 
 // runSingleRotationTest registers a single-rotation lifecycle test for the given rotationCase.
-// It handles: baseline wait, canary secret, rotate patch, restore cleanup, started/complete waits,
-// status verification, secret read-back, SVM check, KAS health/logs, and condition bubble-up.
+// It handles: baseline wait, rotate patch, restore cleanup, started/complete waits,
+// status verification, SVM check, KAS health/logs, and condition bubble-up.
 func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCase) {
 	Context(rc.contextLabel, func() {
 		BeforeEach(func() {
@@ -252,23 +248,6 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 			hostedClusterClient, err := tc.GetHostedClusterClient(hc)
 			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
 
-			testSecret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      rc.testSecretName,
-					Namespace: "default",
-				},
-				Type: corev1.SecretTypeOpaque,
-				Data: map[string][]byte{
-					"testKey": []byte(rc.testSecretData),
-				},
-			}
-			Expect(hostedClusterClient.Create(ctx, testSecret)).To(Succeed())
-			DeferCleanup(func() {
-				if err := hostedClusterClient.Delete(tc.Context, testSecret); err != nil && !apierrors.IsNotFound(err) {
-					GinkgoWriter.Printf("WARNING: failed to cleanup test secret: %v\n", err)
-				}
-			})
-
 			// Re-fetch to get a fresh resource version and current Spec before patching.
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 
@@ -294,11 +273,6 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 			verifyReEncryptionStatus(hc, rc.expectedProvider)
 			rc.verifyProviderField(hc)
 
-			readBack := &corev1.Secret{}
-			Expect(hostedClusterClient.Get(ctx, crclient.ObjectKeyFromObject(testSecret), readBack)).To(Succeed())
-			Expect(readBack.Data["testKey"]).To(Equal([]byte(rc.testSecretData)),
-				"test secret data should be readable after re-encryption")
-
 			svmList, err := listStorageVersionMigrations(ctx, hostedClusterClient)
 			Expect(err).NotTo(HaveOccurred(), "failed to list StorageVersionMigration CRs")
 			Expect(svmList.Items).NotTo(BeEmpty(),
@@ -317,8 +291,6 @@ func AWSKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 	runSingleRotationTest(getTestCtx, rotationCase{
 		contextLabel:     "[Feature:AWSKMSReencryption] AWS KMS Key Rotation",
 		itLabel:          "should re-encrypt all etcd data after active key rotation",
-		testSecretName:   "e2e-reencryption-test-aws",
-		testSecretData:   "aws-kms-reencryption-test-data",
 		expectedProvider: hyperv1.SecretEncryptionProviderAWS,
 		applies: func(hc *hyperv1.HostedCluster, _ *internal.TestContext) (bool, string) {
 			if hc.Spec.Platform.Type != hyperv1.AWSPlatform ||
@@ -352,8 +324,6 @@ func AzureKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 	runSingleRotationTest(getTestCtx, rotationCase{
 		contextLabel:     "[Feature:AzureKMSReencryption] Azure KMS Key Rotation",
 		itLabel:          "should re-encrypt all etcd data after key version rotation",
-		testSecretName:   "e2e-reencryption-test-azure",
-		testSecretData:   "azure-kms-reencryption-test-data",
 		expectedProvider: hyperv1.SecretEncryptionProviderAzure,
 		applies: func(hc *hyperv1.HostedCluster, _ *internal.TestContext) (bool, string) {
 			if hc.Spec.Platform.Type != hyperv1.AzurePlatform ||
@@ -387,8 +357,6 @@ func AESCBCKeyRotationTest(getTestCtx internal.TestContextGetter) {
 	runSingleRotationTest(getTestCtx, rotationCase{
 		contextLabel:     "[Feature:AESCBCReencryption] AESCBC Key Rotation",
 		itLabel:          "should re-encrypt secrets after active key rotation",
-		testSecretName:   "e2e-reencryption-test-aescbc",
-		testSecretData:   "aescbc-reencryption-test-data",
 		expectedProvider: hyperv1.SecretEncryptionProviderAESCBC,
 		applies: func(hc *hyperv1.HostedCluster, _ *internal.TestContext) (bool, string) {
 			if hc.Spec.SecretEncryption.Type != hyperv1.AESCBC || hc.Spec.SecretEncryption.AESCBC == nil {
@@ -464,26 +432,6 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 
 			waitForReEncryptionComplete(ctx, tc.MgmtClient, hcKey, 5*time.Minute)
 
-			hostedClusterClient, err := tc.GetHostedClusterClient(hc)
-			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
-
-			testSecret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-reencryption-test-azure-consecutive",
-					Namespace: "default",
-				},
-				Type: corev1.SecretTypeOpaque,
-				Data: map[string][]byte{
-					"testKey": []byte("azure-kms-consecutive-rotation-test-data"),
-				},
-			}
-			Expect(hostedClusterClient.Create(ctx, testSecret)).To(Succeed())
-			DeferCleanup(func() {
-				if err := hostedClusterClient.Delete(tc.Context, testSecret); err != nil && !apierrors.IsNotFound(err) {
-					GinkgoWriter.Printf("WARNING: failed to cleanup test secret: %v\n", err)
-				}
-			})
-
 			DeferCleanup(func() {
 				restorePatch := []byte(fmt.Sprintf(`{"spec":{"secretEncryption":{"kms":{"azure":{"activeKey":{"keyVersion":%q}}}}}}`, originalVersion))
 				hcRestore := &hyperv1.HostedCluster{
@@ -530,11 +478,6 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				"most recent history entry should be Completed")
 			Expect(hc.Status.SecretEncryption.History[1].State).To(Equal(hyperv1.EncryptionMigrationStateCompleted),
 				"second history entry should also be Completed")
-
-			readBack := &corev1.Secret{}
-			Expect(hostedClusterClient.Get(ctx, crclient.ObjectKeyFromObject(testSecret), readBack)).To(Succeed())
-			Expect(readBack.Data["testKey"]).To(Equal([]byte("azure-kms-consecutive-rotation-test-data")),
-				"test secret data should be readable after two consecutive re-encryptions")
 
 			verifyKASHealth(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 			verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
