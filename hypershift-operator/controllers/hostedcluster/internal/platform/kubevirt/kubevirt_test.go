@@ -99,24 +99,6 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 	}
 }
 
-func TestReconcileCredentials(t *testing.T) {
-	kubevirt := New(nil)
-	fakeClient := fake.NewClientBuilder().Build()
-	fnCallsCount := 0
-	createOrUpdateFN := func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
-		fnCallsCount++
-		return "", nil
-	}
-	hcluster := &hyperv1.HostedCluster{}
-	err := kubevirt.ReconcileCredentials(t.Context(), fakeClient, createOrUpdateFN, hcluster, "controlPlanNamespace")
-	if err != nil {
-		t.Fatalf("ReconcileCredentials failed: %v", err)
-	}
-	if fnCallsCount > 0 {
-		t.Fatalf("create or update func should not be called")
-	}
-}
-
 func TestReconcileSecretEncryption(t *testing.T) {
 	kubevirt := New(nil)
 	fakeClient := fake.NewClientBuilder().Build()

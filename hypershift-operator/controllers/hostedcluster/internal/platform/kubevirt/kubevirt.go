@@ -2,10 +2,12 @@ package kubevirt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
@@ -13,6 +15,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -191,30 +194,87 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hc
 func (p Kubevirt) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
-
-	// If external infra cluster kubeconfig has been provided, copy the secret from the "clusters" to the hosted control plane namespace
-	// with the predictable name "kubevirt-infra-credentials"
-	kvPlatform := hcluster.Spec.Platform.Kubevirt
-	if kvPlatform == nil || kvPlatform.Credentials == nil {
-		return nil
-	}
-
-	var sourceSecret corev1.Secret
-	secretName := client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.Kubevirt.Credentials.InfraKubeConfigSecret.Name}
-	if err := c.Get(ctx, secretName, &sourceSecret); err != nil {
-		return fmt.Errorf("failed to get secret %s: %w", secretName, err)
+	data, err := p.ValidateCredentials(ctx, c, hcluster, controlPlaneNamespace)
+	if err != nil || data == nil {
+		return err
 	}
 	targetSecret := credentialsSecret(controlPlaneNamespace)
-	_, err := createOrUpdate(ctx, c, targetSecret, func() error {
-		if targetSecret.Data == nil {
-			targetSecret.Data = map[string][]byte{}
-		}
-		for k, v := range sourceSecret.Data {
-			targetSecret.Data[k] = v
-		}
+	_, err = createOrUpdate(ctx, c, targetSecret, func() error {
+		targetSecret.Data = data
 		return nil
 	})
 	return err
+}
+
+// ValidateCredentials checks tenant credentials before either publication or
+// infrastructure discovery, removing a previously copied unsafe target on rejection.
+func (p Kubevirt) ValidateCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) (map[string][]byte, error) {
+	kvPlatform := hcluster.Spec.Platform.Kubevirt
+	if kvPlatform == nil || kvPlatform.Credentials == nil {
+		return nil, p.deleteUnsafeCredentials(ctx, c, controlPlaneNamespace)
+	}
+	ref := kvPlatform.Credentials.InfraKubeConfigSecret
+	if ref == nil {
+		return nil, p.rejectCredentials(ctx, c, controlPlaneNamespace, errors.New("infrastructure credential reference is missing"))
+	}
+	if ref.Name == "" {
+		return nil, p.rejectCredentials(ctx, c, controlPlaneNamespace, errors.New("infrastructure credential name is empty"))
+	}
+	if ref.Key == "" {
+		return nil, p.rejectCredentials(ctx, c, controlPlaneNamespace, errors.New("infrastructure credential key is empty"))
+	}
+	var sourceSecret corev1.Secret
+	secretName := client.ObjectKey{Namespace: hcluster.Namespace, Name: ref.Name}
+	if err := c.Get(ctx, secretName, &sourceSecret); err != nil {
+		return nil, p.rejectCredentials(ctx, c, controlPlaneNamespace, fmt.Errorf("failed to get secret %s: %w", secretName, err))
+	}
+	data, err := kvinfra.KubeConfigData(&sourceSecret, ref.Key)
+	if err != nil {
+		return nil, p.rejectCredentials(ctx, c, controlPlaneNamespace, err)
+	}
+	// An older operator may have copied unsafe credentials before the source was
+	// corrected. Remediate that target even if later prerequisites stop publication.
+	if err := p.deleteUnsafeCredentials(ctx, c, controlPlaneNamespace); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (p Kubevirt) rejectCredentials(ctx context.Context, c client.Client, controlPlaneNamespace string, credentialErr error) error {
+	return errors.Join(credentialErr, p.deleteUnsafeCredentials(ctx, c, controlPlaneNamespace))
+}
+
+func (Kubevirt) deleteUnsafeCredentials(ctx context.Context, c client.Client, controlPlaneNamespace string) error {
+	targetSecret := credentialsSecret(controlPlaneNamespace)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(targetSecret), targetSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to inspect infrastructure credential target: %w", err)
+	}
+	// Stored targets must actually have the canonical key: source normalization
+	// must not synthesize an alias and certify unusable persisted credentials.
+	safe := kvinfra.ValidateKubeConfig(targetSecret.Data["kubeconfig"]) == nil
+	if safe {
+		// Older operators copied every source entry, including previous custom keys.
+		// Only namespace is metadata; audit all other persisted data as credentials.
+		for key, data := range targetSecret.Data {
+			if key != "namespace" && kvinfra.ValidateKubeConfig(data) != nil {
+				safe = false
+				break
+			}
+		}
+	}
+	if safe {
+		// Keep last-known-safe credentials when a tenant submits an invalid replacement.
+		return nil
+	}
+	if err := c.Delete(ctx, targetSecret, &client.DeleteOptions{Preconditions: &metav1.Preconditions{
+		UID: &targetSecret.UID, ResourceVersion: &targetSecret.ResourceVersion,
+	}}); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to remove unsafe infrastructure credential target: %w", err)
+	}
+	return nil
 }
 
 func (Kubevirt) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
@@ -257,6 +317,41 @@ func credentialsSecret(hcpNamespace string) *corev1.Secret {
 	}
 }
 
-func (Kubevirt) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (p Kubevirt) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	var ref *hyperv1.KubeconfigSecretRef
+	if kv := hcluster.Spec.Platform.Kubevirt; kv != nil && kv.Credentials != nil && kv.Credentials.InfraKubeConfigSecret != nil {
+		ref = kv.Credentials.InfraKubeConfigSecret
+	}
+	if err := p.deleteUnsafeCredentials(ctx, c, controlPlaneNamespace); err != nil {
+		return err
+	}
+	if ref == nil || ref.Name == "" || ref.Key == "" {
+		return nil
+	}
+	var source corev1.Secret
+	if err := c.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: ref.Name}, &source); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to inspect infrastructure source during deletion: %w", err)
+	}
+	// Recovery publication is eligible only for validated source credentials.
+	// Rejected input still permits teardown that does not consume an infra client.
+	_, validationErr := kvinfra.KubeConfigData(&source, ref.Key)
+	if validationErr == nil {
+		var namespace corev1.Namespace
+		if err := c.Get(ctx, client.ObjectKey{Name: controlPlaneNamespace}, &namespace); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("failed to inspect control plane namespace during deletion: %w", err)
+		}
+		if !namespace.DeletionTimestamp.IsZero() {
+			return nil
+		}
+		// CAPK needs the fixed target until Machines/VMs finish deleting. Reuse normal
+		// validated publication, without recreating deleted/terminating namespaces.
+		return p.ReconcileCredentials(ctx, c, upsert.New(false).CreateOrUpdate, hcluster, controlPlaneNamespace)
+	}
 	return nil
 }
