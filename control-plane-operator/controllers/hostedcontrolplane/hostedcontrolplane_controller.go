@@ -1191,7 +1191,7 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 	}
 
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Authentication != nil {
-		if err := validations.ValidateAuthenticationSpec(ctx, r.Client, hcp.Spec.Configuration.Authentication, hcp.Namespace, []string{hcp.Spec.IssuerURL}); err != nil {
+		if err := validations.ValidateAuthenticationSpec(ctx, r.Client, hcp.Spec.Configuration.Authentication, hcp.Namespace, hcp.Spec.IssuerURL); err != nil {
 			return err
 		}
 	}
