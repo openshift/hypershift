@@ -434,7 +434,7 @@ test-e2ev2-unit:
 test-changed:
 	@CHANGED_DIRS=$$(git diff --name-only $(PULL_BASE_SHA)...HEAD -- '*.go' | \
 		while IFS= read -r file; do dirname "$$file"; done | \
-		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -vE '^\./api(/|$$)' | grep -v '^\./hack/tools/' | grep -vE '^\./test/e2e(/|$$)'); \
+		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -vE '^\./api(/|$$)' | grep -vE '^\./hack/tools(/|$$)' | grep -vE '^\./test/e2e(/|$$)'); \
 	if [ -z "$$CHANGED_DIRS" ]; then \
 		echo "No Go files changed relative to $(PULL_BASE_SHA), skipping tests."; \
 	else \
