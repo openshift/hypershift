@@ -103,6 +103,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"HCPEtcdBackup":           false,
 				"KarpenterOperator":       false,
 				"OSStreams":               true,
+				"DeterministicLBIP":       false,
 			},
 		},
 		{
@@ -115,6 +116,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"HCPEtcdBackup":           true,
 				"KarpenterOperator":       true,
 				"OSStreams":               true,
+				"DeterministicLBIP":       true,
 			},
 		},
 		{
@@ -127,6 +129,7 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"HCPEtcdBackup":           false,
 				"KarpenterOperator":       false,
 				"OSStreams":               false,
+				"DeterministicLBIP":       false,
 			},
 		},
 	}
@@ -171,6 +174,12 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 			assert.Equal(t, tc.expected["OSStreams"], actualOSStreams,
 				"OSStreams should be %v for feature set %s",
 				tc.expected["OSStreams"], tc.featureSet)
+
+			// Test DeterministicLBIP
+			actualDeterministicLBIP := featuregate.Gate().Enabled(featuregate.DeterministicLBIP)
+			assert.Equal(t, tc.expected["DeterministicLBIP"], actualDeterministicLBIP,
+				"DeterministicLBIP should be %v for feature set %s",
+				tc.expected["DeterministicLBIP"], tc.featureSet)
 		})
 	}
 }
@@ -183,4 +192,5 @@ func TestFeatureGateConstants(t *testing.T) {
 	assert.Equal(t, "HCPEtcdBackup", string(featuregate.HCPEtcdBackup))
 	assert.Equal(t, "KarpenterOperator", string(featuregate.KarpenterOperator))
 	assert.Equal(t, "OSStreams", string(featuregate.OSStreams))
+	assert.Equal(t, "DeterministicLBIP", string(featuregate.DeterministicLBIP))
 }
