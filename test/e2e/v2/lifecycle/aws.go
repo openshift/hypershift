@@ -105,13 +105,12 @@ func (a *AWSPlatformConfig) TestMatrix(releaseImage string) TestMatrix {
 			{
 				Name:        "aws-public",
 				Variant:     "public",
-				LabelFilter: "!lifecycle || hosted-cluster-aws",
+				LabelFilter: "!lifecycle || hosted-cluster-aws || global-pull-secret",
 				JUnitFile:   "junit_aws_public.xml",
 			},
 		},
 	}
 }
-
 
 func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {}
 

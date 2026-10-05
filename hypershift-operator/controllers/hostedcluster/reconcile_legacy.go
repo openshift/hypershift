@@ -1190,12 +1190,12 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 		}
+		srcData, srcHasData := src.Data[".dockerconfigjson"]
+		if !srcHasData {
+			return ctrl.Result{}, fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+		}
 		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, dst, func() error {
-			srcData, srcHasData := src.Data[".dockerconfigjson"]
-			if !srcHasData {
-				return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
-			}
 			dst.Type = corev1.SecretTypeDockerConfigJson
 			if dst.Data == nil {
 				dst.Data = map[string][]byte{}
