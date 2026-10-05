@@ -20,10 +20,10 @@
                         "name": "ExternalOIDC"
                     },
                     {
-                        "name": "IngressComponentRouteLabels"
+                        "name": "HyperShiftOnlyDynamicResourceAllocation"
                     },
                     {
-                        "name": "HyperShiftOnlyDynamicResourceAllocation"
+                        "name": "IngressComponentRouteLabels"
                     },
                     {
                         "name": "NetworkDiagnosticsConfig"

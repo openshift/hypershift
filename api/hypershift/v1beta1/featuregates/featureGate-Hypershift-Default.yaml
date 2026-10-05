@@ -44,9 +44,6 @@
                     # We enable all OCP feature gates only so the CRD contains the fields.
                     # Each HostedCluster can configure their specific feature gate CR at creation time via spec.configuration.
                     {
-                        "name": "IngressComponentRouteLabels"
-                    },
-                    {
                         "name": "ExternalOIDC"
                     },
                     {
@@ -57,6 +54,9 @@
                     },
                     {
                         "name": "HyperShiftOnlyDynamicResourceAllocation"
+                    },
+                    {
+                        "name": "IngressComponentRouteLabels"
                     },
                     {
                         "name": "NetworkDiagnosticsConfig"
