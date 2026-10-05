@@ -1709,6 +1709,194 @@ tests:
 
 
 
+  # --- Azure outboundType validation ---
+  - name: When Azure outboundType is UserDefinedRouting it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            outboundType: UserDefinedRouting
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When Azure outboundType is LoadBalancer it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            outboundType: LoadBalancer
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When Azure outboundType is an invalid value it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            outboundType: NATGateway
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Unsupported value"
+
   onUpdate:
   # --- Azure Swift private networking immutability ---
   - name: When Private.Type changes from PrivateLink to Swift it should fail
@@ -2828,3 +3016,249 @@ tests:
           servicePublishingStrategy:
             route: {}
             type: Route
+
+  # --- Azure outboundType immutability ---
+  - name: When Azure outboundType changes from LoadBalancer to UserDefinedRouting it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            outboundType: LoadBalancer
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            outboundType: UserDefinedRouting
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "outboundType is immutable once set"
+
+  - name: When Azure outboundType is removed after being set it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            outboundType: UserDefinedRouting
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "outboundType cannot be removed once set"
