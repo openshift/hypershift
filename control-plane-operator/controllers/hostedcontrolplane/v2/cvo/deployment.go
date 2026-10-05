@@ -29,9 +29,16 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+
+	"github.com/blang/semver"
 )
 
 func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	versionStr := cpContext.ReleaseImageProvider.Version()
+	version, err := semver.Parse(versionStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse control plane release version (%s): %w", versionStr, err)
+	}
 	enableMetricsAccess := cvo.isManagementClusterMetricsAccessEnabled(cpContext)
 
 	if enableMetricsAccess {
@@ -114,7 +121,8 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 			Value: dataPlaneReleaseImage,
 		})
 
-		if len(tlsArgs) > 0 {
+		// cluster-version-operator 1bdca2ee82e8 introduced TLS override flags in 4.23.
+		if version.Major >= 5 || (version.Major == 4 && version.Minor >= 23) {
 			c.Args = append(c.Args, tlsArgs...)
 		}
 

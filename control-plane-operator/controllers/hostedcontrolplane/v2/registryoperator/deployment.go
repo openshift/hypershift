@@ -1,6 +1,9 @@
 package registryoperator
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -9,10 +12,24 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/blang/semver"
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	versionStr := cpContext.ReleaseImageProvider.Version()
+	version, err := semver.Parse(versionStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse control plane release version (%s): %w", versionStr, err)
+	}
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		// cluster-image-registry-operator 89b3f48903c7 added --config in 4.22.
+		// Retain the older metrics server's defaults and certificate file watches.
+		if version.Major == 4 && version.Minor < 22 {
+			for i := range c.Args {
+				c.Args[i] = strings.ReplaceAll(c.Args[i], "--config=/var/run/configmaps/image-registry-controller-config/config.yaml", "")
+			}
+		}
 		proxy.SetEnvVars(&c.Env)
 
 		version := cpContext.UserReleaseImageProvider.Version()

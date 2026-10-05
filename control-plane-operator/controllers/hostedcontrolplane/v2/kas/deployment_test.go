@@ -17,6 +17,8 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/blang/semver"
 )
 
 func TestResolveKASVerbosity(t *testing.T) {
@@ -197,6 +199,7 @@ func TestAdaptDeploymentKASLogLevel(t *testing.T) {
 			}
 			cpContext := component.WorkloadContext{
 				HCP:                      tt.hcp,
+				ReleaseImageProvider:     testutil.FakeImageProvider(),
 				UserReleaseImageProvider: testutil.FakeImageProvider(),
 			}
 			err := adaptDeployment(cpContext, deployment)
@@ -467,9 +470,93 @@ func TestApplyAWSPodIdentityWebhookContainer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			podSpec := &corev1.PodSpec{}
-			err := applyAWSPodIdentityWebhookContainer(podSpec, tc.hcp)
+			err := applyAWSPodIdentityWebhookContainer(podSpec, tc.hcp, semver.MustParse("4.22.0"))
 			g.Expect(err).ToNot(HaveOccurred())
 			tc.validatePod(g, podSpec)
+		})
+	}
+}
+
+func TestAdaptDeployment(t *testing.T) {
+	for _, tc := range []struct {
+		version         string
+		userVersion     string
+		konnectivityTLS bool
+		webhookTLS      bool
+		invalidVersion  bool
+	}{
+		{version: "4.20.0", userVersion: "4.23.0"},
+		{version: "4.21.32-candidate", userVersion: "4.23.0"},
+		{version: "4.21.32", userVersion: "4.23.0"},
+		{version: "4.22.0-rc.0", userVersion: "4.21.32", webhookTLS: true},
+		{version: "4.22.0", userVersion: "4.21.32", webhookTLS: true},
+		{version: "4.23.0-0.nightly-2026-09-08-022115", userVersion: "4.21.32", konnectivityTLS: true, webhookTLS: true},
+		{version: "4.23.0", userVersion: "4.21.32", konnectivityTLS: true, webhookTLS: true},
+		{version: "5.0.0", userVersion: "4.21.32", konnectivityTLS: true, webhookTLS: true},
+		{version: "", invalidVersion: true},
+		{version: "invalid", invalidVersion: true},
+	} {
+		t.Run(fmt.Sprintf("When the control plane release is %q, it should use only supported sidecar TLS flags", tc.version), func(t *testing.T) {
+			for _, profile := range []struct {
+				name  string
+				value *configv1.TLSSecurityProfile
+				min   string
+			}{
+				{name: "default", min: "VersionTLS12"},
+				{name: "Modern", value: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType}, min: "VersionTLS13"},
+				{name: "invalid", value: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType}},
+			} {
+				t.Run(fmt.Sprintf("When the TLS profile is %s, it should preserve supported configuration or return an error", profile.name), func(t *testing.T) {
+					g := NewWithT(t)
+					hcp := &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform, Azure: &hyperv1.AzurePlatformSpec{}},
+						Configuration: &hyperv1.ClusterConfiguration{APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: profile.value,
+						}},
+					}}
+					deployment := &appsv1.Deployment{Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{Name: "konnectivity-server", Args: []string{"--cluster-cert=/etc/konnectivity/server/tls.crt"}}},
+					}}}}
+					err := adaptDeployment(component.WorkloadContext{
+						HCP:                      hcp,
+						ReleaseImageProvider:     testutil.FakeImageProvider(testutil.WithVersion(tc.version)),
+						UserReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion(tc.userVersion)),
+					}, deployment)
+					if tc.invalidVersion || profile.name == "invalid" {
+						g.Expect(err).To(HaveOccurred())
+						return
+					}
+					g.Expect(err).NotTo(HaveOccurred())
+					server := findContainerByNameInPod(&deployment.Spec.Template.Spec, "konnectivity-server")
+					g.Expect(server.Args).To(ContainElements("--server-count", "--cluster-cert=/etc/konnectivity/server/tls.crt"))
+					g.Expect(slices.Contains(server.Args, "--tls-min-version="+profile.min)).To(Equal(tc.konnectivityTLS))
+					g.Expect(slices.ContainsFunc(server.Args, func(arg string) bool {
+						return strings.HasPrefix(arg, "--cipher-suites=")
+					})).To(Equal(profile.name != "Modern"), "older konnectivity still supports cipher suites")
+					webhook := findContainerByNameInPod(&deployment.Spec.Template.Spec, "azure-workload-identity-webhook")
+					g.Expect(webhook).NotTo(BeNil())
+					g.Expect(webhook.Args).To(HaveLen(1))
+					g.Expect(strings.Contains(webhook.Args[0], "--tls-min-version="+profile.min)).To(Equal(tc.webhookTLS))
+					g.Expect(strings.Contains(webhook.Args[0], "--tls-cipher-suites=")).To(Equal(tc.webhookTLS && profile.name != "Modern"))
+					g.Expect(webhook.Args[0]).To(ContainSubstring("--webhook-cert-dir=/var/run/app/certs"))
+
+					hcp.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}}
+					awsDeployment := &appsv1.Deployment{}
+					err = adaptDeployment(component.WorkloadContext{
+						HCP:                      hcp,
+						ReleaseImageProvider:     testutil.FakeImageProvider(testutil.WithVersion(tc.version)),
+						UserReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion(tc.userVersion)),
+					}, awsDeployment)
+					g.Expect(err).NotTo(HaveOccurred())
+					awsWebhook := findContainerByNameInPod(&awsDeployment.Spec.Template.Spec, "aws-pod-identity-webhook")
+					g.Expect(awsWebhook).NotTo(BeNil())
+					g.Expect(slices.Contains(awsWebhook.Command, "--tls-min-version="+profile.min)).To(Equal(tc.webhookTLS))
+					g.Expect(slices.ContainsFunc(awsWebhook.Command, func(arg string) bool {
+						return strings.HasPrefix(arg, "--tls-cipher-suites=")
+					})).To(Equal(tc.webhookTLS && profile.name != "Modern"))
+					g.Expect(awsWebhook.Command).To(ContainElement("--tls-cert=/var/run/app/certs/tls.crt"))
+				})
+			}
 		})
 	}
 }
@@ -578,6 +665,7 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 
 			cpContext := component.WorkloadContext{
 				HCP:                      tc.hcp,
+				ReleaseImageProvider:     testutil.FakeImageProvider(testutil.WithVersion("4.23.0")),
 				UserReleaseImageProvider: testutil.FakeImageProvider(),
 			}
 
