@@ -1,0 +1,35 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  annotations:
+    hypershift.openshift.io/desired-state-hash: a6afd047856dae978e232465701f7a7b6093cea5d227a2d24916efc671bed3b2
+  name: cluster-autoscaler
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  namespaceSelector:
+    matchNames:
+    - hcp-namespace
+  podMetricsEndpoints:
+  - interval: 30s
+    metricRelabelings:
+    - action: replace
+      replacement: ""
+      targetLabel: _id
+    path: /metrics
+    port: metrics
+    relabelings:
+    - action: replace
+      replacement: ""
+      targetLabel: _id
+    scheme: http
+  selector:
+    matchLabels:
+      app: cluster-autoscaler

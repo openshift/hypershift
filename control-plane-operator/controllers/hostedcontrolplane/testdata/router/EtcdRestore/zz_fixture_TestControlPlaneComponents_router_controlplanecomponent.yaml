@@ -1,0 +1,26 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  name: router
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: deployments.apps "router" not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for Dependencies: ignition-server'
+    reason: WaitingForDependencies
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: ""
+    kind: ConfigMap
+    name: router
+  - group: policy
+    kind: PodDisruptionBudget
+    name: router
