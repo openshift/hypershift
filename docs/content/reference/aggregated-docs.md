@@ -28123,6 +28123,87 @@ NAME            VERSION   KUBECONFIG                       PROGRESS   AVAILABLE 
 example         4.14.0    example-admin-kubeconfig         Completed  True        False         The hosted control plane is available
 ```
 
+## External infrastructure credentials
+
+When KubeVirt virtual machines run on a separate infrastructure cluster,
+`spec.platform.kubevirt.credentials.infraKubeConfigSecret` references a Secret
+in the HostedCluster namespace. Its `name` and `key` must identify a non-empty
+kubeconfig with a valid current context and referenced user and cluster.
+
+HyperShift validates the credentials before copying them into the control plane
+namespace or using them for infrastructure discovery. Validation applies to all
+users and clusters in each consumed kubeconfig, including inactive entries. It
+rejects the following settings instead of silently removing them:
+
+* Exec credential plugins (`users[].user.exec`).
+* Authentication provider plugins (`users[].user.auth-provider`).
+* Bearer token files (`users[].user.tokenFile`), even with an inline token.
+* Client certificate/key files (`users[].user.client-certificate` and
+  `users[].user.client-key`), even when embedded data is also supplied.
+* CA files (`clusters[].cluster.certificate-authority`).
+* Disabled TLS verification (`clusters[].cluster.insecure-skip-tls-verify: true`).
+
+Use static inline bearer tokens or embedded client certificate/key credentials
+with TLS verification enabled. Use embedded `certificate-authority-data` when
+providing a custom CA. Kubeconfigs must not reference files on the machine where
+they were generated or on a privileged consumer's filesystem.
+
+The control plane Secret is named `kubevirt-infra-credentials`. CAPK and the
+KubeVirt CSI driver consume its `kubeconfig` key. If only a custom source key is
+provided, HyperShift also publishes its validated data as `kubeconfig`. If both
+keys exist, both must pass validation. Optional CAPK `namespace` metadata is
+preserved; unrelated source entries and stale target keys are not copied. The
+source Secret is not modified.
+
+Infrastructure discovery uses the configured source `key`, even when a different
+valid `kubeconfig` entry exists for CAPK/CSI. Cached infrastructure clients are
+replaced when the configured kubeconfig or infrastructure namespace changes.
+
+### Upgrades and rejected credentials
+
+This validation intentionally rejects configurations that older operators might
+have accepted. Check external infrastructure credentials before upgrading,
+including any inactive users and clusters, and replace unsupported authentication
+methods with safe static credentials.
+
+When validation fails, the HostedCluster reports `PlatformCredentialsFound=False`
+with a message identifying the Secret/key or prohibited field, without including
+the credential contents. A previously copied unsafe or malformed target Secret
+is removed. A safe existing target is preserved when an invalid replacement is
+submitted. Cleanup failures are reported rather than ignored.
+
+To recover, correct the data in the referenced source Secret, keeping its existing
+name and key. After successful reconciliation, the validated credentials are
+published and `PlatformCredentialsFound` becomes True. HyperShift's cached
+infrastructure clients are revalidated and replaced when credentials change.
+
+Keep the referenced source Secret and valid credentials available until NodePool
+and HostedCluster teardown finishes. Image-cache cleanup and other infrastructure
+operations still validate the source before using a cached client. If teardown is
+blocked by rejected or missing credentials, restore safe credentials and retry;
+do not rely on an old cached client or remove finalizers to bypass validation.
+
+Previously copied unsafe targets are also inspected during deletion and when the
+source has already been corrected, before unrelated reconciliation prerequisites.
+Missing source credentials do not by themselves block non-consuming teardown.
+Historical target inspection treats every data entry except `namespace` as
+kubeconfig credentials, including keys copied by earlier operators. An unsafe or
+unparsable historical entry causes the operator-managed target to be removed,
+even if its current credential keys are valid.
+If safe source credentials are restored while the control plane namespace is
+still active, HyperShift republishes the validated target for CAPK's remaining
+Machine/VM deletion operations. It does not recreate deleted or terminating
+control plane namespaces.
+
+!!! warning
+
+    Removing a Secret does not revoke credentials already loaded by running
+    consumers. When remediating previously accepted unsafe configurations,
+    coordinate credential revocation and any required restarts of CAPK, cloud
+    controller, and CSI workloads with your cluster administrator. Verify recovery
+    after reconciliation; do not assume deleting or correcting a Secret alone
+    removes previously loaded state.
+
 ## Accessing the HostedCluster
 
 CLI access to the guest cluster is gained by retrieving the guest cluster's
@@ -28299,7 +28380,6 @@ To delete a HostedCluster:
 ```shell
 hcp destroy cluster kubevirt --name $CLUSTER_NAME
 ```
-
 
 
 ---
