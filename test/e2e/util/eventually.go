@@ -74,13 +74,6 @@ func WithoutConditionDump() EventuallyOption {
 	}
 }
 
-// WithFilteredConditionDump configures the asynchronous assertion to only dump the specified conditions.
-func WithFilteredConditionDump(matchers ...Condition) EventuallyOption {
-	return func(o *EventuallyOptions) {
-		o.filterConditionDump = append(o.filterConditionDump, matchers...)
-	}
-}
-
 // EventuallyObject polls until the predicate is fulfilled on the object.
 func EventuallyObject[T client.Object](t testing.TB, ctx context.Context, objective string, getter func(context.Context) (T, error), predicates []Predicate[T], options ...EventuallyOption) {
 	t.Helper()

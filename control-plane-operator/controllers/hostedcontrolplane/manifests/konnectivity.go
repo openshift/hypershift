@@ -23,12 +23,3 @@ func KonnectivityServerDeployment(ns string) *appsv1.Deployment {
 		},
 	}
 }
-
-func KonnectivityAgentDeployment(ns string) *appsv1.Deployment {
-	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "konnectivity-agent",
-			Namespace: ns,
-		},
-	}
-}
