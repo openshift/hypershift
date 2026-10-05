@@ -1,4 +1,4 @@
-package resources
+package configuration
 
 import (
 	"context"
@@ -6,20 +6,23 @@ import (
 	"sort"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/upsert"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type ClusterOperatorInfo struct {
+type clusterOperatorInfo struct {
 	Name           string
 	VersionMapping map[string]string
 	RelatedObjects []configv1.ObjectReference
 }
 
-var clusterOperators = []ClusterOperatorInfo{
+var clusterOperators = []clusterOperatorInfo{
 	{
 		Name: "openshift-apiserver",
 		VersionMapping: map[string]string{
@@ -242,12 +245,12 @@ var clusterOperators = []ClusterOperatorInfo{
 	},
 }
 
-func (r *reconciler) reconcileClusterOperators(ctx context.Context) error {
+func reconcileClusterOperators(ctx context.Context, hostedClusterClient client.Client, createOrUpdate upsert.CreateOrUpdateFN, params ReconcileParams) error {
 	var errs []error
 	for _, info := range clusterOperators {
 		clusterOperator := &configv1.ClusterOperator{ObjectMeta: metav1.ObjectMeta{Name: info.Name}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, clusterOperator, func() error {
-			clusterOperator.Status = r.clusterOperatorStatus(info, clusterOperator.Status)
+		if _, err := createOrUpdate(ctx, hostedClusterClient, clusterOperator, func() error {
+			clusterOperator.Status = clusterOperatorStatus(params.Versions, info, clusterOperator.Status)
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterOperator, clusterOperator.Name, err))
@@ -257,7 +260,7 @@ func (r *reconciler) reconcileClusterOperators(ctx context.Context) error {
 	return utilerrors.NewAggregate(errs)
 }
 
-func (r *reconciler) clusterOperatorStatus(coInfo ClusterOperatorInfo, currentStatus configv1.ClusterOperatorStatus) configv1.ClusterOperatorStatus {
+func clusterOperatorStatus(versions map[string]string, coInfo clusterOperatorInfo, currentStatus configv1.ClusterOperatorStatus) configv1.ClusterOperatorStatus {
 	status := configv1.ClusterOperatorStatus{}
 	versionMappingKeys := make([]string, 0, len(coInfo.VersionMapping))
 	for key := range coInfo.VersionMapping {
@@ -266,7 +269,7 @@ func (r *reconciler) clusterOperatorStatus(coInfo ClusterOperatorInfo, currentSt
 	sort.Strings(versionMappingKeys)
 	for _, key := range versionMappingKeys {
 		target := coInfo.VersionMapping[key]
-		v, hasVersion := r.versions[target]
+		v, hasVersion := versions[target]
 		if !hasVersion {
 			continue
 		}

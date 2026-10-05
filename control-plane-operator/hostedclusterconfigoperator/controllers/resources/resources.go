@@ -25,7 +25,7 @@ import (
 	azureresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/configuration"
 	gcpresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/gcp"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
@@ -33,7 +33,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kubeadminpassword"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/monitoring"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/namespaces"
 	networkoperator "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/network"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/oapi"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/oauth"
@@ -394,9 +393,13 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get lookup release image %s: %w", hcp.Spec.ReleaseImage, err)
 	}
+	params := configuration.ReconcileParams{
+		ClusterID: hcp.Spec.ClusterID, UpdateService: hcp.Spec.UpdateService,
+		Channel: hcp.Spec.Channel, Capabilities: hcp.Spec.Capabilities, Versions: r.versions,
+	}
 	var errs []error
 	log.Info("reconciling guest cluster crds")
-	if err := r.reconcileCRDs(ctx); err != nil {
+	if err := configuration.Reconcile(ctx, r.client, r.CreateOrUpdate, params, configuration.CRDs); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile crds: %w", err))
 	}
 
@@ -435,12 +438,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 	}
 
 	log.Info("reconciling clusterversion")
-	if err := r.reconcileClusterVersion(ctx, hcp); err != nil {
+	if err := configuration.Reconcile(ctx, r.client, r.CreateOrUpdate, params, configuration.ClusterVersion); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile clusterversion: %w", err))
 	}
 
 	log.Info("reconciling clusterOperators")
-	if err := r.reconcileClusterOperators(ctx); err != nil {
+	if err := configuration.Reconcile(ctx, r.client, r.CreateOrUpdate, params, configuration.ClusterOperators); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile clusterOperators: %w", err))
 	}
 
@@ -450,7 +453,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 	}
 
 	log.Info("reconciling guest cluster namespaces")
-	if err := r.reconcileNamespaces(ctx, hcp); err != nil {
+	if err := configuration.Reconcile(ctx, r.client, r.CreateOrUpdate, params, configuration.Namespaces); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile namespaces: %w", err))
 	}
 
@@ -1098,19 +1101,6 @@ func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1
 	return nil
 }
 
-func (r *reconciler) reconcileCRDs(ctx context.Context) error {
-	var errs []error
-
-	requestCount := manifests.RequestCountCRD()
-	if _, err := r.CreateOrUpdate(ctx, r.client, requestCount, func() error {
-		return crd.ReconcileRequestCountCRD(requestCount)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile request count crd: %w", err))
-	}
-
-	return utilerrors.NewAggregate(errs)
-}
-
 func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
 
@@ -1275,43 +1265,6 @@ func (r *reconciler) reconcileProxyTrustedCAConfigMap(ctx context.Context, hcp *
 	}
 
 	return nil
-}
-
-func (r *reconciler) reconcileNamespaces(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	namespaceManifests := []struct {
-		manifest  func() *corev1.Namespace
-		reconcile func(*corev1.Namespace) error
-	}{
-		{manifest: manifests.NamespaceOpenShiftAPIServer},
-		{manifest: manifests.NamespaceOpenShiftInfra, reconcile: namespaces.ReconcileOpenShiftInfraNamespace},
-		{manifest: manifests.NamespaceOpenshiftCloudControllerManager},
-		{manifest: manifests.NamespaceOpenShiftControllerManager},
-		{manifest: manifests.NamespaceKubeAPIServer, reconcile: namespaces.ReconcileKubeAPIServerNamespace},
-		{manifest: manifests.NamespaceKubeControllerManager},
-		{manifest: manifests.NamespaceKubeScheduler},
-		{manifest: manifests.NamespaceEtcd},
-		{manifest: manifests.NamespaceIngress, reconcile: namespaces.ReconcileOpenShiftIngressNamespace},
-		{manifest: manifests.NamespaceAuthentication},
-		{manifest: manifests.NamespaceRouteControllerManager},
-	}
-
-	var errs []error
-	for _, m := range namespaceManifests {
-		ns := m.manifest()
-		if ns.Name == "openshift-ingress" && !capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
-			continue
-		}
-		if _, err := r.CreateOrUpdate(ctx, r.client, ns, func() error {
-			if m.reconcile != nil {
-				return m.reconcile(ns)
-			}
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile namespace %s: %w", ns.Name, err))
-		}
-	}
-
-	return utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -1575,27 +1528,6 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 	}
 
 	return utilerrors.NewAggregate(errs)
-}
-
-func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
-	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
-		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
-		desiredCaps := capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities)
-		desiredCaps = capabilities.FilterByKnownCapabilities(desiredCaps, clusterVersion.Status.Capabilities.KnownCapabilities)
-		clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
-			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
-			AdditionalEnabledCapabilities: desiredCaps,
-		}
-		clusterVersion.Spec.Upstream = hcp.Spec.UpdateService
-		clusterVersion.Spec.Channel = hcp.Spec.Channel
-		clusterVersion.Spec.DesiredUpdate = nil
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile clusterVersion: %w", err)
-	}
-
-	return nil
 }
 
 func (r *reconciler) reconcileDataPlaneConnectionAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
