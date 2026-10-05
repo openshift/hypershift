@@ -9,7 +9,6 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	supportpki "github.com/openshift/hypershift/support/pki"
-	"github.com/openshift/hypershift/support/podspec"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apiserver/pkg/authentication/serviceaccount"
@@ -99,7 +98,7 @@ func ReconcileKubeConfig(secret, cert *corev1.Secret, ca *corev1.ConfigMap, url 
 		secret.Data = map[string][]byte{}
 	}
 	if key == "" {
-		key = podspec.KubeconfigKey
+		key = config.KubeconfigKey
 	}
 	if secret.Labels == nil {
 		secret.Labels = map[string]string{}
