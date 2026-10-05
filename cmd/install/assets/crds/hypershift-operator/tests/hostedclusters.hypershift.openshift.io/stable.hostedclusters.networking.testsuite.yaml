@@ -923,257 +923,6 @@ tests:
             route: {}
     expectedError: "subnet must be in the range /0 to /125 inclusive"
 
-  # --- v4/v6InternalSubnet immutability ---
-  onUpdate:
-  - name: When v4InternalSubnet is changed on update it should fail
-    initial: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              v4InternalSubnet: "100.64.0.0/16"
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    updated: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              v4InternalSubnet: "10.10.0.0/16"
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    expectedError: "v4InternalSubnet is immutable once set"
-
-  - name: When v6InternalSubnet is changed on update it should fail
-    initial: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              v6InternalSubnet: "fd98::/64"
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    updated: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              v6InternalSubnet: "fd99::/64"
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    expectedError: "v6InternalSubnet is immutable once set"
-
-  - name: When v4InternalSubnet is removed on update it should fail
-    initial: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              v4InternalSubnet: "100.64.0.0/16"
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    updated: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              mtu: 1400
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    expectedError: "v4InternalSubnet is immutable once set and cannot be removed"
-
   - name: When ovnKubernetesConfig is not set and networkType is not OVNKubernetes it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -1568,7 +1317,257 @@ tests:
             route: {}
     expectedError: "should have at least 1 properties"
 
+  # --- v4/v6InternalSubnet immutability ---
   onUpdate:
+  - name: When v4InternalSubnet is changed on update it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              v4InternalSubnet: "100.64.0.0/16"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              v4InternalSubnet: "10.10.0.0/16"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "v4InternalSubnet is immutable once set"
+
+  - name: When v6InternalSubnet is changed on update it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              v6InternalSubnet: "fd98::/64"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              v6InternalSubnet: "fd99::/64"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "v6InternalSubnet is immutable once set"
+
+  - name: When v4InternalSubnet is removed on update it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              v4InternalSubnet: "100.64.0.0/16"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              mtu: 1400
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "v4InternalSubnet is immutable once set and cannot be removed"
+
   - name: When ovnKubernetesConfig is removed after being set it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
