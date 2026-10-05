@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 31e4bff87acbca22d690180a037c396a93d1d0cd8b088d32811fd3e45b9e26c6
+    hypershift.openshift.io/desired-state-hash: e258fe61b9bae3a0a8b14d65aa71e860c8f5ae21c75d580e5f1728fcbde57f05
     image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
   labels:
@@ -131,6 +131,7 @@ spec:
         command:
         - cp
         image: operator-lifecycle-manager
+        imagePullPolicy: IfNotPresent
         name: extract-utilities
         resources: {}
         securityContext:
@@ -138,12 +139,15 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /utilities
           name: utilities
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --catalog.from=/configs
         - --catalog.to=/extracted-catalog/catalog
@@ -152,6 +156,7 @@ spec:
         command:
         - /utilities/copy-content
         image: from:imagestream
+        imagePullPolicy: IfNotPresent
         name: extract-content
         resources: {}
         securityContext:
@@ -159,6 +164,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
@@ -167,6 +173,8 @@ spec:
           name: utilities
         - mountPath: /extracted-catalog
           name: catalog-content
+        - mountPath: /tmp
+          name: tmp-dir
       nodeSelector:
         kubernetes.io/os: linux
       priorityClassName: hypershift-control-plane

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: df6148036ab90734cd9f0fa75bea03751f4576a60c0de24120583abedc59f98d
+    hypershift.openshift.io/desired-state-hash: af891852b952a0cd9d866f93b9cc65ec081885a7893af27b8a8ebe0baeece78f
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -441,7 +441,12 @@ spec:
         imagePullPolicy: IfNotPresent
         name: pre-pull-image-kube-apiserver
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - -c
         - |
@@ -514,10 +519,14 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - -c
         - |
@@ -553,10 +562,14 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - -c
         - |
@@ -574,7 +587,12 @@ spec:
         imagePullPolicy: IfNotPresent
         name: wait-for-etcd
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-api-critical
       schedulerName: default-scheduler
       terminationGracePeriodSeconds: 135

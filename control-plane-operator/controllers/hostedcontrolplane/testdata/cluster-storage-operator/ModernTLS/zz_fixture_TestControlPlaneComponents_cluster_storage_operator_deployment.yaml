@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: c9ce6cd01054306cda3d14ef111ae96d00b94ab70297cb6bb9640e60a727d65a
+    hypershift.openshift.io/desired-state-hash: 15b448e93615d1f824b1c040a8c4df016283874240bd5c6caf1bd73095becda7
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-storage-operator
@@ -203,10 +203,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: guest-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       securityContext:
         runAsNonRoot: true
