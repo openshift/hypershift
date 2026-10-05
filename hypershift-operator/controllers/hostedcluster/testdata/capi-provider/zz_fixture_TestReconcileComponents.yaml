@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   annotations:
     hypershift.openshift.io/cluster: ""
-    hypershift.openshift.io/desired-state-hash: 9e38a050997547dd945ae5ccec9c38002cd1b1470dda242dc235284a645cf147
+    hypershift.openshift.io/desired-state-hash: ba8fe4b6be7353620aeed72b220a5a3d1bbabda409d3cac9b2b836f19467c0c6
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: capi-provider
@@ -136,11 +136,17 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         image: availability-prober
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
       priorityClassName: hypershift-control-plane
       serviceAccountName: capi-provider
       terminationGracePeriodSeconds: 10
@@ -169,6 +175,12 @@ spec:
       - emptyDir:
           medium: Memory
         name: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: a3af38ba6e62d8ab0f6fc66d4ecc0f0bf3e32357021676ad42b77fe04ba29ec0
+    hypershift.openshift.io/desired-state-hash: 65df1a86066341f64bf931f6b43a9c29704ca2149da0142141d5dadd7cb541c0
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: machine-approver
@@ -103,11 +103,17 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:2040/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         image: availability-prober
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
       priorityClassName: hypershift-control-plane
       restartPolicy: Always
       serviceAccount: machine-approver
@@ -132,6 +138,12 @@ spec:
           name: machine-approver-config
           optional: true
         name: config
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}
