@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 5e1b2b035ce10d04740a2674030a5cece0ec197873f264b5f3fde6201192234e
+    hypershift.openshift.io/desired-state-hash: e6989c717e5359292df900ecf9d3fe0f090af54e2869d585b88585a4ad384e9d
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: packageserver
@@ -202,6 +202,8 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         - --kubeconfig=/var/kubeconfig/kubeconfig
         - --required-api=operators.coreos.com,v1alpha1,CatalogSource
         image: availability-prober
@@ -210,6 +212,9 @@ spec:
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
         - mountPath: /var/kubeconfig
           name: kubeconfig
       priorityClassName: hypershift-api-critical
@@ -259,6 +264,12 @@ spec:
       - configMap:
           name: konnectivity-ca-bundle
         name: konnectivity-proxy-ca
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}

@@ -3,6 +3,7 @@ package availabilityprober
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -38,6 +39,7 @@ import (
 type options struct {
 	target                        string
 	kubeconfig                    string
+	caFile                        string
 	waitForInfrastructureResource bool
 	waitForLabeledPodsGone        string
 	waitForClusterRolebinding     string
@@ -52,6 +54,7 @@ func NewStartCommand() *cobra.Command {
 	opts := options{}
 	cmd.Flags().StringVar(&opts.target, "target", "", "A http url to probe. The program will continue until it gets a http 2XX back.")
 	cmd.Flags().StringVar(&opts.kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Required when --required-api is set")
+	cmd.Flags().StringVar(&opts.caFile, "ca-file", "", "PEM-encoded CA bundle used to verify the --target TLS certificate. Required for https targets unless --kubeconfig provides a certificate authority.")
 	cmd.Flags().Var(&opts.requiredAPIs, "required-api", "An api that must be up before the program will be end. Can be passed multiple times, must be in group,version,kind format (e.G. operators.coreos.com,v1alpha1,CatalogSource)")
 	cmd.Flags().BoolVar(&opts.waitForInfrastructureResource, "wait-for-infrastructure-resource", false, "Waits until the cluster infrastructure.config.openshift.io resource is present")
 	cmd.Flags().StringVar(&opts.waitForLabeledPodsGone, "wait-for-labeled-pods-gone", "", "Waits until pods with the specified label is gone from the namespace. Must be in format: namespace/label=selector")
@@ -82,6 +85,7 @@ func NewStartCommand() *cobra.Command {
 
 		var discoveryClient discovery.DiscoveryInterface
 		var kubeClient crclient.Client
+		var kubeconfigCA []byte
 		if opts.kubeconfig != "" {
 			restConfig, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 				&clientcmd.ClientConfigLoadingRules{ExplicitPath: opts.kubeconfig},
@@ -90,6 +94,14 @@ func NewStartCommand() *cobra.Command {
 			if err != nil {
 				log.Error(err, "failed to get kubeconfig")
 				os.Exit(1)
+			}
+			kubeconfigCA = restConfig.TLSClientConfig.CAData
+			if len(kubeconfigCA) == 0 && restConfig.TLSClientConfig.CAFile != "" {
+				kubeconfigCA, err = os.ReadFile(restConfig.TLSClientConfig.CAFile)
+				if err != nil {
+					log.Error(err, "failed to read kubeconfig CA file")
+					os.Exit(1)
+				}
 			}
 			discoveryClient, err = discovery.NewDiscoveryClientForConfig(restConfig)
 			if err != nil {
@@ -103,19 +115,58 @@ func NewStartCommand() *cobra.Command {
 			}
 		}
 
-		check(cmd.Context(), log, url, time.Second, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, opts.waitForClusterRolebinding, opts.waitForLabeledPodsGone, discoveryClient, kubeClient)
+		var tlsCfg *tls.Config
+		if url.Scheme == "https" {
+			tlsCfg, err = tlsConfigForProbe(opts.caFile, kubeconfigCA)
+			if err != nil {
+				log.Error(err, "failed to configure TLS for HTTPS probe")
+				os.Exit(1)
+			}
+		}
+
+		check(cmd.Context(), log, url, time.Second, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, opts.waitForClusterRolebinding, opts.waitForLabeledPodsGone, discoveryClient, kubeClient, tlsCfg)
 	}
 
 	return cmd
 }
 
-func check(ctx context.Context, log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, waitForClusterRolebinding, waitForLabeledPodsGone string, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client) {
+func tlsConfigForProbe(caFile string, kubeconfigCA []byte) (*tls.Config, error) {
+	pool := x509.NewCertPool()
+	loaded := false
+	if caFile != "" {
+		pem, err := os.ReadFile(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read --ca-file: %w", err)
+		}
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("failed to parse certificates from --ca-file %s", caFile)
+		}
+		loaded = true
+	}
+	if !loaded && len(kubeconfigCA) > 0 {
+		if !pool.AppendCertsFromPEM(kubeconfigCA) {
+			return nil, fmt.Errorf("failed to parse certificate authority from kubeconfig")
+		}
+		loaded = true
+	}
+	if !loaded {
+		return nil, fmt.Errorf("HTTPS probe requires a certificate authority via --ca-file or --kubeconfig")
+	}
+	return &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		RootCAs:    pool,
+	}, nil
+}
+
+func check(ctx context.Context, log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, waitForClusterRolebinding, waitForLabeledPodsGone string, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client, tlsCfg *tls.Config) {
 	log = log.WithValues("sleepTime", sleepTime.String())
+	transport := &http.Transport{}
+	if tlsCfg != nil {
+		transport.TLSClientConfig = tlsCfg
+	}
 	client := &http.Client{
-		Timeout: requestTimeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
+		Timeout:   requestTimeout,
+		Transport: transport,
 	}
 	for ; ; time.Sleep(sleepTime) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
