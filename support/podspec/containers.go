@@ -89,6 +89,11 @@ func UpsertEnvVars(c *corev1.Container, envVars []corev1.EnvVar) {
 }
 
 const (
+	// KubeconfigKey is the key used for kubeconfig data in Secrets.
+	KubeconfigKey = "kubeconfig"
+
+	// AWSCloudProviderName is the cloud provider identifier for AWS.
+	AWSCloudProviderName = "aws"
 
 	// CPOImageName is the name under which components can find the CPO image in the release image..
 	CPOImageName = "controlplane-operator"
