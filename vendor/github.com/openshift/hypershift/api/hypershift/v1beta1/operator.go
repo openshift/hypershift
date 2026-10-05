@@ -125,8 +125,9 @@ type ClusterNetworkOperatorSpec struct {
 	// guest cluster and the multus-admission-controller in the management cluster.
 	// Default is false (Multus is enabled).
 	// This field is immutable.
-	// This field can only be set to true when NetworkType is "Other". Setting it to true
-	// with any other NetworkType will result in a validation error during cluster creation.
+	// This field can only be set to true when NetworkType is a third-party CNI (any value other than
+	// OpenShiftSDN or OVNKubernetes). Setting it to true with OpenShiftSDN or OVNKubernetes will result
+	// in a validation error during cluster creation.
 	//
 	// +optional
 	// +kubebuilder:default:=false

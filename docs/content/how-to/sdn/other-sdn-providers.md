@@ -15,7 +15,7 @@ Versions used while writing this doc:
 
 !!! important
 
-    To configure a different CNI provider for the Hosted Cluster, you must adjust the `hostedcluster.spec.networking.networkType` to `Other`. By doing so, the Control Plane Operator will skip the deployment of the default CNI provider.
+    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to a value other than the built-in `OVNKubernetes` or `OpenShiftSDN`. For any such value the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` is the recommended value; HyperShift gives no special handling to any particular third-party value (for example `Calico` or `Cilium` behave exactly like `Other`), so the choice is only a label for your own clarity.
 
 ## Calico
 ### Deployment
