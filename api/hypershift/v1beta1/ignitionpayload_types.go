@@ -10,6 +10,7 @@ import (
 // creates its own on demand). The type is consumer-agnostic — it carries no
 // back-reference to a NodePool so non-NodePool consumers can use it.
 //
+// +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=ignitionpayloads,shortName=ignpayload,scope=Namespaced
