@@ -35,8 +35,12 @@ import (
 //go:embed copy-machine-journals.sh
 var copyJournalsScript []byte
 
-func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, artifactDir, awsCreds string) error {
-	privateKeyFile, err := setupSSHKey(ctx, hc)
+func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, artifactDir, awsCreds, kubeconfigPath string) error {
+	managementClient, err := cmdutil.GetClientWithKubeconfig(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+	privateKeyFile, err := setupSSHKey(ctx, hc, managementClient)
 	if err != nil {
 		return err
 	}
@@ -61,7 +65,7 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		}
 	}()
 
-	bastionIP, err := setupBastion(t, ctx, hc, awsCreds, createLogger, destroyLogger)
+	bastionIP, err := setupBastion(t, ctx, hc, awsCreds, createLogger, destroyLogger, managementClient)
 	if err != nil {
 		return err
 	}
@@ -83,7 +87,7 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	return runJournalDumpScript(ctx, t, hc, artifactDir, copyJournalFile, privateKeyFile, bastionIP, machineIPs, machineInstances)
 }
 
-func setupSSHKey(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
+func setupSSHKey(ctx context.Context, hc *hyperv1.HostedCluster, managementClient client.Client) (string, error) {
 	secretName := hc.Spec.SSHKey.Name
 	if len(secretName) == 0 {
 		return "", fmt.Errorf("no SSH secret specified for cluster, cannot dump journals")
@@ -92,11 +96,7 @@ func setupSSHKey(ctx context.Context, hc *hyperv1.HostedCluster) (string, error)
 	sshKeySecret := &corev1.Secret{}
 	sshKeySecret.Name = secretName
 	sshKeySecret.Namespace = hc.Namespace
-	kubeClient, err := cmdutil.GetClient()
-	if err != nil {
-		return "", err
-	}
-	if err := kubeClient.Get(ctx, client.ObjectKeyFromObject(sshKeySecret), sshKeySecret); err != nil {
+	if err := managementClient.Get(ctx, client.ObjectKeyFromObject(sshKeySecret), sshKeySecret); err != nil {
 		return "", err
 	}
 	privateKey, exists := sshKeySecret.Data["id_rsa"]
@@ -149,7 +149,7 @@ func setupBastionLoggers(artifactDir string) (*zap.Logger, *zap.Logger, error) {
 	return createLogger, destroyLogger, nil
 }
 
-func setupBastion(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, awsCreds string, createLogger, destroyLogger *zap.Logger) (string, error) {
+func setupBastion(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, awsCreds string, createLogger, destroyLogger *zap.Logger, managementClient client.Client) (string, error) {
 	if hc.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
 		return "", nil
 	}
@@ -159,7 +159,6 @@ func setupBastion(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	if prowJobID := os.Getenv("PROW_JOB_ID"); prowJobID != "" {
 		additionalTags = append(additionalTags, supportawsutil.HypershiftProwJobIDTagKey+"="+prowJobID)
 	}
-
 	createBastion := bastionaws.CreateBastionOpts{
 		Namespace:          hc.Namespace,
 		Name:               hc.Name,
@@ -167,7 +166,7 @@ func setupBastion(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		Wait:               true,
 		AdditionalTags:     additionalTags,
 	}
-	_, bastionIP, err := createBastion.Run(ctx, zapr.NewLoggerWithOptions(createLogger))
+	_, bastionIP, err := createBastion.Run(ctx, zapr.NewLoggerWithOptions(createLogger), managementClient)
 	if err != nil {
 		return "", err
 	}
@@ -181,7 +180,7 @@ func setupBastion(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 			Region:             region,
 			AWSCredentialsFile: awsCreds,
 		}
-		if err := destroyBastion.Run(destroyCtx, zapr.NewLoggerWithOptions(destroyLogger)); err != nil {
+		if err := destroyBastion.Run(destroyCtx, zapr.NewLoggerWithOptions(destroyLogger), managementClient); err != nil {
 			t.Logf("error destroying bastion: %v", err)
 		}
 	})

@@ -2,6 +2,7 @@ package oadp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,7 +20,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/go-logr/logr"
 )
 
 // TestCreateScheduleOptionsDefaults verifies that the default values for CreateOptions
@@ -1135,6 +1140,33 @@ func TestRunSchedule(t *testing.T) {
 			tt.expect(g, err)
 		})
 	}
+}
+
+func TestRunScheduleClientProvider(t *testing.T) {
+	t.Run("When no client provider is configured in normal mode, it should return a configuration error", func(t *testing.T) {
+		opts := &CreateOptions{
+			HCName:      "test-cluster",
+			HCNamespace: "clusters",
+			Schedule:    "0 2 * * *",
+			Log:         logr.Discard(),
+		}
+		err := opts.RunSchedule(t.Context())
+		NewWithT(t).Expect(err).To(MatchError("failed to create kubernetes client for schedule validation: client provider is not configured"))
+	})
+
+	t.Run("When client creation fails in render mode, it should render with the default platform", func(t *testing.T) {
+		opts := &CreateOptions{
+			HCName:      "test-cluster",
+			HCNamespace: "clusters",
+			Schedule:    "0 2 * * *",
+			Render:      true,
+			Log:         logr.Discard(),
+			ClientProvider: &cmdutil.ClientProvider{ControllerRuntimeClient: func(string) (crclient.Client, error) {
+				return nil, errors.New("client unavailable")
+			}},
+		}
+		NewWithT(t).Expect(opts.RunSchedule(t.Context())).ToNot(HaveOccurred())
+	})
 }
 
 // TestScheduleNameValidation verifies that schedule name validation works correctly

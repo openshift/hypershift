@@ -12,21 +12,20 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestNewDestroyCommand(t *testing.T) {
 	t.Parallel()
 
-	t.Run("When command is created, it should be invoked as 'openstack' and wire a Run handler", func(t *testing.T) {
+	t.Run("When command is created, it should be invoked as 'openstack' and wire a RunE handler", func(t *testing.T) {
 		t.Parallel()
 		g := NewGomegaWithT(t)
 		opts := &core.DestroyOptions{}
 		cmd := NewDestroyCommand(opts)
 		g.Expect(cmd.Use).To(Equal("openstack"))
-		// OpenStack wires Run (not RunE) because it installs a SIGINT handler
-		// and calls os.Exit on failure, so the handler cannot be invoked from a
-		// test; this is the only check that it is connected at all.
-		g.Expect(cmd.Run).ToNot(BeNil())
+		g.Expect(cmd.RunE).ToNot(BeNil())
 	})
 }
 
@@ -225,7 +224,7 @@ func TestDestroyCluster(t *testing.T) {
 		// A non-nil hook is what makes core.DestroyCluster take the finalizer
 		// path rather than waiting for the HostedCluster to disappear.
 		g.Expect(gotPlatformSpecifics).ToNot(BeNil())
-		g.Expect(gotPlatformSpecifics(context.Background(), opts)).To(Succeed())
+		g.Expect(gotPlatformSpecifics(context.Background(), opts, nil)).To(Succeed())
 	})
 }
 
@@ -245,8 +244,23 @@ func TestDestroyPlatformSpecifics(t *testing.T) {
 			Log:       log.Log,
 		}
 		before := *opts
-		err := destroyPlatformSpecifics(context.Background(), opts)
+		err := destroyPlatformSpecifics(context.Background(), opts, nil)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(*opts).To(Equal(before), "destroyPlatformSpecifics should not mutate the options")
+	})
+}
+
+func TestNewDestroyCommandClientProvider(t *testing.T) {
+	t.Run("When management client creation fails, it should return the provider error", func(t *testing.T) {
+		g := NewWithT(t)
+		cmd := NewDestroyCommand(&core.DestroyOptions{}, &core.ClientProvider{
+			ControllerRuntimeClient: func(string) (crclient.Client, error) {
+				return nil, errors.New("management client unavailable")
+			},
+		})
+
+		cmd.SetArgs([]string{})
+		err := cmd.Execute()
+		g.Expect(err).To(MatchError("management client unavailable"))
 	})
 }

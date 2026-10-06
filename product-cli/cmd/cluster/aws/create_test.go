@@ -2,6 +2,7 @@ package aws
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,6 +20,8 @@ import (
 	"github.com/openshift/hypershift/test/integration/framework"
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -126,7 +129,6 @@ func TestCreateCluster(t *testing.T) {
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
-	t.Setenv("FAKE_CLIENT", "true")
 
 	rawCreds, err := json.Marshal(&awsutil.STSCreds{
 		Credentials: awsutil.Credentials{
@@ -234,7 +236,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, awsOpts); err != nil {
+			if err := core.CreateCluster(ctx, coreOpts, awsOpts, nil); err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 
@@ -245,4 +247,24 @@ func TestCreateCluster(t *testing.T) {
 			testutil.CompareWithFixture(t, manifests)
 		})
 	}
+}
+
+func TestNewCreateCommandClientProvider(t *testing.T) {
+	t.Run("When credential validation needs a client and the provider fails, it should return the provider error", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := &core.RawCreateOptions{
+			Name:           "test-cluster",
+			Namespace:      "clusters",
+			PullSecretFile: "/dev/null",
+		}
+		cmd := NewCreateCommand(opts, &core.ClientProvider{
+			ControllerRuntimeClient: func(string) (crclient.Client, error) {
+				return nil, errors.New("management client unavailable")
+			},
+		})
+		cmd.SetArgs([]string{"--secret-creds", "cloud-credentials"})
+
+		err := cmd.Execute()
+		g.Expect(err).To(MatchError("management client unavailable"))
+	})
 }
