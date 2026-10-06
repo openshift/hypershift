@@ -17,6 +17,7 @@ import (
 // +kubebuilder:printcolumn:name="Generation",type=integer,JSONPath=".status.current.generation"
 // +kubebuilder:printcolumn:name="Generated",type=string,JSONPath=".status.conditions[?(@.type==\"PayloadGenerated\")].status"
 // +kubebuilder:printcolumn:name="Reached",type=string,JSONPath=".status.conditions[?(@.type==\"IgnitionReached\")].status"
+// +openshift:enable:FeatureGate=IgnitionPayloadSystem
 type IgnitionPayload struct {
 	metav1.TypeMeta `json:",inline"`
 	// metadata is the standard object metadata.
