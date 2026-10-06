@@ -405,11 +405,11 @@ func isOrdinaryTest(pass *analysis.Pass, fn *ast.FuncDecl) bool {
 }
 
 func isTestingT(typ types.Type) bool {
-	pointer, ok := typ.(*types.Pointer)
+	pointer, ok := types.Unalias(typ).(*types.Pointer)
 	if !ok {
 		return false
 	}
-	named, ok := pointer.Elem().(*types.Named)
+	named, ok := types.Unalias(pointer.Elem()).(*types.Named)
 	return ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == "testing" && named.Obj().Name() == "T"
 }
 
@@ -621,6 +621,16 @@ func reportAmbiguous(pass *analysis.Pass, test *testFunction) {
 }
 
 func reportGroup(pass *analysis.Pass, tests []*testFunction) {
+	// Explicit exceptions do not reserve a production target, but legacy baseline
+	// tests still count so new tests cannot expand existing violations. Clone the
+	// group to preserve suppression metadata for external test packages.
+	tests = slices.DeleteFunc(slices.Clone(tests), func(test *testFunction) bool {
+		return test.suppressed
+	})
+	if len(tests) == 0 {
+		return
+	}
+
 	slices.SortFunc(tests, func(a, b *testFunction) int {
 		if a.resolution.kind != b.resolution.kind {
 			if a.resolution.kind == resolutionExact {
@@ -654,9 +664,6 @@ func reportGroup(pass *analysis.Pass, tests []*testFunction) {
 	}
 	if primary != nil && !shouldSuppress(pass, primary) {
 		for _, test := range tests[1:] {
-			if test.imported && test.suppressed {
-				continue
-			}
 			if !test.imported && !isLegacyException(pass, test) {
 				continue
 			}
