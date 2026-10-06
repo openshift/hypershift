@@ -1839,22 +1839,19 @@ func TestDNSZonesToDelete(t *testing.T) {
 	}
 }
 
-func TestCleanupDNSOwnershipGate(t *testing.T) {
-	ownedLabel := func(infraID string) map[string]string {
-		return map[string]string{gcpDNSZoneOwnerLabelKey: dnsZoneOwnerID(infraID)}
-	}
-
-	t.Run("It deletes an inferred zone only when its ownership label matches the cluster InfraID", func(t *testing.T) {
+func TestCleanupDNS(t *testing.T) {
+	t.Run("It deletes every candidate zone, both status-recorded and inferred from the cluster name", func(t *testing.T) {
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newTestGCPHCP("test-hcp", "test-ns")
 		hcp.Spec.DNS.BaseDomain = "example.com"
-		hcp.Spec.InfraID = "my-infra"
-		psc := newTestGCPPSC("test-psc", "test-ns", false) // no recorded status zones -> all names inferred
+		psc := newTestGCPPSC("test-psc", "test-ns", false)
+		psc.Status.DNSZones = []hyperv1.DNSZoneStatus{{Name: "leftover-zone"}}
 
 		existing := map[string]*dns.ManagedZone{
-			"test-hcp-hypershift-local": {Name: "test-hcp-hypershift-local", Labels: ownedLabel("my-infra")}, // owned by us
-			"example-com-public":        {Name: "example-com-public", Labels: ownedLabel("another-cluster")}, // owned by another cluster
-			"example-com-private":       {Name: "example-com-private"},                                       // predates the label
+			"test-hcp-hypershift-local": {Name: "test-hcp-hypershift-local"},
+			"example-com-public":        {Name: "example-com-public"},
+			"example-com-private":       {Name: "example-com-private"},
+			"leftover-zone":             {Name: "leftover-zone"},
 		}
 		var deletes []string
 		r := &GCPPrivateServiceConnectReconciler{
@@ -1864,131 +1861,25 @@ func TestCleanupDNSOwnershipGate(t *testing.T) {
 		}
 
 		require.NoError(t, r.cleanupDNS(t.Context(), psc, hcp))
-		assert.ElementsMatch(t, []string{"test-hcp-hypershift-local"}, deletes,
-			"only the inferred zone whose ownership label matches this cluster's InfraID should be deleted")
+		assert.ElementsMatch(t, []string{"test-hcp-hypershift-local", "example-com-public", "example-com-private", "leftover-zone"}, deletes,
+			"all status-recorded and deterministically-inferred zones should be deleted")
 	})
 
-	t.Run("It skips every zone when the cluster has no InfraID to prove ownership", func(t *testing.T) {
+	t.Run("It is a no-op when the GCP client builder is not initialized", func(t *testing.T) {
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newTestGCPHCP("test-hcp", "test-ns")
 		hcp.Spec.DNS.BaseDomain = "example.com"
-		hcp.Spec.InfraID = "" // cannot prove ownership
-
 		psc := newTestGCPPSC("test-psc", "test-ns", false)
-		existing := map[string]*dns.ManagedZone{
-			"test-hcp-hypershift-local": {Name: "test-hcp-hypershift-local", Labels: map[string]string{gcpDNSZoneOwnerLabelKey: ""}},
-		}
+
 		var deletes []string
 		r := &GCPPrivateServiceConnectReconciler{
 			Client:           fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp, psc).Build(),
-			gcpClientBuilder: gcpClientBuilder{initialized: true, customerProject: "customer-project"},
-			dnsClientFactory: func(context.Context) (*dns.Service, error) { return fakeDNSService(t, existing, &deletes), nil },
+			gcpClientBuilder: gcpClientBuilder{initialized: false},
+			dnsClientFactory: func(context.Context) (*dns.Service, error) { return fakeDNSService(t, nil, &deletes), nil },
 		}
 
 		require.NoError(t, r.cleanupDNS(t.Context(), psc, hcp))
-		assert.Empty(t, deletes, "no zone should be deleted without an ownership marker")
-	})
-
-	t.Run("It gates status-recorded zones on ownership too, closing the adopted-zone deletion path", func(t *testing.T) {
-		scheme := newGCPPSCTestScheme(t)
-		hcp := newTestGCPHCP("test-hcp", "test-ns")
-		hcp.Spec.DNS.BaseDomain = "" // no deterministic/inferred names, only the recorded ones
-		hcp.Spec.InfraID = "my-infra"
-
-		psc := newTestGCPPSC("test-psc", "test-ns", false)
-		psc.Status.DNSZones = []hyperv1.DNSZoneStatus{{Name: "owned-recorded-zone"}, {Name: "foreign-recorded-zone"}}
-
-		// Both names are recorded in status, but only one actually carries our ownership
-		// label. A foreign-labeled zone that somehow landed in status (e.g. a stale/restored
-		// object) must NOT be deleted -- status no longer grants a deletion bypass.
-		existing := map[string]*dns.ManagedZone{
-			"owned-recorded-zone":   {Name: "owned-recorded-zone", Labels: ownedLabel("my-infra")},
-			"foreign-recorded-zone": {Name: "foreign-recorded-zone", Labels: ownedLabel("another-cluster")},
-		}
-		var deletes []string
-		r := &GCPPrivateServiceConnectReconciler{
-			Client:           fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp, psc).Build(),
-			gcpClientBuilder: gcpClientBuilder{initialized: true, customerProject: "customer-project"},
-			dnsClientFactory: func(context.Context) (*dns.Service, error) { return fakeDNSService(t, existing, &deletes), nil },
-		}
-
-		require.NoError(t, r.cleanupDNS(t.Context(), psc, hcp))
-		assert.ElementsMatch(t, []string{"owned-recorded-zone"}, deletes,
-			"only the status-recorded zone that carries our ownership label should be deleted")
-	})
-}
-
-// TestCreateZoneStampsOwnerLabel is the creation-side counterpart to TestCleanupDNSOwnershipGate:
-// it proves createZone stamps the ownership label when it actually creates a zone, and that the
-// adoption branch returns the pre-existing zone without creating or re-stamping. The shared
-// fakeDNSService only models Get/Delete, so this test uses a transport that also captures the
-// create (POST) body.
-func TestCreateZoneStampsOwnerLabel(t *testing.T) {
-	hcp := newTestGCPHCP("test-hcp", "test-ns")
-	hcp.Spec.InfraID = "my-infra"
-	ownerLabels := dnsZoneOwnerLabels(hcp)
-	require.NotEmpty(t, ownerLabels[gcpDNSZoneOwnerLabelKey], "test setup: owner labels must be populated")
-
-	jsonResp := func(r *http.Request, code int, body string) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: code,
-			Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
-			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Request:    r,
-		}, nil
-	}
-
-	t.Run("When the zone does not exist, it stamps the ownership label on the created zone", func(t *testing.T) {
-		var created *dns.ManagedZone
-		httpClient := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-			switch r.Method {
-			case http.MethodGet:
-				// Zone does not exist yet -> drives createZone down the create path.
-				return jsonResp(r, http.StatusNotFound, `{"error":{"code":404,"message":"not found"}}`)
-			case http.MethodPost:
-				body, err := io.ReadAll(r.Body)
-				require.NoError(t, err)
-				created = &dns.ManagedZone{}
-				require.NoError(t, json.Unmarshal(body, created))
-				return jsonResp(r, http.StatusOK, string(body)) // echo the created zone back
-			}
-			return jsonResp(r, http.StatusOK, "{}")
-		})}
-		svc, err := dns.NewService(t.Context(), option.WithHTTPClient(httpClient), option.WithoutAuthentication())
-		require.NoError(t, err)
-
-		zone, err := createZone(t.Context(), svc, "customer-project",
-			"test-hcp-hypershift-local", "test-hcp.hypershift.local", "private", "https://example/network", ownerLabels)
-		require.NoError(t, err)
-		require.NotNil(t, created, "a create (POST) request should have been made")
-		assert.Equal(t, ownerLabels, created.Labels, "createZone must stamp the ownership label on the new zone")
-		assert.Equal(t, ownerLabels, zone.Labels, "the returned zone should carry the stamped label")
-	})
-
-	t.Run("When the zone already exists, it adopts without creating or re-stamping", func(t *testing.T) {
-		existing := &dns.ManagedZone{Name: "test-hcp-hypershift-local", DnsName: "test-hcp.hypershift.local."} // no labels
-		var postCalled bool
-		httpClient := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-			switch r.Method {
-			case http.MethodGet:
-				body, err := json.Marshal(existing)
-				require.NoError(t, err)
-				return jsonResp(r, http.StatusOK, string(body))
-			case http.MethodPost:
-				postCalled = true
-				return jsonResp(r, http.StatusOK, "{}")
-			}
-			return jsonResp(r, http.StatusOK, "{}")
-		})}
-		svc, err := dns.NewService(t.Context(), option.WithHTTPClient(httpClient), option.WithoutAuthentication())
-		require.NoError(t, err)
-
-		zone, err := createZone(t.Context(), svc, "customer-project",
-			"test-hcp-hypershift-local", "test-hcp.hypershift.local", "private", "https://example/network", ownerLabels)
-		require.NoError(t, err)
-		assert.False(t, postCalled, "an existing zone must be adopted without a create call")
-		assert.Empty(t, zone.Labels, "adoption must not re-stamp the existing (unlabeled) zone")
+		assert.Empty(t, deletes, "no zone should be deleted when the customer project is unknown")
 	})
 }
 

@@ -784,9 +784,7 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 		}
 	}
 
-	// Candidate zones are the names recorded in status plus the deterministic names inferred
-	// from the (non-unique) cluster name / base domain. Every deletion is ownership-gated
-	// below, so status-recorded names get no special trust.
+	// Prefer recorded status zones, falling back to deterministic names to catch partial provisioning
 	zones := dnsZonesToDelete(gcpPSC, hcp)
 	if len(zones) == 0 {
 		return nil // No DNS zones to clean up
@@ -809,33 +807,9 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 		return fmt.Errorf("failed to create DNS client for cleanup: %w", err)
 	}
 
-	// Zone names are non-unique within a shared GCP project, so every deletion is gated on
-	// the ownership label. A zone with a missing or different owner is left in place and
-	// reported for manual cleanup rather than risk deleting another cluster's zone.
-	var ownerID string
-	if hcp != nil {
-		ownerID = dnsZoneOwnerID(hcp.Spec.InfraID)
-	}
-
+	// Delete all zones (they are always managed by the operator)
 	var errs []error
 	for _, zoneName := range zones {
-		if ownerID == "" {
-			log.Info("Skipping DNS zone deletion: no cluster ownership marker available", "zone", zoneName)
-			continue
-		}
-		zone, err := getZone(ctx, svc, customerProject, zoneName)
-		if err != nil {
-			if isNotFound(err) {
-				continue // Nothing to delete
-			}
-			errs = append(errs, fmt.Errorf("failed to get DNS zone %s for ownership check: %w", zoneName, err))
-			continue
-		}
-		if zone.Labels[gcpDNSZoneOwnerLabelKey] != ownerID {
-			log.Info("Skipping DNS zone not owned by this cluster; manual cleanup required",
-				"zone", zoneName, "expectedOwner", ownerID, "actualOwner", zone.Labels[gcpDNSZoneOwnerLabelKey])
-			continue
-		}
 		if err := deleteZone(ctx, svc, customerProject, zoneName); err != nil {
 			errs = append(errs, fmt.Errorf("failed to delete DNS zone %s: %w", zoneName, err))
 		}
@@ -848,14 +822,10 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 	return nil
 }
 
-// dnsZonesToDelete returns the candidate DNS zone names to clean up during deletion:
-// the names recorded in status after successful creation, plus the deterministic names
-// inferred from the cluster name / base domain (to catch a zone created before its status
-// write during partial provisioning). Zone names share a non-unique naming scheme with
-// other clusters in the same GCP project, so the caller must verify cluster ownership
-// before deleting any of them — status-recorded names get no special trust.
-//
-// The result is de-duplicated and sorted.
+// dnsZonesToDelete returns the DNS zone names to clean up during deletion.
+// It prefers zones recorded in status but always includes the deterministic
+// names so a zone created before its status write (partial provisioning) is
+// still cleaned up. The result is de-duplicated and sorted.
 func dnsZonesToDelete(gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane) []string {
 	names := map[string]struct{}{}
 	for _, z := range gcpPSC.Status.DNSZones {
