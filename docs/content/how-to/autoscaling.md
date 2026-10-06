@@ -31,7 +31,80 @@ oc patch nodepool -n <HOSTED_CLUSTER_NAMESPACE> <NODEPOOL_NAME> --type merge -p 
     `autoScaling` and `replicas` are mutually exclusive. When enabling autoscaling, `replicas` must be set to `null`.
 
 !!! note
-    Scale-from-zero (`min: 0`) is only supported on the AWS platform. All other platforms require `min` >= 1.
+    Scale-from-zero (`min: 0`) is supported on AWS and Azure when the infrastructure provider supplies native capacity or the HyperShift Operator has the corresponding instance-type discovery provider configured. Other platforms require `min` >= 1.
+
+### Scheduling Metadata When Scaling from Zero
+
+Without a live node, the cluster autoscaler needs both resource capacity and scheduling metadata to determine whether a NodePool can run a pending pod. Native infrastructure-provider capacity replaces the CPU, memory, and GPU workaround annotations; it does not replace labels and taints.
+
+For AWS and Azure autoscaling NodePools, the NodePool controller continuously reconciles `spec.nodeLabels`, architecture, and `spec.taints` into the `capacity.cluster-autoscaler.kubernetes.io/labels` and `capacity.cluster-autoscaler.kubernetes.io/taints` annotations on the MachineDeployment (Replace) or MachineSet (InPlace). Scheduling metadata does not require the optional instance-type discovery provider.
+
+For AWS, the Control Plane Operator discovers the worker subnet's availability zone name and ID using the hosted cluster's AWS credentials and region. It records region, zone, and zone ID in the top-level `hypershift.openshift.io/aws-subnet-topology` annotation on the AWSMachineTemplate. The NodePool controller uses that result to advertise all of these topology labels:
+
+- `failure-domain.beta.kubernetes.io/region`
+- `failure-domain.beta.kubernetes.io/zone`
+- `topology.ebs.csi.aws.com/zone`
+- `topology.k8s.aws/zone-id`
+- `topology.kubernetes.io/region`
+- `topology.kubernetes.io/zone`
+
+It also advertises `node.kubernetes.io/instance-type`. Discovered values take precedence over conflicting custom labels. These annotations describe the labels that AWS cloud controllers apply to live nodes; they do not change worker configuration. Arbitrary `spec.nodeLabels` are included, but labels added by other controllers cannot be inferred unless their values are known before a worker exists.
+
+The lookup uses the NodePool's subnet ID or filters, not the control plane's zone. A subnet reference must resolve unambiguously; lookup failures are retried and logged rather than replaced with a guessed zone. The CPO role needs `ec2:DescribeSubnets`, which the generated HyperShift CPO role policies already grant. Custom roles must grant this permission as well.
+
+Automatic zone discovery requires both the updated HyperShift Operator and an updated CPO from the hosted cluster's release payload. Updating the HyperShift Operator alone restores label/taint reconciliation but cannot discover zones for an older CPO. Existing pools receive annotation updates without a worker rollout.
+
+#### Verify AWS Zone-Affine Scale-Up
+
+Use a disposable AWS NodePool with `min: 0`, `max: 1`, and a unique `spec.nodeLabels` entry such as `scale-from-zero-test: "true"`. Do not scale a production pool to zero for this check. The test provisions a worker and incurs AWS charges.
+
+1. Before creating a workload, verify that the pool has zero workers and that its MachineDeployment or MachineSet has all six topology labels and the correct instance type in the capacity labels annotation:
+
+    ```bash
+    oc --context <MANAGEMENT_CONTEXT> -n <CONTROL_PLANE_NAMESPACE> get machinedeployment <NODEPOOL_NAME> \
+      -o go-template='{{index .metadata.annotations "capacity.cluster-autoscaler.kubernetes.io/labels"}}{{"\n"}}'
+    ```
+
+    For InPlace pools, replace `machinedeployment` with `machineset`. Confirm the zone against the worker subnet using credentials for the hosted cluster's AWS account, not the management account:
+
+    ```bash
+    aws ec2 describe-subnets --region <AWS_REGION> --subnet-ids <WORKER_SUBNET_ID> \
+      --query 'Subnets[0].[AvailabilityZone,AvailabilityZoneId]' --output text
+    ```
+
+2. In the hosted cluster, create a pod restricted to that pool and zone, replacing `<WORKER_ZONE>` with the discovered zone:
+
+    ```yaml
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: scale-from-zero-zone-check
+    spec:
+      nodeSelector:
+        scale-from-zero-test: "true"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values: ["<WORKER_ZONE>"]
+      containers:
+      - name: check
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+        command: ["sleep", "3600"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+    ```
+
+    Add matching tolerations if the test NodePool has taints.
+
+3. Verify the autoscaler selects the zero-replica pool, provisions one worker, and schedules the pod. Check that the worker's actual zone labels match the annotations. Verify that a pod requiring a different zone is not assigned to this pool.
+
+4. Delete the test pod in the hosted cluster and clean up the disposable NodePool according to your test environment's procedures.
 
 ### Verify Autoscaling is Enabled
 
