@@ -13,8 +13,13 @@ import (
 func TestRun(t *testing.T) {
 	legacyFixtures := []string{
 		"a/legacy/production_test.go|TestReconcileErrors",
+		"a/legacy/production_test.go|TestWorker_Run",
 		"a/legacyambiguous/production_test.go|TestWorkflow",
 		"a/externallegacy/internal_test.go|TestValidateErrors",
+		"a/externallegacy/internal_test.go|TestWorker_Run",
+		// Explicit exceptions must take precedence over baseline accounting.
+		"a/exception/production_test.go|TestWorker_Run",
+		"a/externalexception/internal_test.go|TestWorker_Run",
 	}
 	for _, fixture := range legacyFixtures {
 		legacyExceptions.Insert(fixture)
@@ -65,11 +70,17 @@ func TestRun(t *testing.T) {
 	t.Run("When a new test reuses a removed baseline path and name, it should still report the violation", func(t *testing.T) {
 		analysistest.Run(t, testdata, Analyzer, "support/util")
 	})
-	t.Run("When an internal scenario has an explicit exception, it should allow an external canonical test", func(t *testing.T) {
+	t.Run("When internal tests have explicit exceptions, it should allow an external canonical test and report remaining duplicates", func(t *testing.T) {
 		analysistest.Run(t, testdata, Analyzer, "a/externalexception")
 	})
-	t.Run("When an internal scenario is only baselined, it should still reject an additional external test", func(t *testing.T) {
+	t.Run("When canonical tests have explicit exceptions, it should exclude them from duplicate accounting", func(t *testing.T) {
+		analysistest.Run(t, testdata, Analyzer, "a/exception")
+	})
+	t.Run("When internal tests are only baselined, it should still reject additional external tests", func(t *testing.T) {
 		analysistest.Run(t, testdata, Analyzer, "a/externallegacy")
+	})
+	t.Run("When tests use direct and chained testing.T aliases, it should still enforce one top-level test per production function", func(t *testing.T) {
+		analysistest.Run(t, testdata, Analyzer, "a/testingalias")
 	})
 }
 
