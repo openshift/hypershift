@@ -17,8 +17,6 @@ package gcpprivateserviceconnect
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -38,14 +36,6 @@ const (
 	// dnsAPITimeout is the timeout for individual GCP DNS API calls to prevent hung reconcilers.
 	// This matches the timeout used in the PSC endpoint controller.
 	dnsAPITimeout = 30 * time.Second
-
-	// gcpDNSZoneOwnerLabelKey is stamped on every managed DNS zone the operator creates.
-	// Its value is a hash of the owning cluster's immutable InfraID (see dnsZoneOwnerID).
-	// Deletion verifies this label to prove ownership before removing a zone, as
-	// defense-in-depth against deleting another cluster's zone should zone names ever
-	// collide in a shared GCP project (zone names are derived from the cluster name /
-	// base domain).
-	gcpDNSZoneOwnerLabelKey = "hypershift-cluster-infra-id"
 )
 
 // newDNSClient initializes a Cloud DNS client using GOOGLE_APPLICATION_CREDENTIALS.
@@ -92,33 +82,6 @@ func isNotFound(err error) bool {
 	return strings.Contains(errStr, "error 404") || strings.Contains(errStr, "notfound") || strings.Contains(errStr, "not found")
 }
 
-// dnsZoneOwnerID derives the value stamped in gcpDNSZoneOwnerLabelKey from a cluster's
-// immutable InfraID. InfraID may be up to 253 characters (the HostedCluster API limit)
-// while GCP label values are capped at 63, so we store a fixed-length hash rather than
-// the raw value. Hashing also keeps the label value valid regardless of the InfraID
-// character set, so it stays correct even if InfraID validation is ever loosened.
-// Returns "" for an empty InfraID so callers can treat "no ownership marker" uniformly.
-func dnsZoneOwnerID(infraID string) string {
-	if infraID == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(infraID))
-	// 32 hex chars (128 bits) is well under the 63-char label-value limit and far beyond
-	// any realistic collision risk for the number of clusters in a single GCP project.
-	return hex.EncodeToString(sum[:])[:32]
-}
-
-// dnsZoneOwnerLabels returns the ownership labels to stamp on DNS zones created for
-// the given cluster, keyed by gcpDNSZoneOwnerLabelKey with dnsZoneOwnerID(InfraID) as
-// the value. It returns nil when no InfraID is set, so we never stamp an empty
-// (non-unique) owner value that would defeat the ownership check on deletion.
-func dnsZoneOwnerLabels(hcp *hyperv1.HostedControlPlane) map[string]string {
-	if hcp == nil || hcp.Spec.InfraID == "" {
-		return nil
-	}
-	return map[string]string{gcpDNSZoneOwnerLabelKey: dnsZoneOwnerID(hcp.Spec.InfraID)}
-}
-
 // zoneNames contains the generated DNS zone names for a cluster.
 type zoneNames struct {
 	hypershiftLocalZoneName string
@@ -137,9 +100,7 @@ type zoneNames struct {
 //   - dnsName: DNS domain name for the zone (will be normalized to end with a dot)
 //   - visibility: "private" or "public"
 //   - vpcNetworkURL: Full GCP VPC network URL (required for private zones, ignored for public)
-//   - ownerLabels: immutable ownership labels stamped on the zone so deletion can prove
-//     the zone belongs to this cluster before removing it (see gcpDNSZoneOwnerLabelKey)
-func createZone(ctx context.Context, svc *dns.Service, projectID, zoneName, dnsName, visibility, vpcNetworkURL string, ownerLabels map[string]string) (*dns.ManagedZone, error) {
+func createZone(ctx context.Context, svc *dns.Service, projectID, zoneName, dnsName, visibility, vpcNetworkURL string) (*dns.ManagedZone, error) {
 	dnsName = ensureDNSDot(dnsName)
 
 	// Check if zone already exists
@@ -150,12 +111,6 @@ func createZone(ctx context.Context, svc *dns.Service, projectID, zoneName, dnsN
 		}
 		// Zone doesn't exist, proceed to create it
 	} else {
-		// Adopt the existing zone by name. Adoption is intentionally not gated on the
-		// ownership label: in the GCP-HCP topology zone names are unique per cluster (base
-		// domains embed per-cluster random suffixes) and each cluster's zones live in its
-		// own customer project, so a name collision with another cluster is not a supported
-		// configuration. Deletion is still ownership-gated as defense-in-depth (see
-		// cleanupDNS). Zones this operator creates are stamped with ownerLabels below.
 		return existing, nil // Zone already exists
 	}
 
@@ -165,7 +120,6 @@ func createZone(ctx context.Context, svc *dns.Service, projectID, zoneName, dnsN
 		DnsName:     dnsName,
 		Description: fmt.Sprintf("%s DNS zone for %s", visibility, dnsName),
 		Visibility:  visibility,
-		Labels:      ownerLabels,
 	}
 
 	// Add private visibility config if needed
@@ -443,18 +397,18 @@ type DNSSetupResult struct {
 }
 
 // createZonesIfNeeded creates the required DNS zones for GCP HCP clusters.
-func createZonesIfNeeded(ctx context.Context, svc *dns.Service, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL string, ownerLabels map[string]string) (*dns.ManagedZone, *dns.ManagedZone, *dns.ManagedZone, error) {
-	hypershiftLocalZone, err := createZone(ctx, svc, projectID, hypershiftZone, hypershiftDNSName, "private", vpcNetworkURL, ownerLabels)
+func createZonesIfNeeded(ctx context.Context, svc *dns.Service, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL string) (*dns.ManagedZone, *dns.ManagedZone, *dns.ManagedZone, error) {
+	hypershiftLocalZone, err := createZone(ctx, svc, projectID, hypershiftZone, hypershiftDNSName, "private", vpcNetworkURL)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to ensure hypershift.local zone: %w", err)
 	}
 
-	publicIngressZone, err := createZone(ctx, svc, projectID, publicZone, ingressDNS, "public", "", ownerLabels)
+	publicIngressZone, err := createZone(ctx, svc, projectID, publicZone, ingressDNS, "public", "")
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to ensure public ingress zone: %w", err)
 	}
 
-	privateIngressZone, err := createZone(ctx, svc, projectID, privateZone, ingressDNS, "private", vpcNetworkURL, ownerLabels)
+	privateIngressZone, err := createZone(ctx, svc, projectID, privateZone, ingressDNS, "private", vpcNetworkURL)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to ensure private ingress zone: %w", err)
 	}
@@ -486,12 +440,12 @@ func retrieveExistingZones(ctx context.Context, svc *dns.Service, projectID, hyp
 
 // ensureZones creates or retrieves DNS zones based on the createZones flag.
 // Currently always called with createZones=true as self-managed scenarios are not yet supported.
-func ensureZones(ctx context.Context, svc *dns.Service, createZones bool, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL string, ownerLabels map[string]string) (*dns.ManagedZone, *dns.ManagedZone, *dns.ManagedZone, []string, error) {
+func ensureZones(ctx context.Context, svc *dns.Service, createZones bool, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL string) (*dns.ManagedZone, *dns.ManagedZone, *dns.ManagedZone, []string, error) {
 	var hypershiftLocalZone, publicIngressZone, privateIngressZone *dns.ManagedZone
 	var err error
 
 	if createZones {
-		hypershiftLocalZone, publicIngressZone, privateIngressZone, err = createZonesIfNeeded(ctx, svc, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL, ownerLabels)
+		hypershiftLocalZone, publicIngressZone, privateIngressZone, err = createZonesIfNeeded(ctx, svc, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL)
 	} else {
 		hypershiftLocalZone, publicIngressZone, privateIngressZone, err = retrieveExistingZones(ctx, svc, projectID, hypershiftZone, publicZone, privateZone)
 	}
@@ -617,7 +571,6 @@ func ReconcileDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane, pscEndpo
 		ctx, svc, true, projectID,
 		names.hypershiftLocalZoneName, names.publicIngressZoneName, names.privateIngressZoneName,
 		hypershiftDNSName, names.ingressDNSName, vpcNetworkURL,
-		dnsZoneOwnerLabels(hcp),
 	)
 	if err != nil {
 		return nil, err
