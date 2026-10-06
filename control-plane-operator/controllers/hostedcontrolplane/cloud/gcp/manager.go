@@ -90,6 +90,30 @@ type FirewallManager struct {
 	// (false, nil) when the token is simply not yet written, and (false, err)
 	// for an unexpected stat failure. Overridable in tests.
 	wifAvailable func() (bool, error)
+	// provisioningAttemptHook, when set, durably records that a managed rule
+	// creation is being attempted or that an owned rule exists (see
+	// GCPFirewallRuleProvisioningAttemptedAnnotation). It is called immediately
+	// before the first InsertFirewall (so the evidence is persisted before any GCP
+	// mutation), and also whenever Reconcile confirms an existing owned rule (so a
+	// rule created by an earlier run is covered too). If it returns an error the
+	// manager makes no GCP mutation, so the on-disk evidence and GCP state never
+	// diverge.
+	provisioningAttemptHook func(ctx context.Context) error
+}
+
+// SetProvisioningAttemptHook registers a hook the manager calls to durably record
+// that a managed firewall rule creation is being attempted or that an owned rule
+// exists, before it mutates GCP. A nil hook is a no-op.
+func (m *FirewallManager) SetProvisioningAttemptHook(fn func(ctx context.Context) error) {
+	m.provisioningAttemptHook = fn
+}
+
+// recordProvisioningAttempt invokes the provisioning-attempt hook if one is set.
+func (m *FirewallManager) recordProvisioningAttempt(ctx context.Context) error {
+	if m.provisioningAttemptHook == nil {
+		return nil
+	}
+	return m.provisioningAttemptHook(ctx)
 }
 
 // NewFirewallManager builds a FirewallManager from the HCP's GCP configuration.
@@ -226,6 +250,14 @@ func (m *FirewallManager) Reconcile(ctx context.Context) Result {
 		return degradedResult(hyperv1.GCPFirewallOwnershipConflict, msg)
 	}
 
+	// A managed rule demonstrably exists: record provisioning evidence so deletion
+	// never skips cleanup of a rule created by an earlier run (e.g. the create's
+	// own evidence write was lost, or the rule predates this field). Abort without
+	// mutating the rule if the evidence cannot be persisted.
+	if err := m.recordProvisioningAttempt(ctx); err != nil {
+		return errorResult(hyperv1.GCPFirewallWaitingForInfra, fmt.Errorf("failed to record firewall rule provisioning: %w", err))
+	}
+
 	desired := desiredFirewall(m.infraID, networkSelfLink, m.networkType, m.nodePortRange)
 	if firewallMatchesDesired(existing, desired) {
 		return convergedResult()
@@ -243,6 +275,14 @@ func (m *FirewallManager) create(ctx context.Context, client firewallClient, net
 		return errorResult(hyperv1.GCPFirewallWaitingForInfra, err)
 	}
 	desired.Description = marker
+
+	// Durably record that a create is being attempted before mutating GCP, so a
+	// later deletion can tell "no rule was ever created" (evidence absent) from
+	// "a rule may exist" (evidence present) even when WIF credentials are gone.
+	// Abort without an InsertFirewall if the evidence cannot be persisted.
+	if err := m.recordProvisioningAttempt(ctx); err != nil {
+		return errorResult(hyperv1.GCPFirewallWaitingForInfra, fmt.Errorf("failed to record firewall rule provisioning before create: %w", err))
+	}
 
 	m.logger.Info("Creating managed worker firewall rule", "name", desired.Name)
 	insertCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)

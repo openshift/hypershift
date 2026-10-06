@@ -3087,6 +3087,13 @@ func (r *HostedControlPlaneReconciler) reconcileGCPWorkerFirewallRules(ctx conte
 		return nil
 	}
 
+	// Durably record a creation attempt before the manager mutates GCP, so a later
+	// deletion with unavailable WIF credentials can distinguish "no rule was ever
+	// created" from "a rule may exist". See gcpFirewallSkipOnWIFUnavailableReason.
+	manager.SetProvisioningAttemptHook(func(ctx context.Context) error {
+		return r.markGCPFirewallProvisioningAttempted(ctx, hcp)
+	})
+
 	// The result below is derived from the spec at this generation (project, VPC,
 	// network type, infra ID). If the spec changes before we patch, re-evaluate.
 	result := manager.Reconcile(ctx)
@@ -3135,29 +3142,49 @@ func (r *HostedControlPlaneReconciler) destroyGCPWorkerFirewallRules(ctx context
 // firewall deletion proceed when GCP WIF credentials are unavailable, and
 // returns a non-empty reason if so.
 //
-// The managed firewall rule can only ever have been created after a Reconcile
-// call obtained a WIF-backed compute client: every Reconcile path sets the
-// GCPFirewallRulesReady condition before making its first GCP API call. So if
-// the condition has never been recorded, or its Reason is still
-// GCPFirewallWaitingForCredentials (the last state Reconcile can reach before
-// ever calling the Compute API), the rule was never created and deletion is a
-// safe no-op. This inference covers the common case (WIF never becomes
-// available before the HCP is deleted) but cannot rule out WIF having flapped
-// available then unavailable again after a rule was created, so an explicit,
-// manually-set annotation remains available as a documented escape hatch for
-// that residual case.
+// It relies only on durable evidence persisted before any GCP mutation, never on
+// the GCPFirewallRulesReady status condition (which is written after the rule is
+// created and can be lost to a failed status patch or overwritten by a later
+// WaitingForCredentials reconcile — so it cannot prove a rule was never created).
+//
+//   - GCPFirewallRuleProvisioningAttemptedAnnotation absent: the control-plane-operator
+//     persists this marker before its first InsertFirewall, so its absence proves
+//     no rule was ever created and deletion is a safe no-op.
+//   - GCPFirewallSkipDeletionAnnotation == "true": an operator has manually
+//     confirmed no rule is left behind and wants deletion to proceed regardless.
+//
+// Otherwise it returns "" so Delete errors, the HCP finalizer is retained, and
+// deletion retries until WIF credentials return and the rule can be checked.
 func gcpFirewallSkipOnWIFUnavailableReason(hcp *hyperv1.HostedControlPlane) string {
 	if hcp.Annotations[hyperv1.GCPFirewallSkipDeletionAnnotation] == "true" {
 		return "explicit " + hyperv1.GCPFirewallSkipDeletionAnnotation + " annotation is set"
 	}
-	cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.GCPFirewallRulesReady))
-	if cond == nil {
-		return "GCPFirewallRulesReady condition was never recorded; the rule was never created"
-	}
-	if cond.Reason == hyperv1.GCPFirewallWaitingForCredentials {
-		return "GCPFirewallRulesReady last reported waiting-for-credentials; the rule was never created"
+	if hcp.Annotations[hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation] != "true" {
+		return "the " + hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation + " marker was never persisted; no firewall rule was ever created"
 	}
 	return ""
+}
+
+// markGCPFirewallProvisioningAttempted durably records, before any GCP mutation, that a
+// firewall rule creation is being attempted. It is wired as the manager's
+// before-create hook so the InsertFirewall only runs once this annotation is
+// persisted; see GCPFirewallRuleProvisioningAttemptedAnnotation and
+// gcpFirewallSkipOnWIFUnavailableReason. The patch is additive metadata and does
+// not bump the HCP generation, so it does not disturb the reconcile's
+// generation guard.
+func (r *HostedControlPlaneReconciler) markGCPFirewallProvisioningAttempted(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if hcp.Annotations[hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation] == "true" {
+		return nil
+	}
+	original := hcp.DeepCopy()
+	if hcp.Annotations == nil {
+		hcp.Annotations = map[string]string{}
+	}
+	hcp.Annotations[hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation] = "true"
+	if err := r.Client.Patch(ctx, hcp, client.MergeFrom(original)); err != nil {
+		return fmt.Errorf("failed to persist %s annotation: %w", hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation, err)
+	}
+	return nil
 }
 
 func awsSecurityGroupFilters(infraID string) []ec2types.Filter {

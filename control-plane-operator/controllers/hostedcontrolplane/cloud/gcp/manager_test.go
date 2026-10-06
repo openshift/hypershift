@@ -380,6 +380,76 @@ func TestFirewallManagerReconcile(t *testing.T) {
 		g.Expect(res.Status).To(Equal(OutcomeDegraded))
 		g.Expect(res.Err).To(BeNil())
 	})
+
+	t.Run("When creating a missing rule, the provisioned hook runs before the insert", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		m := testManager(client)
+		var hookCalled, hookRanBeforeInsert bool
+		m.SetProvisioningAttemptHook(func(context.Context) error {
+			hookCalled = true
+			hookRanBeforeInsert = !client.insertCalled
+			return nil
+		})
+
+		res := m.Reconcile(ctx)
+		g.Expect(res.Status).To(Equal(OutcomeConverged))
+		g.Expect(hookCalled).To(BeTrue())
+		g.Expect(hookRanBeforeInsert).To(BeTrue())
+		g.Expect(client.insertCalled).To(BeTrue())
+	})
+
+	t.Run("When the provisioned hook fails, it aborts without inserting", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		m := testManager(client)
+		m.SetProvisioningAttemptHook(func(context.Context) error { return errors.New("failed to persist provisioning marker") })
+
+		res := m.Reconcile(ctx)
+		g.Expect(res.Status).To(Equal(OutcomeError))
+		g.Expect(res.Err).To(HaveOccurred())
+		g.Expect(client.insertCalled).To(BeFalse())
+	})
+
+	t.Run("When an owned rule already exists, the provisioned hook still runs so deletion can trust the marker", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		name := firewallRuleName(testInfraID)
+		existing := desiredFirewall(testInfraID, client.network.SelfLink, hyperv1.OVNKubernetes, testNodePortRange)
+		existing.Network = client.network.SelfLink
+		marker, _ := ownershipMarker(testInfraID)
+		existing.Description = marker
+		client.firewalls[name] = existing
+
+		m := testManager(client)
+		var hookCalled bool
+		m.SetProvisioningAttemptHook(func(context.Context) error { hookCalled = true; return nil })
+
+		res := m.Reconcile(ctx)
+		g.Expect(res.Status).To(Equal(OutcomeConverged))
+		g.Expect(hookCalled).To(BeTrue())
+		g.Expect(client.insertCalled).To(BeFalse())
+	})
+
+	t.Run("When the provisioned hook fails on an existing owned rule, it does not patch", func(t *testing.T) {
+		g := NewWithT(t)
+		client := newFakeClient()
+		name := firewallRuleName(testInfraID)
+		existing := desiredFirewall(testInfraID, client.network.SelfLink, hyperv1.OVNKubernetes, testNodePortRange)
+		existing.Network = client.network.SelfLink
+		marker, _ := ownershipMarker(testInfraID)
+		existing.Description = marker
+		existing.SourceRanges = []string{"10.0.0.0/8"} // drift that would otherwise trigger a patch
+		client.firewalls[name] = existing
+
+		m := testManager(client)
+		m.SetProvisioningAttemptHook(func(context.Context) error { return errors.New("failed to persist provisioning marker") })
+
+		res := m.Reconcile(ctx)
+		g.Expect(res.Status).To(Equal(OutcomeError))
+		g.Expect(res.Err).To(HaveOccurred())
+		g.Expect(client.patchCalled).To(BeFalse())
+	})
 }
 
 func TestFirewallManagerDelete(t *testing.T) {
