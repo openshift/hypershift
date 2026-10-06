@@ -454,7 +454,9 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 			UserName: opts.ImpersonateAs,
 		}
 	}
-	dumpAzureMachineDiagnostics(ctx, c, opts)
+	azureCtx, cancelAzure := context.WithTimeout(ctx, 10*time.Minute)
+	dumpAzureMachineDiagnostics(azureCtx, c, opts)
+	cancelAzure()
 
 	allNodePools := &hyperv1.NodePoolList{}
 	if err = c.List(ctx, allNodePools, client.InNamespace(opts.Namespace)); err != nil {
