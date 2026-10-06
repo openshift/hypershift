@@ -11,6 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
 	hyperclient "github.com/openshift/hypershift/client/clientset/clientset"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/awsmachinetopology"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/azureprivatelinkservice"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/gcpprivateserviceconnect"
@@ -540,6 +541,18 @@ func NewStartCommand() *cobra.Command {
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate, hcp); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
+		}
+
+		if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+			ec2Client, _ := hostedcontrolplane.GetEC2Client(ctx)
+			if err := (&awsmachinetopology.Reconciler{
+				Client:             mgr.GetClient(),
+				EC2Client:          ec2Client,
+				HostedControlPlane: crclient.ObjectKeyFromObject(hcp),
+			}).SetupWithManager(mgr); err != nil {
+				setupLog.Error(err, "unable to create controller", "controller", "aws-machine-topology")
+				os.Exit(1)
+			}
 		}
 
 		if err := (&healthcheck.HealthCheckUpdater{
