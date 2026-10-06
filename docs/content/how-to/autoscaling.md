@@ -31,7 +31,35 @@ oc patch nodepool -n <HOSTED_CLUSTER_NAMESPACE> <NODEPOOL_NAME> --type merge -p 
     `autoScaling` and `replicas` are mutually exclusive. When enabling autoscaling, `replicas` must be set to `null`.
 
 !!! note
-    Scale-from-zero (`min: 0`) is only supported on the AWS platform. All other platforms require `min` >= 1.
+    Scale-from-zero (`min: 0`) is supported on AWS and Azure when native capacity or the corresponding instance-type discovery provider is available. Other platforms require `min` >= 1.
+
+### Labels and Taints When Scaling from Zero
+
+Without a live worker, the autoscaler needs scheduling labels and taints in addition to resource capacity. For AWS and Azure autoscaling NodePools, HyperShift reconciles `spec.nodeLabels` and `spec.taints` into the `capacity.cluster-autoscaler.kubernetes.io/labels` and `capacity.cluster-autoscaler.kubernetes.io/taints` annotations on the MachineDeployment (Replace) or MachineSet (InPlace). Native provider capacity replaces CPU/memory/GPU workaround annotations, not labels or taints; their reconciliation does not require the optional capacity-discovery provider.
+
+**Topology labels are user-configured, not discovered automatically.** If workloads use zone/region affinity, selectors, or volume topology requirements, supply the corresponding labels on the NodePool before relying on scale-from-zero. For example, for an AWS pool in `eu-central-1b`:
+
+```yaml
+spec:
+  nodeLabels:
+    topology.kubernetes.io/region: eu-central-1
+    topology.kubernetes.io/zone: eu-central-1b
+    topology.ebs.csi.aws.com/zone: eu-central-1b
+    topology.k8s.aws/zone-id: euc1-az3
+    failure-domain.beta.kubernetes.io/region: eu-central-1
+    failure-domain.beta.kubernetes.io/zone: eu-central-1b
+```
+
+Use the actual region, zone name, and zone ID for the pool's subnet in the tenant AWS account; these example values are not a universal zone-name/zone-ID mapping. Include the label keys required by your workloads, along with any custom labels. Label propagation does not validate placement against AWS. Incorrect values can misrepresent the pool to the autoscaler's simulation and result in unsuitable scale-up decisions or workloads remaining pending.
+
+Verify the generated annotation before testing scale-up:
+
+```bash
+oc -n <CONTROL_PLANE_NAMESPACE> get machinedeployment <NODEPOOL_NAME> \
+  -o go-template='{{index .metadata.annotations "capacity.cluster-autoscaler.kubernetes.io/labels"}}{{"\n"}}'
+```
+
+For InPlace pools, use `machineset` instead. Configuring only these labels or taints does not change the NodePool rollout hash or replace workers. Validate actual node labels and workload scheduling on a disposable test pool; this configuration is not a guarantee of successful scheduling.
 
 ### Verify Autoscaling is Enabled
 
