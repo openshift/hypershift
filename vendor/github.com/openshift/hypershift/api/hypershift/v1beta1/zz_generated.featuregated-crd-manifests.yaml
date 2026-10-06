@@ -207,6 +207,7 @@ hostedclusters.hypershift.openshift.io:
   - AWSManagedDNS
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
+  - DeterministicLBIP
   - EtcdSharding
   - ExternalOIDC
   - ExternalOIDCExternalClaimsSourcing
@@ -287,6 +288,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - AWSManagedDNS
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
+  - DeterministicLBIP
   - EtcdSharding
   - ExternalOIDC
   - ExternalOIDCExternalClaimsSourcing

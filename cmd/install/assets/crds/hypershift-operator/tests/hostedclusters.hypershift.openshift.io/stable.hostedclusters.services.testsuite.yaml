@@ -581,6 +581,7 @@ tests:
             type: Route
             route: {}
     expectedError: "Services is immutable"
+
   - name: When services is unchanged but release image is updated it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -702,3 +703,4 @@ tests:
           servicePublishingStrategy:
             route: {}
             type: Route
+
