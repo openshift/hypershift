@@ -17,8 +17,9 @@ limitations under the License.
 // create-guests creates HostedClusters in parallel for v2 e2e
 // lifecycle tests. The number and configuration of clusters is
 // determined by the platform (HYPERSHIFT_PLATFORM env var).
-// It shells out to the hypershift CLI for cluster creation, runs
-// platform-specific post-create hooks, then uses controller-runtime
+// It shells out to a HyperShift CLI for cluster creation — the developer
+// `hypershift` CLI by default, or the product `hcp` CLI when HCP_BINARY is
+// set — runs platform-specific post-create hooks, then uses controller-runtime
 // watches to wait for Available condition and version rollout
 // completion. Cluster names are derived deterministically from
 // PROW_JOB_ID and written to SHARED_DIR for downstream CI steps.
@@ -84,9 +85,9 @@ type envConfig struct {
 	etcdSC      string
 	pullSecret  string
 
-	platform         lifecycle.PlatformConfig
-	hypershiftBinary string
-	waitTimeout      time.Duration
+	platform    lifecycle.PlatformConfig
+	cli         lifecycle.CLI
+	waitTimeout time.Duration
 }
 
 func main() {
@@ -123,9 +124,9 @@ func loadEnvConfig() envConfig {
 		etcdSC:      os.Getenv("HYPERSHIFT_ETCD_STORAGE_CLASS"),
 		pullSecret:  envOrDefault("PULL_SECRET", "/etc/ci-pull-credentials/.dockerconfigjson"),
 
-		platform:         platform,
-		hypershiftBinary: envOrDefault("HYPERSHIFT_BINARY", "hypershift"),
-		waitTimeout:      45 * time.Minute,
+		platform:    platform,
+		cli:         lifecycle.LifecycleCLI(),
+		waitTimeout: 45 * time.Minute,
 	}
 
 	if cfg.n1Image == "" {
@@ -141,6 +142,7 @@ func run(ctx context.Context, cfg envConfig) error {
 		return fmt.Errorf("resolving test plan: %w", err)
 	}
 	log.Printf("Using test plan %q", plan.Name)
+	log.Printf("Using lifecycle CLI %s", cfg.cli)
 
 	allSpecs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
 	if err := plan.Validate(allSpecs); err != nil {
@@ -150,7 +152,8 @@ func run(ctx context.Context, cfg envConfig) error {
 
 	// Phase 0: The manifest must exist before any infra is provisioned so
 	// destroy-guests can always clean up, even if create-guests fails
-	// before the HostedCluster CR is applied.
+	// before the HostedCluster CR is applied. Create args are built first
+	// because an unsupported flag should fail before anything exists.
 	log.Println("Phase 0: Computing cluster identities and writing manifest")
 	named := make([]namedSpec, len(specs))
 	clusterNames := make(map[string]string) // variant -> name
@@ -158,6 +161,11 @@ func run(ctx context.Context, cfg envConfig) error {
 	for i, spec := range specs {
 		name := lifecycle.DeriveClusterName(cfg.prowJobID, spec.Variant)
 		named[i] = namedSpec{ClusterSpec: spec, name: name}
+		args, err := buildCreateArgs(cfg, named[i])
+		if err != nil {
+			return err
+		}
+		named[i].args = args
 		clusterNames[spec.Variant] = name
 		entries[i] = lifecycle.ClusterEntry{
 			Variant:   spec.Variant,
@@ -270,8 +278,16 @@ func run(ctx context.Context, cfg envConfig) error {
 	return nil
 }
 
-// buildCreateArgs returns CLI arguments for creating a cluster.
-func buildCreateArgs(cfg envConfig, ns namedSpec) []string {
+// defaultAvailabilityPolicy is passed explicitly so both CLIs produce the same
+// control plane topology. The developer CLI defaults to SingleReplica while the
+// product CLI defaults to HighlyAvailable, which would otherwise silently
+// triple the control plane replicas of every variant that doesn't set the flag.
+const defaultAvailabilityPolicy = "SingleReplica"
+
+// buildCreateArgs returns CLI arguments for creating a cluster, spelled for
+// cfg.cli. It returns an error when the platform cannot be driven by that CLI
+// or when any resulting flag is one the CLI does not accept.
+func buildCreateArgs(cfg envConfig, ns namedSpec) ([]string, error) {
 	releaseImage := cfg.releaseImage
 	if ns.ReleaseImage != "" {
 		releaseImage = ns.ReleaseImage
@@ -300,15 +316,38 @@ func buildCreateArgs(cfg envConfig, ns namedSpec) []string {
 		args = append(args, "--etcd-storage-class="+cfg.etcdSC)
 	}
 
-	args = append(args, cfg.platform.CreateArgs()...)
+	platformArgs, err := cfg.platform.CreateArgs(cfg.cli)
+	if err != nil {
+		return nil, fmt.Errorf("building %s create args for cluster %s: %w", cfg.platform.Name(), ns.name, err)
+	}
+	args = append(args, platformArgs...)
 	args = append(args, ns.ExtraArgs...)
 
-	return args
+	if !hasFlag(args, "control-plane-availability-policy") {
+		args = append(args, "--control-plane-availability-policy="+defaultAvailabilityPolicy)
+	}
+
+	if err := lifecycle.ValidateArgs(cfg.cli, args); err != nil {
+		return nil, fmt.Errorf("create args for cluster %s: %w", ns.name, err)
+	}
+	return args, nil
+}
+
+// hasFlag reports whether args already set the given long flag, in either the
+// `--flag=value` or `--flag value` spelling.
+func hasFlag(args []string, name string) bool {
+	for _, arg := range args {
+		if arg == "--"+name || strings.HasPrefix(arg, "--"+name+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 type namedSpec struct {
 	lifecycle.ClusterSpec
 	name string
+	args []string
 }
 
 func createClustersParallel(ctx context.Context, cfg envConfig, specs []namedSpec) map[string]error {
@@ -320,11 +359,10 @@ func createClustersParallel(ctx context.Context, cfg envConfig, specs []namedSpe
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			args := buildCreateArgs(cfg, ns)
 			log.Printf("Creating %s cluster %s", ns.Variant, ns.name)
-			log.Printf("Running: %s %v", cfg.hypershiftBinary, args)
+			log.Printf("Running: %s %v", cfg.cli.Binary, ns.args)
 
-			cmd := exec.CommandContext(ctx, cfg.hypershiftBinary, args...)
+			cmd := exec.CommandContext(ctx, cfg.cli.Binary, ns.args...)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			err := cmd.Run()

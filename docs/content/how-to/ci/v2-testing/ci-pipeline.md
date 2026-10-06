@@ -98,6 +98,8 @@ the step.
 
 If any cluster fails to create or roll out, the binary exits non-zero and the job fails fast.
 
+Cluster creation shells out to a HyperShift CLI — the developer `hypershift` CLI by default, or the product `hcp` CLI when `HCP_BINARY` is set. See [Driving Cluster Lifecycle with the Product CLI](#driving-cluster-lifecycle-with-the-product-cli-hcp).
+
 ### `run-tests`
 
 **Source:** `test/e2e/v2/cmd/run-tests/`  
@@ -140,7 +142,7 @@ See [Labels](writing-tests.md#labels-two-layer-model) for how to control which t
 **Source:** `test/e2e/v2/cmd/dump-guests/`  
 **Shipped as:** `/hypershift/bin/dump-guests`
 
-Calls `hypershift dump cluster` in parallel for all clusters, collecting must-gather artifacts to `ARTIFACT_DIR`. Unlike `create` and `destroy`, the dump command is platform-agnostic (no platform subcommand).
+Calls `hypershift dump cluster` in parallel for all clusters, collecting must-gather artifacts to `ARTIFACT_DIR`. Unlike `create` and `destroy`, the dump command is platform-agnostic (no platform subcommand) and always uses the developer CLI — the product `hcp` CLI has no `dump` subcommand, so this binary ignores `HCP_BINARY`.
 
 This binary **always exits 0** to ensure cleanup steps run even if dump fails.
 
@@ -149,9 +151,50 @@ This binary **always exits 0** to ensure cleanup steps run even if dump fails.
 **Source:** `test/e2e/v2/cmd/destroy-guests/`  
 **Shipped as:** `/hypershift/bin/destroy-guests`
 
-Calls `hypershift destroy cluster <platform>` in parallel for all clusters.
+Calls `hypershift destroy cluster <platform>` in parallel for all clusters, or `hcp destroy cluster <platform>` when `HCP_BINARY` is set.
 
 Exits non-zero if any cluster fails to destroy. Logs `ACTION REQUIRED` messages to stdout for orphaned resources, which appear in job logs for manual cleanup.
+
+## Driving Cluster Lifecycle with the Product CLI (`hcp`)
+
+HyperShift ships two CLIs from the same module: the developer CLI `hypershift` (built from `./cmd`) and the product CLI `hcp` (built from `./product-cli`). They share subcommand paths for cluster create and destroy but bind different flag sets — `hcp` exposes the customer-facing subset — so `HYPERSHIFT_BINARY=hcp` would not work. The framework selects a CLI explicitly instead:
+
+| Env var | Selects | Used by |
+|---------|---------|---------|
+| `HYPERSHIFT_BINARY` | Developer CLI. Defaults to `hypershift` on `PATH`. | Everything, unless overridden below |
+| `HCP_BINARY` | Product CLI. Takes precedence over `HYPERSHIFT_BINARY`. | `create-guests`, `destroy-guests` only |
+
+`dump-guests` always uses the developer CLI, as do install, fix and consolelogs, because the product CLI does not implement those subcommands.
+
+### CLI-Aware Argument Construction
+
+`PlatformConfig.CreateArgs(cli)` and `DestroyArgs(cli)` receive the selected CLI so they can emit the right flag spelling. The current differences:
+
+- **Azure**: the developer CLI calls role assignment `--assign-service-principal-roles`; the product CLI calls it `--auto-assign-roles`.
+- **AWS**: `hcp create/destroy cluster aws` requires assumed-role credentials and has no fallback to the AWS default credential chain. Set both `HYPERSHIFT_AWS_ROLE_ARN` and `HYPERSHIFT_AWS_STS_CREDS`; the framework turns them into `--role-arn` and `--sts-creds`. Without them, `create-guests` fails before provisioning anything rather than partway through.
+
+The two CLIs also default `spec.controllerAvailabilityPolicy` differently — `hypershift` to `SingleReplica`, `hcp` to `HighlyAvailable`. `create-guests` always passes `--control-plane-availability-policy=SingleReplica` unless a variant sets it, so switching CLIs does not silently triple control plane replicas.
+
+### Fail-Fast Validation
+
+Before any cluster is created, `create-guests` builds every cluster's args and validates them with `lifecycle.ValidateArgs`, which resolves the subcommand against the CLI's real cobra tree and rejects flags it does not bind. `destroy-guests` does the same once, before the first destroy. An unsupported flag therefore fails the step immediately instead of leaving half-provisioned infrastructure behind.
+
+Because the check reads the actual command trees rather than a hand-maintained allowlist, it cannot drift from the binaries. `make test-e2ev2-unit` round-trips the args every platform and variant emits through both CLIs, so renaming a flag in either CLI fails a unit test.
+
+### Wiring Up a CI Job
+
+The `hypershift-tests` image ships both binaries, so a job variant only needs to point at the product one:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+export HCP_BINARY=/hypershift/bin/hcp
+
+/hypershift/bin/create-guests
+```
+
+The corresponding destroy ref must export the same variable, otherwise the clusters are created by `hcp` and torn down by `hypershift`. Both binaries log the CLI they resolved (`Using lifecycle CLI /hypershift/bin/hcp (hcp)`), which is how job logs confirm the product CLI was actually exercised.
 
 ## When to Create New CI Clusters
 
@@ -234,12 +277,14 @@ type PlatformConfig interface {
     DefaultTestPlan() TestPlan
     TestMatrix() TestMatrix
     PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
-    // Also: Name(), DefaultBaseDomain(), CreateArgs(),
-    // SetupTestEnv(sharedDir), DestroyArgs()
+    // Also: Name(), DefaultBaseDomain(), CreateArgs(cli),
+    // SetupTestEnv(sharedDir), DestroyArgs(cli)
 }
 ```
 
-See [`test/e2e/v2/lifecycle/platform.go`](https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/platform.go) for the full `PlatformConfig` interface, including `Name()`, `DefaultBaseDomain()`, `CreateArgs()`, `SetupTestEnv()`, and `DestroyArgs()`.
+See [`test/e2e/v2/lifecycle/platform.go`](https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/platform.go) for the full `PlatformConfig` interface, including `Name()`, `DefaultBaseDomain()`, `CreateArgs(cli)`, `SetupTestEnv()`, and `DestroyArgs(cli)`.
+
+`CreateArgs` and `DestroyArgs` take the selected `lifecycle.CLI` so a platform can emit the flag spelling that CLI binds, and return an error when the CLI cannot drive the platform at all — see [Driving Cluster Lifecycle with the Product CLI](#driving-cluster-lifecycle-with-the-product-cli-hcp).
 
 Register your platform in the `NewPlatformConfig()` switch in `test/e2e/v2/lifecycle/platform.go`:
 
@@ -292,6 +337,7 @@ Common CI configuration points and where to find them:
 | Image dependencies | Workflow/ref YAML | `release:latest`, `release:n1minor` provide OpenShift release images as environment variables |
 | Timeout | Ref YAML `timeout` field | Per-step timeout (e.g., `150m` for lifecycle tests that create clusters) |
 | `HYPERSHIFT_PLATFORM` | Workflow YAML `env` | Tells CI binaries which `PlatformConfig` to load from `test/e2e/v2/lifecycle/` |
+| `HCP_BINARY` | Workflow YAML `env` or ref script | Drives cluster create/destroy through the product `hcp` CLI instead of `hypershift`. See [Driving Cluster Lifecycle with the Product CLI](#driving-cluster-lifecycle-with-the-product-cli-hcp) |
 
 All step registry YAML lives in [openshift/release](https://github.com/openshift/release/tree/master/ci-operator/step-registry/hypershift). Job definitions live in [ci-operator/config/openshift/hypershift/](https://github.com/openshift/release/tree/master/ci-operator/config/openshift/hypershift).
 

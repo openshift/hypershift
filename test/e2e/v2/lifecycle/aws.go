@@ -15,17 +15,34 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	// awsRoleARNEnvVar and awsSTSCredsEnvVar supply the assumed-role
+	// credentials the product CLI requires on AWS. They are unused by the
+	// developer CLI, which falls back to the AWS SDK default credential chain.
+	awsRoleARNEnvVar  = "HYPERSHIFT_AWS_ROLE_ARN"
+	awsSTSCredsEnvVar = "HYPERSHIFT_AWS_STS_CREDS"
+)
+
 type AWSPlatformConfig struct {
 	region         string
 	zones          []string
 	additionalTags []string
 	sharedDir      string
+
+	roleARN      string
+	stsCredsFile string
 }
 
 type AWSPlatformOptions struct {
 	Region    string
 	Zones     string
 	ProwJobId string
+
+	// RoleARN and STSCredsFile are only consumed by the product CLI, which
+	// requires an explicit assumed role instead of the AWS SDK default
+	// credential chain the developer CLI falls back to.
+	RoleARN      string
+	STSCredsFile string
 }
 
 func NewAWSPlatformConfig(opts AWSPlatformOptions, sharedDir string) *AWSPlatformConfig {
@@ -45,6 +62,8 @@ func NewAWSPlatformConfig(opts AWSPlatformOptions, sharedDir string) *AWSPlatfor
 		sharedDir:      sharedDir,
 		additionalTags: tags,
 		zones:          zones,
+		roleARN:        opts.RoleARN,
+		stsCredsFile:   opts.STSCredsFile,
 	}
 
 	log.Printf("AWS platform config: region=%s, zones=%v, additionalTags=%v", cfg.region, cfg.zones, cfg.additionalTags)
@@ -112,7 +131,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 	}
 }
 
-func (a *AWSPlatformConfig) CreateArgs() []string {
+func (a *AWSPlatformConfig) CreateArgs(cli CLI) ([]string, error) {
 	args := []string{
 		"--region=" + a.region,
 		"--zones=" + strings.Join(a.zones, ","),
@@ -126,7 +145,34 @@ func (a *AWSPlatformConfig) CreateArgs() []string {
 	for _, tag := range a.additionalTags {
 		args = append(args, "--additional-tags="+tag)
 	}
-	return args
+
+	credArgs, err := a.credentialArgs(cli)
+	if err != nil {
+		return nil, err
+	}
+	return append(args, credArgs...), nil
+}
+
+// credentialArgs returns the AWS credential flags for the given CLI. The
+// developer CLI falls back to the AWS SDK default credential chain, which CI
+// populates from the environment, so it needs no flags. The product CLI
+// rejects that fallback: `hcp create cluster aws` and `hcp destroy cluster
+// aws` both call ValidateProductCredentialInfo, which requires --role-arn and
+// --sts-creds. It returns an error naming the env vars to set when the product
+// CLI is selected without them, rather than letting the CLI fail per cluster
+// after the manifest has already been written.
+func (a *AWSPlatformConfig) credentialArgs(cli CLI) ([]string, error) {
+	if !cli.IsHCP() {
+		return nil, nil
+	}
+	if a.roleARN == "" || a.stsCredsFile == "" {
+		return nil, fmt.Errorf("the %s CLI requires assumed-role credentials on AWS: set both %s and %s",
+			cli.Kind, awsRoleARNEnvVar, awsSTSCredsEnvVar)
+	}
+	return []string{
+		"--role-arn=" + a.roleARN,
+		"--sts-creds=" + a.stsCredsFile,
+	}, nil
 }
 
 func (a *AWSPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error {
@@ -209,10 +255,16 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 
 func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {}
 
-func (a *AWSPlatformConfig) DestroyArgs() []string {
+func (a *AWSPlatformConfig) DestroyArgs(cli CLI) ([]string, error) {
 	baseDomain := envOrDefault("HYPERSHIFT_BASE_DOMAIN", a.DefaultBaseDomain())
-	return []string{
+	args := []string{
 		"--region=" + a.region,
 		"--base-domain=" + baseDomain,
 	}
+
+	credArgs, err := a.credentialArgs(cli)
+	if err != nil {
+		return nil, err
+	}
+	return append(args, credArgs...), nil
 }

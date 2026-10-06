@@ -18,6 +18,10 @@ limitations under the License.
 // HostedClusters in parallel. Cluster identities are read from
 // the cluster manifest written by create-guests to SHARED_DIR.
 // It always exits 0 so that dump failures never block teardown.
+//
+// Unlike create-guests and destroy-guests, this binary always uses the
+// developer `hypershift` CLI: the product `hcp` CLI implements only create and
+// destroy, so it has no `dump cluster` subcommand.
 package main
 
 import (
@@ -32,7 +36,9 @@ import (
 )
 
 func main() {
-	hypershiftBinary := flag.String("hypershift-binary", "hypershift", "Path to the hypershift CLI binary")
+	cli := lifecycle.DeveloperCLI()
+	hypershiftBinary := flag.String("hypershift-binary", cli.Binary,
+		"Path to the hypershift CLI binary. Defaults to $"+lifecycle.HypershiftBinaryEnvVar+", then \"hypershift\" on PATH.")
 	flag.Parse()
 
 	sharedDir := os.Getenv("SHARED_DIR")

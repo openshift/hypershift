@@ -18,6 +18,8 @@ limitations under the License.
 // lifecycle tests. Cluster identities are read from the cluster
 // manifest written by create-guests to SHARED_DIR. Platform-specific
 // destroy flags come from PlatformConfig.DestroyArgs().
+// Clusters are destroyed with the developer `hypershift` CLI by default, or
+// the product `hcp` CLI when HCP_BINARY is set.
 // All clusters are destroyed in parallel with best-effort semantics.
 package main
 
@@ -26,6 +28,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"slices"
 	"sync"
 
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
@@ -49,12 +52,17 @@ func main() {
 		log.Fatalf("Failed to initialize platform config: %v", err)
 	}
 
-	hypershiftBin := os.Getenv("HYPERSHIFT_BINARY")
-	if hypershiftBin == "" {
-		hypershiftBin = "hypershift"
+	cli := lifecycle.LifecycleCLI()
+
+	// Destroy args are identical for every cluster, so build them once and
+	// fail before any destroy is attempted if the CLI cannot drive the
+	// platform.
+	args, err := destroyArgs(cli, platform)
+	if err != nil {
+		log.Fatalf("Failed to build destroy args: %v", err)
 	}
 
-	log.Printf("Destroying %d clusters from manifest", len(manifest.Clusters))
+	log.Printf("Destroying %d clusters from manifest using %s", len(manifest.Clusters), cli)
 
 	var (
 		mu     sync.Mutex
@@ -66,7 +74,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := destroyCluster(hypershiftBin, entry, platform); err != nil {
+			if err := destroyCluster(cli, entry, platform, args); err != nil {
 				log.Printf("WARNING: Failed to destroy cluster %s (%s): %v", entry.Name, entry.Variant, err)
 				log.Printf("ACTION REQUIRED: cloud resources for cluster %s (infraID=%s) may be orphaned and need manual cleanup", entry.Name, entry.InfraID)
 				mu.Lock()
@@ -84,25 +92,43 @@ func main() {
 	log.Printf("All clusters destroyed successfully")
 }
 
-func destroyCluster(hypershiftBin string, entry lifecycle.ClusterEntry, platform lifecycle.PlatformConfig) error {
+// destroyArgs returns the platform-specific args shared by every destroy
+// invocation, spelled for cli. The per-cluster identity flags are appended by
+// destroyCluster. It returns an error when the platform cannot be driven by
+// cli or when any resulting flag is one the CLI does not accept.
+func destroyArgs(cli lifecycle.CLI, platform lifecycle.PlatformConfig) ([]string, error) {
+	platformArgs, err := platform.DestroyArgs(cli)
+	if err != nil {
+		return nil, err
+	}
+
+	args := append([]string{
+		"destroy", "cluster", platform.Name(),
+		"--cluster-grace-period=" + clusterGracePeriod,
+	}, platformArgs...)
+
+	if err := lifecycle.ValidateArgs(cli, args); err != nil {
+		return nil, err
+	}
+	return args, nil
+}
+
+func destroyCluster(cli lifecycle.CLI, entry lifecycle.ClusterEntry, platform lifecycle.PlatformConfig, sharedArgs []string) error {
 	log.Printf("Destroying cluster %s (%s, infraID=%s)", entry.Name, entry.Variant, entry.InfraID)
 
-	args := []string{
-		"destroy", "cluster", platform.Name(),
-		"--name=" + entry.Name,
-		"--namespace=" + entry.Namespace,
-		"--infra-id=" + entry.InfraID,
-		"--cluster-grace-period=" + clusterGracePeriod,
-	}
-	args = append(args, platform.DestroyArgs()...)
+	args := append(slices.Clone(sharedArgs),
+		"--name="+entry.Name,
+		"--namespace="+entry.Namespace,
+		"--infra-id="+entry.InfraID,
+	)
 
-	log.Printf("Running: %s %v", hypershiftBin, args)
+	log.Printf("Running: %s %v", cli.Binary, args)
 
-	cmd := exec.Command(hypershiftBin, args...)
+	cmd := exec.Command(cli.Binary, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("hypershift destroy cluster %s failed for %s: %w", platform.Name(), entry.Name, err)
+		return fmt.Errorf("%s destroy cluster %s failed for %s: %w", cli.Kind, platform.Name(), entry.Name, err)
 	}
 
 	log.Printf("Finished destroying cluster: %s", entry.Name)
