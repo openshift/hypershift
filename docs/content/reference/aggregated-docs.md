@@ -55141,6 +55141,41 @@ string
 If omitted, the value will be inferred from the corev1.Service Load balancer type .status.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>loadBalancerClass</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>loadBalancerClass sets Service.spec.loadBalancerClass to select which
+LB controller provisions the Service. Required when the management
+cluster runs multiple LB controllers (e.g., F5 for management + MetalLB
+for tenant workloads). Maps to the Kubernetes Service field directly.
+Immutable after creation — matches Kubernetes semantics.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAnnotations</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceAnnotations is a map of annotations passed through to the
+LoadBalancer Service. The user provides the exact annotations their LB
+provider expects (e.g., metallb.io/loadBalancerIPs,
+service.beta.kubernetes.io/aws-load-balancer-eip-allocations).</p>
+<p>Annotations are applied per-key — existing annotations set by other
+controllers are preserved. HyperShift does not validate annotation
+values — correctness is the user&rsquo;s responsibility, same as setting
+annotations on any Kubernetes Service.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###LogLevel { #hypershift.openshift.io/v1beta1.LogLevel }

@@ -540,7 +540,7 @@ type Capabilities struct {
 // HostedClusterSpec is the desired behavior of a HostedCluster.
 
 // +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
-// +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services == oldSelf.services : true`, message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
+// +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? (oldSelf.services.all(o, self.services.exists(s, s.service == o.service)) && self.services.all(s, oldSelf.services.exists(o, o.service == s.service))) : true`, message="Services entries cannot be added or removed. Changes might result in unpredictable and disruptive behavior."
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("") == "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route")`,message="Azure managed platform (ARO HCP) requires OAuthServer to use Route"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("") != "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer" && (s.servicePublishingStrategy.type == "Route" || s.servicePublishingStrategy.type == "LoadBalancer"))`,message="Self-managed Azure requires OAuthServer to use Route or LoadBalancer"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Konnectivity" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires Konnectivity to use Route service publishing strategy"
@@ -683,7 +683,8 @@ type HostedClusterSpec struct {
 	// Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.
 	//
 	// +kubebuilder:validation:MaxItems=6
-	// +kubebuilder:validation:ListType=atomic
+	// +listType=map
+	// +listMapKey=service
 	// -kubebuilder:validation:XValidation:rule="self.all(s, !(s.service == 'APIServer' && s.servicePublishingStrategy.type == 'Route') || has(s.servicePublishingStrategy.route.hostname))",message="If serviceType is 'APIServer' and publishing strategy is 'Route', then hostname must be set"
 	// -kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? ['APIServer', 'OAuthServer', 'Konnectivity'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', and 'Konnectivity' service types" : ['APIServer', 'OAuthServer', 'Konnectivity', 'Ignition'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types"
 	// -kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'Route' && has(s.servicePublishingStrategy.route) && has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'Route' && (has(y.servicePublishingStrategy.route) && has(y.servicePublishingStrategy.route.hostname) && y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() <= 1)",message="Each route publishingStrategy 'hostname' must be unique within the Services list."
@@ -1026,6 +1027,7 @@ type ServicePublishingStrategyMapping struct {
 	// This field is immutable.
 	//
 	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity;Ignition;OVNSbDb
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="service type is immutable"
 	// +immutable
 	// +required
 	Service ServiceType `json:"service"`
@@ -1047,10 +1049,12 @@ type ServicePublishingStrategy struct {
 	// It can be LoadBalancer;NodePort;Route;None;S3
 	//
 	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route;None;S3
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="publishing strategy type is immutable"
 	// +required
 	Type PublishingStrategyType `json:"type"`
 
 	// nodePort configures exposing a service using a NodePort.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="nodePort config is immutable"
 	// +optional
 	NodePort *NodePortPublishingStrategy `json:"nodePort,omitempty"`
 
@@ -1060,6 +1064,7 @@ type ServicePublishingStrategy struct {
 
 	// route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
 	// The specifics of the setup are platform dependent.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="route config is immutable"
 	// +optional
 	Route *RoutePublishingStrategy `json:"route,omitempty"`
 }
@@ -1122,14 +1127,45 @@ type NodePortPublishingStrategy struct {
 }
 
 // LoadBalancerPublishingStrategy specifies setting used to expose a service as a LoadBalancer.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.hostname) || has(self.hostname)",message="hostname cannot be removed once set"
 type LoadBalancerPublishingStrategy struct {
 	// hostname is the name of the DNS record that will be created pointing to the LoadBalancer and passed through to consumers of the service.
 	// If omitted, the value will be inferred from the corev1.Service Load balancer type .status.
 	// +kubebuilder:validation:XValidation:rule=`self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')`,message="hostname must be a valid domain name (e.g., example.com)"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="hostname is immutable"
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Hostname string `json:"hostname,omitempty"`
+
+	// loadBalancerClass sets Service.spec.loadBalancerClass to select which
+	// LB controller provisions the Service. Required when the management
+	// cluster runs multiple LB controllers (e.g., F5 for management + MetalLB
+	// for tenant workloads). Maps to the Kubernetes Service field directly.
+	// Immutable after creation — matches Kubernetes semantics.
+	//
+	// +openshift:enable:FeatureGate=DeterministicLBIP
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="loadBalancerClass is immutable once set"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	LoadBalancerClass string `json:"loadBalancerClass,omitempty"`
+
+	// serviceAnnotations is a map of annotations passed through to the
+	// LoadBalancer Service. The user provides the exact annotations their LB
+	// provider expects (e.g., metallb.io/loadBalancerIPs,
+	// service.beta.kubernetes.io/aws-load-balancer-eip-allocations).
+	//
+	// Annotations are applied per-key — existing annotations set by other
+	// controllers are preserved. HyperShift does not validate annotation
+	// values — correctness is the user's responsibility, same as setting
+	// annotations on any Kubernetes Service.
+	//
+	// +openshift:enable:FeatureGate=DeterministicLBIP
+	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:validation:MaxProperties=10
+	// +optional
+	ServiceAnnotations map[string]string `json:"serviceAnnotations,omitempty"`
 }
 
 // RoutePublishingStrategy specifies options for exposing a service as a Route.
