@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/k8sutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -146,6 +147,28 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 	gcpCluster, ok := obj.(*capigcp.GCPCluster)
 	g.Expect(ok).To(BeTrue())
 	g.Expect(gcpCluster.Status.Ready).To(BeTrue()) // Critical: Ready status must be set
+}
+
+func TestReconcileGCPClusterResourceLabels(t *testing.T) {
+	g := NewWithT(t)
+	hcp := validHostedCluster()
+	hcp.Spec.InfraID = "test-infra-id"
+	hcp.Spec.Platform.GCP.ResourceLabels = []hyperv1.GCPResourceLabel{
+		{Key: "environment", Value: ptr.To("production")},
+		{Key: "empty"},
+		{Key: k8sutil.GCPLabelCluster, Value: ptr.To("user-value")},
+	}
+	gcpCluster := &capigcp.GCPCluster{}
+
+	err := GCP{}.reconcileGCPCluster(gcpCluster, hcp, hyperv1.APIEndpoint{Host: "api.example.com", Port: 6443})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(map[string]string(gcpCluster.Spec.AdditionalLabels)).To(Equal(map[string]string{
+		"environment":           "production",
+		"empty":                 "",
+		k8sutil.GCPLabelCluster: hcp.Name,
+		k8sutil.GCPLabelInfraID: hcp.Spec.InfraID,
+	}))
 }
 
 func TestCAPIProviderDeploymentSpec(t *testing.T) {

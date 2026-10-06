@@ -570,6 +570,7 @@ func (r *reconciler) reconcilePlatformSpecificResources(ctx context.Context, log
 	case hyperv1.GCPPlatform:
 		log.Info("reconciling GCP specific resources")
 		errs = append(errs, r.reconcileGCPIdentityWebhook(ctx)...)
+		errs = append(errs, r.reconcileGCPLoadBalancerServiceAnnotations(ctx, hcp)...)
 	}
 	return errs
 }
