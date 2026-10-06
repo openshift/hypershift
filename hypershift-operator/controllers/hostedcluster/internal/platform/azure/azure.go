@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -328,12 +329,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 
 		// Use the utility function to reconcile credentials
 		if errs := azureutil.ReconcileAzureCredentials(ctx, c, createOrUpdate, baseSecretData, credentialConfigs, hcluster.Spec.Capabilities); len(errs) > 0 {
-			// Combine all errors into a single error
-			var errorStrings []string
-			for _, err := range errs {
-				errorStrings = append(errorStrings, err.Error())
-			}
-			return fmt.Errorf("failed to reconcile Azure credentials: %s", strings.Join(errorStrings, "; "))
+			return fmt.Errorf("failed to reconcile Azure credentials: %w", errors.Join(errs...))
 		}
 	}
 

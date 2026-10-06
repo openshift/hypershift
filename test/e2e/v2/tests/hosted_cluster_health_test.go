@@ -25,6 +25,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpconst "github.com/openshift/hypershift/pkg/controlplane"
 	"github.com/openshift/hypershift/support/conditions"
+	"github.com/openshift/hypershift/support/imageregistry"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
@@ -143,7 +144,7 @@ func EnsurePayloadArchSetCorrectlyTest(getTestCtx internal.TestContextGetter) {
 			hostedCluster, err := getTestCtx().GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
-			imageMetadataProvider := &hyperutil.RegistryClientImageMetadataProvider{}
+			imageMetadataProvider := &imageregistry.RegistryClientImageMetadataProvider{}
 			Eventually(func(g Gomega) {
 				hc := &hyperv1.HostedCluster{}
 				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(hostedCluster), hc)).To(Succeed())

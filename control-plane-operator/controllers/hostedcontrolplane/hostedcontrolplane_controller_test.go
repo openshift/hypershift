@@ -38,6 +38,7 @@ import (
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -47,7 +48,6 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -172,6 +172,136 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 					g.Expect(err).NotTo(HaveOccurred())
 				}
 			}
+		})
+	}
+}
+
+func TestReconcileCombinedPullSecret(t *testing.T) {
+	t.Parallel()
+
+	validPullSecret := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)
+	mergedData := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"},"custom.io":{"auth":"Y3VzdG9t"}}}`)
+	targetNamespace := "test-ns"
+
+	tests := []struct {
+		name             string
+		existingObjects  []client.Object
+		interceptorFuncs *interceptor.Funcs
+		expectErr        bool
+		errContains      string
+		expectedData     []byte
+	}{
+		{
+			name: "When combined-pull-secret is absent, it should create it from pull-secret",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+			},
+			expectedData: validPullSecret,
+		},
+		{
+			name: "When combined-pull-secret already has data, it should preserve it",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: targetNamespace},
+					Type:       corev1.SecretTypeDockerConfigJson,
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: mergedData},
+				},
+			},
+			expectedData: mergedData,
+		},
+		{
+			name: "When combined-pull-secret exists with empty data, it should seed from pull-secret",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: targetNamespace},
+					Type:       corev1.SecretTypeDockerConfigJson,
+					Data:       map[string][]byte{},
+				},
+			},
+			expectedData: validPullSecret,
+		},
+		{
+			name:        "When pull-secret is missing, it should return an error",
+			expectErr:   true,
+			errContains: "failed to get pull-secret",
+		},
+		{
+			name: "When pull-secret is missing .dockerconfigjson key, it should return an error",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{},
+				},
+			},
+			expectErr:   true,
+			errContains: ".dockerconfigjson",
+		},
+		{
+			name: "When createOrUpdate fails for combined-pull-secret, it should return an error",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+					if s, ok := obj.(*corev1.Secret); ok && s.Name == "combined-pull-secret" {
+						return fmt.Errorf("forbidden")
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			},
+			expectErr:   true,
+			errContains: "failed to reconcile combined-pull-secret",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: targetNamespace,
+				},
+			}
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.existingObjects...)
+			if tc.interceptorFuncs != nil {
+				builder = builder.WithInterceptorFuncs(*tc.interceptorFuncs)
+			}
+			fakeClient := builder.Build()
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(t.Context()),
+			}
+
+			err := r.reconcileCombinedPullSecret(t.Context(), hcp, controllerutil.CreateOrUpdate)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			combinedSecret := common.CombinedPullSecret(targetNamespace)
+			g.Expect(fakeClient.Get(t.Context(), client.ObjectKeyFromObject(combinedSecret), combinedSecret)).To(Succeed())
+			g.Expect(combinedSecret.Type).To(Equal(corev1.SecretTypeDockerConfigJson))
+			g.Expect(combinedSecret.Data[corev1.DockerConfigJsonKey]).To(Equal(tc.expectedData))
 		})
 	}
 }
@@ -686,7 +816,10 @@ func TestEventHandling(t *testing.T) {
 	t.Parallel()
 
 	hcp := sampleHCP(t)
-	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"},
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{}`)},
+	}
 	etcdEncryptionKey := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "etcd-encryption-key"},
 		Data:       map[string][]byte{"key": []byte("very-secret")},
@@ -790,6 +923,85 @@ func TestEventHandling(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileFailsWhenCombinedPullSecretCreateFails(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	hcp := sampleHCP(t)
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"},
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{}`)},
+	}
+	etcdEncryptionKey := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "etcd-encryption-key"},
+		Data:       map[string][]byte{"key": []byte("very-secret")},
+	}
+	fakeNodeTuningOperator := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "node-tuning-operator",
+			Namespace: "bar",
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "None",
+		},
+	}
+	fakeNodeTuningOperatorTLS := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "node-tuning-operator-tls"},
+		Data:       map[string][]byte{"key": []byte("very-secret")},
+	}
+
+	c := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcp, pullSecret, etcdEncryptionKey, fakeNodeTuningOperator, fakeNodeTuningOperatorTLS).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if s, ok := obj.(*corev1.Secret); ok && s.Name == "combined-pull-secret" {
+					return fmt.Errorf("forbidden")
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	readyInfraStatus := infra.InfrastructureStatus{
+		APIHost:          "foo",
+		APIPort:          1,
+		OAuthHost:        "foo",
+		OAuthPort:        1,
+		KonnectivityHost: "foo",
+		KonnectivityPort: 1,
+	}
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().Return(map[string]string{"registry": "override"}).AnyTimes()
+	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+	mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")).AnyTimes()
+
+	r := &HostedControlPlaneReconciler{
+		Client:                        c,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
+		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
+		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
+		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
+			return readyInfraStatus, nil
+		},
+		SetDefaultSecurityContext: false,
+		ec2Client:                 mockEC2,
+	}
+	r.setup(controllerutil.CreateOrUpdate)
+
+	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(hcp)})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to reconcile combined pull secret"))
 }
 
 type createTrackingClient struct {
@@ -1597,8 +1809,15 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 			corev1.DockerConfigJsonKey: []byte(`{}`),
 		},
 	}
+	combinedPullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: "hcp-namespace"},
+		Type:       corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{}`),
+		},
+	}
 
-	fakeComponents = append(fakeComponents, pullSecret.DeepCopy())
+	fakeComponents = append(fakeComponents, pullSecret.DeepCopy(), combinedPullSecret.DeepCopy())
 
 	return fakeComponents
 }
@@ -4757,6 +4976,227 @@ func TestReconcileDeletion(t *testing.T) {
 	}
 }
 
+func TestReconcileDeletionAWSEndpointServices(t *testing.T) {
+	const hoFinalizer = "hypershift.openshift.io/hypershift-operator-finalizer"
+
+	newEndpointService := func(name string, deletionTimestamp *metav1.Time, finalizers ...string) *hyperv1.AWSEndpointService {
+		return &hyperv1.AWSEndpointService{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              name,
+				Namespace:         "test-ns",
+				DeletionTimestamp: deletionTimestamp,
+				Finalizers:        finalizers,
+			},
+		}
+	}
+
+	tests := []struct {
+		name              string
+		platformType      hyperv1.PlatformType
+		conditions        []metav1.Condition
+		endpointServices  []*hyperv1.AWSEndpointService
+		listErr           bool
+		deleteErr         bool
+		wantErr           bool
+		wantRequeue       bool
+		wantFinalizerKept bool
+		wantDeletionOn    map[string]bool
+	}{
+		{
+			name:              "When there are no AWSEndpointServices, it should remove the HCP finalizer",
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+		},
+		{
+			name: "When an AWSEndpointService is not being deleted, it should delete it and requeue",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer, hoFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+			wantDeletionOn:    map[string]bool{"private-router": true},
+		},
+		{
+			name: "When an AWSEndpointService still has the CPO finalizer within the timeout, it should wait",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+		},
+		{
+			name: "When an AWSEndpointService only has the hypershift-operator finalizer, it should not wait for it",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), hoFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+		},
+		{
+			name: "When the CPO finalizer is still present after the timeout, it should proceed with deletion",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", ptr.To(metav1.NewTime(time.Now().Add(-11*time.Minute))), awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+		},
+		{
+			name: "When ValidAWSIdentityProvider is False, it should skip AWSEndpointService cleanup",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
+			},
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+			wantDeletionOn:    map[string]bool{"private-router": false},
+		},
+		{
+			name: "When ValidAWSIdentityProvider is Unknown, it should still delete AWSEndpointServices",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionUnknown, Reason: hyperv1.StatusUnknownReason},
+			},
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+			wantDeletionOn:    map[string]bool{"private-router": true},
+		},
+		{
+			name: "When there are multiple AWSEndpointServices and one is still pending, it should wait",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("ep-a", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), hoFinalizer),
+				newEndpointService("ep-b", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+		},
+		{
+			name:         "When the platform is not AWS, it should not touch AWSEndpointServices",
+			platformType: hyperv1.NonePlatform,
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+			wantDeletionOn:    map[string]bool{"private-router": false},
+		},
+		{
+			name: "When listing AWSEndpointServices fails, it should return an error and keep the finalizer",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			listErr:           true,
+			wantErr:           true,
+			wantFinalizerKept: true,
+		},
+		{
+			name: "When deleting an AWSEndpointService fails, it should return an error and keep the finalizer",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			deleteErr:         true,
+			wantErr:           true,
+			wantFinalizerKept: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			platformSpec := hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{},
+			}
+			if tt.platformType != "" {
+				platformSpec = hyperv1.PlatformSpec{Type: tt.platformType}
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  "test-ns",
+					Finalizers: []string{finalizer},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID:  "test-infra",
+					Platform: platformSpec,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: tt.conditions,
+				},
+			}
+
+			objects := []client.Object{hcp}
+			for _, ep := range tt.endpointServices {
+				objects = append(objects, ep)
+			}
+
+			clientBuilder := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{})
+			if tt.listErr {
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+						if _, ok := list.(*hyperv1.AWSEndpointServiceList); ok {
+							return fmt.Errorf("simulated list error")
+						}
+						return c.List(ctx, list, opts...)
+					},
+				})
+			}
+			if tt.deleteErr {
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						if _, ok := obj.(*hyperv1.AWSEndpointService); ok {
+							return fmt.Errorf("simulated delete error")
+						}
+						return c.Delete(ctx, obj, opts...)
+					},
+				})
+			}
+			fakeClient := clientBuilder.Build()
+
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+			// Re-read from fake client so the object has a ResourceVersion.
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.Log.WithName("test"),
+			}
+
+			result, err := r.reconcileDeletion(ctx, hcp)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tt.wantRequeue {
+				g.Expect(result.RequeueAfter).To(Equal(awsEndpointServiceDeletionRequeueInterval))
+			} else {
+				g.Expect(result.RequeueAfter).To(BeZero())
+			}
+
+			updated := &hyperv1.HostedControlPlane{}
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+			g.Expect(controllerutil.ContainsFinalizer(updated, finalizer)).To(Equal(tt.wantFinalizerKept))
+
+			for name, wantDeleting := range tt.wantDeletionOn {
+				ep := &hyperv1.AWSEndpointService{}
+				g.Expect(fakeClient.Get(ctx, client.ObjectKey{Namespace: "test-ns", Name: name}, ep)).To(Succeed())
+				g.Expect(!ep.DeletionTimestamp.IsZero()).To(Equal(wantDeleting), "AWSEndpointService %s deletion state", name)
+			}
+		})
+	}
+}
+
 func TestReconcileDefaultSecurityGroup(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -5336,7 +5776,7 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 }
 
 // Compile-time assertion that fakeVersionImageMetadataProvider satisfies the interface.
-var _ util.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
+var _ imageregistry.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
 
 // Compile-time assertion for clock interface used by tests.
 var _ clock.Clock = &testingclock.FakeClock{}

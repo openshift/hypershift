@@ -7,7 +7,9 @@ In order to simplify release creation, we use ProjectDevelopmentStreamTemplates
 and ProjectDevelopmentStreams. In this directory, you should find:
 
 * A ProjectDevelopmentStreamTemplate for each deliverable that we manage the
-releases for. The naming convention is deliverablename_development_stream_template.yaml.
+releases for. The naming convention is
+`deliverablename_development_stream_template.yaml` for release streams and
+`deliverablename_hotfix_stream_template.yaml` for hotfix streams.
 * A ProjectDevelopmentStream for each of the releases of each deliverable. The
 naming convention is `deliverablename_underscoredversionnumber_stream.yaml`.
 
@@ -20,42 +22,13 @@ one needs to authenticate with it.
 ### Prerequisites
 
 You must ensure to have installed:
-* [Kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/) or [oc](https://access.redhat.com/downloads/content/290/)
-* [Kubelogin](https://github.com/int128/kubelogin/releases)
+* [oc](https://access.redhat.com/downloads/content/290/)
 
-### Kubeconfig
+### Login
 
-Here you can see an example of the kubeconfig necessary to do authenticate and
-connect to the cluster:
+Authenticate with the Konflux cluster:
 
-    apiVersion: v1
-    clusters:
-    - cluster:
-        server: <server url containing the workspace. For details, look in the team's internal sops repository>
-      name: konflux
-    contexts:
-    - context:
-        cluster: konflux
-        namespace: crt-redhat-acm-tenant
-        user: oidc
-      name: konflux-acm
-    current-context: konflux-acm
-    kind: Config
-    preferences: {}
-    users:
-    - name: oidc
-      user:
-        exec:
-          apiVersion: client.authentication.k8s.io/v1beta1
-          args:
-          - oidc-login
-          - get-token
-          - --oidc-issuer-url=https://sso.redhat.com/auth/realms/redhat-external
-          - --oidc-client-id=rhoas-cli-prod
-          command: kubectl
-          env: null
-          interactiveMode: IfAvailable
-          provideClusterInfo: false
+    oc login --web https://api.stone-prd-rh01.pg1f.p1.openshiftapps.com:6443
 
 ## Creating a new CPO release
 
@@ -87,27 +60,57 @@ Here you can see an example of a CPO release ProjectDevelopmentStream:
 ## Creating a new HyperShift Operator hotfix
 
 For each hotfix, the following steps need to be taken:
-1. Create a branch in the HyperShift repository named `ho-hotfix-jiraTicketReferenceLowercased`
-2. Create a ProjectDevelopmentStream referencing the HyperShift Operator
-Development Stream template. The location for for each new
-ProjectDevelopmentStream file should be the same directory that contains this
-README.
-3. Merge the Konflux generated pull request that adds the `.tekton` pipeline for
-the hotfix application.
+
+1. **Identify the production commit.** Use `podman inspect` on the production
+   image to find the git commit currently deployed:
+
+       podman pull <production-image-pullspec>
+       podman inspect <production-image-pullspec> | jq '.[0].Labels["vcs-ref"]'
+
+   The production image is available in the
+   `quay.io/redhat-services-prod/crt-redhat-acm-tenant/hypershift/hypershift-operator`
+   repository.
+
+2. **Create a hotfix branch** in the HyperShift repository named
+   `ho-hotfix-jiraTicketReferenceLowercased` (e.g.
+   `ho-hotfix-cntrlplane-3632`). The branch should contain the fix
+   cherry-picked on top of the production commit identified in step 1:
+
+       git checkout -b ho-hotfix-<ticket> <production-commit>
+       git cherry-pick <fix-commit>
+       git push origin ho-hotfix-<ticket>
+
+3. **Create a ProjectDevelopmentStream** file referencing the
+   `hypershift-ho-hotfix-template` ProjectDevelopmentStreamTemplate. The file
+   should live in the same directory that contains this README (see example
+   below) and be committed to the hotfix branch.
+
+4. **Apply the ProjectDevelopmentStream** to the Konflux cluster so that
+   Konflux creates the Application, Component, and ImageRepository:
+
+       oc apply -f contrib/konflux/<stream-file>.yaml
+
+5. **Merge the Konflux generated pull request** that adds the `.tekton`
+   pipeline for the hotfix application. After merging, verify the pipeline
+   uses the common build pipeline defined in
+   `.tekton/pipelines/common-operator-build.yaml`. If the generated pipeline
+   does not reference it, submit a follow-up commit to the hotfix branch to
+   switch it (see commit `b84c88d1dd` on `ho-hotfix-cntrlplane-3632` for an
+   example).
 
 Here you can see an example of a hotfix ProjectDevelopmentStream:
 
     apiVersion: projctl.konflux.dev/v1beta1
     kind: ProjectDevelopmentStream
     metadata:
-      name: hypershift-ho-hotfix-ocpbugs-1234
+      name: hypershift-ho-hotfix-cntrlplane-3632
     spec:
       project: crt-redhat-acm-tenant
       template:
-        name: hypershift-ho-template
+        name: hypershift-ho-hotfix-template
         values:
         - name: ticketReference
-          value: "ocpbugs-1234"
+          value: "cntrlplane-3632"
 
 ## Listing HyperShift Operator releases
 
@@ -124,7 +127,7 @@ cli:
 
 For HyperShift Operator hotfix releases created with the ProjectDevelopmentStreamTemplate, one would list them specifically:
 
-    ❯ oc get release --sort-by=.metadata.creationTimestamp -l "appstudio.openshift.io/application=hypershift-operator-hotfix-ocpbugs-1234"
+    ❯ oc get release --sort-by=.metadata.creationTimestamp -l "appstudio.openshift.io/application=hypershift-operator-hotfix-cntrlplane-3632"
 
 ## Listing Control Plane Operator releases
 

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	hypershiftkubeconfig "github.com/openshift/hypershift/cmd/kubeconfig"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/spf13/cobra"
 )
@@ -24,8 +25,16 @@ type renderFunc func(ctx context.Context, namespace string, name string, portFor
 
 // NewCreateCommand returns a command which can render kubeconfigs for HostedCluster
 // resources.
-func NewCreateCommand() *cobra.Command {
-	return newCreateCommand(hypershiftkubeconfig.Render, os.Stderr)
+func NewCreateCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
+	render := func(ctx context.Context, namespace string, name string, portForward bool) error {
+		client, err := clientProvider.ControllerRuntimeClientFor("")
+		if err != nil {
+			return err
+		}
+		return hypershiftkubeconfig.Render(ctx, namespace, name, portForward, client)
+	}
+	return newCreateCommand(render, os.Stderr)
 }
 
 func newCreateCommand(render renderFunc, errOut io.Writer) *cobra.Command {

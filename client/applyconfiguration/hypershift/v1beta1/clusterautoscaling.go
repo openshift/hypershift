@@ -33,6 +33,8 @@ type ClusterAutoscalingApplyConfiguration struct {
 	MaxFreeDifferenceRatioPercent *int32                             `json:"maxFreeDifferenceRatioPercent,omitempty"`
 	PodPriorityThreshold          *int32                             `json:"podPriorityThreshold,omitempty"`
 	Expanders                     []hypershiftv1beta1.ExpanderString `json:"expanders,omitempty"`
+	KubeClientQPS                 *int32                             `json:"kubeClientQPS,omitempty"`
+	KubeClientBurst               *int32                             `json:"kubeClientBurst,omitempty"`
 }
 
 // ClusterAutoscalingApplyConfiguration constructs a declarative configuration of the ClusterAutoscaling type for use with
@@ -114,5 +116,21 @@ func (b *ClusterAutoscalingApplyConfiguration) WithExpanders(values ...hypershif
 	for i := range values {
 		b.Expanders = append(b.Expanders, values[i])
 	}
+	return b
+}
+
+// WithKubeClientQPS sets the KubeClientQPS field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KubeClientQPS field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithKubeClientQPS(value int32) *ClusterAutoscalingApplyConfiguration {
+	b.KubeClientQPS = &value
+	return b
+}
+
+// WithKubeClientBurst sets the KubeClientBurst field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KubeClientBurst field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithKubeClientBurst(value int32) *ClusterAutoscalingApplyConfiguration {
+	b.KubeClientBurst = &value
 	return b
 }

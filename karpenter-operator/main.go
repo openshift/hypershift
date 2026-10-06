@@ -10,8 +10,8 @@ import (
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenterignition"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/util"
 
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
@@ -170,7 +170,7 @@ func run(ctx context.Context) error {
 	imageRegistryOverrides := map[string][]string{}
 	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
 	if ok {
-		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+		imageRegistryOverrides = imageregistry.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
 	}
 	for registry, override := range registryOverrides {
 		if _, exists := imageRegistryOverrides[registry]; !exists {
@@ -192,7 +192,7 @@ func run(ctx context.Context) error {
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
 
-	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+	imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
 

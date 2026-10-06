@@ -407,6 +407,18 @@ const (
 	// without triggering an unexpected update of KubeVirt VMs.
 	NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-topology-spread-constraints"
 
+	// NodePoolSupportsKubevirtArchitectureAnnotation indicates that it is safe to set the VMI
+	// Architecture field and inject the kubernetes.io/arch NodeSelector on KubeVirt VMs in
+	// this NodePool without triggering an unexpected fleet-wide rolling update.
+	//
+	// Because nodePool.Spec.Arch has +kubebuilder:default:=amd64, every existing NodePool
+	// already carries Arch="amd64". Setting Architecture="amd64" on the VMI spec changes the
+	// JSON-serialised KubevirtMachineTemplateSpec, which changes the hash-derived template name
+	// and causes CAPI to replace all VMs — identical in impact to the TopologySpreadConstraints
+	// migration. The annotation is only set for new NodePools or NodePools already undergoing a
+	// version update, so idle existing NodePools are never unexpectedly disrupted.
+	NodePoolSupportsKubevirtArchitectureAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-architecture"
+
 	// IsKubeVirtRHCOSVolumeLabelName labels rhcos DataVolumes and PVCs, to be able to filter them, e.g. for backup
 	IsKubeVirtRHCOSVolumeLabelName = "hypershift.openshift.io/is-kubevirt-rhcos"
 
@@ -543,7 +555,7 @@ type HostedClusterSpec struct {
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
 	// The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
 	// Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
-	// Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+	// Attempting to use a release with a skew against a NodePool release bigger than N-3 for the y-stream will result in leaving the NodePool in an unsupported state.
 	// Changing this field will trigger a rollout of the control plane components.
 	// The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.
 	// +required
@@ -1991,6 +2003,28 @@ type ClusterAutoscaling struct {
 	//
 	// +optional
 	Expanders []ExpanderString `json:"expanders,omitempty"`
+
+	// kubeClientQPS sets the "--kube-client-qps" flag on cluster-autoscaler.
+	// Controls the maximum queries-per-second the autoscaler may send to the
+	// kube-apiserver. Valid values are -1 through 1000.
+	// When set to -1, client-side rate limiting is disabled.
+	// When set to 0, the flag is passed but client-go applies its default QPS of 5.
+	// When omitted, the flag is not set and the autoscaler uses its default (5).
+	//
+	// +kubebuilder:validation:Minimum=-1
+	// +kubebuilder:validation:Maximum=1000
+	// +optional
+	KubeClientQPS *int32 `json:"kubeClientQPS,omitempty"`
+
+	// kubeClientBurst sets the "--kube-client-burst" flag on cluster-autoscaler.
+	// Controls the maximum burst of queries to the kube-apiserver.
+	// Valid values are 1 through 2000.
+	// When omitted, the flag is not set and the autoscaler uses its default (10).
+	//
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2000
+	// +optional
+	KubeClientBurst int32 `json:"kubeClientBurst,omitempty"`
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance

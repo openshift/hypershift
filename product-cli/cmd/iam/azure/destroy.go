@@ -1,14 +1,29 @@
 package azure
 
 import (
+	"context"
+
 	hypershiftazure "github.com/openshift/hypershift/cmd/infra/azure"
 	"github.com/openshift/hypershift/cmd/log"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
 
+// destroyIAMFunc destroys the Azure IAM resources described by opts. It is a
+// parameter of newDestroyCommand so tests can exercise the command's control
+// flow -- flag binding, validation ordering and error propagation -- without
+// reaching Azure.
+type destroyIAMFunc func(ctx context.Context, opts *hypershiftazure.DestroyIAMOptions, l logr.Logger) error
+
 // NewDestroyCommand creates the Azure IAM destroy command for the product CLI
 func NewDestroyCommand() *cobra.Command {
+	return newDestroyCommand(func(ctx context.Context, opts *hypershiftazure.DestroyIAMOptions, l logr.Logger) error {
+		return opts.Run(ctx, l)
+	})
+}
+
+func newDestroyCommand(destroyIAM destroyIAMFunc) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "azure",
 		Short:        "Destroys Azure managed identities and federated credentials for a HostedCluster",
@@ -29,7 +44,7 @@ func NewDestroyCommand() *cobra.Command {
 		if err := opts.Validate(); err != nil {
 			return err
 		}
-		if err := opts.Run(cmd.Context(), l); err != nil {
+		if err := destroyIAM(cmd.Context(), opts, l); err != nil {
 			l.Error(err, "Failed to destroy IAM resources")
 			return err
 		}

@@ -1445,6 +1445,63 @@ The HO has an independent release cadence. For consumer products:
 
 - Our internal image build system builds from our latest commit in main several times a day.
 - To roll out a new build we apply the following process:
+
+#### Automated flow (recommended)
+
+The release process is managed via GitHub Actions workflows triggered by changes to `releases/tags.yaml`.
+
+1. **Request a tag**: Open a PR adding an entry to `releases/tags.yaml`:
+
+    ```yaml
+    tags:
+      - name: "v0.1.47"
+        commit: "abc123def456789..."  # Full 40-char SHA from main
+        description: "HO release for ROSA 4.17.8 rollout"
+    ```
+
+2. **Validation**: The `validate-tag-request` workflow automatically validates:
+    - Tag name is valid semver (`v<major>.<minor>.<patch>`)
+    - Commit SHA exists and is reachable from `main`
+    - Tag does not already exist
+    - No duplicate tag names in the manifest
+
+3. **Tag creation**: Once the PR is reviewed and merged, the `create-tag` workflow creates an annotated git tag at the specified commit and pushes it.
+
+4. **Draft release**: The tag push triggers `create-release`, which:
+    - Generates release notes from conventional commit messages using git-cliff
+    - Builds a source tarball with SHA256 checksum
+    - Creates a **draft** GitHub Release
+
+#### Rehearsing workflow changes
+
+The release workflows use reusable workflow files pinned to `@main`. Because GitHub Actions resolves reusable workflows from the default branch, changes to workflow YAML cannot be tested via normal PR CI.
+
+A dedicated **Rehearse Release Workflows** (`rehearse-release-workflows.yaml`) workflow exists to solve this. It inlines the same install and validation steps so they run from the branch code. There are two ways to trigger it:
+
+**Automatic** — push to a branch named `fix/release-workflow-*` that modifies any
+`*release*` or `*tag*` workflow file:
+
+```bash
+git checkout -b fix/release-workflow-my-change
+# ... edit workflow files ...
+git push origin fix/release-workflow-my-change
+# The rehearsal workflow triggers automatically and results appear in the Actions tab.
+```
+
+**Manual** — once the rehearsal workflow exists on `main`, trigger it on any branch:
+
+```bash
+gh workflow run rehearse-release-workflows.yaml --ref my-branch
+```
+
+The rehearsal is read-only (`permissions: contents: read`) — it installs tools,
+parses `releases/tags.yaml`, and generates sample release notes, but never creates
+tags or releases.
+
+#### Legacy manual flow
+
+For cases where the automated flow is not available:
+
   - Create a git tag for the commit belonging to the image to be rolled out:
     - `git co $commit-sha`
     - `git tag v0.1.1`
@@ -1452,6 +1509,8 @@ The HO has an independent release cadence. For consumer products:
   - Generate release notes:
     - `FROM=v0.1.0 TO=v0.1.1 make release`
     - Use the output to create the PR for bump the new image in the product gitOps repo. E.g.
+
+### Release notes sample
 
 This is a sample of how the release notes looks like added to the PR:
 
@@ -2597,7 +2656,7 @@ graph LR
 ```
 
 - `controlPlaneRelease`: allows patching management-side components without touching the data plane
-- NodePool releases can be updated independently (within N-2 y-stream skew)
+- NodePool releases can be updated independently (within N-3 y-stream skew)
 
 ### Deletion
 
@@ -4620,7 +4679,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
-- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The Control Plane Operator creates/seeds `combined-pull-secret` from `pull-secret` before CPOv2 components reconcile so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret for ongoing merge and revert updates.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -7009,6 +7068,8 @@ oc patch hostedcluster -n <HOSTED_CLUSTER_NAMESPACE> <HOSTED_CLUSTER_NAME> --typ
 | `maxPodGracePeriod` | int | 600 | Maximum seconds to wait for graceful pod termination before scaling down. |
 | `maxNodeProvisionTime` | string | 15m | Maximum time to wait for a node to provision, in Go duration format (e.g., `15m`, `20m`). |
 | `podPriorityThreshold` | int | -10 | Pods with priority below this threshold won't trigger scale-up. |
+| `kubeClientQPS` | int | 5 | Maximum queries-per-second the autoscaler may send to the kube-apiserver (`--kube-client-qps`). Must be between -1 and 1000. `-1` disables client-side rate limiting; `0` uses the client-go default QPS of 5; `1000` is the maximum. When omitted, the flag is not set. |
+| `kubeClientBurst` | int | 10 | Maximum burst of queries to the kube-apiserver (`--kube-client-burst`). Must be between 1 and 2000. `1` is the minimum; `2000` is the maximum. When omitted, the flag is not set. |
 
 !!! note
     Defaults listed in the configuration reference tables represent the cluster autoscaler's effective behavior when the field is omitted. The only API-enforced default is `scaling`, which defaults to `ScaleUpAndScaleDown`.
@@ -8315,7 +8376,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
-- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The Control Plane Operator creates/seeds `combined-pull-secret` from `pull-secret` before CPOv2 components reconcile so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret for ongoing merge and revert updates.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -11567,7 +11628,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
-- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The Control Plane Operator creates/seeds `combined-pull-secret` from `pull-secret` before CPOv2 components reconcile so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret for ongoing merge and revert updates.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -16872,7 +16933,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
-- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The Control Plane Operator creates/seeds `combined-pull-secret` from `pull-secret` before CPOv2 components reconcile so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret for ongoing merge and revert updates.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -26644,6 +26705,7 @@ GCP hosted clusters use a **two-project model** that mirrors the production arch
 - Create GCP Infrastructure — Create network infrastructure (VPC, subnet)
 - Create GCP IAM Resources — Create WIF pool, OIDC provider, and service accounts
 - Create a GCP Hosted Cluster — Deploy your first hosted cluster
+- GCP Workload Identity Webhook — Understand pod mutation for WIF credentials
 - Configure Image Registry — Verify, configure, or troubleshoot the GCS-backed image registry
 - E2E GKE CI Job — CI job for validating GCP platform changes
 
@@ -26959,6 +27021,293 @@ oc get pods -n hypershift
 
 ---
 
+## Source: docs/content/how-to/gcp/workload-identity-webhook.md
+
+# GCP Workload Identity Webhook
+
+The GCP workload identity webhook mutates hosted cluster pods at admission time so containers can authenticate to Google Cloud through Workload Identity Federation (WIF). It uses annotations on a pod's Kubernetes `ServiceAccount` to decide whether and how to inject GCP credential configuration.
+
+In HyperShift, the webhook runs as a sidecar in the hosted cluster's `kube-apiserver` pod. The hosted cluster `MutatingWebhookConfiguration` points to `https://127.0.0.1:9443/mutate-v1-pod`, so admission calls are handled locally by the webhook sidecar in the same pod as the API server.
+
+## Webhook Configuration
+
+For GCP hosted clusters, HyperShift starts the webhook with these key arguments:
+
+```text
+--annotation-prefix=cloud.google.com
+--gcp-default-region=<hosted-control-plane GCP region>
+--kubeconfig=/var/run/app/kubeconfig/kubeconfig
+--token-audience=openshift
+```
+
+This means:
+
+- WIF annotations use the `cloud.google.com` prefix.
+- The default projected token audience is `openshift`.
+- The default Cloud SDK region is the hosted control plane's GCP region.
+- The webhook talks to the hosted cluster API through a local kubeconfig.
+
+HCCO creates the hosted cluster `MutatingWebhookConfiguration` with one webhook:
+
+```yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: gcp-workload-identity-federation-webhook
+webhooks:
+- name: pod-identity-webhook.gcp.mutate.io
+  admissionReviewVersions:
+  - v1
+  clientConfig:
+    url: https://127.0.0.1:9443/mutate-v1-pod
+    caBundle: <root CA bundle>
+  failurePolicy: Ignore
+  rules:
+  - operations:
+    - CREATE
+    apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    resources:
+    - pods
+  sideEffects: None
+```
+
+The webhook applies to pod `CREATE` admission requests. If the webhook is unavailable, `failurePolicy: Ignore` lets pod creation continue without mutation.
+
+## Admission Flow
+
+For each pod `CREATE` request, the webhook does the following:
+
+1. Decodes the pod admission request.
+2. Allows the pod without mutation if `spec.serviceAccountName` is empty.
+3. Fetches the referenced `ServiceAccount` from the pod namespace.
+4. Allows the pod without mutation if the `ServiceAccount` does not exist.
+5. Reads GCP WIF annotations from the `ServiceAccount`.
+6. Allows the pod without mutation if neither required WIF annotation is present.
+7. Rejects the admission request if only one required annotation is present or if an annotation is invalid.
+8. Mutates the pod and returns a JSON patch when the WIF configuration is valid.
+
+Because the webhook configuration uses `failurePolicy: Ignore`, webhook transport failures are ignored by kube-apiserver. Validation errors returned by the webhook are still webhook responses, so callers should treat invalid annotations as pod admission failures.
+
+## Required ServiceAccount Annotations
+
+To enable mutation, annotate the pod's Kubernetes `ServiceAccount` with both required annotations:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: app
+  namespace: example
+  annotations:
+    cloud.google.com/workload-identity-provider: projects/<project-number>/locations/<location>/workloadIdentityPools/<pool-id>/providers/<provider-id>
+    cloud.google.com/service-account-email: <gcp-service-account>@<project>.iam.gserviceaccount.com
+```
+
+The `cloud.google.com/workload-identity-provider` value must use this form:
+
+```text
+projects/{ProjectNumber}/locations/{Location}/workloadIdentityPools/{PoolId}/providers/{ProviderId}
+```
+
+If both required annotations are absent, the webhook does nothing. If only one is present, the webhook returns an error.
+
+## Optional ServiceAccount Annotations
+
+The webhook also supports these optional `ServiceAccount` annotations:
+
+```yaml
+metadata:
+  annotations:
+    cloud.google.com/audience: <audience>
+    cloud.google.com/token-expiration: "<seconds>"
+    cloud.google.com/gcloud-run-as-user: "<uid>"
+    cloud.google.com/injection-mode: direct|gcloud
+```
+
+Defaults in HyperShift:
+
+- `cloud.google.com/audience` defaults to `openshift`.
+- `cloud.google.com/token-expiration` defaults to 24 hours.
+- Token expiration has a minimum of 1 hour.
+- `cloud.google.com/injection-mode` defaults to `gcloud`.
+- `cloud.google.com/gcloud-run-as-user` is unset by default.
+
+## Optional Pod Annotations
+
+Pods can override or refine mutation with these annotations:
+
+```yaml
+metadata:
+  annotations:
+    cloud.google.com/token-expiration: "<seconds>"
+    cloud.google.com/skip-containers: "container-a,init-container-b"
+```
+
+The pod-level `cloud.google.com/token-expiration` annotation overrides the `ServiceAccount` token expiration. The `cloud.google.com/skip-containers` annotation prevents the webhook from adding environment variables and volume mounts to the named init containers or containers.
+
+## Common Mutations
+
+For valid WIF configuration, the webhook adds or replaces a projected Kubernetes service account token volume:
+
+```yaml
+volumes:
+- name: gcp-iam-token
+  projected:
+    defaultMode: 0440
+    sources:
+    - serviceAccountToken:
+        audience: openshift
+        expirationSeconds: <resolved-expiration>
+        path: token
+```
+
+The token is mounted at:
+
+```text
+/var/run/secrets/sts.googleapis.com/serviceaccount/token
+```
+
+For every non-skipped init container and container, the webhook adds the token volume mount and injects these environment variables if they are not already present:
+
+```yaml
+env:
+- name: CLOUDSDK_COMPUTE_REGION
+  value: <hosted-control-plane GCP region>
+- name: CLOUDSDK_CORE_PROJECT
+  value: <project parsed from service-account-email>
+```
+
+The `CLOUDSDK_CORE_PROJECT` value is parsed from the GCP service account email. For example, `app@my-project.iam.gserviceaccount.com` yields `my-project`.
+
+## GCloud Injection Mode
+
+`gcloud` mode is the default when `cloud.google.com/injection-mode` is absent or set to `gcloud`.
+
+In this mode, the webhook adds an emptyDir volume for Cloud SDK configuration:
+
+```yaml
+volumes:
+- name: gcloud-config
+  emptyDir: {}
+```
+
+It prepends or replaces an init container named `gcloud-setup`:
+
+```yaml
+initContainers:
+- name: gcloud-setup
+  image: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+  command:
+  - sh
+  - -c
+  - |
+    gcloud iam workload-identity-pools create-cred-config \
+      $(GCP_WORKLOAD_IDENTITY_PROVIDER) \
+      --service-account=$(GCP_SERVICE_ACCOUNT) \
+      --output-file=$(CLOUDSDK_CONFIG)/federation.json \
+      --credential-source-file=/var/run/secrets/sts.googleapis.com/serviceaccount/token
+    gcloud auth login --cred-file=$(CLOUDSDK_CONFIG)/federation.json
+```
+
+It injects these fields into workload containers:
+
+```yaml
+env:
+- name: GOOGLE_APPLICATION_CREDENTIALS
+  value: /var/run/secrets/gcloud/config/federation.json
+- name: CLOUDSDK_CONFIG
+  value: /var/run/secrets/gcloud/config
+volumeMounts:
+- name: gcp-iam-token
+  mountPath: /var/run/secrets/sts.googleapis.com/serviceaccount
+  readOnly: true
+- name: gcloud-config
+  mountPath: /var/run/secrets/gcloud/config
+```
+
+Use this mode when the pod should rely on the Cloud SDK init container to generate the external account credentials file before workload containers start.
+
+## Direct Injection Mode
+
+Direct mode is enabled with this `ServiceAccount` annotation:
+
+```yaml
+metadata:
+  annotations:
+    cloud.google.com/injection-mode: direct
+```
+
+In direct mode, the webhook does not inject a `gcloud-setup` init container. Instead, it builds the external account credentials JSON itself and stores it in a pod annotation:
+
+```yaml
+metadata:
+  annotations:
+    cloud.google.com/external-credentials-json: |-
+      {
+        "type": "external_account",
+        "audience": "//iam.googleapis.com/projects/<project-number>/locations/<location>/workloadIdentityPools/<pool-id>/providers/<provider-id>",
+        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+        "token_url": "https://sts.googleapis.com/v1/token",
+        "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/<gcp-service-account>@<project>.iam.gserviceaccount.com:generateAccessToken",
+        "credential_source": {
+          "file": "/var/run/secrets/sts.googleapis.com/serviceaccount/token",
+          "format": {
+            "type": "text"
+          }
+        }
+      }
+```
+
+It mounts that annotation through a DownwardAPI volume:
+
+```yaml
+volumes:
+- name: external-credential-config
+  downwardAPI:
+    defaultMode: 0440
+    items:
+    - path: federation.json
+      fieldRef:
+        apiVersion: v1
+        fieldPath: metadata.annotations['cloud.google.com/external-credentials-json']
+```
+
+It injects these fields into workload containers:
+
+```yaml
+env:
+- name: GOOGLE_APPLICATION_CREDENTIALS
+  value: /var/run/secrets/workload-identity/federation.json
+volumeMounts:
+- name: gcp-iam-token
+  mountPath: /var/run/secrets/sts.googleapis.com/serviceaccount
+  readOnly: true
+- name: external-credential-config
+  mountPath: /var/run/secrets/workload-identity
+  readOnly: true
+```
+
+Direct mode avoids the Cloud SDK setup init container and is the mode used by HyperShift's GCP WIF webhook e2e test.
+
+## Result
+
+After mutation, an annotated workload gets:
+
+- A projected Kubernetes service account token with the configured audience.
+- A Google external account credentials file.
+- `GOOGLE_APPLICATION_CREDENTIALS` pointing to that credentials file.
+- Optional Cloud SDK region and project environment variables.
+- In `gcloud` mode, an init container that creates and logs in with the credentials file.
+- In `direct` mode, no init container; the credentials JSON is generated by the webhook and mounted through DownwardAPI.
+
+The application can then use standard Google authentication libraries that read `GOOGLE_APPLICATION_CREDENTIALS` to exchange the Kubernetes token through GCP Security Token Service and impersonate the configured Google service account.
+
+
+---
+
 ## Source: docs/content/how-to/index.md
 
 ---
@@ -27176,7 +27525,30 @@ hcp create cluster kubevirt \
 
 In this example, the KubeVirt VMs will have interfaces attached to the networks
 for the NetworkAttachmentDefinitions network1 and network2 which reside in
-namespace my-namespace.
+namespace my-namespace (which must be the HCP namespace where virt-launcher
+pods run — see the important note below).
+
+!!! important "NAD Namespace Requirement"
+    The NetworkAttachmentDefinition must be created in the namespace where
+    virt-launcher pods run — the **hosted control plane (HCP) namespace** — not
+    the HostedCluster namespace. The HCP namespace follows the pattern
+    `<hc-namespace>-<hc-name>` (with dots in the cluster name replaced by
+    hyphens). For external infrastructure configurations, use the namespace
+    specified in `Credentials.InfraNamespace`.
+
+    With Multus namespace isolation enabled (the OpenShift default), pods can
+    only reference NADs in their own namespace or in the `default` namespace.
+    Placing the NAD in the HostedCluster namespace will result in Multus
+    rejecting the reference at pod sandbox creation time.
+
+    To determine the correct namespace:
+
+    ```shell
+    # For centralized infrastructure (dots in cluster name become hyphens):
+    HCP_NS="${HC_NAMESPACE}-$(echo ${HC_NAME} | tr '.' '-')"
+    # For external infrastructure:
+    HCP_NS=$(oc get hostedcluster <name> -n <ns> -o jsonpath='{.spec.platform.kubevirt.credentials.infraNamespace}')
+    ```
 
 ## Using Secondary Network as Default
 
@@ -28125,6 +28497,36 @@ hcp create cluster kubevirt \
 In the example above, the KubeVirt VMs will only be scheduled to nodes that
  contain the labels labelKey1=labelVal1 and labelKey2=labelVal2.
 
+## Creating NodePools for a Specific Architecture
+
+On a multi-architecture KubeVirt infra cluster (one that has both amd64 and
+s390x nodes, for example), you can create additional NodePools that target a
+specific architecture using the `--arch` flag. The default NodePool created
+with the cluster uses the infra cluster's primary architecture; use this
+command to add a NodePool for a secondary architecture.
+
+```shell linenums="1"
+export CLUSTER_NAME=example
+export PULL_SECRET="$HOME/pull-secret"
+export MEM="6Gi"
+export CPU="2"
+export WORKER_COUNT="2"
+
+hcp create nodepool kubevirt \
+  --cluster-name $CLUSTER_NAME \
+  --name $CLUSTER_NAME-s390x \
+  --replicas $WORKER_COUNT \
+  --pull-secret $PULL_SECRET \
+  --memory $MEM \
+  --cores $CPU \
+  --arch s390x
+```
+
+When `--arch` is set, the operator:
+
+- Sets the KubeVirt VM template `spec.architecture` field so the VM is provisioned with the correct architecture.
+- Injects a `kubernetes.io/arch` NodeSelector into the VM template so virt-launcher pods are scheduled only on infra nodes of the matching architecture.
+
 ## Scaling an existing NodePool
 
 Manually scale a NodePool using the `oc scale` command:
@@ -28521,7 +28923,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
-- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The Control Plane Operator creates/seeds `combined-pull-secret` from `pull-secret` before CPOv2 components reconcile so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret for ongoing merge and revert updates.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -30216,7 +30618,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
-- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The Control Plane Operator creates/seeds `combined-pull-secret` from `pull-secret` before CPOv2 components reconcile so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret for ongoing merge and revert updates.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -30835,7 +31237,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
-- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The Control Plane Operator creates/seeds `combined-pull-secret` from `pull-secret` before CPOv2 components reconcile so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret for ongoing merge and revert updates.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -32424,7 +32826,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
-- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The HyperShift operator bootstraps `combined-pull-secret` at HostedCluster creation time so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The Control Plane Operator creates/seeds `combined-pull-secret` from `pull-secret` before CPOv2 components reconcile so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret for ongoing merge and revert updates.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -41660,7 +42062,7 @@ Release
 This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
 The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
 Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
-Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+Attempting to use a release with a skew against a NodePool release bigger than N-3 for the y-stream will result in leaving the NodePool in an unsupported state.
 Changing this field will trigger a rollout of the control plane components.
 The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
@@ -42324,9 +42726,9 @@ Release
 <p>release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
 the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).</p>
 <p>Version-skew rules and effects:
-- The minor-version skew relative to the control-plane release must be &lt;= N-2.
-This is not currently enforced, but exceeding this limit is unsupported and
-may lead to unpredictable behavior.
+- The minor-version skew relative to the control-plane release must be &lt;= N-3.
+Exceeding this limit is unsupported and will cause the SupportedVersionSkew
+condition to report False.
 - If the specified release is higher than the HostedCluster&rsquo;s release, the
 NodePool will be degraded and the ValidReleaseImage condition will be false.
 - If the specified release is lower than the NodePool&rsquo;s current y-stream,
@@ -45421,10 +45823,11 @@ exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must ex
 HostedCluster.Spec.Platform.Azure.SubscriptionID.
 subnetID is immutable once set.
 The subnetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</code>.
-The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
 The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
 The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
+<p>MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </td>
 </tr>
 <tr>
@@ -45526,16 +45929,15 @@ string
 </em>
 </td>
 <td>
-<p>subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
-different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
-exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must exist under the same subscription ID,
-HostedCluster.Spec.Platform.Azure.SubscriptionID.
+<p>subnetID is the ID of an existing subnet where the HostedCluster&rsquo;s nodes will be created. It must exist in the same
+network as VnetID and under the same subscription as SubscriptionID.
 subnetID is immutable once set.
 The subnetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</code>.
-The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
 The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
 The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
+<p>MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </td>
 </tr>
 <tr>
@@ -45995,7 +46397,7 @@ This subnet must have privateLinkServiceNetworkPolicies disabled.
 If not provided, the controller will auto-create a NAT subnet in the HC&rsquo;s VNet.
 The expected format is:
 /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
-The maximum length is 355 characters.</p>
+The maximum length is 357 characters: 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </td>
 </tr>
 <tr>
@@ -46174,6 +46576,7 @@ Azure&rsquo;s API.</p>
 The expected format is:</p>
 <pre><code>/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
 </code></pre>
+<p>MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </p>
 ###AzureSubscriptionID { #hypershift.openshift.io/v1beta1.AzureSubscriptionID }
 <p>
@@ -46888,6 +47291,38 @@ Options include:
 * Random - selects a group randomly.
 If not specified, <code>[Priority, LeastWaste]</code> is the default.
 Maximum of 3 expanders can be specified.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeClientQPS</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeClientQPS sets the &ldquo;&ndash;kube-client-qps&rdquo; flag on cluster-autoscaler.
+Controls the maximum queries-per-second the autoscaler may send to the
+kube-apiserver. Valid values are -1 through 1000.
+When set to -1, client-side rate limiting is disabled.
+When set to 0, the flag is passed but client-go applies its default QPS of 5.
+When omitted, the flag is not set and the autoscaler uses its default (5).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeClientBurst</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeClientBurst sets the &ldquo;&ndash;kube-client-burst&rdquo; flag on cluster-autoscaler.
+Controls the maximum burst of queries to the kube-apiserver.
+Valid values are 1 through 2000.
+When omitted, the flag is not set and the autoscaler uses its default (10).</p>
 </td>
 </tr>
 </tbody>
@@ -50954,7 +51389,7 @@ Release
 This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
 The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
 Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
-Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+Attempting to use a release with a skew against a NodePool release bigger than N-3 for the y-stream will result in leaving the NodePool in an unsupported state.
 Changing this field will trigger a rollout of the control plane components.
 The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
@@ -56130,9 +56565,9 @@ Release
 <p>release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
 the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).</p>
 <p>Version-skew rules and effects:
-- The minor-version skew relative to the control-plane release must be &lt;= N-2.
-This is not currently enforced, but exceeding this limit is unsupported and
-may lead to unpredictable behavior.
+- The minor-version skew relative to the control-plane release must be &lt;= N-3.
+Exceeding this limit is unsupported and will cause the SupportedVersionSkew
+condition to report False.
 - If the specified release is higher than the HostedCluster&rsquo;s release, the
 NodePool will be degraded and the ValidReleaseImage condition will be false.
 - If the specified release is lower than the NodePool&rsquo;s current y-stream,

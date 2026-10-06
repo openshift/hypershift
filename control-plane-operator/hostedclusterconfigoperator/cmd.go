@@ -37,11 +37,11 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
@@ -268,7 +268,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	imageRegistryOverrides := map[string][]string{}
 	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
 	if ok {
-		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+		imageRegistryOverrides = imageregistry.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
 	}
 	if len(o.registryOverrides) > 0 {
 		if imageRegistryOverrides == nil {
@@ -295,7 +295,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
 
-	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+	imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
 

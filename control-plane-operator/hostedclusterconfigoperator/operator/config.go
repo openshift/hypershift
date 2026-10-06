@@ -12,10 +12,10 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
@@ -78,7 +78,7 @@ type HostedClusterConfigOperatorConfig struct {
 	OAuthPort                     int32
 	OperateOnReleaseImage         string
 	EnableCIDebugOutput           bool
-	ImageMetaDataProvider         util.ImageMetadataProvider
+	ImageMetaDataProvider         imageregistry.ImageMetadataProvider
 	ManagementClusterCapabilities capabilities.CapabiltyChecker
 
 	kubeClient kubeclient.Interface

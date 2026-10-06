@@ -465,7 +465,7 @@ Release
 This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
 The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
 Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
-Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+Attempting to use a release with a skew against a NodePool release bigger than N-3 for the y-stream will result in leaving the NodePool in an unsupported state.
 Changing this field will trigger a rollout of the control plane components.
 The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
@@ -1129,9 +1129,9 @@ Release
 <p>release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
 the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).</p>
 <p>Version-skew rules and effects:
-- The minor-version skew relative to the control-plane release must be &lt;= N-2.
-This is not currently enforced, but exceeding this limit is unsupported and
-may lead to unpredictable behavior.
+- The minor-version skew relative to the control-plane release must be &lt;= N-3.
+Exceeding this limit is unsupported and will cause the SupportedVersionSkew
+condition to report False.
 - If the specified release is higher than the HostedCluster&rsquo;s release, the
 NodePool will be degraded and the ValidReleaseImage condition will be false.
 - If the specified release is lower than the NodePool&rsquo;s current y-stream,
@@ -4226,10 +4226,11 @@ exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must ex
 HostedCluster.Spec.Platform.Azure.SubscriptionID.
 subnetID is immutable once set.
 The subnetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</code>.
-The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
 The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
 The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
+<p>MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </td>
 </tr>
 <tr>
@@ -4331,16 +4332,15 @@ string
 </em>
 </td>
 <td>
-<p>subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
-different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
-exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must exist under the same subscription ID,
-HostedCluster.Spec.Platform.Azure.SubscriptionID.
+<p>subnetID is the ID of an existing subnet where the HostedCluster&rsquo;s nodes will be created. It must exist in the same
+network as VnetID and under the same subscription as SubscriptionID.
 subnetID is immutable once set.
 The subnetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</code>.
-The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
 The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
 The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
+<p>MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </td>
 </tr>
 <tr>
@@ -4800,7 +4800,7 @@ This subnet must have privateLinkServiceNetworkPolicies disabled.
 If not provided, the controller will auto-create a NAT subnet in the HC&rsquo;s VNet.
 The expected format is:
 /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
-The maximum length is 355 characters.</p>
+The maximum length is 357 characters: 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </td>
 </tr>
 <tr>
@@ -4979,6 +4979,7 @@ Azure&rsquo;s API.</p>
 The expected format is:</p>
 <pre><code>/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
 </code></pre>
+<p>MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </p>
 ###AzureSubscriptionID { #hypershift.openshift.io/v1beta1.AzureSubscriptionID }
 <p>
@@ -5693,6 +5694,38 @@ Options include:
 * Random - selects a group randomly.
 If not specified, <code>[Priority, LeastWaste]</code> is the default.
 Maximum of 3 expanders can be specified.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeClientQPS</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeClientQPS sets the &ldquo;&ndash;kube-client-qps&rdquo; flag on cluster-autoscaler.
+Controls the maximum queries-per-second the autoscaler may send to the
+kube-apiserver. Valid values are -1 through 1000.
+When set to -1, client-side rate limiting is disabled.
+When set to 0, the flag is passed but client-go applies its default QPS of 5.
+When omitted, the flag is not set and the autoscaler uses its default (5).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeClientBurst</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeClientBurst sets the &ldquo;&ndash;kube-client-burst&rdquo; flag on cluster-autoscaler.
+Controls the maximum burst of queries to the kube-apiserver.
+Valid values are 1 through 2000.
+When omitted, the flag is not set and the autoscaler uses its default (10).</p>
 </td>
 </tr>
 </tbody>
@@ -9759,7 +9792,7 @@ Release
 This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
 The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
 Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
-Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+Attempting to use a release with a skew against a NodePool release bigger than N-3 for the y-stream will result in leaving the NodePool in an unsupported state.
 Changing this field will trigger a rollout of the control plane components.
 The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
@@ -14935,9 +14968,9 @@ Release
 <p>release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
 the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).</p>
 <p>Version-skew rules and effects:
-- The minor-version skew relative to the control-plane release must be &lt;= N-2.
-This is not currently enforced, but exceeding this limit is unsupported and
-may lead to unpredictable behavior.
+- The minor-version skew relative to the control-plane release must be &lt;= N-3.
+Exceeding this limit is unsupported and will cause the SupportedVersionSkew
+condition to report False.
 - If the specified release is higher than the HostedCluster&rsquo;s release, the
 NodePool will be degraded and the ValidReleaseImage condition will be false.
 - If the specified release is lower than the NodePool&rsquo;s current y-stream,

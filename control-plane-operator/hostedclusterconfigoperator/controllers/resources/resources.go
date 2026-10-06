@@ -51,6 +51,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
@@ -157,7 +158,7 @@ type reconciler struct {
 	oauthPort                 int32
 	versions                  map[string]string
 	operateOnReleaseImage     string
-	ImageMetaDataProvider     util.ImageMetadataProvider
+	ImageMetaDataProvider     imageregistry.ImageMetadataProvider
 	cleanupTracker            *reconcilerpolicy.CleanupTracker
 
 	// exposed for unit test since GetLogs looks hard to be mocked
@@ -566,6 +567,9 @@ func (r *reconciler) reconcilePlatformSpecificResources(ctx context.Context, log
 		log.Info("reconciling Azure specific resources")
 		errs = append(errs, r.reconcileAzureCloudNodeManager(ctx, releaseImage.ComponentImages()["azure-cloud-node-manager"])...)
 		errs = append(errs, r.reconcileAzureIdentityWebhook(ctx)...)
+	case hyperv1.GCPPlatform:
+		log.Info("reconciling GCP specific resources")
+		errs = append(errs, r.reconcileGCPIdentityWebhook(ctx)...)
 	}
 	return errs
 }
@@ -1313,117 +1317,11 @@ func (r *reconciler) reconcileNamespaces(ctx context.Context, hcp *hyperv1.Hoste
 	return utilerrors.NewAggregate(errs)
 }
 
-type manifestAndReconcile[o client.Object] struct {
-	manifest  func() o
-	reconcile func(o) error
-}
-
-func (m manifestAndReconcile[o]) upsert(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
-	obj := m.manifest()
-	if _, err := createOrUpdate(ctx, client, obj, func() error {
-		return m.reconcile(obj)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile %T %s: %w", obj, obj.GetName(), err)
-	}
-
-	return nil
-}
-
-// getKey returns a unique identifier string for the manifest object,
-// combining Kind, Name, and optionally Namespace (if the object is namespaced).
-// This is useful for mapping capabilities to specific manifests while
-// avoiding conflicts between objects with the same name in different scopes
-// or of different kinds (e.g., Role vs RoleBinding).
-//
-// - For namespaced objects: "<namespace>/<name>/<kind>"
-// - For cluster-scoped objects: "<name>/<kind>"
-func (m manifestAndReconcile[o]) getKey() string {
-	obj := m.manifest()
-	gvk := obj.GetObjectKind().GroupVersionKind()
-	ns := obj.GetNamespace()
-	name := obj.GetName()
-	if ns != "" {
-		return fmt.Sprintf("%s/%s/%s", ns, name, gvk.Kind)
-	}
-	return fmt.Sprintf("%s/%s", name, gvk.Kind) // cluster-scoped
-}
-
-type manifestReconciler interface {
-	upsert(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error
-	getKey() string
-}
-
 func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	rbacReconciler := []manifestReconciler{
-		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.CSRApproverClusterRole, reconcile: rbac.ReconcileCSRApproverClusterRole},
-		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.IngressToRouteControllerClusterRole, reconcile: rbac.ReconcileIngressToRouteControllerClusterRole},
-		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.NamespaceSecurityAllocationControllerClusterRole, reconcile: rbac.ReconcileNamespaceSecurityAllocationControllerClusterRole},
-
-		manifestAndReconcile[*rbacv1.Role]{manifest: manifests.IngressToRouteControllerRole, reconcile: rbac.ReconcileReconcileIngressToRouteControllerRole},
-
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.CSRApproverClusterRoleBinding, reconcile: rbac.ReconcileCSRApproverClusterRoleBinding},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.IngressToRouteControllerClusterRoleBinding, reconcile: rbac.ReconcileIngressToRouteControllerClusterRoleBinding},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.NamespaceSecurityAllocationControllerClusterRoleBinding, reconcile: rbac.ReconcileNamespaceSecurityAllocationControllerClusterRoleBinding},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.NodeBootstrapperClusterRoleBinding, reconcile: rbac.ReconcileNodeBootstrapperClusterRoleBinding},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.CSRRenewalClusterRoleBinding, reconcile: rbac.ReconcileCSRRenewalClusterRoleBinding},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.MetricsClientClusterRoleBinding, reconcile: rbac.ReconcileGenericMetricsClusterRoleBinding("system:serviceaccount:hypershift:prometheus")},
-		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.MetricsResourcesClusterRole, reconcile: rbac.ReconcileMetricsResourcesClusterRole},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.MetricsResourcesClusterRoleBinding, reconcile: rbac.ReconcileMetricsResourcesClusterRoleBinding},
-
-		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.IngressToRouteControllerRoleBinding, reconcile: rbac.ReconcileIngressToRouteControllerRoleBinding},
-
-		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.AuthenticatedReaderForAuthenticatedUserRolebinding, reconcile: rbac.ReconcileAuthenticatedReaderForAuthenticatedUserRolebinding},
-
-		manifestAndReconcile[*rbacv1.Role]{manifest: manifests.KCMLeaderElectionRole, reconcile: rbac.ReconcileKCMLeaderElectionRole},
-		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.KCMLeaderElectionRoleBinding, reconcile: rbac.ReconcileKCMLeaderElectionRoleBinding},
-
-		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.ImageTriggerControllerClusterRole, reconcile: rbac.ReconcileImageTriggerControllerClusterRole},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.ImageTriggerControllerClusterRoleBinding, reconcile: rbac.ReconcileImageTriggerControllerClusterRoleBinding},
-
-		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.PodSecurityAdmissionLabelSyncerControllerClusterRole, reconcile: rbac.ReconcilePodSecurityAdmissionLabelSyncerControllerClusterRole},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.PodSecurityAdmissionLabelSyncerControllerRoleBinding, reconcile: rbac.ReconcilePodSecurityAdmissionLabelSyncerControllerRoleBinding},
-
-		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.PriviligedNamespacesPSALabelSyncerClusterRole, reconcile: rbac.ReconcilePriviligedNamespacesPSALabelSyncerClusterRole},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.PriviligedNamespacesPSALabelSyncerClusterRoleBinding, reconcile: rbac.ReconcilePriviligedNamespacesPSALabelSyncerClusterRoleBinding},
-
-		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.DeployerClusterRole, reconcile: rbac.ReconcileDeployerClusterRole},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.DeployerClusterRoleBinding, reconcile: rbac.ReconcileDeployerClusterRoleBinding},
-
-		// ClusterRole and ClusterRoleBinding for useroauthaccesstokens referenced from https://github.com/openshift/cluster-authentication-operator/tree/bebf0fd3932be12594227b415fecd5d664611bc0/bindata/oauth-apiserver/RBAC
-		// Let this go by for now
-		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.UserOAuthClusterRole, reconcile: rbac.ReconcileUserOAuthClusterRole},
-		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.UserOAuthClusterRoleBinding, reconcile: rbac.ReconcileUserOAuthClusterRoleBinding},
-
-		manifestAndReconcile[*rbacv1.Role]{manifest: manifests.KASConnectionCheckerRole, reconcile: rbac.ReconcileKASConnectionCheckerRole},
-		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.KASConnectionCheckerRoleBinding, reconcile: rbac.ReconcileKASConnectionCheckerRoleBinding},
-	}
-
-	if azureutil.IsAroHCPByHCP(hcp) {
-		rbacReconciler = append(rbacReconciler,
-			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.AzureDiskCSIDriverNodeServiceAccountRole, reconcile: rbac.ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRole},
-			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.AzureDiskCSIDriverNodeServiceAccountRoleBinding, reconcile: rbac.ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRoleBinding},
-
-			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.AzureFileCSIDriverNodeServiceAccountRole, reconcile: rbac.ReconcileAzureFileCSIDriverNodeServiceAccountClusterRole},
-			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.AzureFileCSIDriverNodeServiceAccountRoleBinding, reconcile: rbac.ReconcileAzureFileCSIDriverNodeServiceAccountClusterRoleBinding},
-
-			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.CloudNetworkConfigControllerServiceAccountRole, reconcile: rbac.ReconcileCloudNetworkConfigControllerServiceAccountClusterRole},
-			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.CloudNetworkConfigControllerServiceAccountRoleBinding, reconcile: rbac.ReconcileCloudNetworkConfigControllerServiceAccountClusterRoleBinding},
-		)
-	}
-
-	var errs []error
-	for _, m := range rbacReconciler {
-		mKey := m.getKey()
-		capability, found := manifests.RbacCapabilityMap[mKey]
-		if found && capability == hyperv1.IngressCapability && !capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
-			continue
-		}
-		if err := m.upsert(ctx, r.client, r.CreateOrUpdate); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	return utilerrors.NewAggregate(errs)
+	return rbac.Reconcile(ctx, r.client, r.CreateOrUpdate, rbac.ReconcileParams{
+		IngressEnabled: capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities),
+		IsAROHCP:       azureutil.IsAroHCPByHCP(hcp),
+	})
 }
 
 func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -2770,6 +2668,73 @@ func (r *reconciler) reconcileAzureIdentityWebhook(ctx context.Context) []error 
 					"azure.workload.identity/use": "true",
 				},
 			},
+			Rules: []admissionregistrationv1.RuleWithOperations{{
+				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
+				Rule: admissionregistrationv1.Rule{
+					APIGroups:   []string{""},
+					APIVersions: []string{"v1"},
+					Resources:   []string{"pods"},
+				},
+			}},
+			SideEffects: &sideEffectsNone,
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", webhook, webhook.Name, err))
+	}
+
+	return errs
+}
+
+func (r *reconciler) reconcileGCPIdentityWebhook(ctx context.Context) []error {
+	var errs []error
+	clusterRole := manifests.GCPWorkloadIdentityFederationWebhookClusterRole()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRole, func() error {
+		clusterRole.Rules = []rbacv1.PolicyRule{{
+			APIGroups: []string{""},
+			Resources: []string{"serviceaccounts"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRole, clusterRole.Name, err))
+	}
+
+	clusterRoleBinding := manifests.GCPWorkloadIdentityFederationWebhookClusterRoleBinding()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRoleBinding, func() error {
+		clusterRoleBinding.RoleRef.APIGroup = "rbac.authorization.k8s.io"
+		clusterRoleBinding.RoleRef.Kind = "ClusterRole"
+		clusterRoleBinding.RoleRef.Name = clusterRole.Name
+		clusterRoleBinding.Subjects = []rbacv1.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      "gcp-workload-identity-federation-webhook",
+			Namespace: "openshift-authentication",
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRoleBinding, clusterRoleBinding.Name, err))
+	}
+
+	ignoreFailurePolicy := admissionregistrationv1.Ignore
+	sideEffectsNone := admissionregistrationv1.SideEffectClassNone
+	matchEquivalent := admissionregistrationv1.Equivalent
+	reinvocationIfNeeded := admissionregistrationv1.IfNeededReinvocationPolicy
+	webhook := manifests.GCPWorkloadIdentityFederationWebhook()
+	if _, err := r.CreateOrUpdate(ctx, r.client, webhook, func() error {
+		webhook.Webhooks = []admissionregistrationv1.MutatingWebhook{{
+			AdmissionReviewVersions: []string{"v1"},
+			Name:                    "pod-identity-webhook.gcp.mutate.io",
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{
+				CABundle: []byte(r.rootCA),
+				URL:      ptr.To("https://127.0.0.1:9443/mutate-v1-pod"),
+			},
+			FailurePolicy:      &ignoreFailurePolicy,
+			MatchPolicy:        &matchEquivalent,
+			ReinvocationPolicy: &reinvocationIfNeeded,
 			Rules: []admissionregistrationv1.RuleWithOperations{{
 				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
 				Rule: admissionregistrationv1.Rule{

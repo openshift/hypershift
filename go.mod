@@ -63,15 +63,15 @@ require (
 	github.com/onsi/gomega v1.42.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/openshift/api v0.0.0-20260820183036-3db6c4b03286
-	github.com/openshift/client-go v0.0.0-20260715172546-dac61734e0ec
+	github.com/openshift/api v0.0.0-20260930220732-5588d747a72b
+	github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
 	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20260701110644-508d51a6f2bd
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 	github.com/openshift/hypershift/api v0.0.0-20260224085943-34e30acde920
-	github.com/openshift/library-go v0.0.0-20260716164659-7926d144f96a
+	github.com/openshift/library-go v0.0.0-20261001035620-0eb5e87de1be
 	github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b
 	github.com/operator-framework/api v0.45.0
 	github.com/pkg/errors v0.9.1
@@ -101,20 +101,20 @@ require (
 	gopkg.in/ini.v1 v1.67.3
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.36.3
-	k8s.io/apiextensions-apiserver v0.36.3
-	k8s.io/apimachinery v0.36.3
-	k8s.io/apiserver v0.36.3
+	k8s.io/api v0.37.1
+	k8s.io/apiextensions-apiserver v0.37.1
+	k8s.io/apimachinery v0.37.1
+	k8s.io/apiserver v0.37.1
 	k8s.io/autoscaler/vertical-pod-autoscaler v1.7.1
-	k8s.io/cli-runtime v0.36.3
-	k8s.io/client-go v0.36.3
-	k8s.io/component-base v0.36.3
+	k8s.io/cli-runtime v0.37.0
+	k8s.io/client-go v0.37.1
+	k8s.io/component-base v0.37.1
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.140.0
-	k8s.io/kube-aggregator v0.36.3
-	k8s.io/kube-scheduler v0.36.3
-	k8s.io/kubectl v0.36.3
-	k8s.io/pod-security-admission v0.36.3
+	k8s.io/kube-aggregator v0.37.1
+	k8s.io/kube-scheduler v0.37.0
+	k8s.io/kubectl v0.37.0
+	k8s.io/pod-security-admission v0.37.0
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	kubevirt.io/api v1.8.4
 	kubevirt.io/containerized-data-importer-api v1.65.0
@@ -125,7 +125,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
 	sigs.k8s.io/cluster-api-provider-openstack v0.14.8
-	sigs.k8s.io/controller-runtime v0.24.1
+	sigs.k8s.io/controller-runtime v0.25.0
 	sigs.k8s.io/karpenter v1.13.0
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96
 	sigs.k8s.io/secrets-store-csi-driver v1.6.1
@@ -293,12 +293,12 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	k8s.io/cloud-provider v0.36.2 // indirect
-	k8s.io/component-helpers v0.36.3 // indirect
+	k8s.io/component-helpers v0.37.0 // indirect
 	k8s.io/csi-translation-lib v0.36.2 // indirect
-	k8s.io/kms v0.37.0 // indirect
+	k8s.io/kms v0.37.1 // indirect
 	k8s.io/kube-openapi v0.35.1 // indirect
 	k8s.io/kubelet v0.36.2 // indirect
-	k8s.io/streaming v0.37.0 // indirect
+	k8s.io/streaming v0.37.1 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.2.4 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect

@@ -22,6 +22,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
@@ -345,11 +346,11 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
-	controlPlaneOperatorImage, err := hyperutil.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
-	controlPlaneOperatorImageLabels, err := hyperutil.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
+	controlPlaneOperatorImageLabels, err := imageregistry.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 	}
@@ -1210,16 +1211,6 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile pull secret: %w", err)
-		}
-		// Bootstrap the combined-pull-secret with original data if it doesn't exist yet.
-		// HCCO takes ownership after initial creation, merging additional credentials.
-		combinedDst := controlplaneoperator.CombinedPullSecret(controlPlaneNamespace.Name)
-		combinedDst.Type = corev1.SecretTypeDockerConfigJson
-		combinedDst.Data = map[string][]byte{
-			".dockerconfigjson": srcData,
-		}
-		if err := r.Client.Create(ctx, combinedDst); err != nil && !apierrors.IsAlreadyExists(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to bootstrap combined pull secret: %w", err)
 		}
 	}
 

@@ -84,6 +84,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
@@ -153,6 +154,17 @@ const (
 
 	resourceDeletionTimeout = 10 * time.Minute
 
+	// awsEndpointServiceCPOFinalizer is the finalizer the awsprivatelink controller adds to
+	// AWSEndpointServices; it is removed once the VPC endpoint in the guest VPC is deleted.
+	awsEndpointServiceCPOFinalizer = "hypershift.openshift.io/control-plane-operator-finalizer"
+
+	// awsEndpointServiceDeletionTimeout bounds how long HCP deletion waits for VPC
+	// endpoint cleanup. It matches the hypershift-operator's awsEndpointDeletionGracePeriod,
+	// whose fallback removes the finalizer once it elapses.
+	awsEndpointServiceDeletionTimeout = 10 * time.Minute
+
+	awsEndpointServiceDeletionRequeueInterval = 10 * time.Second
+
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
 
@@ -192,7 +204,7 @@ type HostedControlPlaneReconciler struct {
 	awsSession                              *aws.Config
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
-	ImageMetadataProvider                   util.ImageMetadataProvider
+	ImageMetadataProvider                   imageregistry.ImageMetadataProvider
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
 	clock                                   clock.Clock
@@ -428,6 +440,16 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 		}
 	}
 
+	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
+		done, err := r.deleteAWSEndpointServices(ctx, hostedControlPlane)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete AWSEndpointServices: %w", err)
+		}
+		if !done {
+			return ctrl.Result{RequeueAfter: awsEndpointServiceDeletionRequeueInterval}, nil
+		}
+	}
+
 	if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
 		originalHCP := hostedControlPlane.DeepCopy()
 		controllerutil.RemoveFinalizer(hostedControlPlane, finalizer)
@@ -643,8 +665,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != util.HCPControlPlaneReleaseImage(hostedControlPlane) {
-		r.Log.Info("releaseImage is " + util.HCPControlPlaneReleaseImage(hostedControlPlane) + ", but this operator is configured for " + r.OperateOnReleaseImage + ", skipping reconciliation")
+	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane) {
+		r.Log.Info("releaseImage is " + imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane) + ", but this operator is configured for " + r.OperateOnReleaseImage + ", skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
 
@@ -909,7 +931,7 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlaneVersionStatus(ctx co
 	}
 	// Resolve the release image to its digest so controlPlaneVersion records
 	// the immutable image reference, consistent with how CVO records images.
-	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, util.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
+	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
 		return fmt.Errorf("failed to resolve control plane release image digest: %w", err)
 	}
@@ -1182,7 +1204,7 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	}
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer lookupCancel()
-	return r.ReleaseProvider.Lookup(lookupCtx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
+	return r.ReleaseProvider.Lookup(lookupCtx, imageregistry.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {
@@ -1349,6 +1371,12 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		return fmt.Errorf("failed to reconcile default security group: %w", err)
 	}
 
+	// Ensure combined-pull-secret exists before CPOv2 components (e.g. OAPI) reconcile.
+	r.Log.Info("Reconciling combined pull secret")
+	if err := r.reconcileCombinedPullSecret(ctx, hcp, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile combined pull secret: %w", err)
+	}
+
 	cpContext := component.ControlPlaneContext{
 		Context:                        ctx,
 		Client:                         r.Client,
@@ -1424,6 +1452,38 @@ func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Co
 		return reconcileKubeadminPasswordSecret(kubeadminPasswordSecret, hcp, &kubeadminPassword)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kubeadminPasswordSecret: %w", err)
+	}
+	return nil
+}
+
+// reconcileCombinedPullSecret ensures combined-pull-secret exists in the HCP
+// namespace before CPOv2 components reconcile. It seeds the secret from
+// pull-secret only when the secret is missing or has no data, so HCCO-merged
+// credentials are never overwritten. This handles upgrade skew where an older
+// HyperShift Operator has not created the secret; HCCO takes ownership for
+// ongoing updates (merging additional registry credentials).
+func (r *HostedControlPlaneReconciler) reconcileCombinedPullSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull-secret for combined-pull-secret bootstrap: %w", err)
+	}
+	pullSecretData, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return fmt.Errorf("pull-secret %q is missing .dockerconfigjson key", pullSecret.Name)
+	}
+
+	combinedSecret := common.CombinedPullSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, combinedSecret, func() error {
+		if len(combinedSecret.Data[corev1.DockerConfigJsonKey]) > 0 {
+			return nil
+		}
+		combinedSecret.Type = corev1.SecretTypeDockerConfigJson
+		combinedSecret.Data = map[string][]byte{
+			corev1.DockerConfigJsonKey: pullSecretData,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile combined-pull-secret: %w", err)
 	}
 	return nil
 }
@@ -1928,6 +1988,13 @@ func (r *HostedControlPlaneReconciler) reconcileAWSPlatformCerts(ctx context.Con
 // GCP PD CSI metrics Services unconditionally. On a GKE management cluster there is no
 // service-ca-operator to honor that annotation, so self-sign unconditionally.
 func (r *HostedControlPlaneReconciler) reconcileGCPPlatformCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	gcpWorkloadIdentityFederationWebhookServingCert := manifests.GCPWorkloadIdentityFederationWebhookServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, gcpWorkloadIdentityFederationWebhookServingCert, func() error {
+		return pki.ReconcileGCPWorkloadIdentityFederationWebhookServingCert(gcpWorkloadIdentityFederationWebhookServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile %s secret: %w", gcpWorkloadIdentityFederationWebhookServingCert.Name, err)
+	}
+
 	gcpPDCsiDriverOperatorServingCert := manifests.GCPPDCsiDriverOperatorServingCert(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, gcpPDCsiDriverOperatorServingCert, func() error {
 		return pki.ReconcileGCPPDCsiDriverOperatorMetricsServingCertSecret(gcpPDCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
@@ -2785,6 +2852,60 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 		}
 	}
 	return false, nil
+}
+
+// deleteAWSEndpointServices deletes the AWSEndpointServices in the HCP namespace and reports
+// whether HCP deletion may proceed. It runs while the HCP (and therefore KAS, token-minter
+// credentials and SharedVPC role configuration) still exists, so the awsprivatelink controller
+// can remove the VPC endpoint in the guest VPC before the control plane is torn down.
+// Only the control-plane-operator finalizer is awaited; the hypershift-operator finalizer does
+// not depend on the HCP and is awaited by the HostedCluster controller. If cleanup does not finish
+// within awsEndpointServiceDeletionTimeout (or credentials are invalid), HCP deletion proceeds and
+// the HostedCluster controller's deleteAWSEndpointServices removes the leftover finalizer.
+func (r *HostedControlPlaneReconciler) deleteAWSEndpointServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	// The hypershift-operator gates its cleanup on GetCredentialStatus, which needs both
+	// ValidOIDCConfiguration and ValidAWSIdentityProvider. We only have ValidAWSIdentityProvider on
+	// the HCP (ValidOIDCConfiguration is a HostedCluster-level condition), so we key off that alone,
+	// like the other HCP credential checks here (hasValidCloudCredentials, security group creation).
+	// Skip only when it is explicitly False; Unknown or missing still tries, since cleanup is best effort.
+	if cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider)); cond != nil && cond.Status == metav1.ConditionFalse {
+		log.Info("Skipping AWSEndpointService cleanup because the AWS identity provider is invalid", "reason", cond.Reason)
+		return true, nil
+	}
+
+	awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
+	if err := r.List(ctx, awsEndpointServiceList, client.InNamespace(hcp.Namespace)); err != nil {
+		return false, fmt.Errorf("failed to list AWSEndpointServices: %w", err)
+	}
+
+	done := true
+	for i := range awsEndpointServiceList.Items {
+		awsEndpointService := &awsEndpointServiceList.Items[i]
+		if awsEndpointService.DeletionTimestamp.IsZero() {
+			log.Info("Deleting AWSEndpointService", "name", awsEndpointService.Name)
+			if err := r.Delete(ctx, awsEndpointService); err != nil && !apierrors.IsNotFound(err) {
+				return false, fmt.Errorf("failed to delete AWSEndpointService %s: %w", awsEndpointService.Name, err)
+			}
+			done = false
+			continue
+		}
+		if !controllerutil.ContainsFinalizer(awsEndpointService, awsEndpointServiceCPOFinalizer) {
+			continue
+		}
+		if elapsed := time.Since(awsEndpointService.DeletionTimestamp.Time); elapsed > awsEndpointServiceDeletionTimeout {
+			log.Error(fmt.Errorf("timed out after %s", duration.ShortHumanDuration(elapsed)),
+				"AWSEndpointService cleanup incomplete, VPC endpoint may be leaked; continuing HCP deletion",
+				"name", awsEndpointService.Name)
+			continue
+		}
+		done = false
+	}
+	if !done {
+		log.Info("Waiting for AWSEndpointService cleanup")
+	}
+	return done, nil
 }
 
 func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {

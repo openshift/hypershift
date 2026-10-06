@@ -50,7 +50,8 @@ data:
             "postBind": {},
             "multiPoint": {},
             "placementGenerate": {},
-            "placementScore": {}
+            "placementScore": {},
+            "podGroupPostFilter": {}
           }
         }
       ]

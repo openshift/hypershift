@@ -5,7 +5,7 @@ version: v1beta1
 tests:
   onCreate:
   # --- Azure VM image validation ---
-  - name: when marketplace is fully populated with imageGeneration set it should pass
+  - name: when marketplace is fully populated with a maximum-length braced subnetID it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: NodePool
@@ -31,7 +31,7 @@ tests:
                 imageGeneration: Gen2
             osDisk:
               diskStorageAccountType: Premium_LRS
-            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subnetID: "/subscriptions/{12345678-1234-5678-9012-123456789012}/resourceGroups/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr/providers/Microsoft.Network/virtualNetworks/vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/subnets/ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
           type: Azure
 
   - name: when marketplace is fully populated without imageGeneration it should pass

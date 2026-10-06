@@ -21,6 +21,7 @@ import (
 	npconstants "github.com/openshift/hypershift/pkg/nodepool"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
@@ -106,7 +107,7 @@ type NodePoolReconciler struct {
 	ReleaseProvider releaseinfo.Provider
 	upsert.CreateOrUpdateProvider
 	HypershiftOperatorImage string
-	ImageMetadataProvider   supportutil.ImageMetadataProvider
+	ImageMetadataProvider   imageregistry.ImageMetadataProvider
 	KubevirtInfraClients    kvinfra.KubevirtInfraClientMap
 	EC2Client               awsapi.EC2API
 	InstanceTypeProvider    instancetype.Provider
@@ -1121,7 +1122,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 	if err != nil {
 		return nil, err
 	}
-	controlPlaneOperatorImage, err := supportutil.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
@@ -1131,7 +1132,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
 
-	imageLabels := supportutil.ImageLabels(controlPlaneOperatorImageMetadata)
+	imageLabels := imageregistry.ImageLabels(controlPlaneOperatorImageMetadata)
 	result := &CPOCapabilities{}
 	_, result.DecompressAndDecodeConfig = imageLabels[controlPlaneOperatorManagesDecompressAndDecodeConfig]
 	_, result.CreateDefaultAWSSecurityGroup = imageLabels[controlPlaneOperatorCreatesDefaultAWSSecurityGroup]

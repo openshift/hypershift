@@ -39,6 +39,7 @@ import (
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -47,7 +48,6 @@ import (
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -115,7 +115,7 @@ func (rp fakeReleaseProvider) GetReleaseProvider() releaseinfo.ProviderWithOpenS
 	return rp.releaseProvider
 }
 
-func (rp fakeReleaseProvider) GetMetadataProvider() hyperutil.ImageMetadataProvider {
+func (rp fakeReleaseProvider) GetMetadataProvider() imageregistry.ImageMetadataProvider {
 	return &rp.metadataProvider
 }
 
@@ -9610,39 +9610,20 @@ func TestReconcilePullSecretSync(t *testing.T) {
 	validPullSecret := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)
 
 	tests := []struct {
-		name                     string
-		existingObjects          []crclient.Object
-		interceptorFuncs         *interceptor.Funcs
-		expectErr                bool
-		errContains              string
-		expectCombinedSecretData bool
-		combinedAlreadyExists    bool
+		name             string
+		existingObjects  []crclient.Object
+		interceptorFuncs *interceptor.Funcs
+		expectErr        bool
+		errContains      string
 	}{
 		{
-			name: "When pull secret exists with valid data, it should create both secrets",
+			name: "When pull secret exists with valid data, it should sync pull-secret to control plane namespace",
 			existingObjects: []crclient.Object{
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
 					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
 				},
 			},
-			expectCombinedSecretData: true,
-		},
-		{
-			name: "When combined-pull-secret already exists, it should not overwrite it",
-			existingObjects: []crclient.Object{
-				&corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
-					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
-				},
-				&corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: "cp-ns"},
-					Type:       corev1.SecretTypeDockerConfigJson,
-					Data:       map[string][]byte{".dockerconfigjson": []byte(`{"auths":{"merged.io":{"auth":"bWVyZ2Vk"}}}`)},
-				},
-			},
-			combinedAlreadyExists:    true,
-			expectCombinedSecretData: true,
 		},
 		{
 			name:        "When pull secret does not exist, it should return error",
@@ -9698,25 +9679,6 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			expectErr:   true,
 			errContains: "create pull-secret failed",
 		},
-		{
-			name: "When combined-pull-secret Create fails with non-AlreadyExists error, it should return error",
-			existingObjects: []crclient.Object{
-				&corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
-					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
-				},
-			},
-			interceptorFuncs: &interceptor.Funcs{
-				Create: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
-					if s, ok := obj.(*corev1.Secret); ok && s.Name == "combined-pull-secret" {
-						return fmt.Errorf("forbidden")
-					}
-					return c.Create(ctx, obj, opts...)
-				},
-			},
-			expectErr:   true,
-			errContains: "bootstrap combined pull secret",
-		},
 	}
 
 	for _, tc := range tests {
@@ -9758,17 +9720,6 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			pullSecret := controlplaneoperator.PullSecret("cp-ns")
 			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
 			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
-
-			combinedSecret := controlplaneoperator.CombinedPullSecret("cp-ns")
-			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(combinedSecret), combinedSecret)).To(Succeed())
-
-			if tc.combinedAlreadyExists {
-				g.Expect(combinedSecret.Data[".dockerconfigjson"]).To(Equal([]byte(`{"auths":{"merged.io":{"auth":"bWVyZ2Vk"}}}`)),
-					"combined-pull-secret should not be overwritten when it already exists")
-			} else {
-				g.Expect(combinedSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret),
-					"combined-pull-secret should contain original pull secret data on first creation")
-			}
 		})
 	}
 }

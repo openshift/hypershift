@@ -99,12 +99,12 @@ $(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
 
 KUBEAPILINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/kube-api-linter.so)
 $(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugin
-	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -buildmode=plugin -o $(KUBEAPILINTER_PLUGIN) sigs.k8s.io/kube-api-linter/pkg/plugin
+	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -buildmode=plugin -ldflags '-s -w' -o $(KUBEAPILINTER_PLUGIN) sigs.k8s.io/kube-api-linter/pkg/plugin
 
 HYPERSHIFTLINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/hypershiftlinter.so)
 HYPERSHIFTLINTER_SRC := $(shell find $(TOOLS_DIR)/hypershiftlinter -name '*.go' 2>/dev/null)
 $(HYPERSHIFTLINTER_PLUGIN): $(TOOLS_DIR)/go.mod $(HYPERSHIFTLINTER_SRC) # Build hypershiftlinter as Go plugin
-	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -a -buildmode=plugin -o $(HYPERSHIFTLINTER_PLUGIN) ./hypershiftlinter/cmd/plugin
+	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -a -buildmode=plugin -ldflags '-s -w' -o $(HYPERSHIFTLINTER_PLUGIN) ./hypershiftlinter/cmd/plugin
 
 # When not otherwise set, diff/lint against the upstream main branch.
 # This is always set in OpenShift CI.
@@ -454,7 +454,7 @@ ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envt
 ENVTEST_OCP_K8S_VERSIONS ?= 1.30.3 1.31.2 1.32.1 1.33.2 1.34.1 1.35.1 1.36.2
 
 # Vanilla Kubernetes versions for envtest (upstream kubebuilder assets)
-ENVTEST_KUBE_VERSIONS ?= 1.31.0 1.32.0 1.33.0 1.34.0 1.35.0 1.36.0
+ENVTEST_KUBE_VERSIONS ?= 1.31.0 1.32.0 1.33.0 1.34.0 1.35.0 1.36.0 1.37.0
 
 # Parallel envtest execution: 0 = sequential (default), N = N parallel jobs, MAX = all versions in parallel.
 ENVTEST_JOBS ?= 0

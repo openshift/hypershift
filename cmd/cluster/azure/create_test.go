@@ -14,12 +14,19 @@ import (
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	apiversion "k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
+	kubeclient "k8s.io/client-go/kubernetes"
+	fakekubeclient "k8s.io/client-go/kubernetes/fake"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 
 	"github.com/spf13/pflag"
@@ -86,7 +93,6 @@ func TestDNSZoneRGValidation(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	t.Setenv("FAKE_CLIENT", "true")
 
 	credentialsFile, _, pullSecretFile := setupAzureTestFixtures(t)
 	tempDir := t.TempDir()
@@ -138,7 +144,7 @@ func TestDNSZoneRGValidation(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
 
-			err = core.CreateCluster(ctx, coreOpts, azureOpts)
+			err = core.CreateCluster(ctx, coreOpts, azureOpts, nil)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
@@ -201,7 +207,6 @@ func TestRoleAssignmentWithInfraJSON(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	t.Setenv("FAKE_CLIENT", "true")
 
 	credentialsFile, infraFile, pullSecretFile := setupAzureTestFixtures(t)
 	tempDir := t.TempDir()
@@ -259,7 +264,7 @@ func TestRoleAssignmentWithInfraJSON(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
 
-			err = core.CreateCluster(ctx, coreOpts, azureOpts)
+			err = core.CreateCluster(ctx, coreOpts, azureOpts, nil)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
@@ -274,7 +279,6 @@ func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	t.Setenv("FAKE_CLIENT", "true")
 
 	credentialsFile, infraFile, pullSecretFile := setupAzureTestFixtures(t)
 	tempDir := t.TempDir()
@@ -484,7 +488,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, azureOpts); err != nil {
+			if err := core.CreateCluster(ctx, coreOpts, azureOpts, nil); err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 
@@ -501,7 +505,6 @@ func TestCreateClusterAutoNodeRequiresKarpenterClientID(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	t.Setenv("FAKE_CLIENT", "true")
 	g := NewGomegaWithT(t)
 
 	credentialsFile, _, pullSecretFile := setupAzureTestFixtures(t)
@@ -545,7 +548,19 @@ func TestCreateClusterAutoNodeRequiresKarpenterClientID(t *testing.T) {
 	coreOpts.Render = true
 	coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
 
-	err = core.CreateCluster(ctx, coreOpts, azureOpts)
+	managementClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+	typedClient := fakekubeclient.NewClientset()
+	typedDiscovery := typedClient.Discovery().(*fakediscovery.FakeDiscovery)
+	typedDiscovery.FakedServerVersion = &apiversion.Info{Platform: "linux/amd64"}
+	clientProvider := &core.ClientProvider{
+		ControllerRuntimeClient: func(string) (crclient.Client, error) {
+			return managementClient, nil
+		},
+		KubernetesClientSet: func(string) (kubeclient.Interface, error) {
+			return typedClient, nil
+		},
+	}
+	err = core.CreateCluster(ctx, coreOpts, azureOpts, clientProvider)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("autoNode on Azure requires a Karpenter workload identity"))
 }
