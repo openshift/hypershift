@@ -3381,6 +3381,20 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
+	// A successful probe is cached against the observed generation. The vault,
+	// the active key and the credential reference all live in the spec, so
+	// nothing that determines the result can change without bumping the
+	// generation. Re-running the probe on every reconcile (~60s) would mean
+	// recurring crypto operations, audit log entries and throttling exposure on
+	// a customer-owned resource, and the azure-kms-provider sidecar already
+	// exercises the same access path continuously at runtime. Unknown and False
+	// are deliberately not cached: those are the states reconciliation needs to
+	// converge out of.
+	if existing := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig)); existing != nil &&
+		existing.Status == metav1.ConditionTrue && existing.ObservedGeneration == hcp.Generation {
+		return
+	}
+
 	// keysTransport stays nil on every path except a private Key Vault on ARO
 	// HCP, where the keys client has to reach the vault through the private
 	// router instead of its public FQDN.
@@ -3393,21 +3407,23 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		// through a hostAlias. Do the same in-process so the condition
 		// reflects a real probe rather than staying Unknown forever.
 		if hyperazureutil.IsPrivateKeyVault(hcp) {
-			transport, err := r.privateRouterKeyVaultTransport(ctx, hcp)
+			keyVaultClient, err := hyperazureutil.PrivateRouterKeyVaultClient(ctx, r.Client, hcp)
 			if err != nil {
 				// The relay may still be provisioning. Report Unknown and let
-				// the next reconcile retry until the router is available.
+				// the next reconcile retry until the router is available. This
+				// uses its own reason so that consumers can tell a transient
+				// "not yet" apart from a validator that never ran at all.
 				meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
 					Type:               string(hyperv1.ValidAzureKMSConfig),
 					ObservedGeneration: hcp.Generation,
 					Status:             metav1.ConditionUnknown,
-					Reason:             hyperv1.StatusUnknownReason,
+					Reason:             hyperv1.PrivateKeyVaultValidationPendingReason,
 					Message:            fmt.Sprintf("Private Key Vault cannot be validated yet: %v", err),
 				})
 				return
 			}
-			defer transport.CloseIdleConnections()
-			keysTransport = transport
+			defer keyVaultClient.CloseIdleConnections()
+			keysTransport = keyVaultClient
 		}
 
 		key := hcp.Namespace + kmsAzureCredentials
@@ -3519,86 +3535,6 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 
 	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-}
-
-// privateRouterKeyVaultTransport builds the HTTP transport the keys client uses
-// to validate a Key Vault that only accepts traffic from the customer VNet.
-//
-// The management cluster has no route to the vault's private endpoint, but the
-// private router does, and it already relays Key Vault connections for the
-// azure-kms-provider sidecar (see the keyvault backend in the router config and
-// the hostAlias on the KAS deployment). This resolves that same relay for the
-// CPO's own client.
-//
-// Returns an error while the router Service or Deployment is unavailable;
-// callers should treat that as "cannot tell yet" rather than a validation failure.
-func (r *HostedControlPlaneReconciler) privateRouterKeyVaultTransport(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*http.Client, error) {
-	keyVaultFQDN, err := hyperazureutil.GetKeyVaultFQDN(hcp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Key Vault FQDN: %w", err)
-	}
-
-	routerService := manifests.PrivateRouterService(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(routerService), routerService); err != nil {
-		return nil, fmt.Errorf("failed to get private-router service: %w", err)
-	}
-
-	clusterIP := routerService.Spec.ClusterIP
-	if clusterIP == "" || clusterIP == corev1.ClusterIPNone {
-		return nil, fmt.Errorf("private-router service %s/%s has no ClusterIP", routerService.Namespace, routerService.Name)
-	}
-
-	// Take the port from the Service rather than assuming 443 so this keeps
-	// working if the relay is ever moved to a different port.
-	var relayPort int32
-	for _, port := range routerService.Spec.Ports {
-		if port.Name == "https" {
-			relayPort = port.Port
-			break
-		}
-	}
-	if relayPort == 0 {
-		return nil, fmt.Errorf("private-router service %s/%s has no https port", routerService.Namespace, routerService.Name)
-	}
-
-	routerDeployment := manifests.RouterDeployment(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(routerDeployment), routerDeployment); err != nil {
-		return nil, fmt.Errorf("failed to get router deployment: %w", err)
-	}
-	// An available replica is sufficient to attempt the probe. Requiring a
-	// completed rollout would unnecessarily skip validation during updates.
-	if routerDeployment.Status.AvailableReplicas == 0 {
-		return nil, fmt.Errorf("router deployment %s/%s has no available replicas", routerDeployment.Namespace, routerDeployment.Name)
-	}
-
-	relayAddress := net.JoinHostPort(clusterIP, strconv.Itoa(int(relayPort)))
-	return &http.Client{Transport: keyVaultRelayTransport(keyVaultFQDN, relayAddress)}, nil
-}
-
-// keyVaultRelayTransport returns a transport that opens connections addressed
-// to keyVaultFQDN against relayAddress instead, and leaves every other host
-// alone.
-//
-// Only the TCP destination changes. The request still carries the vault
-// hostname, so SNI, certificate verification and the bearer token are all
-// unchanged, and the router forwards the stream to the vault's private endpoint
-// without terminating TLS. The host check keeps the rewrite off unrelated
-// traffic the pipeline might emit.
-func keyVaultRelayTransport(keyVaultFQDN, relayAddress string) *http.Transport {
-	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	// The relay is a ClusterIP in this namespace. Honouring HTTP(S)_PROXY here
-	// would hand the proxy address to DialContext instead of the vault FQDN, so
-	// the rewrite below would never fire and the connection would be sent
-	// somewhere that cannot reach the private endpoint.
-	transport.Proxy = nil
-	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		if host, _, err := net.SplitHostPort(address); err == nil && strings.EqualFold(host, keyVaultFQDN) {
-			return dialer.DialContext(ctx, network, relayAddress)
-		}
-		return dialer.DialContext(ctx, network, address)
-	}
-	return transport
 }
 
 func (r *HostedControlPlaneReconciler) GetGuestClusterClient(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*kubernetes.Clientset, error) {

@@ -64,15 +64,35 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 			// through the private router rather than the public endpoint.
 			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionTrue
 			if netutil.IsAroHCPByHC(hostedCluster) && hostedCluster.Spec.SecretEncryption.KMS.Azure.KeyVaultAccess == hyperv1.AzureKeyVaultPrivate {
-				// Older CPO images explicitly skip this probe. Recognize only
-				// their legacy condition, since overrides and backports can
-				// change support without changing the control plane version.
-				// Unknown conditions from the new validator must still fail
-				// the health expectation until a probe succeeds.
+				// Two Unknowns are expected for a private vault, discriminated by
+				// Reason rather than by message text so that rewording a message
+				// cannot silently change the health expectation:
+				//
+				//   - StatusUnknownReason: an older CPO image skipped the probe
+				//     entirely. The current validator never emits that reason for a
+				//     configured private vault, so it identifies the legacy
+				//     behaviour unambiguously. Matching on the reason rather than
+				//     the control plane version is deliberate: overrides and
+				//     backports can change support without changing the version.
+				//   - PrivateKeyVaultValidationPendingReason: the private router
+				//     that relays the probe is still provisioning. Without this,
+				//     every router rollout window would count as a failure on a
+				//     freshly created cluster.
+				//
+				// The pending reason is tolerated for as long as it lasts rather
+				// than only for a provisioning window. A router that never becomes
+				// available already fails the cluster through HostedClusterAvailable,
+				// since the router ControlPlaneComponent gates
+				// HostedControlPlaneAvailable. Bounding the tolerance here would
+				// duplicate that signal, report it under a misleading condition and
+				// make this function depend on a clock.
+				//
+				// Any other Unknown comes from the current validator and must still
+				// fail the health expectation until a probe succeeds.
 				condition := meta.FindStatusCondition(hostedCluster.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
 				if condition != nil && condition.Status == metav1.ConditionUnknown &&
-					condition.Reason == hyperv1.StatusUnknownReason &&
-					condition.Message == "Private Key Vault endpoint is not reachable from the management cluster" {
+					(condition.Reason == hyperv1.StatusUnknownReason ||
+						condition.Reason == hyperv1.PrivateKeyVaultValidationPendingReason) {
 					conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
 				}
 			}

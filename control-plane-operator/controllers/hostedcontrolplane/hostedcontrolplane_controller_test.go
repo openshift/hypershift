@@ -5794,23 +5794,23 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 			status: metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason, message: "Azure KMS is not configured",
 		},
 		{
-			name:   "When the private router Service is missing, it should report Unknown",
-			status: metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason, message: "cannot be validated yet",
+			name:   "When the private router Service is missing, it should report Unknown as pending",
+			status: metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "cannot be validated yet",
 		},
 		{
-			name:    "When the private router has no ClusterIP, it should report Unknown",
+			name:    "When the private router has no ClusterIP, it should report Unknown as pending",
 			objects: []client.Object{pendingService, router},
-			status:  metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason, message: "no ClusterIP",
+			status:  metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "no ClusterIP",
 		},
 		{
-			name:    "When the router Deployment is missing, it should report Unknown",
+			name:    "When the router Deployment is missing, it should report Unknown as pending",
 			objects: []client.Object{svc},
-			status:  metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason, message: "failed to get router deployment",
+			status:  metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "failed to get router deployment",
 		},
 		{
-			name:    "When the router has no available replicas, it should report Unknown",
+			name:    "When the router has no available replicas, it should report Unknown as pending",
 			objects: []client.Object{svc, pendingRouter},
-			status:  metav1.ConditionUnknown, reason: hyperv1.StatusUnknownReason, message: "no available replicas",
+			status:  metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "no available replicas",
 		},
 		{
 			name:    "When the router has an available replica during rollout, it should attempt credential loading",
@@ -5957,95 +5957,24 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 				r.validateAzureKMSConfig(ctx, hcp)
 				g.Expect(meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig)).Status).To(Equal(metav1.ConditionTrue))
 				g.Expect(loadCount).To(Equal(1), "subsequent probes must reuse the cached credential")
-				g.Expect(tokenCount).To(Equal(2))
-			}
-		})
-	}
-}
+				if tc.responseCode == http.StatusOK {
+					g.Expect(tokenCount).To(Equal(1), "a successful probe must not be repeated while the generation is unchanged")
+				} else {
+					g.Expect(tokenCount).To(Equal(2), "a failed probe must be retried on the next reconcile")
+				}
 
-func TestPrivateRouterKeyVaultTransport(t *testing.T) {
-	for _, tc := range []struct {
-		name, clusterIP string
-		port            int32
-		message         string
-	}{
-		{name: "When the Service is headless, it should reject the relay", clusterIP: corev1.ClusterIPNone, port: 443, message: "no ClusterIP"},
-		{name: "When the https port is absent, it should reject the relay", clusterIP: "127.0.0.1", message: "no https port"},
-		{name: "When the Service uses another https port, it should dial that port", clusterIP: "127.0.0.1"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			port := tc.port
-			var relay net.Listener
-			if tc.message == "" {
-				var err error
-				relay, err = net.Listen("tcp", "127.0.0.1:0")
-				g.Expect(err).ToNot(HaveOccurred())
-				defer relay.Close()
-				port = int32(relay.Addr().(*net.TCPAddr).Port)
+				// Anything that can change the outcome lives in the spec, so a
+				// generation bump must send the probe to the vault again.
+				probesSoFar := tokenCount
+				hcp.Generation++
+				r.validateAzureKMSConfig(ctx, hcp)
+				condition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
+				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
+				g.Expect(tokenCount).To(Equal(probesSoFar+1), "a generation bump must re-probe the vault")
 			}
-			svc, router := privateRouterObjectsForTest(tc.clusterIP, port, 1)
-			if tc.message == "no https port" {
-				svc.Spec.Ports = nil
-			}
-			r := &HostedControlPlaneReconciler{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(svc, router).Build()}
-			client, err := r.privateRouterKeyVaultTransport(t.Context(), azureKMSHostedControlPlaneForTest())
-			if tc.message != "" {
-				g.Expect(err).To(MatchError(ContainSubstring(tc.message)))
-				return
-			}
-			g.Expect(err).ToNot(HaveOccurred())
-			defer client.CloseIdleConnections()
-			conn, err := client.Transport.(*http.Transport).DialContext(t.Context(), "tcp", net.JoinHostPort(testAzureKeyVaultFQDN, "443"))
-			g.Expect(err).ToNot(HaveOccurred())
-			defer conn.Close()
-			g.Expect(conn.RemoteAddr().String()).To(Equal(relay.Addr().String()))
 		})
 	}
-}
-
-func TestKeyVaultRelayTransport(t *testing.T) {
-	relay, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer relay.Close()
-	direct, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer direct.Close()
-	for _, tc := range []struct{ name, address, destination string }{
-		{name: "When the address is the vault hostname, it should dial the relay", address: net.JoinHostPort(testAzureKeyVaultFQDN, "443"), destination: relay.Addr().String()},
-		{name: "When the vault hostname uses upper case, it should dial the relay", address: net.JoinHostPort(strings.ToUpper(testAzureKeyVaultFQDN), "443"), destination: relay.Addr().String()},
-		{name: "When the address is unrelated, it should dial that address directly", address: direct.Addr().String(), destination: direct.Addr().String()},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			transport := keyVaultRelayTransport(testAzureKeyVaultFQDN, relay.Addr().String())
-			defer transport.CloseIdleConnections()
-			g.Expect(transport.Proxy).To(BeNil(), "the private relay must bypass environment proxies")
-			conn, err := transport.DialContext(t.Context(), "tcp", tc.address)
-			g.Expect(err).ToNot(HaveOccurred())
-			defer conn.Close()
-			g.Expect(conn.RemoteAddr().String()).To(Equal(tc.destination))
-		})
-	}
-	t.Run("When the relay serves a certificate for a different hostname, it should reject the TLS connection", func(t *testing.T) {
-		g := NewWithT(t)
-		server, roots := azureKMSRelayServerForTest(t, func(http.ResponseWriter, *http.Request) { t.Error("an invalid TLS connection reached the handler") })
-		transport := keyVaultRelayTransport("wrong.vault.azure.net", server.Listener.Addr().String())
-		defer transport.CloseIdleConnections()
-		transport.TLSClientConfig = &tls.Config{RootCAs: roots}
-		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://wrong.vault.azure.net", nil)
-		g.Expect(err).ToNot(HaveOccurred())
-		response, err := (&http.Client{Transport: transport}).Do(request)
-		if response != nil {
-			response.Body.Close()
-		}
-		var hostnameError x509.HostnameError
-		g.Expect(errors.As(err, &hostnameError)).To(BeTrue(), "the vault certificate must still be checked against its hostname: %v", err)
-	})
 }
 
 // Compile-time assertion that fakeVersionImageMetadataProvider satisfies the interface.
