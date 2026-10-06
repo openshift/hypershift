@@ -35,13 +35,16 @@ users:
 `
 
 func TestReconcileCredentials(t *testing.T) {
+	t.Parallel()
 	t.Run("When no KubeVirt platform is configured, it should leave credentials absent", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		c := fake.NewClientBuilder().Build()
 		g.Expect(New(nil).ReconcileCredentials(t.Context(), c, upsert.New(false).CreateOrUpdate, &hyperv1.HostedCluster{}, "clusters-tenant")).To(Succeed())
 		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(credentialsSecret("clusters-tenant")), &corev1.Secret{})).To(Satisfy(apierrors.IsNotFound))
 	})
 	t.Run("When tenant credentials contain an exec plugin, it should reject them without publishing a Secret", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		source := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "infra-credentials"},
@@ -162,6 +165,7 @@ users:
 		{name: "When the credential key collides with namespace metadata, it should reject it", key: "namespace", data: map[string][]byte{"namespace": []byte(safeKubeconfig)}, wantErr: "namespace"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
 			key := tc.key
 			if key == "" && !tc.missingKey {
@@ -246,6 +250,7 @@ users:
 }
 
 func TestValidateCredentials(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name       string
 		local      bool
@@ -264,6 +269,7 @@ func TestValidateCredentials(t *testing.T) {
 		{name: "When external credentials are removed but a historical key is unsafe, it should still remove the target", local: true, target: map[string][]byte{"kubeconfig": []byte(safeKubeconfig), "old-custom": []byte("malformed")}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
 			hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "tenant"}, Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
 				Type:     hyperv1.KubevirtPlatform,
@@ -322,7 +328,26 @@ func TestValidateCredentials(t *testing.T) {
 }
 
 func TestDeleteCredentials(t *testing.T) {
+	t.Parallel()
+	t.Run("When unsafe credential cleanup is denied, it should propagate the failure and retain the target Secret", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		target := credentialsSecret("clusters-tenant")
+		target.Data = map[string][]byte{"kubeconfig": []byte("malformed")}
+		cleanupErr := errors.New("credential cleanup denied")
+		c := fake.NewClientBuilder().WithObjects(target).WithInterceptorFuncs(interceptor.Funcs{
+			Delete: func(context.Context, client.WithWatch, client.Object, ...client.DeleteOption) error {
+				return cleanupErr
+			},
+		}).Build()
+		err := New(nil).DeleteCredentials(t.Context(), c, &hyperv1.HostedCluster{}, target.Namespace)
+		g.Expect(errors.Is(err, cleanupErr)).To(BeTrue())
+		stored := &corev1.Secret{}
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(target), stored)).To(Succeed())
+		g.Expect(stored.Data).To(Equal(target.Data))
+	})
 	t.Run("When teardown has no source but a safe target, it should retain usable credentials without fetching the source", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		target := credentialsSecret("clusters-tenant")
 		target.Data = map[string][]byte{"kubeconfig": []byte(safeKubeconfig)}
@@ -332,6 +357,7 @@ func TestDeleteCredentials(t *testing.T) {
 		g.Expect(target.Data).To(HaveKeyWithValue("kubeconfig", []byte(safeKubeconfig)))
 	})
 	t.Run("When a deleting cluster's source is corrected, it should restore only safe canonical credentials for live consumers", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "tenant"}, Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
 			Type:     hyperv1.KubevirtPlatform,
@@ -357,6 +383,7 @@ func TestDeleteCredentials(t *testing.T) {
 		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(target), &corev1.Secret{})).To(Satisfy(apierrors.IsNotFound))
 	})
 	t.Run("When the control plane namespace is terminating, it should not publish credentials or recreate resources", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "tenant"}, Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
 			Type:     hyperv1.KubevirtPlatform,
@@ -380,4 +407,103 @@ func TestDeleteCredentials(t *testing.T) {
 		g.Expect(writes).To(BeZero())
 		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(credentialsSecret(ns.Name)), &corev1.Secret{})).To(Satisfy(apierrors.IsNotFound))
 	})
+}
+
+func TestReconcileDeletionCredentials(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name              string
+		mutate            func(*hyperv1.HostedCluster)
+		missingSource     bool
+		invalidSource     bool
+		missingNamespace  bool
+		terminating       bool
+		denyWrite         bool
+		denyInspection    bool
+		wantCredentialErr string
+		wantErr           string
+		published         bool
+	}{
+		{name: "When teardown credentials are valid and the namespace is live, it should report successful publication", published: true},
+		{name: "When external credentials are disabled, it should not publish or report rejection", mutate: func(hc *hyperv1.HostedCluster) { hc.Spec.Platform.Kubevirt.Credentials = nil }},
+		{name: "When the credential reference is missing, it should report non-blocking rejection", mutate: func(hc *hyperv1.HostedCluster) { hc.Spec.Platform.Kubevirt.Credentials.InfraKubeConfigSecret = nil }, wantCredentialErr: "reference"},
+		{name: "When the credential name is empty, it should report non-blocking rejection", mutate: func(hc *hyperv1.HostedCluster) { hc.Spec.Platform.Kubevirt.Credentials.InfraKubeConfigSecret.Name = "" }, wantCredentialErr: "name"},
+		{name: "When the credential key is empty, it should report non-blocking rejection", mutate: func(hc *hyperv1.HostedCluster) { hc.Spec.Platform.Kubevirt.Credentials.InfraKubeConfigSecret.Key = "" }, wantCredentialErr: "key"},
+		{name: "When the source Secret is absent, it should report non-blocking rejection", missingSource: true, wantCredentialErr: "source"},
+		{name: "When the source is invalid, it should report non-blocking rejection without publication", invalidSource: true, wantCredentialErr: "parsed"},
+		{name: "When the namespace is absent, it should skip publication without claiming success", missingNamespace: true},
+		{name: "When the namespace is terminating, it should skip publication without claiming success", terminating: true},
+		{name: "When target publication fails, it should propagate the failure without claiming success", denyWrite: true, wantErr: "publication denied"},
+		{name: "When target inspection fails, it should propagate the failure without claiming success", denyInspection: true, wantErr: "inspection denied"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "tenant"}, Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.KubevirtPlatform, Kubevirt: &hyperv1.KubevirtPlatformSpec{Credentials: &hyperv1.KubevirtPlatformCredentials{InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{Name: "infra", Key: "kubeconfig"}}},
+			}}}
+			if tc.mutate != nil {
+				tc.mutate(hc)
+			}
+			source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "infra"}, Data: map[string][]byte{"kubeconfig": []byte(safeKubeconfig), "extra": []byte("untrusted")}}
+			if tc.invalidSource {
+				source.Data["kubeconfig"] = []byte("users: [private-test-token")
+			}
+			target := credentialsSecret("clusters-tenant")
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: target.Namespace}}
+			if tc.terminating {
+				now := metav1.Now()
+				ns.DeletionTimestamp = &now
+				ns.Finalizers = []string{"retained-for-test"}
+			}
+			builder := fake.NewClientBuilder()
+			if !tc.missingSource {
+				builder.WithObjects(source)
+			}
+			if !tc.missingNamespace {
+				builder.WithObjects(ns)
+			}
+			c := builder.WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if tc.denyInspection && key == client.ObjectKeyFromObject(target) {
+						return errors.New("inspection denied")
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+				Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+					if tc.denyWrite {
+						return errors.New("publication denied")
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			}).Build()
+			result, err := New(nil).ReconcileDeletionCredentials(t.Context(), c, hc, ns.Name)
+			if tc.wantErr == "" {
+				g.Expect(err).NotTo(HaveOccurred())
+			} else {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.wantErr)))
+			}
+			if tc.wantCredentialErr == "" {
+				g.Expect(result.CredentialError).NotTo(HaveOccurred())
+			} else {
+				g.Expect(result.CredentialError).To(MatchError(ContainSubstring(tc.wantCredentialErr)))
+				g.Expect(result.CredentialError.Error()).NotTo(ContainSubstring("private-test-token"))
+			}
+			g.Expect(result.Published).To(Equal(tc.published))
+			if !tc.denyInspection {
+				err = c.Get(t.Context(), client.ObjectKeyFromObject(target), target)
+				if tc.published {
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(target.Data).To(Equal(map[string][]byte{"kubeconfig": []byte(safeKubeconfig)}))
+				} else {
+					g.Expect(err).To(Satisfy(apierrors.IsNotFound))
+				}
+			}
+			if !tc.missingSource {
+				unchanged := &corev1.Secret{}
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(source), unchanged)).To(Succeed())
+				g.Expect(unchanged.Data).To(Equal(source.Data))
+			}
+		})
+	}
 }

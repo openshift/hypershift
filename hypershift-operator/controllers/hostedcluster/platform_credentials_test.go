@@ -2,6 +2,8 @@ package hostedcluster
 
 import (
 	"context"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
 	"strings"
 	"testing"
@@ -13,12 +15,16 @@ import (
 	platformkubevirt "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/upsert"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"k8s.io/client-go/transport"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -55,11 +61,18 @@ func credentialHostedCluster() *hyperv1.HostedCluster {
 }
 
 func TestReconcile(t *testing.T) {
+	t.Parallel()
 	t.Run("When Managed HSM is unsupported across reconciles, it should never persist configuration success before rejecting it", func(t *testing.T) {
-		testManagedHSMBeforeInitialStatus(t, false)
+		t.Parallel()
+		testManagedHSMBeforeInitialStatus(t)
 	})
-	t.Run("When the Managed HSM release is unavailable, it should leave validation incomplete and block reconciliation", func(t *testing.T) {
-		testManagedHSMBeforeInitialStatus(t, true)
+	t.Run("When the Managed HSM pull Secret is unusable, it should persist incomplete validation and still propagate HCP configuration", func(t *testing.T) {
+		t.Parallel()
+		testManagedHSMDegradedReconciliation(t, false)
+	})
+	t.Run("When the Managed HSM pull Secret is missing, it should persist incomplete validation and still propagate HCP configuration", func(t *testing.T) {
+		t.Parallel()
+		testManagedHSMDegradedReconciliation(t, true)
 	})
 	for _, credentialPatch := range []bool{false, true} {
 		name := "When the reconciliation condition retries after a concurrent status write, it should not replay pending status"
@@ -67,6 +80,7 @@ func TestReconcile(t *testing.T) {
 			name = "When the credential condition retries after a concurrent status write, it should not replay pending status"
 		}
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
 			hc := credentialHostedCluster()
 			hc.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.NonePlatform}
@@ -107,6 +121,7 @@ func TestReconcile(t *testing.T) {
 		})
 	}
 	t.Run("When reconciliation updates its own spec generation, it should requeue without reporting a stale status-patch error", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		hc.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.NonePlatform}
@@ -127,6 +142,7 @@ func TestReconcile(t *testing.T) {
 		g.Expect(meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ReconciliationSucceeded)).ObservedGeneration).To(Equal(int64(4)))
 	})
 	t.Run("When another writer changes the spec during successful reconciliation, it should still reject stale status", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		hc.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.NonePlatform}
@@ -145,6 +161,7 @@ func TestReconcile(t *testing.T) {
 		g.Expect(meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ReconciliationSucceeded))).To(BeNil())
 	})
 	t.Run("When successful finalizer removal deletes the cluster, it should complete without a NotFound error or requeue", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		hc.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.NonePlatform}
@@ -164,6 +181,7 @@ func TestReconcile(t *testing.T) {
 		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), &hyperv1.HostedCluster{})).To(Satisfy(apierrors.IsNotFound))
 	})
 	t.Run("When a status fetch fails for an unrelated reason, it should still report that error", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		hc.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.NonePlatform}
@@ -188,6 +206,7 @@ func TestReconcile(t *testing.T) {
 		g.Expect(err).To(MatchError(ContainSubstring("status fetch denied")))
 	})
 	t.Run("When the cluster disappears after a reconciliation failure, it should preserve the original error", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		hc.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.NonePlatform}
@@ -202,6 +221,7 @@ func TestReconcile(t *testing.T) {
 		g.Expect(err).To(MatchError("original reconciliation failure"))
 	})
 	t.Run("When external credentials are invalid, it should clean up unsafe targets and report rejection before any reconciliation callback", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "infra"}, Data: map[string][]byte{"kubeconfig": []byte("malformed")}}
@@ -227,6 +247,7 @@ func TestReconcile(t *testing.T) {
 		g.Expect(condition.Message).NotTo(ContainSubstring("private-test-token"))
 	})
 	t.Run("When ingress status refresh imports a sizing condition, it should preserve the sizing controller's later update", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		hc.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.NonePlatform}
@@ -251,6 +272,7 @@ func TestReconcile(t *testing.T) {
 		g.Expect(meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))).To(BeNil())
 	})
 	t.Run("When a corrected source has an unsafe target before a shared prerequisite blocks reconciliation, it should remove the unsafe target", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "infra"}, Data: map[string][]byte{"kubeconfig": []byte(externalInfraKubeconfig)}}
@@ -276,10 +298,12 @@ func TestReconcile(t *testing.T) {
 		{name: "When unsafe target cleanup fails during deletion, it should report the cleanup failure", deny: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
 			hc := credentialHostedCluster()
 			hc.DeletionTimestamp = &metav1.Time{Time: metav1.Now().Time}
 			hc.Finalizers = []string{HostedClusterFinalizer}
+			meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{Type: string(hyperv1.PlatformCredentialsFound), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason, ObservedGeneration: hc.Generation})
 			data := []byte("malformed")
 			if tc.safe {
 				data = []byte(externalInfraKubeconfig)
@@ -314,9 +338,60 @@ func TestReconcile(t *testing.T) {
 			} else {
 				g.Expect(err).To(Satisfy(apierrors.IsNotFound))
 			}
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), hc)).To(Succeed())
+			g.Expect(meta.IsStatusConditionFalse(hc.Status.Conditions, string(hyperv1.PlatformCredentialsFound))).To(BeTrue())
 		})
 	}
+	t.Run("When rejected teardown credentials are corrected, it should recover publication and status without blocking non-consuming teardown", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		hc := credentialHostedCluster()
+		hc.DeletionTimestamp = &metav1.Time{Time: metav1.Now().Time}
+		hc.Finalizers = []string{HostedClusterFinalizer}
+		meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{Type: string(hyperv1.PlatformCredentialsFound), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason, ObservedGeneration: hc.Generation})
+		meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{Type: "ConcurrentCondition", Status: metav1.ConditionTrue, Reason: "Preserved"})
+		unsafe := strings.ReplaceAll(externalInfraKubeconfig, "user: {token: private-test-token}", "user: {tokenFile: /private-test-token}")
+		source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "infra"}, Data: map[string][]byte{"kubeconfig": []byte(unsafe)}}
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)}}
+		target := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: ns.Name, Name: hyperv1.KubeVirtInfraCredentialsSecretName}, Data: map[string][]byte{"kubeconfig": []byte(externalInfraKubeconfig)}}
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).WithObjects(hc, source, ns, target).Build()
+		calls := 0
+		r := &HostedClusterReconciler{Client: c, now: metav1.Now,
+			overwriteReconcile: func(context.Context, ctrl.Request, logr.Logger, *hyperv1.HostedCluster) (ctrl.Result, error) {
+				calls++
+				return ctrl.Result{}, nil
+			},
+		}
+		_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(hc)})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(calls).To(Equal(1))
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), hc)).To(Succeed())
+		condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.PlatformCredentialsFound))
+		g.Expect(condition).NotTo(BeNil())
+		g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(condition.Message).To(ContainSubstring("tokenFile"))
+		g.Expect(condition.Message).NotTo(ContainSubstring("private-test-token"))
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(target), target)).To(Succeed())
+		g.Expect(target.Data).To(Equal(map[string][]byte{"kubeconfig": []byte(externalInfraKubeconfig)}))
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+		rotated := strings.ReplaceAll(externalInfraKubeconfig, "private-test-token", "rotated-test-token")
+		source.Data = map[string][]byte{"kubeconfig": []byte(rotated), "unrelated": []byte("untrusted")}
+		g.Expect(c.Update(t.Context(), source)).To(Succeed())
+		_, err = r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(hc)})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(calls).To(Equal(2))
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), hc)).To(Succeed())
+		condition = meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.PlatformCredentialsFound))
+		g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(condition.ObservedGeneration).To(Equal(hc.Generation))
+		g.Expect(meta.IsStatusConditionTrue(hc.Status.Conditions, "ConcurrentCondition")).To(BeTrue())
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(target), target)).To(Succeed())
+		g.Expect(target.Data).To(Equal(map[string][]byte{"kubeconfig": []byte(rotated)}))
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+		g.Expect(source.Data).To(HaveKeyWithValue("unrelated", []byte("untrusted")))
+	})
 	t.Run("When credentials are rejected for an older generation, it should not relabel the error or replace the active spec snapshot", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		hc.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.NonePlatform}
@@ -340,6 +415,7 @@ func TestReconcile(t *testing.T) {
 		g.Expect(meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ReconciliationSucceeded))).To(BeNil())
 	})
 	t.Run("When a credential patch observes concurrent status, it should not replay that imported condition over a later update", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		hc.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.NonePlatform}
@@ -364,7 +440,9 @@ func TestReconcile(t *testing.T) {
 }
 
 func TestReconcilePlatformCredentialsWithStatus(t *testing.T) {
+	t.Parallel()
 	t.Run("When rejected credentials are corrected, it should publish credentials and recover status while preserving concurrent conditions", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "infra"}, Data: map[string][]byte{"kubeconfig": []byte("malformed")}}
@@ -399,9 +477,95 @@ func TestReconcilePlatformCredentialsWithStatus(t *testing.T) {
 		g.Expect(c.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: hyperv1.KubeVirtInfraCredentialsSecretName}, target)).To(Succeed())
 		g.Expect(target.Data).To(HaveKeyWithValue("kubeconfig", []byte(externalInfraKubeconfig)))
 	})
+	for _, tc := range []struct {
+		name   string
+		mutate func(*testing.T, *clientcmdapi.Config)
+		want   string
+	}{
+		{name: "When credentials reference a token file, it should reject publication and persist credential failure", mutate: func(_ *testing.T, config *clientcmdapi.Config) {
+			config.AuthInfos["infra"].TokenFile = "/private-test-token"
+		}, want: "tokenFile"},
+		{name: "When credentials disable TLS verification, it should reject publication and persist credential failure", mutate: func(_ *testing.T, config *clientcmdapi.Config) {
+			config.Clusters["infra"].InsecureSkipTLSVerify = true
+		}, want: "insecure-skip-tls-verify"},
+		{name: "When current context references an absent user, it should persist an actionable sanitized rejection", mutate: func(_ *testing.T, config *clientcmdapi.Config) {
+			config.Contexts["infra"].AuthInfo = "private-test-token"
+		}, want: "current-context references a missing user"},
+		{name: "When current context references an absent cluster, it should persist an actionable sanitized rejection", mutate: func(_ *testing.T, config *clientcmdapi.Config) {
+			config.Contexts["infra"].Cluster = "private-test-token"
+		}, want: "current-context references a missing cluster"},
+		{name: "When current context does not exist, it should reject publication and persist credential failure", mutate: func(_ *testing.T, config *clientcmdapi.Config) {
+			config.CurrentContext = "private-test-token"
+		}, want: "current-context does not exist"},
+		{name: "When credentials contain embedded client certificates and CA data, it should publish usable credentials and persist success", mutate: func(t *testing.T, config *clientcmdapi.Config) {
+			g := NewWithT(t)
+			caKey, caCert, err := certs.GenerateSelfSignedCertificate(&certs.CertCfg{IsCA: true, Subject: pkix.Name{CommonName: "infra-ca", OrganizationalUnit: []string{"infra"}}, KeyUsages: x509.KeyUsageCertSign, Validity: certs.ValidityOneDay})
+			g.Expect(err).NotTo(HaveOccurred())
+			key, cert, err := certs.GenerateSignedCertificate(caKey, caCert, &certs.CertCfg{Subject: pkix.Name{CommonName: "infra-client", OrganizationalUnit: []string{"infra"}}, ExtKeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, Validity: certs.ValidityOneDay})
+			g.Expect(err).NotTo(HaveOccurred())
+			config.AuthInfos["infra"] = &clientcmdapi.AuthInfo{ClientCertificateData: certs.CertToPem(cert), ClientKeyData: certs.PrivateKeyToPem(key)}
+			config.Clusters["infra"].CertificateAuthorityData = certs.CertToPem(caCert)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			config, err := clientcmd.Load([]byte(externalInfraKubeconfig))
+			g.Expect(err).NotTo(HaveOccurred())
+			tc.mutate(t, config)
+			data, err := clientcmd.Write(*config)
+			g.Expect(err).NotTo(HaveOccurred())
+			hc := credentialHostedCluster()
+			initialStatus := metav1.ConditionTrue
+			if tc.want == "" {
+				initialStatus = metav1.ConditionFalse
+			}
+			meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{Type: string(hyperv1.PlatformCredentialsFound), Status: initialStatus, Reason: "Previous", ObservedGeneration: hc.Generation})
+			source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "infra"}, Data: map[string][]byte{"kubeconfig": data, "extra": []byte("untrusted")}}
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).WithObjects(hc, source).Build()
+			r := &HostedClusterReconciler{Client: c}
+			namespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+			p := platformkubevirt.New(nil)
+			err = r.reconcilePlatformCredentialsWithStatus(t.Context(), hc, upsert.New(false).CreateOrUpdate, namespace, p)
+			fresh := &hyperv1.HostedCluster{}
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), fresh)).To(Succeed())
+			condition := meta.FindStatusCondition(fresh.Status.Conditions, string(hyperv1.PlatformCredentialsFound))
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.ObservedGeneration).To(Equal(hc.Generation))
+			target := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: hyperv1.KubeVirtInfraCredentialsSecretName}}
+			if tc.want != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.want)))
+				g.Expect(err.Error()).NotTo(ContainSubstring("private-test-token"))
+				g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(condition.Message).To(ContainSubstring(tc.want))
+				g.Expect(condition.Message).NotTo(ContainSubstring("private-test-token"))
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(target), target)).To(Satisfy(apierrors.IsNotFound))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(target), target)).To(Succeed())
+				g.Expect(target.Data).To(Equal(map[string][]byte{"kubeconfig": data}))
+				restConfig, err := clientcmd.RESTConfigFromKubeConfig(target.Data["kubeconfig"])
+				g.Expect(err).NotTo(HaveOccurred())
+				transportConfig, err := restConfig.TransportConfig()
+				g.Expect(err).NotTo(HaveOccurred())
+				tlsConfig, err := transport.TLSConfigFor(transportConfig)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(tlsConfig.RootCAs).NotTo(BeNil())
+				g.Expect(tlsConfig.GetClientCertificate).NotTo(BeNil())
+				clientCertificate, err := tlsConfig.GetClientCertificate(nil)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(clientCertificate.Certificate).To(HaveLen(1))
+			}
+			unchanged := &corev1.Secret{}
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(source), unchanged)).To(Succeed())
+			g.Expect(unchanged.Data).To(Equal(source.Data))
+		})
+	}
 }
 
 func TestValidateKubevirtCredentials(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		platform hyperv1.PlatformType
@@ -414,6 +578,7 @@ func TestValidateKubevirtCredentials(t *testing.T) {
 		{name: "When another platform is selected, it should leave its credential handling unchanged", platform: hyperv1.NonePlatform, invalid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
 			hc := credentialHostedCluster()
 			hc.Spec.Platform.Type = tc.platform
@@ -443,7 +608,9 @@ func TestValidateKubevirtCredentials(t *testing.T) {
 }
 
 func TestPatchPlatformCredentialsCondition(t *testing.T) {
+	t.Parallel()
 	t.Run("When the HostedCluster generation advances during credential reconciliation, it should not publish a stale condition", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		stale := hc.DeepCopy()
@@ -456,6 +623,7 @@ func TestPatchPlatformCredentialsCondition(t *testing.T) {
 		g.Expect(meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.PlatformCredentialsFound))).To(BeNil())
 	})
 	t.Run("When metadata changes without a generation change, it should reject the stale snapshot rather than promote its resource version", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		hc.Annotations = map[string]string{hyperv1.HostedClusterRestoredFromBackupAnnotation: "true"}

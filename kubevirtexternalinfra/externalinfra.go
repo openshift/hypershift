@@ -325,8 +325,23 @@ func ValidateKubeConfig(data []byte) error {
 	if config.CurrentContext == "" {
 		return errors.New("kubeconfig must specify current-context")
 	}
-	if config.Contexts[config.CurrentContext] == nil {
+	currentContext := config.Contexts[config.CurrentContext]
+	if currentContext == nil {
 		return errors.New("kubeconfig current-context does not exist")
+	}
+	// Reference names are tenant input too; identify the failed category without
+	// including names or credential values in errors surfaced through status.
+	if currentContext.AuthInfo == "" {
+		return errors.New("kubeconfig current-context must reference a user")
+	}
+	if config.AuthInfos[currentContext.AuthInfo] == nil {
+		return errors.New("kubeconfig current-context references a missing user")
+	}
+	if currentContext.Cluster == "" {
+		return errors.New("kubeconfig current-context must reference a cluster")
+	}
+	if config.Clusters[currentContext.Cluster] == nil {
+		return errors.New("kubeconfig current-context references a missing cluster")
 	}
 	for _, context := range config.Contexts {
 		if context == nil {

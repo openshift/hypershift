@@ -23,7 +23,21 @@ func (r *HostedClusterReconciler) validateKubevirtCredentials(ctx context.Contex
 	} else {
 		// Non-consuming teardown does not require a source, but unsafe persisted
 		// credentials must not remain available to deleting infrastructure clients.
-		err = p.DeleteCredentials(ctx, r.Client, hc, namespace)
+		var result platformkubevirt.DeletionCredentialsResult
+		result, err = p.ReconcileDeletionCredentials(ctx, r.Client, hc, namespace)
+		if err == nil {
+			if result.CredentialError != nil {
+				if r.KubevirtInfraClients != nil {
+					r.KubevirtInfraClients.Delete(hc.Spec.InfraID)
+				}
+				// Report rejection, but allow teardown which does not need an infra client.
+				return r.patchPlatformCredentialsCondition(ctx, hc, result.CredentialError)
+			}
+			if result.Published {
+				return r.patchPlatformCredentialsCondition(ctx, hc, nil)
+			}
+			return nil
+		}
 	}
 	if err == nil {
 		// Do not mark credentials found until they have actually been published.

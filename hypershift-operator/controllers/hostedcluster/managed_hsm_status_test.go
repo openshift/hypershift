@@ -10,6 +10,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -47,14 +49,10 @@ func managedHSMHostedCluster() *hyperv1.HostedCluster {
 	return hc
 }
 
-func testManagedHSMBeforeInitialStatus(t *testing.T, unavailable bool) {
+func testManagedHSMBeforeInitialStatus(t *testing.T) {
 	t.Helper()
 	g := NewWithT(t)
 	hc := managedHSMHostedCluster()
-	expectedStatus := metav1.ConditionFalse
-	if unavailable {
-		expectedStatus = metav1.ConditionUnknown
-	}
 	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, Data: map[string][]byte{".dockerconfigjson": []byte("{}")}}
 	statusWrites := 0
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).WithObjects(hc, pullSecret).WithInterceptorFuncs(interceptor.Funcs{
@@ -62,7 +60,7 @@ func testManagedHSMBeforeInitialStatus(t *testing.T, unavailable bool) {
 			if target, ok := obj.(*hyperv1.HostedCluster); ok {
 				condition := meta.FindStatusCondition(target.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
 				g.Expect(condition).NotTo(BeNil())
-				g.Expect(condition.Status).To(Equal(expectedStatus), "the first status write must include the Managed HSM result")
+				g.Expect(condition.Status).To(Equal(metav1.ConditionFalse), "the first status write must include the Managed HSM result")
 				statusWrites++
 			}
 			return c.SubResource(subresource).Update(ctx, obj, opts...)
@@ -72,11 +70,7 @@ func testManagedHSMBeforeInitialStatus(t *testing.T, unavailable bool) {
 		},
 	}).Build()
 	provider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(gomock.NewController(t))
-	if unavailable {
-		provider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("release unavailable")).AnyTimes()
-	} else {
-		provider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.21.3"), nil).AnyTimes()
-	}
+	provider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.21.3"), nil).AnyTimes()
 	r := &HostedClusterReconciler{Client: c, Clock: clocktesting.NewFakeClock(time.Now()), CertRotationScale: 24 * time.Hour,
 		createOrUpdate: func(ctrl.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate }, ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		RegistryProvider: fakeReleaseProvider{releaseProvider: provider, metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Architecture: "amd64"}}}, now: metav1.Now,
@@ -84,15 +78,11 @@ func testManagedHSMBeforeInitialStatus(t *testing.T, unavailable bool) {
 	var transitionTime metav1.Time
 	for i := 0; i < 2; i++ {
 		_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(hc)})
-		if unavailable {
-			g.Expect(err).To(MatchError(ContainSubstring("configuration validation is incomplete")))
-		} else {
-			g.Expect(err).To(MatchError(ContainSubstring("configuration is invalid")))
-			g.Expect(err).To(MatchError(ContainSubstring("does not support Azure Managed HSM")))
-		}
+		g.Expect(err).To(MatchError(ContainSubstring("configuration is invalid")))
+		g.Expect(err).To(MatchError(ContainSubstring("does not support Azure Managed HSM")))
 		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), hc)).To(Succeed())
 		condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
-		g.Expect(condition.Status).To(Equal(expectedStatus))
+		g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 		g.Expect(condition.ObservedGeneration).To(Equal(int64(4)))
 		if i == 0 {
 			transitionTime = condition.LastTransitionTime
@@ -103,7 +93,40 @@ func testManagedHSMBeforeInitialStatus(t *testing.T, unavailable bool) {
 	g.Expect(statusWrites).To(Equal(2))
 }
 
+func testManagedHSMDegradedReconciliation(t *testing.T, missingPullSecret bool) {
+	t.Helper()
+	g := NewWithT(t)
+	hc := managedHSMHostedCluster()
+	hc.Spec.NodeSelector = map[string]string{"node-role.kubernetes.io/worker": ""}
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)}}
+	hcp := controlplaneoperator.HostedControlPlane(namespace.Name, hc.Name)
+	objects := []client.Object{hc, namespace, hcp}
+	if !missingPullSecret {
+		objects = append(objects, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, Data: map[string][]byte{}})
+	}
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).WithObjects(objects...).Build()
+	provider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(gomock.NewController(t))
+	provider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("release unavailable")).AnyTimes()
+	r := &HostedClusterReconciler{Client: c, Clock: clocktesting.NewFakeClock(time.Now()), CertRotationScale: 24 * time.Hour,
+		createOrUpdate: func(ctrl.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate }, ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		RegistryProvider: fakeReleaseProvider{releaseProvider: provider, metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Architecture: "amd64"}}}, now: metav1.Now,
+	}
+	_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(hc)})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).NotTo(ContainSubstring("configuration validation is incomplete"))
+	g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), hc)).To(Succeed())
+	condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
+	g.Expect(condition).NotTo(BeNil())
+	g.Expect(condition.Status).To(Equal(metav1.ConditionUnknown))
+	g.Expect(condition.ObservedGeneration).To(Equal(hc.Generation))
+	g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+	g.Expect(hcp.Spec.NodeSelector).To(Equal(hc.Spec.NodeSelector))
+	g.Expect(hcp.Spec.ReleaseImage).To(Equal(hc.Spec.Release.Image))
+	g.Expect(hcp.Spec.SecretEncryption).To(Equal(hc.Spec.SecretEncryption))
+}
+
 func TestComputeValidHostedClusterConfiguration(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name       string
 		mutate     func(*hyperv1.HostedCluster)
@@ -124,6 +147,7 @@ func TestComputeValidHostedClusterConfiguration(t *testing.T) {
 		{name: "When other configuration is invalid, it should preserve that rejection even with a supported HSM version", mutate: func(hc *hyperv1.HostedCluster) { hc.Spec.ClusterID = "invalid" }, version: "4.22.0", want: metav1.ConditionFalse, message: "cannot parse cluster ID"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
 			hc := managedHSMHostedCluster()
 			if tc.mutate != nil {
