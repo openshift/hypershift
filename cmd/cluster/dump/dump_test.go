@@ -522,3 +522,46 @@ func TestNewDumpCommand(t *testing.T) {
 		}
 	})
 }
+
+func TestNewDumpCommandAzureCredentials(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		environment string
+		want        string
+	}{
+		{
+			name: "When an Azure credentials flag is set, it should use the flag value",
+			args: []string{"--artifact-dir", "test", "--azure-creds", "/etc/azure/credentials.json"},
+			want: "/etc/azure/credentials.json",
+		},
+		{
+			name:        "When the Azure credentials flag is omitted, it should use AZURE_CREDS",
+			args:        []string{"--artifact-dir", "test"},
+			environment: "/etc/azure/from-env.json",
+			want:        "/etc/azure/from-env.json",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AZURE_CREDS", test.environment)
+
+			var capturedOpts *DumpOptions
+			cmd := NewDumpCommand(func(_ context.Context, opts *DumpOptions) error {
+				capturedOpts = opts
+				return nil
+			})
+			cmd.SetArgs(test.args)
+			if err := cmd.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if capturedOpts == nil {
+				t.Fatal("expected dump callback to be called")
+			}
+			if capturedOpts.AzureCredentialsFile != test.want {
+				t.Fatalf("AzureCredentialsFile = %q, want %q", capturedOpts.AzureCredentialsFile, test.want)
+			}
+		})
+	}
+}

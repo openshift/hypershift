@@ -58,7 +58,7 @@ type AzurePlatformConfig struct {
 // environment variables with CI defaults.
 func NewAzurePlatformConfig(sharedDir string) *AzurePlatformConfig {
 	cfg := &AzurePlatformConfig{
-		creds:              envOrDefault("AZURE_CREDS", defaultAzureCreds),
+		creds:              AzureCredentialsFileFromEnv(),
 		location:           envOrDefault("HYPERSHIFT_AZURE_LOCATION", defaultAzureLocation),
 		oidcIssuerURL:      envOrDefault("AZURE_OIDC_ISSUER_URL", defaultOIDCIssuerURL),
 		saTokenKeyPath:     envOrDefault("AZURE_SA_TOKEN_ISSUER_KEY_PATH", defaultSATokenKeyPath),
@@ -104,6 +104,12 @@ func NewAzurePlatformConfig(sharedDir string) *AzurePlatformConfig {
 	}
 
 	return cfg
+}
+
+// AzureCredentialsFileFromEnv returns the configured Azure credentials path,
+// using the self-managed E2E default when AZURE_CREDS is unset.
+func AzureCredentialsFileFromEnv() string {
+	return envOrDefault("AZURE_CREDS", defaultAzureCreds)
 }
 
 func (a *AzurePlatformConfig) Name() string { return "azure" }

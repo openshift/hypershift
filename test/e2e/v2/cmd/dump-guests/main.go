@@ -50,13 +50,14 @@ func main() {
 	}
 
 	log.Printf("Dumping %d clusters from manifest", len(manifest.Clusters))
+	azureCredentialsFile := lifecycle.AzureCredentialsFileFromEnv()
 
 	var wg sync.WaitGroup
 	for _, entry := range manifest.Clusters {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			dumpCluster(*hypershiftBinary, artifactDir, entry.Name, entry.Namespace)
+			dumpCluster(*hypershiftBinary, artifactDir, entry.Name, entry.Namespace, azureCredentialsFile)
 		}()
 	}
 	wg.Wait()
@@ -64,20 +65,14 @@ func main() {
 	log.Println("All cluster dumps complete")
 }
 
-func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string) {
+func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace, azureCredentialsFile string) {
 	dumpDir := filepath.Join(artifactDir, clusterName)
 	if err := os.MkdirAll(dumpDir, 0755); err != nil {
 		log.Printf("WARNING: Failed to create artifact directory %s: %v", dumpDir, err)
 		return
 	}
 
-	args := []string{
-		"dump", "cluster",
-		"--artifact-dir=" + dumpDir,
-		"--dump-guest-cluster=true",
-		"--name=" + clusterName,
-		"--namespace=" + namespace,
-	}
+	args := dumpClusterArgs(dumpDir, clusterName, namespace, azureCredentialsFile)
 
 	log.Printf("Dumping cluster %s -> %s", clusterName, dumpDir)
 	log.Printf("Running: %s %v", hypershiftBinary, args)
@@ -91,4 +86,18 @@ func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string) {
 	}
 
 	log.Printf("Successfully dumped cluster %s", clusterName)
+}
+
+func dumpClusterArgs(dumpDir, clusterName, namespace, azureCredentialsFile string) []string {
+	args := []string{
+		"dump", "cluster",
+		"--artifact-dir=" + dumpDir,
+		"--dump-guest-cluster=true",
+		"--name=" + clusterName,
+		"--namespace=" + namespace,
+	}
+	if azureCredentialsFile != "" {
+		args = append(args, "--azure-creds="+azureCredentialsFile)
+	}
+	return args
 }

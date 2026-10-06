@@ -488,7 +488,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
-			err = dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig)
+			err = dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig, opts.AzurePlatform.CredentialsFile)
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
@@ -498,7 +498,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 			}
 			return utilerrors.NewAggregate(dumpErrors)
 		default:
-			err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig)
+			err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig, opts.AzurePlatform.CredentialsFile)
 			if err != nil {
 				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}

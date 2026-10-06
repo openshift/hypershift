@@ -7,6 +7,32 @@ import (
 	"testing"
 )
 
+func TestAzureCredentialsFileFromEnv(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		want string
+	}{
+		{
+			name: "When AZURE_CREDS is set, it should return the configured path",
+			env:  "/etc/azure/custom-credentials.json",
+			want: "/etc/azure/custom-credentials.json",
+		},
+		{
+			name: "When AZURE_CREDS is unset, it should return the self-managed Azure default",
+			want: defaultAzureCreds,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AZURE_CREDS", test.env)
+			if got := AzureCredentialsFileFromEnv(); got != test.want {
+				t.Fatalf("AzureCredentialsFileFromEnv() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 	t.Parallel()
 

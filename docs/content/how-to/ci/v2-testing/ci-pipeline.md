@@ -142,6 +142,8 @@ See [Labels](writing-tests.md#labels-two-layer-model) for how to control which t
 
 Calls `hypershift dump cluster` in parallel for all clusters, collecting must-gather artifacts to `ARTIFACT_DIR`. Unlike `create` and `destroy`, the dump command is platform-agnostic (no platform subcommand).
 
+For Azure clusters, `dump-guests` forwards `AZURE_CREDS` to the dump command so it can collect each AzureMachine's serial boot log and best-effort worker journal before teardown. The identity in that credentials file needs `Microsoft.Compute/virtualMachines/retrieveBootDiagnosticsData/action` and `Microsoft.Compute/virtualMachines/runCommand/action`, scoped to the worker VM resource group. The serial log URI is a SAS URL; it is used only for the download and is not written to the artifacts or logs. Missing permissions, unavailable diagnostics, and VM agent failures are reported as nonfatal dump warnings.
+
 This binary **always exits 0** to ensure cleanup steps run even if dump fails.
 
 ### `destroy-guests`
