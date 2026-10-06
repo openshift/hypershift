@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: certified-operators-catalog
   annotations:
-    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"}, {"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"}, {"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"rebuild-cache\")].image"}, {"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
 spec:
   selector:
     matchLabels:
@@ -86,8 +86,6 @@ spec:
         - args:
           - --catalog.from=/configs
           - --catalog.to=/extracted-catalog/catalog
-          - --cache.from=/tmp/cache
-          - --cache.to=/extracted-catalog/cache
           command:
           - /utilities/copy-content
           image: from:imagestream
@@ -97,6 +95,26 @@ spec:
           volumeMounts:
           - mountPath: /utilities
             name: utilities
+          - mountPath: /extracted-catalog
+            name: catalog-content
+        # rebuild-cache regenerates the opm cache from the extracted /configs instead of
+        # copying the cache shipped in the catalog image. Filtered catalog images produced by
+        # oc-mirror v2 ship a stale opm cache that no longer matches their filtered /configs
+        # (OCPBUGS-109376), which makes `opm serve --cache-dir` fail its integrity check with
+        # "cache requires rebuild". Rebuilding here keeps container startup fast while ensuring
+        # the cache is always consistent with the served catalog.
+        - args:
+          - serve
+          - /extracted-catalog/catalog
+          - --cache-dir=/extracted-catalog/cache
+          - --cache-only
+          command:
+          - /bin/opm
+          image: from:imagestream
+          name: rebuild-cache
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
           - mountPath: /extracted-catalog
             name: catalog-content
       volumes:
