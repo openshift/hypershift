@@ -435,6 +435,19 @@ const (
 	// project, to let deletion proceed anyway.
 	GCPFirewallSkipDeletionAnnotation = "hypershift.openshift.io/skip-gcp-firewall-rule-cleanup"
 
+	// GCPFirewallRuleProvisioningAttemptedAnnotation is durable evidence, persisted
+	// before the control-plane-operator mutates GCP, that a managed worker firewall
+	// rule creation was attempted. The control-plane-operator sets it to "true"
+	// immediately before its first InsertFirewall call and only proceeds with the
+	// create once the write succeeds. Its absence therefore proves no rule was
+	// ever created, which lets deletion safely skip cleanup even when WIF
+	// credentials are unavailable (the rule's existence cannot be checked). Its
+	// presence means a rule may exist, so deletion retains the HCP finalizer until
+	// the rule is confirmed gone. It records an attempt, not confirmed existence: a
+	// create that is attempted but fails still sets it, which is deliberately
+	// conservative (it can over-retain the finalizer but can never leak a rule).
+	GCPFirewallRuleProvisioningAttemptedAnnotation = "hypershift.openshift.io/gcp-firewall-rule-provisioning-attempted"
+
 	// DisableIgnitionServerAnnotation controls skipping of the ignition server deployment.
 	DisableIgnitionServerAnnotation = "hypershift.openshift.io/disable-ignition-server"
 
