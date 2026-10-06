@@ -7,16 +7,21 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	clusterdump "github.com/openshift/hypershift/cmd/cluster/dump"
 	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
+	consolelogsazure "github.com/openshift/hypershift/cmd/consolelogs/azure"
 	"github.com/openshift/hypershift/cmd/infra/aws/util"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/upsert"
 
 	"k8s.io/apimachinery/pkg/util/errors"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -25,7 +30,7 @@ import (
 // DumpHostedCluster dumps the contents of the hosted cluster to the given artifact
 // directory, and returns an error if any aspect of that operation fails. The loop
 // detector is configured to return an error when any warnings are detected.
-func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, isDumpingGuestCluster bool, dumpGuestClusterPolicies map[clusterdump.DumpGuestClusterPolicy]struct{}, artifactDir, kubeconfigPath, azureCredentialsFile string) error {
+func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, isDumpingGuestCluster bool, dumpGuestClusterPolicies map[clusterdump.DumpGuestClusterPolicy]struct{}, artifactDir, kubeconfigPath string) error {
 	dumpLogFile := filepath.Join(artifactDir, "dump.log")
 	dumpLog, err := os.Create(dumpLogFile)
 	if err != nil {
@@ -53,7 +58,6 @@ func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedClus
 		Name:                     hc.Name,
 		Kubeconfig:               kubeconfigPath,
 		ArtifactDir:              artifactDir,
-		AzureCredentialsFile:     azureCredentialsFile,
 		LogCheckers:              []clusterdump.LogChecker{findKubeObjectUpdateLoops},
 		IsDumpingGuestCluster:    isDumpingGuestCluster,
 		DumpGuestClusterPolicies: dumpGuestClusterPolicies,
@@ -68,6 +72,35 @@ func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedClus
 		allErrors = append(allErrors, fmt.Errorf("failed to dump cluster: %w", err))
 	}
 	return errors.NewAggregate(allErrors)
+}
+
+// DumpAzureMachineDiagnostics collects Azure VM serial console logs and worker
+// journals for an Azure HostedCluster. Azure collection is best-effort for E2E
+// artifacts and is bounded so it cannot hang test cleanup indefinitely.
+func DumpAzureMachineDiagnostics(ctx context.Context, namespace, name, credentialsFile, artifactDir, kubeconfigPath string) error {
+	diagnosticsCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+
+	managementClient, err := cmdutil.GetClientWithKubeconfig(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	hostedCluster := &hyperv1.HostedCluster{}
+	if err := managementClient.Get(diagnosticsCtx, crclient.ObjectKey{Namespace: namespace, Name: name}, hostedCluster); err != nil {
+		return fmt.Errorf("failed to get HostedCluster for Azure diagnostics: %w", err)
+	}
+	if hostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil
+	}
+	if credentialsFile == "" {
+		return fmt.Errorf("Azure credentials file is not configured")
+	}
+
+	if err := consolelogsazure.DumpMachineDiagnostics(diagnosticsCtx, managementClient, hostedCluster, credentialsFile, artifactDir, logr.Discard()); err != nil {
+		return fmt.Errorf("failed to collect Azure machine diagnostics: %w", err)
+	}
+	return nil
 }
 
 // DumpMachineConsoleLogs dumps machine console logs for the given hostedcluster.

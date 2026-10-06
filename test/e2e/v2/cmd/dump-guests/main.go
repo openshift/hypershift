@@ -21,6 +21,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"os"
@@ -28,6 +29,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	e2edump "github.com/openshift/hypershift/test/e2e/util/dump"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 )
 
@@ -72,7 +74,7 @@ func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace, azureCre
 		return
 	}
 
-	args := dumpClusterArgs(dumpDir, clusterName, namespace, azureCredentialsFile)
+	args := dumpClusterArgs(dumpDir, clusterName, namespace)
 
 	log.Printf("Dumping cluster %s -> %s", clusterName, dumpDir)
 	log.Printf("Running: %s %v", hypershiftBinary, args)
@@ -82,22 +84,22 @@ func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace, azureCre
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		log.Printf("WARNING: Failed to dump cluster %s: %v", clusterName, err)
-		return
+	} else {
+		log.Printf("Successfully dumped cluster %s", clusterName)
 	}
 
-	log.Printf("Successfully dumped cluster %s", clusterName)
+	if err := e2edump.DumpAzureMachineDiagnostics(context.Background(), namespace, clusterName, azureCredentialsFile, dumpDir, ""); err != nil {
+		log.Printf("WARNING: Failed to dump Azure machine diagnostics for cluster %s: %v", clusterName, err)
+	}
 }
 
-func dumpClusterArgs(dumpDir, clusterName, namespace, azureCredentialsFile string) []string {
+func dumpClusterArgs(dumpDir, clusterName, namespace string) []string {
 	args := []string{
 		"dump", "cluster",
 		"--artifact-dir=" + dumpDir,
 		"--dump-guest-cluster=true",
 		"--name=" + clusterName,
 		"--namespace=" + namespace,
-	}
-	if azureCredentialsFile != "" {
-		args = append(args, "--azure-creds="+azureCredentialsFile)
 	}
 	return args
 }

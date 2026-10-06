@@ -9,7 +9,7 @@ import (
 )
 
 func TestDumpHostedCluster(t *testing.T) {
-	err := DumpHostedCluster(t.Context(), t, &v1beta1.HostedCluster{}, false, map[clusterdump.DumpGuestClusterPolicy]struct{}{}, t.TempDir(), "/nonexistent/kubeconfig", "")
+	err := DumpHostedCluster(t.Context(), t, &v1beta1.HostedCluster{}, false, map[clusterdump.DumpGuestClusterPolicy]struct{}{}, t.TempDir(), "/nonexistent/kubeconfig")
 	if err == nil {
 		t.Fatal("expected invalid kubeconfig to stop dumping")
 	}

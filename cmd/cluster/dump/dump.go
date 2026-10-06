@@ -16,7 +16,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	scheduling "github.com/openshift/hypershift/api/scheduling/v1alpha1"
-	consolelogsazure "github.com/openshift/hypershift/cmd/consolelogs/azure"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
@@ -142,12 +141,11 @@ var (
 )
 
 type DumpOptions struct {
-	Namespace            string
-	Name                 string
-	Kubeconfig           string
-	ArtifactDir          string
-	AzureCredentialsFile string
-	ArchiveDump          bool
+	Namespace   string
+	Name        string
+	Kubeconfig  string
+	ArtifactDir string
+	ArchiveDump bool
 	// LogCheckers is a list of functions that will
 	// get run over all raw logs if set.
 	LogCheckers []LogChecker
@@ -216,7 +214,6 @@ func NewDumpCommand(dumpCallback DumpCallback, clientProviders ...*util.ClientPr
 		Namespace:                "clusters",
 		Name:                     "example",
 		ArtifactDir:              "",
-		AzureCredentialsFile:     os.Getenv("AZURE_CREDS"),
 		ArchiveDump:              true,
 		AgentNamespace:           "",
 		DumpGuestClusterPolicies: map[DumpGuestClusterPolicy]struct{}{},
@@ -228,7 +225,6 @@ func NewDumpCommand(dumpCallback DumpCallback, clientProviders ...*util.ClientPr
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.ImpersonateAs, "as", opts.ImpersonateAs, "The user or service account to impersonate to and used to execute the cluster dump command")
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
-	cmd.Flags().StringVar(&opts.AzureCredentialsFile, "azure-creds", opts.AzureCredentialsFile, "Path to the Azure credentials file for collecting Azure VM diagnostics")
 	cmd.Flags().BoolVar(&opts.ArchiveDump, "archive-dump", opts.ArchiveDump, "Create a tar archive of the artifact directory")
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
 	cmd.Flags().StringVar(&dumpGuestClusterFlag, "dump-guest-cluster", "", "Dump data plane content as well. "+
@@ -454,9 +450,6 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 			UserName: opts.ImpersonateAs,
 		}
 	}
-	azureCtx, cancelAzure := context.WithTimeout(ctx, 10*time.Minute)
-	dumpAzureMachineDiagnostics(azureCtx, c, opts)
-	cancelAzure()
 
 	allNodePools := &hyperv1.NodePoolList{}
 	if err = c.List(ctx, allNodePools, client.InNamespace(opts.Namespace)); err != nil {
@@ -569,24 +562,6 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	}
 
 	return nil
-}
-
-func dumpAzureMachineDiagnostics(ctx context.Context, kubeClient client.Client, opts *DumpOptions) {
-	hostedCluster := &hyperv1.HostedCluster{}
-	if err := kubeClient.Get(ctx, client.ObjectKey{Namespace: opts.Namespace, Name: opts.Name}, hostedCluster); err != nil {
-		opts.Log.Info("Skipping Azure machine diagnostics because the HostedCluster could not be read", "error", err)
-		return
-	}
-	if hostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
-		return
-	}
-	if opts.AzureCredentialsFile == "" {
-		opts.Log.Info("Skipping Azure machine diagnostics because --azure-creds or AZURE_CREDS is not configured")
-		return
-	}
-	if err := consolelogsazure.DumpMachineDiagnostics(ctx, kubeClient, hostedCluster, opts.AzureCredentialsFile, opts.ArtifactDir, opts.Log); err != nil {
-		opts.Log.Error(err, "Azure machine diagnostics collection failed; continuing cluster dump")
-	}
 }
 
 // DumpGuestCluster dumps resources from a hosted cluster using its apiserver
