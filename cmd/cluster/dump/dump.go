@@ -450,7 +450,6 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 			UserName: opts.ImpersonateAs,
 		}
 	}
-
 	allNodePools := &hyperv1.NodePoolList{}
 	if err = c.List(ctx, allNodePools, client.InNamespace(opts.Namespace)); err != nil {
 		opts.Log.Error(err, "Cannot list nodepools")

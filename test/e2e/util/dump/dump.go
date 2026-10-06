@@ -78,13 +78,20 @@ func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedClus
 // journals for an Azure HostedCluster. Azure collection is best-effort for E2E
 // artifacts and is bounded so it cannot hang test cleanup indefinitely.
 func DumpAzureMachineDiagnostics(ctx context.Context, namespace, name, credentialsFile, artifactDir, kubeconfigPath string) error {
-	diagnosticsCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
-
 	managementClient, err := cmdutil.GetClientWithKubeconfig(kubeconfigPath)
 	if err != nil {
 		return err
 	}
+	return dumpAzureMachineDiagnostics(ctx, managementClient, namespace, name, credentialsFile, artifactDir, func(ctx context.Context, managementClient crclient.Client, hostedCluster *hyperv1.HostedCluster, credentialsFile, artifactDir string) error {
+		return consolelogsazure.DumpMachineDiagnostics(ctx, managementClient, hostedCluster, credentialsFile, artifactDir, logr.Discard())
+	})
+}
+
+type azureMachineDiagnosticsCollector func(context.Context, crclient.Client, *hyperv1.HostedCluster, string, string) error
+
+func dumpAzureMachineDiagnostics(ctx context.Context, managementClient crclient.Client, namespace, name, credentialsFile, artifactDir string, collect azureMachineDiagnosticsCollector) error {
+	diagnosticsCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
 
 	hostedCluster := &hyperv1.HostedCluster{}
 	if err := managementClient.Get(diagnosticsCtx, crclient.ObjectKey{Namespace: namespace, Name: name}, hostedCluster); err != nil {
@@ -97,7 +104,7 @@ func DumpAzureMachineDiagnostics(ctx context.Context, namespace, name, credentia
 		return fmt.Errorf("Azure credentials file is not configured")
 	}
 
-	if err := consolelogsazure.DumpMachineDiagnostics(diagnosticsCtx, managementClient, hostedCluster, credentialsFile, artifactDir, logr.Discard()); err != nil {
+	if err := collect(diagnosticsCtx, managementClient, hostedCluster, credentialsFile, artifactDir); err != nil {
 		return fmt.Errorf("failed to collect Azure machine diagnostics: %w", err)
 	}
 	return nil
