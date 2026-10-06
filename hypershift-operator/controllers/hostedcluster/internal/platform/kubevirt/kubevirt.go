@@ -318,40 +318,68 @@ func credentialsSecret(hcpNamespace string) *corev1.Secret {
 }
 
 func (p Kubevirt) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	var ref *hyperv1.KubeconfigSecretRef
-	if kv := hcluster.Spec.Platform.Kubevirt; kv != nil && kv.Credentials != nil && kv.Credentials.InfraKubeConfigSecret != nil {
-		ref = kv.Credentials.InfraKubeConfigSecret
-	}
+	_, err := p.ReconcileDeletionCredentials(ctx, c, hcluster, controlPlaneNamespace)
+	return err
+}
+
+// DeletionCredentialsResult distinguishes non-blocking source rejection from
+// successful publication. Cleanup and API failures are returned separately.
+type DeletionCredentialsResult struct {
+	Published       bool
+	CredentialError error
+}
+
+// ReconcileDeletionCredentials retains safe credentials for deleting consumers
+// and reports validation/publication outcomes without blocking non-consuming teardown.
+func (p Kubevirt) ReconcileDeletionCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) (DeletionCredentialsResult, error) {
+	result := DeletionCredentialsResult{}
 	if err := p.deleteUnsafeCredentials(ctx, c, controlPlaneNamespace); err != nil {
-		return err
+		return result, err
 	}
-	if ref == nil || ref.Name == "" || ref.Key == "" {
-		return nil
+	kv := hcluster.Spec.Platform.Kubevirt
+	if kv == nil || kv.Credentials == nil {
+		return result, nil
 	}
-	var source corev1.Secret
-	if err := c.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: ref.Name}, &source); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("failed to inspect infrastructure source during deletion: %w", err)
+	ref := kv.Credentials.InfraKubeConfigSecret
+	switch {
+	case ref == nil:
+		result.CredentialError = errors.New("infrastructure credential reference is missing")
+	case ref.Name == "":
+		result.CredentialError = errors.New("infrastructure credential name is empty")
+	case ref.Key == "":
+		result.CredentialError = errors.New("infrastructure credential key is empty")
 	}
-	// Recovery publication is eligible only for validated source credentials.
-	// Rejected input still permits teardown that does not consume an infra client.
-	_, validationErr := kvinfra.KubeConfigData(&source, ref.Key)
-	if validationErr == nil {
-		var namespace corev1.Namespace
-		if err := c.Get(ctx, client.ObjectKey{Name: controlPlaneNamespace}, &namespace); err != nil {
+	if result.CredentialError == nil {
+		var source corev1.Secret
+		if err := c.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: ref.Name}, &source); err != nil {
+			err = fmt.Errorf("failed to inspect infrastructure source during deletion: %w", err)
 			if apierrors.IsNotFound(err) {
-				return nil
+				result.CredentialError = err
+				return result, nil
 			}
-			return fmt.Errorf("failed to inspect control plane namespace during deletion: %w", err)
+			return result, err
 		}
-		if !namespace.DeletionTimestamp.IsZero() {
-			return nil
+		// Recovery publication is eligible only for validated source credentials.
+		// Rejected input still permits teardown that does not consume an infra client.
+		_, result.CredentialError = kvinfra.KubeConfigData(&source, ref.Key)
+		if result.CredentialError == nil {
+			var namespace corev1.Namespace
+			if err := c.Get(ctx, client.ObjectKey{Name: controlPlaneNamespace}, &namespace); err != nil {
+				if apierrors.IsNotFound(err) {
+					return result, nil
+				}
+				return result, fmt.Errorf("failed to inspect control plane namespace during deletion: %w", err)
+			}
+			if !namespace.DeletionTimestamp.IsZero() {
+				return result, nil
+			}
+			// CAPK needs the fixed target until Machines/VMs finish deleting. Reuse normal
+			// validated publication, without recreating deleted/terminating namespaces.
+			if err := p.ReconcileCredentials(ctx, c, upsert.New(false).CreateOrUpdate, hcluster, controlPlaneNamespace); err != nil {
+				return result, err
+			}
+			result.Published = true
 		}
-		// CAPK needs the fixed target until Machines/VMs finish deleting. Reuse normal
-		// validated publication, without recreating deleted/terminating namespaces.
-		return p.ReconcileCredentials(ctx, c, upsert.New(false).CreateOrUpdate, hcluster, controlPlaneNamespace)
 	}
-	return nil
+	return result, nil
 }

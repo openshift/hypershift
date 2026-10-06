@@ -21,20 +21,24 @@ import (
 )
 
 func TestReconcileCustomKubeconfigSync(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
-		name     string
-		disabled bool
-		dns      bool
-		stale    bool
-		retry    bool
+		name         string
+		disabled     bool
+		dns          bool
+		stale        bool
+		retry        bool
+		deleteDenied bool
 	}{
 		{name: "When custom DNS is removed, it should delete the Secret and persist the cleared reference"},
 		{name: "When a conflict changes the custom reference, it should recompute cleanup from the latest status", retry: true},
 		{name: "When custom kubeconfigs are unsupported, it should preserve the existing Secret and status", disabled: true},
 		{name: "When the HostedCluster still requests custom DNS, it should not clear status from an older HCP", dns: true},
 		{name: "When the generation changes before cleanup, it should preserve the Secret and reject stale status", stale: true},
+		{name: "When Secret deletion fails, it should propagate the error and retain the Secret and both custom references", deleteDenied: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
 			hc := credentialHostedCluster()
 			hc.Spec.Platform = hyperv1.PlatformSpec{Type: hyperv1.NonePlatform}
@@ -46,7 +50,14 @@ func TestReconcileCustomKubeconfigSync(t *testing.T) {
 			oldSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "old-custom"}}
 			newSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "new-custom"}}
 			patches := 0
+			deletionErr := errors.New("custom kubeconfig deletion denied")
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).WithObjects(hc, oldSecret, newSecret).WithInterceptorFuncs(interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					if tc.deleteDenied {
+						return deletionErr
+					}
+					return c.Delete(ctx, obj, opts...)
+				},
 				SubResourcePatch: func(ctx context.Context, c client.Client, subresource string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
 					patches++
 					if tc.retry && patches == 1 {
@@ -75,11 +86,14 @@ func TestReconcileCustomKubeconfigSync(t *testing.T) {
 			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), fresh)).To(Succeed())
 			if tc.stale {
 				g.Expect(err).To(MatchError(ContainSubstring("changed")))
+			} else if tc.deleteDenied {
+				g.Expect(errors.Is(err, deletionErr)).To(BeTrue())
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
 			}
-			if tc.disabled || tc.dns || tc.stale {
+			if tc.disabled || tc.dns || tc.stale || tc.deleteDenied {
 				g.Expect(fresh.Status.CustomKubeconfig).To(Equal(&corev1.LocalObjectReference{Name: oldSecret.Name}))
+				g.Expect(hc.Status.CustomKubeconfig).To(Equal(&corev1.LocalObjectReference{Name: oldSecret.Name}))
 				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(oldSecret), oldSecret)).To(Succeed())
 			} else {
 				g.Expect(fresh.Status.CustomKubeconfig).To(BeNil())

@@ -1398,9 +1398,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			// an error should be returned here because the ValidHostedClusterConfiguration status may be transient
 			return ctrl.Result{}, fmt.Errorf("configuration is invalid: %s", validConfig.Message)
 		}
-		if validConfig != nil && validConfig.Status == metav1.ConditionUnknown {
-			return ctrl.Result{}, fmt.Errorf("configuration validation is incomplete: %s", validConfig.Message)
-		}
+		// Incomplete release-dependent validation is reported as Unknown, but must
+		// not prevent CoreHCPChain from propagating configuration during an outage.
 		supportedHostedCluster := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.SupportedHostedCluster))
 		if supportedHostedCluster != nil && supportedHostedCluster.Status == metav1.ConditionFalse {
 			log.Error(fmt.Errorf("not supported by operator configuration"), "reconciliation is blocked", "message", supportedHostedCluster.Message)

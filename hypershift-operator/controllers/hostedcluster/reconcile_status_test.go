@@ -21,7 +21,9 @@ import (
 )
 
 func TestPatchHostedClusterCondition(t *testing.T) {
+	t.Parallel()
 	t.Run("When a conflict changes the status used to compute a condition, it should recompute from the latest object", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		hc := credentialHostedCluster()
 		hc.Status.CustomKubeconfig = &corev1.LocalObjectReference{Name: "initial"}
