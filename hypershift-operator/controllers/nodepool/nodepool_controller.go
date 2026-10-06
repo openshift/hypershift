@@ -4,6 +4,7 @@ import (
 	"context"
 	coreerrors "errors"
 	"fmt"
+	"maps"
 	"os"
 	"regexp"
 	"sort"
@@ -491,21 +492,19 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
-	// Set scale-from-zero annotations if provider is configured and platform is supported
-	// This works for both Replace (MachineDeployment) and InPlace (MachineSet) upgrade types
-	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && r.ScaleFromZeroPlatform == nodePool.Spec.Platform.Type {
-		if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, capi); err != nil {
-			// Distinguish permanent errors (VM size doesn't exist in this region)
-			// from transient errors (API failure, cache load error) to avoid
-			// retrying indefinitely for non-existent VM sizes.
-			var vmNotFound *azureinstancetype.VMSizeNotFoundError
-			if coreerrors.As(err, &vmNotFound) {
-				log.Error(err, "Permanent error setting scale-from-zero annotations; verify the VM size exists in this region")
-				return ctrl.Result{}, nil
-			}
-			log.Error(err, "Failed to set scale-from-zero annotations, will retry")
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	// Scheduling metadata is still needed when CAPA/CAPZ provides native capacity,
+	// even if the optional instance-type provider is not configured.
+	if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, capi); err != nil {
+		// Distinguish permanent errors (VM size doesn't exist in this region)
+		// from transient errors (API failure, cache load error) to avoid
+		// retrying indefinitely for non-existent VM sizes.
+		var vmNotFound *azureinstancetype.VMSizeNotFoundError
+		if coreerrors.As(err, &vmNotFound) {
+			log.Error(err, "Permanent error setting scale-from-zero annotations; verify the VM size exists in this region")
+			return ctrl.Result{}, nil
 		}
+		log.Error(err, "Failed to set scale-from-zero annotations, will retry")
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	return ctrl.Result{}, nil
@@ -1371,6 +1370,10 @@ func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]st
 // reconcileScaleFromZeroAnnotations sets scale-from-zero annotations on MachineDeployment/MachineSet.
 // It supports multiple platforms by switching on the NodePool's platform type.
 func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Context, nodePool *hyperv1.NodePool, capi *CAPI) error {
+	if !isAutoscalingEnabled(nodePool) {
+		return nil
+	}
+
 	// Get the platform-specific machine template
 	var machineTemplate interface{}
 	switch nodePool.Spec.Platform.Type {
@@ -1396,7 +1399,7 @@ func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Conte
 		machineTemplate = azureTemplate
 
 	default:
-		return fmt.Errorf("unsupported platform for scale-from-zero: %s", nodePool.Spec.Platform.Type)
+		return nil
 	}
 
 	// Get the appropriate CAPI object (MachineSet for InPlace, MachineDeployment for Replace)
@@ -1426,11 +1429,19 @@ func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Conte
 	}
 
 	// Create a patch base before modifying the object
-	patch := client.MergeFrom(obj.DeepCopyObject().(client.Object))
+	patch := client.MergeFromWithOptions(obj.DeepCopyObject().(client.Object), client.MergeFromWithOptimisticLock{})
+	originalAnnotations := obj.GetAnnotations()
+	provider := r.InstanceTypeProvider
+	if r.ScaleFromZeroPlatform != nodePool.Spec.Platform.Type {
+		provider = nil
+	}
 
 	// Set scale-from-zero annotations on the object
-	if err := setScaleFromZeroAnnotationsOnObject(ctx, r.InstanceTypeProvider, nodePool, obj, machineTemplate); err != nil {
+	if err := setScaleFromZeroAnnotationsOnObject(ctx, provider, nodePool, obj, machineTemplate); err != nil {
 		return fmt.Errorf("failed to set scale-from-zero annotations: %w", err)
+	}
+	if maps.Equal(originalAnnotations, obj.GetAnnotations()) {
+		return nil
 	}
 
 	// Patch only sends the diff, avoiding unnecessary API updates when annotations haven't changed
