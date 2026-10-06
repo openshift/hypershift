@@ -314,6 +314,29 @@ func (p GCP) buildVolumes(_ *hyperv1.HostedCluster) []corev1.Volume {
 	}
 }
 
+type gcpCredentialSecret struct {
+	serviceAccountEmail hyperv1.GCPServiceAccountEmail
+	secret              *corev1.Secret
+}
+
+func gcpCredentialSecrets(hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) []gcpCredentialSecret {
+	var serviceAccounts hyperv1.GCPServiceAccountsEmails
+	if hcluster != nil && hcluster.Spec.Platform.GCP != nil {
+		serviceAccounts = hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails
+	}
+
+	// Keep this as an ordered slice so roles with the same service account email
+	// still reconcile and clean up their distinct Secrets.
+	return []gcpCredentialSecret{
+		{serviceAccountEmail: serviceAccounts.NodePool, secret: NodePoolManagementCredsSecret(controlPlaneNamespace)},
+		{serviceAccountEmail: serviceAccounts.ControlPlane, secret: ControlPlaneOperatorCredsSecret(controlPlaneNamespace)},
+		{serviceAccountEmail: serviceAccounts.CloudController, secret: CloudControllerCredsSecret(controlPlaneNamespace)},
+		{serviceAccountEmail: serviceAccounts.Storage, secret: GCPPDCloudCredentialsSecret(controlPlaneNamespace)},
+		{serviceAccountEmail: serviceAccounts.ImageRegistry, secret: ImageRegistryCredsSecret(controlPlaneNamespace)},
+		{serviceAccountEmail: serviceAccounts.Network, secret: CNCCCredsSecret(controlPlaneNamespace)},
+	}
+}
+
 func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string,
@@ -342,23 +365,14 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 		return nil
 	}
 
-	credentialSecrets := map[hyperv1.GCPServiceAccountEmail]*corev1.Secret{
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool:        NodePoolManagementCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane:    ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController: CloudControllerCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage:         GCPPDCloudCredentialsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry:   ImageRegistryCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network:         CNCCCredsSecret(controlPlaneNamespace),
-	}
-
-	for email, secret := range credentialSecrets {
-		if err := syncSecret(secret, string(email)); err != nil {
+	for _, credential := range gcpCredentialSecrets(hcluster, controlPlaneNamespace) {
+		if err := syncSecret(credential.secret, string(credential.serviceAccountEmail)); err != nil {
 			errs = append(errs, err)
 		}
 	}
 
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to reconcile GCP credentials: %v", errs)
+	if err := utilerrors.NewAggregate(errs); err != nil {
+		return fmt.Errorf("failed to reconcile GCP credentials: %w", err)
 	}
 
 	return nil
@@ -449,11 +463,16 @@ func (p GCP) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
 
-// DeleteCredentials is a no-op
-// TODO: Implement GCP workload identity credential cleanup.
+// DeleteCredentials removes the GCP workload identity credential Secrets for a HostedCluster.
 func (p GCP) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	// TODO: Implement GCP credential cleanup
-	return nil
+	var errs []error
+	for _, credential := range gcpCredentialSecrets(hcluster, controlPlaneNamespace) {
+		if _, err := k8sutil.DeleteIfNeeded(ctx, c, credential.secret); err != nil {
+			errs = append(errs, fmt.Errorf("failed to clean up GCP cloud credential secret %s/%s: %w", credential.secret.Namespace, credential.secret.Name, err))
+		}
+	}
+
+	return utilerrors.NewAggregate(errs)
 }
 
 // GetCredentialStatus returns the GCP credential status (valid/invalid/unknown).
