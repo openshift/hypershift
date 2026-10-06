@@ -237,9 +237,9 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	obj := &hyperv1.GCPPrivateServiceConnect{}
 	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
 		if apierrors.IsNotFound(err) {
-			// FIX for Issue #5: PSC CR not found - this could be a synthetic request
-			// from mapHCPToPSC when HCP is deleting with no PSC CRs.
-			// Check if there's an HCP in this namespace that needs finalizer removal.
+			// PSC CR not found - this could be a synthetic request from mapHCPToPSC
+			// when the HCP is deleting with no PSC CRs. Check if there's an HCP in
+			// this namespace that needs finalizer removal.
 			return r.handleOrphanedHCPFinalizer(ctx, req.Namespace, log)
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to get GCPPrivateServiceConnect: %w", err)
