@@ -1985,7 +1985,7 @@ func TestMapHCPToPSC(t *testing.T) {
 			expectNames: nil,
 		},
 		{
-			name:          "When HCP is deleting with no PSC CRs, it should enqueue synthetic request (Issue #5 fix)",
+			name:          "When HCP is deleting with no PSC CRs, it should enqueue synthetic request",
 			hcpFinalizers: []string{hcpGCPPSCFinalizerName},
 			hcpDeleting:   true,
 			pscObjects:    []client.Object{},        // No PSC CRs
@@ -2050,7 +2050,7 @@ func TestMapHCPToPSC(t *testing.T) {
 }
 
 func TestHandleOrphanedHCPFinalizer(t *testing.T) {
-	t.Run("When HCP is deleting with finalizer but no PSC CRs, it should remove HCP finalizer (Issue #5 fix)", func(t *testing.T) {
+	t.Run("When HCP is deleting with finalizer but no PSC CRs, it should remove HCP finalizer", func(t *testing.T) {
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newTestHCP("test-hcp", "test-ns")
 		hcp.Finalizers = []string{hcpGCPPSCFinalizerName, "other-finalizer"}
@@ -2204,7 +2204,7 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 		expectFinalizerRetained bool
 	}{
 		{
-			name:               "When builder is initialized but HCP is deleted, it should remove PSC finalizer (Issue #6 fix)",
+			name:               "When builder is initialized but HCP is deleted, it should remove PSC finalizer",
 			builderInitialized: true,
 		},
 		{
