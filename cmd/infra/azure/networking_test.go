@@ -2,9 +2,11 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -14,6 +16,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
 
@@ -85,6 +90,86 @@ func TestNewVirtualNetworkLink(t *testing.T) {
 			g.Expect(*link.Properties.VirtualNetwork.ID).To(Equal(test.vnetID))
 			g.Expect(link.Properties.RegistrationEnabled).ToNot(BeNil())
 			g.Expect(*link.Properties.RegistrationEnabled).To(Equal(test.registrationEnabled))
+		})
+	}
+}
+
+type testSanitizedCauseError struct {
+	marker string
+}
+
+func (e *testSanitizedCauseError) Error() string {
+	return e.marker
+}
+
+func TestSanitizeVirtualNetworkLinkCause(t *testing.T) {
+	tests := []struct {
+		name             string
+		cause            error
+		isTarget         error
+		expectedCategory string
+		asTarget         func() any
+	}{
+		{
+			name:             "When the cause is a deadline, it should use a fixed deadline category",
+			cause:            fmt.Errorf("wrapped: %w", context.DeadlineExceeded),
+			isTarget:         context.DeadlineExceeded,
+			expectedCategory: "provider/deadline-exceeded",
+		},
+		{
+			name:             "When the cause is cancellation, it should use a fixed cancellation category",
+			cause:            fmt.Errorf("wrapped: %w", context.Canceled),
+			isTarget:         context.Canceled,
+			expectedCategory: "provider/canceled",
+		},
+		{
+			name:             "When the cause is an authentication failure, it should use a fixed authentication category",
+			cause:            fmt.Errorf("wrapped: %w", &azidentity.AuthenticationFailedError{}),
+			expectedCategory: "provider/authentication",
+			asTarget: func() any {
+				var target *azidentity.AuthenticationFailedError
+				return &target
+			},
+		},
+		{
+			name: "When the cause is a transport failure, it should use a fixed transport category",
+			cause: fmt.Errorf("wrapped: %w", &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: &testSanitizedCauseError{marker: "SENSITIVE_TRANSPORT_DETAIL"},
+			}),
+			expectedCategory: "provider/transport",
+			asTarget: func() any {
+				var target *net.OpError
+				return &target
+			},
+		},
+		{
+			name:             "When the cause is unrecognized, it should use a fixed unknown category",
+			cause:            fmt.Errorf("wrapped: %w", &testSanitizedCauseError{marker: "SENSITIVE_UNKNOWN_DETAIL"}),
+			expectedCategory: "provider/unknown",
+			asTarget: func() any {
+				var target *testSanitizedCauseError
+				return &target
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			err := sanitizeVirtualNetworkLinkCause("poll", "provider", test.cause)
+
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(Equal(fmt.Sprintf("virtual network link provider error phase=poll category=%s", test.expectedCategory)))
+			g.Expect(errors.Is(err, test.cause)).To(BeTrue())
+			if test.isTarget != nil {
+				g.Expect(errors.Is(err, test.isTarget)).To(BeTrue())
+			}
+			g.Expect(err.Error()).ToNot(ContainSubstring("SENSITIVE_"))
+			if test.asTarget != nil {
+				g.Expect(errors.As(err, test.asTarget())).To(BeTrue())
+			}
 		})
 	}
 }
@@ -258,6 +343,18 @@ func TestErrorsAsAzureResponseError(t *testing.T) {
 type virtualNetworkLinkGetAction func(context.Context) (armprivatedns.VirtualNetworkLink, error)
 
 type virtualNetworkLinkBeginAction func(context.Context, *armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions) (virtualNetworkLinkPoller, error)
+
+type testTokenCredential struct{}
+
+func (testTokenCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+}
+
+type testHTTPTransport func(*http.Request) (*http.Response, error)
+
+func (f testHTTPTransport) Do(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
 
 type fakeVirtualNetworkLinkClient struct {
 	mu sync.Mutex
@@ -561,6 +658,7 @@ func TestCreatePrivateDNSZoneLink(t *testing.T) {
 	t.Run("When the incident conflict never converges, it should fail at the configured bound", testCreatePrivateDNSZoneLinkPendingConflictExhaustion)
 	t.Run("When a conditional create loses a race, it should verify without overwriting", testCreatePrivateDNSZoneLinkHandlesConditionalCreateRace)
 	t.Run("When a conditional race remains pending, it should observe without overwriting", testCreatePrivateDNSZoneLinkObservesPendingConditionalRaceWithoutOverwrite)
+	t.Run("When a pending conditional race never converges, it should fail at the configured bound preserving the 412 cause", testCreatePrivateDNSZoneLinkConditionalRaceExhaustion)
 	t.Run("When Begin returns an unrelated error, it should fail closed", testCreatePrivateDNSZoneLinkPreservesUnrelatedBeginError)
 	t.Run("When polling ends after cancellation, it should skip recovery GET", testCreatePrivateDNSZoneLinkPollErrorCancellationSkipsRecoveryGet)
 	t.Run("When polling ends after a deadline, it should skip recovery GET", testCreatePrivateDNSZoneLinkPollErrorDeadlineSkipsRecoveryGet)
@@ -569,6 +667,100 @@ func TestCreatePrivateDNSZoneLink(t *testing.T) {
 	t.Run("When cancellation occurs during backoff, it should stop subsequent calls", testCreatePrivateDNSZoneLinkCancellationDuringBackoffStopsFurtherCalls)
 	t.Run("When the convergence child deadline expires, it should preserve the deadline and stop calls", testCreatePrivateDNSZoneLinkInternalDeadlineStopsFurtherCalls)
 	t.Run("When provider failures are returned, it should sanitize text and preserve causes", testCreatePrivateDNSZoneLinkSanitizesProviderErrors)
+}
+
+func TestAzureVirtualNetworkLinkClientBeginCreateOrUpdate(t *testing.T) {
+	const (
+		subscriptionID      = "test-subscription"
+		resourceGroupName   = "test-resource-group"
+		privateDNSZoneName  = "test.private.example.com"
+		linkName            = "test-link"
+		desiredVNetID       = "/subscriptions/test-subscription/resourceGroups/test-vnet-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet"
+		expectedRequestPath = "/subscriptions/test-subscription/resourceGroups/test-resource-group/providers/Microsoft.Network/privateDnsZones/test.private.example.com/virtualNetworkLinks/test-link"
+	)
+
+	newClient := func(t *testing.T, transport testHTTPTransport) *azureVirtualNetworkLinkClient {
+		t.Helper()
+		sdkClient, err := armprivatedns.NewVirtualNetworkLinksClient(subscriptionID, testTokenCredential{}, &arm.ClientOptions{
+			ClientOptions: policy.ClientOptions{Transport: transport},
+		})
+		NewGomegaWithT(t).Expect(err).ToNot(HaveOccurred())
+		return &azureVirtualNetworkLinkClient{client: sdkClient}
+	}
+
+	t.Run("When the adapter creates a link, it should forward the target and desired request", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		transport := testHTTPTransport(func(request *http.Request) (*http.Response, error) {
+			g.Expect(request.Method).To(Equal(http.MethodPut))
+			g.Expect(request.URL.Path).To(Equal(expectedRequestPath))
+			g.Expect(request.URL.Query().Get("api-version")).To(Equal("2024-06-01"))
+			g.Expect(request.Header.Get("If-None-Match")).To(Equal("*"))
+
+			var requestedLink armprivatedns.VirtualNetworkLink
+			g.Expect(json.NewDecoder(request.Body).Decode(&requestedLink)).To(Succeed())
+			g.Expect(requestedLink.Properties).ToNot(BeNil())
+			g.Expect(requestedLink.Properties.VirtualNetwork).ToNot(BeNil())
+			g.Expect(requestedLink.Properties.VirtualNetwork.ID).ToNot(BeNil())
+			g.Expect(*requestedLink.Properties.VirtualNetwork.ID).To(Equal(desiredVNetID))
+			g.Expect(requestedLink.Properties.RegistrationEnabled).ToNot(BeNil())
+			g.Expect(*requestedLink.Properties.RegistrationEnabled).To(BeFalse())
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     http.StatusText(http.StatusOK),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body: io.NopCloser(strings.NewReader(fmt.Sprintf(
+					`{"location":"global","properties":{"provisioningState":"Succeeded","virtualNetwork":{"id":%q},"registrationEnabled":false}}`,
+					desiredVNetID,
+				))),
+				Request: request,
+			}, nil
+		})
+		client := newClient(t, transport)
+
+		poller, err := client.BeginCreateOrUpdate(
+			t.Context(),
+			resourceGroupName,
+			privateDNSZoneName,
+			linkName,
+			NewVirtualNetworkLink(VirtualNetworkLinkLocation, desiredVNetID, false),
+			&armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions{IfNoneMatch: ptr.To("*")},
+		)
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(poller).ToNot(BeNil())
+	})
+
+	t.Run("When the SDK returns the recognized pending conflict, it should construct a classifiable response error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		transport := testHTTPTransport(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusConflict,
+				Status:     http.StatusText(http.StatusConflict),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(pendingVirtualNetworkLinkUpsertStructuredBody)),
+				Request:    request,
+			}, nil
+		})
+		client := newClient(t, transport)
+
+		poller, err := client.BeginCreateOrUpdate(
+			t.Context(),
+			resourceGroupName,
+			privateDNSZoneName,
+			linkName,
+			NewVirtualNetworkLink(VirtualNetworkLinkLocation, desiredVNetID, false),
+			&armprivatedns.VirtualNetworkLinksClientBeginCreateOrUpdateOptions{IfNoneMatch: ptr.To("*")},
+		)
+
+		g.Expect(poller).To(BeNil())
+		g.Expect(err).To(HaveOccurred())
+		var responseError *azcore.ResponseError
+		g.Expect(errors.As(err, &responseError)).To(BeTrue())
+		g.Expect(responseError.StatusCode).To(Equal(http.StatusConflict))
+		g.Expect(responseError.ErrorCode).To(Equal("Conflict"))
+		g.Expect(isPendingVirtualNetworkLinkUpsert(err)).To(BeTrue())
+	})
 }
 
 func testCreatePrivateDNSZoneLinkExistingLinkPolicy(t *testing.T) {
@@ -774,18 +966,29 @@ func testCreatePrivateDNSZoneLinkPendingConflictExhaustion(t *testing.T) {
 	g := NewGomegaWithT(t)
 	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
 	client := &fakeVirtualNetworkLinkClient{}
-	for range 3 {
+	var lastPendingConflict *azcore.ResponseError
+	for attempt := range 3 {
+		pendingBody := fmt.Sprintf(`{"error":{"code":"Conflict","message":"Another operation is pending for requested object. Operation group '/operations/groups/id/|virtualNetworkLinks|sensitive-subscription-%d|sensitive-resource-group-%d|sensitive-zone-%d|sensitive-link-%d' already has 1 operations like '/operations/type/UpsertVirtualNetworkLink/id/sensitive-operation-%d' queued."}}`, attempt, attempt, attempt, attempt, attempt)
+		lastPendingConflict = testResponseError(http.StatusConflict, "Conflict", pendingBody)
 		client.getActions = append(client.getActions, getVirtualNetworkLinkError(testResponseError(http.StatusNotFound, "NotFound", ``)))
-		client.beginActions = append(client.beginActions, beginVirtualNetworkLink(nil, testResponseError(http.StatusConflict, "Conflict", pendingVirtualNetworkLinkUpsertBody)))
+		client.beginActions = append(client.beginActions, beginVirtualNetworkLink(nil, lastPendingConflict))
 	}
 
 	err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(3))
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(wait.Interrupted(err)).To(BeTrue())
+	var responseError *azcore.ResponseError
+	g.Expect(errors.As(err, &responseError)).To(BeTrue())
+	g.Expect(responseError).To(BeIdenticalTo(lastPendingConflict))
 	g.Expect(err.Error()).To(ContainSubstring("attempts=3"))
 	g.Expect(err.Error()).To(ContainSubstring("category=pending virtual network link upsert"))
+	g.Expect(err.Error()).To(ContainSubstring("category=pending-upsert status=409 code=Conflict"))
 	g.Expect(err.Error()).ToNot(ContainSubstring("/operations/type/"))
-	g.Expect(err.Error()).ToNot(ContainSubstring("REDACTED"))
+	g.Expect(err.Error()).ToNot(ContainSubstring("sensitive-subscription"))
+	g.Expect(err.Error()).ToNot(ContainSubstring("sensitive-resource-group"))
+	g.Expect(err.Error()).ToNot(ContainSubstring("sensitive-zone"))
+	g.Expect(err.Error()).ToNot(ContainSubstring("sensitive-link"))
+	g.Expect(err.Error()).ToNot(ContainSubstring("sensitive-operation"))
 	getContexts, beginContexts, _ := client.snapshot()
 	g.Expect(getContexts).To(HaveLen(3))
 	g.Expect(beginContexts).To(HaveLen(3))
@@ -889,6 +1092,47 @@ func testCreatePrivateDNSZoneLinkObservesPendingConditionalRaceWithoutOverwrite(
 	getContexts, beginContexts, _ := client.snapshot()
 	g.Expect(getContexts).To(HaveLen(3))
 	g.Expect(beginContexts).To(HaveLen(1))
+}
+
+func testCreatePrivateDNSZoneLinkConditionalRaceExhaustion(t *testing.T) {
+	g := NewGomegaWithT(t)
+	desiredVNetID := "/subscriptions/example/resourceGroups/example/providers/Microsoft.Network/virtualNetworks/desired"
+	creating := armprivatedns.ProvisioningStateCreating
+	client := &fakeVirtualNetworkLinkClient{}
+	var lastPrecondition *azcore.ResponseError
+	markers := make([]string, 0, 3)
+	for attempt := range 3 {
+		marker := fmt.Sprintf("CONDITIONAL_RACE_EXHAUSTION_MARKER_%d", attempt)
+		markers = append(markers, marker)
+		lastPrecondition = testSensitiveResponseError(t, http.StatusPreconditionFailed, "PreconditionFailed", marker)
+		// Each attempt loses the conditional create to a compatible but still-pending
+		// link, so observation continues until the retry budget is exhausted.
+		client.getActions = append(client.getActions,
+			getVirtualNetworkLinkError(testResponseError(http.StatusNotFound, "NotFound", ``)),
+			getVirtualNetworkLink(testVirtualNetworkLink(desiredVNetID, ptr.To(false), &creating, nil)),
+		)
+		client.beginActions = append(client.beginActions, beginVirtualNetworkLink(nil, lastPrecondition))
+	}
+
+	err := createPrivateDNSZoneLink(context.Background(), client, "resource-group", "private-zone", "link", desiredVNetID, testPrivateDNSZoneLinkConfig(3))
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(wait.Interrupted(err)).To(BeTrue())
+	var responseError *azcore.ResponseError
+	g.Expect(errors.As(err, &responseError)).To(BeTrue())
+	g.Expect(responseError).To(BeIdenticalTo(lastPrecondition))
+	g.Expect(err.Error()).To(ContainSubstring("attempts=3"))
+	g.Expect(err.Error()).To(ContainSubstring("category=conditional race properties=desired states=pending"))
+	g.Expect(err.Error()).To(ContainSubstring("category=precondition-failed status=412 code=PreconditionFailed"))
+	g.Expect(err.Error()).ToNot(ContainSubstring("/subscriptions/"))
+	g.Expect(err.Error()).ToNot(ContainSubstring("/operations/type/"))
+	for _, marker := range markers {
+		g.Expect(err.Error()).ToNot(ContainSubstring(marker))
+		g.Expect(err.Error()).ToNot(ContainSubstring("raw-body-" + marker))
+		g.Expect(err.Error()).ToNot(ContainSubstring("operation-" + marker))
+	}
+	getContexts, beginContexts, _ := client.snapshot()
+	g.Expect(getContexts).To(HaveLen(6))
+	g.Expect(beginContexts).To(HaveLen(3))
 }
 
 func testCreatePrivateDNSZoneLinkPreservesUnrelatedBeginError(t *testing.T) {

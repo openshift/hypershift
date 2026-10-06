@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
@@ -346,6 +348,22 @@ func sanitizeVirtualNetworkLinkCause(phase, category string, cause error) error 
 		if safeAzureErrorCodePattern.MatchString(responseError.ErrorCode) {
 			sanitized.errorCode = responseError.ErrorCode
 		}
+		return sanitized
+	}
+
+	var authenticationError *azidentity.AuthenticationFailedError
+	var transportError net.Error
+	switch {
+	case errors.Is(cause, context.DeadlineExceeded):
+		sanitized.category += "/deadline-exceeded"
+	case errors.Is(cause, context.Canceled):
+		sanitized.category += "/canceled"
+	case errors.As(cause, &authenticationError):
+		sanitized.category += "/authentication"
+	case errors.As(cause, &transportError):
+		sanitized.category += "/transport"
+	default:
+		sanitized.category += "/unknown"
 	}
 	return sanitized
 }
@@ -555,6 +573,8 @@ func convergePrivateDNSZoneLink(ctx context.Context, client virtualNetworkLinkCl
 	var poller virtualNetworkLinkPoller
 	completed := false
 	lastObservation := "target not yet observed"
+	var lastRetryableProviderErr error
+	var lastConditionalRaceErr error
 	attempts := 0
 	err := cappedExponentialBackoffWithContext(convergenceCtx, config.backoff, func(callCtx context.Context) (bool, error) {
 		attempts++
@@ -585,6 +605,7 @@ func convergePrivateDNSZoneLink(ctx context.Context, client virtualNetworkLinkCl
 		}
 		if isPendingVirtualNetworkLinkUpsert(getErr) {
 			lastObservation = "pending virtual network link upsert"
+			lastRetryableProviderErr = getErr
 			return false, nil
 		}
 		if !isResponseStatus(getErr, http.StatusPreconditionFailed) {
@@ -610,9 +631,22 @@ func convergePrivateDNSZoneLink(ctx context.Context, client virtualNetworkLinkCl
 			completed = true
 			return true, nil
 		}
+		if retry {
+			// The conditional create lost a race to a compatible but still-pending
+			// link. Retain the sanitized 412 cause so that, if continued observation
+			// later exhausts the retry budget or hits the deadline, the final error
+			// still preserves the original precondition failure for errors.Is/errors.As.
+			lastConditionalRaceErr = conditionalErr
+		}
 		return !retry, nil
 	})
 	if err != nil {
+		if lastRetryableProviderErr != nil {
+			err = errors.Join(err, sanitizeVirtualNetworkLinkCause("conditional-create", "pending-upsert", lastRetryableProviderErr))
+		}
+		if lastConditionalRaceErr != nil {
+			err = errors.Join(err, lastConditionalRaceErr)
+		}
 		return nil, false, fmt.Errorf("network link did not converge (attempts=%d category=%s): %w", attempts, lastObservation, err)
 	}
 	return poller, completed, nil
