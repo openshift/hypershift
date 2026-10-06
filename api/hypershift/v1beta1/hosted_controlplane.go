@@ -162,6 +162,8 @@ type HostedControlPlaneSpec struct {
 	// in the management cluster.
 	// +required
 	// +kubebuilder:validation:MaxItems=6
+	// +listType=map
+	// +listMapKey=service
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
 	// auditWebhook contains metadata for configuring an audit webhook
