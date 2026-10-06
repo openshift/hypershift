@@ -417,6 +417,7 @@ nav:
       - '4.13': reference/manifests/ibmcloud/4.13.md
   - reference/multi-platform-support.md
   - 'NodePool Rollouts': reference/nodepool-rollouts.md
+  - 'NodePool Rollout State Machine': reference/nodepool-rollout-state-machine.md
   - 'Openshift behaviour deviations':
     - reference/ocp-behaviour-deviations/index.md
     - 'Upgrade 4.17 > 4.18': reference/ocp-behaviour-deviations/upgrade-4.17-4.18.md

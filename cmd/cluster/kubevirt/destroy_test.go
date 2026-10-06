@@ -35,6 +35,7 @@ func TestNewDestroyCommand(t *testing.T) {
 			Log:       log.Log,
 		}
 		cmd := NewDestroyCommand(opts)
+		cmd.SetContext(t.Context())
 		g.Expect(cmd.RunE(cmd, nil)).To(HaveOccurred())
 	})
 }

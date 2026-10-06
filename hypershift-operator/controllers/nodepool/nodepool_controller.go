@@ -66,16 +66,18 @@ import (
 )
 
 const (
-	finalizer                                = "hypershift.openshift.io/finalizer"
-	autoscalerMaxAnnotation                  = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
-	autoscalerMinAnnotation                  = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
-	nodePoolAnnotation                       = "hypershift.openshift.io/nodePool"
-	nodePoolAnnotationCurrentConfig          = "hypershift.openshift.io/nodePoolCurrentConfig"
-	nodePoolAnnotationCurrentConfigVersion   = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
-	nodePoolAnnotationTargetConfigVersion    = "hypershift.openshift.io/nodePoolTargetConfigVersion"
-	nodePoolAnnotationUpgradeInProgressTrue  = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
-	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
-	nodePoolAnnotationMaxUnavailable         = "hypershift.openshift.io/nodePoolMaxUnavailable"
+	finalizer                                 = "hypershift.openshift.io/finalizer"
+	autoscalerMaxAnnotation                   = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
+	autoscalerMinAnnotation                   = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
+	nodePoolAnnotation                        = "hypershift.openshift.io/nodePool"
+	nodePoolAnnotationCurrentConfig           = "hypershift.openshift.io/nodePoolCurrentConfig"
+	nodePoolAnnotationCurrentConfigVersion    = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+	nodePoolAnnotationTargetConfigVersion     = "hypershift.openshift.io/nodePoolTargetConfigVersion"
+	nodePoolAnnotationCurrentRolloutConfig    = "hypershift.openshift.io/nodePoolCurrentRolloutConfig"
+	nodePoolAnnotationInProgressRolloutConfig = "hypershift.openshift.io/nodePoolInProgressRolloutConfig"
+	nodePoolAnnotationUpgradeInProgressTrue   = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
+	nodePoolAnnotationUpgradeInProgressFalse  = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
+	nodePoolAnnotationMaxUnavailable          = "hypershift.openshift.io/nodePoolMaxUnavailable"
 
 	// ec2InstanceMetadataHTTPTokensAnnotation can be set to change the instance metadata options of the nodepool underlying EC2 instances
 	// possible values are 'required' (i.e. IMDSv2) or 'optional' which is the default.
@@ -350,6 +352,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		r.supportedVersionSkewCondition,
 		r.validMachineConfigCondition,
 		r.updatingConfigCondition,
+		r.configUpdatePendingCondition,
 		r.updatingVersionCondition,
 		// Conditition that depends on a valid config/token.
 		r.validGeneratedPayloadCondition,
@@ -461,14 +464,44 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// 2. - Reconcile towards expected state of the world.
+
+	// Look up the CAPI workload's current bootstrap hash before token
+	// reconciliation so effectiveSecrets() can maintain the in-progress
+	// rollout target when management-side drift changes the calculated hash.
+	var deployedBootstrapHash string
+	switch nodePool.Spec.Management.UpgradeType {
+	case hyperv1.UpgradeTypeReplace:
+		md := capi.machineDeployment()
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(md), md); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to get MachineDeployment for deployed bootstrap hash: %w", err)
+			}
+		} else if md.Spec.Template.Spec.Bootstrap.DataSecretName != nil {
+			deployedBootstrapHash = extractHashFromSecretName(*md.Spec.Template.Spec.Bootstrap.DataSecretName)
+		}
+	case hyperv1.UpgradeTypeInPlace:
+		ms := capi.machineSet()
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ms), ms); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to get MachineSet for deployed bootstrap hash: %w", err)
+			}
+		} else if ms.Spec.Template.Spec.Bootstrap.DataSecretName != nil {
+			deployedBootstrapHash = extractHashFromSecretName(*ms.Spec.Template.Spec.Bootstrap.DataSecretName)
+		}
+	}
+	token.SetDeployedBootstrapHash(deployedBootstrapHash)
+
 	if err := token.Reconcile(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	seedRolloutAnnotation(nodePool, token.RolloutHashWithoutVersion())
 
 	// non automated infrastructure should not have any machine level cluster-api components
 	if !isAutomatedMachineManagement(nodePool) {
 		targetConfigHash := token.HashWithoutVersion()
 		targetPayloadConfigHash := token.Hash()
+		targetRolloutConfigHash := token.RolloutHashWithoutVersion()
 		nodePool.Status.Version = releaseImage.Version()
 		if nodePool.Annotations == nil {
 			nodePool.Annotations = make(map[string]string)
@@ -479,6 +512,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
 		}
 		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetPayloadConfigHash
+		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
 		return ctrl.Result{}, nil
 	}
 
@@ -803,7 +837,11 @@ func isUpdatingVersion(nodePool *hyperv1.NodePool, targetVersion string) bool {
 }
 
 func isUpdatingConfig(nodePool *hyperv1.NodePool, targetConfigHash string) bool {
-	return targetConfigHash != nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig]
+	currentHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentRolloutConfig]
+	if currentHash == "" {
+		return false
+	}
+	return targetConfigHash != currentHash
 }
 
 func isUpdatingMachineTemplate(nodePool *hyperv1.NodePool, targetMachineTemplate string) bool {
@@ -896,6 +934,40 @@ func MachineDeploymentComplete(deployment *capiv1.MachineDeployment, machineSets
 	}
 
 	return true
+}
+
+// seedRolloutAnnotation seeds the rollout config annotation on first reconcile
+// after operator upgrade. The completed hash is left for CAPI status reconciliation:
+// a workload template can match the desired hash before its rollout completes.
+func seedRolloutAnnotation(nodePool *hyperv1.NodePool, rolloutHashWithoutVersion string) {
+	if _, ok := nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]; ok {
+		return
+	}
+
+	if nodePool.Annotations == nil {
+		nodePool.Annotations = make(map[string]string)
+	}
+
+	// Always seed immediately. Migration policy: pre-migration config changes
+	// are absorbed into the baseline because an opaque full-hash comparison
+	// cannot distinguish user config changes from management-only drift.
+	// Once seeded, the standard rollout-hash comparison detects future changes.
+	nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = rolloutHashWithoutVersion
+}
+
+// extractHashFromSecretName extracts the config hash from a user-data secret name.
+// User-data secrets follow the pattern: user-data-{nodepool-name}-{hash}
+// Token secrets follow the pattern: token-secret-{nodepool-name}-{hash}
+// Returns empty string if the name doesn't match the expected pattern.
+func extractHashFromSecretName(secretName string) string {
+	parts := strings.Split(secretName, "-")
+	// Minimum 4 parts: prefix (user/token), data/secret, nodepool-name, hash
+	// Note: nodepool names can contain hyphens, so there may be more than 4 parts
+	if len(parts) < 4 {
+		return ""
+	}
+	// The hash is the last component
+	return parts[len(parts)-1]
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
