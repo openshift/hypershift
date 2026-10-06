@@ -199,8 +199,9 @@ func (r *GCPPrivateServiceConnectReconciler) mapHCPToPSC() handler.MapFunc {
 		// remove the orphaned HCP finalizer (PSC CRs were deleted before the HCP).
 		if !hcp.DeletionTimestamp.IsZero() && len(pscList.Items) == 0 {
 			log.Info("HCP deleting with no PSC CRs - enqueueing request to remove HCP finalizer")
-			// Use HCP namespace + a known suffix as the PSC name
-			// Reconcile will get NotFound and handle HCP finalizer removal
+			// Use HCP namespace + a known suffix as the PSC name. This assumes no real
+			// PSC CR is named "<hcp>-psc": Reconcile must get NotFound for this name so it
+			// routes into handleOrphanedHCPFinalizer and removes the orphaned HCP finalizer.
 			return []reconcile.Request{{
 				NamespacedName: types.NamespacedName{
 					Name:      hcp.Name + "-psc",
@@ -784,8 +785,8 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 		}
 	}
 
-	// Prefer recorded status zones, falling back to deterministic names to catch partial provisioning
-	zones := dnsZonesToDelete(gcpPSC, hcp)
+	// Delete only zones recorded in status; see dnsZonesToDelete for why names aren't inferred.
+	zones := dnsZonesToDelete(gcpPSC)
 	if len(zones) == 0 {
 		return nil // No DNS zones to clean up
 	}
@@ -807,7 +808,7 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 		return fmt.Errorf("failed to create DNS client for cleanup: %w", err)
 	}
 
-	// Delete all zones (they are always managed by the operator)
+	// Delete the status-recorded zones (see dnsZonesToDelete: names are never inferred).
 	var errs []error
 	for _, zoneName := range zones {
 		if err := deleteZone(ctx, svc, customerProject, zoneName); err != nil {
@@ -822,23 +823,14 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 	return nil
 }
 
-// dnsZonesToDelete returns the DNS zone names to clean up during deletion.
-// It prefers zones recorded in status but always includes the deterministic
-// names so a zone created before its status write (partial provisioning) is
-// still cleaned up. The result is de-duplicated and sorted.
-func dnsZonesToDelete(gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane) []string {
+// dnsZonesToDelete returns the de-duplicated, sorted zone names recorded in status.
+// Deterministic names are not inferred: they aren't unique within a shared GCP project,
+// so deleting one could remove another cluster's zone. We leak over cross-deleting.
+func dnsZonesToDelete(gcpPSC *hyperv1.GCPPrivateServiceConnect) []string {
 	names := map[string]struct{}{}
 	for _, z := range gcpPSC.Status.DNSZones {
 		if z.Name != "" {
 			names[z.Name] = struct{}{}
-		}
-	}
-
-	if hcp != nil && hcp.Spec.DNS.BaseDomain != "" {
-		if generated, err := generateZoneNames(hcp.Name, hcp.Spec.DNS.BaseDomain); err == nil {
-			for _, name := range []string{generated.hypershiftLocalZoneName, generated.publicIngressZoneName, generated.privateIngressZoneName} {
-				names[name] = struct{}{}
-			}
 		}
 	}
 

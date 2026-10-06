@@ -1781,11 +1781,6 @@ func TestReconcileDelete(t *testing.T) {
 }
 
 func TestDNSZonesToDelete(t *testing.T) {
-	hcpWithDomain := func(baseDomain string) *hyperv1.HostedControlPlane {
-		hcp := newTestGCPHCP("test-hcp", "test-ns")
-		hcp.Spec.DNS.BaseDomain = baseDomain
-		return hcp
-	}
 	pscWithStatusZones := func(names ...string) *hyperv1.GCPPrivateServiceConnect {
 		psc := newTestGCPPSC("test-psc", "test-ns", false)
 		for _, n := range names {
@@ -1797,61 +1792,50 @@ func TestDNSZonesToDelete(t *testing.T) {
 	tests := []struct {
 		name          string
 		psc           *hyperv1.GCPPrivateServiceConnect
-		hcp           *hyperv1.HostedControlPlane
 		expectedZones []string
 	}{
 		{
-			name:          "When status has no zones but HCP is present, deterministic names are inferred",
+			name:          "When status records zones, only those recorded names are returned",
+			psc:           pscWithStatusZones("test-hcp-hypershift-local", "example-com-public"),
+			expectedZones: []string{"example-com-public", "test-hcp-hypershift-local"},
+		},
+		{
+			name:          "When status records duplicate zone names, the result is de-duplicated",
+			psc:           pscWithStatusZones("dup-zone", "dup-zone"),
+			expectedZones: []string{"dup-zone"},
+		},
+		{
+			name:          "When status has no zones, nothing is returned and no deterministic names are inferred",
 			psc:           pscWithStatusZones(),
-			hcp:           hcpWithDomain("example.com"),
-			expectedZones: []string{"example-com-private", "example-com-public", "test-hcp-hypershift-local"},
-		},
-		{
-			name:          "When status records a deterministic name, it is de-duplicated against the inferred names",
-			psc:           pscWithStatusZones("test-hcp-hypershift-local"),
-			hcp:           hcpWithDomain("example.com"),
-			expectedZones: []string{"example-com-private", "example-com-public", "test-hcp-hypershift-local"},
-		},
-		{
-			name:          "When status records a zone with no deterministic overlap, it is unioned with all inferred names",
-			psc:           pscWithStatusZones("leftover-zone"),
-			hcp:           hcpWithDomain("example.com"),
-			expectedZones: []string{"example-com-private", "example-com-public", "leftover-zone", "test-hcp-hypershift-local"},
-		},
-		{
-			name:          "When there is no HCP and status is empty, it should yield nothing",
-			psc:           pscWithStatusZones(),
-			hcp:           nil,
 			expectedZones: nil,
 		},
 		{
-			name:          "When the HCP has no base domain, only status-recorded names are returned",
-			psc:           pscWithStatusZones("leftover-zone"),
-			hcp:           hcpWithDomain(""),
-			expectedZones: []string{"leftover-zone"},
+			name:          "When a status zone name is empty, it is skipped",
+			psc:           pscWithStatusZones(""),
+			expectedZones: nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.ElementsMatch(t, tt.expectedZones, dnsZonesToDelete(tt.psc, tt.hcp))
+			assert.ElementsMatch(t, tt.expectedZones, dnsZonesToDelete(tt.psc))
 		})
 	}
 }
 
 func TestCleanupDNS(t *testing.T) {
-	t.Run("It deletes every candidate zone, both status-recorded and inferred from the cluster name", func(t *testing.T) {
+	t.Run("It deletes only the zones recorded in status, leaving deterministically-named zones in place", func(t *testing.T) {
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newTestGCPHCP("test-hcp", "test-ns")
 		hcp.Spec.DNS.BaseDomain = "example.com"
 		psc := newTestGCPPSC("test-psc", "test-ns", false)
-		psc.Status.DNSZones = []hyperv1.DNSZoneStatus{{Name: "leftover-zone"}}
+		psc.Status.DNSZones = []hyperv1.DNSZoneStatus{{Name: "recorded-zone"}}
 
 		existing := map[string]*dns.ManagedZone{
-			"test-hcp-hypershift-local": {Name: "test-hcp-hypershift-local"},
-			"example-com-public":        {Name: "example-com-public"},
-			"example-com-private":       {Name: "example-com-private"},
-			"leftover-zone":             {Name: "leftover-zone"},
+			"recorded-zone":             {Name: "recorded-zone"},
+			"test-hcp-hypershift-local": {Name: "test-hcp-hypershift-local"}, // deterministic name, must NOT be deleted
+			"example-com-public":        {Name: "example-com-public"},        // deterministic name, must NOT be deleted
+			"example-com-private":       {Name: "example-com-private"},       // deterministic name, must NOT be deleted
 		}
 		var deletes []string
 		r := &GCPPrivateServiceConnectReconciler{
@@ -1861,25 +1845,30 @@ func TestCleanupDNS(t *testing.T) {
 		}
 
 		require.NoError(t, r.cleanupDNS(t.Context(), psc, hcp))
-		assert.ElementsMatch(t, []string{"test-hcp-hypershift-local", "example-com-public", "example-com-private", "leftover-zone"}, deletes,
-			"all status-recorded and deterministically-inferred zones should be deleted")
+		assert.ElementsMatch(t, []string{"recorded-zone"}, deletes,
+			"only status-recorded zones should be deleted; deterministically-named zones must be left in place")
 	})
 
-	t.Run("It is a no-op when the GCP client builder is not initialized", func(t *testing.T) {
+	t.Run("It deletes nothing when status has no recorded zones, leaking rather than cross-deleting an inferred zone", func(t *testing.T) {
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newTestGCPHCP("test-hcp", "test-ns")
-		hcp.Spec.DNS.BaseDomain = "example.com"
-		psc := newTestGCPPSC("test-psc", "test-ns", false)
+		hcp.Spec.DNS.BaseDomain = "example.com"            // deterministic names are computable, but must not be deleted
+		psc := newTestGCPPSC("test-psc", "test-ns", false) // empty status: deleted before/without DNS provisioning
 
+		existing := map[string]*dns.ManagedZone{
+			"test-hcp-hypershift-local": {Name: "test-hcp-hypershift-local"},
+			"example-com-public":        {Name: "example-com-public"},
+			"example-com-private":       {Name: "example-com-private"},
+		}
 		var deletes []string
 		r := &GCPPrivateServiceConnectReconciler{
 			Client:           fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp, psc).Build(),
-			gcpClientBuilder: gcpClientBuilder{initialized: false},
-			dnsClientFactory: func(context.Context) (*dns.Service, error) { return fakeDNSService(t, nil, &deletes), nil },
+			gcpClientBuilder: gcpClientBuilder{initialized: true, customerProject: "customer-project"},
+			dnsClientFactory: func(context.Context) (*dns.Service, error) { return fakeDNSService(t, existing, &deletes), nil },
 		}
 
 		require.NoError(t, r.cleanupDNS(t.Context(), psc, hcp))
-		assert.Empty(t, deletes, "no zone should be deleted when the customer project is unknown")
+		assert.Empty(t, deletes, "with no recorded zones, nothing should be deleted even though deterministic names exist")
 	})
 }
 
