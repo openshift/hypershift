@@ -7881,11 +7881,11 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
-may have the following key/value pairs:</p>
-<pre><code>etcd-client-ca.crt: Certificate Authority value
-etcd-client.crt: Client certificate value
-etcd-client.key: Client certificate key value
+<p>clientSecret refers to a secret for client mTLS authentication with the etcd cluster.
+The secret must contain all three of the following key/value pairs:</p>
+<pre><code>etcd-client-ca.crt: CA bundle used to verify the etcd server certificate
+etcd-client.crt: Client certificate used to authenticate to etcd
+etcd-client.key: Private key for the client certificate
 </code></pre>
 </td>
 </tr>
@@ -13544,6 +13544,47 @@ string
 If omitted, the value will be inferred from the corev1.Service Load balancer type .status.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>loadBalancerClass</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>loadBalancerClass sets Service.spec.loadBalancerClass to select which
+LB controller provisions the Service. Required when the management
+cluster runs multiple LB controllers (e.g., F5 for management + MetalLB
+for tenant workloads). Maps to the Kubernetes Service field directly.
+Immutable after creation — matches Kubernetes semantics.
+Must be a valid Kubernetes qualified-name: an optional lowercase DNS
+subdomain prefix followed by &lsquo;/&rsquo; and a name segment starting and ending
+with an alphanumeric character (e.g., &ldquo;example.com/my-lb-class&rdquo;).
+Maximum length is 253 characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAnnotations</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceAnnotations is a map of annotations passed through to the
+LoadBalancer Service. The user provides the exact annotations their LB
+provider expects (e.g., metallb.io/loadBalancerIPs,
+service.beta.kubernetes.io/aws-load-balancer-eip-allocations).
+Mutable — annotations can be added, changed, or removed after creation.</p>
+<p>Annotations are applied per-key — existing annotations set by other
+controllers are preserved. HyperShift does not validate annotation
+values — correctness is the user&rsquo;s responsibility, same as setting
+annotations on any Kubernetes Service.
+Minimum 1, maximum 10 annotations per service.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###LogLevel { #hypershift.openshift.io/v1beta1.LogLevel }
@@ -15341,8 +15382,8 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>port is the port of the NodePort service. If &lt;=0, the port is dynamically
-assigned when the service is created.</p>
+<p>port is the port of the NodePort service.
+If omitted, the port is dynamically assigned when the service is created.</p>
 </td>
 </tr>
 </tbody>
@@ -18905,7 +18946,7 @@ connections; &ndash;etcd-servers-overrides only overrides server URLs.</p>
 </p>
 <p>
 <p>UnmanagedEtcdSpec specifies configuration which enables the control plane to
-integrate with an eternally managed etcd cluster.</p>
+integrate with an externally managed etcd cluster.</p>
 </p>
 <table>
 <thead>
@@ -18923,10 +18964,10 @@ string
 </em>
 </td>
 <td>
-<p>endpoint is the full etcd cluster client endpoint URL. For example:</p>
+<p>endpoint is the full etcd cluster client endpoint HTTPS URL. For example:</p>
 <pre><code>https://etcd-client:2379
 </code></pre>
-<p>If the URL uses an HTTPS scheme, the TLS field is required.</p>
+<p>The tls field is required to authenticate to and verify the etcd endpoint.</p>
 </td>
 </tr>
 <tr>
@@ -18939,7 +18980,7 @@ EtcdTLSConfig
 </em>
 </td>
 <td>
-<p>tls specifies TLS configuration for HTTPS etcd client endpoints.</p>
+<p>tls specifies the required TLS configuration for the HTTPS etcd client endpoint.</p>
 </td>
 </tr>
 <tr>
