@@ -1443,3 +1443,466 @@ func TestReconcileUserDataSecret(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenReconcileAfterTokenRotation(t *testing.T) {
+	g := NewWithT(t)
+
+	hcName := "test-hc"
+	hcNamespace := "namespace"
+	controlplaneNamespace := "controlplane-namespace"
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pull-secret",
+			Namespace: hcNamespace,
+		},
+		Data: map[string][]byte{
+			".dockerconfigjson": []byte(`{"auths":{"example.com":{"auth":"dGVzdDp0ZXN0"}}}`),
+		},
+	}
+	ignitionServerCACert := ignitionserver.IgnitionCACertSecret(controlplaneNamespace)
+	ignitionServerCACert.Data = map[string][]byte{
+		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
+	}
+
+	configGenerator := &ConfigGenerator{
+		hostedCluster: &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hcName,
+				Namespace: hcNamespace,
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				PullSecret: corev1.LocalObjectReference{Name: pullSecret.GetName()},
+			},
+			Status: hyperv1.HostedClusterStatus{
+				IgnitionEndpoint: "https://example.com",
+			},
+		},
+		nodePool: &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-np",
+				Namespace: hcNamespace,
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentConfigVersion: "placeholder",
+					nodePoolAnnotationCurrentRolloutConfig: "placeholder",
+				},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+				Release:    hyperv1.Release{Image: "image:4.17"},
+				Platform:   hyperv1.NodePoolPlatform{Type: hyperv1.AWSPlatform},
+			},
+		},
+		controlplaneNamespace: controlplaneNamespace,
+		rolloutConfig: &rolloutConfig{
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.17"},
+				},
+			},
+			globalConfig: "test-global-config",
+			mcoRawConfig: "raw-config",
+		},
+	}
+	cpoCapabilities := &CPOCapabilities{DecompressAndDecodeConfig: true}
+
+	fakeClient := fake.NewClientBuilder().WithObjects(pullSecret, ignitionServerCACert).Build()
+	configGenerator.Client = fakeClient
+
+	token, err := NewToken(t.Context(), configGenerator, cpoCapabilities)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Seed the annotations so isOutdated() returns false on subsequent calls.
+	configGenerator.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = token.Hash()
+	configGenerator.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = token.RolloutHashWithoutVersion()
+	configGenerator.nodePool.Status.Version = token.Version()
+
+	// First reconcile: creates the token and user data secrets.
+	err = token.Reconcile(t.Context())
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Read back the original token UUID from the token secret.
+	gotTokenSecret := &corev1.Secret{}
+	err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(token.TokenSecret()), gotTokenSecret)
+	g.Expect(err).ToNot(HaveOccurred())
+	originalToken := string(gotTokenSecret.Data[TokenSecretTokenKey])
+	g.Expect(originalToken).ToNot(BeEmpty())
+
+	// Read back the user data secret and verify it contains the original token.
+	gotUserData := &corev1.Secret{}
+	err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(token.UserDataSecret()), gotUserData)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(string(gotUserData.Data["value"])).To(ContainSubstring(
+		base64.StdEncoding.EncodeToString([]byte(originalToken)),
+	))
+
+	// Simulate token rotation: the ignition server's TokenSecretReconciler
+	// generates a new UUID and moves the current one to old_token.
+	rotatedToken := uuid.New().String()
+	gotTokenSecret.Data["old_token"] = []byte(originalToken)
+	gotTokenSecret.Data[TokenSecretTokenKey] = []byte(rotatedToken)
+	err = fakeClient.Update(t.Context(), gotTokenSecret)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Verify isOutdated() is false — no spec-driven change occurred.
+	g.Expect(token.isOutdated()).To(BeFalse(), "isOutdated should be false: no spec-driven change")
+
+	// Second reconcile: should still refresh the user data secret with the
+	// rotated token, even though isOutdated() is false.
+	err = token.Reconcile(t.Context())
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Read back the user data secret and verify it now contains the ROTATED
+	// token, not the original. This is the core assertion: if Token.Reconcile()
+	// had skipped secret maintenance, the user data would still hold the
+	// original token UUID, which the ignition server would eventually purge.
+	err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(token.UserDataSecret()), gotUserData)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(string(gotUserData.Data["value"])).To(ContainSubstring(
+		base64.StdEncoding.EncodeToString([]byte(rotatedToken)),
+	), "user data secret must contain the rotated token UUID")
+	g.Expect(string(gotUserData.Data["value"])).ToNot(ContainSubstring(
+		base64.StdEncoding.EncodeToString([]byte(originalToken)),
+	), "user data secret must NOT contain the old token UUID")
+}
+
+// TestTokenReconcileManagementSideDrift verifies that Token.Reconcile() does
+// NOT create orphan secrets when only management-side content changes (e.g.
+// HAProxy image bump). Instead, it should maintain the deployed secrets
+// (identified by the nodePoolAnnotationCurrentConfigVersion annotation).
+func TestResolveEffectiveHash(t *testing.T) {
+	configGenerator := &ConfigGenerator{
+		controlplaneNamespace: "clusters-test",
+		rolloutConfig: &rolloutConfig{
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.18.5"}},
+			},
+			mcoRawConfig:        "user-config-A + haproxy-B",
+			rolloutMcoRawConfig: "user-config-A",
+		},
+	}
+	currentHash := configGenerator.Hash()
+	rolloutHash := configGenerator.RolloutHash()
+	const previousHash = "deadbeef"
+	const olderHash = "cafebabe"
+
+	tests := []struct {
+		name              string
+		outdated          bool
+		deployedHash      string
+		completedHash     string
+		inProgressRollout string
+		versionChanged    bool
+		expectedState     secretMaintenanceState
+		expectedHash      string
+	}{
+		{
+			name:          "When no hashes are recorded and no change is pending, it should maintain the current hash in Steady",
+			expectedState: stateSteady,
+			expectedHash:  currentHash,
+		},
+		{
+			name:          "When deployed and completed hashes match the current hash, it should remain Steady",
+			deployedHash:  currentHash,
+			completedHash: currentHash,
+			expectedState: stateSteady,
+			expectedHash:  currentHash,
+		},
+		{
+			name:          "When management content drifts, it should prefer the deployed hash over the completed hash",
+			deployedHash:  previousHash,
+			completedHash: olderHash,
+			expectedState: stateManagementDrift,
+			expectedHash:  previousHash,
+		},
+		{
+			name:          "When management content drifts without a bootstrap reference, it should maintain the completed hash",
+			completedHash: previousHash,
+			expectedState: stateCompletedDrift,
+			expectedHash:  previousHash,
+		},
+		{
+			name:          "When the deployed hash matches current but completion differs without a pending change, it should use CompletedDrift",
+			deployedHash:  currentHash,
+			completedHash: previousHash,
+			expectedState: stateCompletedDrift,
+			expectedHash:  previousHash,
+		},
+		{
+			name:          "When an outdated NodePool has no recorded hashes, it should start a NewRollout under the current hash",
+			outdated:      true,
+			expectedState: stateNewRollout,
+			expectedHash:  currentHash,
+		},
+		{
+			name:          "When a spec change has no deployed hash but an older completed hash, it should select NewRollout instead of CompletedDrift",
+			outdated:      true,
+			completedHash: previousHash,
+			expectedState: stateNewRollout,
+			expectedHash:  currentHash,
+		},
+		{
+			name:              "When the current rollout target is already deployed but incomplete, it should maintain it as NewRollout",
+			outdated:          true,
+			deployedHash:      currentHash,
+			completedHash:     previousHash,
+			inProgressRollout: rolloutHash,
+			expectedState:     stateNewRollout,
+			expectedHash:      currentHash,
+		},
+		{
+			name:          "When a config change follows a completed rollout, it should select NewRollout",
+			outdated:      true,
+			deployedHash:  previousHash,
+			completedHash: previousHash,
+			expectedState: stateNewRollout,
+			expectedHash:  currentHash,
+		},
+		{
+			name:           "When a version upgrade starts without an in-progress annotation, it should select NewRollout instead of SupersededRollout",
+			outdated:       true,
+			deployedHash:   previousHash,
+			completedHash:  previousHash,
+			versionChanged: true,
+			expectedState:  stateNewRollout,
+			expectedHash:   currentHash,
+		},
+		{
+			name:              "When a version rollout has aligned deployed and completed hashes with a matching marker, it should continue the deployed target",
+			outdated:          true,
+			deployedHash:      previousHash,
+			completedHash:     previousHash,
+			inProgressRollout: rolloutHash,
+			versionChanged:    true,
+			expectedState:     stateContinuedRollout,
+			expectedHash:      previousHash,
+		},
+		{
+			name:           "When an unannotated version rollout has a deployed target ahead of completion, it should adopt the deployed hash",
+			outdated:       true,
+			deployedHash:   previousHash,
+			completedHash:  olderHash,
+			versionChanged: true,
+			expectedState:  stateAdoptedRollout,
+			expectedHash:   previousHash,
+		},
+		{
+			name:          "When an unannotated rollout has a different deployed hash and no completed hash, it should adopt the deployed hash",
+			outdated:      true,
+			deployedHash:  previousHash,
+			expectedState: stateAdoptedRollout,
+			expectedHash:  previousHash,
+		},
+		{
+			name:              "When management content drifts during the same config rollout, it should continue the deployed target",
+			outdated:          true,
+			deployedHash:      previousHash,
+			completedHash:     olderHash,
+			inProgressRollout: rolloutHash,
+			expectedState:     stateContinuedRollout,
+			expectedHash:      previousHash,
+		},
+		{
+			name:              "When a new spec change supersedes a config rollout, it should select the current hash as SupersededRollout",
+			outdated:          true,
+			deployedHash:      previousHash,
+			completedHash:     olderHash,
+			inProgressRollout: "abcdef01",
+			expectedState:     stateSupersededRollout,
+			expectedHash:      currentHash,
+		},
+		{
+			name:              "When a new spec change supersedes a version rollout with aligned hashes, it should select SupersededRollout",
+			outdated:          true,
+			deployedHash:      previousHash,
+			completedHash:     previousHash,
+			inProgressRollout: "abcdef01",
+			versionChanged:    true,
+			expectedState:     stateSupersededRollout,
+			expectedHash:      currentHash,
+		},
+		{
+			name:              "When deployed and completed hashes and versions agree despite a matching marker, it should select NewRollout",
+			outdated:          true,
+			deployedHash:      previousHash,
+			completedHash:     previousHash,
+			inProgressRollout: rolloutHash,
+			expectedState:     stateNewRollout,
+			expectedHash:      currentHash,
+		},
+		{
+			name:              "When deployed and completed hashes and versions agree despite a different marker, it should select NewRollout",
+			outdated:          true,
+			deployedHash:      previousHash,
+			completedHash:     previousHash,
+			inProgressRollout: "abcdef01",
+			expectedState:     stateNewRollout,
+			expectedHash:      currentHash,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cg := *configGenerator
+			cg.nodePool = &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: "clusters"},
+				Status:     hyperv1.NodePoolStatus{Version: cg.Version()},
+			}
+			if tc.completedHash != "" || tc.inProgressRollout != "" {
+				cg.nodePool.Annotations = map[string]string{}
+				if tc.completedHash != "" {
+					cg.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = tc.completedHash
+				}
+				if tc.inProgressRollout != "" {
+					cg.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = tc.inProgressRollout
+				}
+			}
+			if tc.versionChanged {
+				cg.nodePool.Status.Version = "4.18.4"
+			}
+			token := &Token{
+				ConfigGenerator:       &cg,
+				deployedBootstrapHash: tc.deployedHash,
+			}
+
+			g.Expect(token.resolveEffectiveHash(tc.outdated)).To(Equal(tc.expectedState))
+			g.Expect(token.secretState).To(Equal(tc.expectedState))
+			g.Expect(token.effectiveHash).To(Equal(tc.expectedHash))
+		})
+	}
+}
+
+func TestTokenReconcileManagementSideDrift(t *testing.T) {
+	g := NewWithT(t)
+
+	hcName := "test-hc"
+	hcNamespace := "namespace"
+	controlplaneNamespace := "controlplane-namespace"
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pull-secret",
+			Namespace: hcNamespace,
+		},
+		Data: map[string][]byte{
+			".dockerconfigjson": []byte(`{"auths":{"example.com":{"auth":"dGVzdDp0ZXN0"}}}`),
+		},
+	}
+	ignitionServerCACert := ignitionserver.IgnitionCACertSecret(controlplaneNamespace)
+	ignitionServerCACert.Data = map[string][]byte{
+		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
+	}
+
+	configGenerator := &ConfigGenerator{
+		hostedCluster: &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hcName,
+				Namespace: hcNamespace,
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				PullSecret: corev1.LocalObjectReference{Name: pullSecret.GetName()},
+			},
+			Status: hyperv1.HostedClusterStatus{
+				IgnitionEndpoint: "https://example.com",
+			},
+		},
+		nodePool: &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-np",
+				Namespace: hcNamespace,
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentConfigVersion: "placeholder",
+					nodePoolAnnotationCurrentRolloutConfig: "placeholder",
+				},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+				Release:    hyperv1.Release{Image: "image:4.17"},
+				Platform:   hyperv1.NodePoolPlatform{Type: hyperv1.AWSPlatform},
+			},
+		},
+		controlplaneNamespace: controlplaneNamespace,
+		rolloutConfig: &rolloutConfig{
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "4.17"},
+				},
+			},
+			globalConfig: "test-global-config",
+			mcoRawConfig: "raw-config",
+		},
+	}
+	cpoCapabilities := &CPOCapabilities{DecompressAndDecodeConfig: true}
+
+	fakeClient := fake.NewClientBuilder().WithObjects(pullSecret, ignitionServerCACert).Build()
+	configGenerator.Client = fakeClient
+
+	token, err := NewToken(t.Context(), configGenerator, cpoCapabilities)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Seed annotations so isOutdated() returns false.
+	configGenerator.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = token.Hash()
+	configGenerator.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = token.RolloutHashWithoutVersion()
+	configGenerator.nodePool.Status.Version = token.Version()
+
+	// First reconcile: creates the initial token and user data secrets.
+	err = token.Reconcile(t.Context())
+	g.Expect(err).ToNot(HaveOccurred())
+
+	deployedHash := token.Hash()
+	deployedTokenSecretName := token.TokenSecret().Name
+	deployedUserDataSecretName := token.UserDataSecret().Name
+
+	// Read back and verify initial secrets exist.
+	gotTokenSecret := &corev1.Secret{}
+	err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(token.TokenSecret()), gotTokenSecret)
+	g.Expect(err).ToNot(HaveOccurred())
+	originalTokenUUID := string(gotTokenSecret.Data[TokenSecretTokenKey])
+	g.Expect(originalTokenUUID).ToNot(BeEmpty())
+
+	// Simulate a management-side-only change: modify globalConfig (included in
+	// Hash() but excluded from RolloutHash). This changes Hash() without
+	// changing RolloutHashWithoutVersion().
+	configGenerator.rolloutConfig.globalConfig = "changed-global-config"
+	token2, err := NewToken(t.Context(), configGenerator, cpoCapabilities)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Verify the management change actually changed Hash() but not RolloutHash.
+	g.Expect(token2.Hash()).ToNot(Equal(deployedHash), "Hash should change with management content")
+	g.Expect(token2.RolloutHashWithoutVersion()).To(Equal(token.RolloutHashWithoutVersion()),
+		"RolloutHashWithoutVersion should NOT change")
+	g.Expect(token2.isOutdated()).To(BeFalse(), "isOutdated should be false for management-side drift")
+
+	// Second reconcile: should maintain the deployed secrets, NOT create orphans.
+	err = token2.Reconcile(t.Context())
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Verify the deployed secrets still exist and were maintained.
+	err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: deployedTokenSecretName, Namespace: controlplaneNamespace},
+	}), gotTokenSecret)
+	g.Expect(err).ToNot(HaveOccurred(), "deployed token secret should still exist")
+
+	gotUserData := &corev1.Secret{}
+	err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(&corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: deployedUserDataSecretName, Namespace: controlplaneNamespace},
+	}), gotUserData)
+	g.Expect(err).ToNot(HaveOccurred(), "deployed user data secret should still exist")
+
+	// Verify no orphan secrets were created under the new hash.
+	orphanTokenSecret := token2.TokenSecret()
+	orphanUserDataSecret := token2.UserDataSecret()
+	g.Expect(orphanTokenSecret.Name).ToNot(Equal(deployedTokenSecretName),
+		"new hash should produce a different secret name")
+
+	err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(orphanTokenSecret), &corev1.Secret{})
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+		"orphan token secret under new hash should NOT have been created")
+	err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(orphanUserDataSecret), &corev1.Secret{})
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+		"orphan user data secret under new hash should NOT have been created")
+
+	// Verify the deployed user data secret still contains the original token UUID.
+	g.Expect(string(gotUserData.Data["value"])).To(ContainSubstring(
+		base64.StdEncoding.EncodeToString([]byte(originalTokenUUID)),
+	), "deployed user data secret should still reference the original token UUID")
+}

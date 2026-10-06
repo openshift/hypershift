@@ -36,14 +36,23 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest"
 	"go.uber.org/zap/zaptest/observer"
 )
 
-func TestSecretJanitor_Reconcile(t *testing.T) {
-	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
-	mockCtrl := gomock.NewController(t)
+type janitorTestFixture struct {
+	nodePool        *hyperv1.NodePool
+	hostedCluster   *hyperv1.HostedCluster
+	pullSecret      *corev1.Secret
+	machineConfig   *corev1.ConfigMap
+	ignitionConfigs []*corev1.ConfigMap
+	ignitionCACert  *corev1.Secret
+	client          client.Client
+	reconciler      secretJanitor
+	fakeClock       *testingclock.FakeClock
+}
 
+func newJanitorTestFixture(t *testing.T) *janitorTestFixture {
+	t.Helper()
 	theTime, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z")
 	if err != nil {
 		t.Fatalf("could not parse time: %v", err)
@@ -76,8 +85,6 @@ func TestSecretJanitor_Reconcile(t *testing.T) {
 				{Name: "machineconfig-1"},
 			},
 		},
-		//We need the np.Status.Version to stay at 4.18 so that the token doesn't get updated when bumping releases,
-		// this protects us from possibly hiding other factors that might be causing the token to be updated
 		Status: hyperv1.NodePoolStatus{Version: semver.MustParse("4.18.0").String()},
 	}
 
@@ -111,75 +118,76 @@ spec:
 		},
 	}
 
-	ignitionConfig := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "core-machineconfig",
-			Namespace: "myns-cluster-name",
-			Labels: map[string]string{
-				nodePoolCoreIgnitionConfigLabel: "true",
+	makeIgnitionConfig := func(name string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "myns-cluster-name",
+				Labels: map[string]string{
+					nodePoolCoreIgnitionConfigLabel: "true",
+				},
 			},
-		},
-		Data: map[string]string{
-			TokenSecretConfigKey: coreMachineConfig,
-		},
+			Data: map[string]string{
+				TokenSecretConfigKey: coreMachineConfig,
+			},
+		}
 	}
-	ignitionConfig2 := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "core-machineconfig-2",
-			Namespace: "myns-cluster-name",
-			Labels: map[string]string{
-				nodePoolCoreIgnitionConfigLabel: "true",
-			},
-		},
-		Data: map[string]string{
-			TokenSecretConfigKey: coreMachineConfig,
-		},
-	}
-	ignitionConfig3 := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "core-machineconfig-3",
-			Namespace: "myns-cluster-name",
-			Labels: map[string]string{
-				nodePoolCoreIgnitionConfigLabel: "true",
-			},
-		},
-		Data: map[string]string{
-			TokenSecretConfigKey: coreMachineConfig,
-		},
+	ignitionConfigs := []*corev1.ConfigMap{
+		makeIgnitionConfig("core-machineconfig"),
+		makeIgnitionConfig("core-machineconfig-2"),
+		makeIgnitionConfig("core-machineconfig-3"),
 	}
 
 	ignitionServerCACert := ignitionserver.IgnitionCACertSecret("myns-cluster-name")
 	ignitionServerCACert.Data = map[string][]byte{
 		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
 	}
+
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
 		nodePool,
 		hostedCluster,
 		pullSecret,
 		machineConfig,
-		ignitionConfig,
-		ignitionConfig2,
-		ignitionConfig3,
+		ignitionConfigs[0],
+		ignitionConfigs[1],
+		ignitionConfigs[2],
 		ignitionServerCACert,
 	).Build()
-	mockedReleaseProvider := releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl)
-	//We need the ReleaseProvider to stay at 4.18 so that the token doesn't get updated when bumping releases,
-	// this protects us from possibly hiding other factors that might be causing the token to be updated
-	mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(testutils.InitReleaseImageOrDie("4.18.0"), nil).AnyTimes()
+
 	r := secretJanitor{
 		NodePoolReconciler: &NodePoolReconciler{
-			Client: c,
-			//We need the ReleaseProvider to stay at 4.18 so that the token doesn't get updated when bumping releases,
-			// this protects us from possibly hiding other factors that might be causing the token to be updated
+			Client:          c,
 			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
 			ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
 				Labels: map[string]string{},
 			}}},
 		},
-
 		now: fakeClock.Now,
 	}
+
+	return &janitorTestFixture{
+		nodePool:        nodePool,
+		hostedCluster:   hostedCluster,
+		pullSecret:      pullSecret,
+		machineConfig:   machineConfig,
+		ignitionConfigs: ignitionConfigs,
+		ignitionCACert:  ignitionServerCACert,
+		client:          c,
+		reconciler:      r,
+		fakeClock:       fakeClock,
+	}
+}
+
+func TestSecretJanitor_Reconcile(t *testing.T) {
+	f := newJanitorTestFixture(t)
+	c := f.client
+	r := f.reconciler
+	nodePool := f.nodePool
+	hostedCluster := f.hostedCluster
+	pullSecret := f.pullSecret
+	machineConfig := f.machineConfig
+	ignitionServerCACert := f.ignitionCACert
+	fakeClock := f.fakeClock
 
 	for _, testCase := range []struct {
 		name     string
@@ -290,27 +298,7 @@ spec:
 				t.Errorf("failed to reconcile object: %v", err)
 			}
 
-			got := &corev1.Secret{}
-			err := c.Get(ctx, client.ObjectKeyFromObject(testCase.input), got)
-			if testCase.expected == nil {
-				if !apierrors.IsNotFound(err) {
-					t.Errorf("expected object to not exist, got error: %v", err)
-				}
-				deletedLogs := logs.FilterMessage("Deleted secret").All()
-				if len(deletedLogs) != 1 {
-					t.Fatalf("expected one deletion log, got %d", len(deletedLogs))
-				}
-				if got := deletedLogs[0].ContextMap()["secret"]; got != key.String() {
-					t.Errorf("expected secret log field %q, got %v", key.String(), got)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("failed to fetch object: %v", err)
-				}
-				if diff := cmp.Diff(got, testCase.expected, cmpopts.IgnoreFields(metav1.ObjectMeta{}, "ResourceVersion")); diff != "" {
-					t.Errorf("got unexpected object after reconcile: %v", diff)
-				}
-			}
+			assertJanitorResult(t, c, ctx, testCase.input, testCase.expected, key, logs)
 		})
 	}
 
@@ -332,7 +320,7 @@ spec:
 		deleteCalled := false
 		failingClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
 			nodePool, hostedCluster, pullSecret, machineConfig,
-			ignitionConfig, ignitionConfig2, ignitionConfig3, ignitionServerCACert, userDataSecret,
+			f.ignitionConfigs[0], f.ignitionConfigs[1], f.ignitionConfigs[2], ignitionServerCACert, userDataSecret,
 		).WithInterceptorFuncs(interceptor.Funcs{
 			Delete: func(_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.DeleteOption) error {
 				g.Expect(client.ObjectKeyFromObject(obj)).To(Equal(key))
@@ -357,7 +345,7 @@ spec:
 	})
 
 	t.Run("When the hosted cluster is not found it should clean up token secret", func(t *testing.T) {
-		// Create a client with the nodePool but without the hostedCluster.
+		ctx := t.Context()
 		noHCClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(nodePool).Build()
 		noHCReconciler := secretJanitor{
 			NodePoolReconciler: &NodePoolReconciler{
@@ -398,7 +386,7 @@ spec:
 	})
 
 	t.Run("When the hosted cluster is not found it should clean up userdata secret", func(t *testing.T) {
-		// Create a client with the nodePool but without the hostedCluster.
+		ctx := t.Context()
 		noHCClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(nodePool).Build()
 		noHCReconciler := secretJanitor{
 			NodePoolReconciler: &NodePoolReconciler{
@@ -433,6 +421,7 @@ spec:
 	})
 
 	t.Run("When the hosted cluster is being deleted it should clean up token secret", func(t *testing.T) {
+		ctx := t.Context()
 		now := metav1.Now()
 		deletingHC := hostedCluster.DeepCopy()
 		deletingHC.DeletionTimestamp = &now
@@ -481,6 +470,7 @@ spec:
 	})
 
 	t.Run("When the hosted cluster is being deleted it should clean up userdata secret", func(t *testing.T) {
+		ctx := t.Context()
 		now := metav1.Now()
 		deletingHC := hostedCluster.DeepCopy()
 		deletingHC.DeletionTimestamp = &now
@@ -521,6 +511,137 @@ spec:
 			t.Errorf("expected userdata secret to be deleted, got error: %v", err)
 		}
 	})
+
+	t.Run("When management-side drift occurred, janitor should keep deployed token secret", func(t *testing.T) {
+		ctx := t.Context()
+		deployedHash := "oldhash456"
+		driftNodePool := nodePool.DeepCopy()
+		driftNodePool.Annotations = map[string]string{
+			nodePoolAnnotationCurrentConfigVersion: deployedHash,
+		}
+
+		driftClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+			driftNodePool,
+			hostedCluster,
+			pullSecret,
+			machineConfig,
+			f.ignitionConfigs[0], f.ignitionConfigs[1], f.ignitionConfigs[2],
+			ignitionServerCACert,
+		).Build()
+		driftReconciler := secretJanitor{
+			NodePoolReconciler: &NodePoolReconciler{
+				Client:          driftClient,
+				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
+				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
+					Labels: map[string]string{},
+				}}},
+			},
+			now: fakeClock.Now,
+		}
+
+		deployedTokenSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "token-nodepool-name-" + deployedHash,
+				Namespace: "myns",
+				Annotations: map[string]string{
+					nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				},
+			},
+		}
+		if err := driftClient.Create(ctx, deployedTokenSecret); err != nil {
+			t.Fatalf("failed to create deployed token secret: %v", err)
+		}
+
+		key := client.ObjectKeyFromObject(deployedTokenSecret)
+		if _, err := driftReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("failed to reconcile: %v", err)
+		}
+
+		got := &corev1.Secret{}
+		if err := driftClient.Get(ctx, key, got); err != nil {
+			t.Fatalf("failed to get deployed token secret: %v", err)
+		}
+		if _, hasExpiration := got.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation]; hasExpiration {
+			t.Errorf("deployed token secret should not be expired, but has expiration annotation")
+		}
+	})
+
+	t.Run("When management-side drift occurred, janitor should keep deployed userdata secret", func(t *testing.T) {
+		ctx := t.Context()
+		deployedHash := "oldhash789"
+		driftNodePool := nodePool.DeepCopy()
+		driftNodePool.Annotations = map[string]string{
+			nodePoolAnnotationCurrentConfigVersion: deployedHash,
+		}
+
+		driftClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+			driftNodePool,
+			hostedCluster,
+			pullSecret,
+			machineConfig,
+			f.ignitionConfigs[0], f.ignitionConfigs[1], f.ignitionConfigs[2],
+			ignitionServerCACert,
+		).Build()
+		driftReconciler := secretJanitor{
+			NodePoolReconciler: &NodePoolReconciler{
+				Client:          driftClient,
+				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
+				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
+					Labels: map[string]string{},
+				}}},
+			},
+			now: fakeClock.Now,
+		}
+
+		deployedUserdataSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "user-data-nodepool-name-" + deployedHash,
+				Namespace: "myns",
+				Annotations: map[string]string{
+					nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				},
+			},
+		}
+		if err := driftClient.Create(ctx, deployedUserdataSecret); err != nil {
+			t.Fatalf("failed to create deployed userdata secret: %v", err)
+		}
+
+		key := client.ObjectKeyFromObject(deployedUserdataSecret)
+		if _, err := driftReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("failed to reconcile: %v", err)
+		}
+
+		// Secret should still exist (not deleted)
+		got := &corev1.Secret{}
+		if err := driftClient.Get(ctx, key, got); err != nil {
+			t.Fatalf("deployed userdata secret should exist but got error: %v", err)
+		}
+	})
+}
+
+func assertJanitorResult(t *testing.T, c client.Client, ctx context.Context, input, expected *corev1.Secret, key client.ObjectKey, logs *observer.ObservedLogs) {
+	t.Helper()
+	got := &corev1.Secret{}
+	err := c.Get(ctx, client.ObjectKeyFromObject(input), got)
+	if expected == nil {
+		if !apierrors.IsNotFound(err) {
+			t.Errorf("expected object to not exist, got error: %v", err)
+		}
+		deletedLogs := logs.FilterMessage("Deleted secret").All()
+		if len(deletedLogs) != 1 {
+			t.Fatalf("expected one deletion log, got %d", len(deletedLogs))
+		}
+		if got := deletedLogs[0].ContextMap()["secret"]; got != key.String() {
+			t.Errorf("expected secret log field %q, got %v", key.String(), got)
+		}
+	} else {
+		if err != nil {
+			t.Errorf("failed to fetch object: %v", err)
+		}
+		if diff := cmp.Diff(got, expected, cmpopts.IgnoreFields(metav1.ObjectMeta{}, "ResourceVersion")); diff != "" {
+			t.Errorf("got unexpected object after reconcile: %v", diff)
+		}
+	}
 }
 
 func TestShouldKeepOldUserData(t *testing.T) {
