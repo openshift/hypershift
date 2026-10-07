@@ -7472,6 +7472,9 @@ spec:
                       - Ignition
                       - OVNSbDb
                       type: string
+                      x-kubernetes-validations:
+                      - message: service type is immutable
+                        rule: self == oldSelf
                     servicePublishingStrategy:
                       description: servicePublishingStrategy specifies how to publish
                         a service endpoint.
@@ -7491,7 +7494,12 @@ spec:
                               - message: hostname must be a valid domain name (e.g.,
                                   example.com)
                                 rule: self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')
+                              - message: hostname is immutable
+                                rule: self == oldSelf
                           type: object
+                          x-kubernetes-validations:
+                          - message: hostname cannot be removed once set
+                            rule: '!has(oldSelf.hostname) || has(self.hostname)'
                         nodePort:
                           description: nodePort configures exposing a service using
                             a NodePort.
@@ -7517,6 +7525,9 @@ spec:
                           required:
                           - address
                           type: object
+                          x-kubernetes-validations:
+                          - message: nodePort config is immutable
+                            rule: self == oldSelf
                         route:
                           description: |-
                             route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
@@ -7534,6 +7545,9 @@ spec:
                                   example.com)
                                 rule: self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')
                           type: object
+                          x-kubernetes-validations:
+                          - message: route config is immutable
+                            rule: self == oldSelf
                         type:
                           description: |-
                             type is the publishing strategy used for the service.
@@ -7545,6 +7559,9 @@ spec:
                           - None
                           - S3
                           type: string
+                          x-kubernetes-validations:
+                          - message: publishing strategy type is immutable
+                            rule: self == oldSelf
                       required:
                       - type
                       type: object
@@ -7574,6 +7591,9 @@ spec:
                   type: object
                 maxItems: 6
                 type: array
+                x-kubernetes-list-map-keys:
+                - service
+                x-kubernetes-list-type: map
               sshKey:
                 description: sshKey is a reference to a secret containing the SSH
                   key for the hosted control plane.
