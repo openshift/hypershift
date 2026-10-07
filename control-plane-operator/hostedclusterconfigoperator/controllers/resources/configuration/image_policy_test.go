@@ -1,6 +1,8 @@
 package configuration
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -11,8 +13,12 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func TestReconcileImagePolicy(t *testing.T) {
@@ -73,6 +79,34 @@ func TestReconcileImagePolicy(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When ICSP and stale IDMS exist, it should delete ICSP before replacing mirrors and remain idempotent", func(t *testing.T) {
+		assert := NewWithT(t)
+		hcp := populatedConfigurationHCP(t)
+		idms := globalconfig.ImageDigestMirrorSet()
+		idms.Spec.ImageDigestMirrors = []configv1.ImageDigestMirrors{{Source: "stale.example.com", Mirrors: []configv1.ImageMirror{"stale-mirror.example.com"}}}
+		var operations []string
+		guest := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(globalconfig.ImageContentSourcePolicy(), idms).WithInterceptorFuncs(interceptor.Funcs{Delete: func(ctx context.Context, target client.WithWatch, object client.Object, opts ...client.DeleteOption) error {
+			operations = append(operations, fmt.Sprintf("delete %T %s/%s", object, object.GetNamespace(), object.GetName()))
+			return target.Delete(ctx, object, opts...)
+		}}).Build()
+		root := &configurationTestClients{client: guest, CreateOrUpdateProvider: configurationUpserter{func(ctx context.Context, target client.Client, object client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+			operations = append(operations, fmt.Sprintf("upsert %T %s/%s", object, object.GetNamespace(), object.GetName()))
+			assert.Expect(apierrors.IsNotFound(guest.Get(ctx, client.ObjectKeyFromObject(globalconfig.ImageContentSourcePolicy()), globalconfig.ImageContentSourcePolicy()))).To(BeTrue())
+			return controllerutil.CreateOrUpdate(ctx, target, object, mutate)
+		}}}
+		assert.Expect(ReconcileImagePolicy(t.Context(), root.hosted(), hcp.Spec.ImageContentSources)).To(Succeed())
+		assert.Expect(operations).To(Equal([]string{fmt.Sprintf("delete %T /%s", globalconfig.ImageContentSourcePolicy(), globalconfig.ImageContentSourcePolicy().Name), fmt.Sprintf("upsert %T /%s", idms, idms.Name)}))
+		assert.Expect(guest.Get(t.Context(), client.ObjectKeyFromObject(idms), idms)).To(Succeed())
+		assert.Expect(idms.Spec.ImageDigestMirrors).To(Equal([]configv1.ImageDigestMirrors{{Source: "quay.io/openshift-release-dev/ocp-release", Mirrors: []configv1.ImageMirror{"mirror.example.com/release"}}}))
+		assert.Expect(idms.Labels["machineconfiguration.openshift.io/role"]).To(Equal("worker"))
+		before := idms.DeepCopy()
+		operations = nil
+		assert.Expect(ReconcileImagePolicy(t.Context(), root.hosted(), hcp.Spec.ImageContentSources)).To(Succeed())
+		assert.Expect(operations).To(Equal([]string{fmt.Sprintf("upsert %T /%s", idms, idms.Name)}))
+		assert.Expect(guest.Get(t.Context(), client.ObjectKeyFromObject(idms), idms)).To(Succeed())
+		assert.Expect(idms).To(Equal(before))
+	})
 }
 
 func compareICSAndIDMS(g *WithT, ics []hyperv1.ImageContentSource, idms *configv1.ImageDigestMirrorSet) {
