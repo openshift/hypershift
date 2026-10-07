@@ -217,7 +217,6 @@ hostedclusters.hypershift.openshift.io:
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - IngressComponentRouteLabels
-  - IngressControllerLBSecurityGroupsAWS
   - KMSEncryption
   - NetworkObservabilityInstall
   - OpenStack
@@ -297,7 +296,6 @@ hostedcontrolplanes.hypershift.openshift.io:
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - IngressComponentRouteLabels
-  - IngressControllerLBSecurityGroupsAWS
   - KMSEncryption
   - NetworkObservabilityInstall
   - OpenStack

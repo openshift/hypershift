@@ -323,7 +323,8 @@ ignitionpayloads.hypershift.openshift.io:
   CRDName: ignitionpayloads.hypershift.openshift.io
   Capability: ""
   Category: ""
-  FeatureGates: []
+  FeatureGates:
+  - IgnitionPayloadSystem
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
   FilenameRunLevel: ""
@@ -345,7 +346,8 @@ ignitionpayloads.hypershift.openshift.io:
   Scope: Namespaced
   ShortNames:
   - ignpayload
-  TopLevelFeatureGates: []
+  TopLevelFeatureGates:
+  - IgnitionPayloadSystem
   Version: v1beta1
 
 nodepools.hypershift.openshift.io:

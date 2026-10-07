@@ -208,7 +208,7 @@ tests:
           rolloutHash: "r1"
           token: "tok-1"
           generation: 0
-    expectedStatusError: "status.current.generation"
+    expectedStatusError: "current.generation"
 
   - name: When status.previous.generation is 0 it should fail
     initial: |
@@ -235,7 +235,7 @@ tests:
           rolloutHash: "r0"
           token: "tok-0"
           generation: 0
-    expectedStatusError: "status.previous.generation"
+    expectedStatusError: "previous.generation"
 
   - name: When status.current has valid generation it should pass
     initial: |
