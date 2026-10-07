@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/awsapi"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/oidc"
 
@@ -46,16 +50,46 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 		return errors.New("please supply a public S3 bucket name with --e2e.aws-oidc-s3-bucket-name")
 	}
 
+	providerID := SimpleNameGenerator.GenerateName("e2e-oidc-provider-")
+	tags, err := resolveSharedOIDCProviderTags(providerID, opts.AdditionalTags, E2ETagsFromEnvironment())
+	if err != nil {
+		return err
+	}
 	ctx := context.Background()
 	iamClient, s3Client := oidcProviderClients(ctx, opts)
+	return setupSharedOIDCProviderWithClients(ctx, opts, artifactDir, iamClient, s3Client, providerID, tags)
+}
 
+func resolveSharedOIDCProviderTags(providerID string, additionalTags []string, e2eTags map[string]string) ([]string, error) {
+	tags, err := cmdutil.ParseAWSTags(additionalTags)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse additional tags: %w", err)
+	}
+	maps.Copy(tags, e2eTags)
+	// The provider is shared across HostedClusters, so use its own infrastructure
+	// identity and do not assign a HostedCluster name.
+	tags[supportawsutil.HypershiftInfraIDTagKey] = providerID
+	resolvedTags := make([]string, 0, len(tags))
+	for k, v := range tags {
+		resolvedTags = append(resolvedTags, k+"="+v)
+	}
+	slices.Sort(resolvedTags)
+	return resolvedTags, nil
+}
+
+func setupSharedOIDCProviderWithClients(ctx context.Context, opts *Options, artifactDir string, iamClient awsapi.IAMAPI, s3Client awsapi.S3API, providerID string, tags []string) error {
 	s3Region := opts.HOInstallationOptions.AWSOidcS3Region
 	if s3Region == "" {
 		s3Region = opts.ConfigurableClusterOptions.Region
 	}
-
-	providerID := SimpleNameGenerator.GenerateName("e2e-oidc-provider-")
 	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", opts.ConfigurableClusterOptions.AWSOidcS3BucketName, s3Region, providerID)
+	iamOptions := awsinfra.CreateIAMOptions{
+		IssuerURL:      issuerURL,
+		AdditionalTags: tags,
+	}
+	if err := iamOptions.ParseAdditionalTags(); err != nil {
+		return fmt.Errorf("failed to parse additional tags: %w", err)
+	}
 
 	key, err := certs.PrivateKey()
 	if err != nil {
@@ -93,14 +127,6 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket: %w", path, opts.ConfigurableClusterOptions.AWSOidcS3BucketName, err)
 			return wrapped
 		}
-	}
-
-	iamOptions := awsinfra.CreateIAMOptions{
-		IssuerURL:      issuerURL,
-		AdditionalTags: opts.AdditionalTags,
-	}
-	if err := iamOptions.ParseAdditionalTags(); err != nil {
-		return fmt.Errorf("failed to parse additional tags: %w", err)
 	}
 
 	createLogFile := filepath.Join(artifactDir, "create-oidc-provider.log")
