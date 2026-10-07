@@ -169,6 +169,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ClusterVersionStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ComponentLogLevelSpec"):
 		return &hypershiftv1beta1.ComponentLogLevelSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ConfigMapReference"):
+		return &hypershiftv1beta1.ConfigMapReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ConfigurationStatus"):
 		return &hypershiftv1beta1.ConfigurationStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneManagedIdentities"):
@@ -279,6 +281,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.IBMCloudKMSUnmanagedAuthSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("IBMCloudPlatformSpec"):
 		return &hypershiftv1beta1.IBMCloudPlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("IgnitionPayload"):
+		return &hypershiftv1beta1.IgnitionPayloadApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("IgnitionPayloadSpec"):
+		return &hypershiftv1beta1.IgnitionPayloadSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("IgnitionPayloadStatus"):
+		return &hypershiftv1beta1.IgnitionPayloadStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ImageContentSource"):
 		return &hypershiftv1beta1.ImageContentSourceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("IngressDefaultCertificateReference"):
@@ -407,6 +415,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.OVNIPv6ConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OVNKubernetesConfig"):
 		return &hypershiftv1beta1.OVNKubernetesConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("PayloadReference"):
+		return &hypershiftv1beta1.PayloadReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PersistentVolumeEtcdStorageSpec"):
 		return &hypershiftv1beta1.PersistentVolumeEtcdStorageSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PlacementOptions"):

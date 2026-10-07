@@ -317,6 +317,39 @@ hostedcontrolplanes.hypershift.openshift.io:
   TopLevelFeatureGates: []
   Version: v1beta1
 
+ignitionpayloads.hypershift.openshift.io:
+  Annotations: {}
+  ApprovedPRNumber: ""
+  CRDName: ignitionpayloads.hypershift.openshift.io
+  Capability: ""
+  Category: ""
+  FeatureGates:
+  - IgnitionPayloadSystem
+  FilenameOperatorName: ""
+  FilenameOperatorOrdering: ""
+  FilenameRunLevel: ""
+  GroupName: hypershift.openshift.io
+  HasStatus: true
+  KindName: IgnitionPayload
+  Labels: {}
+  PluralName: ignitionpayloads
+  PrinterColumns:
+  - jsonPath: .status.current.generation
+    name: Generation
+    type: integer
+  - jsonPath: .status.conditions[?(@.type=="PayloadGenerated")].status
+    name: Generated
+    type: string
+  - jsonPath: .status.conditions[?(@.type=="IgnitionReached")].status
+    name: Reached
+    type: string
+  Scope: Namespaced
+  ShortNames:
+  - ignpayload
+  TopLevelFeatureGates:
+  - IgnitionPayloadSystem
+  Version: v1beta1
+
 nodepools.hypershift.openshift.io:
   Annotations: {}
   ApprovedPRNumber: ""

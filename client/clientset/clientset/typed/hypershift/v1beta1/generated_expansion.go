@@ -29,4 +29,6 @@ type HostedClusterExpansion interface{}
 
 type HostedControlPlaneExpansion interface{}
 
+type IgnitionPayloadExpansion interface{}
+
 type NodePoolExpansion interface{}

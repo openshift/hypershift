@@ -35,6 +35,8 @@ type Interface interface {
 	HostedClusters() HostedClusterInformer
 	// HostedControlPlanes returns a HostedControlPlaneInformer.
 	HostedControlPlanes() HostedControlPlaneInformer
+	// IgnitionPayloads returns a IgnitionPayloadInformer.
+	IgnitionPayloads() IgnitionPayloadInformer
 	// NodePools returns a NodePoolInformer.
 	NodePools() NodePoolInformer
 }
@@ -78,6 +80,11 @@ func (v *version) HostedClusters() HostedClusterInformer {
 // HostedControlPlanes returns a HostedControlPlaneInformer.
 func (v *version) HostedControlPlanes() HostedControlPlaneInformer {
 	return &hostedControlPlaneInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// IgnitionPayloads returns a IgnitionPayloadInformer.
+func (v *version) IgnitionPayloads() IgnitionPayloadInformer {
+	return &ignitionPayloadInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // NodePools returns a NodePoolInformer.

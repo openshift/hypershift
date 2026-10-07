@@ -1,0 +1,291 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "IgnitionPayload validation"
+crdName: ignitionpayloads.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  # --- Valid configurations ---
+  - name: When a fully-populated valid IgnitionPayload is created it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-1
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+        additionalTrustBundle:
+          name: "trust-bundle"
+        osStream: "rhel-9"
+        rolloutGlobalConfig:
+          name: "np-1-rollout-global"
+        rolloutConfigMaps:
+          - name: "user-cfg"
+          - name: "core-cfg"
+        mgmtConfigMaps:
+          - name: "haproxy-cfg"
+        retiredGeneration: 2
+
+  - name: When a minimal valid IgnitionPayload is created it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-minimal
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+
+  - name: When osStream is rhel-10 it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-rhel10
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+        osStream: "rhel-10"
+
+  # --- Required field validation ---
+  - name: When spec.releaseImage is missing it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-missing-release
+        namespace: hcp-ns
+      spec:
+        pullSecretName: "pull-secret"
+    expectedError: "spec.releaseImage"
+
+  - name: When spec.pullSecretName is missing it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-missing-pull-secret
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+    expectedError: "spec.pullSecretName"
+
+  - name: When spec.releaseImage is empty it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-empty-release
+        namespace: hcp-ns
+      spec:
+        releaseImage: ""
+        pullSecretName: "pull-secret"
+    expectedError: "spec.releaseImage"
+
+  - name: When spec.pullSecretName is empty it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-empty-pull-secret
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: ""
+    expectedError: "spec.pullSecretName"
+
+  # --- List MinItems validation ---
+  - name: When spec.rolloutConfigMaps is an empty array it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-empty-rollout-configmaps
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+        rolloutConfigMaps: []
+    expectedError: "spec.rolloutConfigMaps"
+
+  - name: When spec.mgmtConfigMaps is an empty array it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-empty-mgmt-configmaps
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+        mgmtConfigMaps: []
+    expectedError: "spec.mgmtConfigMaps"
+
+  # --- Enum validation ---
+  - name: When osStream is invalid it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-invalid-osstream
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+        osStream: "rhel-8"
+    expectedError: "spec.osStream"
+
+  # --- ConfigMapReference validation ---
+  - name: When additionalTrustBundle.name is empty it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-empty-trust-bundle-name
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+        additionalTrustBundle:
+          name: ""
+    expectedError: "spec.additionalTrustBundle.name"
+
+  - name: When rolloutGlobalConfig.name is empty it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-empty-rollout-global-config-name
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+        rolloutGlobalConfig:
+          name: ""
+    expectedError: "spec.rolloutGlobalConfig.name"
+
+  - name: When rolloutConfigMaps contains an entry with empty name it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-empty-rollout-configmap-name
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+        rolloutConfigMaps:
+          - name: ""
+    expectedError: "spec.rolloutConfigMaps"
+
+  onUpdate:
+  # --- Status validation ---
+  - name: When status.current.generation is 0 it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-status-test
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-status-test
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+      status:
+        current:
+          configHash: "h1"
+          rolloutHash: "r1"
+          token: "tok-1"
+          generation: 0
+    expectedStatusError: "current.generation"
+
+  - name: When status.previous.generation is 0 it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-status-test-2
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-status-test-2
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+      status:
+        previous:
+          configHash: "h0"
+          rolloutHash: "r0"
+          token: "tok-0"
+          generation: 0
+    expectedStatusError: "previous.generation"
+
+  - name: When status.current has valid generation it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-status-test-3
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-status-test-3
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+      status:
+        current:
+          configHash: "h1"
+          rolloutHash: "r1"
+          token: "tok-1"
+          generation: 1
+        previous:
+          configHash: "h0"
+          rolloutHash: "r0"
+          token: "tok-0"
+          generation: 1
+        rolloutHashVersion: 1
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-status-test-3
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecretName: "pull-secret"
+      status:
+        current:
+          configHash: "h1"
+          rolloutHash: "r1"
+          token: "tok-1"
+          generation: 1
+        previous:
+          configHash: "h0"
+          rolloutHash: "r0"
+          token: "tok-0"
+          generation: 1
+        rolloutHashVersion: 1
