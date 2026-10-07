@@ -17,13 +17,12 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/imageprovider"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/util"
@@ -467,7 +466,7 @@ func (p *LocalIgnitionProvider) runMCO(ctx context.Context, dirs *payloadDirs, r
 		return fmt.Errorf("failed to make dir: %w", err)
 	}
 
-	pullSecretObject := common.PullSecret("default")
+	pullSecretObject := manifests.PullSecret("default")
 	pullSecretObject.Data = map[string][]byte{
 		corev1.DockerConfigJsonKey: pullSecret,
 	}
