@@ -1,0 +1,301 @@
+apiVersion: apiextensions.k8s.io/v1
+name: HostedControlPlane legacy KMS encryption compatibility
+crdName: hostedcontrolplanes.hypershift.openshift.io
+crdFeatureSet: CustomNoUpgrade
+version: v1beta1
+tests:
+  onCreate:
+  - name: When legacy inline Vault KMS configuration is provided, it should succeed
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        infraID: example
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        olmCatalogPlacement: management
+        platform:
+          type: None
+        pullSecret:
+          name: pull-secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.22.0-x86_64
+        sshKey:
+          name: ssh-key
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        configuration:
+          apiServer:
+            audit:
+              profile: Default
+            encryption:
+              type: KMS
+              kms:
+                type: Vault
+                vault:
+                  kmsPluginImage: quay.io/hashicorp/vault-k8s@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                  vaultAddress: https://vault.example.com:8200
+                  authentication:
+                    type: AppRole
+                    appRole:
+                      secret:
+                        name: vault-credentials
+                  vaultKeyPath: transit/keys/test-key
+
+  - name: When pluginConfig-only KMS configuration is provided to the legacy schema, it should fail instead of being silently pruned
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+        infraID: example
+        issuerURL: https://kubernetes.default.svc
+        platform:
+          type: None
+        pullSecret:
+          name: pull-secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.22.0-x86_64
+        sshKey:
+          name: ssh-key
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        configuration:
+          apiServer:
+            audit:
+              profile: Default
+            encryption:
+              type: KMS
+              kms:
+                pluginConfig:
+                  apiVersion: config.openshift.io/v1
+                  resource: vaultkmsconfigs
+                  name: cluster
+    expectedError: "spec.configuration.apiServer.encryption.kms.type: Required value"
+
+  onUpdate:
+  - name: When legacy inline Vault KMS configuration is unchanged, it should allow an unrelated channel update
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        infraID: example
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        olmCatalogPlacement: management
+        platform:
+          type: None
+        pullSecret:
+          name: pull-secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.22.0-x86_64
+        sshKey:
+          name: ssh-key
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        configuration:
+          apiServer:
+            audit:
+              profile: Default
+            encryption:
+              type: KMS
+              kms:
+                type: Vault
+                vault:
+                  kmsPluginImage: quay.io/hashicorp/vault-k8s@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                  vaultAddress: https://vault.example.com:8200
+                  authentication:
+                    type: AppRole
+                    appRole:
+                      secret:
+                        name: vault-credentials
+                  vaultKeyPath: transit/keys/test-key
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        capabilities: {}
+        channel: stable-4.22
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        infraID: example
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        olmCatalogPlacement: management
+        platform:
+          type: None
+        pullSecret:
+          name: pull-secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.22.0-x86_64
+        sshKey:
+          name: ssh-key
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        configuration:
+          apiServer:
+            audit:
+              profile: Default
+            encryption:
+              type: KMS
+              kms:
+                type: Vault
+                vault:
+                  kmsPluginImage: quay.io/hashicorp/vault-k8s@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                  vaultAddress: https://vault.example.com:8200
+                  authentication:
+                    type: AppRole
+                    appRole:
+                      secret:
+                        name: vault-credentials
+                  vaultKeyPath: transit/keys/test-key
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        capabilities: {}
+        channel: stable-4.22
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        infraID: example
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        olmCatalogPlacement: management
+        platform:
+          type: None
+        pullSecret:
+          name: pull-secret
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.22.0-x86_64
+        sshKey:
+          name: ssh-key
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        configuration:
+          apiServer:
+            audit:
+              profile: Default
+            encryption:
+              type: KMS
+              kms:
+                type: Vault
+                vault:
+                  kmsPluginImage: quay.io/hashicorp/vault-k8s@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+                  vaultAddress: https://vault.example.com:8200
+                  authentication:
+                    type: AppRole
+                    appRole:
+                      secret:
+                        name: vault-credentials
+                  vaultKeyPath: transit/keys/test-key

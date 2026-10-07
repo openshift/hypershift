@@ -6410,6 +6410,11 @@ func (in *ServingInfo) DeepCopyInto(out *ServingInfo) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.CurvePreferences != nil {
+		in, out := &in.CurvePreferences, &out.CurvePreferences
+		*out = make([]int32, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 

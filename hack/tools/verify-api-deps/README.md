@@ -1,83 +1,116 @@
 # API Dependencies Verification Tool
 
-This tool enforces strict dependency restrictions on the HyperShift API module (`api/`) to maintain API stability, compatibility, and a minimal dependency footprint.
+This tool enforces dependency restrictions for the separate HyperShift API module
+(`api/`).
 
-## Purpose
+## Enforced Invariants
 
-The HyperShift API module is a separate Go module with its own `go.mod` file. It should only have these **direct** dependencies:
+### Direct dependency allowlist
+
+The API module may directly require only the modules listed in
+`api/.imports_allowed`:
 
 - Core Kubernetes APIs (`k8s.io/api`, `k8s.io/apimachinery`, `k8s.io/utils`)
 - OpenShift API definitions (`github.com/openshift/api`)
 
-## Allowlist Configuration
+Indirect requirements are excluded from this allowlist check because Go manages
+them transitively. The allowlist lives beside `api/go.mod`, falls under API
+reviewer ownership, supports comments beginning with `#`, and contains one module
+path per line.
 
-The allowed dependencies are defined in `api/.imports_allowed` - a simple text file with one module path per line. This file:
+### Shared dependency versions
 
-- **Lives in the API module** alongside the `go.mod` file
-- **Falls under API reviewer control** via the OWNERS file
-- **Requires API reviewer approval** for any changes
-- **Supports comments** (lines starting with `#`)
-- **One dependency per line** format
+Every module path required by both root `go.mod` and `api/go.mod` must use the
+same literal version. This comparison:
 
-## How It Works
+- Includes both direct and indirect requirements
+- Does not require direct/indirect classifications to match
+- Ignores dependencies required by only one module
+- Reports every mismatch in deterministic module-path order
 
-1. **Finds** the repository root by walking up directories to locate the `.git` directory
-2. **Locates** the API module at `<repo-root>/api`
-3. **Loads** the allowed dependencies from `api/.imports_allowed` file
-4. **Reads** the `api/go.mod` file
-5. **Parses** the required dependencies (ignoring indirect dependencies)
-6. **Validates** each dependency against the allowlist
-7. **Fails** with a detailed error message if unauthorized dependencies are found
+This removes literal shared-require drift, which is one source of divergent
+module graphs.
+
+### Shared dependency replacements
+
+For paths literally required by both modules, every replacement directive must
+match in both files. The comparison uses the union of all replacement keys,
+including inactive version-scoped keys. An unversioned key does not match a
+version-scoped key. Module targets must have the same path and version.
+
+Local filesystem targets are resolved relative to the `go.mod` containing the
+directive and compared as lexically cleaned absolute paths. Symlinks are not
+resolved. This allows different relative spellings of the same location while
+keeping diagnostics explicit about both the literal and resolved paths.
+
+Requirements and replacements for paths unique to one module are outside this
+check. That includes root-only local use of the HyperShift API module and
+root-only Karpenter replacements. Replace-only or transitive paths that are not
+literal requirements in both modules are also outside the check. Exclude
+directives are intentionally not checked for symmetry.
+
+These literal directive checks do not prove effective MVS graph equality, check
+every transitive selection, or prove that a downstream consumer can resolve the
+API module. Standalone graph and consumer tests cover those contracts
+separately.
 
 ## Usage
 
+Run the supported local check from the repository root:
+
 ```bash
-# Run as part of verification
-make verify
-
-# Run standalone
 make verify-api-deps
-
-# Build and run directly (works from any directory within the repo)
-cd hack/tools/verify-api-deps
-go run main.go
 ```
 
-## Adding New Dependencies
+The target runs the verifier's unit tests, rebuilds the verifier when its source
+changes, validates the API dependency allowlist, and compares shared requirement
+versions and replacements.
 
-If you need to add a new dependency to the API module:
+The check also runs through `make verify`, `make verify-ci`, pre-commit
+verification, and the repository's verify CI workflow.
 
-1. **Consult API reviewers first** - discuss alternatives and necessity
-2. **Ensure the dependency is essential** for API type definitions
-3. **Verify compatibility** and that it doesn't introduce breaking changes
-4. **After approval**, add the module path to `api/.imports_allowed`
-5. **Update this documentation** if the reasoning changes
+## Mismatch Diagnostics
 
-## Error Messages
+A shared requirement or replacement mismatch fails with the key and value
+declared by each file:
 
-When the tool detects unauthorized dependencies, it provides:
+```text
+shared dependency versions do not match:
+  example.com/a
+    go.mod:     v1.2.0
+    api/go.mod: v1.1.0
 
-- ❌ Clear list of violating dependencies
-- 📋 Instructions for the review process
-- 📁 Location to update the allowlist after approval
-- 👥 Guidance to contact API reviewers
+shared dependency replacements do not match:
+  example.com/b <all versions>
+    go.mod:     => example.com/b-fork v1.2.3
+    api/go.mod: <missing>
 
-## Integration
+align shared requirements and replacements and run `make update`
+```
 
-This tool runs automatically as part of:
+Align all reported shared requirements and replacements, then run `make update`
+to refresh module metadata, vendoring, and generated artifacts according to
+repository conventions.
 
-- `make verify` (full verification suite)
-- `make verify-parallel` (parallel verification tasks)
-- Pre-commit hooks
-- CI/CD pipelines
+## Adding API Dependencies
+
+Before adding a new direct dependency to the API module:
+
+1. Consult API reviewers about alternatives and necessity.
+2. Ensure the dependency is essential for API type definitions.
+3. Verify compatibility and downstream impact.
+4. After approval, add its module path to `api/.imports_allowed`.
+5. If the root module already requires it, use the same literal version.
+6. Align any replacement keys for paths required by both modules.
+7. Run `make update` and `make verify-api-deps`.
+
+Dependencies unique to one module do not need to be introduced into the other
+module. If a dependency later becomes shared, the consistency check begins
+enforcing its version automatically.
 
 ## Rationale
 
-The strict direct dependency restrictions for the API module ensure:
-
-- **Stability**: Minimal direct dependencies mean fewer potential breaking changes
-- **Compatibility**: Reduced version conflict risks with consumer projects  
-- **Performance**: Faster builds and smaller dependency trees
-- **Security**: Smaller attack surface with fewer third-party dependencies
-- **Maintainability**: Clear separation between API definitions and implementations
-- **Simplicity**: Only essential APIs are directly imported, everything else is transitive
+The direct dependency allowlist maintains a minimal, stable API dependency
+surface. Shared literal-requirement and replacement enforcement makes dependency
+updates explicit across the two modules and prevents silent directive drift
+while preserving each module's unique requirements.
