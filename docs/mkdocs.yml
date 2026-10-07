@@ -135,6 +135,7 @@ nav:
         - how-to/disaster-recovery/methods/etcd-snapshot/index.md
         - how-to/disaster-recovery/methods/etcd-snapshot/backup-flow.md
         - how-to/disaster-recovery/methods/etcd-snapshot/restore-flow.md
+        - 'Shard Backup Plan': how-to/disaster-recovery/methods/etcd-snapshot/shard-backup-plan.md
         - how-to/disaster-recovery/methods/etcd-snapshot/managed-services-credentials.md
     - 'Platform Guides':
       - 'AWS': how-to/disaster-recovery/platform-guides/aws.md

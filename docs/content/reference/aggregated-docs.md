@@ -21773,7 +21773,7 @@ The controller creates a Kubernetes `Job` in the HO namespace with three contain
 | `fetch-certs` | Init container | control-plane-operator | Runs `fetch-etcd-certs`: copies etcd TLS certificates from the HCP namespace using the cross-namespace RBAC |
 | `snapshot-etcd` | Init container | etcd | Runs `etcdctl snapshot save`: connects to the default etcd on port 2379 using the fetched TLS certificates and creates a local snapshot file |
 | `snapshot-etcd-<name>` | Init container (per shard) | etcd | When etcd sharding is enabled, one additional init container per PV-backed shard runs `etcdctl snapshot save` against that shard's client endpoint. EmptyDir-backed shards are skipped |
-| `upload` | Main container | control-plane-operator | Runs `etcd-upload --snapshot-dir`: uploads all shard snapshot files to object storage. Writes a JSON array of per-shard URLs to the termination message |
+| `upload` | Main container | control-plane-operator | Runs `etcd-upload`: `--snapshot-path` for single-shard clusters (backward compatible with older CPO images), `--snapshot-dir` for multi-shard clusters, uploading each shard-named file as a separate object. Writes the snapshot URL (single shard) or a JSON array of per-shard URLs (multi-shard) to the termination message |
 
 **Job configuration:**
 
@@ -22748,6 +22748,10 @@ Add per-shard snapshot tracking to `HCPEtcdBackupStatus`:
 // shardSnapshots contains the snapshot URLs for each etcd shard that was
 // backed up. When etcd sharding is not enabled, this list contains a single
 // entry for the default shard. Each entry maps a shard name to its snapshot URL.
+// The controller receives this list through the upload container's termination
+// message, which Kubernetes truncates at 4096 bytes; etcd-upload fails the Job
+// rather than emit a truncated payload, so the serialized list (names plus
+// URLs) must stay under that limit.
 // +optional
 // +listType=map
 // +listMapKey=name
@@ -22774,16 +22778,24 @@ the **default shard's** snapshot URL. New consumers should prefer `ShardSnapshot
 
 ##### a. Shard discovery
 
-Add a helper that resolves the list of etcd shards to back up:
+Add a helper that resolves the list of etcd shards to back up. Shards backed by
+`EmptyDir` storage are skipped — they hold ephemeral data that is not worth
+backing up — and the same filtered list is used for shard discovery, health
+checks, and Job construction so no snapshot init container is ever created for
+an excluded shard:
 
 ```go
-func (r *HCPEtcdBackupReconciler) etcdShards(hcp *hyperv1.HostedControlPlane) []etcdShardInfo {
+func etcdShards(hcp *hyperv1.HostedControlPlane) []etcdShardInfo {
     shards := []etcdShardInfo{{
-        name:     "etcd",
-        endpoint: fmt.Sprintf("https://etcd-client.%s.svc:%d", hcp.Namespace, supportconfig.EtcdClientPort),
+        name: "etcd",
+        endpoint: fmt.Sprintf("https://%s.%s.svc:%d",
+            etcdutil.ClientServiceName("etcd"), hcp.Namespace, supportconfig.EtcdClientPort),
     }}
     if hcp.Spec.Etcd.Managed != nil {
         for _, s := range hcp.Spec.Etcd.Managed.Shards {
+            if s.Storage.Type == hyperv1.EmptyDirEtcdShardStorage {
+                continue
+            }
             shardName := fmt.Sprintf("etcd-%s", s.Name)
             shards = append(shards, etcdShardInfo{
                 name:     shardName,
@@ -22825,7 +22837,7 @@ func (r *HCPEtcdBackupReconciler) checkEtcdHealth(ctx context.Context, hcp *hype
 Replace the single `snapshot` init container with one init container **per shard**,
 each writing to a shard-named snapshot file:
 
-```
+```text
 Init containers:
   fetch-certs          (unchanged — shared client TLS works for all shards)
   snapshot-etcd        etcdctl --endpoints=etcd-client.<ns>:2379 snapshot save /backup/etcd.db
@@ -22837,7 +22849,10 @@ Main container:
 
 The upload command changes from `--snapshot-path` (single file) to `--snapshot-dir`
 (directory of shard-named files), uploading each as a separate object with the
-shard name in the key.
+shard name in the key. Because older CPO images only support `--snapshot-path`,
+multi-shard backup Jobs require a CPO image with `--snapshot-dir` support:
+clusters must not enable multi-shard backup until the management cluster's CPO
+image is synchronized to a version that has it.
 
 ##### d. NetworkPolicy (`ensureNetworkPolicy`)
 
@@ -22846,9 +22861,10 @@ The current policy selects pods with `app: etcd`. However, shard pods carry
 uses `app: {{ .Name }}` where `.Name` is `etcd-events`, not `etcd`. The
 NetworkPolicy must be widened.
 
-Option A (recommended): Use a `matchExpressions` selector with a prefix match
-via multiple label values. Since shards are known at Job creation time, the
-controller can build the list:
+Option A (recommended): Use a `matchExpressions` selector listing the exact
+`app` values for every shard. Since shards are known at Job creation time, the
+controller can build the list (note that `LabelSelectorOpIn` matches exact
+label values — it does not perform prefix matching):
 
 ```go
 np.Spec.PodSelector = metav1.LabelSelector{
