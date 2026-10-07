@@ -11,7 +11,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 )
 
 func TestAdaptService(t *testing.T) {
@@ -47,7 +46,7 @@ func TestAdaptService(t *testing.T) {
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 						Type: hyperv1.NodePort,
 						NodePort: &hyperv1.NodePortPublishingStrategy{
-							Port: ptr.To(int32(30123)),
+							Port: 30123,
 						},
 					},
 				},
@@ -187,7 +186,7 @@ func TestAdaptServicePreservesNodePort(t *testing.T) {
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 						Type: hyperv1.NodePort,
 						NodePort: &hyperv1.NodePortPublishingStrategy{
-							Port: ptr.To(int32(30456)),
+							Port: 30456,
 						},
 					},
 				},
@@ -238,7 +237,7 @@ func TestAdaptServiceMultiplePorts(t *testing.T) {
 					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 						Type: hyperv1.NodePort,
 						NodePort: &hyperv1.NodePortPublishingStrategy{
-							Port: ptr.To(int32(30789)),
+							Port: 30789,
 						},
 					},
 				},

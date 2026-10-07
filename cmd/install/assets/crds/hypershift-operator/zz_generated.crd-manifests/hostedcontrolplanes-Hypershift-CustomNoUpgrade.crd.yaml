@@ -10102,10 +10102,14 @@ spec:
                                   || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')
                             port:
                               description: |-
-                                port is the port of the NodePort service. If <=0, the port is dynamically
-                                assigned when the service is created.
+                                port is the port of the NodePort service.
+                                If omitted, the port is dynamically assigned when the service is created.
                               format: int32
                               type: integer
+                              x-kubernetes-validations:
+                              - message: port must not be 0, omit the field to have
+                                  the port dynamically assigned
+                                rule: self != 0
                           required:
                           - address
                           type: object
