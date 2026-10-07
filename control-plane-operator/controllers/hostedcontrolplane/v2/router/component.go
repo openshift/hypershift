@@ -103,19 +103,10 @@ func ensureHCPRouterRoutesExist(cpContext component.WorkloadContext) error {
 		return fmt.Errorf("waiting for HCP router routes: %s", strings.Join(missing, ", "))
 	}
 
-	// Also verify that each route's backend Service has a ClusterIP assigned.
-	// If the Service exists but Kubernetes has not yet allocated a ClusterIP, the
-	// router ConfigMap would be generated with an empty destination IP and later
-	// updated once the ClusterIP is available, triggering an unnecessary rolling
-	// update of the router pods at a time when they are susceptible to Azure CNI
-	// DHCP timeouts.
-	//
-	// We check only the routes in expectedSet (the ARO HCP required routes) rather
-	// than every route in the namespace. Routes outside this set (e.g. external KAS
-	// routes, metrics-forwarder) either do not exist yet — in which case adaptConfig
-	// also skips them — or are not created for ARO HCP at all. The critical window
-	// is the initial Deployment creation: once the router is running with a stable
-	// ConfigMap, subsequent route arrivals are handled by live reconciliation.
+	// Verify that each expected route's backend Service has a ClusterIP assigned.
+	// Without this gate the router ConfigMap would contain an empty destination IP,
+	// causing a rolling update once the ClusterIP arrives — during a window where
+	// pods are susceptible to Azure CNI DHCP timeouts.
 	expectedSet := make(map[string]struct{}, len(expected))
 	for _, name := range expected {
 		expectedSet[name] = struct{}{}

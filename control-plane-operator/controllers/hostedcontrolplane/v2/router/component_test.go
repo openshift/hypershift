@@ -788,7 +788,7 @@ func TestRouterPredicate(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "When ARO HCP has a service with no ClusterIP, predicate should return false with error",
+			name: "When the ARO HCP backend service has no ClusterIP, it should return false with an error",
 			hcp:  aroHCP(),
 			objects: []runtime.Object{
 				readyRoute("kube-apiserver-internal", "kube-apiserver"),
