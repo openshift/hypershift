@@ -176,10 +176,10 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
 
 .PHONY: verify-parallel
-verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
+verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs verify-hypershift-ci-daily-health
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
+verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs verify-hypershift-ci-daily-health ## Run the same checks as the GHA verify workflow.
 	$(MAKE) verify-git-clean
 
 .PHONY: verify
@@ -682,6 +682,14 @@ verify-tekton-pipeline-pairs: $(PYTHON_VENV_STAMP) ## Verify paired Tekton Pipel
 	else \
 		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/verify-tekton-pipeline-pairs_test.py && \
 		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-tekton-pipeline-pairs.py; \
+	fi
+
+.PHONY: verify-hypershift-ci-daily-health
+verify-hypershift-ci-daily-health: $(PYTHON_VENV_STAMP) ## Verify the offline HyperShift CI daily health companion.
+	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
+		$(PYTHON_VENV)/bin/python3 -m pytest -q .chai-bot/hypershift-ci-daily-health/scripts/test_hypershift_ci_daily_health.py; \
+	else \
+		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q .chai-bot/hypershift-ci-daily-health/scripts/test_hypershift_ci_daily_health.py; \
 	fi
 
 .PHONY: verify-codespell

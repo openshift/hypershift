@@ -1,0 +1,11 @@
+{
+  "name": "5.0.0-0.ci",
+  "tags": [
+    {
+      "name": "5.0.0-0.ci-2026-09-28-080000",
+      "phase": "Accepted",
+      "pullSpec": "q",
+      "downloadURL": "d"
+    }
+  ]
+}
