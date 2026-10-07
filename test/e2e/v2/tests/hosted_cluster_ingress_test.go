@@ -297,7 +297,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}
 		})
 
-		It("should create the cert secret and set defaultCertificate on the HostedCluster", Label(internal.InformingLabel), func() {
+		It("should create the cert secret and set defaultCertificate on the HostedCluster", func() {
 			By("Creating the TLS secret in the HostedCluster namespace")
 			certSecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -337,7 +337,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			})).To(Succeed(), "failed to set defaultCertificate on HostedCluster")
 		})
 
-		It("should propagate the custom cert data to the hosted cluster's default-ingress-cert secret", Label(internal.InformingLabel), func() {
+		It("should propagate the custom cert data to the hosted cluster's default-ingress-cert secret", func() {
 			Eventually(func(g Gomega) {
 				hostedClusterSecret := &corev1.Secret{}
 				ref := manifests.IngressDefaultIngressControllerCert()
@@ -353,7 +353,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should report the IngressDefaultCertificateSynced condition as True on the HostedCluster", Label(internal.InformingLabel), func() {
+		It("should report the IngressDefaultCertificateSynced condition as True on the HostedCluster", func() {
 			Eventually(func(g Gomega) {
 				hc, err := tc.GetHostedCluster()
 				g.Expect(err).NotTo(HaveOccurred())
@@ -365,7 +365,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should populate the observed-default-ingress-cert ConfigMap in the control plane namespace with the custom cert's CA", Label(internal.InformingLabel), func() {
+		It("should populate the observed-default-ingress-cert ConfigMap in the control plane namespace with the custom cert's CA", func() {
 			Eventually(func(g Gomega) {
 				cm := cpomanifests.IngressObservedDefaultIngressCertCA(tc.ControlPlaneNamespace)
 				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(cm), cm)).To(Succeed(), "observed-default-ingress-cert ConfigMap should exist in control plane namespace")
@@ -380,7 +380,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 10*time.Minute, 15*time.Second).Should(Succeed())
 		})
 
-		It("should serve a route with the custom cert verifiable by the CA from the management cluster", Label(internal.InformingLabel), func() {
+		It("should serve a route with the custom cert verifiable by the CA from the management cluster", func() {
 			By("Reading the observed CA from the management cluster")
 			var caBundle []byte
 			Eventually(func(g Gomega) {
@@ -406,7 +406,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should propagate rotated certificate data when the source secret is updated", Label(internal.InformingLabel), func() {
+		It("should propagate rotated certificate data when the source secret is updated", func() {
 			By("Generating a new certificate for rotation")
 			newCertPEM, newKeyPEM, err := v2util.GenerateCustomCertificate(
 				[]string{fmt.Sprintf("*.%s", ingressDomain)},
@@ -473,7 +473,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should report InvalidCertificateSecret and preserve the served certificate when the source secret is missing tls.key", Label(internal.InformingLabel), func() {
+		It("should report InvalidCertificateSecret and preserve the served certificate when the source secret is missing tls.key", func() {
 			const badSecretName = "e2e-custom-ingress-cert-invalid"
 			ref := manifests.IngressDefaultIngressControllerCert()
 
@@ -533,7 +533,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			})).To(Succeed())
 		})
 
-		It("should preserve the last synced certificate and report SecretNotFound when the source secret is deleted", Label(internal.InformingLabel), func() {
+		It("should preserve the last synced certificate and report SecretNotFound when the source secret is deleted", func() {
 			ref := manifests.IngressDefaultIngressControllerCert()
 
 			By("Capturing the certificate currently served in the hosted cluster")
@@ -570,7 +570,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			}, 1*time.Minute, 10*time.Second).Should(Succeed())
 		})
 
-		It("should revert to the generated wildcard certificate when defaultCertificate is cleared", Label(internal.InformingLabel), func() {
+		It("should revert to the generated wildcard certificate when defaultCertificate is cleared", func() {
 			ref := manifests.IngressDefaultIngressControllerCert()
 
 			By("Capturing the custom certificate currently served")
