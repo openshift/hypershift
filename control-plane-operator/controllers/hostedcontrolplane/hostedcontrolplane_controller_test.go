@@ -684,7 +684,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 				Log:    ctrl.LoggerFrom(t.Context()),
 			}
 
-			conditionPtr := r.etcdRestoredCondition(t.Context(), tc.sts)
+			conditionPtr := r.etcdRestoredConditionForSTS(t.Context(), tc.sts, tc.sts.Name)
 			g.Expect(conditionPtr).ToNot(BeNil())
 			g.Expect(*conditionPtr).To(Equal(tc.expectedCondition))
 		})

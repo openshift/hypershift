@@ -502,7 +502,10 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, 
 	if hostedControlPlane.Spec.Etcd.ManagementType == hyperv1.Managed &&
 		hostedControlPlane.Spec.Etcd.Managed != nil && r.hasRestoreURLs(hostedControlPlane) {
 		restoreCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
-		if restoreCondition == nil {
+		// Keep re-evaluating until the restore is actually True: a shard's
+		// etcd-init container can fail transiently and succeed on retry, so a
+		// single observation of False must not latch permanently.
+		if restoreCondition == nil || restoreCondition.Status != metav1.ConditionTrue {
 			r.Log.Info("Reconciling etcd cluster restore status")
 			conditionPtr := r.aggregateEtcdRestoredCondition(ctx, hostedControlPlane)
 			if conditionPtr != nil {
@@ -2667,13 +2670,6 @@ func (r *HostedControlPlaneReconciler) hostedControlPlaneInNamespace(ctx context
 		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hcp.Namespace, Name: hcp.Name}})
 	}
 	return result
-}
-
-// Deprecated: etcdRestoredCondition is a convenience wrapper retained for
-// pre-existing tests. Production code should use aggregateEtcdRestoredCondition
-// (which handles multiple shards) or etcdRestoredConditionForSTS directly.
-func (r *HostedControlPlaneReconciler) etcdRestoredCondition(ctx context.Context, sts *appsv1.StatefulSet) *metav1.Condition {
-	return r.etcdRestoredConditionForSTS(ctx, sts, sts.Name)
 }
 
 // etcdRestoredConditionForSTS checks if the etcd-init containers have completed
