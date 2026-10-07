@@ -1464,6 +1464,14 @@ func TestControlPlaneComponents(t *testing.T) {
 				ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
 			},
 		}
+		// Satisfy component preconditions so gated components (e.g. the
+		// cluster-storage-operator, which gates on ConfigOperatorReconciliationSucceeded)
+		// render their full manifest set for fixture comparison.
+		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+			Type:   string(hyperv1.ConfigOperatorReconciliationSucceeded),
+			Status: metav1.ConditionTrue,
+			Reason: hyperv1.AsExpectedReason,
+		})
 		if tt.platformType != nil {
 			hcp.Spec.Platform.Type = *tt.platformType
 			if *tt.platformType == hyperv1.IBMCloudPlatform {

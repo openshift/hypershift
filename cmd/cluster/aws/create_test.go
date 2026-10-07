@@ -295,3 +295,58 @@ func TestGenerateResources(t *testing.T) {
 		g.Expect(resources[0].GetLabels()).To(HaveKeyWithValue(util.DeleteWithClusterLabelName, "true"))
 	})
 }
+
+func TestValidateInitialStorageVolumesKMSKey(t *testing.T) {
+	tests := []struct {
+		name      string
+		kmsKeyARN string
+		region    string
+		expectErr string
+	}{
+		{
+			name:      "When no key is set, it should pass",
+			kmsKeyARN: "",
+			region:    "us-east-1",
+		},
+		{
+			name:      "When a valid key ARN in the cluster region is set, it should pass",
+			kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:key/d3cdd9e0-3fd1-47a4-a559-72ae3672c5a6",
+			region:    "us-east-1",
+		},
+		{
+			name:      "When a valid alias ARN in the cluster region is set, it should pass",
+			kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:alias/hypershift-ci",
+			region:    "us-east-1",
+		},
+		{
+			name:      "When the ARN is malformed, it should fail",
+			kmsKeyARN: "not-an-arn",
+			region:    "us-east-1",
+			expectErr: "must be a valid AWS KMS key ARN",
+		},
+		{
+			name:      "When the ARN has no key id after the slash, it should fail",
+			kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:key/",
+			region:    "us-east-1",
+			expectErr: "must be a valid AWS KMS key ARN",
+		},
+		{
+			name:      "When the key is in a different region than the cluster, it should fail",
+			kmsKeyARN: "arn:aws:kms:us-west-2:123456789012:key/d3cdd9e0-3fd1-47a4-a559-72ae3672c5a6",
+			region:    "us-east-1",
+			expectErr: "must reference a key in the cluster region",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			err := validateInitialStorageVolumesKMSKey(tc.kmsKeyARN, tc.region)
+			if tc.expectErr == "" {
+				g.Expect(err).NotTo(HaveOccurred())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectErr))
+			}
+		})
+	}
+}

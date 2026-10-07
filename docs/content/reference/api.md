@@ -1544,6 +1544,56 @@ If the platform does not support LoadBalancerSourceRanges, this field may have n
 </tr>
 </tbody>
 </table>
+###AWSCSIDriverConfig { #hypershift.openshift.io/v1beta1.AWSCSIDriverConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CSIDriverOperatorSpec">CSIDriverOperatorSpec</a>)
+</p>
+<p>
+<p>AWSCSIDriverConfig specifies configuration for the AWS EBS CSI driver.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>initialKMSKeyARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>initialKMSKeyARN is the ARN of an AWS KMS key used to encrypt volumes
+created by the default StorageClass. When set, new PersistentVolumes
+provisioned by the default StorageClass are encrypted with this key
+instead of the AWS account&rsquo;s default EBS encryption key.</p>
+<p>When omitted, no KMS key is configured on the default StorageClass and
+EBS volumes are encrypted with the AWS account&rsquo;s default EBS encryption
+key.</p>
+<p>The value may be either the ARN or Alias ARN of a KMS key and must follow
+the format arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>,
+where <partition> is one of aws, aws-cn, aws-us-gov, aws-iso, aws-iso-b,
+aws-iso-e, or aws-iso-f; <region> is the AWS region; <account-id> is the
+12-digit AWS account identifier; and <key-id-or-alias> is the KMS key ID
+or alias name. The key must be in the same region as the cluster
+(spec.platform.aws.region).</p>
+<p>When set, must be between 1 and 2048 characters.</p>
+<p>This field can only be set when the HostedCluster is created and is
+immutable afterwards. Day-2 changes to storage encryption must be made
+directly on the ClusterCSIDriver resource in the hosted cluster.</p>
+<p>The IAM role in spec.platform.aws.rolesRef.storageARN must have
+kms:Decrypt, kms:GenerateDataKeyWithoutPlaintext, and kms:CreateGrant
+permissions on the specified key.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AWSCloudProviderConfig { #hypershift.openshift.io/v1beta1.AWSCloudProviderConfig }
 <p>
 (<em>Appears on:</em>
@@ -5348,6 +5398,42 @@ NestedVirtualizationPolicy
 <p>nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
 Supported on C8i, M8i, and R8i instance families.
 When omitted, nested virtualization is not enabled (AWS default behavior).</p>
+</td>
+</tr>
+</tbody>
+</table>
+###CSIDriverOperatorSpec { #hypershift.openshift.io/v1beta1.CSIDriverOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>CSIDriverOperatorSpec specifies configuration for the CSI driver operator
+in the hosted cluster. Platform-specific configuration is nested per platform.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>aws,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSCSIDriverConfig">
+AWSCSIDriverConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws configures the AWS EBS CSI driver.
+It can only be set when spec.platform.type is AWS.</p>
+<p>When omitted, no AWS-specific CSI driver configuration is applied and the
+default StorageClass uses the AWS account&rsquo;s default EBS encryption settings.</p>
 </td>
 </tr>
 </tbody>
@@ -16369,6 +16455,22 @@ Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
 The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>csiDriverOperator,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CSIDriverOperatorSpec">
+CSIDriverOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>csiDriverOperator configures the CSI drivers of the hosted cluster.
+Settings are grouped by platform.</p>
+<p>When omitted, the CSI drivers use their default configuration.</p>
 </td>
 </tr>
 </tbody>
