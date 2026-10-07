@@ -153,7 +153,7 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return obj.GetName() == "azure-cloud-config" || obj.GetName() == "openstack-cloud-config"
 		}))).
 		WithOptions(controller.Options{
-			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 5*time.Minute),
 			MaxConcurrentReconciles: 10,
 		})
 	for _, managedResource := range r.managedResources() {
