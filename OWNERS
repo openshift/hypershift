@@ -6,6 +6,11 @@ filters:
     - core-reviewers
     emeritus_approvers:
     - davidvossel
+  "^openshift-hypershift-.*":
+    approvers:
+    - ci-operator-config-approvers
+    reviewers:
+    - ci-operator-config-approvers
   # Konflux
   "^\\.tekton/.*":
     approvers:
