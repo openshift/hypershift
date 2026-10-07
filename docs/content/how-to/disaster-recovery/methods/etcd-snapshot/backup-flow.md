@@ -193,7 +193,7 @@ The controller creates a Kubernetes `Job` in the HO namespace with three contain
 | `fetch-certs` | Init container | control-plane-operator | Runs `fetch-etcd-certs`: copies etcd TLS certificates from the HCP namespace using the cross-namespace RBAC |
 | `snapshot-etcd` | Init container | etcd | Runs `etcdctl snapshot save`: connects to the default etcd on port 2379 using the fetched TLS certificates and creates a local snapshot file |
 | `snapshot-etcd-<name>` | Init container (per shard) | etcd | When etcd sharding is enabled, one additional init container per PV-backed shard runs `etcdctl snapshot save` against that shard's client endpoint. EmptyDir-backed shards are skipped |
-| `upload` | Main container | control-plane-operator | Runs `etcd-upload --snapshot-dir`: uploads all shard snapshot files to object storage. Writes a JSON array of per-shard URLs to the termination message |
+| `upload` | Main container | control-plane-operator | Runs `etcd-upload`: `--snapshot-path` for single-shard clusters (backward compatible with older CPO images), `--snapshot-dir` for multi-shard clusters, uploading each shard-named file as a separate object. Writes the snapshot URL (single shard) or a JSON array of per-shard URLs (multi-shard) to the termination message |
 
 **Job configuration:**
 
