@@ -11,7 +11,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -169,7 +168,7 @@ func TestGenerateKMSPodConfig_SelfManaged(t *testing.T) {
 					ContainSubstring("--token-file=" + path.Join(config.CloudTokenMountPath, "token")),
 				))
 				g.Expect(tokenMinter.container.Args).To(ContainElement(
-					ContainSubstring("--kubeconfig=" + path.Join("/etc/kubernetes", podspec.KubeconfigKey)),
+					ContainSubstring("--kubeconfig=" + path.Join("/etc/kubernetes", config.KubeconfigKey)),
 				))
 
 				// Verify volume mounts

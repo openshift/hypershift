@@ -74,15 +74,6 @@ func KASAdminKubeconfigSecret(controlPlaneNamespace string, ref *hyperv1.Kubecon
 	return s
 }
 
-func KASBootstrapKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "bootstrap-kubeconfig",
-			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
 func KASDeployment(controlPlaneNamespace string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

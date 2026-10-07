@@ -89,7 +89,6 @@ func UpsertEnvVars(c *corev1.Container, envVars []corev1.EnvVar) {
 }
 
 const (
-
 	// CPOImageName is the name under which components can find the CPO image in the release image..
 	CPOImageName = "controlplane-operator"
 

@@ -92,13 +92,6 @@ func Tracer(name string) trace.Tracer {
 	return otel.Tracer("hypershift/" + name)
 }
 
-// StartSpan is a convenience wrapper that starts a child span from the
-// given context. It returns the updated context and span. The caller must
-// call span.End() when the operation completes.
-func StartSpan(ctx context.Context, t trace.Tracer, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return t.Start(ctx, name, opts...)
-}
-
 // parseSampler returns a trace sampler for the given name and argument.
 // If name is empty, it defaults to parentbased_always_on (100% sampling).
 func parseSampler(name, arg string) sdktrace.Sampler {

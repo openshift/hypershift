@@ -3,7 +3,6 @@ package operator
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -25,7 +24,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
-	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -80,8 +78,6 @@ type HostedClusterConfigOperatorConfig struct {
 	EnableCIDebugOutput           bool
 	ImageMetaDataProvider         imageregistry.ImageMetadataProvider
 	ManagementClusterCapabilities capabilities.CapabiltyChecker
-
-	kubeClient kubeclient.Interface
 }
 
 func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpName string) ctrl.Manager {
@@ -202,22 +198,6 @@ func CfgFromFile(path string) *rest.Config {
 		panic(fmt.Sprintf("failed to construct kubeconfig from path %s: %v", path, err))
 	}
 	return cfg
-}
-
-func (c *HostedClusterConfigOperatorConfig) KubeClient() kubeclient.Interface {
-	if c.kubeClient == nil {
-		var err error
-		c.kubeClient, err = kubeclient.NewForConfig(c.Config)
-		if err != nil {
-			c.Fatal(err, "cannot get management kube client")
-		}
-	}
-	return c.kubeClient
-}
-
-func (c *HostedClusterConfigOperatorConfig) Fatal(err error, msg string) {
-	c.Logger.Error(err, msg)
-	os.Exit(1)
 }
 
 func (c *HostedClusterConfigOperatorConfig) Start(ctx context.Context) error {

@@ -295,7 +295,7 @@ func (p *azureKMSProvider) buildKASContainerAzureKMSTokenMinter() func(*corev1.C
 			fmt.Sprintf("--service-account-namespace=%s", manifests.KASContainerKMSProviderServiceAccount().Namespace),
 			fmt.Sprintf("--service-account-name=%s", manifests.KASContainerKMSProviderServiceAccount().Name),
 			fmt.Sprintf("--token-file=%s", path.Join(config.CloudTokenMountPath, "token")),
-			fmt.Sprintf("--kubeconfig=%s", path.Join("/etc/kubernetes", podspec.KubeconfigKey)),
+			fmt.Sprintf("--kubeconfig=%s", path.Join("/etc/kubernetes", config.KubeconfigKey)),
 		}
 		c.Resources = corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
