@@ -3238,6 +3238,25 @@ func TestParseShardSnapshots(t *testing.T) {
 		_, err := parseShardSnapshots("[invalid")
 		g.Expect(err).To(HaveOccurred())
 	})
+
+	t.Run("When JSON entries have invalid URLs they should be skipped", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		msg := `[{"name":"etcd","url":"s3://b/etcd.db"},{"name":"etcd-events","url":"ftp://b/etcd-events.db"},{"name":"etcd-logs","url":"not-a-url"},{"name":"","url":"s3://b/unnamed.db"}]`
+		snapshots, err := parseShardSnapshots(msg)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(HaveLen(1))
+		g.Expect(snapshots[0].Name).To(Equal("etcd"))
+		g.Expect(snapshots[0].SnapshotURL).To(Equal("s3://b/etcd.db"))
+	})
+
+	t.Run("When plain URL has an unsupported scheme it should return nil", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		snapshots, err := parseShardSnapshots("some stray log line from the upload container")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(BeNil())
+	})
 }
 
 func TestEnsureNetworkPolicyMultiShard(t *testing.T) {

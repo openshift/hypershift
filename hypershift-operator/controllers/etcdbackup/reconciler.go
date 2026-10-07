@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -458,8 +459,9 @@ type etcdShardInfo struct {
 // EmptyDir-backed shards are skipped since they hold ephemeral data.
 func etcdShards(hcp *hyperv1.HostedControlPlane) []etcdShardInfo {
 	shards := []etcdShardInfo{{
-		name:     "etcd",
-		endpoint: fmt.Sprintf("https://etcd-client.%s.svc:%d", hcp.Namespace, supportconfig.EtcdClientPort),
+		name: "etcd",
+		endpoint: fmt.Sprintf("https://%s.%s.svc:%d",
+			etcdutil.ClientServiceName("etcd"), hcp.Namespace, supportconfig.EtcdClientPort),
 	}}
 	if hcp.Spec.Etcd.Managed != nil {
 		for _, s := range hcp.Spec.Etcd.Managed.Shards {
@@ -715,6 +717,9 @@ func parseShardSnapshots(msg string) ([]hyperv1.HCPEtcdShardSnapshot, error) {
 		}
 		var snapshots []hyperv1.HCPEtcdShardSnapshot
 		for _, e := range entries {
+			if e.Name == "" || !isSupportedSnapshotURL(e.URL) {
+				continue
+			}
 			snapshots = append(snapshots, hyperv1.HCPEtcdShardSnapshot{
 				Name:        e.Name,
 				SnapshotURL: e.URL,
@@ -723,13 +728,21 @@ func parseShardSnapshots(msg string) ([]hyperv1.HCPEtcdShardSnapshot, error) {
 		return snapshots, nil
 	}
 	// Backward compat: plain URL from older CPO images.
-	if msg != "" {
+	if isSupportedSnapshotURL(msg) {
 		return []hyperv1.HCPEtcdShardSnapshot{{
 			Name:        "etcd",
 			SnapshotURL: msg,
 		}}, nil
 	}
 	return nil, nil
+}
+
+func isSupportedSnapshotURL(rawURL string) bool {
+	parsedURL, err := url.ParseRequestURI(rawURL)
+	if err != nil || parsedURL.Host == "" {
+		return false
+	}
+	return parsedURL.Scheme == "https" || parsedURL.Scheme == "s3"
 }
 
 // setEncryptionMetadata populates encryption metadata on the backup status
