@@ -93,7 +93,7 @@ func run(ctx context.Context, opts options) error {
 
 	uploader, err := newUploader(ctx, opts)
 	if err != nil {
-		return err
+		return fmt.Errorf("create uploader: %w", err)
 	}
 
 	if opts.snapshotDir != "" {
@@ -148,9 +148,9 @@ func runDir(ctx context.Context, opts options, uploader Uploader) error {
 		shardName := strings.TrimSuffix(entry.Name(), ".db")
 		key := fmt.Sprintf("%s/%d/%s.db", opts.keyPrefix, timestamp, shardName)
 
-		result, err := uploader.Upload(ctx, snapshotPath, key)
-		if err != nil {
-			return fmt.Errorf("failed to upload shard %q snapshot: %w", shardName, err)
+		result, uploadErr := uploader.Upload(ctx, snapshotPath, key)
+		if uploadErr != nil {
+			return fmt.Errorf("failed to upload shard %q snapshot: %w", shardName, uploadErr)
 		}
 
 		fmt.Printf("uploaded %s: %s\n", shardName, result.URL)
@@ -168,6 +168,13 @@ func runDir(ctx context.Context, opts options, uploader Uploader) error {
 	jsonBytes, err := json.Marshal(snapshots)
 	if err != nil {
 		return fmt.Errorf("failed to marshal shard snapshots: %w", err)
+	}
+
+	// Kubernetes truncates container termination messages at 4096 bytes.
+	// Fail loudly rather than write a truncated (unparsable) payload the
+	// controller would then silently drop.
+	if len(jsonBytes) > 4096 {
+		return fmt.Errorf("shard snapshot result (%d bytes) exceeds the 4096-byte termination message limit; reduce the number of shards or the key prefix length", len(jsonBytes))
 	}
 
 	if err := os.WriteFile("/dev/termination-log", jsonBytes, 0644); err != nil {

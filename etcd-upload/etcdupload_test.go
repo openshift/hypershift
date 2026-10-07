@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -151,6 +152,24 @@ func TestRunDir(t *testing.T) {
 		err := runDir(context.Background(), opts, uploader)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("failed to read snapshot directory"))
+	})
+
+	t.Run("When the serialized shard results exceed the termination message limit it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		dir := t.TempDir()
+		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
+		g.Expect(writeTestFile(dir, "etcd-events.db")).To(Succeed())
+
+		uploader := &fakeUploader{}
+		opts := options{
+			snapshotDir: dir,
+			// Each URL is ~2100 bytes, so the JSON array of two shards
+			// exceeds the 4096-byte termination message limit.
+			keyPrefix: strings.Repeat("a", 2100),
+		}
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("4096"))
 	})
 }
 
