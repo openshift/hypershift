@@ -499,11 +499,12 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 			return utilerrors.NewAggregate(dumpErrors)
 		case hyperv1.AzurePlatform:
 			var dumpErrors []error
-			if err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig); err != nil {
-				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
-			}
+
 			if err := dump.DumpAzureMachineDiagnostics(ctx, hc.Namespace, hc.Name, opts.AzurePlatform.CredentialsFile, artifactDir, opts.Kubeconfig); err != nil {
 				t.Logf("Failed to dump Azure machine diagnostics; this is nonfatal: %v", err)
+			}
+			if err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig); err != nil {
+				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
 			return utilerrors.NewAggregate(dumpErrors)
 		default:

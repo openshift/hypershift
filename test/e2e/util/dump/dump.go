@@ -83,7 +83,14 @@ func DumpAzureMachineDiagnostics(ctx context.Context, namespace, name, credentia
 		return err
 	}
 	return dumpAzureMachineDiagnostics(ctx, managementClient, namespace, name, credentialsFile, artifactDir, func(ctx context.Context, managementClient crclient.Client, hostedCluster *hyperv1.HostedCluster, credentialsFile, artifactDir string) error {
-		return consolelogsazure.DumpMachineDiagnostics(ctx, managementClient, hostedCluster, credentialsFile, artifactDir, logr.Discard())
+		managementConfig, err := cmdutil.GetConfigWithKubeconfig(kubeconfigPath)
+		if err != nil {
+			return err
+		}
+		_, err = consolelogsazure.CollectMachineDiagnostics(ctx, managementClient, hostedCluster, consolelogsazure.DiagnosticsOptions{
+			CredentialsFile: credentialsFile, ArtifactDir: artifactDir, ManagementConfig: managementConfig, SSH: consolelogsazure.SSHOptionsFromEnv(),
+		}, logr.Discard())
+		return err
 	})
 }
 
@@ -99,9 +106,6 @@ func dumpAzureMachineDiagnostics(ctx context.Context, managementClient crclient.
 	}
 	if hostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
 		return nil
-	}
-	if credentialsFile == "" {
-		return fmt.Errorf("Azure credentials file is not configured")
 	}
 
 	if err := collect(diagnosticsCtx, managementClient, hostedCluster, credentialsFile, artifactDir); err != nil {

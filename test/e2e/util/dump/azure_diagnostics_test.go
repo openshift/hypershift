@@ -31,9 +31,9 @@ func TestDumpAzureMachineDiagnostics(t *testing.T) {
 			hostedCluster: hostedClusterForDiagnostics(hyperv1.AWSPlatform),
 		},
 		{
-			name:          "When Azure credentials are missing, it should return a configuration error",
+			name:          "When Azure credentials are missing, it should still attempt journal collection",
 			hostedCluster: hostedClusterForDiagnostics(hyperv1.AzurePlatform),
-			wantError:     "Azure credentials file is not configured",
+			wantCollector: true,
 		},
 		{
 			name:          "When an Azure HostedCluster has credentials, it should collect machine diagnostics",

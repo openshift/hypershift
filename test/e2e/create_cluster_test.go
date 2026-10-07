@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"github.com/openshift/hypershift/test/e2e/util/dump"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
 
@@ -29,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/clientcmd"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -136,6 +138,15 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureDefaultSecurityGroupTags(t, ctx, mgtClient, hostedCluster, clusterOpts)
 
 		if globalOpts.Platform == hyperv1.AzurePlatform {
+			t.Run("[Feature:AzureMachineDiagnostics] VerifyAzureMachineDiagnostics", func(t *testing.T) {
+				artifacts := globalOpts.ArtifactDir
+				if artifacts == "" {
+					artifacts = t.TempDir()
+				}
+				if err := dump.VerifyAzureMachineDiagnostics(ctx, mgtClient, hostedCluster, clusterOpts.AzurePlatform.CredentialsFile, artifacts, clusterOpts.Kubeconfig); err != nil {
+					t.Fatal(err)
+				}
+			})
 			// WI webhook must run before AllowedCIDRs. AllowedCIDRs blocks and restores
 			// all KAS traffic; the webhook sidecar (FailurePolicy: Ignore) may not be
 			// ready during recovery, silently skipping mutation on pods created in that window.

@@ -4,6 +4,7 @@ package lifecycle
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -130,4 +131,48 @@ func TestAzureOAuthLBPrivateExtraArgs(t *testing.T) {
 			t.Errorf("oauth-lb-private ExtraArgs %v missing %q", spec.ExtraArgs, arg)
 		}
 	}
+}
+
+func TestAzurePlatformConfigCreateArgs(t *testing.T) {
+	t.Run("When Azure E2E cluster arguments are built, it should enable managed boot diagnostics", func(t *testing.T) {
+		if !slices.Contains((&AzurePlatformConfig{}).CreateArgs(), "--diagnostics-storage-account-type=Managed") {
+			t.Fatal("boot diagnostics must be enabled before VM creation")
+		}
+	})
+}
+
+func TestAzurePlatformConfigTestMatrix(t *testing.T) {
+	t.Run("When the default Azure plan runs, it should select diagnostics checks on public and private clusters", func(t *testing.T) {
+		matrix := (&AzurePlatformConfig{}).TestMatrix()
+		var foundPublic, foundPrivate, foundBootstrap bool
+		for _, group := range matrix.Parallel {
+			if group.Variant == "private" && strings.Contains(group.LabelFilter, "azure-machine-diagnostics") {
+				foundPrivate = true
+			}
+		}
+		for _, lane := range matrix.Sequential {
+			for _, group := range lane.Steps {
+				if group.Variant == "public" {
+					if strings.Contains(group.LabelFilter, "azure-machine-diagnostics-bootstrap") {
+						foundBootstrap = true
+					} else if strings.Contains(group.LabelFilter, "azure-machine-diagnostics") {
+						foundPublic = true
+					}
+				}
+			}
+		}
+		if !foundPublic || !foundPrivate || !foundBootstrap {
+			t.Fatal("Azure diagnostics checks are missing from the default test matrix")
+		}
+	})
+}
+
+func TestAzurePlatformConfigDestroyArgs(t *testing.T) {
+	t.Run("When Azure teardown arguments are built, it should omit creation-only diagnostics flags", func(t *testing.T) {
+		for _, arg := range (&AzurePlatformConfig{}).DestroyArgs() {
+			if strings.HasPrefix(arg, "--diagnostics-") {
+				t.Fatalf("teardown cannot accept %s", arg)
+			}
+		}
+	})
 }

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/client-go/rest"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
@@ -34,195 +36,263 @@ import (
 )
 
 const (
-	consoleLogsDirectory = "machine-console-logs"
-	journalsDirectory    = "machine-journals"
-
+	consoleLogsDirectory  = "machine-console-logs"
+	journalsDirectory     = "machine-journals"
 	maxConcurrentMachines = 4
 	maxSerialLogSize      = 32 << 20
 	consoleLogTimeout     = 2 * time.Minute
-	runCommandTimeout     = 2 * time.Minute
+	collectionTimeout     = 10 * time.Minute
 )
 
-const journalCommand = "journalctl --no-pager --boot=0 --lines=1000 2>&1 | tail -c 3500"
+type bootDiagnosticsState string
+
+const (
+	bootEnabled  bootDiagnosticsState = "enabled"
+	bootDisabled bootDiagnosticsState = "disabled"
+	bootUnknown  bootDiagnosticsState = "unknown"
+)
 
 type computeClient interface {
-	RetrieveSerialConsoleLogURI(ctx context.Context, resourceGroup, vmName string) (string, error)
-	RunJournalCommand(ctx context.Context, resourceGroup, vmName string) (string, error)
+	RetrieveSerialConsoleLogURI(context.Context, string, string) (string, error)
+	BootDiagnosticsState(context.Context, string, string) (bootDiagnosticsState, error)
+}
+type computeClientFactory func(string) (computeClient, error)
+
+// DiagnosticsOptions configures independent serial and journal collection.
+// SSH is attempted only after unsuccessful API journal collection and only when configured.
+type DiagnosticsOptions struct {
+	CredentialsFile  string
+	ArtifactDir      string
+	ManagementConfig *rest.Config
+	SSH              *SSHOptions
+	// SerialOnly avoids guest access when validating workers that cannot register.
+	SerialOnly       bool
+	serialHTTPClient *http.Client
 }
 
-type computeClientFactory func(subscriptionID string) (computeClient, error)
+// DumpMachineDiagnostics collects diagnostics best-effort, returning aggregate
+// collection errors. Every discovered machine's outcome is saved in the summary.
+func DumpMachineDiagnostics(ctx context.Context, kubeClient client.Client, hc *hyperv1.HostedCluster, credentialsFile, artifactDir string, logger logr.Logger) error {
+	_, err := CollectMachineDiagnostics(ctx, kubeClient, hc, DiagnosticsOptions{CredentialsFile: credentialsFile, ArtifactDir: artifactDir}, logger)
+	return err
+}
 
-// DumpMachineDiagnostics collects Azure VM serial console logs and best-effort
-// worker journals for the HostedCluster. Azure credentials are read from the
-// same credentials file used to create Azure HostedClusters.
-func DumpMachineDiagnostics(ctx context.Context, kubeClient client.Client, hostedCluster *hyperv1.HostedCluster, credentialsFile, artifactDir string, logger logr.Logger) error {
-	if credentialsFile == "" {
-		return errors.New("azure credentials file is not configured")
+// CollectMachineDiagnostics collects serial logs before attempting journals.
+// Missing Azure credentials do not prevent API or configured SSH journal access.
+// The report is also written to machine-diagnostics.json, including empty discovery.
+func CollectMachineDiagnostics(ctx context.Context, kubeClient client.Client, hc *hyperv1.HostedCluster, opts DiagnosticsOptions, logger logr.Logger) (CollectionReport, error) {
+	ctx, cancel := context.WithTimeout(ctx, collectionTimeout)
+	defer cancel()
+	if hc == nil || hc.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return CollectionReport{}, errors.New("an Azure HostedCluster is required")
 	}
-
-	machines, err := listAzureMachines(ctx, kubeClient, hostedCluster)
+	if opts.ArtifactDir == "" {
+		return CollectionReport{}, errors.New("an artifact directory is required")
+	}
+	machines, err := listAzureMachines(ctx, kubeClient, hc)
 	if err != nil {
-		return fmt.Errorf("failed to list AzureMachines: %w", err)
+		report := CollectionReport{Error: "failed to list AzureMachines"}
+		return report, utilerrors.NewAggregate([]error{errors.New(report.Error), writeReport(opts.ArtifactDir, report)})
 	}
-	if len(machines) == 0 {
-		logger.Info("No AzureMachines found for HostedCluster; skipping Azure machine diagnostics", "namespace", hostedCluster.Namespace, "name", hostedCluster.Name)
-		return nil
+	factory, factoryErr := newComputeClientFactory(hc, opts.CredentialsFile)
+	if factoryErr != nil {
+		factory = func(string) (computeClient, error) { return nil, factoryErr }
 	}
+	lifetimeCtx := ctx
+	apiFactory := func(ctx context.Context) (JournalCollector, func(), error) {
+		return newAPIJournalCollector(ctx, lifetimeCtx, kubeClient, hc, opts.ManagementConfig)
+	}
+	return collectMachineDiagnostics(ctx, machines, opts, factory, apiFactory, logger)
+}
 
+func newComputeClientFactory(hc *hyperv1.HostedCluster, credentialsFile string) (computeClientFactory, error) {
+	if credentialsFile == "" {
+		return nil, errors.New("azure credentials file is not configured")
+	}
 	credentials, err := cmdutil.ReadCredentials(credentialsFile)
 	if err != nil {
-		return fmt.Errorf("failed to read Azure credentials: %w", err)
+		return nil, errors.New("failed to read Azure credentials file")
 	}
 	if credentials.ClientID == "" || credentials.TenantID == "" || credentials.ClientSecret == "" {
-		return errors.New("azure credentials file must contain clientId, tenantId, and clientSecret")
+		return nil, errors.New("azure credentials file must contain clientId, tenantId, and clientSecret")
 	}
-	if hostedCluster.Spec.Platform.Azure == nil {
-		return errors.New("hostedcluster Azure platform configuration is missing")
+	if hc.Spec.Platform.Azure == nil {
+		return nil, errors.New("HostedCluster Azure configuration is missing")
 	}
-	cloudConfig, err := azureutil.GetAzureCloudConfiguration(hostedCluster.Spec.Platform.Azure.Cloud)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(hc.Spec.Platform.Azure.Cloud)
 	if err != nil {
-		return fmt.Errorf("failed to resolve Azure cloud environment: %w", err)
+		return nil, errors.New("failed to resolve Azure cloud environment")
 	}
-
-	credential, err := azidentity.NewClientSecretCredential(credentials.TenantID, credentials.ClientID, credentials.ClientSecret, &azidentity.ClientSecretCredentialOptions{
-		ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
-	})
+	credential, err := azidentity.NewClientSecretCredential(credentials.TenantID, credentials.ClientID, credentials.ClientSecret, &azidentity.ClientSecretCredentialOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
 	if err != nil {
-		return fmt.Errorf("failed to create Azure credentials: %w", err)
+		return nil, errors.New("failed to create Azure credentials")
 	}
-	factory := func(subscriptionID string) (computeClient, error) {
-		vmClient, err := armcompute.NewVirtualMachinesClient(subscriptionID, credential, &arm.ClientOptions{
-			ClientOptions: policy.ClientOptions{Cloud: cloudConfig},
-		})
+	return func(subscriptionID string) (computeClient, error) {
+		vmClient, err := armcompute.NewVirtualMachinesClient(subscriptionID, credential, &arm.ClientOptions{ClientOptions: policy.ClientOptions{Cloud: cloudConfig}})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create Azure compute client: %w", err)
+			return nil, errors.New("failed to create Azure compute client")
 		}
 		return sdkComputeClient{virtualMachines: vmClient}, nil
-	}
-
-	return collectMachineDiagnostics(ctx, machines, artifactDir, factory, logger)
+	}, nil
 }
 
-func listAzureMachines(ctx context.Context, kubeClient client.Client, hostedCluster *hyperv1.HostedCluster) ([]capiazure.AzureMachine, error) {
-	machineList := &capiazure.AzureMachineList{}
-	if err := kubeClient.List(ctx, machineList,
-		client.InNamespace(manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)),
-		client.MatchingLabels{clusterv1.ClusterNameLabel: hostedCluster.Spec.InfraID},
-	); err != nil {
-		return nil, err
-	}
-	return machineList.Items, nil
+func listAzureMachines(ctx context.Context, kubeClient client.Client, hc *hyperv1.HostedCluster) ([]capiazure.AzureMachine, error) {
+	list := &capiazure.AzureMachineList{}
+	err := kubeClient.List(ctx, list, client.InNamespace(manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)), client.MatchingLabels{clusterv1.ClusterNameLabel: hc.Spec.InfraID})
+	sort.Slice(list.Items, func(i, j int) bool { return list.Items[i].Name < list.Items[j].Name })
+	return list.Items, err
 }
 
-func collectMachineDiagnostics(ctx context.Context, machines []capiazure.AzureMachine, artifactDir string, newClient computeClientFactory, logger logr.Logger) error {
+type apiJournalFactory func(context.Context) (JournalCollector, func(), error)
+
+func collectMachineDiagnostics(ctx context.Context, machines []capiazure.AzureMachine, opts DiagnosticsOptions, factory computeClientFactory, apiFactory apiJournalFactory, logger logr.Logger) (CollectionReport, error) {
+	artifactDir := opts.ArtifactDir
+	report := CollectionReport{Machines: make([]MachineResult, len(machines))}
 	if err := os.MkdirAll(filepath.Join(artifactDir, consoleLogsDirectory), 0755); err != nil {
-		return fmt.Errorf("failed to create Azure console log directory: %w", err)
+		return report, err
 	}
 	if err := os.MkdirAll(filepath.Join(artifactDir, journalsDirectory), 0755); err != nil {
-		return fmt.Errorf("failed to create Azure journal directory: %w", err)
+		return report, err
 	}
+	for i := range machines {
+		report.Machines[i] = MachineResult{Name: machines[i].Name, BootDiagnostics: string(bootUnknown), Journals: map[string]ArtifactResult{}}
+	}
+	// Journals cannot consume the serial collection budget for later machines.
+	parallelMachines(ctx, len(machines), func(i int) {
+		state, result := collectSerialConsoleLog(ctx, factory, machines[i], artifactDir, opts.serialHTTPClient)
+		report.Machines[i].BootDiagnostics = string(state)
+		report.Machines[i].Serial = result
+	})
+	var api JournalCollector
+	var apiErr error
+	if len(machines) > 0 && !opts.SerialOnly {
+		setupCtx, cancel := context.WithTimeout(ctx, journalTimeout)
+		var cleanup func()
+		api, cleanup, apiErr = initializeAPIJournalCollector(setupCtx, apiFactory)
+		cancel()
+		if cleanup != nil {
+			defer cleanup()
+		}
+	}
+	parallelMachines(ctx, len(machines), func(i int) {
+		if opts.SerialOnly {
+			for _, kind := range journalKinds {
+				report.Machines[i].Journals[kind] = ArtifactResult{Status: StatusSkipped, Reason: "serial-only collection requested"}
+			}
+		} else {
+			report.Machines[i].Journals = collectJournals(ctx, machines[i], artifactDir, api, apiErr, opts.SSH)
+		}
+	})
+	var errs []error
+	for _, machine := range report.Machines {
+		logger.Info("Azure machine diagnostics", "machine", machine.Name, "serial", machine.Serial.Status, "reason", machine.Serial.Reason, "bootDiagnostics", machine.BootDiagnostics)
+		for kind, result := range machine.Journals {
+			logger.Info("Azure worker journal", "machine", machine.Name, "kind", kind, "status", result.Status, "reason", result.Reason)
+			if result.Status == StatusFailed || result.Status == StatusTimedOut || result.Status == StatusEmpty {
+				errs = append(errs, fmt.Errorf("AzureMachine %s %s: %s", machine.Name, kind, result.Reason))
+			}
+		}
+		if machine.Serial.Status == StatusFailed || machine.Serial.Status == StatusTimedOut || machine.Serial.Status == StatusEmpty {
+			errs = append(errs, fmt.Errorf("AzureMachine %s serial: %s", machine.Name, machine.Serial.Reason))
+		}
+	}
+	errs = append(errs, writeReport(artifactDir, report))
+	return report, utilerrors.NewAggregate(errs)
+}
 
+func parallelMachines(ctx context.Context, count int, collect func(int)) {
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, maxConcurrentMachines)
-	machineErrors := make([]error, len(machines))
-	for i := range machines {
+	for i := 0; i < count; i++ {
+		// Always record cancellation, even for work that never starts.
+		if ctx.Err() != nil {
+			collect(i)
+			continue
+		}
 		select {
 		case semaphore <- struct{}{}:
 		case <-ctx.Done():
-			machineErrors[i] = ctx.Err()
+			collect(i)
 			continue
 		}
 		wg.Add(1)
-		go func(index int, machine capiazure.AzureMachine) {
-			defer wg.Done()
-			defer func() { <-semaphore }()
-			machineErrors[index] = collectOneMachine(ctx, machine, artifactDir, newClient, logger)
-		}(i, machines[i])
+		go func(i int) { defer wg.Done(); defer func() { <-semaphore }(); collect(i) }(i)
 	}
 	wg.Wait()
-
-	var errs []error
-	for i, err := range machineErrors {
-		if err != nil {
-			errs = append(errs, fmt.Errorf("AzureMachine %s: %w", machines[i].Name, err))
-		}
-	}
-	return utilerrors.NewAggregate(errs)
 }
 
-func collectOneMachine(ctx context.Context, machine capiazure.AzureMachine, artifactDir string, newClient computeClientFactory, logger logr.Logger) error {
+func collectSerialConsoleLog(ctx context.Context, factory computeClientFactory, machine capiazure.AzureMachine, artifactDir string, httpClient *http.Client) (bootDiagnosticsState, ArtifactResult) {
+	state := bootDiagnosticsSetting(machine)
+	result := ArtifactResult{Status: StatusSkipped}
+	path := filepath.Join(consoleLogsDirectory, machine.Name+".log")
+	_ = os.Remove(filepath.Join(artifactDir, path))
+	if ctx.Err() != nil {
+		return state, failedResult(ctx.Err(), "serial collection canceled")
+	}
 	if machine.Spec.ProviderID == nil || strings.TrimSpace(*machine.Spec.ProviderID) == "" {
-		logger.Info("Skipping AzureMachine without a provider ID", "machine", machine.Name)
-		return nil
+		result.Reason = "provider ID is missing"
+		return state, result
 	}
-	subscriptionID, resourceGroup, vmName, err := parseAzureVMResourceID(*machine.Spec.ProviderID)
+	sub, rg, vm, err := parseAzureVMResourceID(*machine.Spec.ProviderID)
 	if err != nil {
-		return fmt.Errorf("cannot identify Azure VM: %w", err)
+		return state, failedResult(err, "provider ID does not identify an Azure VM")
 	}
-	vmClient, err := newClient(subscriptionID)
+	if state == bootDisabled {
+		result.Reason = "boot diagnostics are disabled"
+		return state, result
+	}
+	vmClient, err := factory(sub)
 	if err != nil {
-		return fmt.Errorf("failed to create Azure VM client: %w", err)
+		return state, failedResult(err, err.Error())
 	}
-
-	var errs []error
-	if !bootDiagnosticsDisabled(&machine) {
-		if err := collectSerialConsoleLog(ctx, vmClient, machine.Name, resourceGroup, vmName, artifactDir); err != nil {
-			errs = append(errs, err)
-		}
-	} else {
-		logger.Info("Skipping disabled Azure boot diagnostics", "machine", machine.Name)
-	}
-
-	if err := collectJournal(ctx, vmClient, machine.Name, resourceGroup, vmName, artifactDir); err != nil {
-		errs = append(errs, err)
-	}
-	return utilerrors.NewAggregate(errs)
-}
-
-func collectSerialConsoleLog(ctx context.Context, vmClient computeClient, machineName, resourceGroup, vmName, artifactDir string) error {
 	requestCtx, cancel := context.WithTimeout(ctx, consoleLogTimeout)
-	serialLogURI, err := vmClient.RetrieveSerialConsoleLogURI(requestCtx, resourceGroup, vmName)
-	cancel()
+	defer cancel()
+	if state == bootUnknown {
+		state, err = vmClient.BootDiagnosticsState(requestCtx, rg, vm)
+		if err != nil {
+			return bootUnknown, failedResult(err, "failed to query VM boot diagnostics: "+safeAzureError(err).Error())
+		}
+		if state != bootEnabled {
+			result.Reason = "VM boot diagnostics are " + string(state)
+			return state, result
+		}
+	}
+	uri, err := vmClient.RetrieveSerialConsoleLogURI(requestCtx, rg, vm)
 	if err != nil {
-		return fmt.Errorf("failed to retrieve Azure boot diagnostics: %w", err)
+		return state, failedResult(err, "failed to retrieve Azure boot diagnostics: "+safeAzureError(err).Error())
 	}
-	if serialLogURI == "" {
-		return nil
+	if uri == "" {
+		result.Reason = "serial log URI is unavailable"
+		return state, result
 	}
-
-	content, err := downloadSerialConsoleLog(ctx, &http.Client{Timeout: consoleLogTimeout}, serialLogURI)
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: consoleLogTimeout}
+	}
+	content, err := downloadSerialConsoleLog(requestCtx, httpClient, uri)
 	if err != nil {
-		return err
+		return state, failedResult(err, err.Error())
 	}
-	logFile := filepath.Join(artifactDir, consoleLogsDirectory, machineName+".log")
-	if err := os.WriteFile(logFile, content, 0644); err != nil {
-		return fmt.Errorf("failed to write Azure serial console log: %w", err)
+	if len(strings.TrimSpace(string(content))) == 0 {
+		return state, ArtifactResult{Status: StatusEmpty, Reason: "serial log is empty"}
 	}
-	return nil
+	if err := os.WriteFile(filepath.Join(artifactDir, path), content, 0644); err != nil {
+		return state, failedResult(err, "failed to write serial log")
+	}
+	return state, ArtifactResult{Status: StatusCollected, Path: path, Bytes: int64(len(content))}
 }
 
-func collectJournal(ctx context.Context, vmClient computeClient, machineName, resourceGroup, vmName, artifactDir string) error {
-	requestCtx, cancel := context.WithTimeout(ctx, runCommandTimeout)
-	journal, err := vmClient.RunJournalCommand(requestCtx, resourceGroup, vmName)
-	cancel()
-	if err != nil {
-		return fmt.Errorf("failed to retrieve worker journal: %w", err)
-	}
-	if journal == "" {
-		return nil
-	}
-	logFile := filepath.Join(artifactDir, journalsDirectory, machineName+".log")
-	if err := os.WriteFile(logFile, []byte(journal), 0644); err != nil {
-		return fmt.Errorf("failed to write Azure worker journal: %w", err)
-	}
-	return nil
-}
-
-func bootDiagnosticsDisabled(machine *capiazure.AzureMachine) bool {
+func bootDiagnosticsSetting(machine capiazure.AzureMachine) bootDiagnosticsState {
 	if machine.Spec.Diagnostics == nil || machine.Spec.Diagnostics.Boot == nil {
-		return false
+		return bootUnknown
 	}
-	return machine.Spec.Diagnostics.Boot.StorageAccountType == capiazure.DisabledDiagnosticsStorage
+	switch machine.Spec.Diagnostics.Boot.StorageAccountType {
+	case capiazure.DisabledDiagnosticsStorage:
+		return bootDisabled
+	case capiazure.ManagedDiagnosticsStorage, capiazure.UserManagedDiagnosticsStorage:
+		return bootEnabled
+	default:
+		return bootUnknown
+	}
 }
 
 func parseAzureVMResourceID(providerID string) (subscriptionID, resourceGroup, vmName string, err error) {
@@ -263,6 +333,12 @@ func downloadSerialConsoleLog(ctx context.Context, httpClient *http.Client, seri
 	response, err := httpClient.Do(request)
 	if err != nil {
 		// net/http errors include the request URL, including its SAS query string.
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, context.DeadlineExceeded
+		}
 		return nil, errors.New("failed to download Azure serial console log")
 	}
 	defer response.Body.Close()
@@ -272,6 +348,9 @@ func downloadSerialConsoleLog(ctx context.Context, httpClient *http.Client, seri
 
 	content, err := io.ReadAll(io.LimitReader(response.Body, maxSerialLogSize+1))
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, errors.New("failed to read Azure serial console log response")
 	}
 	if len(content) > maxSerialLogSize {
@@ -284,10 +363,10 @@ type sdkComputeClient struct {
 	virtualMachines *armcompute.VirtualMachinesClient
 }
 
-func (c sdkComputeClient) RetrieveSerialConsoleLogURI(ctx context.Context, resourceGroup, vmName string) (string, error) {
-	response, err := c.virtualMachines.RetrieveBootDiagnosticsData(ctx, resourceGroup, vmName, nil)
+func (c sdkComputeClient) RetrieveSerialConsoleLogURI(ctx context.Context, rg, vm string) (string, error) {
+	response, err := c.virtualMachines.RetrieveBootDiagnosticsData(ctx, rg, vm, nil)
 	if err != nil {
-		return "", err
+		return "", safeAzureError(err)
 	}
 	if response.SerialConsoleLogBlobURI == nil {
 		return "", nil
@@ -295,29 +374,43 @@ func (c sdkComputeClient) RetrieveSerialConsoleLogURI(ctx context.Context, resou
 	return *response.SerialConsoleLogBlobURI, nil
 }
 
-func (c sdkComputeClient) RunJournalCommand(ctx context.Context, resourceGroup, vmName string) (string, error) {
-	commandID := "RunShellScript"
-	script := journalCommand
-	poller, err := c.virtualMachines.BeginRunCommand(ctx, resourceGroup, vmName, armcompute.RunCommandInput{
-		CommandID: &commandID,
-		Script:    []*string{&script},
-	}, nil)
+func (c sdkComputeClient) BootDiagnosticsState(ctx context.Context, rg, vm string) (bootDiagnosticsState, error) {
+	response, err := c.virtualMachines.Get(ctx, rg, vm, nil)
 	if err != nil {
-		return "", err
+		return bootUnknown, safeAzureError(err)
 	}
-	response, err := poller.PollUntilDone(ctx, nil)
-	if err != nil {
-		return "", err
+	if response.Properties == nil || response.Properties.DiagnosticsProfile == nil || response.Properties.DiagnosticsProfile.BootDiagnostics == nil || response.Properties.DiagnosticsProfile.BootDiagnostics.Enabled == nil {
+		return bootUnknown, nil
 	}
+	if *response.Properties.DiagnosticsProfile.BootDiagnostics.Enabled {
+		return bootEnabled, nil
+	}
+	return bootDisabled, nil
+}
 
-	var output []string
-	for _, status := range response.Value {
-		if status == nil || status.Code == nil || status.Message == nil {
-			continue
-		}
-		if strings.Contains(*status.Code, "StdOut") || strings.Contains(*status.Code, "StdErr") {
-			output = append(output, *status.Message)
-		}
+func safeAzureError(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
 	}
-	return strings.Join(output, "\n"), nil
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	var safe *azureAPIError
+	if errors.As(err, &safe) {
+		return safe
+	}
+	var response *azcore.ResponseError
+	if errors.As(err, &response) {
+		return &azureAPIError{status: response.StatusCode}
+	}
+	return errors.New("azure API request failed")
+}
+
+type azureAPIError struct{ status int }
+
+func (e *azureAPIError) Error() string {
+	if e.status == http.StatusNotFound {
+		return "Azure VM was not found (HTTP 404)"
+	}
+	return fmt.Sprintf("Azure API returned HTTP %d", e.status)
 }

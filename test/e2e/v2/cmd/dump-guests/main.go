@@ -68,12 +68,19 @@ func main() {
 }
 
 func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace, azureCredentialsFile string) {
+	dumpClusterWithDiagnostics(hypershiftBinary, artifactDir, clusterName, namespace, azureCredentialsFile, e2edump.DumpAzureMachineDiagnostics)
+}
+
+func dumpClusterWithDiagnostics(hypershiftBinary, artifactDir, clusterName, namespace, azureCredentialsFile string, collect func(context.Context, string, string, string, string, string) error) {
 	dumpDir := filepath.Join(artifactDir, clusterName)
 	if err := os.MkdirAll(dumpDir, 0755); err != nil {
 		log.Printf("WARNING: Failed to create artifact directory %s: %v", dumpDir, err)
 		return
 	}
 
+	if err := collect(context.Background(), namespace, clusterName, azureCredentialsFile, dumpDir, ""); err != nil {
+		log.Printf("WARNING: Failed to dump Azure machine diagnostics for cluster %s: %v", clusterName, err)
+	}
 	args := dumpClusterArgs(dumpDir, clusterName, namespace)
 
 	log.Printf("Dumping cluster %s -> %s", clusterName, dumpDir)
@@ -86,10 +93,6 @@ func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace, azureCre
 		log.Printf("WARNING: Failed to dump cluster %s: %v", clusterName, err)
 	} else {
 		log.Printf("Successfully dumped cluster %s", clusterName)
-	}
-
-	if err := e2edump.DumpAzureMachineDiagnostics(context.Background(), namespace, clusterName, azureCredentialsFile, dumpDir, ""); err != nil {
-		log.Printf("WARNING: Failed to dump Azure machine diagnostics for cluster %s: %v", clusterName, err)
 	}
 }
 

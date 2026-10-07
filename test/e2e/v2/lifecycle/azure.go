@@ -179,6 +179,7 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 func (a *AzurePlatformConfig) CreateArgs() []string {
 	args := []string{
 		"--azure-creds=" + a.creds,
+		"--diagnostics-storage-account-type=Managed",
 		"--location=" + a.location,
 		"--oidc-issuer-url=" + a.oidcIssuerURL,
 		"--sa-token-issuer-private-key-path=" + a.saTokenKeyPath,
@@ -366,7 +367,7 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 			{
 				Name:        "private",
 				Variant:     "private",
-				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance || azure-machine-diagnostics",
 			},
 			{
 				Name:        "oauth-lb-private",
@@ -381,13 +382,13 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 					{
 						Name:        "public",
 						Variant:     "public",
-						LabelFilter: "self-managed-azure-public || hosted-cluster-node-communication || hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress",
+						LabelFilter: "azure-machine-diagnostics || self-managed-azure-public || hosted-cluster-node-communication || hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress",
 						Skip:        "KAS allowed CIDRs",
 					},
 					{
 						Name:    "public-nodepool-rollouts",
 						Variant: "public",
-						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
+						LabelFilter: "azure-machine-diagnostics-bootstrap || nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
 							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-disk-encryption || nodepool-osimagestream-upgrade",
 					},
 				},

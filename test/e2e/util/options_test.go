@@ -86,3 +86,12 @@ func TestComplete(t *testing.T) {
 		t.Fatal("expected invalid kubeconfig to stop completion when release image is missing")
 	}
 }
+
+func TestDefaultAzureOptions(t *testing.T) {
+	t.Run("When Azure E2E workers are created, it should enable managed boot diagnostics", func(t *testing.T) {
+		opts := (&Options{}).DefaultAzureOptions()
+		if opts.NodePoolOpts.DiagnosticsStorageAccountType != hyperv1.AzureDiagnosticsStorageAccountTypeManaged {
+			t.Fatal("Azure E2E workers must enable managed boot diagnostics before creation")
+		}
+	})
+}
