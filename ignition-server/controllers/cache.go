@@ -35,6 +35,16 @@ type CacheValue struct {
 	Payload         []byte
 	SecretName      string
 	CloudConfigHash string
+	// AdditionalTrustBundleHash and ProxyTrustedCAHash are compared against the token Secret's
+	// current values on every reconcile, alongside CloudConfigHash, to decide whether a cached
+	// payload is still valid. Without this, a trust-bundle content change for a token Secret that
+	// is not renamed (e.g. an in-place ca-bundle.crt edit, or a Secret pair CAPI intentionally
+	// keeps under its existing name across a hash-formula migration, see
+	// hypershift-operator/controllers/nodepool/config_hash_version.go) would never invalidate an
+	// already-cached payload, serving stale trust-bundle content until the token naturally
+	// rotates or expires (up to the cache ttl).
+	AdditionalTrustBundleHash string
+	ProxyTrustedCAHash        string
 }
 
 type entry struct {

@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -33,6 +34,7 @@ import (
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/coreos/stream-metadata-go/stream"
+	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/testr"
 	"github.com/go-logr/zapr"
 	"github.com/google/uuid"
@@ -839,6 +841,7 @@ func TestTokenReconcile(t *testing.T) {
 			g.Expect(gotTokenSecret.Data[TokenSecretPullSecretHashKey]).To(Equal(expectedPullSecretHash))
 			g.Expect(gotTokenSecret.Data[TokenSecretAdditionalTrustBundleKey]).To(Equal(expectedAdditionalTrustBundleHash))
 			g.Expect(gotTokenSecret.Data[TokenSecretHCConfigurationHashKey]).To(Equal([]byte(expectedGlobalConfig)))
+			g.Expect(gotTokenSecret.Data[TokenSecretProxyTrustedCAHashKey]).To(Equal([]byte(tc.configGenerator.proxyTrustedCAHash)))
 
 			// Validate the os-stream key is set to the resolved RHEL stream.
 			g.Expect(gotTokenSecret.Data[TokenSecretOSStreamKey]).To(Equal([]byte(tc.configGenerator.resolvedRHELStreamForBootImage)))
@@ -936,7 +939,7 @@ func TestTokenUserDataSecret(t *testing.T) {
 							},
 						},
 						pullSecretName:            "test-pull-secret",
-						additionalTrustBundleName: "test-trust-bundle",
+						additionalTrustBundleHash: "test-trust-bundle-hash",
 						globalConfig:              "test-global-config",
 						mcoRawConfig:              "test-mco-raw-config",
 					},
@@ -1375,6 +1378,198 @@ func TestSetKarpenterAMILabels(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileTokenSecretProxyTrustedCAHash(t *testing.T) {
+	testCases := []struct {
+		name               string
+		proxyTrustedCAHash string
+	}{
+		{
+			name:               "When ConfigGenerator.proxyTrustedCAHash is set, it should write it to the token Secret",
+			proxyTrustedCAHash: "proxy-trusted-ca-hash-value",
+		},
+		{
+			name:               "When ConfigGenerator.proxyTrustedCAHash is empty, it should write an empty value to the token Secret",
+			proxyTrustedCAHash: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			token := &Token{
+				ConfigGenerator: &ConfigGenerator{
+					hostedCluster: &hyperv1.HostedCluster{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-hc",
+							Namespace: "test-namespace",
+						},
+					},
+					nodePool: &hyperv1.NodePool{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-nodepool",
+						},
+						Spec: hyperv1.NodePoolSpec{
+							Management: hyperv1.NodePoolManagement{
+								UpgradeType: hyperv1.UpgradeTypeReplace,
+							},
+						},
+					},
+					rolloutConfig: &rolloutConfig{
+						proxyTrustedCAHash: tc.proxyTrustedCAHash,
+						releaseImage: &releaseinfo.ReleaseImage{
+							ImageStream: &imageapi.ImageStream{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "4.17",
+								},
+							},
+						},
+					},
+				},
+				cpoCapabilities:    &CPOCapabilities{DecompressAndDecodeConfig: true},
+				proxyTrustedCAHash: []byte(tc.proxyTrustedCAHash),
+			}
+
+			tokenSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "token-test",
+					Namespace: "test-namespace",
+				},
+			}
+
+			err := token.reconcileTokenSecret(tokenSecret)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(tokenSecret.Data[TokenSecretProxyTrustedCAHashKey]).To(Equal([]byte(tc.proxyTrustedCAHash)))
+		})
+	}
+}
+
+func TestReconcileLegacyBootstrapSecrets(t *testing.T) {
+	controlplaneNamespace := "cp-ns"
+
+	newToken := func(fakeObjects ...crclient.Object) *Token {
+		return &Token{
+			CreateOrUpdateProvider: upsert.New(false),
+			cpoCapabilities:        &CPOCapabilities{DecompressAndDecodeConfig: true},
+			userData: &userData{
+				ignitionServerEndpoint: "ignition.example.com",
+				proxy:                  &configv1.Proxy{},
+			},
+			ConfigGenerator: &ConfigGenerator{
+				Client: fake.NewClientBuilder().WithObjects(fakeObjects...).Build(),
+				hostedCluster: &hyperv1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-hc",
+						Namespace: "test-ns",
+					},
+				},
+				nodePool: &hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-np",
+						Namespace: "test-ns",
+					},
+				},
+				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig: &rolloutConfig{
+					releaseImage: &releaseinfo.ReleaseImage{
+						ImageStream: &imageapi.ImageStream{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "4.17.0",
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	t.Run("When liveUserDataSecretName is empty, it should be a no-op", func(t *testing.T) {
+		g := NewWithT(t)
+		token := newToken()
+		g.Expect(token.reconcileLegacyBootstrapSecrets(t.Context(), logr.Discard(), "")).To(Succeed())
+	})
+
+	t.Run("When liveUserDataSecretName already matches the current target, it should be a no-op", func(t *testing.T) {
+		g := NewWithT(t)
+		token := newToken()
+		g.Expect(token.reconcileLegacyBootstrapSecrets(t.Context(), logr.Discard(), token.UserDataSecret().GetName())).To(Succeed())
+
+		// Nothing should have been created, since this isn't a legacy Secret to refresh
+		// (Token.Reconcile() owns reconciling the current target pair).
+		secrets := &corev1.SecretList{}
+		g.Expect(token.Client.List(t.Context(), secrets, crclient.InNamespace(controlplaneNamespace))).To(Succeed())
+		g.Expect(secrets.Items).To(BeEmpty())
+	})
+
+	t.Run("When liveUserDataSecretName lacks the user-data prefix, it should be a no-op", func(t *testing.T) {
+		g := NewWithT(t)
+		token := newToken()
+		g.Expect(token.reconcileLegacyBootstrapSecrets(t.Context(), logr.Discard(), "unexpected-name")).To(Succeed())
+
+		secrets := &corev1.SecretList{}
+		g.Expect(token.Client.List(t.Context(), secrets, crclient.InNamespace(controlplaneNamespace))).To(Succeed())
+		g.Expect(secrets.Items).To(BeEmpty())
+	})
+
+	t.Run("When liveUserDataSecretName is a legacy name, it should create and refresh the legacy token and user-data Secret pair", func(t *testing.T) {
+		g := NewWithT(t)
+		token := newToken()
+		legacyUserDataName := "user-data-test-np-legacyhash"
+		legacyTokenName := "token-test-np-legacyhash"
+
+		g.Expect(token.reconcileLegacyBootstrapSecrets(t.Context(), logr.Discard(), legacyUserDataName)).To(Succeed())
+
+		legacyTokenSecret := &corev1.Secret{}
+		g.Expect(token.Client.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: legacyTokenName}, legacyTokenSecret)).To(Succeed())
+		g.Expect(legacyTokenSecret.Data[TokenSecretTokenKey]).ToNot(BeEmpty())
+
+		legacyUserDataSecret := &corev1.Secret{}
+		g.Expect(token.Client.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: legacyUserDataName}, legacyUserDataSecret)).To(Succeed())
+		g.Expect(legacyUserDataSecret.Data["value"]).ToNot(BeEmpty())
+
+		// The current (non-legacy) target pair should not have been touched.
+		g.Expect(token.Client.Get(t.Context(), crclient.ObjectKeyFromObject(token.UserDataSecret()), &corev1.Secret{})).To(HaveOccurred())
+		g.Expect(token.Client.Get(t.Context(), crclient.ObjectKeyFromObject(token.TokenSecret()), &corev1.Secret{})).To(HaveOccurred())
+	})
+
+	t.Run("When the legacy Secret pair already exists, it should keep reconciling (refreshing) it in place", func(t *testing.T) {
+		g := NewWithT(t)
+		legacyUserDataName := "user-data-test-np-legacyhash"
+		legacyTokenName := "token-test-np-legacyhash"
+
+		existingTokenSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      legacyTokenName,
+				Namespace: controlplaneNamespace,
+			},
+			Data: map[string][]byte{
+				TokenSecretTokenKey: []byte("existing-token"),
+			},
+		}
+		existingUserDataSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      legacyUserDataName,
+				Namespace: controlplaneNamespace,
+			},
+		}
+
+		token := newToken(existingTokenSecret, existingUserDataSecret)
+		g.Expect(token.reconcileLegacyBootstrapSecrets(t.Context(), logr.Discard(), legacyUserDataName)).To(Succeed())
+
+		// reconcileTokenSecret is idempotent and does not overwrite an existing token value.
+		gotTokenSecret := &corev1.Secret{}
+		g.Expect(token.Client.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: legacyTokenName}, gotTokenSecret)).To(Succeed())
+		g.Expect(gotTokenSecret.Data[TokenSecretTokenKey]).To(Equal([]byte("existing-token")))
+
+		// The user-data Secret should have been (re)populated using that token.
+		gotUserDataSecret := &corev1.Secret{}
+		g.Expect(token.Client.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: legacyUserDataName}, gotUserDataSecret)).To(Succeed())
+		g.Expect(gotUserDataSecret.Data["value"]).ToNot(BeEmpty())
+		encodedToken := base64.StdEncoding.EncodeToString([]byte("existing-token"))
+		g.Expect(string(gotUserDataSecret.Data["value"])).To(ContainSubstring(encodedToken))
+	})
 }
 
 func TestReconcileUserDataSecret(t *testing.T) {

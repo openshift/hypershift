@@ -34,7 +34,19 @@ Changes to the following fields alter the configuration hash that the controller
 
 - **`HostedCluster.spec.pullSecret`** — a change in the **name** of the referenced Secret triggers a rollout. Changing the content of the Secret without changing the name does not trigger a rollout.
 
-- **`HostedCluster.spec.additionalTrustBundle`** — same behavior as `pullSecret`: only a change in the referenced ConfigMap **name** triggers a rollout.
+- **`HostedCluster.spec.additionalTrustBundle`** — changing the referenced ConfigMap **name** or the `ca-bundle.crt` content triggers a rollout across all NodePools.
+
+- **`HostedCluster.spec.configuration.proxy.trustedCA`** — changing the referenced ConfigMap **name** or the `ca-bundle.crt` content triggers a rollout across all NodePools.
+
+!!! note "HyperShift Operator upgrade and trust-bundle hashing"
+
+    When upgrading to a HyperShift Operator that hashes trust-bundle ConfigMap **content**
+    (instead of only the ConfigMap name), NodePools that already reference a trust bundle do
+    **not** roll solely because of that formula change. On the first reconcile after upgrade,
+    the controller migrates the NodePool config hash to the current formula version
+    (`nodePoolConfigHashVersion`) and rewrites the current-config annotations as the new
+    baseline. A rollout occurs only when `ca-bundle.crt` (or the referenced ConfigMap
+    name) changes afterward.
 
 - **`HostedCluster.spec.imageContentSources`** — changes to image content source policies managed at the HostedCluster level produce an additional core ignition config that alters the configuration hash.
 
@@ -171,7 +183,8 @@ These conditions are set to `True` while the corresponding rollout is in progres
 | `NodePool.spec.config` | Yes | The changed NodePool |
 | `NodePool.spec.tuningConfig` | Yes | The changed NodePool |
 | `HostedCluster.spec.pullSecret` (name change) | Yes | All NodePools |
-| `HostedCluster.spec.additionalTrustBundle` (name change) | Yes | All NodePools |
+| `HostedCluster.spec.additionalTrustBundle` (name or content change) | Yes | All NodePools |
+| `HostedCluster.spec.configuration.proxy.trustedCA` (name or content change) | Yes | All NodePools |
 | `HostedCluster.spec.imageContentSources` | Yes | All NodePools |
 | `HostedCluster.spec.configuration.proxy` | Yes | All NodePools |
 | `HostedCluster.spec.configuration.image` | Yes | All NodePools |

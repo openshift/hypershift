@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"context"
+	coreerrors "errors"
 	"fmt"
 	"net/netip"
 	"strconv"
@@ -425,14 +426,13 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	}
 	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
 	if err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
-			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedReason,
-			Message:            err.Error(),
-			ObservedGeneration: nodePool.Generation,
-		})
-		return &ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
+		result, condErr := setValidMachineConfigConditionForError(nodePool, err)
+		if condErr == nil {
+			// Trust-bundle ConfigMap problems soft-fail; ValidMachineConfig=False already
+			// surfaces the problem and ConfigMap watches requeue when restored.
+			log.Info("HostedCluster trust bundle ConfigMap is missing or invalid", "error", err.Error())
+		}
+		return result, condErr
 	}
 
 	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -445,11 +445,40 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	return nil, nil
 }
 
-func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+// setValidMachineConfigConditionForError sets ValidMachineConfig=False for a config generation error.
+// Missing or malformed HostedCluster trust-bundle ConfigMaps soft-fail (nil error) so transient
+// delete/recreate windows do not hard-fail NodePool reconciliation. Other config errors still
+// return an error for exponential backoff.
+func setValidMachineConfigConditionForError(nodePool *hyperv1.NodePool, err error) (*ctrl.Result, error) {
+	reason := hyperv1.NodePoolValidationFailedReason
+	var trustBundleErr *TrustBundleConfigError
+	softFail := coreerrors.As(err, &trustBundleErr)
+	if softFail && apierrors.IsNotFound(err) {
+		reason = hyperv1.NodePoolNotFoundReason
+	}
+
+	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+		Status:             corev1.ConditionFalse,
+		Reason:             reason,
+		Message:            err.Error(),
+		ObservedGeneration: nodePool.Generation,
+	})
+	if softFail {
+		// Reconciling won't solve the input problem; a ConfigMap create/update will requeue.
+		return &ctrl.Result{}, nil
+	}
+	return &ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
+}
+
+// updatingConfigCondition evaluates NodePoolUpdatingConfig using a Token already built by
+// reconcile(). Callers must pass that Token so this path does not rebuild ConfigGenerator /
+// release metadata via r.token(). Config hash version migration runs in reconcile() before
+// this condition is evaluated; annotations are already at CurrentConfigHashVersion here.
+func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, token *Token) (*ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	token, err := r.token(ctx, hcluster, nodePool)
-	if err != nil {
-		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
+	if token == nil {
+		return &ctrl.Result{}, fmt.Errorf("token is required")
 	}
 
 	targetConfigHash := token.HashWithoutVersion()

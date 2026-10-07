@@ -285,6 +285,16 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 	if currentConfigVersion == "" {
 		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = cg.Hash()
 	} else {
+		// If currentConfigVersion was produced by the legacy (v1) hash formula for the current
+		// configuration content, this is a HyperShift Operator upgrade that only changed the
+		// trust-bundle hash formula (v1->v2), not the actual configuration. Pin Hash() to the
+		// stored value so it doesn't look like a real change below (which would churn bootstrap
+		// Secrets) or to Karpenter's own drift detection (which reads Hash() back out of the
+		// ignition payload), which would otherwise trigger an unwanted Node replacement. See
+		// MigrateKarpenterConfigVersionHash and ConfigGenerator.SetPinnedHash for more detail.
+		if nodepool.MigrateKarpenterConfigVersionHash(cg, currentConfigVersion) {
+			cg.SetPinnedHash(currentConfigVersion)
+		}
 		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
 	}
 
