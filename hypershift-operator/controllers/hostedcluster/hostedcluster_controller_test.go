@@ -2549,7 +2549,7 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "172.16.3.3",
-									Port:    ptr.To(int32(30443)),
+									Port:    30443,
 								},
 							},
 						},
@@ -6264,7 +6264,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    ptr.To(int32(31000)),
+									Port:    31000,
 								},
 							},
 						},
@@ -6273,7 +6273,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 			},
 		},
 		{
-			name: "When port is 0 for dynamic assignment it should always be valid",
+			name: "When port is omitted (zero value) for dynamic assignment it should always be valid",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -6283,7 +6283,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    ptr.To(int32(0)),
+									Port:    0,
 								},
 							},
 						},
@@ -6302,7 +6302,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    ptr.To(int32(10000)),
+									Port:    10000,
 								},
 							},
 						},
@@ -6310,7 +6310,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(10000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(10000), "port must be within the configured range 30000-32767, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -6324,7 +6324,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    ptr.To(int32(65000)),
+									Port:    65000,
 								},
 							},
 						},
@@ -6332,7 +6332,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(65000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(65000), "port must be within the configured range 30000-32767, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -6351,7 +6351,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    ptr.To(int32(28000)),
+									Port:    28000,
 								},
 							},
 						},
@@ -6375,7 +6375,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    ptr.To(int32(40000)),
+									Port:    40000,
 								},
 							},
 						},
@@ -6383,7 +6383,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(40000), "port must be within the configured range 25000-35000 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(40000), "port must be within the configured range 25000-35000, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -6402,7 +6402,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    ptr.To(int32(31000)),
+									Port:    31000,
 								},
 							},
 						},
@@ -6429,7 +6429,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "1.1.1.1",
-									Port:    ptr.To(int32(31000)),
+									Port:    31000,
 								},
 							},
 						},

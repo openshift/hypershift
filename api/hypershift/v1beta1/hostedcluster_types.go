@@ -1115,10 +1115,11 @@ type NodePortPublishingStrategy struct {
 	// +required
 	Address string `json:"address"`
 
-	// port is the port of the NodePort service. If <=0, the port is dynamically
-	// assigned when the service is created.
+	// port is the port of the NodePort service.
+	// If omitted, the port is dynamically assigned when the service is created.
+	// +kubebuilder:validation:Minimum=1
 	// +optional
-	Port *int32 `json:"port,omitempty"`
+	Port int32 `json:"port,omitempty"`
 }
 
 // LoadBalancerPublishingStrategy specifies setting used to expose a service as a LoadBalancer.
