@@ -416,6 +416,11 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileDNS(ctx context.Context, g
 		LastTransitionTime: metav1.Now(),
 	})
 
+	// Report the outcome of the opt-in ACME challenge CNAME when a delegation
+	// target is configured, so a cluster owner who set one can see why no
+	// record was published.
+	reconcileACMECNAMECondition(gcpPSC, dnsResult.ACMECNAME)
+
 	// Update status with DNS information
 	if err := r.Status().Patch(ctx, gcpPSC, patch); err != nil {
 		log.Error(err, "failed to update status with DNS information")
@@ -424,6 +429,34 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileDNS(ctx context.Context, g
 
 	log.Info("DNS reconciliation completed successfully", "zones", len(gcpPSC.Status.DNSZones))
 	return ctrl.Result{}, nil
+}
+
+// reconcileACMECNAMECondition reports the outcome of the opt-in ACME challenge
+// CNAME reconciliation. The condition is only maintained when a delegation
+// target is configured (spec.platform.gcp.delegation.acmeChallengeTarget);
+// without one there is nothing to report.
+func reconcileACMECNAMECondition(gcpPSC *hyperv1.GCPPrivateServiceConnect, outcome ACMECNAMEOutcome) {
+	if outcome.Target == "" {
+		return
+	}
+
+	condition := metav1.Condition{
+		Type:               string(hyperv1.GCPACMECNAMEAvailable),
+		LastTransitionTime: metav1.Now(),
+	}
+	switch {
+	case outcome.RecordName != "":
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.GCPSuccessReason
+		condition.Message = fmt.Sprintf("ACME challenge CNAME %s points at %s", outcome.RecordName, outcome.Target)
+	case outcome.SkipReason != "":
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = outcome.SkipReason
+		condition.Message = outcome.Message
+	default:
+		return
+	}
+	meta.SetStatusCondition(&gcpPSC.Status.Conditions, condition)
 }
 
 // cleanupDNS cleans up DNS zones and DNSEndpoint using zone names stored in PSC status
