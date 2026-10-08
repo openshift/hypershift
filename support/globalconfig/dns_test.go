@@ -208,6 +208,70 @@ func TestReconcileDNSConfig(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:           "When GCP platform is used, ingress zone IDs are derived from the raw base domain",
+			inputDNSConfig: DNSConfig(),
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: v1.ObjectMeta{
+					Name: fakeHCPName,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					DNS: hyperv1.DNSSpec{
+						BaseDomain: fakeBaseDomain,
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+					},
+				},
+			},
+			expectedDNSConfig: &configv1.DNS{
+				ObjectMeta: v1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: configv1.DNSSpec{
+					BaseDomain: fmt.Sprintf("%s.%s", fakeHCPName, fakeBaseDomain),
+					PublicZone: &configv1.DNSZone{
+						ID: "example-com-public",
+					},
+					PrivateZone: &configv1.DNSZone{
+						ID: "example-com-private",
+					},
+				},
+			},
+		},
+		{
+			name:           "When GCP platform has explicit zone IDs, they are preserved and not overwritten by derived names",
+			inputDNSConfig: DNSConfig(),
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: v1.ObjectMeta{
+					Name: fakeHCPName,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					DNS: hyperv1.DNSSpec{
+						BaseDomain:    fakeBaseDomain,
+						PublicZoneID:  "custom-public-zone",
+						PrivateZoneID: "custom-private-zone",
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+					},
+				},
+			},
+			expectedDNSConfig: &configv1.DNS{
+				ObjectMeta: v1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: configv1.DNSSpec{
+					BaseDomain: fmt.Sprintf("%s.%s", fakeHCPName, fakeBaseDomain),
+					PublicZone: &configv1.DNSZone{
+						ID: "custom-public-zone",
+					},
+					PrivateZone: &configv1.DNSZone{
+						ID: "custom-private-zone",
+					},
+				},
+			},
+		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
