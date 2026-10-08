@@ -29,6 +29,8 @@ type GCPPlatformSpecApplyConfiguration struct {
 	NetworkConfig    *GCPNetworkConfigApplyConfiguration          `json:"networkConfig,omitempty"`
 	EndpointAccess   *hypershiftv1beta1.GCPEndpointAccessType     `json:"endpointAccess,omitempty"`
 	ResourceLabels   []GCPResourceLabelApplyConfiguration         `json:"resourceLabels,omitempty"`
+	ResourceTags     []GCPResourceTagApplyConfiguration           `json:"resourceTags,omitempty"`
+	Delegation       *GCPDNSDelegationSpecApplyConfiguration      `json:"delegation,omitempty"`
 	WorkloadIdentity *GCPWorkloadIdentityConfigApplyConfiguration `json:"workloadIdentity,omitempty"`
 }
 
@@ -80,6 +82,27 @@ func (b *GCPPlatformSpecApplyConfiguration) WithResourceLabels(values ...*GCPRes
 		}
 		b.ResourceLabels = append(b.ResourceLabels, *values[i])
 	}
+	return b
+}
+
+// WithResourceTags adds the given value to the ResourceTags field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the ResourceTags field.
+func (b *GCPPlatformSpecApplyConfiguration) WithResourceTags(values ...*GCPResourceTagApplyConfiguration) *GCPPlatformSpecApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithResourceTags")
+		}
+		b.ResourceTags = append(b.ResourceTags, *values[i])
+	}
+	return b
+}
+
+// WithDelegation sets the Delegation field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Delegation field is set to the value of the last call.
+func (b *GCPPlatformSpecApplyConfiguration) WithDelegation(value *GCPDNSDelegationSpecApplyConfiguration) *GCPPlatformSpecApplyConfiguration {
+	b.Delegation = value
 	return b
 }
 
