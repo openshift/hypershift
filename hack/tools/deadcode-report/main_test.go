@@ -17,6 +17,20 @@ import (
 
 func TestRun(t *testing.T) {
 	t.Parallel()
+	t.Run("When an analyzer override is supplied, it should reject the unsupported flag before scanning", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		reporter := buildTestTool(t, "./deadcode-report")
+		artifacts := t.TempDir()
+		cmd := exec.CommandContext(t.Context(), reporter, "-deadcode="+filepath.Join(t.TempDir(), "untrusted-analyzer"), "-artifact-dir="+artifacts)
+		out, err := cmd.CombinedOutput()
+		var exitError *exec.ExitError
+		g.Expect(errors.As(err, &exitError)).To(BeTrue(), "%s", out)
+		g.Expect(exitError.ExitCode()).To(Equal(2), "%s", out)
+		g.Expect(string(out)).To(ContainSubstring("flag provided but not defined: -deadcode"))
+		_, err = os.Stat(filepath.Join(artifacts, "deadcode-summary.txt"))
+		g.Expect(os.IsNotExist(err)).To(BeTrue())
+	})
 	t.Run("When the pinned analyzer scans a fixture, it should publish only unreachable first-party functions", func(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
@@ -62,7 +76,9 @@ func TestRun(t *testing.T) {
 		g.Expect(string(summary)).To(ContainSubstring("Reported candidates: 0"))
 		g.Expect(string(summary)).To(ContainSubstring("Tracked source dirty: true"))
 		reporter := buildTestTool(t, "./deadcode-report")
-		cmd := exec.CommandContext(t.Context(), reporter, "-deadcode="+tool, "-artifact-dir="+artifacts)
+		// The CLI uses only the pinned analyzer installed next to the reporter.
+		g.Expect(os.WriteFile(filepath.Join(filepath.Dir(reporter), "deadcode"), binary, 0755)).To(Succeed())
+		cmd := exec.CommandContext(t.Context(), reporter, "-artifact-dir="+artifacts)
 		cmd.Dir = root
 		cmd.Env = append(os.Environ(), "GOMEMLIMIT=4GiB", "GOGC=70", "GOPROXY=off", "GOSUMDB=off", "GOPACKAGESDRIVER=/nonexistent-driver")
 		out, err := cmd.CombinedOutput()
@@ -75,7 +91,7 @@ func TestRun(t *testing.T) {
 		g.Expect(run(t.Context(), root, tool, artifacts)).To(MatchError(ContainSubstring("analysis failed")))
 		_, err = os.Stat(filepath.Join(artifacts, "deadcode-summary.txt"))
 		g.Expect(os.IsNotExist(err)).To(BeTrue())
-		cmd = exec.CommandContext(t.Context(), reporter, "-deadcode="+tool, "-artifact-dir="+artifacts)
+		cmd = exec.CommandContext(t.Context(), reporter, "-artifact-dir="+artifacts)
 		cmd.Dir = root
 		out, err = cmd.CombinedOutput()
 		var exitError *exec.ExitError
