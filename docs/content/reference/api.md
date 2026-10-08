@@ -6910,6 +6910,14 @@ and reports missing images if any.</p>
 e.g. load balancers were created successfully.
 A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.</p>
 </td>
+</tr><tr><td><p>&#34;IngressCredentialsFound&#34;</p></td>
+<td><p>IngressCredentialsFound indicates whether the optional ingress-operator
+credentials are configured. It is only evaluated for platforms whose
+ingress operator needs cloud credentials (today: GCP). A False condition
+is non-blocking: the HostedCluster keeps reconciling, but the guest
+ingress operator runs without cloud credentials and cannot publish the
+*.apps DNS records.</p>
+</td>
 </tr><tr><td><p>&#34;IngressDefaultCertificateSynced&#34;</p></td>
 <td><p>IngressDefaultCertificateSynced indicates whether the user-provided default
 ingress certificate referenced by
@@ -9370,17 +9378,21 @@ GCPServiceAccountEmail
 <em>(Optional)</em>
 <p>ingress is the Google Service Account email for the cluster Ingress Operator
 that manages the default IngressController&rsquo;s wildcard (*.apps) Cloud DNS records.
-This GSA requires the following IAM roles:
+This GSA requires the following IAM role:
 - roles/dns.admin (DNS Admin - for managing records in the ingress managed zone)
-- roles/compute.viewer (Compute Viewer - for reading load balancer / instance metadata)
-See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
-Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.</p>
+<p>When the Ingress capability is enabled (the default), creating the cluster
+through the CLI without this field fails fast, and a cluster created
+without it (e.g. via direct YAML) reports a non-blocking
+IngressCredentialsFound condition: the guest ingress operator runs
+without credentials and cannot publish the *.apps DNS records. Because
+the field is immutable, such a cluster cannot be fixed after creation.
+When the Ingress capability is disabled, this field is ignored. The email
+must belong to the GCP project in spec.project, and it can only be set at
+creation time.</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
 Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
 the required service accounts with appropriate IAM roles and WIF bindings.</p>
-<p>ingress is optional: it is only consumed when the Ingress capability is
-enabled. When Ingress is enabled it must be set (enforced controller-side,
-capability-aware, so existing clusters with Ingress disabled are unaffected).</p>
 </td>
 </tr>
 </tbody>

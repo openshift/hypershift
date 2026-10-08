@@ -131,9 +131,10 @@ func TestValidateGCPOptions(t *testing.T) {
 			expectErr:    true,
 			expectSubstr: "required flag(s) \"network-service-account\" not set",
 		},
-		"When ingress-service-account is missing, it should succeed (optional, capability-gated)": {
-			opts:      RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, Zone: validOpts.Zone, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount, ImageRegistryServiceAccount: validOpts.ImageRegistryServiceAccount, NetworkServiceAccount: validOpts.NetworkServiceAccount},
-			expectErr: false,
+		"When ingress-service-account is missing and the Ingress capability is enabled (the default), it should return an error": {
+			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, Zone: validOpts.Zone, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount, ImageRegistryServiceAccount: validOpts.ImageRegistryServiceAccount, NetworkServiceAccount: validOpts.NetworkServiceAccount},
+			expectErr:    true,
+			expectSubstr: "ingress-service-account",
 		},
 		"When zone is missing, it should return an error": {
 			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount, ImageRegistryServiceAccount: validOpts.ImageRegistryServiceAccount, NetworkServiceAccount: validOpts.NetworkServiceAccount, IngressServiceAccount: validOpts.IngressServiceAccount},
@@ -159,6 +160,88 @@ func TestValidateGCPOptions(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestValidateIngressServiceAccountCapabilityGating verifies that the ingress
+// service account is only required when the Ingress capability is enabled:
+// with the capability disabled the flag may be omitted.
+func TestValidateIngressServiceAccountCapabilityGating(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	// GCP options without the ingress service account.
+	gcpOpts := RawCreateOptions{
+		Project:                       "test-project-123",
+		Region:                        "us-central1",
+		Network:                       "test-network",
+		PrivateServiceConnectSubnet:   "test-psc-subnet",
+		WorkloadIdentityProjectNumber: "123456789012",
+		WorkloadIdentityPoolID:        "test-pool-id",
+		WorkloadIdentityProviderID:    "test-provider-id",
+		NodePoolServiceAccount:        "nodepool@test-project-123.iam.gserviceaccount.com",
+		ControlPlaneServiceAccount:    "controlplane@test-project-123.iam.gserviceaccount.com",
+		CloudControllerServiceAccount: "cloudcontroller@test-project-123.iam.gserviceaccount.com",
+		StorageServiceAccount:         "storage@test-project-123.iam.gserviceaccount.com",
+		ImageRegistryServiceAccount:   "imageregistry@test-project-123.iam.gserviceaccount.com",
+		NetworkServiceAccount:         "network@test-project-123.iam.gserviceaccount.com",
+	}
+
+	// Build core options through the real pipeline with the Ingress (and,
+	// as required when disabling Ingress, Console) capabilities disabled.
+	coreRaw := core.DefaultOptions()
+	coreRaw.Name = "test-cluster"
+	coreRaw.PullSecretFile = "unused"
+	coreRaw.Render = true
+	coreRaw.NodePoolReplicas = -1 // no NodePool: zone not required
+	coreRaw.DisableClusterCapabilities = []string{
+		string(hyperv1.IngressCapability),
+		string(hyperv1.ConsoleCapability),
+	}
+	coreValidated, err := coreRaw.Validate(context.Background(), nil)
+	g.Expect(err).To(BeNil())
+	coreOpts, err := coreValidated.Complete()
+	g.Expect(err).To(BeNil())
+
+	_, err = gcpOpts.Validate(context.Background(), coreOpts)
+	g.Expect(err).To(BeNil(), "ingress-service-account should be optional when the Ingress capability is disabled")
+}
+
+// TestValidateIngressServiceAccountRequiredThroughPipeline verifies the
+// fail-fast path with real (non-nil) core options: the Ingress capability
+// enabled (the default) and no ingress service account must be rejected
+// before the cluster is created.
+func TestValidateIngressServiceAccountRequiredThroughPipeline(t *testing.T) {
+	g := NewWithT(t)
+
+	gcpOpts := RawCreateOptions{
+		Project:                       "test-project-123",
+		Region:                        "us-central1",
+		Network:                       "test-network",
+		PrivateServiceConnectSubnet:   "test-psc-subnet",
+		WorkloadIdentityProjectNumber: "123456789012",
+		WorkloadIdentityPoolID:        "test-pool-id",
+		WorkloadIdentityProviderID:    "test-provider-id",
+		NodePoolServiceAccount:        "nodepool@test-project-123.iam.gserviceaccount.com",
+		ControlPlaneServiceAccount:    "controlplane@test-project-123.iam.gserviceaccount.com",
+		CloudControllerServiceAccount: "cloudcontroller@test-project-123.iam.gserviceaccount.com",
+		StorageServiceAccount:         "storage@test-project-123.iam.gserviceaccount.com",
+		ImageRegistryServiceAccount:   "imageregistry@test-project-123.iam.gserviceaccount.com",
+		NetworkServiceAccount:         "network@test-project-123.iam.gserviceaccount.com",
+	}
+
+	coreRaw := core.DefaultOptions()
+	coreRaw.Name = "test-cluster"
+	coreRaw.PullSecretFile = "unused"
+	coreRaw.Render = true
+	coreRaw.NodePoolReplicas = -1 // no NodePool: zone not required
+	coreValidated, err := coreRaw.Validate(context.Background(), nil)
+	g.Expect(err).To(BeNil())
+	coreOpts, err := coreValidated.Complete()
+	g.Expect(err).To(BeNil())
+
+	_, err = gcpOpts.Validate(context.Background(), coreOpts)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("ingress-service-account"))
+	g.Expect(err.Error()).To(ContainSubstring("unless the Ingress capability is disabled"))
 }
 
 func TestCreateCluster(t *testing.T) {
