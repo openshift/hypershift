@@ -551,6 +551,7 @@ func readyService(name string) *corev1.Service {
 }
 
 func testScheme(t *testing.T) *runtime.Scheme {
+	t.Helper()
 	scheme := runtime.NewScheme()
 	if err := routev1.Install(scheme); err != nil {
 		t.Fatalf("install Route scheme: %v", err)
@@ -561,14 +562,15 @@ func testScheme(t *testing.T) *runtime.Scheme {
 	return scheme
 }
 
-func TestEnsureHCPRouterRoutesExist(t *testing.T) {
+func TestEnsureHCPRouterBackendsReady(t *testing.T) {
 	scheme := testScheme(t)
 
 	tests := []struct {
-		name        string
-		hcp         *hyperv1.HostedControlPlane
-		objects     []runtime.Object
-		expectedErr string
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		objects        []runtime.Object
+		expectedErr    string
+		substringMatch bool
 	}{
 		{
 			name: "When all base routes are present and ready with ClusterIPs, it should succeed",
@@ -719,7 +721,30 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 				readyService("konnectivity-server"),
 				readyService("oauth"),
 			},
-			expectedErr: "failed to get service ignition-server-proxy for route ignition-server",
+			expectedErr:    "failed to get service ignition-server-proxy for route ignition-server",
+			substringMatch: true,
+		},
+		{
+			name: "When an extra route outside expected set has no ClusterIP, it should still succeed",
+			hcp:  aroHCP(),
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
+				readyRoute("ignition-server", "ignition-server-proxy"),
+				readyRoute("extra-route", "extra-service"),
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
+				readyService("ignition-server-proxy"),
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "extra-service",
+						Namespace: "test-ns",
+					},
+					Spec: corev1.ServiceSpec{},
+				},
+			},
 		},
 	}
 	for _, tc := range tests {
@@ -734,11 +759,13 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 				Client:  fakeClient,
 				HCP:     tc.hcp,
 			}
-			err := ensureHCPRouterRoutesExist(cpContext)
+			err := ensureHCPRouterBackendsReady(cpContext)
 			if tc.expectedErr == "" {
 				g.Expect(err).ToNot(HaveOccurred())
-			} else {
+			} else if tc.substringMatch {
 				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedErr)))
+			} else {
+				g.Expect(err).To(MatchError(tc.expectedErr))
 			}
 		})
 	}

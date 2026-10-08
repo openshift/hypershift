@@ -2,7 +2,6 @@ package router
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -66,7 +65,7 @@ func routerPredicate(cpContext component.WorkloadContext) (bool, error) {
 		return false, nil
 	}
 	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
-		if err := ensureHCPRouterRoutesExist(cpContext); err != nil {
+		if err := ensureHCPRouterBackendsReady(cpContext); err != nil {
 			return false, err
 		}
 	}
@@ -76,7 +75,7 @@ func routerPredicate(cpContext component.WorkloadContext) (bool, error) {
 // TODO: introduce live reloading like in shared proxy so the router config
 // is updated when routes change after the initial reconcile.
 
-func ensureHCPRouterRoutesExist(cpContext component.WorkloadContext) error {
+func ensureHCPRouterBackendsReady(cpContext component.WorkloadContext) error {
 	expected := aroExpectedHCPRouterRouteNames(cpContext.HCP)
 	if len(expected) == 0 {
 		return nil
@@ -105,17 +104,11 @@ func ensureHCPRouterRoutesExist(cpContext component.WorkloadContext) error {
 
 	// Verify that each expected route's backend Service has a ClusterIP assigned.
 	// Without this gate the router ConfigMap would contain an empty destination IP,
-	// causing a rolling update once the ClusterIP arrives — during a window where
+	// causing a rolling update once the ClusterIP arrives -- during a window where
 	// pods are susceptible to Azure CNI DHCP timeouts.
-	expectedSet := make(map[string]struct{}, len(expected))
-	for _, name := range expected {
-		expectedSet[name] = struct{}{}
-	}
 	var missingIPs []string
-	for _, route := range routesByName {
-		if _, ok := expectedSet[route.Name]; !ok {
-			continue
-		}
+	for _, name := range expected {
+		route := routesByName[name]
 		svc := &corev1.Service{}
 		key := client.ObjectKey{Name: route.Spec.To.Name, Namespace: cpContext.HCP.Namespace}
 		if err := cpContext.Client.Get(cpContext, key, svc); err != nil {
@@ -126,7 +119,6 @@ func ensureHCPRouterRoutesExist(cpContext component.WorkloadContext) error {
 		}
 	}
 	if len(missingIPs) > 0 {
-		sort.Strings(missingIPs)
 		return fmt.Errorf("waiting for ClusterIP on services: %s", strings.Join(missingIPs, ", "))
 	}
 
