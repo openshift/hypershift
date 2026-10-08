@@ -431,3 +431,42 @@ func TestGenerateZoneNamesValidationErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestAcmeChallengeTarget(t *testing.T) {
+	tests := []struct {
+		name       string
+		baseDomain string
+		expected   string
+	}{
+		{
+			name:       "When baseDomain is the delegated ingress subdomain, it should strip the in. label into the region zone",
+			baseDomain: "in.my-cluster-abcde.dev.gcp-hcp.openshiftapps.com",
+			expected:   "_acme-challenge.apps.my-cluster-abcde.dev.gcp-hcp.openshiftapps.com.",
+		},
+		{
+			name:       "When baseDomain already has a trailing dot, it should keep exactly one trailing dot",
+			baseDomain: "in.example.com.",
+			expected:   "_acme-challenge.apps.example.com.",
+		},
+		{
+			name:       "When baseDomain is a short delegated name, it should strip the in. label",
+			baseDomain: "in.example.com",
+			expected:   "_acme-challenge.apps.example.com.",
+		},
+		{
+			name:       "When baseDomain has no dot, it should use it as-is without panicking",
+			baseDomain: "example",
+			expected:   "_acme-challenge.apps.example.",
+		},
+		{
+			name:       "When baseDomain is not the delegated in. shape, it should not drop the first label",
+			baseDomain: "example.com",
+			expected:   "_acme-challenge.apps.example.com.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, acmeChallengeTarget(tt.baseDomain))
+		})
+	}
+}

@@ -434,9 +434,9 @@ func ensureZones(ctx context.Context, svc *dns.Service, createZones bool, projec
 // reconcileRecords ensures required DNS records exist with correct values.
 // All record operations are idempotent (similar to AWS Route53 UPSERT).
 func reconcileRecords(ctx context.Context, svc *dns.Service, projectID, hypershiftZone, publicZone, hypershiftDNSName, ingressDNS, baseDomain, pscEndpointIP string) error {
-	// Create ACME challenge CNAME record in public zone
+	// Create ACME challenge CNAME record in the public (customer) ingress zone.
 	acmeRecordName := fmt.Sprintf("_acme-challenge.apps.%s", ingressDNS)
-	acmeTarget := ensureDNSDot(fmt.Sprintf("_acme-challenge.%s", baseDomain))
+	acmeTarget := acmeChallengeTarget(baseDomain)
 	if err := createCNAMERecord(ctx, svc, projectID, publicZone, acmeRecordName, acmeTarget, 300); err != nil {
 		return fmt.Errorf("failed to reconcile ACME challenge CNAME: %w", err)
 	}
@@ -454,6 +454,24 @@ func reconcileRecords(ctx context.Context, svc *dns.Service, projectID, hypershi
 	}
 
 	return nil
+}
+
+// acmeChallengeTarget returns the CNAME target for the ingress wildcard ACME
+// challenge. The challenge name (_acme-challenge.apps.in.<H>) lives under the
+// ingress subdomain (in.<H>), which is delegated to the customer project; the
+// region-scoped cert-manager cannot write there. The target therefore points
+// one label up into the region zone (<H>) — where cert-manager (via
+// cnameStrategy: Follow) can write the _acme-challenge TXT. The "apps" label is
+// retained so it stays distinct from the API wildcard's own _acme-challenge.<H>
+// challenge record.
+func acmeChallengeTarget(baseDomain string) string {
+	// The ingress baseDomain is the delegated "in.<H>" subdomain; the apps
+	// managed zone lives under its parent "<H>". Strip the leading "in." label
+	// specifically rather than dropping whatever the first label happens to be,
+	// so an unexpected (non-delegated) baseDomain degrades to "apps.<baseDomain>"
+	// instead of silently losing its first label.
+	parentDomain := strings.TrimPrefix(baseDomain, "in.")
+	return ensureDNSDot(fmt.Sprintf("_acme-challenge.apps.%s", parentDomain))
 }
 
 // validateReconcileInput validates the input parameters for DNS reconciliation.
