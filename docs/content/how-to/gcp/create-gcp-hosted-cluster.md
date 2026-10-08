@@ -86,7 +86,7 @@ hypershift create cluster gcp \
 | `--storage-service-account` | Yes | GCP PD CSI Driver SA email |
 | `--image-registry-service-account` | Yes | Image Registry Operator SA email |
 | `--network-service-account` | Yes | Cloud Network Config Controller SA email |
-| `--ingress-service-account` | Conditional | Ingress Operator SA email (manages *.apps Cloud DNS). Required only when the Ingress capability is enabled; omit it when Ingress is disabled. |
+| `--ingress-service-account` | Conditional | Ingress Operator SA email (manages *.apps Cloud DNS). Required when the Ingress capability is enabled (the default); omit it only when Ingress is disabled via `--disable-cluster-capabilities=Ingress,Console`. |
 | `--service-account-signing-key-path` | Yes | Path to RSA private key for OIDC token signing |
 | `--oidc-issuer-url` | Yes | OIDC issuer URL |
 | `--node-pool-replicas` | Yes | Number of worker nodes (default: 0) |

@@ -13,6 +13,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -36,6 +37,7 @@ const (
 	testStorageGSA         hyperv1.GCPServiceAccountEmail = "test-storage@test-project.iam.gserviceaccount.com"
 	testImageRegistryGSA   hyperv1.GCPServiceAccountEmail = "test-image-registry@test-project.iam.gserviceaccount.com"
 	testNetworkGSA         hyperv1.GCPServiceAccountEmail = "test-network-sa@test-project.iam.gserviceaccount.com"
+	testIngressGSA         hyperv1.GCPServiceAccountEmail = "test-ingress-sa@test-project.iam.gserviceaccount.com"
 )
 
 // testCreateOrUpdate is a test helper that implements createOrUpdate functionality
@@ -102,6 +104,7 @@ func validHostedCluster() *hyperv1.HostedCluster {
 							Storage:         testStorageGSA,
 							ImageRegistry:   testImageRegistryGSA,
 							Network:         testNetworkGSA,
+							Ingress:         testIngressGSA,
 						},
 					},
 				},
@@ -467,6 +470,27 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 			},
 			errorMsg: "network service account email is required",
 		},
+		{
+			// The ingress service account is deliberately not validated here:
+			// it is enforced at creation time by CEL on the HostedClusterSpec,
+			// and a missing account on an existing cluster is surfaced as the
+			// non-blocking IngressCredentialsFound condition instead (see
+			// TestReconcileIngressCredentialsCondition) so the critical
+			// PlatformCredentials step is not blocked.
+			name: "missing ingress service account email with Ingress capability enabled",
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Ingress = ""
+			},
+		},
+		{
+			name: "missing ingress service account email with Ingress capability disabled",
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Ingress = ""
+				hc.Spec.Capabilities = &hyperv1.Capabilities{
+					Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability, hyperv1.ConsoleCapability},
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -482,6 +506,61 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 			} else {
 				g.Expect(err).To(BeNil())
 			}
+		})
+	}
+}
+
+// TestReconcileIngressCredentialsCondition verifies the non-blocking
+// IngressCredentialsFound condition: a missing ingress service account on an
+// existing cluster must be surfaced as a condition, not as a validation
+// failure that would block the PlatformCredentials step.
+func TestReconcileIngressCredentialsCondition(t *testing.T) {
+	g := NewWithT(t)
+
+	tests := []struct {
+		name           string
+		mutate         func(hc *hyperv1.HostedCluster)
+		expectedStatus metav1.ConditionStatus
+		expectedReason string
+	}{
+		{
+			name:           "When the ingress service account is configured, it should report True",
+			mutate:         func(hc *hyperv1.HostedCluster) {},
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name: "When Ingress is enabled but the service account is missing, it should report False with a dedicated reason",
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Ingress = ""
+			},
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperv1.IngressServiceAccountNotFoundReason,
+		},
+		{
+			name: "When the Ingress capability is disabled, it should report True",
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Capabilities = &hyperv1.Capabilities{
+					Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability, hyperv1.ConsoleCapability},
+				}
+			},
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hc := validHostedCluster()
+			tt.mutate(hc)
+
+			p := GCP{}
+			p.reconcileIngressCredentialsCondition(hc)
+
+			condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.IngressCredentialsFound))
+			g.Expect(condition).ToNot(BeNil())
+			g.Expect(condition.Status).To(Equal(tt.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tt.expectedReason))
 		})
 	}
 }
