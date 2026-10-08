@@ -245,13 +245,13 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 func (karp *KarpenterOperatorOptions) addStandaloneAdapterContainer(deployment *appsv1.Deployment) error {
 	adapterEnv := []corev1.EnvVar{
 		{
-			Name: "MY_NAMESPACE",
+			Name: "NAMESPACE",
 			ValueFrom: &corev1.EnvVarSource{
 				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"},
 			},
 		},
 		{
-			Name: "MY_NAME",
+			Name: "POD_NAME",
 			ValueFrom: &corev1.EnvVarSource{
 				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
 			},
@@ -269,7 +269,7 @@ func (karp *KarpenterOperatorOptions) addStandaloneAdapterContainer(deployment *
 		Command: []string{"/usr/bin/karpenter-operator"},
 		Args: []string{
 			"--target-kubeconfig=/mnt/kubeconfig/target-kubeconfig",
-			"--namespace=$(MY_NAMESPACE)",
+			"--namespace=$(NAMESPACE)",
 			"--control-plane-operator-image=" + karp.ControlPlaneOperatorImage,
 			"--hypershift-operator-image=" + karp.HyperShiftOperatorImage,
 			"--ignition-endpoint=" + karp.IgnitionEndpoint,
