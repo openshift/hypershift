@@ -217,7 +217,7 @@ deadcode: $(DEADCODE) $(DEADCODE_REPORT)
 	# Always replace a cached cross-compiled mockgen before executing it.
 	cd $(TOOLS_DIR); GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) CGO_ENABLED=0 $(GO) build -tags=tools -o $(MOCKGEN) go.uber.org/mock/mockgen
 	$(MAKE) generate GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH)
-	$(DEADCODE_REPORT) -deadcode="$(DEADCODE)" -artifact-dir="$(ARTIFACT_DIR)"
+	$(DEADCODE_REPORT) -artifact-dir="$(ARTIFACT_DIR)"
 
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs

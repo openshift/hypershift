@@ -31,10 +31,14 @@ type scanMetadata struct {
 }
 
 func main() {
-	tool := flag.String("deadcode", "hack/tools/bin/deadcode", "path to a trusted, locally built pinned deadcode executable")
 	artifacts := flag.String("artifact-dir", "/tmp/artifacts", "output directory for the three reports")
 	flag.Parse()
-	if err := run(context.Background(), ".", *tool, *artifacts); err != nil {
+	// Make builds both tools together; do not select an executable from CLI input.
+	executable, err := os.Executable()
+	if err == nil {
+		err = run(context.Background(), ".", filepath.Join(filepath.Dir(executable), "deadcode"), *artifacts)
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "deadcode-report: %v\n", err)
 		os.Exit(1)
 	}
@@ -120,7 +124,7 @@ func run(ctx context.Context, root, tool, artifacts string) error {
 	}
 	metadata.goVersion = strings.TrimSpace(string(goVersion))
 	filter := "^" + regexp.QuoteMeta(module.Module.Mod.Path) + "(/|_test$|$)"
-	// The caller-selected executable and its filesystem are trusted local inputs.
+	// The sibling analyzer executable and its filesystem must remain trusted.
 	// analyzerVersion checks compatibility, not authenticity. Execute the path
 	// directly with separate arguments, never through a shell (see DEVELOPMENT.md).
 	cmd := exec.CommandContext(ctx, tool, "-json", "-generated", "-test", "-filter="+filter, "-tags="+scanTags, "./...")

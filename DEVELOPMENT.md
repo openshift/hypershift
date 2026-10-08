@@ -127,29 +127,21 @@ for algorithm and interpretation limits.
 
 ##### Analyzer executable trust boundary
 
-`deadcode-report -deadcode=<path>` selects an executable to run with the invoking
-user's privileges. This is a local developer/CI option, not input from a
-HostedCluster, tenant, or network request. Use the analyzer built from the pinned,
-vendored tools module by `make deadcode`; do not pass an executable supplied by an
-untrusted party. The executable, its parent directories/symlink targets, checkout,
-Go/Git tools, and inherited environment must remain trusted for the entire run.
-This command is not a sandbox for analyzing untrusted checkouts or binaries.
+`deadcode-report` always runs the `deadcode` executable next to its own binary.
+`make deadcode` builds both binaries together from the pinned, vendored tools
+module. There is no analyzer-path CLI override or analyzer lookup through `PATH`.
+This local developer/CI tool runs with the invoking user's privileges; it is not
+a sandbox for analyzing untrusted checkouts or binaries. The executables, their
+parent directories/symlink targets, checkout, Go/Git tools, and inherited
+environment must remain trusted for the entire run.
 
-The helper converts the selected path to an absolute filename and checks its Go
+The helper converts the sibling path to an absolute filename and checks its Go
 build metadata for the analyzer's command/module identity and v0.44.0 version.
 Those checks catch incompatible tools; they are **not** signature verification,
 a cryptographic authenticity guarantee, or protection against concurrent
 replacement. Execution uses `exec.CommandContext` directly with separate
 arguments, never a shell. Spaces and shell metacharacters in the filename are
 literal, as covered by the offline reachability fixture.
-
-If a security scanner reports command injection at this execution call, submit
-the trust-boundary explanation and regression evidence to the project's
-maintainers/security reviewers. Record any approved disposition on the PR and
-in the scanner finding, and obtain a passing security job before merging.
-Documentation alone does not dismiss a finding. Do not add a blanket `.snyk`
-exclusion, suppress the job, or treat build metadata as proof of trust to make
-the check pass.
 
 Run the helper's offline fixture checks explicitly because root-module tests do
 not cover the tools module:
