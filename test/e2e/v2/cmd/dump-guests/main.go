@@ -29,7 +29,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	e2edump "github.com/openshift/hypershift/test/e2e/util/dump"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 )
 
@@ -50,16 +49,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read cluster manifest: %v", err)
 	}
+	platform, err := lifecycle.NewPlatformConfig(os.Getenv("HYPERSHIFT_PLATFORM"), sharedDir)
+	if err != nil {
+		log.Fatalf("Failed to initialize platform config: %v", err)
+	}
 
 	log.Printf("Dumping %d clusters from manifest", len(manifest.Clusters))
-	azureCredentialsFile := lifecycle.AzureCredentialsFileFromEnv()
 
 	var wg sync.WaitGroup
 	for _, entry := range manifest.Clusters {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			dumpCluster(*hypershiftBinary, artifactDir, entry.Name, entry.Namespace, azureCredentialsFile)
+			dumpCluster(*hypershiftBinary, artifactDir, entry.Name, entry.Namespace, platform.DumpMachineDiagnostics)
 		}()
 	}
 	wg.Wait()
@@ -67,19 +69,15 @@ func main() {
 	log.Println("All cluster dumps complete")
 }
 
-func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace, azureCredentialsFile string) {
-	dumpClusterWithDiagnostics(hypershiftBinary, artifactDir, clusterName, namespace, azureCredentialsFile, e2edump.DumpAzureMachineDiagnostics)
-}
-
-func dumpClusterWithDiagnostics(hypershiftBinary, artifactDir, clusterName, namespace, azureCredentialsFile string, collect func(context.Context, string, string, string, string, string) error) {
+func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string, collect func(context.Context, string, string, string) error) {
 	dumpDir := filepath.Join(artifactDir, clusterName)
 	if err := os.MkdirAll(dumpDir, 0755); err != nil {
 		log.Printf("WARNING: Failed to create artifact directory %s: %v", dumpDir, err)
 		return
 	}
 
-	if err := collect(context.Background(), namespace, clusterName, azureCredentialsFile, dumpDir, ""); err != nil {
-		log.Printf("WARNING: Failed to dump Azure machine diagnostics for cluster %s: %v", clusterName, err)
+	if err := collect(context.Background(), namespace, clusterName, dumpDir); err != nil {
+		log.Printf("WARNING: Failed to dump machine diagnostics for cluster %s: %v", clusterName, err)
 	}
 	args := dumpClusterArgs(dumpDir, clusterName, namespace)
 

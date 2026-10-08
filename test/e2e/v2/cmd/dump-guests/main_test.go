@@ -12,33 +12,45 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestDumpClusterWithDiagnostics(t *testing.T) {
-	t.Run("When Azure diagnostics fail, it should still run generic collection afterward", func(t *testing.T) {
-		dir := t.TempDir()
-		marker := filepath.Join(dir, "generic-called")
-		t.Setenv("GENERIC_DUMP_MARKER", marker)
-		binary := filepath.Join(dir, "hypershift")
-		if err := os.WriteFile(binary, []byte("#!/bin/sh\ntouch \"$GENERIC_DUMP_MARKER\"\nexit 1\n"), 0700); err != nil {
-			t.Fatal(err)
-		}
-		called := false
-		dumpClusterWithDiagnostics(binary, dir, "hc", "clusters", "/etc/azure/credentials.json", func(_ context.Context, namespace, name, credentials, artifacts, kubeconfig string) error {
-			called = true
-			if _, err := os.Stat(marker); !os.IsNotExist(err) {
-				t.Error("generic dump ran before Azure collection")
-			}
-			if namespace != "clusters" || name != "hc" || credentials != "/etc/azure/credentials.json" || artifacts != filepath.Join(dir, "hc") {
-				t.Error("Azure collector received incorrect cluster configuration")
-			}
-			return errors.New("Azure unavailable")
+func TestDumpCluster(t *testing.T) {
+	tests := []struct {
+		name           string
+		diagnosticsErr error
+	}{
+		{
+			name: "When platform diagnostics succeed, it should run generic collection afterward",
+		},
+		{
+			name:           "When platform diagnostics fail, it should still run generic collection afterward",
+			diagnosticsErr: errors.New("diagnostics unavailable"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			dir := t.TempDir()
+			marker := filepath.Join(dir, "generic-called")
+			t.Setenv("GENERIC_DUMP_MARKER", marker)
+			binary := filepath.Join(dir, "hypershift")
+			g.Expect(os.WriteFile(binary, []byte("#!/bin/sh\ntouch \"$GENERIC_DUMP_MARKER\"\n"), 0700)).To(Succeed())
+
+			called := false
+			dumpCluster(binary, dir, "hc", "clusters", func(_ context.Context, namespace, name, artifacts string) error {
+				called = true
+				_, err := os.Stat(marker)
+				g.Expect(os.IsNotExist(err)).To(BeTrue(), "generic dump should run after platform diagnostics")
+				g.Expect(namespace).To(Equal("clusters"))
+				g.Expect(name).To(Equal("hc"))
+				g.Expect(artifacts).To(Equal(filepath.Join(dir, "hc")))
+				return tt.diagnosticsErr
+			})
+
+			g.Expect(called).To(BeTrue(), "platform diagnostics should run")
+			_, err := os.Stat(marker)
+			g.Expect(err).NotTo(HaveOccurred(), "generic dump should run even if diagnostics fail")
 		})
-		if !called {
-			t.Fatal("Azure collection was skipped")
-		}
-		if _, err := os.Stat(marker); err != nil {
-			t.Fatalf("Azure failure prevented generic collection: %v", err)
-		}
-	})
+	}
 }
 
 func TestDumpClusterArgs(t *testing.T) {

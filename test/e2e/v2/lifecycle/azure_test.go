@@ -3,9 +3,13 @@
 package lifecycle
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	. "github.com/onsi/gomega"
 )
 
 func TestAzureCredentialsFileFromEnv(t *testing.T) {
@@ -174,5 +178,18 @@ func TestAzurePlatformConfigDestroyArgs(t *testing.T) {
 				t.Fatalf("teardown cannot accept %s", arg)
 			}
 		}
+	})
+}
+
+func TestAzurePlatformConfigDumpMachineDiagnostics(t *testing.T) {
+	t.Run("When management kubeconfig is invalid, it should report the diagnostics collection failure", func(t *testing.T) {
+		g := NewWithT(t)
+		kubeconfig := filepath.Join(t.TempDir(), "kubeconfig")
+		g.Expect(os.WriteFile(kubeconfig, []byte("invalid kubeconfig"), 0600)).To(Succeed())
+		t.Setenv("KUBECONFIG", kubeconfig)
+
+		platform := &AzurePlatformConfig{creds: "/etc/azure/credentials.json"}
+		err := platform.DumpMachineDiagnostics(t.Context(), "clusters", "hc", t.TempDir())
+		g.Expect(err).To(HaveOccurred())
 	})
 }
