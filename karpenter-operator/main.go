@@ -207,8 +207,11 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to setup karpenter ignition controller with manager: %w", err)
 	}
 
-	if err := setupOperatorInfoMetric(managementCluster); err != nil {
-		return fmt.Errorf("failed to setup operator info metric: %w", err)
+	// Standalone karpenter-operator metrics exist in the standalone operator, so don't register them in the adapter
+	if !standaloneAdapter {
+		if err := setupOperatorInfoMetric(managementCluster); err != nil {
+			return fmt.Errorf("failed to setup operator info metric: %w", err)
+		}
 	}
 
 	if err := mgr.Start(ctx); err != nil {
