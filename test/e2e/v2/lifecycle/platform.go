@@ -214,9 +214,8 @@ type PlatformConfig interface {
 	// "hypershift destroy cluster <platform>".
 	DestroyArgs() []string
 
-	// DumpMachineDiagnostics collects platform-specific machine artifacts
-	// that "hypershift dump cluster" does not collect.
-	DumpMachineDiagnostics(ctx context.Context, namespace, name, artifactDir string) error
+	// DumpArgs returns platform-specific args for "hypershift dump cluster".
+	DumpArgs() []string
 }
 
 // NewPlatformConfig creates a PlatformConfig for the given platform

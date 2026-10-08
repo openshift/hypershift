@@ -116,6 +116,44 @@ func TestDumpClusterWithRetry(t *testing.T) {
 	})
 }
 
+func TestDumpCluster(t *testing.T) {
+	t.Run("When Azure options are absent, it should skip Azure diagnostics setup", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv("PATH", "")
+		clientCalls := 0
+		opts := &DumpOptions{
+			Log: logr.Discard(),
+			ClientProvider: &util.ClientProvider{ControllerRuntimeClient: func(string) (client.Client, error) {
+				clientCalls++
+				return crfake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build(), nil
+			}},
+		}
+
+		g.Expect(DumpCluster(t.Context(), opts)).To(MatchError("cannot find oc command"))
+		g.Expect(clientCalls).To(BeZero(), "Azure diagnostics should not run without Azure options")
+	})
+
+	t.Run("When Azure diagnostics setup fails, it should continue with the general dump", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv("PATH", "")
+		clientCalls := 0
+		opts := &DumpOptions{
+			Namespace:   "clusters",
+			Name:        "hc",
+			ArtifactDir: t.TempDir(),
+			Azure:       &AzureDumpOptions{},
+			Log:         logr.Discard(),
+			ClientProvider: &util.ClientProvider{ControllerRuntimeClient: func(string) (client.Client, error) {
+				clientCalls++
+				return crfake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build(), nil
+			}},
+		}
+
+		g.Expect(DumpCluster(t.Context(), opts)).To(MatchError("cannot find oc command"))
+		g.Expect(clientCalls).To(Equal(1), "Azure diagnostics should run before the general dump")
+	})
+}
+
 func TestIsResourceRegistered(t *testing.T) {
 	dummyGroup := "dummy.group.io"
 	dummyVersion := "v2beta3"
@@ -414,6 +452,48 @@ func discoveryResourcesFor(t *testing.T, c client.Client, objs []client.Object) 
 }
 
 func TestNewDumpCommand(t *testing.T) {
+	t.Run("When Azure credentials are specified, it should enable Azure machine diagnostics", func(t *testing.T) {
+		g := NewWithT(t)
+		var capturedOpts *DumpOptions
+		cmd := NewDumpCommand(func(_ context.Context, opts *DumpOptions) error {
+			capturedOpts = opts
+			return nil
+		})
+		cmd.SetArgs([]string{"--artifact-dir", t.TempDir(), "--azure-creds=/azure/credentials.json"})
+
+		g.Expect(cmd.Execute()).To(Succeed())
+		g.Expect(capturedOpts).NotTo(BeNil())
+		g.Expect(capturedOpts.Azure).To(Equal(&AzureDumpOptions{CredentialsFile: "/azure/credentials.json"}))
+	})
+
+	t.Run("When Azure credentials are explicitly empty, it should still enable journal collection", func(t *testing.T) {
+		g := NewWithT(t)
+		var capturedOpts *DumpOptions
+		cmd := NewDumpCommand(func(_ context.Context, opts *DumpOptions) error {
+			capturedOpts = opts
+			return nil
+		})
+		cmd.SetArgs([]string{"--artifact-dir", t.TempDir(), "--azure-creds="})
+
+		g.Expect(cmd.Execute()).To(Succeed())
+		g.Expect(capturedOpts).NotTo(BeNil())
+		g.Expect(capturedOpts.Azure).To(Equal(&AzureDumpOptions{}))
+	})
+
+	t.Run("When Azure credentials are omitted, it should leave Azure diagnostics disabled", func(t *testing.T) {
+		g := NewWithT(t)
+		var capturedOpts *DumpOptions
+		cmd := NewDumpCommand(func(_ context.Context, opts *DumpOptions) error {
+			capturedOpts = opts
+			return nil
+		})
+		cmd.SetArgs([]string{"--artifact-dir", t.TempDir()})
+
+		g.Expect(cmd.Execute()).To(Succeed())
+		g.Expect(capturedOpts).NotTo(BeNil())
+		g.Expect(capturedOpts.Azure).To(BeNil())
+	})
+
 	t.Run("When using the --dump-guest-cluster flag", func(t *testing.T) {
 		tests := []struct {
 			name               string

@@ -217,7 +217,6 @@ func (a *AWSPlatformConfig) DestroyArgs() []string {
 	}
 }
 
-func (a *AWSPlatformConfig) DumpMachineDiagnostics(ctx context.Context, namespace, name, artifactDir string) error {
-	// The v2 AWS dump currently has no additional machine diagnostics step.
+func (a *AWSPlatformConfig) DumpArgs() []string {
 	return nil
 }

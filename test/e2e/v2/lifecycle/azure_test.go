@@ -3,8 +3,6 @@
 package lifecycle
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -181,15 +179,10 @@ func TestAzurePlatformConfigDestroyArgs(t *testing.T) {
 	})
 }
 
-func TestAzurePlatformConfigDumpMachineDiagnostics(t *testing.T) {
-	t.Run("When management kubeconfig is invalid, it should report the diagnostics collection failure", func(t *testing.T) {
+func TestAzurePlatformConfigDumpArgs(t *testing.T) {
+	t.Run("When Azure dump args are requested, it should pass the credentials file", func(t *testing.T) {
 		g := NewWithT(t)
-		kubeconfig := filepath.Join(t.TempDir(), "kubeconfig")
-		g.Expect(os.WriteFile(kubeconfig, []byte("invalid kubeconfig"), 0600)).To(Succeed())
-		t.Setenv("KUBECONFIG", kubeconfig)
-
 		platform := &AzurePlatformConfig{creds: "/etc/azure/credentials.json"}
-		err := platform.DumpMachineDiagnostics(t.Context(), "clusters", "hc", t.TempDir())
-		g.Expect(err).To(HaveOccurred())
+		g.Expect(platform.DumpArgs()).To(Equal([]string{"--azure-creds=/etc/azure/credentials.json"}))
 	})
 }

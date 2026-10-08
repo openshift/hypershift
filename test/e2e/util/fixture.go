@@ -488,7 +488,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
-			err = dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig)
+			err = dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, nil, artifactDir, opts.Kubeconfig)
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
@@ -498,17 +498,13 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 			}
 			return utilerrors.NewAggregate(dumpErrors)
 		case hyperv1.AzurePlatform:
-			var dumpErrors []error
-
-			if err := dump.DumpAzureMachineDiagnostics(ctx, hc.Namespace, hc.Name, opts.AzurePlatform.CredentialsFile, artifactDir, opts.Kubeconfig); err != nil {
-				t.Logf("Failed to dump Azure machine diagnostics; this is nonfatal: %v", err)
+			if err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies,
+				&clusterdump.AzureDumpOptions{CredentialsFile: opts.AzurePlatform.CredentialsFile}, artifactDir, opts.Kubeconfig); err != nil {
+				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}
-			if err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig); err != nil {
-				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
-			}
-			return utilerrors.NewAggregate(dumpErrors)
+			return nil
 		default:
-			err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig)
+			err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, nil, artifactDir, opts.Kubeconfig)
 			if err != nil {
 				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}

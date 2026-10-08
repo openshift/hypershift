@@ -12,7 +12,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-	e2edump "github.com/openshift/hypershift/test/e2e/util/dump"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -491,8 +490,8 @@ func (a *AzurePlatformConfig) DestroyArgs() []string {
 	}
 }
 
-func (a *AzurePlatformConfig) DumpMachineDiagnostics(ctx context.Context, namespace, name, artifactDir string) error {
-	return e2edump.DumpAzureMachineDiagnostics(ctx, namespace, name, a.creds, artifactDir, "")
+func (a *AzurePlatformConfig) DumpArgs() []string {
+	return []string{"--azure-creds=" + a.creds}
 }
 
 func envOrDefault(key, defaultVal string) string {

@@ -21,7 +21,6 @@ limitations under the License.
 package main
 
 import (
-	"context"
 	"flag"
 	"log"
 	"os"
@@ -61,7 +60,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			dumpCluster(*hypershiftBinary, artifactDir, entry.Name, entry.Namespace, platform.DumpMachineDiagnostics)
+			dumpCluster(*hypershiftBinary, artifactDir, entry.Name, entry.Namespace, platform.DumpArgs())
 		}()
 	}
 	wg.Wait()
@@ -69,17 +68,14 @@ func main() {
 	log.Println("All cluster dumps complete")
 }
 
-func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string, collect func(context.Context, string, string, string) error) {
+func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string, platformArgs []string) {
 	dumpDir := filepath.Join(artifactDir, clusterName)
 	if err := os.MkdirAll(dumpDir, 0755); err != nil {
 		log.Printf("WARNING: Failed to create artifact directory %s: %v", dumpDir, err)
 		return
 	}
 
-	if err := collect(context.Background(), namespace, clusterName, dumpDir); err != nil {
-		log.Printf("WARNING: Failed to dump machine diagnostics for cluster %s: %v", clusterName, err)
-	}
-	args := dumpClusterArgs(dumpDir, clusterName, namespace)
+	args := dumpClusterArgs(dumpDir, clusterName, namespace, platformArgs)
 
 	log.Printf("Dumping cluster %s -> %s", clusterName, dumpDir)
 	log.Printf("Running: %s %v", hypershiftBinary, args)
@@ -94,7 +90,7 @@ func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string, c
 	}
 }
 
-func dumpClusterArgs(dumpDir, clusterName, namespace string) []string {
+func dumpClusterArgs(dumpDir, clusterName, namespace string, platformArgs []string) []string {
 	args := []string{
 		"dump", "cluster",
 		"--artifact-dir=" + dumpDir,
@@ -102,5 +98,5 @@ func dumpClusterArgs(dumpDir, clusterName, namespace string) []string {
 		"--name=" + clusterName,
 		"--namespace=" + namespace,
 	}
-	return args
+	return append(args, platformArgs...)
 }

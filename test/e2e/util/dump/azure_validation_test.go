@@ -29,8 +29,13 @@ func TestVerifyAzureMachineDiagnostics(t *testing.T) {
 			if err := capiazure.AddToScheme(scheme); err != nil {
 				t.Fatal(err)
 			}
-			hc := hostedClusterForDiagnostics(hyperv1.AzurePlatform)
-			hc.Spec.InfraID = "hc-infra"
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "clusters"},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID:  "hc-infra",
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform},
+				},
+			}
 			builder := fake.NewClientBuilder().WithScheme(scheme)
 			if tt.withMachine {
 				builder = builder.WithObjects(&capiazure.AzureMachine{ObjectMeta: metav1.ObjectMeta{Name: "worker-0", Namespace: manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name), Labels: map[string]string{clusterv1.ClusterNameLabel: hc.Spec.InfraID}}})
