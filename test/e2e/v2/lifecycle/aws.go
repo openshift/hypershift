@@ -148,6 +148,14 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 		publicArgs = append(publicArgs, "--initial-storage-volumes-kms-key="+arn)
 	}
 
+	// Always include kms-reencryption so the variant set is stable regardless of environment.
+	// --kms-key-arn is only appended when the ARN is configured; without it the cluster uses
+	// the default AESCBC encryption.
+	kmsCreateArgs := clusterArgs()
+	if kmsKeyARN := os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN"); kmsKeyARN != "" {
+		kmsCreateArgs = clusterArgs("--kms-key-arn=" + kmsKeyARN)
+	}
+
 	return []ClusterSpec{
 		{
 			Variant:     "public",
@@ -230,6 +238,11 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 				"--additional-trust-bundle="+filepath.Join(a.sharedDir, "mirror-registry-ca.pem"),
 				"--image-content-sources="+filepath.Join(a.sharedDir, "mirror-registry-ics.yaml"),
 			),
+		},
+		{
+			Variant:     "kms-reencryption",
+			DestroyArgs: destroyArgs,
+			CreateArgs:  kmsCreateArgs,
 		},
 	}
 }
@@ -315,6 +328,11 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 				Name:        "karpenter-upgrade",
 				Variant:     "karpenter-upgrade",
 				LabelFilter: "karpenter-upgrade",
+			},
+			{
+				Name:        "kms-reencryption",
+				Variant:     "kms-reencryption",
+				LabelFilter: "etcd-encryption-reencryption",
 			},
 		},
 		Sequential: []SequentialGroup{
