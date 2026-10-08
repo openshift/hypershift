@@ -1145,6 +1145,7 @@ type RoutePublishingStrategy struct {
 }
 
 // DNSSpec specifies the DNS configuration for the hosted cluster ingress.
+// +kubebuilder:validation:XValidation:rule=`!has(oldSelf.ingressAcmeChallengeTarget) || has(self.ingressAcmeChallengeTarget)`,message="ingressAcmeChallengeTarget cannot be removed once set"
 type DNSSpec struct {
 	// baseDomain is the base domain of the hosted cluster.
 	// It will be used to configure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
@@ -1204,6 +1205,38 @@ type DNSSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	// +immutable
 	PrivateZoneID string `json:"privateZoneID,omitempty"`
+
+	// ingressAcmeChallengeTarget delegates the ACME DNS-01 challenge for the
+	// ingress wildcard certificate (*.apps of the cluster's ingress domain) to
+	// an external solver. When set, the control plane operator creates a CNAME
+	// record named _acme-challenge.<ingress domain> in the public ingress DNS
+	// zone it manages for the cluster, pointing at this fully qualified target,
+	// and owns and reconciles that record; it never touches any other record
+	// at that name. This lets a certificate issuer running outside the cluster
+	// (e.g. a central cert-manager with DNS-01 access to the zone this target
+	// lives in) solve the challenge for the wildcard certificate even though
+	// it cannot write the ingress zone itself.
+	// The target must be a name the external solver is configured to write TXT
+	// records for, conventionally an _acme-challenge name in a centrally
+	// managed zone, and must differ from the record name it is attached to.
+	// The record name follows the cluster's ingress domain: apps.<baseDomainPrefix>.<baseDomain>
+	// by default, or the spec.configuration.ingress domain/appsDomain override
+	// when set; the record is only created when that name is inside the
+	// cluster's base domain. The field can be set at creation or added later,
+	// but once set it cannot be changed or removed.
+	// When unset, no record is created (and a record left by an earlier
+	// controller revision at the legacy name is removed), and the deployment
+	// is responsible for issuing the ingress wildcard certificate, solving its
+	// DNS-01 challenge in the ingress zone itself.
+	// Today only the GCP platform consumes this field; other platforms ignore it.
+	//
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:XValidation:rule=`self == oldSelf`,message="ingressAcmeChallengeTarget is immutable"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^_acme-challenge\\.(?:[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}\\.?$')`,message="ingressAcmeChallengeTarget must be a fully qualified name starting with _acme-challenge. (e.g., _acme-challenge.apps.example.com)"
+	IngressAcmeChallengeTarget string `json:"ingressAcmeChallengeTarget,omitempty"`
 }
 
 // clusterNetworking specifies network configuration for a cluster.

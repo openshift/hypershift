@@ -26731,6 +26731,15 @@ hypershift create cluster gcp \
 | `--zone` | Conditional | GCP zone for nodes. Required when `--node-pool-replicas >= 0` (default). Optional when `--node-pool-replicas=-1` (no NodePool created). |
 | `--boot-image` | No | Override RHCOS boot image from release payload |
 
+## DNS
+
+The control plane operator creates three Cloud DNS zones in the hosted cluster's project: a private `{cluster}-hypershift.local` zone, and public/private ingress zones for `--base-domain`. Records for the API server and `*.apps` endpoints are managed in these zones automatically.
+
+Two things are expected from the deployment, not from HyperShift:
+
+- **Zone delegation**: the parent zone of `--base-domain` must delegate to the public ingress zone's name servers (surfaced in the HostedControlPlane status) for the ingress zone to be resolvable.
+- **Ingress certificate**: the ingress operator serves the `*.apps` wildcard with the cluster's default certificate unless a publicly-trusted one is provided. When the deployment runs a certificate issuer outside the cluster that must solve the ACME DNS-01 challenge for the wildcard (e.g. a central cert-manager with access to the parent zone, but not to the ingress zone in the hosted cluster's project), set `spec.dns.ingressAcmeChallengeTarget` on the HostedCluster to the fully qualified name that issuer is configured to write challenge TXT records for, conventionally `_acme-challenge.<...>` in the parent zone. The operator then creates a CNAME `_acme-challenge.<ingress domain>` → that target in the public ingress zone, so the external issuer can solve the challenge by following the CNAME. The field can be set at creation or added later, but once set it cannot be changed or removed. When the field is unset no record is created and the deployment handles the ingress wildcard certificate's DNS-01 challenge itself.
+
 ## Monitor Cluster Creation
 
 Watch the hosted cluster status:
@@ -49717,6 +49726,40 @@ Once set, this value is immutable.</p>
 The maximum length of 265 is derived from Azure resource naming limits
 (see <a href="https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules):">https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules):</a>
 /subscriptions/ (15) + UUID (36) + /resourceGroups/ (16) + resource group name (90)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingressAcmeChallengeTarget</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ingressAcmeChallengeTarget delegates the ACME DNS-01 challenge for the
+ingress wildcard certificate (*.apps of the cluster&rsquo;s ingress domain) to
+an external solver. When set, the control plane operator creates a CNAME
+record named _acme-challenge.<ingress domain> in the public ingress DNS
+zone it manages for the cluster, pointing at this fully qualified target,
+and owns and reconciles that record; it never touches any other record
+at that name. This lets a certificate issuer running outside the cluster
+(e.g. a central cert-manager with DNS-01 access to the zone this target
+lives in) solve the challenge for the wildcard certificate even though
+it cannot write the ingress zone itself.
+The target must be a name the external solver is configured to write TXT
+records for, conventionally an _acme-challenge name in a centrally
+managed zone, and must differ from the record name it is attached to.
+The record name follows the cluster&rsquo;s ingress domain: apps.<baseDomainPrefix>.<baseDomain>
+by default, or the spec.configuration.ingress domain/appsDomain override
+when set; the record is only created when that name is inside the
+cluster&rsquo;s base domain. The field can be set at creation or added later,
+but once set it cannot be changed or removed.
+When unset, no record is created (and a record left by an earlier
+controller revision at the legacy name is removed), and the deployment
+is responsible for issuing the ingress wildcard certificate, solving its
+DNS-01 challenge in the ingress zone itself.
+Today only the GCP platform consumes this field; other platforms ignore it.</p>
 </td>
 </tr>
 </tbody>

@@ -7636,6 +7636,40 @@ The maximum length of 265 is derived from Azure resource naming limits
 /subscriptions/ (15) + UUID (36) + /resourceGroups/ (16) + resource group name (90)</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>ingressAcmeChallengeTarget</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ingressAcmeChallengeTarget delegates the ACME DNS-01 challenge for the
+ingress wildcard certificate (*.apps of the cluster&rsquo;s ingress domain) to
+an external solver. When set, the control plane operator creates a CNAME
+record named _acme-challenge.<ingress domain> in the public ingress DNS
+zone it manages for the cluster, pointing at this fully qualified target,
+and owns and reconciles that record; it never touches any other record
+at that name. This lets a certificate issuer running outside the cluster
+(e.g. a central cert-manager with DNS-01 access to the zone this target
+lives in) solve the challenge for the wildcard certificate even though
+it cannot write the ingress zone itself.
+The target must be a name the external solver is configured to write TXT
+records for, conventionally an _acme-challenge name in a centrally
+managed zone, and must differ from the record name it is attached to.
+The record name follows the cluster&rsquo;s ingress domain: apps.<baseDomainPrefix>.<baseDomain>
+by default, or the spec.configuration.ingress domain/appsDomain override
+when set; the record is only created when that name is inside the
+cluster&rsquo;s base domain. The field can be set at creation or added later,
+but once set it cannot be changed or removed.
+When unset, no record is created (and a record left by an earlier
+controller revision at the legacy name is removed), and the deployment
+is responsible for issuing the ingress wildcard certificate, solving its
+DNS-01 challenge in the ingress zone itself.
+Today only the GCP platform consumes this field; other platforms ignore it.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###DNSZoneStatus { #hypershift.openshift.io/v1beta1.DNSZoneStatus }
