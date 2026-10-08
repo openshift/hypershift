@@ -131,15 +131,19 @@ spec:
   services:
   - service: APIServer
     servicePublishingStrategy:
+      route: {}
       type: Route
   - service: Ignition
     servicePublishingStrategy:
+      route: {}
       type: Route
   - service: Konnectivity
     servicePublishingStrategy:
+      route: {}
       type: Route
   - service: OAuthServer
     servicePublishingStrategy:
+      route: {}
       type: Route
   sshKey: {}
 status:
