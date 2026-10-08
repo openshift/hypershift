@@ -36,6 +36,7 @@ const (
 	flagStorageServiceAccount         = "storage-service-account"
 	flagImageRegistryServiceAccount   = "image-registry-service-account"
 	flagNetworkServiceAccount         = "network-service-account"
+	flagIngressServiceAccount         = "ingress-service-account"
 	flagServiceAccountSigningKeyPath  = "service-account-signing-key-path"
 	flagEndpointAccess                = "endpoint-access"
 	flagIssuerURL                     = "oidc-issuer-url"
@@ -86,6 +87,9 @@ type RawCreateOptions struct {
 	// NetworkServiceAccount is the Google Service Account email for the Cloud Network Config Controller
 	NetworkServiceAccount string
 
+	// IngressServiceAccount is the Google Service Account email for the cluster Ingress Operator
+	IngressServiceAccount string
+
 	// ServiceAccountSigningKeyPath is the path to the private key file for the service account token issuer
 	ServiceAccountSigningKeyPath string
 
@@ -123,6 +127,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.StorageServiceAccount, flagStorageServiceAccount, opts.StorageServiceAccount, "Google Service Account email for GCP PD CSI Driver (from `hypershift create iam gcp` output)")
 	flags.StringVar(&opts.ImageRegistryServiceAccount, flagImageRegistryServiceAccount, opts.ImageRegistryServiceAccount, "Google Service Account email for Image Registry Operator (from `hypershift create iam gcp` output)")
 	flags.StringVar(&opts.NetworkServiceAccount, flagNetworkServiceAccount, opts.NetworkServiceAccount, "Google Service Account email for Cloud Network Config Controller (from `hypershift create iam gcp` output)")
+	flags.StringVar(&opts.IngressServiceAccount, flagIngressServiceAccount, opts.IngressServiceAccount, "Google Service Account email for the cluster Ingress Operator (from `hypershift create iam gcp` output)")
 	flags.StringVar(&opts.ServiceAccountSigningKeyPath, flagServiceAccountSigningKeyPath, "", "The file to the private key for the service account token issuer")
 	flags.StringVar(&opts.EndpointAccess, flagEndpointAccess, string(hyperv1.GCPEndpointAccessPrivate), "Endpoint access type (Private or PublicAndPrivate)")
 	flags.StringVar(&opts.IssuerURL, flagIssuerURL, "", "The OIDC provider issuer URL")
@@ -182,6 +187,8 @@ func (o *RawCreateOptions) Validate(_ context.Context, opts *core.CreateOptions)
 	if err := util.ValidateRequiredOption(flagImageRegistryServiceAccount, o.ImageRegistryServiceAccount); err != nil {
 		return nil, err
 	}
+	// ingress-service-account is optional: it is only required when the Ingress
+	// capability is enabled, which is validated controller-side (capability-aware).
 	if err := util.ValidateRequiredOption(flagNetworkServiceAccount, o.NetworkServiceAccount); err != nil {
 		return nil, err
 	}
@@ -300,6 +307,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedClus
 				Storage:         hyperv1.GCPServiceAccountEmail(o.StorageServiceAccount),
 				ImageRegistry:   hyperv1.GCPServiceAccountEmail(o.ImageRegistryServiceAccount),
 				Network:         hyperv1.GCPServiceAccountEmail(o.NetworkServiceAccount),
+				Ingress:         hyperv1.GCPServiceAccountEmail(o.IngressServiceAccount),
 			},
 		},
 		EndpointAccess: hyperv1.GCPEndpointAccessType(o.EndpointAccess),
