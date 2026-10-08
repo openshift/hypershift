@@ -20,11 +20,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/gcputil"
 
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/dns/v1"
@@ -311,56 +311,30 @@ func createARecord(ctx context.Context, svc *dns.Service, projectID, zoneName, r
 	})
 }
 
-// gcpZoneNameRegexp validates GCP Cloud DNS managed zone names.
-// Must start with a lowercase letter and contain only lowercase letters, numbers, and hyphens.
-var gcpZoneNameRegexp = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-
-// validateZoneName validates that a name meets GCP Cloud DNS managed zone naming constraints.
-func validateZoneName(name string) error {
-	if !gcpZoneNameRegexp.MatchString(name) {
-		return fmt.Errorf("zone name %q is invalid: must start with a lowercase letter and contain only lowercase letters, numbers, and hyphens", name)
-	}
-	return nil
-}
-
-// truncateName truncates a name to the specified maximum length.
-func truncateName(name string, maxLen int) string {
-	if len(name) <= maxLen {
-		return name
-	}
-	return name[:maxLen]
-}
-
 // generateZoneNames generates Cloud DNS zone names and DNS names from cluster name and base domain.
+// The zone-name derivation is shared with support/gcputil so that the guest dns.config
+// wiring (support/globalconfig) computes the identical public/private ingress zone names.
 // Returns an error if the generated zone names would violate GCP naming constraints.
 func generateZoneNames(clusterName, baseDomain string) (zoneNames, error) {
-	// Convert base domain to zone name format (dots -> hyphens)
-	baseZoneName := strings.ReplaceAll(baseDomain, ".", "-")
+	hypershiftLocal, err := gcputil.HypershiftLocalZoneName(clusterName)
+	if err != nil {
+		return zoneNames{}, err
+	}
+	public, err := gcputil.PublicIngressZoneName(baseDomain)
+	if err != nil {
+		return zoneNames{}, err
+	}
+	private, err := gcputil.PrivateIngressZoneName(baseDomain)
+	if err != nil {
+		return zoneNames{}, err
+	}
 
-	// GCP DNS zone names must be <= 63 characters
-	// Leave room for suffixes: "-public" (7) or "-private" (8) chars
-	maxBaseNameLen := 63 - 8
-	baseZoneName = truncateName(baseZoneName, maxBaseNameLen)
-
-	names := zoneNames{
-		hypershiftLocalZoneName: truncateName(fmt.Sprintf("%s-hypershift-local", clusterName), 63),
-		publicIngressZoneName:   truncateName(fmt.Sprintf("%s-public", baseZoneName), 63),
-		privateIngressZoneName:  truncateName(fmt.Sprintf("%s-private", baseZoneName), 63),
+	return zoneNames{
+		hypershiftLocalZoneName: hypershiftLocal,
+		publicIngressZoneName:   public,
+		privateIngressZoneName:  private,
 		ingressDNSName:          ensureDNSDot(baseDomain),
-	}
-
-	// Validate all generated zone names
-	if err := validateZoneName(names.hypershiftLocalZoneName); err != nil {
-		return zoneNames{}, fmt.Errorf("invalid hypershift.local zone name derived from cluster %q: %w", clusterName, err)
-	}
-	if err := validateZoneName(names.publicIngressZoneName); err != nil {
-		return zoneNames{}, fmt.Errorf("invalid public ingress zone name derived from baseDomain %q: %w", baseDomain, err)
-	}
-	if err := validateZoneName(names.privateIngressZoneName); err != nil {
-		return zoneNames{}, fmt.Errorf("invalid private ingress zone name derived from baseDomain %q: %w", baseDomain, err)
-	}
-
-	return names, nil
+	}, nil
 }
 
 // DNSSetupResult contains the results of setting up cluster DNS zones.
