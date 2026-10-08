@@ -18,7 +18,14 @@ type ReleaseImageProvider interface {
 	ComponentImages() map[string]string
 }
 
+// ComponentImageOverrideProvider reports whether a component image was replaced
+// independently of the selected release payload.
+type ComponentImageOverrideProvider interface {
+	ImageOverridden(key string) bool
+}
+
 var _ ReleaseImageProvider = &SimpleReleaseImageProvider{}
+var _ ComponentImageOverrideProvider = &SimpleReleaseImageProvider{}
 
 type SimpleReleaseImageProvider struct {
 	missingImages    []string
@@ -58,6 +65,18 @@ func (p *SimpleReleaseImageProvider) ImageExist(key string) (string, bool) {
 
 func (p *SimpleReleaseImageProvider) ComponentImages() map[string]string {
 	return p.componentsImages
+}
+
+func (p *SimpleReleaseImageProvider) ImageOverridden(key string) bool {
+	return p.ReleaseImage != nil && p.ReleaseImage.ComponentImageOverridden(key)
+}
+
+// ImageOverridden conservatively treats providers without override metadata as
+// overridden, so callers do not infer binary capabilities from payload metadata
+// when the selected component image is unknown.
+func ImageOverridden(provider ReleaseImageProvider, key string) bool {
+	overrideProvider, ok := provider.(ComponentImageOverrideProvider)
+	return !ok || overrideProvider.ImageOverridden(key)
 }
 
 // NewWithRegistryOverrides creates a SimpleReleaseImageProvider that applies

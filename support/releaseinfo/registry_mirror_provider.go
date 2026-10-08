@@ -50,6 +50,9 @@ func (p *RegistryMirrorProviderDecorator) Lookup(ctx context.Context, image stri
 		StreamMetadata: releaseImage.StreamMetadata,
 		OSStreams:      releaseImage.OSStreams,
 	}
+	if releaseImage.overriddenComponentImages != nil {
+		result.overriddenComponentImages = releaseImage.overriddenComponentImages.Clone()
+	}
 	if len(canonicalImages) > 0 {
 		result.SetCanonicalComponentImages(canonicalImages)
 	}

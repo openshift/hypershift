@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"regexp"
 	"sort"
 	"strings"
@@ -56,6 +57,30 @@ type ReleaseImage struct {
 	// canonicalComponentImages holds component images before any registry
 	// overrides are applied. Set by RegistryMirrorProviderDecorator.
 	canonicalComponentImages map[string]string
+
+	// overriddenComponentImages records component names whose images were replaced
+	// independently of the selected release payload.
+	overriddenComponentImages sets.Set[string]
+}
+
+// snapshot returns a copy with independently mutable decorator state. Stream
+// metadata is treated as immutable, while the image stream and private maps
+// that decorators update are copied to keep cached provider results unchanged.
+func (i *ReleaseImage) snapshot() *ReleaseImage {
+	result := &ReleaseImage{
+		StreamMetadata: i.StreamMetadata,
+		OSStreams:      i.OSStreams,
+	}
+	if i.ImageStream != nil {
+		result.ImageStream = i.ImageStream.DeepCopy()
+	}
+	if i.canonicalComponentImages != nil {
+		result.canonicalComponentImages = maps.Clone(i.canonicalComponentImages)
+	}
+	if i.overriddenComponentImages != nil {
+		result.overriddenComponentImages = i.overriddenComponentImages.Clone()
+	}
+	return result
 }
 
 // StreamForName returns stream metadata by name. If name is empty, returns
@@ -115,6 +140,12 @@ func (i *ReleaseImage) CanonicalComponentImages() map[string]string {
 // SetCanonicalComponentImages stores the pre-override component images.
 func (i *ReleaseImage) SetCanonicalComponentImages(images map[string]string) {
 	i.canonicalComponentImages = images
+}
+
+// ComponentImageOverridden reports whether a component image was replaced
+// independently of the selected release payload.
+func (i *ReleaseImage) ComponentImageOverridden(name string) bool {
+	return i.overriddenComponentImages.Has(name)
 }
 
 func (i *ReleaseImage) ComponentVersions() (map[string]string, error) {

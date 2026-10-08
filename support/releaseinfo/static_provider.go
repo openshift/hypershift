@@ -7,6 +7,7 @@ import (
 	imageapi "github.com/openshift/api/image/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 var _ Provider = (*StaticProviderDecorator)(nil)
@@ -30,6 +31,7 @@ func (p *StaticProviderDecorator) Lookup(ctx context.Context, image string, pull
 	if err != nil {
 		return nil, err
 	}
+	releaseImage = releaseImage.snapshot()
 	if p.ComponentImages == nil {
 		return releaseImage, nil
 	}
@@ -41,6 +43,10 @@ func (p *StaticProviderDecorator) Lookup(ctx context.Context, image string, pull
 			},
 		}
 		releaseImage.Spec.Tags = append(releaseImage.Spec.Tags, ref) //TODO(cewong): ensure we're not adding tags that are already in the map!
+		if releaseImage.overriddenComponentImages == nil {
+			releaseImage.overriddenComponentImages = sets.New[string]()
+		}
+		releaseImage.overriddenComponentImages.Insert(component)
 	}
 	return releaseImage, nil
 }

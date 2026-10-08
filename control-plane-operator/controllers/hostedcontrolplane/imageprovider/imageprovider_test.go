@@ -1,6 +1,7 @@
 package imageprovider
 
 import (
+	"context"
 	"maps"
 	"testing"
 
@@ -12,6 +13,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"go.uber.org/mock/gomock"
 )
 
 func TestNewFromImages(t *testing.T) {
@@ -181,6 +184,66 @@ func TestComponentImages(t *testing.T) {
 
 		g.Expect(result).To(Equal(images))
 	})
+}
+
+func TestImageOverridden(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When the provider reports override metadata, it should use the reported component state", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		provider := NewFromImages(map[string]string{})
+
+		g.Expect(ImageOverridden(provider, "cluster-ingress-operator")).To(BeFalse())
+	})
+
+	t.Run("When the provider cannot report override metadata, it should conservatively treat the component as overridden", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		provider := NewMockReleaseImageProvider(gomock.NewController(t))
+
+		g.Expect(ImageOverridden(provider, "cluster-ingress-operator")).To(BeTrue())
+	})
+
+	t.Run("When a static override passes through the production provider chain, it should report only the replaced component", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		delegateImage := newTestReleaseImage(map[string]string{
+			"cluster-ingress-operator": "quay.io/openshift-release-dev/cluster-ingress-operator:latest",
+			"kube-apiserver":           "quay.io/openshift-release-dev/kube-apiserver:latest",
+		})
+		staticProvider := &releaseinfo.StaticProviderDecorator{
+			Delegate: releaseInfoProviderFunc(func(context.Context, string, []byte) (*releaseinfo.ReleaseImage, error) {
+				return delegateImage, nil
+			}),
+			ComponentImages: map[string]string{
+				"cluster-ingress-operator": "registry.example.com/custom/cluster-ingress-operator:latest",
+			},
+		}
+		mirrorProvider := &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: staticProvider,
+			RegistryOverrides: map[string]string{
+				"registry.example.com": "mirror.example.com",
+			},
+		}
+		releaseImage, err := mirrorProvider.Lookup(t.Context(), "quay.io/openshift-release-dev/ocp-release:latest", nil)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		provider := NewWithRegistryOverrides(releaseImage, mirrorProvider.GetRegistryOverrides())
+
+		g.Expect(provider.GetImage("cluster-ingress-operator")).To(Equal("mirror.example.com/custom/cluster-ingress-operator:latest"))
+		g.Expect(ImageOverridden(provider, "cluster-ingress-operator")).To(BeTrue())
+		g.Expect(ImageOverridden(provider, "kube-apiserver")).To(BeFalse())
+	})
+}
+
+type releaseInfoProviderFunc func(context.Context, string, []byte) (*releaseinfo.ReleaseImage, error)
+
+func (f releaseInfoProviderFunc) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
+	return f(ctx, image, pullSecret)
 }
 
 func newTestReleaseImage(images map[string]string) *releaseinfo.ReleaseImage {
