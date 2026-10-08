@@ -65,6 +65,21 @@ type Token struct {
 	globalConfigHash          []byte
 	cloudConfigHash           []byte
 	userData                  *userData
+
+	// deployedBootstrapHash is the full hash extracted from the CAPI workload's
+	// current bootstrap secret reference (MachineDeployment or MachineSet). Set
+	// by the caller before Reconcile() so resolveEffectiveHash() can maintain
+	// the in-progress rollout target during management-side drift.
+	deployedBootstrapHash string
+
+	// effectiveHash is the full hash that this reconcile cycle is actually
+	// maintaining secrets for. Set by resolveEffectiveHash() and used by
+	// reconcileUserDataSecret() for the TargetConfigVersionHash ignition header.
+	effectiveHash string
+
+	// secretState records which state the secret maintenance state machine
+	// resolved to during this reconcile cycle.
+	secretState secretMaintenanceState
 }
 
 // userData contains the input necessary to generate the user data secret
@@ -171,11 +186,51 @@ func (t *Token) getIgnitionCACert(ctx context.Context) ([]byte, error) {
 	return caCertBytes, nil
 }
 
+// isOutdated returns true when a spec-driven change (version or config) requires
+// new token and user-data secrets. Management-side-only changes (e.g. HAProxy image
+// bumps) return false — existing secrets remain valid and the MachineDeployment
+// continues to reference them.
 func (t *Token) isOutdated() bool {
-	return t.Hash() != t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+	currentRolloutConfig := t.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+	if currentRolloutConfig == "" {
+		// Annotation absent: either a new NodePool (need to create secrets) or
+		// an existing NodePool after operator upgrade (secrets already exist).
+		if _, hasOldAnnotation := t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]; hasOldAnnotation {
+			// Migration policy: only version changes require new secrets.
+			// Pre-migration config changes are absorbed into the new baseline
+			// because the deployed full hash cannot distinguish user config
+			// changes from management-only drift (e.g. HAProxy image bumps).
+			// Once the rollout annotation is seeded, the standard rollout-hash
+			// comparison handles future changes correctly.
+			if t.Version() != t.nodePool.Status.Version {
+				return true
+			}
+			return false
+		}
+		return true
+	}
+	versionChanged := t.Version() != t.nodePool.Status.Version
+	configChanged := t.RolloutHashWithoutVersion() != currentRolloutConfig
+	// Detect reversion: the desired rollout hash no longer matches what was
+	// propagated. This catches A→B→A where the completed baseline matches A
+	// but the workload still targets B.
+	inProgressRollout := t.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig]
+	revertPending := inProgressRollout != "" && t.RolloutHash() != inProgressRollout
+	return versionChanged || configChanged || revertPending
 }
 
 func (t *Token) cleanupOutdated(ctx context.Context) error {
+	currentRolloutConfig := t.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+	completedHash := t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+	// During migration (no rollout annotation), the "outdated" secrets are named
+	// with the completed hash. If that hash matches the deployed bootstrap hash,
+	// those secrets are still actively referenced by the CAPI workload. Skip
+	// cleanup to avoid invalidating the active bootstrap reference before CAPI
+	// propagation updates it to the new target.
+	if currentRolloutConfig == "" && completedHash != "" && completedHash == t.deployedBootstrapHash {
+		return nil
+	}
+
 	tokenSecret := t.outdatedTokenSecret()
 	err := t.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret)
 	if err != nil && !apierrors.IsNotFound(err) {
@@ -234,13 +289,20 @@ func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSe
 func (t *Token) Reconcile(ctx context.Context) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	if t.isOutdated() {
+	outdated := t.isOutdated()
+	if outdated {
 		if err := t.cleanupOutdated(ctx); err != nil {
 			return fmt.Errorf("failed to cleanup outdated token Secrets: %w", err)
 		}
 	}
 
-	tokenSecret := t.TokenSecret()
+	// Resolve which secrets to maintain based on the secret maintenance state
+	// machine. When only management-side content changed, this returns the
+	// deployed secrets (not new ones under the drifted hash) so that the
+	// MachineDeployment's bootstrap reference stays valid and the ignition
+	// server's token rotation doesn't invalidate the embedded token UUID.
+	tokenSecret, userDataSecret := t.effectiveSecrets(outdated)
+
 	if result, err := t.CreateOrUpdate(ctx, t.Client, tokenSecret, func() error {
 		return t.reconcileTokenSecret(tokenSecret)
 	}); err != nil {
@@ -255,7 +317,6 @@ func (t *Token) Reconcile(ctx context.Context) error {
 		return fmt.Errorf("token secret is missing token key")
 	}
 
-	userDataSecret := t.UserDataSecret()
 	if result, err := t.CreateOrUpdate(ctx, t.Client, userDataSecret, func() error {
 		return t.reconcileUserDataSecret(log, userDataSecret, string(tokenBytes))
 	}); err != nil {
@@ -264,6 +325,187 @@ func (t *Token) Reconcile(ctx context.Context) error {
 		log.Info("Reconciled user data Secret", "result", result)
 	}
 	return nil
+}
+
+// SetDeployedBootstrapHash records the full hash extracted from the CAPI
+// workload's current bootstrap secret reference (e.g. MachineDeployment or
+// MachineSet). Must be called before Reconcile() so effectiveSecrets() can
+// maintain the in-progress rollout target during management-side drift.
+func (t *Token) SetDeployedBootstrapHash(hash string) {
+	t.deployedBootstrapHash = hash
+}
+
+// EffectiveHash returns the full hash that this reconcile cycle maintained
+// secrets for. Determined by resolveEffectiveHash() during Reconcile().
+// Only valid after Reconcile() has been called.
+func (t *Token) EffectiveHash() string {
+	if t.effectiveHash == "" {
+		return t.Hash()
+	}
+	return t.effectiveHash
+}
+
+// secretMaintenanceState represents the resolved state of the secret
+// maintenance state machine. Each state determines which hash is used
+// to name and maintain the token and user-data secrets.
+//
+// See docs/content/reference/nodepool-rollout-state-machine.md for the
+// full state diagram and transition rules.
+type secretMaintenanceState string
+
+const (
+	// stateSteady: no spec-driven change is pending, and the deployed and
+	// completed hashes are absent or match Hash(). Maintain secrets under Hash().
+	stateSteady secretMaintenanceState = "Steady"
+
+	// stateManagementDrift: management-side content changed (e.g. HAProxy
+	// image bump) but no spec-driven rollout is needed. The CAPI workload
+	// still references the deployed bootstrap hash. Maintain those secrets
+	// so token rotation stays in sync.
+	stateManagementDrift secretMaintenanceState = "ManagementDrift"
+
+	// stateCompletedDrift: the deployed hash is absent or matches Hash(),
+	// but the completed hash differs without a spec-driven change.
+	// Maintain the completed secrets.
+	stateCompletedDrift secretMaintenanceState = "CompletedDrift"
+
+	// stateNewRollout: a spec-driven change requires secrets under Hash(),
+	// with no differing active target to retain or supersede. Also covers
+	// a target already deployed but awaiting rollout completion.
+	stateNewRollout secretMaintenanceState = "NewRollout"
+
+	// stateAdoptedRollout: a mid-flight rollout predates the migration
+	// to rollout annotations. The deployed hash differs from the completed
+	// hash, indicating an active rollout target from the old operator.
+	// Maintain those deployed secrets to keep the bootstrap reference alive.
+	stateAdoptedRollout secretMaintenanceState = "AdoptedRollout"
+
+	// stateContinuedRollout: the in-progress annotation matches the
+	// current RolloutHash(), meaning the same rollout is still in flight
+	// but management content has drifted. Continue maintaining the
+	// deployed secrets.
+	stateContinuedRollout secretMaintenanceState = "ContinuedRollout"
+
+	// stateSupersededRollout: a genuinely new spec-driven change arrived
+	// while a previous rollout was in flight. The in-progress annotation
+	// does NOT match the current RolloutHash(). Switch to the new Hash().
+	stateSupersededRollout secretMaintenanceState = "SupersededRollout"
+)
+
+// resolveEffectiveHash determines which full hash should be used to name and
+// maintain the token and user-data secrets for this reconcile cycle. The
+// decision is modeled as an explicit state machine with seven states — see
+// the secretMaintenanceState constants for descriptions.
+//
+// Inputs:
+//   - outdated: true when isOutdated() detected a spec-driven change
+//   - t.deployedBootstrapHash: hash from the CAPI workload's current bootstrap ref
+//   - annotations: nodePoolAnnotationCurrentConfigVersion (completed hash),
+//     nodePoolAnnotationInProgressRolloutConfig (in-progress rollout hash)
+//   - t.Hash(), t.RolloutHash(): current calculated hashes
+//
+// The resolved state is stored in t.secretState.
+func (t *Token) resolveEffectiveHash(outdated bool) secretMaintenanceState {
+	completedHash := t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+	deployedHash := t.deployedBootstrapHash
+	inProgressRollout := t.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig]
+	currentHash := t.Hash()
+
+	deployedDiffers := deployedHash != "" && deployedHash != currentHash
+
+	if !outdated {
+		// No spec-driven change. Maintain whichever hash is currently active.
+		switch {
+		case deployedDiffers:
+			// The CAPI workload references a different hash than what we'd
+			// calculate now. This is management-side drift — the workload's
+			// secrets must stay alive for token rotation.
+			t.effectiveHash = deployedHash
+			t.secretState = stateManagementDrift
+		case completedHash != "" && completedHash != currentHash:
+			// No CAPI workload (or its ref matches current), but the
+			// completed annotation tracks a different hash. Maintain those.
+			t.effectiveHash = completedHash
+			t.secretState = stateCompletedDrift
+		default:
+			t.effectiveHash = currentHash
+			t.secretState = stateSteady
+		}
+		return t.secretState
+	}
+
+	// A spec-driven change was detected (outdated == true).
+
+	if deployedDiffers {
+		// The CAPI workload references a hash that differs from our target.
+		// Determine whether this is a pre-existing rollout to adopt, the
+		// same rollout with management drift, or a genuinely new request.
+
+		// Check whether rollout annotations need to be considered: either the
+		// deployed hash differs from the completed one (CAPI is ahead of
+		// completion tracking) or a version mismatch exists. The latter also
+		// covers a fresh version upgrade before any target has been propagated.
+		rolloutInProgress := deployedHash != completedHash ||
+			t.Version() != t.nodePool.Status.Version
+
+		if rolloutInProgress {
+			switch {
+			case inProgressRollout == "" && deployedHash != completedHash:
+				// Active rollout from before migration — the deployed hash
+				// was the old operator's target. Keep those secrets alive.
+				t.effectiveHash = deployedHash
+				t.secretState = stateAdoptedRollout
+
+			case inProgressRollout == "":
+				// Deployed matches completed and no prior rollout is recorded.
+				// The version mismatch signals a fresh upgrade.
+				t.effectiveHash = currentHash
+				t.secretState = stateNewRollout
+
+			case inProgressRollout != "" && t.RolloutHash() == inProgressRollout:
+				// Same rollout still in flight with management-only drift.
+				t.effectiveHash = deployedHash
+				t.secretState = stateContinuedRollout
+
+			default:
+				// Genuinely new spec-driven change superseding any in-flight
+				// work. Switch to the new hash.
+				t.effectiveHash = currentHash
+				t.secretState = stateSupersededRollout
+			}
+			return t.secretState
+		}
+	}
+
+	// Default: no deployed hash, no in-flight complexity, or the deployed
+	// hash matches the current one (possibly awaiting rollout completion).
+	t.effectiveHash = currentHash
+	t.secretState = stateNewRollout
+	return t.secretState
+}
+
+// effectiveSecrets returns the token and user data secrets that Reconcile
+// should maintain, based on the state resolved by resolveEffectiveHash.
+func (t *Token) effectiveSecrets(outdated bool) (*corev1.Secret, *corev1.Secret) {
+	t.resolveEffectiveHash(outdated)
+	if t.effectiveHash == t.Hash() {
+		return t.TokenSecret(), t.UserDataSecret()
+	}
+	return t.secretsForHash(t.effectiveHash)
+}
+
+func (t *Token) secretsForHash(hash string) (*corev1.Secret, *corev1.Secret) {
+	return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: t.controlplaneNamespace,
+				Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, t.nodePool.GetName(), hash),
+			},
+		}, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: t.controlplaneNamespace,
+				Name:      fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, t.nodePool.GetName(), hash),
+			},
+		}
 }
 
 const UserDataSecrePrefix = "user-data"
@@ -415,7 +657,7 @@ func (t *Token) reconcileUserDataSecret(log logr.Logger, userDataSecret *corev1.
 
 	encodedCACert := base64.StdEncoding.EncodeToString(t.userData.caCert)
 	encodedToken := base64.StdEncoding.EncodeToString([]byte(token))
-	ignConfig := ignConfig(encodedCACert, encodedToken, t.userData.ignitionServerEndpoint, t.Hash(), t.userData.proxy, t.nodePool)
+	ignConfig := ignConfig(encodedCACert, encodedToken, t.userData.ignitionServerEndpoint, t.EffectiveHash(), t.userData.proxy, t.nodePool)
 	userDataValue, err := json.Marshal(ignConfig)
 	if err != nil {
 		return fmt.Errorf("failed to marshal ignition config: %w", err)

@@ -44,6 +44,17 @@ To run envtest for a single suite, use Ginkgo's `--focus` flag:
 GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go test -tags envtest -race ./test/envtest/... -- --focus="hostedclusters.*etcd"
 ```
 
+#### Token Rotation Testing
+
+The `TestUpgradeHyperShiftOperator` E2E test verifies that token rotation continues correctly after operator upgrades. Instead of waiting 5.5+ hours for natural rotation, the test:
+
+1. Captures the active bootstrap chain (CAPI workload → userdata Secret → token Secret)
+2. Patches `hypershift.openshift.io/last-token-generation-time` to 6 hours ago
+3. Polls for rotation completion (new token ID, updated timestamp, same Secret UID)
+4. Verifies bootstrap chain integrity (CAPI references unchanged, credentials valid)
+
+This approach tests production code paths without introducing test-only configuration surface.
+
 ### Code Quality
 
 ```bash
