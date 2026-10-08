@@ -26197,6 +26197,7 @@ hypershift create cluster gcp \
   --storage-service-account=<storage-sa-email> \
   --image-registry-service-account=<image-registry-sa-email> \
   --network-service-account=<network-sa-email> \
+  --ingress-service-account=<ingress-sa-email> \
   --service-account-signing-key-path=<path-to-sa-signer.key> \
   --oidc-issuer-url=<oidc-issuer-url> \
   --base-domain=<your-dns-domain> \
@@ -26247,6 +26248,7 @@ hypershift create cluster gcp \
 | `--storage-service-account` | Yes | GCP PD CSI Driver SA email |
 | `--image-registry-service-account` | Yes | Image Registry Operator SA email |
 | `--network-service-account` | Yes | Cloud Network Config Controller SA email |
+| `--ingress-service-account` | Conditional | Ingress Operator SA email (manages *.apps Cloud DNS). Required only when the Ingress capability is enabled; omit it when Ingress is disabled. |
 | `--service-account-signing-key-path` | Yes | Path to RSA private key for OIDC token signing |
 | `--oidc-issuer-url` | Yes | OIDC issuer URL |
 | `--node-pool-replicas` | Yes | Number of worker nodes (default: 0) |
@@ -50641,6 +50643,32 @@ Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
 Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
 the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingress</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ingress is the Google Service Account email for the cluster Ingress Operator
+that manages the default IngressController&rsquo;s wildcard (*.apps) Cloud DNS records.
+This GSA requires the following IAM roles:
+- roles/dns.admin (DNS Admin - for managing records in the ingress managed zone)
+- roles/compute.viewer (Compute Viewer - for reading load balancer / instance metadata)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+<p>ingress is optional: it is only consumed when the Ingress capability is
+enabled. When Ingress is enabled it must be set (enforced controller-side,
+capability-aware, so existing clusters with Ingress disabled are unaffected).</p>
 </td>
 </tr>
 </tbody>
