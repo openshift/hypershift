@@ -3520,7 +3520,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		Algorithm: ptr.To(azkeys.EncryptionAlgorithmRSAOAEP256),
 		Value:     []byte("text"),
 	}
-	// Bound authentication, HTTP requests and retries without cancelling the
+	// Bound authentication, HTTP requests and retries without canceling the
 	// cached credential's background reloader or the rest of reconciliation.
 	probeCtx, cancel := context.WithTimeout(ctx, azureKMSValidationTimeout)
 	defer cancel()

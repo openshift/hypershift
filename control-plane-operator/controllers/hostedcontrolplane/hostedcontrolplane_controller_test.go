@@ -71,6 +71,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -5721,14 +5722,23 @@ func azureKMSHostedControlPlaneForTest() *hyperv1.HostedControlPlane {
 	}
 }
 
-func privateRouterObjectsForTest(clusterIP string, port int32, availableReplicas int32) (*corev1.Service, *appsv1.Deployment) {
+func privateRouterObjectsForTest(clusterIP string, port int32, ready bool) (*corev1.Service, *discoveryv1.EndpointSlice) {
 	svc := manifests.PrivateRouterService("hcp-namespace")
 	svc.Spec.ClusterIP = clusterIP
 	svc.Spec.Ports = []corev1.ServicePort{{Name: "https", Port: port, Protocol: corev1.ProtocolTCP}}
-	deployment := manifests.RouterDeployment("hcp-namespace")
-	deployment.Spec.Replicas = ptr.To(int32(3))
-	deployment.Status.AvailableReplicas = availableReplicas
-	return svc, deployment
+	endpointSlice := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      svc.Name + "-abcde",
+			Namespace: svc.Namespace,
+			Labels:    map[string]string{discoveryv1.LabelServiceName: svc.Name},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Endpoints: []discoveryv1.Endpoint{{
+			Addresses:  []string{"10.128.0.10"},
+			Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(ready)},
+		}},
+	}
+	return svc, endpointSlice
 }
 
 // These tests are deliberately sequential: validation clones DefaultTransport,
@@ -5775,9 +5785,9 @@ func (f azureKMSTestCredential) GetToken(ctx context.Context, options policy.Tok
 func TestValidateAzureKMSConfig(t *testing.T) {
 	// ARO is selected by each HCP's authentication type, not the environment.
 	t.Setenv("MANAGED_SERVICE", "")
-	svc, router := privateRouterObjectsForTest("172.30.0.100", 443, 1)
-	pendingRouter := router.DeepCopy()
-	pendingRouter.Status.AvailableReplicas = 0
+	svc, routerEndpoints := privateRouterObjectsForTest("172.30.0.100", 443, true)
+	pendingRouterEndpoints := routerEndpoints.DeepCopy()
+	pendingRouterEndpoints.Endpoints[0].Conditions.Ready = ptr.To(false)
 	pendingService := svc.DeepCopy()
 	pendingService.Spec.ClusterIP = ""
 
@@ -5799,22 +5809,22 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 		},
 		{
 			name:    "When the private router has no ClusterIP, it should report Unknown as pending",
-			objects: []client.Object{pendingService, router},
+			objects: []client.Object{pendingService, routerEndpoints},
 			status:  metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "no ClusterIP",
 		},
 		{
-			name:    "When the router Deployment is missing, it should report Unknown as pending",
+			name:    "When the private router has no endpoint slices, it should report Unknown as pending",
 			objects: []client.Object{svc},
-			status:  metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "failed to get router deployment",
+			status:  metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "no ready endpoints",
 		},
 		{
-			name:    "When the router has no available replicas, it should report Unknown as pending",
-			objects: []client.Object{svc, pendingRouter},
-			status:  metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "no available replicas",
+			name:    "When no router endpoint is ready, it should report Unknown as pending",
+			objects: []client.Object{svc, pendingRouterEndpoints},
+			status:  metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason, message: "no ready endpoints",
 		},
 		{
-			name:    "When the router has an available replica during rollout, it should attempt credential loading",
-			objects: []client.Object{svc, router},
+			name:    "When a router endpoint is ready during rollout, it should attempt credential loading",
+			objects: []client.Object{svc, routerEndpoints},
 			status:  metav1.ConditionFalse, reason: hyperv1.InvalidAzureCredentialsReason, message: "test credential load failure",
 		},
 		{
@@ -5907,7 +5917,7 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			portNumber, err := strconv.Atoi(port)
 			g.Expect(err).ToNot(HaveOccurred())
-			svc, router := privateRouterObjectsForTest(host, int32(portNumber), 1)
+			svc, routerEndpoints := privateRouterObjectsForTest(host, int32(portNumber), true)
 			hcp := azureKMSHostedControlPlaneForTest()
 			ctx := t.Context()
 			if tc.stall {
@@ -5915,13 +5925,12 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 				ctx, cancel = context.WithTimeout(ctx, 200*time.Millisecond)
 				defer cancel()
 			}
-			var loaderCtx context.Context
 			var loadCount, tokenCount int
 			r := &HostedControlPlaneReconciler{
-				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(svc, router).Build(),
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(svc, routerEndpoints).Build(),
 				newAzureKMSCredential: func(credentialCtx context.Context, path string, _ ...dataplane.Option) (azcore.TokenCredential, error) {
 					loadCount++
-					loaderCtx = credentialCtx
+					g.Expect(credentialCtx).To(Equal(ctx), "credential refresh must not use the short-lived probe context")
 					g.Expect(path).To(Equal("/mnt/kms/test-kms-creds"))
 					return azureKMSTestCredential(func(probeCtx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 						tokenCount++
@@ -5950,9 +5959,8 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 			}
 			g.Expect(loadCount).To(Equal(1))
 			g.Expect(tokenCount).To(Equal(1), "the first probe must use the newly loaded credential")
-			g.Expect(loaderCtx).To(Equal(ctx), "credential refresh must not use the short-lived probe context")
 			if !tc.stall {
-				g.Expect(loaderCtx.Err()).ToNot(HaveOccurred(), "finishing a probe must not cancel credential refresh")
+				g.Expect(ctx.Err()).ToNot(HaveOccurred(), "finishing a probe must not cancel credential refresh")
 				responseCode.Store(http.StatusOK)
 				r.validateAzureKMSConfig(ctx, hcp)
 				g.Expect(meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig)).Status).To(Equal(metav1.ConditionTrue))

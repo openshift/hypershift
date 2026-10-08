@@ -19,8 +19,8 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -51,14 +51,23 @@ func privateKeyVaultHostedControlPlaneForTest() *hyperv1.HostedControlPlane {
 	}
 }
 
-func privateRouterObjectsForTest(clusterIP string, port int32, availableReplicas int32) (*corev1.Service, *appsv1.Deployment) {
+func privateRouterObjectsForTest(clusterIP string, port int32, ready bool) (*corev1.Service, *discoveryv1.EndpointSlice) {
 	svc := manifests.PrivateRouterService("hcp-namespace")
 	svc.Spec.ClusterIP = clusterIP
 	svc.Spec.Ports = []corev1.ServicePort{{Name: "https", Port: port, Protocol: corev1.ProtocolTCP}}
-	deployment := manifests.RouterDeployment("hcp-namespace")
-	deployment.Spec.Replicas = ptr.To(int32(3))
-	deployment.Status.AvailableReplicas = availableReplicas
-	return svc, deployment
+	endpointSlice := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      svc.Name + "-abcde",
+			Namespace: svc.Namespace,
+			Labels:    map[string]string{discoveryv1.LabelServiceName: svc.Name},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Endpoints: []discoveryv1.Endpoint{{
+			Addresses:  []string{"10.128.0.10"},
+			Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(ready)},
+		}},
+	}
+	return svc, endpointSlice
 }
 
 func keyVaultServerForTest(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *x509.CertPool) {
@@ -98,16 +107,16 @@ func TestPrivateRouterKeyVaultClient(t *testing.T) {
 			var relay net.Listener
 			if tc.message == "" {
 				var err error
-				relay, err = net.Listen("tcp", "127.0.0.1:0")
+				relay, err = (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 				g.Expect(err).ToNot(HaveOccurred())
 				defer relay.Close()
 				port = int32(relay.Addr().(*net.TCPAddr).Port)
 			}
-			svc, router := privateRouterObjectsForTest(tc.clusterIP, port, 1)
+			svc, endpointSlice := privateRouterObjectsForTest(tc.clusterIP, port, true)
 			if tc.message == "no https port" {
 				svc.Spec.Ports = nil
 			}
-			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(svc, router).Build()
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(svc, endpointSlice).Build()
 			keyVaultClient, err := PrivateRouterKeyVaultClient(t.Context(), c, privateKeyVaultHostedControlPlaneForTest())
 			if tc.message != "" {
 				g.Expect(err).To(MatchError(ContainSubstring(tc.message)))
@@ -122,12 +131,43 @@ func TestPrivateRouterKeyVaultClient(t *testing.T) {
 		})
 	}
 
-	t.Run("When the router Deployment has no available replicas, it should report the relay as unavailable", func(t *testing.T) {
+	t.Run("When no endpoint is ready, it should report the relay as unavailable", func(t *testing.T) {
 		g := NewWithT(t)
-		svc, router := privateRouterObjectsForTest("172.30.0.100", 443, 0)
-		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(svc, router).Build()
+		svc, endpointSlice := privateRouterObjectsForTest("172.30.0.100", 443, false)
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(svc, endpointSlice).Build()
 		_, err := PrivateRouterKeyVaultClient(t.Context(), c, privateKeyVaultHostedControlPlaneForTest())
-		g.Expect(err).To(MatchError(ContainSubstring("no available replicas")))
+		g.Expect(err).To(MatchError(ContainSubstring("no ready endpoints")))
+	})
+
+	t.Run("When the Service has no endpoint slices, it should report the relay as unavailable", func(t *testing.T) {
+		g := NewWithT(t)
+		svc, _ := privateRouterObjectsForTest("172.30.0.100", 443, true)
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(svc).Build()
+		_, err := PrivateRouterKeyVaultClient(t.Context(), c, privateKeyVaultHostedControlPlaneForTest())
+		g.Expect(err).To(MatchError(ContainSubstring("no ready endpoints")))
+	})
+
+	t.Run("When an endpoint does not track readiness, it should treat it as ready", func(t *testing.T) {
+		g := NewWithT(t)
+		svc, endpointSlice := privateRouterObjectsForTest("172.30.0.100", 443, true)
+		endpointSlice.Endpoints[0].Conditions.Ready = nil
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(svc, endpointSlice).Build()
+		keyVaultClient, err := PrivateRouterKeyVaultClient(t.Context(), c, privateKeyVaultHostedControlPlaneForTest())
+		g.Expect(err).ToNot(HaveOccurred())
+		keyVaultClient.CloseIdleConnections()
+	})
+
+	t.Run("When a slice carries a ready endpoint alongside an unready one, it should accept the relay", func(t *testing.T) {
+		g := NewWithT(t)
+		svc, endpointSlice := privateRouterObjectsForTest("172.30.0.100", 443, false)
+		endpointSlice.Endpoints = append(endpointSlice.Endpoints, discoveryv1.Endpoint{
+			Addresses:  []string{"10.128.0.11"},
+			Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)},
+		})
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(svc, endpointSlice).Build()
+		keyVaultClient, err := PrivateRouterKeyVaultClient(t.Context(), c, privateKeyVaultHostedControlPlaneForTest())
+		g.Expect(err).ToNot(HaveOccurred())
+		keyVaultClient.CloseIdleConnections()
 	})
 }
 
@@ -140,12 +180,13 @@ func (stubRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 func TestKeyVaultRelayTransport(t *testing.T) {
-	relay, err := net.Listen("tcp", "127.0.0.1:0")
+	listenConfig := &net.ListenConfig{}
+	relay, err := listenConfig.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer relay.Close()
-	direct, err := net.Listen("tcp", "127.0.0.1:0")
+	direct, err := listenConfig.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}

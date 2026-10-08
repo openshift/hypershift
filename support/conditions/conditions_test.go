@@ -105,7 +105,7 @@ func TestExpectedHCConditions(t *testing.T) {
 			name:              "When the new validator is waiting for its router, it should accept the pending Unknown condition",
 			managedIdentities: true, access: hyperv1.AzureKeyVaultPrivate,
 			status: metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason,
-			message: "Private Key Vault cannot be validated yet: router has no available replicas", expected: metav1.ConditionUnknown,
+			message: "Private Key Vault cannot be validated yet: router has no ready endpoints", expected: metav1.ConditionUnknown,
 		},
 		{
 			name:              "When the probe fails, it should require True",
@@ -129,7 +129,7 @@ func TestExpectedHCConditions(t *testing.T) {
 			name:              "When a public vault reports the pending Unknown, it should require True",
 			managedIdentities: true, access: hyperv1.AzureKeyVaultPublic,
 			status: metav1.ConditionUnknown, reason: hyperv1.PrivateKeyVaultValidationPendingReason,
-			message: "Private Key Vault cannot be validated yet: router has no available replicas", expected: metav1.ConditionTrue,
+			message: "Private Key Vault cannot be validated yet: router has no ready endpoints", expected: metav1.ConditionTrue,
 		},
 		{
 			name:   "When a self-managed cluster has the legacy condition, it should still require True",

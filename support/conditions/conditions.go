@@ -71,7 +71,7 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 				//   - StatusUnknownReason: an older CPO image skipped the probe
 				//     entirely. The current validator never emits that reason for a
 				//     configured private vault, so it identifies the legacy
-				//     behaviour unambiguously. Matching on the reason rather than
+				//     behavior unambiguously. Matching on the reason rather than
 				//     the control plane version is deliberate: overrides and
 				//     backports can change support without changing the version.
 				//   - PrivateKeyVaultValidationPendingReason: the private router

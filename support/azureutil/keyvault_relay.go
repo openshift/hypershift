@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -30,7 +31,7 @@ const keyVaultRelayDialTimeout = 30 * time.Second
 // the hostAlias on the KAS deployment). This resolves that same relay for the
 // CPO's own client.
 //
-// Returns an error while the router Service or Deployment is unavailable;
+// Returns an error while the router Service has no address or no ready backend;
 // callers should treat that as "cannot tell yet" rather than a validation failure.
 func PrivateRouterKeyVaultClient(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane) (*http.Client, error) {
 	keyVaultFQDN, err := GetKeyVaultFQDN(hcp)
@@ -61,18 +62,39 @@ func PrivateRouterKeyVaultClient(ctx context.Context, c client.Client, hcp *hype
 		return nil, fmt.Errorf("private-router service %s/%s has no https port", routerService.Namespace, routerService.Name)
 	}
 
-	routerDeployment := manifests.RouterDeployment(hcp.Namespace)
-	if err := c.Get(ctx, client.ObjectKeyFromObject(routerDeployment), routerDeployment); err != nil {
-		return nil, fmt.Errorf("failed to get router deployment: %w", err)
+	// The dial needs a ready backend behind the ClusterIP, which is what the
+	// EndpointSlices report. The router Deployment's replica count is only a
+	// proxy for that, and it is derived from the Service already read above, so
+	// the relay's workload name does not have to be repeated here.
+	endpointSlices := &discoveryv1.EndpointSliceList{}
+	if err := c.List(ctx, endpointSlices,
+		client.InNamespace(routerService.Namespace),
+		client.MatchingLabels{discoveryv1.LabelServiceName: routerService.Name},
+	); err != nil {
+		return nil, fmt.Errorf("failed to list private-router endpoint slices: %w", err)
 	}
-	// An available replica is sufficient to attempt the probe. Requiring a
+	// A single ready endpoint is enough to attempt the probe. Waiting for a
 	// completed rollout would unnecessarily skip validation during updates.
-	if routerDeployment.Status.AvailableReplicas == 0 {
-		return nil, fmt.Errorf("router deployment %s/%s has no available replicas", routerDeployment.Namespace, routerDeployment.Name)
+	if !hasReadyEndpoint(endpointSlices) {
+		return nil, fmt.Errorf("private-router service %s/%s has no ready endpoints", routerService.Namespace, routerService.Name)
 	}
 
 	relayAddress := net.JoinHostPort(clusterIP, strconv.Itoa(int(relayPort)))
 	return &http.Client{Transport: KeyVaultRelayTransport(keyVaultFQDN, relayAddress)}, nil
+}
+
+// hasReadyEndpoint reports whether any slice carries an endpoint that can serve
+// traffic. An unset Ready condition means the publisher does not track
+// readiness, which the EndpointSlice API defines as ready.
+func hasReadyEndpoint(endpointSlices *discoveryv1.EndpointSliceList) bool {
+	for _, slice := range endpointSlices.Items {
+		for _, endpoint := range slice.Endpoints {
+			if endpoint.Conditions.Ready == nil || *endpoint.Conditions.Ready {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // KeyVaultRelayTransport returns a transport that opens connections addressed
@@ -93,7 +115,7 @@ func KeyVaultRelayTransport(keyVaultFQDN, relayAddress string) *http.Transport {
 		base = &http.Transport{}
 	}
 	transport := base.Clone()
-	// The relay is a ClusterIP in this namespace. Honouring HTTP(S)_PROXY here
+	// The relay is a ClusterIP in this namespace. Honoring HTTP(S)_PROXY here
 	// would hand the proxy address to DialContext instead of the vault FQDN, so
 	// the rewrite below would never fire and the connection would be sent
 	// somewhere that cannot reach the private endpoint.
