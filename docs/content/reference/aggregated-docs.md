@@ -26259,6 +26259,15 @@ hypershift create cluster gcp \
 | `--zone` | Conditional | GCP zone for nodes. Required when `--node-pool-replicas >= 0` (default). Optional when `--node-pool-replicas=-1` (no NodePool created). |
 | `--boot-image` | No | Override RHCOS boot image from release payload |
 
+## DNS
+
+The control plane operator creates three Cloud DNS zones in the hosted cluster's project: a private `{cluster}-hypershift.local` zone, and public/private ingress zones for `--base-domain`. Records for the API server and `*.apps` endpoints are managed in these zones automatically.
+
+Two things are expected from the deployment, not from HyperShift:
+
+- **Zone delegation**: the parent zone of `--base-domain` must delegate to the public ingress zone's name servers (surfaced in the HostedControlPlane status) for the ingress zone to be resolvable.
+- **Ingress certificate**: the ingress operator serves the `*.apps` wildcard with the cluster's default certificate unless a publicly-trusted one is provided. When `--base-domain` is an `in.<parent>` subdomain delegated from a parent zone, the operator additionally creates a `_acme-challenge.apps` CNAME in the public ingress zone pointing at the parent zone, so an external cert-manager with a DNS-01 solver for the parent zone can issue the wildcard certificate. For any other base domain no such record is created; run your own DNS-01 challenge solver with access to the ingress zone instead.
+
 ## Monitor Cluster Creation
 
 Watch the hosted cluster status:

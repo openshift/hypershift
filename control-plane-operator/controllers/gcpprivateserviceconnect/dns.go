@@ -289,6 +289,59 @@ func createCNAMERecord(ctx context.Context, svc *dns.Service, projectID, zoneNam
 	})
 }
 
+// managedAcmeCNAMETargets returns the CNAME values this controller (or an
+// earlier revision of it) writes at the ACME challenge name for the given
+// base domain: the original _acme-challenge.<baseDomain> target and the
+// current _acme-challenge.apps.<parent> target. The cleanup path only removes
+// records carrying one of these values; a CNAME with any other value at the
+// challenge name was put there by someone else (e.g. an operator's own
+// CNAME-based DNS-01 delegation) and must be preserved.
+func managedAcmeCNAMETargets(baseDomain string) []string {
+	return []string{
+		fmt.Sprintf("_acme-challenge.%s", baseDomain),
+		fmt.Sprintf("_acme-challenge.apps.%s", strings.TrimPrefix(baseDomain, delegatedIngressPrefix)),
+	}
+}
+
+// deleteCNAMERecord removes the CNAME record at recordName when its value is
+// one of removableTargets; records with any other value are left untouched.
+// It is a no-op when the record does not exist.
+func deleteCNAMERecord(ctx context.Context, svc *dns.Service, projectID, zoneName, recordName string, removableTargets ...string) error {
+	recordName = ensureDNSDot(recordName)
+
+	existing, err := findRecord(ctx, svc, projectID, zoneName, recordName, "CNAME")
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return nil
+	}
+
+	removable := false
+	if len(existing.Rrdatas) == 1 {
+		for _, target := range removableTargets {
+			if existing.Rrdatas[0] == ensureDNSDot(target) {
+				removable = true
+				break
+			}
+		}
+	}
+	if !removable {
+		return nil
+	}
+
+	change := &dns.Change{
+		Deletions: []*dns.ResourceRecordSet{existing},
+	}
+	apiCtx, cancel := context.WithTimeout(ctx, dnsAPITimeout)
+	defer cancel()
+	if _, err := svc.Changes.Create(projectID, zoneName, change).Context(apiCtx).Do(); err != nil {
+		return fmt.Errorf("failed to delete CNAME record %s: %w", recordName, err)
+	}
+
+	return nil
+}
+
 // createARecord ensures an A record exists with the correct value.
 func createARecord(ctx context.Context, svc *dns.Service, projectID, zoneName, recordName, ipAddress string, ttl int64) error {
 	recordName = ensureDNSDot(recordName)
@@ -352,7 +405,9 @@ type DNSSetupResult struct {
 	IngressDNSName string
 
 	// PublicIngressNSRecords are the authoritative name servers for the public ingress zone.
-	// These must be delegated from the regional zone by the CLS/CLM delegation controller.
+	// Whoever manages the parent zone of the base domain must delegate to
+	// these for the ingress zone to be resolvable (e.g. an NS record created
+	// by the deployment's own tooling; HyperShift does not do this itself).
 	// Example: ["ns-cloud-a1.googledomains.com.", "ns-cloud-a2.googledomains.com.", ...]
 	// Note: Private zones don't need delegation - they're only accessible within the VPC.
 	PublicIngressNSRecords []string
@@ -434,11 +489,22 @@ func ensureZones(ctx context.Context, svc *dns.Service, createZones bool, projec
 // reconcileRecords ensures required DNS records exist with correct values.
 // All record operations are idempotent (similar to AWS Route53 UPSERT).
 func reconcileRecords(ctx context.Context, svc *dns.Service, projectID, hypershiftZone, publicZone, hypershiftDNSName, ingressDNS, baseDomain, pscEndpointIP string) error {
-	// Create ACME challenge CNAME record in public zone
+	// Create the ACME challenge CNAME record in the public (customer) ingress
+	// zone, but only when the ACME challenge delegation applies to this base
+	// domain (see acmeChallengeTarget). For any other base domain the record is
+	// not wanted — those deployments are expected to run their own DNS-01
+	// challenge solver with access to the ingress zone — so also remove a
+	// CNAME an earlier reconciliation of this controller left at the challenge
+	// name: a leftover CNAME blocks the TXT records such a solver needs to
+	// write. Only values this controller itself writes are removed; an
+	// operator's own CNAME-based DNS-01 delegation at that name is preserved.
 	acmeRecordName := fmt.Sprintf("_acme-challenge.apps.%s", ingressDNS)
-	acmeTarget := ensureDNSDot(fmt.Sprintf("_acme-challenge.%s", baseDomain))
-	if err := createCNAMERecord(ctx, svc, projectID, publicZone, acmeRecordName, acmeTarget, 300); err != nil {
-		return fmt.Errorf("failed to reconcile ACME challenge CNAME: %w", err)
+	if acmeTarget, delegated := acmeChallengeTarget(baseDomain); delegated {
+		if err := createCNAMERecord(ctx, svc, projectID, publicZone, acmeRecordName, acmeTarget, 300); err != nil {
+			return fmt.Errorf("failed to reconcile ACME challenge CNAME: %w", err)
+		}
+	} else if err := deleteCNAMERecord(ctx, svc, projectID, publicZone, acmeRecordName, managedAcmeCNAMETargets(baseDomain)...); err != nil {
+		return fmt.Errorf("failed to clean up ACME challenge CNAME: %w", err)
 	}
 
 	// Create api A record in hypershift.local zone pointing to PSC endpoint
@@ -454,6 +520,44 @@ func reconcileRecords(ctx context.Context, svc *dns.Service, projectID, hypershi
 	}
 
 	return nil
+}
+
+// delegatedIngressPrefix is the label under which the ingress zone (the
+// HostedControlPlane base domain) is delegated from a parent zone in managed
+// GCP deployments: in.<parent>. The ACME challenge CNAME target is derived by
+// stripping this label.
+const delegatedIngressPrefix = "in."
+
+// acmeChallengeTarget returns the CNAME target for the ingress wildcard ACME
+// challenge, and whether the ACME challenge delegation applies to the given
+// base domain at all.
+//
+// When it applies, the record _acme-challenge.apps.<baseDomain> (created in
+// the ingress zone this operator manages in the cluster's project) is pointed
+// at _acme-challenge.apps.<parent> — the same name one label up, in the zone
+// the base domain is delegated from. This lets an external cert-manager
+// deployment with a DNS-01 solver for the parent zone (and CNAME following)
+// solve the challenge for the *.apps wildcard certificate even though it
+// cannot write the delegated ingress zone. The "apps" label is retained so the
+// target stays distinct from the API server's own _acme-challenge.<parent>
+// challenge record.
+//
+// This is an assumption about the deployment, not something HyperShift
+// enforces: it holds when the base domain is the delegated "in.<parent>"
+// subdomain used by managed GCP offerings. Standalone clusters with any other
+// base domain get no delegation record (delegated=false): the target would
+// equal the record name (a self-referential CNAME no resolver can follow), and
+// those deployments are expected to run their own challenge solver against
+// the ingress zone.
+func acmeChallengeTarget(baseDomain string) (target string, delegated bool) {
+	// Strip the leading "in." label specifically rather than dropping
+	// whatever the first label happens to be, so an unexpected base domain
+	// disables the delegation instead of silently losing its first label.
+	parentDomain := strings.TrimPrefix(baseDomain, delegatedIngressPrefix)
+	if parentDomain == baseDomain || parentDomain == "" {
+		return "", false
+	}
+	return ensureDNSDot(fmt.Sprintf("_acme-challenge.apps.%s", parentDomain)), true
 }
 
 // validateReconcileInput validates the input parameters for DNS reconciliation.
@@ -496,7 +600,7 @@ func validateReconcileInput(hcp *hyperv1.HostedControlPlane, pscEndpointIP strin
 //  1. Private hypershift.local zone
 //  2. Public ingress zone
 //  3. Private ingress zone
-//  4. ACME challenge CNAME in public zone (delegates to regional zone)
+//  4. ACME challenge CNAME in public zone (conditional; see acmeChallengeTarget)
 //  5. A record for api.{cluster}.hypershift.local -> PSC endpoint IP
 //
 // Parameters:
@@ -565,8 +669,13 @@ func ReconcileDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane, pscEndpo
 		appsRecordName,
 	}
 
-	publicIngressCreatedRecords := []string{
-		acmeRecordName,
+	// The ACME challenge CNAME is only created when the base domain is the
+	// delegated "in.<parent>" subdomain (see acmeChallengeTarget); report it
+	// in the status only then, so it never lists a record that does not
+	// exist.
+	publicIngressCreatedRecords := []string{}
+	if _, delegated := acmeChallengeTarget(baseDomain); delegated {
+		publicIngressCreatedRecords = append(publicIngressCreatedRecords, acmeRecordName)
 	}
 
 	// Return result with zone information and created records

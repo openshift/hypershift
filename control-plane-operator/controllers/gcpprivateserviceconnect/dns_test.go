@@ -431,3 +431,78 @@ func TestGenerateZoneNamesValidationErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestManagedAcmeCNAMETargets(t *testing.T) {
+	tests := []struct {
+		name       string
+		baseDomain string
+		expected   []string
+	}{
+		{
+			name:       "When baseDomain is the delegated in. subdomain, it should list both historical targets with the in. label stripped",
+			baseDomain: "in.example.com",
+			expected:   []string{"_acme-challenge.in.example.com", "_acme-challenge.apps.example.com"},
+		},
+		{
+			name:       "When baseDomain is not delegated, it should list the targets as written for that domain",
+			baseDomain: "example.com",
+			expected:   []string{"_acme-challenge.example.com", "_acme-challenge.apps.example.com"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, managedAcmeCNAMETargets(tt.baseDomain))
+		})
+	}
+}
+
+func TestAcmeChallengeTarget(t *testing.T) {
+	tests := []struct {
+		name       string
+		baseDomain string
+		expected   string
+		delegated  bool
+	}{
+		{
+			name:       "When baseDomain is the delegated in. subdomain, it should strip the in. label into the parent zone",
+			baseDomain: "in.my-cluster.dev.example.com",
+			expected:   "_acme-challenge.apps.my-cluster.dev.example.com.",
+			delegated:  true,
+		},
+		{
+			name:       "When baseDomain already has a trailing dot, it should keep exactly one trailing dot",
+			baseDomain: "in.example.com.",
+			expected:   "_acme-challenge.apps.example.com.",
+			delegated:  true,
+		},
+		{
+			name:       "When baseDomain is a short delegated name, it should strip the in. label",
+			baseDomain: "in.example.com",
+			expected:   "_acme-challenge.apps.example.com.",
+			delegated:  true,
+		},
+		{
+			// A base domain without the "in." label is not the delegated
+			// subdomain the ACME challenge delegation assumes; the CNAME
+			// target would equal the record name (a self-referential CNAME),
+			// so no record must be created.
+			name:       "When baseDomain is not the delegated in. subdomain, it should report no delegation",
+			baseDomain: "example.com",
+			expected:   "",
+			delegated:  false,
+		},
+		{
+			name:       "When baseDomain is only the in. prefix, it should report no delegation",
+			baseDomain: "in.",
+			expected:   "",
+			delegated:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target, delegated := acmeChallengeTarget(tt.baseDomain)
+			assert.Equal(t, tt.expected, target)
+			assert.Equal(t, tt.delegated, delegated)
+		})
+	}
+}
