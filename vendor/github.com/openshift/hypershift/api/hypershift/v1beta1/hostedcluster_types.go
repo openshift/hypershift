@@ -2182,21 +2182,21 @@ type PersistentVolumeEtcdStorageSpec struct {
 }
 
 // UnmanagedEtcdSpec specifies configuration which enables the control plane to
-// integrate with an eternally managed etcd cluster.
+// integrate with an externally managed etcd cluster.
 // +openshift:validation:FeatureGateAwareXValidation:featureGate=EtcdSharding,rule="has(oldSelf.shards) == has(self.shards)",message="shards cannot be added or removed after creation"
 type UnmanagedEtcdSpec struct {
-	// endpoint is the full etcd cluster client endpoint URL. For example:
+	// endpoint is the full etcd cluster client endpoint HTTPS URL. For example:
 	//
 	//     https://etcd-client:2379
 	//
-	// If the URL uses an HTTPS scheme, the TLS field is required.
+	// The tls field is required to authenticate to and verify the etcd endpoint.
 	//
 	// +kubebuilder:validation:Pattern=`^https://`
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	Endpoint string `json:"endpoint"`
 
-	// tls specifies TLS configuration for HTTPS etcd client endpoints.
+	// tls specifies the required TLS configuration for the HTTPS etcd client endpoint.
 	// +required
 	TLS EtcdTLSConfig `json:"tls"`
 
@@ -2222,12 +2222,12 @@ type UnmanagedEtcdSpec struct {
 
 // EtcdTLSConfig specifies TLS configuration for HTTPS etcd client endpoints.
 type EtcdTLSConfig struct {
-	// clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
-	// may have the following key/value pairs:
+	// clientSecret refers to a secret for client mTLS authentication with the etcd cluster.
+	// The secret must contain all three of the following key/value pairs:
 	//
-	//     etcd-client-ca.crt: Certificate Authority value
-	//     etcd-client.crt: Client certificate value
-	//     etcd-client.key: Client certificate key value
+	//     etcd-client-ca.crt: CA bundle used to verify the etcd server certificate
+	//     etcd-client.crt: Client certificate used to authenticate to etcd
+	//     etcd-client.key: Private key for the client certificate
 	// +required
 	ClientSecret corev1.LocalObjectReference `json:"clientSecret"`
 }
