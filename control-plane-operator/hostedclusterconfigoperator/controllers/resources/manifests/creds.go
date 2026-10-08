@@ -72,6 +72,15 @@ func AzureFileCSICloudCredsSecret() *corev1.Secret {
 
 // GCP credential secrets for hosted cluster operators
 
+func GCPIngressCloudCredsSecret() *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "openshift-ingress-operator",
+			Name:      "cloud-credentials",
+		},
+	}
+}
+
 func GCPImageRegistryCloudCredsSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

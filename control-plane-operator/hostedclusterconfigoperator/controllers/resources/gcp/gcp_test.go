@@ -23,6 +23,7 @@ import (
 const (
 	testImageRegistryGSA = "image-registry@test-project.iam.gserviceaccount.com"
 	testStorageGSA       = "storage@test-project.iam.gserviceaccount.com"
+	testIngressGSA       = "ingress-op@test-project.iam.gserviceaccount.com"
 	testProjectNumber    = "123456789012"
 	testPoolID           = "test-pool"
 	testProviderID       = "test-provider"
@@ -45,6 +46,7 @@ func makeHCP() *hyperv1.HostedControlPlane {
 						ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
 							ImageRegistry: testImageRegistryGSA,
 							Storage:       testStorageGSA,
+							Ingress:       testIngressGSA,
 						},
 					},
 				},
@@ -118,6 +120,71 @@ func TestSetupOperandCredentials(t *testing.T) {
 				g.Expect(cred.CredentialSource.File).To(Equal("/var/run/secrets/openshift/serviceaccount/token"))
 			} else {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected image registry credentials secret to be absent")
+			}
+		})
+	}
+}
+
+func TestSetupOperandCredentials_Ingress(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name            string
+		disableIngress  bool
+		createNamespace bool
+		expectSecret    bool
+	}{
+		{
+			name:            "When ingress capability is enabled it should create the credential secret",
+			createNamespace: true,
+			expectSecret:    true,
+		},
+		{
+			name:            "When ingress capability is disabled it should skip the credential secret",
+			disableIngress:  true,
+			createNamespace: true,
+		},
+		{
+			name:            "When target namespace does not exist it should skip without error",
+			createNamespace: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+
+			if tc.createNamespace {
+				ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-ingress-operator"}}
+				g.Expect(c.Create(t.Context(), ns)).To(Succeed())
+			}
+
+			hcp := makeHCP()
+			if tc.disableIngress {
+				hcp.Spec.Capabilities = &hyperv1.Capabilities{
+					Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability},
+				}
+			}
+
+			errs := SetupOperandCredentials(t.Context(), c, upsert.New(false), hcp)
+			g.Expect(errs).To(BeEmpty())
+
+			key := client.ObjectKey{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}
+			var sec corev1.Secret
+			err := c.Get(t.Context(), key, &sec)
+
+			if tc.expectSecret {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(sec.Data).To(HaveKey("service_account.json"))
+				g.Expect(sec.Type).To(Equal(corev1.SecretTypeOpaque))
+
+				var cred gcputil.ExternalAccountCredential
+				g.Expect(json.Unmarshal(sec.Data["service_account.json"], &cred)).To(Succeed())
+				g.Expect(cred.Type).To(Equal("external_account"))
+				g.Expect(cred.ServiceAccountImpersonationURL).To(ContainSubstring(testIngressGSA))
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected ingress credentials secret to be absent")
 			}
 		})
 	}
