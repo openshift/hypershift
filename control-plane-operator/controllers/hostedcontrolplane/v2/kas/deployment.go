@@ -32,6 +32,8 @@ import (
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 const (
@@ -69,7 +71,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	hcp := cpContext.HCP
 	updateMainContainer(&deployment.Spec.Template.Spec, hcp)
 
-	tlsArgs, err := getTLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+	tlsArgs, err := getKonnectivityTLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile(), cpContext.ReleaseImageProvider.Version())
 	if err != nil {
 		return err
 	}
@@ -662,6 +664,35 @@ func getTLSArgs(profile *configv1.TLSSecurityProfile) ([]string, error) {
 		tlsArgs = append(tlsArgs, fmt.Sprintf("--tls-min-version=%s", minTLSVersion))
 	}
 
+	if len(cipherSuites) != 0 {
+		tlsArgs = append(tlsArgs, fmt.Sprintf("--cipher-suites=%s", strings.Join(cipherSuites, ",")))
+	}
+
+	return tlsArgs, nil
+}
+
+func getKonnectivityTLSArgs(profile *configv1.TLSSecurityProfile, releaseVersion string) ([]string, error) {
+	version, err := semver.Parse(releaseVersion)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse konnectivity server release version %q: %w", releaseVersion, err)
+	}
+
+	var tlsArgs []string
+	if version.Major > config.Version423.Major ||
+		(version.Major == config.Version423.Major && version.Minor >= config.Version423.Minor) {
+		minTLSVersion, err := config.MinTLSVersion(profile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get min TLS version: %w", err)
+		}
+		if minTLSVersion != "" {
+			tlsArgs = append(tlsArgs, fmt.Sprintf("--tls-min-version=%s", minTLSVersion))
+		}
+	}
+
+	cipherSuites, err := config.CipherSuites(profile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cipher suites: %w", err)
+	}
 	if len(cipherSuites) != 0 {
 		tlsArgs = append(tlsArgs, fmt.Sprintf("--cipher-suites=%s", strings.Join(cipherSuites, ",")))
 	}

@@ -158,4 +158,5 @@ const (
 var (
 	Version419 = semver.MustParse("4.19.0")
 	Version420 = semver.MustParse("4.20.0")
+	Version423 = semver.MustParse("4.23.0")
 )

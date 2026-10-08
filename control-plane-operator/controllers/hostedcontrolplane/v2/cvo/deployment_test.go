@@ -11,8 +11,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -232,7 +234,7 @@ func extractResourceNames(objects []client.Object) []string {
 	return names
 }
 
-func createTestContext(hcp *hyperv1.HostedControlPlane) component.WorkloadContext {
+func createTestContext(hcp *hyperv1.HostedControlPlane, controlPlaneReleaseVersion, userReleaseVersion string) component.WorkloadContext {
 	pullSecret := common.PullSecret(hcp.Namespace)
 	pullSecret.Data = map[string][]byte{
 		corev1.DockerConfigJsonKey: []byte(`{"auths":{"test.registry":{"auth":"dGVzdDp0ZXN0"}}}`),
@@ -252,10 +254,12 @@ func createTestContext(hcp *hyperv1.HostedControlPlane) component.WorkloadContex
 	}
 
 	return component.WorkloadContext{
-		Context:               context.Background(),
-		Client:                fakeClient,
-		HCP:                   hcp,
-		ImageMetadataProvider: fakeImageProvider,
+		Context:                  context.Background(),
+		Client:                   fakeClient,
+		HCP:                      hcp,
+		ReleaseImageProvider:     testutil.FakeImageProvider(testutil.WithVersion(controlPlaneReleaseVersion)),
+		UserReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion(userReleaseVersion)),
+		ImageMetadataProvider:    fakeImageProvider,
 	}
 }
 
@@ -264,12 +268,115 @@ func TestAdaptDeployment(t *testing.T) {
 
 	testCases := []struct {
 		name                  string
+		releaseVersion        string
+		userReleaseVersion    string
 		hcp                   *hyperv1.HostedControlPlane
 		expectedTLSMinVersion string
 		expectedCipherSuites  string
+		expectedError         string
 	}{
 		{
-			name: "When TLS profile has empty cipher suites list, it should not add tls-cipher-suites flag",
+			name:           "When release is 4.21 multi and TLS profile is nil, it should omit unsupported TLS flags",
+			releaseVersion: "4.21.0-multi",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+		},
+		{
+			name:           "When release is 4.21 multi and TLS profile is explicit, it should omit unsupported TLS flags",
+			releaseVersion: "4.21.0-multi",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "When release is 4.22 multi and TLS profile is nil, it should omit unsupported TLS flags",
+			releaseVersion: "4.22.0-multi",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+		},
+		{
+			name:           "When release is 4.22 multi and TLS profile is explicit, it should omit unsupported TLS flags",
+			releaseVersion: "4.22.0-multi",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "When release is 4.23 multi and TLS profile is nil, it should add Intermediate TLS flags",
+			releaseVersion: "4.23.0-multi",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			expectedTLSMinVersion: "--tls-min-version=VersionTLS12",
+			expectedCipherSuites: "--tls-cipher-suites=" + strings.Join(
+				config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers), ","),
+		},
+		{
+			name:               "When control-plane release is 4.22 and user release is 4.23, it should omit unsupported TLS flags",
+			releaseVersion:     "4.22.0",
+			userReleaseVersion: "4.23.0",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+		},
+		{
+			name:               "When control-plane release is 4.23 and user release is 4.22, it should add Intermediate TLS flags",
+			releaseVersion:     "4.23.0",
+			userReleaseVersion: "4.22.0",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			expectedTLSMinVersion: "--tls-min-version=VersionTLS12",
+			expectedCipherSuites: "--tls-cipher-suites=" + strings.Join(
+				config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers), ","),
+		},
+		{
+			name:           "When release version is invalid, it should return a contextual error",
+			releaseVersion: "invalid-version",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			expectedError: "failed to parse CVO release version \"invalid-version\"",
+		},
+		{
+			name:           "When TLS profile has empty cipher suites list, it should not add tls-cipher-suites flag",
+			releaseVersion: "4.23.0",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -293,7 +400,8 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedCipherSuites:  "",
 		},
 		{
-			name: "When TLS profile has empty MinTLSVersion, it should not add tls-min-version flag",
+			name:           "When TLS profile has empty MinTLSVersion, it should not add tls-min-version flag",
+			releaseVersion: "4.23.0",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -317,7 +425,8 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedCipherSuites:  "--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
 		},
 		{
-			name: "When TLS profile has both fields empty, it should not add any TLS flags",
+			name:           "When TLS profile has both fields empty, it should not add any TLS flags",
+			releaseVersion: "4.23.0",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -341,7 +450,8 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedCipherSuites:  "",
 		},
 		{
-			name: "When TLS profile has both fields set and a single cipher suite, it should add both flags and a single cipher",
+			name:           "When TLS profile has both fields set and a single cipher suite, it should add both flags and a single cipher",
+			releaseVersion: "4.23.0",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -365,7 +475,8 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedCipherSuites:  "--tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
 		},
 		{
-			name: "When TLS profile has both fields set and multiple cipher suites, it should add both flags and a comma-separated cipher list",
+			name:           "When TLS profile has both fields set and multiple cipher suites, it should add both flags and a comma-separated cipher list",
+			releaseVersion: "4.23.0",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -392,7 +503,21 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedCipherSuites:  "--tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
 		},
 		{
-			name: "When TLS profile type is Modern, it should set min version to TLS 1.3 and not add cipher suites flag",
+			name:           "When release is 5.0 and TLS profile is nil, it should add Intermediate TLS flags",
+			releaseVersion: "5.0.0",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			expectedTLSMinVersion: "--tls-min-version=VersionTLS12",
+			expectedCipherSuites: "--tls-cipher-suites=" + strings.Join(
+				config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers), ","),
+		},
+		{
+			name:           "When release is 5.0 and TLS profile type is Modern, it should set min version to TLS 1.3 without cipher suites",
+			releaseVersion: "5.0.0",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -420,10 +545,18 @@ func TestAdaptDeployment(t *testing.T) {
 			deployment, err := assets.LoadDeploymentManifest(ComponentName)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			cpContext := createTestContext(tc.hcp)
+			userReleaseVersion := tc.userReleaseVersion
+			if userReleaseVersion == "" {
+				userReleaseVersion = tc.releaseVersion
+			}
+			cpContext := createTestContext(tc.hcp, tc.releaseVersion, userReleaseVersion)
 
 			cvo := &clusterVersionOperator{}
 			err = cvo.adaptDeployment(cpContext, deployment)
+			if tc.expectedError != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedError)))
+				return
+			}
 			g.Expect(err).ToNot(HaveOccurred())
 
 			container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)

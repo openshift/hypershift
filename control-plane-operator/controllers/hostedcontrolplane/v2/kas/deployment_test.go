@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/testutil"
 
@@ -197,6 +198,7 @@ func TestAdaptDeploymentKASLogLevel(t *testing.T) {
 			}
 			cpContext := component.WorkloadContext{
 				HCP:                      tt.hcp,
+				ReleaseImageProvider:     testutil.FakeImageProvider(testutil.WithVersion("4.23.0")),
 				UserReleaseImageProvider: testutil.FakeImageProvider(),
 			}
 			err := adaptDeployment(cpContext, deployment)
@@ -474,16 +476,115 @@ func TestApplyAWSPodIdentityWebhookContainer(t *testing.T) {
 	}
 }
 
-func TestKonnectivityServerTLSMinVersion(t *testing.T) {
+func TestAdaptDeploymentKonnectivityTLSArguments(t *testing.T) {
 	testCases := []struct {
-		name           string
-		hcp            *hyperv1.HostedControlPlane
-		expectedMinTLS string
+		name                 string
+		releaseVersion       string
+		hcp                  *hyperv1.HostedControlPlane
+		expectedMinTLS       string
+		checkCipherSuites    bool
+		expectedCipherSuites string
+		expectedErrorMessage string
 	}{
 		{
-			name:           "When TLS security profile is nil, it should use default Intermediate profile for konnectivity-server",
+			name:           "When release is 4.21 multi and TLS security profile is nil, it should omit minimum version and retain cipher suites",
+			releaseVersion: "4.21.0-multi",
+			hcp:            &hyperv1.HostedControlPlane{},
+			expectedCipherSuites: "--cipher-suites=" + strings.Join(
+				config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers), ","),
+			checkCipherSuites: true,
+		},
+		{
+			name:           "When release is 4.21 multi and TLS security profile is Intermediate, it should omit minimum version and retain cipher suites",
+			releaseVersion: "4.21.0-multi",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+						},
+					},
+				},
+			},
+			expectedCipherSuites: "--cipher-suites=" + strings.Join(
+				config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers), ","),
+			checkCipherSuites: true,
+		},
+		{
+			name:           "When release is 4.21 multi and TLS security profile is Modern, it should omit unsupported minimum version",
+			releaseVersion: "4.21.0-multi",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType},
+						},
+					},
+				},
+			},
+			checkCipherSuites: true,
+		},
+		{
+			name:           "When release is 4.22 multi and TLS security profile is nil, it should omit minimum version and retain cipher suites",
+			releaseVersion: "4.22.0-multi",
+			hcp:            &hyperv1.HostedControlPlane{},
+			expectedCipherSuites: "--cipher-suites=" + strings.Join(
+				config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers), ","),
+			checkCipherSuites: true,
+		},
+		{
+			name:           "When release is 4.22 multi and TLS security profile is Intermediate, it should omit minimum version and retain cipher suites",
+			releaseVersion: "4.22.0-multi",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileIntermediateType},
+						},
+					},
+				},
+			},
+			expectedCipherSuites: "--cipher-suites=" + strings.Join(
+				config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers), ","),
+			checkCipherSuites: true,
+		},
+		{
+			name:           "When release is 4.22 and TLS security profile is Modern, it should omit unsupported TLS arguments",
+			releaseVersion: "4.22.0-multi",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileModernType},
+						},
+					},
+				},
+			},
+			checkCipherSuites: true,
+		},
+		{
+			name:                 "When release version is invalid, it should return a contextual error",
+			releaseVersion:       "invalid-version",
+			hcp:                  &hyperv1.HostedControlPlane{},
+			expectedErrorMessage: "failed to parse konnectivity server release version \"invalid-version\"",
+		},
+		{
+			name:           "When release is 4.23 multi and TLS security profile is nil, it should use default Intermediate profile",
+			releaseVersion: "4.23.0-multi",
 			expectedMinTLS: "VersionTLS12",
 			hcp:            &hyperv1.HostedControlPlane{},
+			expectedCipherSuites: "--cipher-suites=" + strings.Join(
+				config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers), ","),
+			checkCipherSuites: true,
+		},
+		{
+			name:           "When release is 5.0 and TLS security profile is nil, it should use default Intermediate profile",
+			releaseVersion: "5.0.0",
+			expectedMinTLS: "VersionTLS12",
+			hcp:            &hyperv1.HostedControlPlane{},
+			expectedCipherSuites: "--cipher-suites=" + strings.Join(
+				config.OpenSSLToIANACipherSuites(configv1.TLSProfiles[configv1.TLSProfileIntermediateType].Ciphers), ","),
+			checkCipherSuites: true,
 		},
 		{
 			name:           "When TLS security profile is Old, it should set TLS 1.0 for konnectivity-server",
@@ -516,7 +617,8 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 			},
 		},
 		{
-			name:           "When TLS security profile is Modern, it should set TLS 1.3 for konnectivity-server",
+			name:           "When TLS security profile is Modern, it should set TLS 1.3 without cipher suites for konnectivity-server",
+			releaseVersion: "5.0.0",
 			expectedMinTLS: "VersionTLS13",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -529,10 +631,14 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 					},
 				},
 			},
+			checkCipherSuites: true,
 		},
 		{
-			name:           "When TLS security profile is Custom with TLS 1.2, it should set TLS 1.2 for konnectivity-server",
-			expectedMinTLS: "VersionTLS12",
+			name:                 "When TLS security profile is Custom with TLS 1.2, it should set exact TLS arguments for konnectivity-server",
+			releaseVersion:       "4.23.0-multi",
+			expectedMinTLS:       "VersionTLS12",
+			expectedCipherSuites: "--cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			checkCipherSuites:    true,
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Configuration: &hyperv1.ClusterConfiguration{
@@ -542,6 +648,7 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 								Custom: &configv1.CustomTLSProfile{
 									TLSProfileSpec: configv1.TLSProfileSpec{
 										MinTLSVersion: configv1.VersionTLS12,
+										Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
 									},
 								},
 							},
@@ -575,9 +682,14 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
+			releaseVersion := tc.releaseVersion
+			if releaseVersion == "" {
+				releaseVersion = "4.23.0"
+			}
 
 			cpContext := component.WorkloadContext{
 				HCP:                      tc.hcp,
+				ReleaseImageProvider:     testutil.FakeImageProvider(testutil.WithVersion(releaseVersion)),
 				UserReleaseImageProvider: testutil.FakeImageProvider(),
 			}
 
@@ -598,12 +710,27 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 			}
 
 			err := adaptDeployment(cpContext, deployment)
+			if tc.expectedErrorMessage != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedErrorMessage)))
+				return
+			}
 			g.Expect(err).ToNot(HaveOccurred())
 
 			container := findContainerByNameInPod(&deployment.Spec.Template.Spec, "konnectivity-server")
 			g.Expect(container).NotTo(BeNil())
-			expected := fmt.Sprintf("--tls-min-version=%s", tc.expectedMinTLS)
-			g.Expect(container.Args).To(ContainElement(expected))
+			if tc.expectedMinTLS == "" {
+				g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--tls-min-version")))
+			} else {
+				expected := fmt.Sprintf("--tls-min-version=%s", tc.expectedMinTLS)
+				g.Expect(container.Args).To(ContainElement(expected))
+			}
+			if tc.checkCipherSuites {
+				if tc.expectedCipherSuites != "" {
+					g.Expect(container.Args).To(ContainElement(tc.expectedCipherSuites))
+				} else {
+					g.Expect(container.Args).ToNot(ContainElement(ContainSubstring("--cipher-suites=")))
+				}
+			}
 		})
 	}
 }

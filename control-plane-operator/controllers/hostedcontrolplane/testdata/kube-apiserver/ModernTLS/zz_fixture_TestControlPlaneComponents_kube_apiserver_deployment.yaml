@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: aa002a20e51608264ac0da9bb982da2883cf8a95a53266ec219d9361edbea95c
+    hypershift.openshift.io/desired-state-hash: d3abe1de9ae955c3bd5d96a32847f02e4e89fef1e6b8656f5a8e32a0edbe67eb
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -234,7 +234,6 @@ spec:
         - 30s
         - --server-count
         - "3"
-        - --tls-min-version=VersionTLS13
         command:
         - /usr/bin/proxy-server
         image: apiserver-network-proxy

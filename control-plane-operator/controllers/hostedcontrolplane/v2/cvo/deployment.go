@@ -29,6 +29,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+
+	"github.com/blang/semver"
 )
 
 func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -103,9 +105,19 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		})
 	})
 
-	tlsArgs, err := config.TLSArgs(cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile())
+	versionString := cpContext.ReleaseImageProvider.Version()
+	version, err := semver.Parse(versionString)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse CVO release version %q: %w", versionString, err)
+	}
+
+	var tlsArgs []string
+	if version.Major > config.Version423.Major ||
+		(version.Major == config.Version423.Major && version.Minor >= config.Version423.Minor) {
+		tlsArgs, err = config.TLSArgs(cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile())
+		if err != nil {
+			return fmt.Errorf("failed to resolve CVO TLS arguments: %w", err)
+		}
 	}
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
