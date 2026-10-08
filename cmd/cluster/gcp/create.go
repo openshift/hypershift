@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -187,8 +188,18 @@ func (o *RawCreateOptions) Validate(_ context.Context, opts *core.CreateOptions)
 	if err := util.ValidateRequiredOption(flagImageRegistryServiceAccount, o.ImageRegistryServiceAccount); err != nil {
 		return nil, err
 	}
-	// ingress-service-account is optional: it is only required when the Ingress
-	// capability is enabled, which is validated controller-side (capability-aware).
+	// The Ingress capability is enabled by default, so a cluster created
+	// without the ingress service account would run its ingress operator
+	// without Cloud DNS credentials (reported as a non-blocking
+	// IngressCredentialsFound=False condition on the HostedCluster). The
+	// workload identity configuration is immutable, so such a cluster cannot be
+	// fixed after creation; fail fast here instead. opts == nil handles unit
+	// tests; production always passes completed opts.
+	if opts == nil || !slices.Contains(opts.DisableClusterCapabilities, string(hyperv1.IngressCapability)) {
+		if err := util.ValidateRequiredOption(flagIngressServiceAccount, o.IngressServiceAccount); err != nil {
+			return nil, fmt.Errorf("%w unless the Ingress capability is disabled", err)
+		}
+	}
 	if err := util.ValidateRequiredOption(flagNetworkServiceAccount, o.NetworkServiceAccount); err != nil {
 		return nil, err
 	}
