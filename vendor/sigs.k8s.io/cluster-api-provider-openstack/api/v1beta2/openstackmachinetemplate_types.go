@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Kubernetes Authors.
+Copyright 2026 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,34 +14,38 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package v1beta2
 
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 )
 
 // OpenStackMachineTemplateSpec defines the desired state of OpenStackMachineTemplate.
 type OpenStackMachineTemplateSpec struct {
-	Template OpenStackMachineTemplateResource `json:"template"`
+	// template is the OpenStackMachineTemplate resource data.
+	// +required
+	Template OpenStackMachineTemplateResource `json:"template,omitzero"`
 }
 
 // OpenStackMachineTemplateStatus defines the observed state of OpenStackMachineTemplate.
 type OpenStackMachineTemplateStatus struct {
-	// Capacity defines the resource capacity for this machine.
+	// conditions defines current service state of the OpenStackMachineTemplate.
+	// The Ready condition must surface issues during the entire lifecycle of the OpenStackMachineTemplate.
+	// (both during initial provisioning and after the initial provisioning is completed).
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// capacity defines the resource capacity for this machine.
 	// This value is used for autoscaling from zero operations as defined in:
 	// https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20210310-opt-in-autoscaling-from-zero.md
 	// +optional
 	Capacity corev1.ResourceList `json:"capacity,omitempty"`
+	// nodeInfo contains information about the node's operating system.
 	// +optional
 	NodeInfo NodeInfo `json:"nodeInfo,omitempty,omitzero"`
-
-	// Conditions defines current service state of the OpenStackMachineTemplate.
-	// The Ready condition must surface issues during the entire lifecycle of the OpenStackMachineTemplate.
-	// (both during initial provisioning and after the initial provisioning is completed).
-	// +optional
-	Conditions clusterv1beta1.Conditions `json:"conditions,omitempty"`
 }
 
 // NodeInfo contains information about the node's architecture and operating system.
@@ -55,15 +59,22 @@ type NodeInfo struct {
 
 // +genclient
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 // +kubebuilder:resource:path=openstackmachinetemplates,scope=Namespaced,categories=cluster-api,shortName=osmt
 // +kubebuilder:subresource:status
 
 // OpenStackMachineTemplate is the Schema for the openstackmachinetemplates API.
 type OpenStackMachineTemplate struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// metadata is the standard object metadata.
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   OpenStackMachineTemplateSpec   `json:"spec,omitempty"`
+	// spec is the desired state of the OpenStackMachineTemplate.
+	// +optional
+	Spec OpenStackMachineTemplateSpec `json:"spec,omitempty"`
+	// status is the observed state of the OpenStackMachineTemplate.
+	// +optional
 	Status OpenStackMachineTemplateStatus `json:"status,omitempty"`
 }
 
@@ -73,14 +84,11 @@ type OpenStackMachineTemplate struct {
 type OpenStackMachineTemplateList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []OpenStackMachineTemplate `json:"items"`
+	// +required
+	Items []OpenStackMachineTemplate `json:"items"`
 }
 
-func init() {
-	objectTypes = append(objectTypes, &OpenStackMachineTemplate{}, &OpenStackMachineTemplateList{})
-}
-
-// GetIdentifyRef returns the object's namespace and IdentityRef if it has an IdentityRef, or nulls if it does not.
+// GetIdentityRef returns the object's namespace and IdentityRef if it has an IdentityRef, or nulls if it does not.
 func (r *OpenStackMachineTemplate) GetIdentityRef() (*string, *OpenStackIdentityReference) {
 	if r.Spec.Template.Spec.IdentityRef != nil {
 		return &r.Namespace, r.Spec.Template.Spec.IdentityRef
@@ -88,12 +96,16 @@ func (r *OpenStackMachineTemplate) GetIdentityRef() (*string, *OpenStackIdentity
 	return nil, nil
 }
 
+func init() {
+	objectTypes = append(objectTypes, &OpenStackMachineTemplate{}, &OpenStackMachineTemplateList{})
+}
+
 // GetConditions returns the observations of the operational state of the OpenStackMachineTemplate resource.
-func (r *OpenStackMachineTemplate) GetConditions() clusterv1beta1.Conditions {
+func (r *OpenStackMachineTemplate) GetConditions() []metav1.Condition {
 	return r.Status.Conditions
 }
 
 // SetConditions sets the underlying service state of the OpenStackMachineTemplate to the predescribed clusterv1.Conditions.
-func (r *OpenStackMachineTemplate) SetConditions(conditions clusterv1beta1.Conditions) {
+func (r *OpenStackMachineTemplate) SetConditions(conditions []metav1.Condition) {
 	r.Status.Conditions = conditions
 }

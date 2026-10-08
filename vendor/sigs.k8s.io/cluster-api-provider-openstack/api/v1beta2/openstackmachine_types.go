@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Kubernetes Authors.
+Copyright 2026 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,15 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package v1beta2
 
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
-	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 
-	capoerrors "sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors"
 	"sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/optional"
 )
 
@@ -52,25 +49,28 @@ const (
 // +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'String' ? has(self.string) : !has(self.string)",message="string is required when type is String, and forbidden otherwise"
 // +union.
 type SchedulerHintAdditionalValue struct {
-	// Type represents the type of the value.
+	// type represents the type of the value.
 	// Valid values are Bool, String, and Number.
-	// +kubebuilder:validation:Required
+	// +required
 	// +unionDiscriminator
-	Type SchedulerHintValueType `json:"type"`
+	Type SchedulerHintValueType `json:"type,omitempty"`
 
-	// Bool is the boolean value of the scheduler hint, used when Type is "Bool".
+	// bool is the boolean value of the scheduler hint, used when Type is "Bool".
 	// This field is required if type is 'Bool', and must not be set otherwise.
 	// +unionMember,optional
+	// +optional
 	Bool *bool `json:"bool,omitempty"`
 
-	// Number is the integer value of the scheduler hint, used when Type is "Number".
+	// number is the integer value of the scheduler hint, used when Type is "Number".
 	// This field is required if type is 'Number', and must not be set otherwise.
 	// +unionMember,optional
-	Number *int `json:"number,omitempty"`
+	// +optional
+	Number *int32 `json:"number,omitempty"`
 
-	// String is the string value of the scheduler hint, used when Type is "String".
+	// string is the string value of the scheduler hint, used when Type is "String".
 	// This field is required if type is 'String', and must not be set otherwise.
 	// +unionMember,optional
+	// +optional
 	// +kubebuilder:validation:MinLength:=1
 	// +kubebuilder:validation:MaxLength:=255
 	String *string `json:"string,omitempty"`
@@ -79,80 +79,85 @@ type SchedulerHintAdditionalValue struct {
 // SchedulerHintAdditionalProperty represents a single additional property for a scheduler hint.
 // It includes a Name to identify the property and a Value that can be of various types.
 type SchedulerHintAdditionalProperty struct {
-	// Name is the name of the scheduler hint property.
+	// name is the name of the scheduler hint property.
 	// It is a unique identifier for the property.
 	// +kubebuilder:validation:MinLength:=1
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
+	// +required
+	Name string `json:"name,omitempty"`
 
-	// Value is the value of the scheduler hint property, which can be of various types
+	// value is the value of the scheduler hint property, which can be of various types
 	// (e.g., bool, string, int). The type is indicated by the Value.Type field.
-	// +kubebuilder:validation:Required
-	Value SchedulerHintAdditionalValue `json:"value"`
+	// +required
+	Value SchedulerHintAdditionalValue `json:"value,omitzero"`
 }
 
 // OpenStackMachineSpec defines the desired state of OpenStackMachine.
-// +kubebuilder:validation:XValidation:message="at least one of flavor or flavorID must be set",rule=(has(self.flavor) || has(self.flavorID))
 type OpenStackMachineSpec struct {
-	// ProviderID is the unique identifier as specified by the cloud provider.
+	// providerID is the unique identifier as specified by the cloud provider.
+	// +optional
 	ProviderID *string `json:"providerID,omitempty"`
 
-	// The flavor reference for the flavor for your server instance.
-	// +kubebuilder:validation:MinLength=1
-	Flavor *string `json:"flavor,omitempty"`
+	// flavor is the flavor to use for this machine.
+	// +required
+	Flavor FlavorParam `json:"flavor,omitzero"`
 
-	// FlavorID allows flavors to be specified by ID.  This field takes precedence
-	// over Flavor.
-	// +kubebuilder:validation:MinLength=1
-	FlavorID *string `json:"flavorID,omitempty"`
-
-	// The image to use for your server instance.
+	// image is the image to use for the server instance.
 	// If the rootVolume is specified, this will be used when creating the root volume.
 	// +required
-	Image ImageParam `json:"image"`
+	Image ImageParam `json:"image,omitzero"`
 
-	// The ssh key to inject in the instance
+	// sshKeyName is the name of the SSH key to inject in the instance.
+	// +optional
 	SSHKeyName string `json:"sshKeyName,omitempty"`
 
-	// Ports to be attached to the server instance. They are created if a port with the given name does not already exist.
+	// ports to be attached to the server instance. They are created if a port with the given name does not already exist.
 	// If not specified a default port will be added for the default cluster network.
+	// +listType=atomic
+	// +optional
 	Ports []PortOpts `json:"ports,omitempty"`
 
-	// The names of the security groups to assign to the instance
+	// securityGroups is a list of security groups to assign to the instance.
+	// +listType=atomic
+	// +optional
 	SecurityGroups []SecurityGroupParam `json:"securityGroups,omitempty"`
 
-	// Whether the server instance is created on a trunk port or not.
+	// trunk specifies whether the server instance is created on a trunk port or not.
+	// +optional
 	Trunk bool `json:"trunk,omitempty"`
 
-	// Tags which will be added to the machine and all dependent resources
+	// tags which will be added to the machine and all dependent resources
 	// which support them. These are in addition to Tags defined on the
 	// cluster.
 	// Requires Nova api 2.52 minimum!
 	// +listType=set
+	// +optional
 	Tags []string `json:"tags,omitempty"`
 
-	// Metadata mapping. Allows you to create a map of key value pairs to add to the server instance.
+	// serverMetadata is a list of key/value pairs to add to the server instance.
 	// +listType=map
 	// +listMapKey=key
+	// +optional
 	ServerMetadata []ServerMetadata `json:"serverMetadata,omitempty"`
 
-	// Config Drive support
+	// configDrive enables config drive support.
+	// +optional
 	ConfigDrive *bool `json:"configDrive,omitempty"`
 
-	// The volume metadata to boot from
+	// rootVolume is the volume metadata to boot from.
+	// +optional
 	RootVolume *RootVolume `json:"rootVolume,omitempty"`
 
-	// AdditionalBlockDevices is a list of specifications for additional block devices to attach to the server instance
+	// additionalBlockDevices is a list of specifications for additional block devices to attach to the server instance
 	// +listType=map
 	// +listMapKey=name
 	// +optional
 	AdditionalBlockDevices []AdditionalBlockDevice `json:"additionalBlockDevices,omitempty"`
 
-	// The server group to assign the machine to.
+	// serverGroup is the server group to assign the machine to.
 	// +optional
 	ServerGroup *ServerGroupParam `json:"serverGroup,omitempty"`
 
-	// IdentityRef is a reference to a secret holding OpenStack credentials
+	// identityRef is a reference to a secret holding OpenStack credentials
 	// to be used when reconciling this machine. If not specified, the
 	// credentials specified in the cluster will be used.
 	// +optional
@@ -164,7 +169,7 @@ type OpenStackMachineSpec struct {
 	// +optional
 	FloatingIPPoolRef *corev1.TypedLocalObjectReference `json:"floatingIPPoolRef,omitempty"`
 
-	// SchedulerHintAdditionalProperties are arbitrary key/value pairs that provide additional hints
+	// schedulerHintAdditionalProperties are arbitrary key/value pairs that provide additional hints
 	// to the OpenStack scheduler. These hints can influence how instances are placed on the infrastructure,
 	// such as specifying certain host aggregates or availability zones.
 	// +optional
@@ -174,20 +179,22 @@ type OpenStackMachineSpec struct {
 }
 
 type ServerMetadata struct {
-	// Key is the server metadata key
+	// key is the server metadata key
 	// +kubebuilder:validation:MaxLength:=255
-	// +kubebuilder:validation:Required
-	Key string `json:"key"`
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	Key string `json:"key,omitempty"`
 
-	// Value is the server metadata value
+	// value is the server metadata value
 	// +kubebuilder:validation:MaxLength:=255
-	// +kubebuilder:validation:Required
-	Value string `json:"value"`
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	Value string `json:"value,omitempty"`
 }
 
 // MachineInitialization contains information about the initialization status of the machine.
 type MachineInitialization struct {
-	// Provisioned is set to true when the initial provisioning of the machine infrastructure is completed.
+	// provisioned is set to true when the initial provisioning of the machine infrastructure is completed.
 	// The value of this field is never updated after provisioning is completed.
 	// +optional
 	Provisioned bool `json:"provisioned,omitempty"`
@@ -195,92 +202,66 @@ type MachineInitialization struct {
 
 // OpenStackMachineStatus defines the observed state of OpenStackMachine.
 type OpenStackMachineStatus struct {
-	// Ready is true when the provider resource is ready.
-	//
-	// Deprecated: This field is deprecated and will be removed in a future API version.
-	// Use status.conditions to determine the ready state of the machine.
+	// conditions defines current service state of the OpenStackMachine.
+	// This field surfaces into Machine's status.conditions[InfrastructureReady] condition.
+	// The Ready condition must surface issues during the entire lifecycle of the OpenStackMachine
+	// (both during initial provisioning and after the initial provisioning is completed).
 	// +optional
-	Ready bool `json:"ready"`
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
-	// Initialization contains information about the initialization status of the machine.
+	// initialization contains information about the initialization status of the machine.
 	// +optional
 	Initialization *MachineInitialization `json:"initialization,omitempty"`
 
-	// InstanceID is the OpenStack instance ID for this machine.
+	// instanceID is the OpenStack instance ID for this machine.
 	// +optional
 	InstanceID optional.String `json:"instanceID,omitempty"`
 
-	// Addresses contains the OpenStack instance associated addresses.
+	// addresses contains the OpenStack instance associated addresses.
+	// +listType=atomic
+	// +optional
 	Addresses []corev1.NodeAddress `json:"addresses,omitempty"`
 
-	// InstanceState is the state of the OpenStack instance for this machine.
+	// instanceState is the state of the OpenStack instance for this machine.
 	// This field is not set anymore by the OpenStackMachine controller.
 	// Instead, it's set by the OpenStackServer controller.
 	// +optional
 	InstanceState *InstanceState `json:"instanceState,omitempty"`
 
-	// Resolved contains parts of the machine spec with all external
+	// resolved contains parts of the machine spec with all external
 	// references fully resolved.
 	// +optional
 	Resolved *ResolvedMachineSpec `json:"resolved,omitempty"`
 
-	// Resources contains references to OpenStack resources created for the machine.
+	// resources contains references to OpenStack resources created for the machine.
 	// +optional
 	Resources *MachineResources `json:"resources,omitempty"`
-
-	// FailureReason explains the reson behind a failure.
-	//
-	// Deprecated: This field is deprecated and will be removed in a future API version.
-	// Use status.conditions to report failures.
-	// +optional
-	FailureReason *capoerrors.DeprecatedCAPIMachineStatusError `json:"failureReason,omitempty"`
-
-	// FailureMessage will be set in the event that there is a terminal problem
-	// reconciling the Machine and will contain a more verbose string suitable
-	// for logging and human consumption.
-	//
-	// This field should not be set for transitive errors that a controller
-	// faces that are expected to be fixed automatically over
-	// time (like service outages), but instead indicate that something is
-	// fundamentally wrong with the Machine's spec or the configuration of
-	// the controller, and that manual intervention is required. Examples
-	// of terminal errors would be invalid combinations of settings in the
-	// spec, values that are unsupported by the controller, or the
-	// responsible controller itself being critically misconfigured.
-	//
-	// Any transient errors that occur during the reconciliation of Machines
-	// can be added as events to the Machine object and/or logged in the
-	// controller's output.
-	//
-	// Deprecated: This field is deprecated and will be removed in a future API version.
-	// Use status.conditions to report failures.
-	// +optional
-	FailureMessage *string `json:"failureMessage,omitempty"`
-
-	// Conditions defines current service state of the OpenStackMachine.
-	// This field surfaces into Machine's status.conditions[InfrastructureReady] condition.
-	// The Ready condition must surface issues during the entire lifecycle of the OpenStackMachine
-	// (both during initial provisioning and after the initial provisioning is completed).
-	// +optional
-	Conditions clusterv1beta1.Conditions `json:"conditions,omitempty"`
 }
 
 // +genclient
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 // +kubebuilder:resource:path=openstackmachines,scope=Namespaced,categories=cluster-api,shortName=osm
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.cluster\\.x-k8s\\.io/cluster-name",description="Cluster to which this OpenStackMachine belongs"
-// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="Machine ready status"
 // +kubebuilder:printcolumn:name="ProviderID",type="string",JSONPath=".spec.providerID",description="OpenStack instance ID"
 // +kubebuilder:printcolumn:name="Machine",type="string",JSONPath=".metadata.ownerReferences[?(@.kind==\"Machine\")].name",description="Machine object which owns with this OpenStackMachine"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of OpenStackMachine"
 
 // OpenStackMachine is the Schema for the openstackmachines API.
 type OpenStackMachine struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// metadata is the standard object metadata.
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   OpenStackMachineSpec   `json:"spec,omitempty"`
+	// spec is the desired state of the OpenStackMachine.
+	// +optional
+	Spec OpenStackMachineSpec `json:"spec,omitempty"`
+	// status is the observed state of the OpenStackMachine.
+	// +optional
 	Status OpenStackMachineStatus `json:"status,omitempty"`
 }
 
@@ -290,23 +271,18 @@ type OpenStackMachine struct {
 type OpenStackMachineList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []OpenStackMachine `json:"items"`
+	// +required
+	Items []OpenStackMachine `json:"items"`
 }
 
 // GetConditions returns the observations of the operational state of the OpenStackMachine resource.
-func (r *OpenStackMachine) GetConditions() clusterv1beta1.Conditions {
+func (r *OpenStackMachine) GetConditions() []metav1.Condition {
 	return r.Status.Conditions
 }
 
 // SetConditions sets the underlying service state of the OpenStackMachine to the predescribed clusterv1.Conditions.
-func (r *OpenStackMachine) SetConditions(conditions clusterv1beta1.Conditions) {
+func (r *OpenStackMachine) SetConditions(conditions []metav1.Condition) {
 	r.Status.Conditions = conditions
-}
-
-// SetFailure sets the OpenStackMachine status failure reason and failure message.
-func (r *OpenStackMachine) SetFailure(failureReason capoerrors.DeprecatedCAPIMachineStatusError, failureMessage error) {
-	r.Status.FailureReason = &failureReason
-	r.Status.FailureMessage = ptr.To(failureMessage.Error())
 }
 
 var _ IdentityRefProvider = &OpenStackMachine{}
