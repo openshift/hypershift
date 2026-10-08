@@ -1476,3 +1476,60 @@ func TestReconcileDNSEndpoint(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileACMECNAMECondition(t *testing.T) {
+	tests := []struct {
+		name     string
+		outcome  ACMECNAMEOutcome
+		expected *metav1.Condition
+	}{
+		{
+			name:    "When no delegation target is configured, it should not set the condition",
+			outcome: ACMECNAMEOutcome{},
+		},
+		{
+			name: "When the record was published, it should report success",
+			outcome: ACMECNAMEOutcome{
+				Target:     "_acme-challenge.central.example.com",
+				RecordName: "_acme-challenge.apps.example.com",
+			},
+			expected: &metav1.Condition{
+				Type:    string(hyperv1.GCPACMECNAMEAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.GCPSuccessReason,
+				Message: "ACME challenge CNAME _acme-challenge.apps.example.com points at _acme-challenge.central.example.com",
+			},
+		},
+		{
+			name: "When the record was skipped, it should report the specific reason and message",
+			outcome: ACMECNAMEOutcome{
+				Target:     "_acme-challenge.central.example.com",
+				SkipReason: hyperv1.GCPACMECNAMEOutsideBaseDomainReason,
+				Message:    "No ACME challenge CNAME was created: the ingress domain apps.other.example.org is not within the cluster base domain example.com.",
+			},
+			expected: &metav1.Condition{
+				Type:    string(hyperv1.GCPACMECNAMEAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.GCPACMECNAMEOutsideBaseDomainReason,
+				Message: "No ACME challenge CNAME was created: the ingress domain apps.other.example.org is not within the cluster base domain example.com.",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gcpPSC := &hyperv1.GCPPrivateServiceConnect{}
+			reconcileACMECNAMECondition(gcpPSC, tt.outcome)
+
+			condition := meta.FindStatusCondition(gcpPSC.Status.Conditions, string(hyperv1.GCPACMECNAMEAvailable))
+			if tt.expected == nil {
+				require.Nil(t, condition, "expected no %s condition", hyperv1.GCPACMECNAMEAvailable)
+				return
+			}
+			require.NotNil(t, condition, "expected %s condition to be set", hyperv1.GCPACMECNAMEAvailable)
+			assert.Equal(t, tt.expected.Status, condition.Status)
+			assert.Equal(t, tt.expected.Reason, condition.Reason)
+			assert.Equal(t, tt.expected.Message, condition.Message)
+		})
+	}
+}

@@ -1044,7 +1044,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Copy GCPEndpointAvailable and GCPServiceAttachmentAvailable conditions from the GCPPrivateServiceConnect resources.
+	// Copy GCPEndpointAvailable, GCPServiceAttachmentAvailable and GCPACMECNAMEAvailable conditions from the GCPPrivateServiceConnect resources.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
 		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var gcpPSCList hyperv1.GCPPrivateServiceConnectList
@@ -1059,6 +1059,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPEndpointAvailable))
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPServiceAttachmentAvailable))
+			propagateGCPPSCACMECNAMECondition(hcluster, gcpPSCList)
 		}
 	}
 
@@ -6149,6 +6150,30 @@ func computeGCPPSCCondition(gcpPSCList hyperv1.GCPPrivateServiceConnectList, con
 		resourceConditions[i] = psc.Status.Conditions
 	}
 	return computeEndpointServiceCondition(resourceConditions, conditionType, hyperv1.GCPErrorReason, hyperv1.GCPSuccessReason, "GCPPrivateServiceConnect conditions not found")
+}
+
+// propagateGCPPSCACMECNAMECondition copies the GCPACMECNAMEAvailable condition
+// from the GCPPrivateServiceConnect resources to the HostedCluster, preserving
+// its status, reason and message. Unlike the conditions aggregated by
+// computeGCPPSCCondition, this condition is only maintained when the cluster
+// sets spec.platform.gcp.delegation.acmeChallengeTarget, so when no PSC reports
+// it the condition is left unset (and removed if it was previously set) rather
+// than reported as Unknown.
+func propagateGCPPSCACMECNAMECondition(hcluster *hyperv1.HostedCluster, gcpPSCList hyperv1.GCPPrivateServiceConnectList) {
+	for _, psc := range gcpPSCList.Items {
+		condition := meta.FindStatusCondition(psc.Status.Conditions, string(hyperv1.GCPACMECNAMEAvailable))
+		if condition == nil {
+			continue
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:    string(hyperv1.GCPACMECNAMEAvailable),
+			Status:  condition.Status,
+			Reason:  condition.Reason,
+			Message: condition.Message,
+		})
+		return
+	}
+	meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.GCPACMECNAMEAvailable))
 }
 
 // propagateAzureResourceIDAnnotation copies the Azure resource ID annotation set by Cluster Service

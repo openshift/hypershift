@@ -655,7 +655,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 	}
 
-	// Copy GCPEndpointAvailable and GCPServiceAttachmentAvailable conditions from the GCPPrivateServiceConnect resources.
+	// Copy GCPEndpointAvailable, GCPServiceAttachmentAvailable and GCPACMECNAMEAvailable conditions from the GCPPrivateServiceConnect resources.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
 		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var gcpPSCList hyperv1.GCPPrivateServiceConnectList
@@ -670,6 +670,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		} else {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPEndpointAvailable))
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPServiceAttachmentAvailable))
+			propagateGCPPSCACMECNAMECondition(hcluster, gcpPSCList)
 		}
 	}
 

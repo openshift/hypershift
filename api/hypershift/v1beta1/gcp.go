@@ -144,6 +144,47 @@ type GCPNetworkConfig struct {
 	PrivateServiceConnectSubnet GCPResourceReference `json:"privateServiceConnectSubnet,omitzero"`
 }
 
+// GCPDNSDelegationSpec configures DNS delegation for the ingress wildcard
+// certificate of a GCP hosted cluster.
+//
+// +kubebuilder:validation:MinProperties=1
+type GCPDNSDelegationSpec struct {
+	// acmeChallengeTarget delegates the ACME DNS-01 challenge for the ingress
+	// wildcard certificate (*.apps) to a solver running outside the cluster.
+	// When set, HyperShift publishes a CNAME record at
+	// _acme-challenge.<ingress domain> in the cluster's public ingress DNS zone,
+	// pointing at this target, so an external certificate issuer that can write
+	// the target's zone but not the cluster's ingress zone (for example a central
+	// cert-manager) can solve the challenge by following the CNAME.
+	//
+	// The value is the fully qualified name the external solver writes its
+	// challenge TXT records to. It must be lowercase, must start with the
+	// _acme-challenge. label, must contain at least two further labels, must not
+	// end with a dot, and is limited to 253 characters.
+	//
+	// The record is only created when the cluster's ingress domain
+	// (apps.<baseDomainPrefix>.<baseDomain> by default, or the
+	// spec.configuration.ingress domain or appsDomain override when set) is
+	// within the cluster's base domain, and when the target differs from the
+	// record name. When the record is not created, the GCPACMECNAMEAvailable
+	// condition on the HostedCluster reports why.
+	//
+	// When this field is not set, no record is created and the deployment is
+	// responsible for issuing the ingress wildcard certificate, solving its
+	// DNS-01 challenge in the ingress zone itself.
+	//
+	// The field can be set when the cluster is created or added later, but once
+	// set it cannot be changed or removed.
+	//
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="acmeChallengeTarget is immutable"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^_acme-challenge(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){2,}$')`,message="acmeChallengeTarget must be a lowercase fully qualified name starting with _acme-challenge. and containing at least two further labels (e.g., _acme-challenge.apps.example.com)"
+	ACMEChallengeTarget string `json:"acmeChallengeTarget,omitempty"`
+}
+
 // GCPPlatformSpec specifies configuration for clusters running on Google Cloud Platform.
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.controlPlane.contains('@') && self.workloadIdentity.serviceAccountsEmails.controlPlane.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="controlPlane service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.nodePool.contains('@') && self.workloadIdentity.serviceAccountsEmails.nodePool.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="nodePool service account must belong to the same project"
@@ -154,6 +195,7 @@ type GCPNetworkConfig struct {
 // +kubebuilder:validation:XValidation:rule="has(self.resourceTags) == has(oldSelf.resourceTags)",message="resourceTags may only be configured during installation",fieldPath=".resourceTags"
 // +kubebuilder:validation:XValidation:rule="!has(self.resourceTags) || self.resourceTags.all(t, !has(t.parentID) || t.parentID.matches('^[1-9][0-9]{0,31}$') || t.parentID == self.project)",message="resourceTags parentID must be an organization ID or the GCP platform project",fieldPath=".resourceTags"
 // +kubebuilder:validation:XValidation:rule="!has(self.workloadIdentity.serviceAccountsEmails.ingress) || self.workloadIdentity.serviceAccountsEmails.ingress.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="ingress service account must belong to the same project"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.delegation) || has(self.delegation)",message="delegation cannot be removed once set",fieldPath=".delegation"
 type GCPPlatformSpec struct {
 	// project is the GCP project ID.
 	// A valid project ID must satisfy the following rules:
@@ -246,6 +288,11 @@ type GCPPlatformSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="resourceTags are immutable"
 	// +kubebuilder:validation:XValidation:rule="self.all(t, self.exists_one(u, u.key == t.key))",message="resourceTags keys must be unique across all parents"
 	ResourceTags []GCPResourceTag `json:"resourceTags,omitempty"`
+
+	// delegation configures DNS delegation for the ingress wildcard certificate
+	// of the hosted cluster. When omitted, no delegation record is created.
+	// +optional
+	Delegation GCPDNSDelegationSpec `json:"delegation,omitzero"`
 
 	// workloadIdentity configures Workload Identity Federation for the cluster.
 	// This enables secure, short-lived token-based authentication without storing
