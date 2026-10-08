@@ -286,3 +286,5 @@ replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-
 // 	k8s.io/apiserver => k8s.io/apiserver v0.32.3
 // 	k8s.io/client-go => k8s.io/client-go v0.32.3
 // )
+
+replace golang.org/x/crypto => github.com/openshift-sustaining/crypto v0.33.0-sec.3
