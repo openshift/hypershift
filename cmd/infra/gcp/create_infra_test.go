@@ -206,10 +206,12 @@ func TestNetworkManagerFormatNames(t *testing.T) {
 	tests := []struct {
 		name        string
 		infraID     string
+		resources   NetworkResourceNames
 		expectedNet string
 		expectedSub string
 		expectedRtr string
 		expectedNAT string
+		expectedFW  string
 	}{
 		{
 			name:        "When infraID is simple it should format names correctly",
@@ -218,6 +220,7 @@ func TestNetworkManagerFormatNames(t *testing.T) {
 			expectedSub: "my-cluster-subnet",
 			expectedRtr: "my-cluster-router",
 			expectedNAT: "my-cluster-nat",
+			expectedFW:  "my-cluster-allow-kubelet",
 		},
 		{
 			name:        "When infraID has numbers it should format names correctly",
@@ -226,13 +229,29 @@ func TestNetworkManagerFormatNames(t *testing.T) {
 			expectedSub: "cluster-12345-subnet",
 			expectedRtr: "cluster-12345-router",
 			expectedNAT: "cluster-12345-nat",
+			expectedFW:  "cluster-12345-allow-kubelet",
+		},
+		{
+			name:    "When explicit resource names are set they take precedence over infraID",
+			infraID: "generated-infra-id",
+			resources: NetworkResourceNames{
+				Network: "independent-network", Subnet: "independent-subnet",
+				Router: "independent-router", NAT: "independent-nat",
+				FirewallRule: "independent-firewall",
+			},
+			expectedNet: "independent-network",
+			expectedSub: "independent-subnet",
+			expectedRtr: "independent-router",
+			expectedNAT: "independent-nat",
+			expectedFW:  "independent-firewall",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nm := &NetworkManager{
-				infraID: tt.infraID,
+				infraID:   tt.infraID,
+				resources: tt.resources,
 			}
 
 			if got := nm.formatNetworkName(); got != tt.expectedNet {
@@ -246,6 +265,9 @@ func TestNetworkManagerFormatNames(t *testing.T) {
 			}
 			if got := nm.formatNATName(); got != tt.expectedNAT {
 				t.Errorf("formatNATName() = %q, want %q", got, tt.expectedNAT)
+			}
+			if got := nm.formatFirewallName(); got != tt.expectedFW {
+				t.Errorf("formatFirewallName() = %q, want %q", got, tt.expectedFW)
 			}
 		})
 	}

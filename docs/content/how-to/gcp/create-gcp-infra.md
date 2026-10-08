@@ -36,7 +36,7 @@ hypershift create infra gcp \
 
 !!! warning "Infra ID constraints"
 
-    The `--infra-id` value must not start with `gcp-` (reserved by GCP for Workload Identity Pool IDs). Use the same `--infra-id` value across all `hypershift create` commands (`infra`, `iam`, `cluster`).
+    The `--infra-id` value must not start with `gcp-` (reserved by GCP for Workload Identity Pool IDs). Infrastructure and IAM resource names are recorded in the HostedCluster, so their `--infra-id` values do not need to match the cluster's generated InfraID.
 
 ### Flags
 
@@ -76,7 +76,7 @@ The command outputs JSON with the created resource names:
 }
 ```
 
-Save this output — you will need the `networkName` and `subnetName` values when creating the hosted cluster.
+Save this output — when creating the HostedCluster, pass the `networkName`, `subnetName`, `routerName`, `natName`, and `firewallRuleName` values. The HostedCluster records these exact names so cluster destruction can remove only its associated resources.
 
 ## Destroy Infrastructure
 

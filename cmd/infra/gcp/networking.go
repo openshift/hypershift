@@ -31,16 +31,60 @@ type NetworkManager struct {
 	projectID      string
 	infraID        string
 	region         string
+	resources      NetworkResourceNames
 	computeService *compute.Service
 	logger         logr.Logger
 }
 
+// NetworkResourceNames contains the exact GCP resource names used by a cluster.
+type NetworkResourceNames struct {
+	Network      string
+	Subnet       string
+	Router       string
+	NAT          string
+	FirewallRule string
+}
+
+// Any selects the explicit resource names path instead of InfraID-derived names.
+// A true result still requires Validate to ensure all resource names are present.
+func (n NetworkResourceNames) Any() bool {
+	return n.Network != "" || n.Subnet != "" || n.Router != "" || n.NAT != "" || n.FirewallRule != ""
+}
+
+// Validate requires every resource name for cleanup using explicit references.
+func (n NetworkResourceNames) Validate() error {
+	for _, ref := range []struct{ name, value string }{
+		{name: "network", value: n.Network},
+		{name: "subnet", value: n.Subnet},
+		{name: "router", value: n.Router},
+		{name: "NAT", value: n.NAT},
+		{name: "firewall rule", value: n.FirewallRule},
+	} {
+		if ref.value == "" {
+			return fmt.Errorf("%s resource name is required", ref.name)
+		}
+	}
+	return nil
+}
+
 // NewNetworkManager creates a new NetworkManager for GCP network operations.
 func NewNetworkManager(ctx context.Context, projectID, infraID, region string, logger logr.Logger) (*NetworkManager, error) {
+	return newNetworkManager(ctx, projectID, infraID, region, NetworkResourceNames{}, logger)
+}
+
+// NewNetworkManagerWithResources constructs a manager using explicit resource names.
+func NewNetworkManagerWithResources(ctx context.Context, projectID, region string, resources NetworkResourceNames, logger logr.Logger) (*NetworkManager, error) {
+	if err := resources.Validate(); err != nil {
+		return nil, err
+	}
+	return newNetworkManager(ctx, projectID, "", region, resources, logger)
+}
+
+func newNetworkManager(ctx context.Context, projectID, infraID, region string, resources NetworkResourceNames, logger logr.Logger) (*NetworkManager, error) {
 	if projectID == "" {
 		return nil, fmt.Errorf("projectID is required")
 	}
-	if infraID == "" {
+	if infraID == "" && !resources.Any() {
 		return nil, fmt.Errorf("infraID is required")
 	}
 	if region == "" {
@@ -56,6 +100,7 @@ func NewNetworkManager(ctx context.Context, projectID, infraID, region string, l
 		projectID:      projectID,
 		infraID:        infraID,
 		region:         region,
+		resources:      resources,
 		computeService: computeService,
 		logger:         logger,
 	}, nil
@@ -378,26 +423,41 @@ func formatOperationErrors(errors []*compute.OperationErrorErrors) string {
 
 // formatNetworkName returns the VPC network name for this infrastructure.
 func (n *NetworkManager) formatNetworkName() string {
+	if n.resources.Network != "" {
+		return n.resources.Network
+	}
 	return fmt.Sprintf("%s-network", n.infraID)
 }
 
 // formatSubnetName returns the subnet name for this infrastructure.
 func (n *NetworkManager) formatSubnetName() string {
+	if n.resources.Subnet != "" {
+		return n.resources.Subnet
+	}
 	return fmt.Sprintf("%s-subnet", n.infraID)
 }
 
 // formatRouterName returns the Cloud Router name for this infrastructure.
 func (n *NetworkManager) formatRouterName() string {
+	if n.resources.Router != "" {
+		return n.resources.Router
+	}
 	return fmt.Sprintf("%s-router", n.infraID)
 }
 
 // formatNATName returns the Cloud NAT name for this infrastructure.
 func (n *NetworkManager) formatNATName() string {
+	if n.resources.NAT != "" {
+		return n.resources.NAT
+	}
 	return fmt.Sprintf("%s-nat", n.infraID)
 }
 
 // formatFirewallName returns the firewall rule name for kubelet access.
 func (n *NetworkManager) formatFirewallName() string {
+	if n.resources.FirewallRule != "" {
+		return n.resources.FirewallRule
+	}
 	return fmt.Sprintf("%s-allow-kubelet", n.infraID)
 }
 
