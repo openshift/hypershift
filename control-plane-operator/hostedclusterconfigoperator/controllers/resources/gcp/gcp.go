@@ -50,6 +50,13 @@ func SetupOperandCredentials(
 ) []error {
 	configs := []gcpCredentialConfig{
 		{
+			manifestFunc:        manifests.GCPIngressCloudCredsSecret,
+			serviceAccountEmail: string(hcp.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Ingress),
+			secretKey:           defaultCredentialSecretKey,
+			capabilityChecker:   capabilities.IsIngressCapabilityEnabled,
+			errorContext:        "guest cluster ingress credential",
+		},
+		{
 			manifestFunc:        manifests.GCPImageRegistryCloudCredsSecret,
 			serviceAccountEmail: string(hcp.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry),
 			secretKey:           defaultCredentialSecretKey,
@@ -78,6 +85,14 @@ func reconcileGCPCredentials(
 
 	for _, cfg := range configs {
 		if cfg.capabilityChecker != nil && !cfg.capabilityChecker(hcp.Spec.Capabilities) {
+			continue
+		}
+
+		// Skip when no service account email is configured. The email is optional
+		// for capability-gated operands (e.g. ingress); when it is required but
+		// missing the hypershift-operator surfaces a HostedCluster condition, so
+		// here we simply have nothing to build a credential from.
+		if cfg.serviceAccountEmail == "" {
 			continue
 		}
 
