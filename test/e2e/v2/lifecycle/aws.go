@@ -63,7 +63,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
 		extraArgs = strings.Fields(envArgs)
 	}
-	return []ClusterSpec{
+	specs := []ClusterSpec{
 		{
 			Variant: "public",
 			ExtraArgs: append(extraArgs, []string{
@@ -110,6 +110,17 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 			}...),
 		},
 	}
+
+	// Only include the KMS re-encryption variant when the primary etcd KMS key ARN is configured.
+	// This prevents the variant from appearing in regular e2e-v2-aws jobs that don't set this env var.
+	if kmsKeyARN := os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN"); kmsKeyARN != "" {
+		specs = append(specs, ClusterSpec{
+			Variant:   "kms-reencryption",
+			ExtraArgs: append(extraArgs, "--kms-key-arn="+kmsKeyARN),
+		})
+	}
+
+	return specs
 }
 
 func (a *AWSPlatformConfig) CreateArgs() []string {
