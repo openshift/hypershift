@@ -55,8 +55,10 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/smithy-go"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -5858,4 +5860,315 @@ func parseHostPort(t *testing.T, server *httptest.Server) (string, int) {
 		t.Fatalf("failed to parse port: %v", err)
 	}
 	return host, port
+}
+
+// kmsAPIError returns a smithy API error matching AWS KMS error conventions.
+func kmsAPIError(code, message string) error {
+	return &smithy.GenericAPIError{Code: code, Message: message}
+}
+
+func TestValidateAWSKMSConfig(t *testing.T) {
+	baseHCP := func() *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "hcp",
+				Namespace:  "hcp-namespace",
+				Generation: 1,
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+				},
+				SecretEncryption: &hyperv1.SecretEncryptionSpec{
+					Type: hyperv1.KMS,
+					KMS: &hyperv1.KMSSpec{
+						Provider: hyperv1.AWS,
+						AWS: &hyperv1.AWSKMSSpec{
+							Region: "us-east-1",
+							ActiveKey: hyperv1.AWSKMSKeyEntry{
+								ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id",
+							},
+							Auth: hyperv1.AWSKMSAuthSpec{
+								AWSKMSRoleARN: "arn:aws:iam::123456789:role/kms-role",
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	awsSession := aws.Config{
+		Region:      "us-east-1",
+		Credentials: credentials.NewStaticCredentialsProvider("AKID", "SECRET", ""),
+	}
+
+	tests := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		nilAWSSession     bool
+		getGuestToken     func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error)
+		kmsEncryptResult  func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error)
+		assumeRoleResult  func(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error)
+		expectedStatus    metav1.ConditionStatus
+		expectedReason    string
+		expectMsgContains string
+		conditionExpected bool
+	}{
+		{
+			name: "When KMS is not configured, it should set condition Unknown",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "hcp", Namespace: "ns", Generation: 1},
+				Spec:       hyperv1.HostedControlPlaneSpec{},
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionUnknown,
+			expectedReason:    hyperv1.StatusUnknownReason,
+			expectMsgContains: "AWS KMS is not configured",
+		},
+		{
+			name: "When KMS region is empty, it should set condition False",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP()
+				hcp.Spec.SecretEncryption.KMS.AWS.Region = ""
+				return hcp
+			}(),
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.InvalidConfigurationReason,
+			expectMsgContains: "AWS KMS region is not configured",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS key is not found, it should report NotFoundException",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("NotFoundException", "key not found")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "NotFoundException",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS key is disabled, it should report DisabledException",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: x509: certificate signed by unknown authority")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("DisabledException", "key is disabled")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "DisabledException",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS key is pending deletion, it should report KeyUnavailableException",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("KeyUnavailableException", "key pending deletion")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "KeyUnavailableException",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS key is in invalid state, it should report KMSInvalidStateException",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("KMSInvalidStateException", "key in invalid state")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "KMSInvalidStateException",
+		},
+		{
+			name: "When guest cluster is unavailable and CPO lacks direct KMS access, it should report Unknown with informative message",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("AccessDeniedException", "access denied")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionUnknown,
+			expectedReason:    hyperv1.StatusUnknownReason,
+			expectMsgContains: "guest cluster API is unavailable",
+		},
+		{
+			name: "When guest cluster is unavailable but KMS key is accessible directly, it should report Unknown about incomplete validation",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return &kms.EncryptOutput{}, nil
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionUnknown,
+			expectedReason:    hyperv1.StatusUnknownReason,
+			expectMsgContains: "KMS key is accessible",
+		},
+		{
+			name: "When full chain succeeds, it should report True",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "test-token", nil
+			},
+			assumeRoleResult: func(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error) {
+				creds := aws.Credentials{
+					AccessKeyID:     "ASSUMED_AKID",
+					SecretAccessKey: "ASSUMED_SECRET",
+					SessionToken:    "ASSUMED_TOKEN",
+				}
+				return &creds, nil
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return &kms.EncryptOutput{}, nil
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionTrue,
+			expectedReason:    hyperv1.AsExpectedReason,
+			expectMsgContains: hyperv1.AllIsWellMessage,
+		},
+		{
+			name: "When role assumption fails, it should report False with InvalidIAMRole",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "test-token", nil
+			},
+			assumeRoleResult: func(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error) {
+				return nil, kmsAPIError("AccessDeniedException", "cannot assume role")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.InvalidIAMRoleReason,
+			expectMsgContains: "failed to assume role web identity",
+		},
+		{
+			name: "When full chain encrypt fails, it should report False with AWSError",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "test-token", nil
+			},
+			assumeRoleResult: func(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error) {
+				creds := aws.Credentials{
+					AccessKeyID:     "ASSUMED_AKID",
+					SecretAccessKey: "ASSUMED_SECRET",
+					SessionToken:    "ASSUMED_TOKEN",
+				}
+				return &creds, nil
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("AccessDeniedException", "no kms:Encrypt permission")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "failed to encrypt data using KMS",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS key has wrong usage type, it should report InvalidKeyUsageException",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("InvalidKeyUsageException", "key usage is SIGN_VERIFY")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "InvalidKeyUsageException",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS returns unexpected error, it should report Unknown",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("ThrottlingException", "rate exceeded")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionUnknown,
+			expectedReason:    hyperv1.StatusUnknownReason,
+			expectMsgContains: "ThrottlingException",
+		},
+		{
+			name:          "When guest cluster is unavailable and AWS session is nil, it should report Unknown",
+			hcp:           baseHCP(),
+			nilAWSSession: true,
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionUnknown,
+			expectedReason:    hyperv1.StatusUnknownReason,
+			expectMsgContains: "no AWS session is configured",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+			mockCtrl := gomock.NewController(t)
+			mockKMS := awsapi.NewMockKMSAPI(mockCtrl)
+
+			if tc.kmsEncryptResult != nil {
+				mockKMS.EXPECT().Encrypt(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(tc.kmsEncryptResult).AnyTimes()
+			}
+
+			var sessionPtr *aws.Config
+			if !tc.nilAWSSession {
+				sessionPtr = &awsSession
+			}
+
+			r := &HostedControlPlaneReconciler{
+				awsSession: sessionPtr,
+				newKMSClient: func(cfg aws.Config, optFns ...func(*kms.Options)) awsapi.KMSAPI {
+					return mockKMS
+				},
+			}
+
+			if tc.getGuestToken != nil {
+				r.getGuestToken = tc.getGuestToken
+			}
+			if tc.assumeRoleResult != nil {
+				r.assumeRoleWithWebIdentity = tc.assumeRoleResult
+			}
+
+			r.validateAWSKMSConfig(ctx, tc.hcp)
+
+			cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.ValidAWSKMSConfig))
+			if tc.conditionExpected {
+				g.Expect(cond).ToNot(BeNil(), "ValidAWSKMSConfig condition should be set")
+				g.Expect(cond.Status).To(Equal(tc.expectedStatus), "condition status mismatch")
+				if tc.expectedReason != "" {
+					g.Expect(cond.Reason).To(Equal(tc.expectedReason), "condition reason mismatch")
+				}
+				if tc.expectMsgContains != "" {
+					g.Expect(cond.Message).To(ContainSubstring(tc.expectMsgContains), "condition message should contain expected substring")
+				}
+			} else {
+				g.Expect(cond).To(BeNil(), "ValidAWSKMSConfig condition should not be set")
+			}
+		})
+	}
 }

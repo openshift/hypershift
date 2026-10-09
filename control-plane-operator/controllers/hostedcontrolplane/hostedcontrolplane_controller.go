@@ -203,6 +203,9 @@ type HostedControlPlaneReconciler struct {
 	ec2Client                               awsapi.EC2API
 	awsSession                              *aws.Config
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
+	newKMSClient                            func(cfg aws.Config, optFns ...func(*kms.Options)) awsapi.KMSAPI
+	assumeRoleWithWebIdentity               func(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error)
+	getGuestToken                           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error)
 	EnableCVOManagementClusterMetricsAccess bool
 	ImageMetadataProvider                   imageregistry.ImageMetadataProvider
 	cpoAzureCredentialsLoaded               sync.Map
@@ -233,6 +236,11 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 	r.SetDefaultSecurityContext = !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint)
 
 	r.reconcileInfrastructureStatus = r.defaultReconcileInfrastructureStatus
+	r.newKMSClient = func(cfg aws.Config, optFns ...func(*kms.Options)) awsapi.KMSAPI {
+		return kms.NewFromConfig(cfg, optFns...)
+	}
+	r.assumeRoleWithWebIdentity = supportawsutil.AssumeRoleWithWebIdentity
+	r.getGuestToken = r.defaultGetGuestToken
 
 	r.ec2Client, r.awsSession = GetEC2Client(context.Background())
 
@@ -3269,6 +3277,20 @@ func hasValidCloudCredentials(hcp *hyperv1.HostedControlPlane) (string, bool) {
 	return "", true
 }
 
+func (r *HostedControlPlaneReconciler) defaultGetGuestToken(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+	guestClient, err := r.GetGuestClusterClient(ctx, hcp)
+	if err != nil {
+		return "", fmt.Errorf("failed to create guest client: %w", err)
+	}
+
+	sa := manifests.KASContainerKMSProviderServiceAccount()
+	token, err := k8sutil.CreateTokenForServiceAccount(ctx, sa, k8sutil.ServiceAccountClient(guestClient, sa.Namespace))
+	if err != nil {
+		return "", fmt.Errorf("failed to create token for KMS provider service account: %w", err)
+	}
+	return token, nil
+}
+
 func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
 	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil || hcp.Spec.SecretEncryption.KMS.AWS == nil {
 		// AWS KMS not configured
@@ -3284,32 +3306,31 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 	}
 	log := ctrl.LoggerFrom(ctx)
 
-	guestClient, err := r.GetGuestClusterClient(ctx, hcp)
-	if err != nil {
-		// guest cluster is not ready yet.
-		log.Error(err, "failed to create guest client")
-		return
-	}
-
-	sa := manifests.KASContainerKMSProviderServiceAccount()
-	token, err := k8sutil.CreateTokenForServiceAccount(ctx, sa, k8sutil.ServiceAccountClient(guestClient, sa.Namespace))
-	if err != nil {
-		// service account might not be created in the guest cluster or KAS is not operational.
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAWSKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionUnknown,
-			Message:            fmt.Sprintf("failed to create token for KMS provider service account: %v", err),
-			Reason:             hyperv1.StatusUnknownReason,
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-		return
-	}
-
 	roleArn := hcp.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN
 	kmsKeyArn := hcp.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN
+	kmsRegion := hcp.Spec.SecretEncryption.KMS.AWS.Region
 
-	creds, err := supportawsutil.AssumeRoleWithWebIdentity(ctx, r.awsSession, "control-plane-operator", roleArn, token)
+	if kmsRegion == "" {
+		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidAWSKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            "AWS KMS region is not configured",
+			Reason:             hyperv1.InvalidConfigurationReason,
+		})
+		return
+	}
+
+	token, err := r.getGuestToken(ctx, hcp)
+	if err != nil {
+		// Guest cluster API is unavailable. Attempt a direct KMS key validation
+		// to detect key-level issues that might be causing the guest cluster to be down.
+		log.Error(err, "failed to get guest token for KMS validation, falling back to direct KMS key check")
+		r.validateKMSKeyDirect(ctx, hcp, kmsKeyArn, kmsRegion)
+		return
+	}
+
+	creds, err := r.assumeRoleWithWebIdentity(ctx, r.awsSession, "control-plane-operator", roleArn, token)
 	if err != nil {
 		condition := metav1.Condition{
 			Type:               string(hyperv1.ValidAWSKMSConfig),
@@ -3337,11 +3358,13 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 		Reason:             hyperv1.AsExpectedReason,
 	}
 
-	kmsService := kms.NewFromConfig(awsSession)
+	kmsService := r.newKMSClient(awsSession, func(o *kms.Options) {
+		o.Region = kmsRegion
+	})
 
 	input := &kms.EncryptInput{
 		KeyId:     aws.String(kmsKeyArn),
-		Plaintext: []byte("text"),
+		Plaintext: []byte("test"),
 	}
 	if _, err = kmsService.Encrypt(ctx, input); err != nil {
 		condition = metav1.Condition{
@@ -3353,6 +3376,76 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 		}
 	}
 
+	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+}
+
+// validateKMSKeyDirect attempts to validate the KMS key using the CPO's own
+// credentials when the guest cluster is unavailable. This detects key-level
+// issues (non-existent, disabled, pending deletion) without the full
+// role-assumption chain that depends on the guest cluster API.
+//
+// In self-managed deployments the KMS key and the CPO are in the same AWS
+// account, so the probe surfaces real key errors (NotFoundException,
+// DisabledException, etc.). In ROSA the customer provides a KMS key from
+// their own account while the CPO runs in Red Hat's account; AWS will return
+// AccessDeniedException for all cross-account cases (including non-existent
+// keys) to avoid leaking key existence, so the fallback reports
+// ConditionUnknown.
+func (r *HostedControlPlaneReconciler) validateKMSKeyDirect(ctx context.Context, hcp *hyperv1.HostedControlPlane, kmsKeyArn, kmsRegion string) {
+	if r.awsSession == nil {
+		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidAWSKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Message:            "Unable to validate KMS configuration: guest cluster API is unavailable and no AWS session is configured",
+			Reason:             hyperv1.StatusUnknownReason,
+		})
+		return
+	}
+
+	kmsService := r.newKMSClient(*r.awsSession, func(o *kms.Options) {
+		o.Region = kmsRegion
+	})
+
+	input := &kms.EncryptInput{
+		KeyId:     aws.String(kmsKeyArn),
+		Plaintext: []byte("test"),
+	}
+
+	_, err := kmsService.Encrypt(ctx, input)
+	if err != nil {
+		errorCode := supportawsutil.AWSErrorCode(err)
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAWSKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.StatusUnknownReason,
+		}
+		switch errorCode {
+		case "NotFoundException", "DisabledException", "KeyUnavailableException", "KMSInvalidStateException", "InvalidKeyUsageException":
+			// These errors indicate a problem with the KMS key itself.
+			condition.Status = metav1.ConditionFalse
+			condition.Reason = hyperv1.AWSErrorReason
+			condition.Message = fmt.Sprintf("KMS key validation failed (key: %s), code: %s", kmsKeyArn, errorCode)
+		case "AccessDeniedException":
+			// CPO doesn't have direct access to the key (expected in ROSA cross-account setups).
+			condition.Message = "Unable to validate KMS configuration: guest cluster API is unavailable and direct KMS key access is not permitted"
+		default:
+			condition.Message = fmt.Sprintf("Unable to validate KMS configuration: guest cluster API is unavailable, direct KMS check failed with code: %s", errorCode)
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	// KMS encrypt succeeded with CPO credentials — key is accessible.
+	// Full role-chain validation could not be completed because the guest cluster is unavailable.
+	condition := metav1.Condition{
+		Type:               string(hyperv1.ValidAWSKMSConfig),
+		ObservedGeneration: hcp.Generation,
+		Status:             metav1.ConditionUnknown,
+		Message:            "KMS key is accessible but full validation cannot be completed: guest cluster API is unavailable for role assumption validation",
+		Reason:             hyperv1.StatusUnknownReason,
+	}
 	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 }
 
