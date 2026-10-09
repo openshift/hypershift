@@ -5522,6 +5522,163 @@ func TestReconcileDefaultSecurityGroup_GenerationConflict(t *testing.T) {
 		"platform status should not be patched when generation changed underneath us")
 }
 
+func TestReconcileGCPWorkerFirewallRules(t *testing.T) {
+	t.Run("When the platform is not GCP, it should be a no-op and set no condition", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns", Generation: 1},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				InfraID:  "test-infra",
+				Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{}},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hcp).
+			WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+			Build()
+		ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+		r := &HostedControlPlaneReconciler{Client: fakeClient, Log: ctrl.Log.WithName("test")}
+		g.Expect(r.reconcileGCPWorkerFirewallRules(ctx, hcp)).To(Succeed())
+
+		updated := &hyperv1.HostedControlPlane{}
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.GCPFirewallRulesReady))).To(BeNil())
+	})
+
+	t.Run("When WIF credentials are unavailable, it should degrade gracefully without an aggregate error", func(t *testing.T) {
+		g := NewWithT(t)
+		// Ensure no WIF credentials are visible to the manager in this env.
+		t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns", Generation: 1},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				InfraID: "test-infra",
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.GCPPlatform,
+					GCP: &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network: hyperv1.GCPResourceReference{Name: "test-infra-network"},
+						},
+					},
+				},
+				Networking: hyperv1.ClusterNetworking{NetworkType: hyperv1.OVNKubernetes},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hcp).
+			WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+			Build()
+		ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+		r := &HostedControlPlaneReconciler{Client: fakeClient, Log: ctrl.Log.WithName("test")}
+		// No aggregate error: the reconcile must not be wedged.
+		g.Expect(r.reconcileGCPWorkerFirewallRules(ctx, hcp)).To(Succeed())
+
+		updated := &hyperv1.HostedControlPlane{}
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.GCPFirewallRulesReady))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.Reason).To(Equal(hyperv1.GCPFirewallWaitingForCredentials))
+		g.Expect(cond.ObservedGeneration).To(Equal(int64(1)))
+	})
+}
+
+func TestGCPFirewallSkipOnWIFUnavailableReason(t *testing.T) {
+	t.Run("When the provisioned marker was never persisted, it should return a non-empty reason", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).ToNot(BeEmpty())
+	})
+
+	t.Run("When the provisioned marker is set, it should return an empty reason so the finalizer is retained", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation: "true"},
+			},
+		}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).To(BeEmpty())
+	})
+
+	t.Run("When a stale status condition exists but the provisioned marker is absent, it should still skip (status is not durable evidence)", func(t *testing.T) {
+		g := NewWithT(t)
+		// A prior converged condition does not prove a rule currently exists: the
+		// marker is the only durable, pre-mutation evidence. Marker absent => skip.
+		hcp := &hyperv1.HostedControlPlane{
+			Status: hyperv1.HostedControlPlaneStatus{
+				Conditions: []metav1.Condition{{
+					Type:   string(hyperv1.GCPFirewallRulesReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				}},
+			},
+		}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).ToNot(BeEmpty())
+	})
+
+	t.Run("When the manual skip annotation is set, it should return a non-empty reason even with the provisioned marker set", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					hyperv1.GCPFirewallSkipDeletionAnnotation:              "true",
+					hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation: "true",
+				},
+			},
+		}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).ToNot(BeEmpty())
+	})
+}
+
+func TestMarkGCPFirewallProvisioned(t *testing.T) {
+	newHCP := func(annotations map[string]string) *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "hcp",
+				Namespace:   "ns",
+				Annotations: annotations,
+			},
+		}
+	}
+
+	t.Run("When the marker is absent, it persists the annotation", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHCP(nil)
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp).Build()
+		r := &HostedControlPlaneReconciler{Client: c}
+
+		g.Expect(r.markGCPFirewallProvisioningAttempted(t.Context(), hcp)).To(Succeed())
+		g.Expect(hcp.Annotations).To(HaveKeyWithValue(hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation, "true"))
+
+		persisted := &hyperv1.HostedControlPlane{}
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hcp), persisted)).To(Succeed())
+		g.Expect(persisted.Annotations).To(HaveKeyWithValue(hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation, "true"))
+	})
+
+	t.Run("When the marker is already set, it is a no-op", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHCP(map[string]string{hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation: "true"})
+		// No client is needed since no patch should be issued; a nil client would
+		// panic if the function tried to patch.
+		r := &HostedControlPlaneReconciler{}
+
+		g.Expect(r.markGCPFirewallProvisioningAttempted(t.Context(), hcp)).To(Succeed())
+	})
+}
+
 func TestHealthCheckKASEndpoint(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
