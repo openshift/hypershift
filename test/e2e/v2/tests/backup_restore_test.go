@@ -59,6 +59,8 @@ const (
 const (
 	// oadpPluginConfigMapName is the name of the ConfigMap used to configure the hypershift OADP plugin.
 	oadpPluginConfigMapName = "hypershift-oadp-plugin-config"
+	// etcdSnapshotURLAnnotation carries the snapshot URL through Velero's backup archive.
+	etcdSnapshotURLAnnotation = "hypershift.openshift.io/etcd-snapshot-url"
 	// etcdBackupMethodKey is the ConfigMap key that controls the etcd backup method.
 	etcdBackupMethodKey = "etcdBackupMethod"
 	// etcdBackupMethodSnapshot is the value for etcdBackupMethodKey to use etcd snapshots.
@@ -150,6 +152,13 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 	})
 
 	Context(ContextPreBackupControlPlane, func() {
+		It("should load the HyperShift OADP plugin in Velero", func() {
+			image, err := backuprestore.GetReadyHypershiftPluginImage(testCtx)
+			Expect(err).NotTo(HaveOccurred())
+			assertExpectedPluginImage(image)
+			GinkgoWriter.Printf("Velero loaded HyperShift OADP plugin image %s\n", image)
+		})
+
 		It("should have control plane healthy before backup", func() {
 			expectedConditions = validatePreBackupControlPlane(testCtx, platformCfg.excludeWorkloads)
 		})
@@ -301,6 +310,20 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 			skipNodePoolValidation := hc.Spec.Platform.Type == hyperv1.AgentPlatform
 			validatePostRestoreControlPlane(testCtx, platformCfg.excludeWorkloads, expectedConditions, skipNodePoolValidation)
 		})
+
+		It("should report HyperShift plugin recovery completed on HostedCluster", func() {
+			Eventually(func(g Gomega) {
+				hc, err := testCtx.GetHostedCluster()
+				g.Expect(err).NotTo(HaveOccurred())
+				condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.HostedClusterRestoredFromBackup))
+				g.Expect(condition).NotTo(BeNil(), "expected HostedClusterRestoredFromBackup condition on %s/%s", hc.Namespace, hc.Name)
+				if condition == nil {
+					return
+				}
+				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(condition.Reason).To(Equal(hyperv1.RecoveryFinishedReason))
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed())
+		})
 	})
 })
 
@@ -326,6 +349,12 @@ func validateBeforeEach(testCtx *internal.TestContext) {
 	err := backuprestore.EnsureVeleroPodRunning(testCtx)
 	if err != nil {
 		Fail(fmt.Sprintf("Velero is not running: %v", err))
+	}
+}
+
+func assertExpectedPluginImage(image string) {
+	if expected := internal.GetEnvVarValue("E2E_HYPERSHIFT_OADP_PLUGIN_IMAGE"); expected != "" {
+		Expect(image).To(Equal(expected), "Velero must load the plugin image built by this job")
 	}
 }
 
@@ -504,6 +533,17 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 	})
 
 	Context(ContextPreBackupControlPlane, func() {
+		It("should load the HyperShift OADP plugin in Velero", func() {
+			var image string
+			Eventually(func(g Gomega) {
+				var err error
+				image, err = backuprestore.GetReadyHypershiftPluginImage(testCtx)
+				g.Expect(err).NotTo(HaveOccurred())
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(10 * time.Minute).Should(Succeed())
+			assertExpectedPluginImage(image)
+			GinkgoWriter.Printf("Velero loaded HyperShift OADP plugin image %s\n", image)
+		})
+
 		It("should have control plane healthy before backup", func() {
 			expectedConditions = validatePreBackupControlPlane(testCtx, platformCfg.excludeWorkloads)
 		})
@@ -643,6 +683,57 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 					"expected restoreSnapshotURL to be a non-empty presigned URL")
 			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed())
 			GinkgoWriter.Printf("RestoreSnapshotURL is set on HostedCluster\n")
+		})
+
+		It("should restore the snapshot URL annotation on HostedCluster and HostedControlPlane", func() {
+			Expect(snapshotURL).NotTo(BeEmpty(), "snapshot URL should be captured from the HCPEtcdBackup created in this run")
+			Eventually(func(g Gomega) {
+				hc, err := testCtx.GetHostedCluster()
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(hc.Annotations).To(HaveKeyWithValue(etcdSnapshotURLAnnotation, snapshotURL),
+					"expected restored HostedCluster %s/%s to carry the backup snapshot URL", hc.Namespace, hc.Name)
+
+				hcp := &hyperv1.HostedControlPlane{}
+				err = testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
+					Name: testCtx.ClusterName, Namespace: testCtx.ControlPlaneNamespace,
+				}, hcp)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(hcp.Annotations).To(HaveKeyWithValue(etcdSnapshotURLAnnotation, snapshotURL),
+					"expected restored HostedControlPlane %s/%s to carry the backup snapshot URL", hcp.Namespace, hcp.Name)
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed())
+		})
+
+		It("should have a signed restore URL for the snapshot created in this run", func() {
+			Expect(snapshotURL).NotTo(BeEmpty(), "snapshot URL should be captured from the HCPEtcdBackup created in this run")
+			Eventually(func(g Gomega) {
+				hostedCluster := &hyperv1.HostedCluster{}
+				err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
+					Name:      testCtx.ClusterName,
+					Namespace: testCtx.ClusterNamespace,
+				}, hostedCluster)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(hostedCluster.Spec.Etcd.Managed).NotTo(BeNil(), "expected managed etcd spec to be set")
+				g.Expect(hostedCluster.Spec.Etcd.Managed.Storage.RestoreSnapshotURL).To(HaveLen(1),
+					"expected restoreSnapshotURL to contain exactly one entry")
+				g.Expect(backuprestore.ValidateSnapshotRestoreURL(snapshotURL,
+					hostedCluster.Spec.Etcd.Managed.Storage.RestoreSnapshotURL[0])).To(Succeed(),
+					"expected restoreSnapshotURL to identify the snapshot created in this run")
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed())
+			GinkgoWriter.Printf("RestoreSnapshotURL identifies the backup snapshot\n")
+		})
+
+		It("should report HyperShift plugin recovery completed on HostedCluster", func() {
+			Eventually(func(g Gomega) {
+				hc, err := testCtx.GetHostedCluster()
+				g.Expect(err).NotTo(HaveOccurred())
+				condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.HostedClusterRestoredFromBackup))
+				g.Expect(condition).NotTo(BeNil(), "expected HostedClusterRestoredFromBackup condition on %s/%s", hc.Namespace, hc.Name)
+				if condition == nil {
+					return
+				}
+				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(condition.Reason).To(Equal(hyperv1.RecoveryFinishedReason))
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed())
 		})
 
 		It("should have all etcd members in a single cluster after restore", Label(internal.InformingLabel), func() {
