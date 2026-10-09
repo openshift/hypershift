@@ -195,11 +195,6 @@ tests:
         management:
           autoRepair: false
           upgradeType: Replace
-          replace:
-            strategy: RollingUpdate
-            rollingUpdate:
-              maxSurge: 1
-              maxUnavailable: 0
         release:
           image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
         replicas: 0
@@ -321,11 +316,6 @@ tests:
         management:
           autoRepair: false
           upgradeType: Replace
-          replace:
-            strategy: RollingUpdate
-            rollingUpdate:
-              maxSurge: 1
-              maxUnavailable: 0
         release:
           image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
         replicas: 0
