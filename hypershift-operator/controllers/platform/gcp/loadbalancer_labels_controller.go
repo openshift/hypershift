@@ -10,7 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/gcputil"
-	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -135,7 +135,7 @@ func (r *GCPLoadBalancerLabelsReconciler) Reconcile(ctx context.Context, req ctr
 	if !hcp.DeletionTimestamp.IsZero() || hcp.Spec.Platform.Type != hyperv1.GCPPlatform {
 		return ctrl.Result{}, nil
 	}
-	if isPaused, duration := supportutil.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
 		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
