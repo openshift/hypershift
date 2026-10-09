@@ -575,17 +575,47 @@ func (r *HostedControlPlaneReconciler) reconcileKASStatus(ctx context.Context, h
 // deprecated mechanism is used to configure the hosted control plane. Each deprecation
 // check appends a message to the collected list; if any fire, the condition is set to True
 // with the messages joined together, otherwise it is set to False. This makes it easy to
-// add new deprecation checks over time. Today the only such mechanism is the
-// hypershift.openshift.io/kube-apiserver-verbosity-level annotation, which fires whenever
-// the annotation is present, even if spec.operatorConfiguration.kubeAPIServer.logLevel is
-// also set and taking precedence, so that users are guided to remove the deprecated
-// annotation entirely. The condition is message-only: it does not affect verbosity
-// resolution, config hashes, or rollouts.
+// add new deprecation checks over time. Today the mechanisms are the
+// hypershift.openshift.io/kube-apiserver-verbosity-level annotation, the legacy OVNSbDb
+// and OIDC service entries, spec.platform.aws.multiArch, and
+// spec.secretEncryption.aescbc.backupKey, spec.secretEncryption.kms.aws.backupKey, and
+// spec.secretEncryption.kms.azure.backupKey. The annotation fires whenever it is present, even
+// if spec.operatorConfiguration.kubeAPIServer.logLevel is also set and taking precedence; the
+// service entries fire whenever they are present because those services are no longer used,
+// multiArch fires when true because it is no longer used, and backupKey fields fire whenever
+// they are present because the system manages previous keys through status.secretEncryption.activeKey.
+// The condition is message-only: it does not affect configuration resolution, config hashes,
+// or rollouts.
 func (r *HostedControlPlaneReconciler) reconcileDeprecatedConfigurationStatus(hostedControlPlane *hyperv1.HostedControlPlane) {
 	var deprecationMessages []string
 
 	if _, hasVerbosityAnnotation := hostedControlPlane.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation]; hasVerbosityAnnotation {
 		deprecationMessages = append(deprecationMessages, fmt.Sprintf("The deprecated %q annotation is set; migrate to spec.operatorConfiguration.kubeAPIServer.logLevel and remove the annotation", hyperv1.KubeAPIServerVerbosityLevelAnnotation))
+	}
+	for _, service := range hostedControlPlane.Spec.Services {
+		if service.Service == hyperv1.OVNSbDb || service.Service == hyperv1.OIDC {
+			deprecationMessages = append(deprecationMessages, fmt.Sprintf("The deprecated spec.services entry %q is present; remove this entry because the service is no longer used", service.Service))
+		}
+	}
+	if hostedControlPlane.Spec.Platform.AWS != nil && hostedControlPlane.Spec.Platform.AWS.MultiArch {
+		deprecationMessages = append(deprecationMessages, "The deprecated spec.platform.aws.multiArch field is set to true; remove it because it is no longer used")
+	}
+	if hostedControlPlane.Spec.SecretEncryption != nil &&
+		hostedControlPlane.Spec.SecretEncryption.AESCBC != nil &&
+		hostedControlPlane.Spec.SecretEncryption.AESCBC.BackupKey != nil { //nolint:staticcheck
+		deprecationMessages = append(deprecationMessages, "The deprecated spec.secretEncryption.aescbc.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after status.secretEncryption.activeKey is set")
+	}
+	if hostedControlPlane.Spec.SecretEncryption != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS.AWS != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS.AWS.BackupKey != nil { //nolint:staticcheck
+		deprecationMessages = append(deprecationMessages, "The deprecated spec.secretEncryption.kms.aws.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after status.secretEncryption.activeKey is set")
+	}
+	if hostedControlPlane.Spec.SecretEncryption != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS.Azure != nil &&
+		hostedControlPlane.Spec.SecretEncryption.KMS.Azure.BackupKey != nil { //nolint:staticcheck
+		deprecationMessages = append(deprecationMessages, "The deprecated spec.secretEncryption.kms.azure.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after status.secretEncryption.activeKey is set")
 	}
 
 	newCondition := metav1.Condition{
