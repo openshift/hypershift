@@ -6,7 +6,7 @@ import (
 
 func assignTagOperator(d *dataTreeNavigator, context Context, expressionNode *ExpressionNode) (Context, error) {
 
-	log.Debugf("AssignTagOperator: %v")
+	log.Debugf("AssignTagOperator")
 	tag := ""
 
 	if !expressionNode.Operation.UpdateAssign {
@@ -20,7 +20,7 @@ func assignTagOperator(d *dataTreeNavigator, context Context, expressionNode *Ex
 		}
 	}
 
-	lhs, err := d.GetMatchingNodes(context, expressionNode.LHS)
+	lhs, err := d.GetMatchingNodes(context.WritableClone(), expressionNode.LHS)
 
 	if err != nil {
 		return Context{}, err

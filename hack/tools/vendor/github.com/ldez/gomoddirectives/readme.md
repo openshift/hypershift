@@ -3,7 +3,6 @@
 A linter that handle directives into `go.mod`.
 
 [![Sponsor](https://img.shields.io/badge/Sponsor%20me-%E2%9D%A4%EF%B8%8F-pink)](https://github.com/sponsors/ldez)
-[![Build Status](https://github.com/ldez/gomoddirectives/workflows/Main/badge.svg?branch=master)](https://github.com/ldez/gomoddirectives/actions)
 
 ## Usage
 
@@ -26,7 +25,11 @@ linters:
       # Default: []
       replace-allow-list:
         - launchpad.net/gocheck
-      
+
+      # Allow all `replace` directives.
+      # Default: false
+      replace-allow-all: true
+
       # Allow to not explain why the version has been retracted in the `retract` directives.
       # Default: false
       retract-allow-no-explanation: true
@@ -85,6 +88,8 @@ Flags:
         List of allowed replace directives
   -local
         Allow local replace directives
+  -all-replace
+        Allow all replace directives
   -retract-no-explanation
         Allow to use retract directives without explanation
   -tool
@@ -120,6 +125,7 @@ retract (
 - Ban all `replace` directives.
 - Allow only local `replace` directives.
 - Allow only some `replace` directives.
+- Allow all `replace` directives.
 - Detect duplicated `replace` directives.
 - Detect identical `replace` directives.
 
@@ -154,7 +160,7 @@ exclude (
 )
 ```
 
-### [`ignore`](TODO) directives
+### [`ignore`](https://go.dev/ref/mod#go-mod-file-ignore) directives
 
 - Ban all `ignore` directives.
 
