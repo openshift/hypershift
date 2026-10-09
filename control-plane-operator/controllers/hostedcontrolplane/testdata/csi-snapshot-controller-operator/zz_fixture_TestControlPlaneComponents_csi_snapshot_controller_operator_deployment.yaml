@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: bcd633232a94bccfb801abc5a9da370873e958ad09d7877115984cf7bcc27ec1
+    hypershift.openshift.io/desired-state-hash: db146c21522f523eb956cbfb158e76c9b662b896e1566d16caf96c0c77ab1c16
   labels:
     app: csi-snapshot-controller-operator
     hypershift.openshift.io/managed-by: control-plane-operator
@@ -112,6 +112,8 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         - --kubeconfig=/var/kubeconfig/kubeconfig
         - --required-api=operator.openshift.io,v1,CSISnapshotController
         image: availability-prober
@@ -120,6 +122,9 @@ spec:
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
         - mountPath: /var/kubeconfig
           name: guest-kubeconfig
       priorityClassName: hypershift-control-plane
@@ -150,6 +155,12 @@ spec:
           defaultMode: 420
           name: csi-snapshot-controller-operator-config
         name: config
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}

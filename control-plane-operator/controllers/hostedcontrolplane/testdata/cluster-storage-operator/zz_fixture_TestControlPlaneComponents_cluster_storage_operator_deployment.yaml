@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 092ffc6bcf871763587ed4d02f814da54fdefabce063479b895fe63359cfaa20
+    hypershift.openshift.io/desired-state-hash: bcf71544b2ea2f8e3fdc34bc000f8c26889975646d3e3ae0215463a1561ef828
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-storage-operator
@@ -197,6 +197,8 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
+        - --ca-file
+        - /etc/availability-prober/ca/ca.crt
         - --kubeconfig=/var/kubeconfig/kubeconfig
         - --required-api=operator.openshift.io,v1,Storage
         image: availability-prober
@@ -205,6 +207,9 @@ spec:
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /etc/availability-prober/ca
+          name: availability-prober-root-ca
+          readOnly: true
         - mountPath: /var/kubeconfig
           name: guest-kubeconfig
       priorityClassName: hypershift-control-plane
@@ -235,6 +240,12 @@ spec:
           defaultMode: 420
           name: cluster-storage-operator-config
         name: config
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: root-ca
+        name: availability-prober-root-ca
       - emptyDir: {}
         name: tmp-dir
 status: {}
