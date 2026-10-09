@@ -386,6 +386,49 @@ func TestReconcile(t *testing.T) {
 		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}, updatedSecret)).To(Succeed())
 		g.Expect(updatedSecret.Data[corev1.TLSCertKey]).To(Equal(originalCert))
 	})
+
+	t.Run("When the serving cert was signed by a stale CA it should be re-signed against the current CA (ROSAENG-65488)", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Simulate the incident: the CA secret was regenerated at some point (staleCASecret
+		// represents the CA that originally signed the still-valid leaf), but the leaf itself
+		// (servingSecret) was never re-issued against the new CA. The current CA secret in the
+		// cluster is now currentCASecret, which is different from the one that signed the leaf.
+		staleCASecret, servingSecret, _, err := GenerateInitialWebhookCerts("hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+		originalCert := append([]byte(nil), servingSecret.Data[corev1.TLSCertKey]...)
+
+		currentCASecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: CASecretName, Namespace: "hypershift"},
+			Type:       corev1.SecretTypeOpaque,
+		}
+		g.Expect(certs.ReconcileSelfSignedCA(currentCASecret, "hypershift-webhook-ca", "openshift")).To(Succeed())
+		g.Expect(currentCASecret.Data[certs.CASignerCertMapKey]).ToNot(Equal(staleCASecret.Data[certs.CASignerCertMapKey]))
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(currentCASecret, servingSecret).Build()
+		r := newReconciler(cl)
+
+		_, err = r.Reconcile(t.Context(), caRequest())
+		g.Expect(err).ToNot(HaveOccurred())
+
+		updatedSecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}, updatedSecret)).To(Succeed())
+
+		// The leaf must be re-signed even though the original was still time-valid with correct SANs.
+		g.Expect(updatedSecret.Data[corev1.TLSCertKey]).ToNot(Equal(originalCert))
+
+		// The re-signed leaf must chain to the current CA.
+		updatedCASecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: CASecretName, Namespace: "hypershift"}, updatedCASecret)).To(Succeed())
+		caPool := x509.NewCertPool()
+		g.Expect(caPool.AppendCertsFromPEM(updatedCASecret.Data[certs.CASignerCertMapKey])).To(BeTrue())
+		block, _ := pem.Decode(updatedSecret.Data[corev1.TLSCertKey])
+		g.Expect(block).ToNot(BeNil())
+		leaf, err := x509.ParseCertificate(block.Bytes)
+		g.Expect(err).ToNot(HaveOccurred())
+		_, err = leaf.Verify(x509.VerifyOptions{Roots: caPool})
+		g.Expect(err).ToNot(HaveOccurred())
+	})
 }
 
 func TestGenerateInitialWebhookCerts(t *testing.T) {
