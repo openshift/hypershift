@@ -13445,6 +13445,7 @@ Pull request callers resolve their reusable workflows from `main`, while post-me
 | `cpo-container-sync.yaml` | `cpo-container-sync-reusable.yaml` | Validate CPO container image references are in sync |
 | `dependabot-commit-fix.yaml` | `dependabot-commit-fix-reusable.yaml` | Rewrite dependabot commit messages to pass gitlint |
 | `gocacheprog-test.yaml` | `gocacheprog-test-reusable.yaml` | Tests for the `contrib/ci/gocacheprog` build cache tool (path-filtered) |
+| `test-commit-layout.yaml` | `test-commit-layout-reusable.yaml` | Tests for the `skills/restructure-commits` layout tool and ownership generator (path-filtered) |
 | `validate-cpo-overrides.yaml` | — | Validate CPO override images contain the PRs claimed in the PR description |
 
 !!! note

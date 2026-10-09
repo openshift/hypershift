@@ -92,6 +92,7 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator kar
 
 .PHONY: update
 update: api-deps workspace-sync deps api api-docs clients docs-aggregate
+	$(MAKE) ownership-rules
 
 GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
 $(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
@@ -682,6 +683,25 @@ verify-tekton-pipeline-pairs: $(PYTHON_VENV_STAMP) ## Verify paired Tekton Pipel
 	else \
 		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/verify-tekton-pipeline-pairs_test.py && \
 		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-tekton-pipeline-pairs.py; \
+	fi
+
+COMMIT_LAYOUT := skills/restructure-commits/commit_layout.py
+
+.PHONY: verify-commit-layout
+verify-commit-layout: ## Verify component commit layout of BASE..HEAD_REF (restructure-commits gate). Set BASE; optional HEAD_REF, EXPECT_TREE.
+	@test -n "$(BASE)" || { echo "BASE must be set to the merge base with the PR target branch" >&2; exit 2; }
+	@python3 $(COMMIT_LAYOUT) verify --base "$(BASE)" --head "$(or $(HEAD_REF),HEAD)" $(if $(EXPECT_TREE),--expect-tree "$(EXPECT_TREE)")
+
+.PHONY: ownership-rules
+ownership-rules: ## Regenerate the restructure-commits ownership.json and SKILL.md table from repository facts.
+	python3 skills/restructure-commits/generate_ownership.py
+
+.PHONY: test-commit-layout
+test-commit-layout: $(PYTHON_VENV_STAMP) ## Test the restructure-commits layout tool and ownership generator.
+	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
+		$(PYTHON_VENV)/bin/python3 -m pytest -q -p no:cacheprovider skills/restructure-commits; \
+	else \
+		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q -p no:cacheprovider skills/restructure-commits; \
 	fi
 
 .PHONY: verify-codespell
