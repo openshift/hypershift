@@ -432,6 +432,20 @@ const (
 	// KubeAPIServerGoAwayChance allows the --goaway-chance parameter of the kube-apiserver to be overridden from its default of 0
 	KubeAPIServerGoAwayChance = "hypershift.openshift.io/kube-apiserver-goaway-chance"
 
+	// KubeAPIServerEventTTLMinutes allows the --event-ttl parameter of the kube-apiserver to be overridden
+	// from its default of 3h (180 minutes). Lowering it reduces the etcd storage consumed by events.
+	// The value is an integer number of minutes (e.g. "60", "180") and must be between 5 and 180 inclusive.
+	// The setting only applies to events created after the change; existing events keep their original TTL.
+	// An invalid value is rejected by the HostedCluster controller, which reports it via the
+	// ValidHostedClusterConfiguration condition and leaves the kube-apiserver on the default.
+	KubeAPIServerEventTTLMinutes = "hypershift.openshift.io/event-ttl-minutes"
+
+	// MinEventTTLMinutes and MaxEventTTLMinutes bound the KubeAPIServerEventTTLMinutes annotation.
+	// Below the minimum, events expire faster than a typical troubleshooting window. The maximum is
+	// the current default, because raising it would only add etcd storage pressure.
+	MinEventTTLMinutes = 5
+	MaxEventTTLMinutes = 180
+
 	// KubeAPIServerServiceAccountTokenMaxExpiration allows setting the maximum expiration duration
 	// for service account tokens issued by the kube-apiserver. This is useful during service account
 	// signing key rotation to enforce a limited token lifetime, ensuring tokens are re-issued with

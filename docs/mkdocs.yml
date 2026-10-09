@@ -116,6 +116,7 @@ nav:
   - 'Configure OCP components':
     - how-to/configure-ocp-components/index.md
     - how-to/configure-ocp-components/kubeapi-server.md
+    - how-to/configure-ocp-components/kubeapi-server-event-ttl.md
     - how-to/configure-ocp-components/oauth-serving-certificates.md
     - how-to/configure-ocp-components/custom-kas-kubeconfig.md
     - how-to/configure-ocp-components/configurable-log-levels.md

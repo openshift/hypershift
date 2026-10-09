@@ -1092,6 +1092,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2": "test2",
 				hyperv1.KubeAPIServerGoAwayChance:                            "0.001",
+				hyperv1.KubeAPIServerEventTTLMinutes:                         "60",
 				"foo":                                                        "bar", // should not be copied
 			},
 			expectedAnnotations: map[string]string{
@@ -1100,6 +1101,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2": "test2",
 				hyperv1.KubeAPIServerGoAwayChance:                            "0.001",
+				hyperv1.KubeAPIServerEventTTLMinutes:                         "60",
 				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
 				k8sutil.HostedClusterAnnotation:                              hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:                   "true",
@@ -9720,6 +9722,68 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			pullSecret := controlplaneoperator.PullSecret("cp-ns")
 			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
 			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
+		})
+	}
+}
+
+func TestValidateEventTTL(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name          string
+		annotations   map[string]string
+		expectedError string
+	}{
+		{
+			name: "When the annotation is absent, it should succeed",
+		},
+		{
+			name:        "When the annotation is at the minimum, it should succeed",
+			annotations: map[string]string{hyperv1.KubeAPIServerEventTTLMinutes: "5"},
+		},
+		{
+			name:        "When the annotation is at the maximum, it should succeed",
+			annotations: map[string]string{hyperv1.KubeAPIServerEventTTLMinutes: "180"},
+		},
+		{
+			name:        "When the annotation is within range, it should succeed",
+			annotations: map[string]string{hyperv1.KubeAPIServerEventTTLMinutes: "60"},
+		},
+		{
+			name:          "When the annotation is below the minimum, it should return an error",
+			annotations:   map[string]string{hyperv1.KubeAPIServerEventTTLMinutes: "4"},
+			expectedError: "must be between 5 and 180 minutes",
+		},
+		{
+			name:          "When the annotation is above the maximum, it should return an error",
+			annotations:   map[string]string{hyperv1.KubeAPIServerEventTTLMinutes: "181"},
+			expectedError: "must be between 5 and 180 minutes",
+		},
+		{
+			name:          "When the annotation is a duration string, it should return an error",
+			annotations:   map[string]string{hyperv1.KubeAPIServerEventTTLMinutes: "60m"},
+			expectedError: "must be an integer number of minutes",
+		},
+		{
+			name:        "When the annotation is empty, it should be treated as unset",
+			annotations: map[string]string{hyperv1.KubeAPIServerEventTTLMinutes: ""},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			err := validateEventTTL(&hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Annotations: tc.annotations},
+			})
+
+			if tc.expectedError == "" {
+				g.Expect(err).ToNot(HaveOccurred())
+				return
+			}
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
 		})
 	}
 }
