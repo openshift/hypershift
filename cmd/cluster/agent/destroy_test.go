@@ -7,6 +7,10 @@ import (
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/log"
+	hyperapi "github.com/openshift/hypershift/support/api"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 // The Agent destroy path is a thin wrapper around none.DestroyCluster; the
@@ -21,10 +25,19 @@ func TestNewDestroyCommand(t *testing.T) {
 		g.Expect(cmd.Use).To(Equal("agent"))
 	})
 
-	// t.Setenv forbids t.Parallel, so this subtest runs serially.
 	t.Run("When the destroy path fails, it should propagate the error instead of swallowing it", func(t *testing.T) {
+		t.Parallel()
 		g := NewGomegaWithT(t)
-		t.Setenv("FAKE_CLIENT", "true")
+
+		// Inject a fake management-cluster client so the destroy path never
+		// reaches a real API server. The fake client has no HostedCluster, so
+		// GetCluster returns NotFound and the destroy proceeds from user input.
+		fakeClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		provider := &core.ClientProvider{
+			ControllerRuntimeClient: func(string) (crclient.Client, error) {
+				return fakeClient, nil
+			},
+		}
 
 		// No HostedCluster exists and no infra ID is set, so the delegated
 		// destroy path fails. RunE must return that error so the CLI exits
@@ -34,7 +47,8 @@ func TestNewDestroyCommand(t *testing.T) {
 			Namespace: "clusters",
 			Log:       log.Log,
 		}
-		cmd := NewDestroyCommand(opts)
+		cmd := NewDestroyCommand(opts, provider)
+		cmd.SetContext(t.Context())
 		g.Expect(cmd.RunE(cmd, nil)).To(HaveOccurred())
 	})
 }
