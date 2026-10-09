@@ -144,6 +144,11 @@ func init() {
 		false,
 	)
 	RegisterEnvVar(
+		"SHARED_DIR",
+		"CI shared directory containing platform-specific test configuration such as GCP workload identity credentials.",
+		false,
+	)
+	RegisterEnvVar(
 		"E2E_SHOW_ENV_HELP",
 		"When set to any non-empty value, displays environment variable help and exits without running tests.",
 		false,
