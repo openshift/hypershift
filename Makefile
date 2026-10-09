@@ -176,10 +176,10 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
 
 .PHONY: verify-parallel
-verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
+verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs verify-perf-timings
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
+verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs verify-perf-timings ## Run the same checks as the GHA verify workflow.
 	$(MAKE) verify-git-clean
 
 .PHONY: verify
@@ -682,6 +682,14 @@ verify-tekton-pipeline-pairs: $(PYTHON_VENV_STAMP) ## Verify paired Tekton Pipel
 	else \
 		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/verify-tekton-pipeline-pairs_test.py && \
 		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-tekton-pipeline-pairs.py; \
+	fi
+
+.PHONY: verify-perf-timings
+verify-perf-timings: $(PYTHON_VENV_STAMP) ## Verify the e2e artifact timing extractor against its fixtures.
+	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
+		$(PYTHON_VENV)/bin/python3 -m pytest -q hack/perf/test_hcp_timings.py; \
+	else \
+		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/perf/test_hcp_timings.py; \
 	fi
 
 .PHONY: verify-codespell
