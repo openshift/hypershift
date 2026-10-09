@@ -171,6 +171,41 @@ func TestGetCredentialStatus(t *testing.T) {
 
 }
 
+func TestComputeGCPResourceTagsSupportCondition(t *testing.T) {
+	for _, tc := range []struct {
+		name, version string
+		status        metav1.ConditionStatus
+		reason        string
+	}{
+		{"When the control plane version is unsupported, it should report false", "5.2.0", metav1.ConditionFalse, "UnsupportedControlPlaneVersion"},
+		{"When the control plane version supports tags, it should report true", "5.3.0", metav1.ConditionTrue, hyperv1.AsExpectedReason},
+		{"When the control plane version is unknown, it should report unknown", "", metav1.ConditionUnknown, hyperv1.StatusUnknownReason},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hc := &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.GCPPlatform,
+				GCP:  &hyperv1.GCPPlatformSpec{ResourceTags: []hyperv1.GCPResourceTag{{Key: "environment", Value: "production"}}},
+			}}}
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Status.ControlPlaneVersion.Desired.Version = tc.version
+
+			g.Expect(ComputeGCPResourceTagsSupportCondition(hc, hcp)).To(BeTrue())
+			condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.GCPResourceTagsSupported))
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(tc.status))
+			g.Expect(condition.Reason).To(Equal(tc.reason))
+		})
+	}
+
+	t.Run("When resource tags are omitted, it should remove a stale condition", func(t *testing.T) {
+		g := NewWithT(t)
+		hc := &hyperv1.HostedCluster{Status: hyperv1.HostedClusterStatus{Conditions: []metav1.Condition{{Type: string(hyperv1.GCPResourceTagsSupported), Status: metav1.ConditionFalse}}}}
+		g.Expect(ComputeGCPResourceTagsSupportCondition(hc, nil)).To(BeTrue())
+		g.Expect(meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.GCPResourceTagsSupported))).To(BeNil())
+	})
+}
+
 // TestWorkloadIdentityValidationScenarios tests additional edge cases for WIF validation.
 // This expands on the existing TestValidateWorkloadIdentityConfiguration with more comprehensive coverage.
 func TestWorkloadIdentityValidationScenarios(t *testing.T) {

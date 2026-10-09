@@ -400,6 +400,24 @@ func TestLoadServiceAccountDefinitions(t *testing.T) {
 			K8sServiceAccountRef{Namespace: "openshift-image-registry", Name: "registry"},
 		))
 	})
+
+	t.Run("When loading tag-consuming definitions, it should grant Tag User to storage and image-registry", func(t *testing.T) {
+		g := NewWithT(t)
+		definitions, err := loadServiceAccountDefinitions()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		for _, name := range []string{"gcp-pd-csi", "image-registry"} {
+			var definition *ServiceAccountDefinition
+			for i := range definitions {
+				if definitions[i].Name == name {
+					definition = &definitions[i]
+					break
+				}
+			}
+			g.Expect(definition).NotTo(BeNil(), "expected to find %s service account definition", name)
+			g.Expect(definition.Roles).To(ContainElement("roles/resourcemanager.tagUser"), "%s needs Tag User for resource tags", name)
+		}
+	})
 }
 
 func TestIsTransientIAMError(t *testing.T) {

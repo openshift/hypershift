@@ -29,6 +29,7 @@ type GCPPlatformSpecApplyConfiguration struct {
 	NetworkConfig    *GCPNetworkConfigApplyConfiguration          `json:"networkConfig,omitempty"`
 	EndpointAccess   *hypershiftv1beta1.GCPEndpointAccessType     `json:"endpointAccess,omitempty"`
 	ResourceLabels   []GCPResourceLabelApplyConfiguration         `json:"resourceLabels,omitempty"`
+	ResourceTags     []GCPResourceTagApplyConfiguration           `json:"resourceTags,omitempty"`
 	WorkloadIdentity *GCPWorkloadIdentityConfigApplyConfiguration `json:"workloadIdentity,omitempty"`
 }
 
@@ -79,6 +80,19 @@ func (b *GCPPlatformSpecApplyConfiguration) WithResourceLabels(values ...*GCPRes
 			panic("nil value passed to WithResourceLabels")
 		}
 		b.ResourceLabels = append(b.ResourceLabels, *values[i])
+	}
+	return b
+}
+
+// WithResourceTags adds the given value to the ResourceTags field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the ResourceTags field.
+func (b *GCPPlatformSpecApplyConfiguration) WithResourceTags(values ...*GCPResourceTagApplyConfiguration) *GCPPlatformSpecApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithResourceTags")
+		}
+		b.ResourceTags = append(b.ResourceTags, *values[i])
 	}
 	return b
 }

@@ -30,3 +30,24 @@ func TestSupportsGCPRuntimeCredentialValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestSupportsGCPResourceTags(t *testing.T) {
+	for _, tc := range []struct {
+		name, version    string
+		supported, known bool
+	}{
+		{"When the version is 5.2, it should be unsupported", "5.2.99", false, true},
+		{"When the version is a 5.3 CI prerelease, it should be supported", "5.3.0-0.ci-20261009", true, true},
+		{"When the minor version is later, it should be supported", "5.4.0", true, true},
+		{"When the major version is later, it should be supported", "6.0.0", true, true},
+		{"When the version is empty, it should be unknown", "", false, false},
+		{"When the version is malformed, it should be unknown", "not-a-version", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			supported, known := SupportsGCPResourceTags(tc.version)
+			g.Expect(supported).To(Equal(tc.supported))
+			g.Expect(known).To(Equal(tc.known))
+		})
+	}
+}

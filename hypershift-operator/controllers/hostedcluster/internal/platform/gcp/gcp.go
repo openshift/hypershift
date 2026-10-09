@@ -542,6 +542,39 @@ func ComputeGCPCredentialConditions(hc *hyperv1.HostedCluster, hcp *hyperv1.Host
 	return changed
 }
 
+// ComputeGCPResourceTagsSupportCondition reports whether the requested control
+// plane version can propagate configured resource tags to the guest cluster.
+func ComputeGCPResourceTagsSupportCondition(hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) bool {
+	if hc.Spec.Platform.GCP == nil || len(hc.Spec.Platform.GCP.ResourceTags) == 0 {
+		return meta.RemoveStatusCondition(&hc.Status.Conditions, string(hyperv1.GCPResourceTagsSupported))
+	}
+
+	version := hc.Status.ControlPlaneVersion.Desired.Version
+	if hcp != nil {
+		version = hcp.Status.ControlPlaneVersion.Desired.Version
+	}
+	supported, known := conditions.SupportsGCPResourceTags(version)
+	condition := metav1.Condition{
+		Type:               string(hyperv1.GCPResourceTagsSupported),
+		ObservedGeneration: hc.Generation,
+	}
+	switch {
+	case supported:
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.AsExpectedReason
+		condition.Message = "The control plane version supports GCP resource tag propagation"
+	case known:
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = "UnsupportedControlPlaneVersion"
+		condition.Message = "GCP resource tags require control plane version 5.3 or later"
+	default:
+		condition.Status = metav1.ConditionUnknown
+		condition.Reason = hyperv1.StatusUnknownReason
+		condition.Message = "The control plane version cannot be determined; GCP resource tag propagation availability is unknown"
+	}
+	return meta.SetStatusCondition(&hc.Status.Conditions, condition)
+}
+
 // validateWorkloadIdentityConfiguration validates the Workload Identity Federation configuration.
 // This ensures all required fields are present and properly formatted.
 func validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedCluster) error {
