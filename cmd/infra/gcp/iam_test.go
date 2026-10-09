@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -17,6 +19,7 @@ import (
 	"google.golang.org/api/cloudresourcemanager/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iam/v1"
+	"google.golang.org/api/option"
 )
 
 // timeoutError simulates net/http's unexported tlsHandshakeTimeoutError.
@@ -26,11 +29,68 @@ func (e timeoutError) Error() string   { return string(e) }
 func (e timeoutError) Timeout() bool   { return true }
 func (e timeoutError) Temporary() bool { return true }
 
+func invalidIAMReferences() []struct {
+	name, project, projectNumber, pool, provider, errorText string
+} {
+	return []struct{ name, project, projectNumber, pool, provider, errorText string }{
+		{"When project is missing, it should reject references before creating clients", "", "987654321", "pool", "provider", "project-id is required"},
+		{"When the WIF project number is missing, it should reject references before creating clients", "project", "", "pool", "provider", "workload identity project number is required"},
+		{"When the WIF project number is a project ID, it should reject references before creating clients", "project", "other-project", "pool", "provider", "must contain only digits"},
+		{"When the WIF project number contains whitespace, it should reject references before creating clients", "project", " 987654321", "pool", "provider", "must contain only digits"},
+		{"When pool is missing, it should reject references before creating clients", "project", "987654321", "", "provider", "workload identity pool ID is required"},
+		{"When provider is missing, it should reject references before creating clients", "project", "987654321", "pool", "", "workload identity provider ID is required"},
+		{"When accounts are missing, it should reject references before creating clients", "project", "987654321", "pool", "provider", "service account email for"},
+	}
+}
+
+func TestValidateIAMResourceReferences(t *testing.T) {
+	for _, test := range invalidIAMReferences() {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateIAMResourceReferences(test.project, test.projectNumber, test.pool, test.provider, nil)
+			if err == nil || !strings.Contains(err.Error(), test.errorText) {
+				t.Fatalf("expected error containing %q, got %v", test.errorText, err)
+			}
+		})
+	}
+}
+
+func TestNewIAMManagerWithResources(t *testing.T) {
+	for _, test := range invalidIAMReferences() {
+		t.Run(test.name, func(t *testing.T) {
+			manager, err := NewIAMManagerWithResources(context.Background(), test.project, test.projectNumber, test.pool, test.provider, nil, logr.Discard())
+			if manager != nil || err == nil || !strings.Contains(err.Error(), test.errorText) {
+				t.Fatalf("expected no manager and error containing %q, got %v, %v", test.errorText, manager, err)
+			}
+		})
+	}
+	t.Run("When explicit references are valid, it should keep the service-account and WIF projects separate", func(t *testing.T) {
+		g := NewWithT(t)
+		// Constructors read ADC configuration but do not fetch tokens. Use fake
+		// credentials so this test never depends on the developer's environment.
+		credentials := filepath.Join(t.TempDir(), "adc.json")
+		g.Expect(os.WriteFile(credentials, []byte(`{"type":"authorized_user","client_id":"test-client","client_secret":"test-secret","refresh_token":"test-token"}`), 0600)).To(Succeed())
+		t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credentials)
+		definitions, err := loadServiceAccountDefinitions()
+		g.Expect(err).ToNot(HaveOccurred())
+		emails := make(map[string]string, len(definitions))
+		for _, definition := range definitions {
+			emails[definition.Name] = definition.Name + "@test-project.iam.gserviceaccount.com"
+		}
+		manager, err := NewIAMManagerWithResources(context.Background(), "test-project", "987654321", "recorded-pool", "recorded-provider", emails, logr.Discard())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(manager.projectID).To(Equal("test-project"))
+		g.Expect(manager.workloadIdentityProjectNumber).To(Equal("987654321"))
+		g.Expect(manager.serviceAccountEmails).To(Equal(emails))
+		g.Expect(manager.formatPoolParent()).To(Equal("projects/987654321/locations/global/workloadIdentityPools/recorded-pool"))
+	})
+}
+
 func TestIAMManagerFormatServiceAccountMethods(t *testing.T) {
 	manager := &IAMManager{
-		projectID: "test-project",
-		infraID:   "test-infra",
-		logger:    logr.Discard(),
+		projectID:                     "test-project",
+		workloadIdentityProjectNumber: "987654321",
+		infraID:                       "test-infra",
+		logger:                        logr.Discard(),
 	}
 
 	tests := []struct {
@@ -69,6 +129,135 @@ func TestIAMManagerFormatServiceAccountMethods(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 			g.Expect(tt.method(tt.arg)).To(Equal(tt.expected))
+		})
+	}
+	NewWithT(t).Expect(manager.formatProjectResource()).To(Equal("projects/test-project"))
+}
+
+func TestIAMManagerUsesExplicitHostedClusterReferences(t *testing.T) {
+	manager := &IAMManager{
+		projectID:            "test-project",
+		infraID:              "generated-cluster-infra",
+		workloadIdentityPool: "independent-pool",
+		workloadIdentityOIDC: "independent-provider",
+		serviceAccountEmails: map[string]string{
+			"nodepool-mgmt": "custom-nodepool@test-project.iam.gserviceaccount.com",
+		},
+	}
+
+	if got := manager.formatPoolID(); got != "independent-pool" {
+		t.Errorf("formatPoolID() = %q, want independent-pool", got)
+	}
+	if got := manager.formatProviderID(); got != "independent-provider" {
+		t.Errorf("formatProviderID() = %q, want independent-provider", got)
+	}
+	if got := manager.formatServiceAccountEmail("nodepool-mgmt"); got != "custom-nodepool@test-project.iam.gserviceaccount.com" {
+		t.Errorf("formatServiceAccountEmail() = %q, want exact HostedCluster email", got)
+	}
+}
+
+func iamCleanupProjects() []struct{ name, projectNumber, poolResource, providerID string } {
+	return []struct{ name, projectNumber, poolResource, providerID string }{
+		{"When WIF is in the HostedCluster project, it should use its recorded project number", "123456789", "projects/123456789/locations/global/workloadIdentityPools/recorded-pool", "recorded-provider"},
+		{"When WIF is in another project, it should use the recorded WIF project number", "987654321", "projects/987654321/locations/global/workloadIdentityPools/recorded-pool", "recorded-provider"},
+		{"When standalone cleanup has no WIF project number, it should keep the project ID and derived names", "", "projects/test-project/locations/global/workloadIdentityPools/test-infra-wi-pool", "test-infra-k8s-provider"},
+	}
+}
+
+func iamCleanupManager(projectNumber string) *IAMManager {
+	manager := &IAMManager{
+		projectID: "test-project", infraID: "test-infra", logger: logr.Discard(),
+		workloadIdentityProjectNumber: projectNumber,
+	}
+	if projectNumber != "" {
+		manager.workloadIdentityPool = "recorded-pool"
+		manager.workloadIdentityOIDC = "recorded-provider"
+	}
+	return manager
+}
+
+func TestIAMManagerFormatPoolParent(t *testing.T) {
+	for _, test := range iamCleanupProjects() {
+		t.Run(test.name, func(t *testing.T) {
+			NewWithT(t).Expect(iamCleanupManager(test.projectNumber).formatPoolParent()).To(Equal(test.poolResource))
+		})
+	}
+}
+
+type iamCleanupTransport func(*http.Request) (*http.Response, error)
+
+func (transport iamCleanupTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return transport(request)
+}
+
+// assertIAMDeleteRequest exercises the real SDK request construction using an
+// in-memory transport. No authentication or network access is performed.
+func assertIAMDeleteRequest(t *testing.T, manager *IAMManager, destroy func(context.Context) error, resource string, asynchronous bool) {
+	t.Helper()
+	g := NewWithT(t)
+	expected := []string{"DELETE /v1/" + resource}
+	operation := resource + "/operations/delete"
+	if asynchronous {
+		expected = append(expected, "GET /v1/"+operation)
+	}
+	var requests []string
+	transport := iamCleanupTransport(func(request *http.Request) (*http.Response, error) {
+		call := request.Method + " " + request.URL.Path
+		index := len(requests)
+		requests = append(requests, call)
+		if index >= len(expected) || call != expected[index] {
+			return nil, fmt.Errorf("unexpected IAM cleanup request: %s", call)
+		}
+		body := `{}`
+		if asynchronous {
+			if request.Method == http.MethodDelete {
+				body = fmt.Sprintf(`{"name":%q}`, operation)
+			} else {
+				body = `{"done":true}`
+			}
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+			Body: io.NopCloser(strings.NewReader(body)),
+		}, nil
+	})
+	service, err := iam.NewService(context.Background(), option.WithHTTPClient(&http.Client{Transport: transport}))
+	g.Expect(err).ToNot(HaveOccurred())
+	manager.iamService = service
+	g.Expect(destroy(context.Background())).To(Succeed())
+	g.Expect(requests).To(Equal(expected))
+}
+
+func TestIAMManagerDeleteWorkloadIdentityPool(t *testing.T) {
+	for _, test := range iamCleanupProjects() {
+		t.Run(test.name, func(t *testing.T) {
+			manager := iamCleanupManager(test.projectNumber)
+			assertIAMDeleteRequest(t, manager, manager.DeleteWorkloadIdentityPool, test.poolResource, true)
+		})
+	}
+}
+
+func TestIAMManagerDeleteOIDCProvider(t *testing.T) {
+	for _, test := range iamCleanupProjects() {
+		t.Run(test.name, func(t *testing.T) {
+			manager := iamCleanupManager(test.projectNumber)
+			assertIAMDeleteRequest(t, manager, manager.DeleteOIDCProvider, test.poolResource+"/providers/"+test.providerID, true)
+		})
+	}
+}
+
+func TestIAMManagerDeleteServiceAccount(t *testing.T) {
+	for _, test := range []struct{ name, projectNumber string }{
+		{"When WIF is in the HostedCluster project, it should delete service accounts by project ID", "123456789"},
+		{"When WIF is in another project, it should keep service-account deletion in the HostedCluster project", "987654321"},
+		{"When standalone cleanup has no WIF project number, it should retain service-account deletion by project ID", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manager := iamCleanupManager(test.projectNumber)
+			email := "custom-account@test-project.iam.gserviceaccount.com"
+			assertIAMDeleteRequest(t, manager, func(ctx context.Context) error {
+				return manager.deleteServiceAccount(ctx, email)
+			}, "projects/test-project/serviceAccounts/"+email, false)
 		})
 	}
 }

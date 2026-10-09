@@ -2,8 +2,10 @@ package gcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -32,6 +34,9 @@ func TestCreateOptionsApplyPlatformSpecifics(t *testing.T) {
 						Region:                        "us-central1",
 						Network:                       "test-network",
 						PrivateServiceConnectSubnet:   "test-psc-subnet",
+						RouterName:                    "test-router",
+						NATName:                       "test-nat",
+						FirewallRuleName:              "test-firewall",
 						WorkloadIdentityProjectNumber: "123456789012",
 						WorkloadIdentityPoolID:        "test-pool-id",
 						WorkloadIdentityProviderID:    "test-provider-id",
@@ -57,6 +62,9 @@ func TestCreateOptionsApplyPlatformSpecifics(t *testing.T) {
 	g.Expect(hostedCluster.Spec.Platform.GCP.Region).To(Equal("us-central1"))
 	g.Expect(hostedCluster.Spec.Platform.GCP.NetworkConfig.Network.Name).To(Equal(hyperv1.GCPResourceName("test-network")))
 	g.Expect(hostedCluster.Spec.Platform.GCP.NetworkConfig.PrivateServiceConnectSubnet.Name).To(Equal(hyperv1.GCPResourceName("test-psc-subnet")))
+	resources, err := parseInfraResources(hostedCluster.Annotations[infraResourcesAnnotation])
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(resources).To(Equal(infraResources{Version: 1, Router: "test-router", NAT: "test-nat", FirewallRule: "test-firewall"}))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ProjectNumber).To(Equal("123456789012"))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.PoolID).To(Equal("test-pool-id"))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ProviderID).To(Equal("test-provider-id"))
@@ -66,6 +74,62 @@ func TestCreateOptionsApplyPlatformSpecifics(t *testing.T) {
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage).To(Equal(hyperv1.GCPServiceAccountEmail("storage@test-project-123.iam.gserviceaccount.com")))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry).To(Equal(hyperv1.GCPServiceAccountEmail("imageregistry@test-project-123.iam.gserviceaccount.com")))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network).To(Equal(hyperv1.GCPServiceAccountEmail("network@test-project-123.iam.gserviceaccount.com")))
+
+	// The generated manifest must remain writable by clients using the old API.
+	data, err := json.Marshal(hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+	var networkConfig map[string]interface{}
+	g.Expect(json.Unmarshal(data, &networkConfig)).To(Succeed())
+	spec := networkConfig["spec"].(map[string]interface{})
+	network := spec["platform"].(map[string]interface{})["gcp"].(map[string]interface{})["networkConfig"].(map[string]interface{})
+	g.Expect(network).To(HaveLen(2), "Cleanup references must not expand the HostedCluster spec")
+	var previousClient hyperv1.HostedCluster
+	g.Expect(json.Unmarshal(data, &previousClient)).To(Succeed())
+	previousClient.Finalizers = append(previousClient.Finalizers, "test-finalizer")
+	roundTrip, err := json.Marshal(previousClient)
+	g.Expect(err).ToNot(HaveOccurred())
+	var retained hyperv1.HostedCluster
+	g.Expect(json.Unmarshal(roundTrip, &retained)).To(Succeed())
+	g.Expect(retained.Annotations).To(HaveKeyWithValue(infraResourcesAnnotation, hostedCluster.Annotations[infraResourcesAnnotation]))
+
+	original := *opts.RawCreateOptions
+	tests := []struct {
+		name        string
+		omitFlags   bool
+		annotations map[string]string
+		expectError bool
+	}{
+		{name: "When cleanup flags are omitted, it should reject missing resource names", omitFlags: true, expectError: true},
+		{name: "When unrelated annotations exist, it should retain them and add cleanup metadata", annotations: map[string]string{"example.com/keep": "value"}},
+		{name: "When an existing annotation matches the flags, it should accept it", annotations: map[string]string{infraResourcesAnnotation: `{"version":1,"router":"test-router","nat":"test-nat","firewallRule":"test-firewall"}`}},
+		{name: "When an existing annotation conflicts with the flags, it should reject it", annotations: map[string]string{infraResourcesAnnotation: `{"version":1,"router":"other-router","nat":"test-nat","firewallRule":"test-firewall"}`}, expectError: true},
+		{name: "When valid metadata is supplied without flags, it should reject missing resource names", omitFlags: true, annotations: map[string]string{infraResourcesAnnotation: `{"version":1,"router":"test-router","nat":"test-nat","firewallRule":"test-firewall"}`}, expectError: true},
+		{name: "When malformed metadata is supplied without flags, it should reject it", omitFlags: true, annotations: map[string]string{infraResourcesAnnotation: `{`}, expectError: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			*opts.RawCreateOptions = original
+			if tt.omitFlags {
+				opts.RouterName = ""
+				opts.NATName = ""
+				opts.FirewallRuleName = ""
+			}
+			hc := &hyperv1.HostedCluster{}
+			hc.Annotations = tt.annotations
+			err := opts.ApplyPlatformSpecifics(hc)
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(hc.Annotations).To(HaveKeyWithValue(infraResourcesAnnotation,
+				`{"version":1,"router":"test-router","nat":"test-nat","firewallRule":"test-firewall"}`))
+			if tt.annotations["example.com/keep"] != "" {
+				g.Expect(hc.Annotations).To(HaveKeyWithValue("example.com/keep", "value"))
+			}
+		})
+	}
 }
 
 func TestValidateGCPOptions(t *testing.T) {
@@ -77,6 +141,9 @@ func TestValidateGCPOptions(t *testing.T) {
 		Zone:                          "us-central1-a",
 		Network:                       "test-network",
 		PrivateServiceConnectSubnet:   "test-psc-subnet",
+		RouterName:                    "test-router",
+		NATName:                       "test-nat",
+		FirewallRuleName:              "test-firewall",
 		WorkloadIdentityProjectNumber: "123456789012",
 		WorkloadIdentityPoolID:        "test-pool-id",
 		WorkloadIdentityProviderID:    "test-provider-id",
@@ -137,6 +204,39 @@ func TestValidateGCPOptions(t *testing.T) {
 			opts:      validOpts,
 			expectErr: false,
 		},
+		"When all cleanup flags are omitted, it should reject creation options": {
+			opts: func() RawCreateOptions {
+				opts := validOpts
+				opts.RouterName, opts.NATName, opts.FirewallRuleName = "", "", ""
+				return opts
+			}(),
+			expectErr:    true,
+			expectSubstr: "required flag(s) \"router-name\" not set",
+		},
+		"When router name is missing, it should return an error": {
+			opts:         func() RawCreateOptions { opts := validOpts; opts.RouterName = ""; return opts }(),
+			expectErr:    true,
+			expectSubstr: "required flag(s) \"router-name\" not set",
+		},
+		"When NAT name is missing, it should return an error": {
+			opts:         func() RawCreateOptions { opts := validOpts; opts.NATName = ""; return opts }(),
+			expectErr:    true,
+			expectSubstr: "required flag(s) \"nat-name\" not set",
+		},
+		"When firewall rule name is missing, it should return an error": {
+			opts:         func() RawCreateOptions { opts := validOpts; opts.FirewallRuleName = ""; return opts }(),
+			expectErr:    true,
+			expectSubstr: "required flag(s) \"firewall-rule-name\" not set",
+		},
+		"When a cleanup name is invalid, it should reject creation options": {
+			opts: func() RawCreateOptions {
+				opts := validOpts
+				opts.RouterName = "projects/other/routers/router"
+				return opts
+			}(),
+			expectErr:    true,
+			expectSubstr: "invalid GCP router name",
+		},
 	}
 
 	for name, tc := range tests {
@@ -165,10 +265,12 @@ func TestCreateCluster(t *testing.T) {
 		t.Fatalf("failed to write pullSecret: %v", err)
 	}
 
-	for _, testCase := range []struct {
-		name         string
-		args         []string
-		expectedZone string
+	testCases := []struct {
+		name           string
+		args           []string
+		expectedZone   string
+		expectedErr    string
+		omitInfraFlags bool
 	}{
 		{
 			name: "When minimal flags are provided with no NodePool, it should render successfully",
@@ -177,6 +279,9 @@ func TestCreateCluster(t *testing.T) {
 				"--region=us-central1",
 				"--network=test-network",
 				"--private-service-connect-subnet=test-psc-subnet",
+				"--router-name=test-router",
+				"--nat-name=test-nat",
+				"--firewall-rule-name=test-firewall",
 				"--workload-identity-project-number=123456789012",
 				"--workload-identity-pool-id=test-pool",
 				"--workload-identity-provider-id=test-provider",
@@ -200,6 +305,9 @@ func TestCreateCluster(t *testing.T) {
 				"--zone=us-central1-b",
 				"--network=test-network",
 				"--private-service-connect-subnet=test-psc-subnet",
+				"--router-name=test-router",
+				"--nat-name=test-nat",
+				"--firewall-rule-name=test-firewall",
 				"--workload-identity-project-number=123456789012",
 				"--workload-identity-pool-id=test-pool",
 				"--workload-identity-provider-id=test-provider",
@@ -215,14 +323,28 @@ func TestCreateCluster(t *testing.T) {
 			},
 			expectedZone: "us-central1-b",
 		},
-	} {
+		{
+			name:           "When legacy flags omit cleanup names, it should reject creation before rendering",
+			omitInfraFlags: true,
+			expectedErr:    "required flag(s) \"router-name\" not set",
+		},
+	}
+	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
 			core.BindDeveloperOptions(coreOpts, flags)
 			gcpOpts := DefaultOptions()
 			BindOptions(gcpOpts, flags)
-			if err := flags.Parse(testCase.args); err != nil {
+			args := testCase.args
+			if testCase.omitInfraFlags {
+				for _, arg := range testCases[0].args {
+					if !strings.HasPrefix(arg, "--router-name=") && !strings.HasPrefix(arg, "--nat-name=") && !strings.HasPrefix(arg, "--firewall-rule-name=") {
+						args = append(args, arg)
+					}
+				}
+			}
+			if err := flags.Parse(args); err != nil {
 				t.Fatalf("failed to parse flags: %v", err)
 			}
 
@@ -231,7 +353,16 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, gcpOpts, nil); err != nil {
+			err := core.CreateCluster(ctx, coreOpts, gcpOpts, nil)
+			if testCase.expectedErr != "" {
+				g := NewGomegaWithT(t)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(testCase.expectedErr))
+				_, statErr := os.Stat(manifestsFile)
+				g.Expect(os.IsNotExist(statErr)).To(BeTrue(), "Invalid creation options must not write manifests")
+				return
+			}
+			if err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 

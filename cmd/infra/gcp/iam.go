@@ -89,11 +89,15 @@ func loadServiceAccountDefinitions() ([]ServiceAccountDefinition, error) {
 
 // IAMManager encapsulates all GCP API interactions used by the GCP IAM creation flow.
 type IAMManager struct {
-	projectID     string
-	projectNumber string
-	infraID       string
-	oidcIssuerURL string
-	jwksFile      string
+	projectID                     string
+	projectNumber                 string
+	workloadIdentityProjectNumber string
+	infraID                       string
+	workloadIdentityPool          string
+	workloadIdentityOIDC          string
+	serviceAccountEmails          map[string]string
+	oidcIssuerURL                 string
+	jwksFile                      string
 
 	iamService *iam.Service
 	crmService *cloudresourcemanager.Service
@@ -101,6 +105,62 @@ type IAMManager struct {
 }
 
 func NewIAMManager(ctx context.Context, projectID string, infraID string, jwksFile string, logger logr.Logger) (*IAMManager, error) {
+	if infraID == "" {
+		return nil, fmt.Errorf("infraID is not set on Client")
+	}
+	return newIAMManager(ctx, projectID, infraID, "", "", nil, jwksFile, logger)
+}
+
+// NewIAMManagerWithResources constructs a manager using exact HostedCluster resource references.
+// projectID identifies service accounts and role bindings; workloadIdentityProjectNumber
+// identifies the pool and provider, which may belong to a different project.
+func NewIAMManagerWithResources(ctx context.Context, projectID, workloadIdentityProjectNumber, poolID, providerID string, serviceAccountEmails map[string]string, logger logr.Logger) (*IAMManager, error) {
+	if err := validateIAMResourceReferences(projectID, workloadIdentityProjectNumber, poolID, providerID, serviceAccountEmails); err != nil {
+		return nil, err
+	}
+	manager, err := newIAMManager(ctx, projectID, "", poolID, providerID, serviceAccountEmails, "", logger)
+	if err != nil {
+		return nil, err
+	}
+	manager.workloadIdentityProjectNumber = workloadIdentityProjectNumber
+	return manager, nil
+}
+
+// validateIAMResourceReferences performs local validation before creating clients.
+func validateIAMResourceReferences(projectID, workloadIdentityProjectNumber, poolID, providerID string, serviceAccountEmails map[string]string) error {
+	if projectID == "" {
+		return fmt.Errorf("project-id is required")
+	}
+	if workloadIdentityProjectNumber == "" {
+		return fmt.Errorf("workload identity project number is required")
+	}
+	for _, digit := range workloadIdentityProjectNumber {
+		if digit < '0' || digit > '9' {
+			return fmt.Errorf("workload identity project number must contain only digits")
+		}
+	}
+	if poolID == "" {
+		return fmt.Errorf("workload identity pool ID is required")
+	}
+	if providerID == "" {
+		return fmt.Errorf("workload identity provider ID is required")
+	}
+	definitions, err := loadServiceAccountDefinitions()
+	if err != nil {
+		return fmt.Errorf("failed to load service account definitions: %w", err)
+	}
+	for _, definition := range definitions {
+		if serviceAccountEmails[definition.Name] == "" {
+			return fmt.Errorf("service account email for %s is required", definition.Name)
+		}
+	}
+	return nil
+}
+
+func newIAMManager(ctx context.Context, projectID, infraID, poolID, providerID string, serviceAccountEmails map[string]string, jwksFile string, logger logr.Logger) (*IAMManager, error) {
+	if projectID == "" {
+		return nil, fmt.Errorf("projectID is required")
+	}
 	iamService, err := iam.NewService(ctx, option.WithScopes(iam.CloudPlatformScope))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create IAM service client: %w", err)
@@ -110,20 +170,16 @@ func NewIAMManager(ctx context.Context, projectID string, infraID string, jwksFi
 		return nil, fmt.Errorf("failed to create Cloud Resource Manager service client: %w", err)
 	}
 
-	if infraID == "" {
-		return nil, fmt.Errorf("infraID is not set on Client")
-	}
-
-	if projectID == "" {
-		return nil, fmt.Errorf("projectID is required")
-	}
 	return &IAMManager{
-		projectID:  projectID,
-		infraID:    infraID,
-		jwksFile:   jwksFile,
-		iamService: iamService,
-		crmService: crmService,
-		logger:     logger,
+		projectID:            projectID,
+		infraID:              infraID,
+		workloadIdentityPool: poolID,
+		workloadIdentityOIDC: providerID,
+		serviceAccountEmails: serviceAccountEmails,
+		jwksFile:             jwksFile,
+		iamService:           iamService,
+		crmService:           crmService,
+		logger:               logger,
 	}, nil
 }
 
@@ -550,11 +606,17 @@ func (c *IAMManager) addMemberToServiceAccountRoleBinding(policy *iam.Policy, ro
 
 // formatPoolID returns the Workload Identity Pool ID derived from infraID.
 func (c *IAMManager) formatPoolID() string {
+	if c.workloadIdentityPool != "" {
+		return c.workloadIdentityPool
+	}
 	return fmt.Sprintf("%s-wi-pool", c.infraID)
 }
 
 // formatProviderID returns the Workload Identity Provider ID derived from infraID.
 func (c *IAMManager) formatProviderID() string {
+	if c.workloadIdentityOIDC != "" {
+		return c.workloadIdentityOIDC
+	}
 	return fmt.Sprintf("%s-k8s-provider", c.infraID)
 }
 
@@ -587,6 +649,9 @@ func (c *IAMManager) formatServiceAccountID(componentName string) string {
 
 // formatServiceAccountEmail returns the full email address for a service account.
 func (c *IAMManager) formatServiceAccountEmail(componentName string) string {
+	if email := c.serviceAccountEmails[componentName]; email != "" {
+		return email
+	}
 	return fmt.Sprintf("%s@%s.iam.gserviceaccount.com", c.formatServiceAccountID(componentName), c.projectID)
 }
 
@@ -618,7 +683,13 @@ func (c *IAMManager) formatPoolResource(parent, poolID string) string {
 
 // formatPoolParent returns the parent resource path for the Workload Identity Pool.
 func (c *IAMManager) formatPoolParent() string {
-	return fmt.Sprintf("projects/%s/locations/global/workloadIdentityPools/%s", c.projectID, c.formatPoolID())
+	project := c.projectID
+	// HostedCluster cleanup uses its recorded WIF project. Standalone creation
+	// and cleanup keep using the project ID supplied to their commands.
+	if c.workloadIdentityProjectNumber != "" {
+		project = c.workloadIdentityProjectNumber
+	}
+	return fmt.Sprintf("projects/%s/locations/global/workloadIdentityPools/%s", project, c.formatPoolID())
 }
 
 // formatProviderResource returns the full resource path for an OIDC Provider.
@@ -1028,8 +1099,7 @@ func (c *IAMManager) undeleteWorkloadIdentityProvider(ctx context.Context, provi
 // DeleteWorkloadIdentityPool deletes the Workload Identity Pool for this cluster.
 func (c *IAMManager) DeleteWorkloadIdentityPool(ctx context.Context) error {
 	poolID := c.formatPoolID()
-	parent := fmt.Sprintf("projects/%s/locations/global", c.projectID)
-	poolResource := c.formatPoolResource(parent, poolID)
+	poolResource := c.formatPoolParent()
 
 	c.logger.Info("Deleting Workload Identity Pool", "poolID", poolID)
 

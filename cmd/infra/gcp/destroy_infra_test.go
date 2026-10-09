@@ -71,6 +71,22 @@ func TestDestroyInfraOptionsValidate(t *testing.T) {
 	}
 }
 
+func TestNetworkResourceNamesValidate(t *testing.T) {
+	valid := NetworkResourceNames{
+		Network: "recorded-network", Subnet: "recorded-subnet", Router: "recorded-router",
+		NAT: "recorded-nat", FirewallRule: "recorded-firewall",
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("expected full resource references to validate: %v", err)
+	}
+
+	partial := valid
+	partial.Router = ""
+	if err := partial.Validate(); err == nil || !strings.Contains(err.Error(), "router resource name is required") {
+		t.Fatalf("expected missing router reference error, got %v", err)
+	}
+}
+
 func TestFormatOperationErrors(t *testing.T) {
 	tests := []struct {
 		name     string
