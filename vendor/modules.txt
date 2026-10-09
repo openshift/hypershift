@@ -1074,6 +1074,7 @@ github.com/openshift/api/console/v1
 github.com/openshift/api/etcd
 github.com/openshift/api/etcd/v1
 github.com/openshift/api/etcd/v1alpha1
+github.com/openshift/api/features
 github.com/openshift/api/helm
 github.com/openshift/api/helm/v1beta1
 github.com/openshift/api/image
