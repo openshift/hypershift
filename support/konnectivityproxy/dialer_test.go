@@ -346,7 +346,7 @@ func startConnectProxy(t *testing.T, connectCount *atomic.Int32) net.Listener {
 				http.Error(w, "hijack not supported", http.StatusInternalServerError)
 				return
 			}
-			client, _, err := hijacker.Hijack()
+			client, clientRW, err := hijacker.Hijack()
 			if err != nil {
 				return
 			}
@@ -356,11 +356,11 @@ func startConnectProxy(t *testing.T, connectCount *atomic.Int32) net.Listener {
 			}
 
 			done := make(chan struct{}, 2)
-			relay := func(dst, src net.Conn) {
+			relay := func(dst io.Writer, src io.Reader) {
 				io.Copy(dst, src) //nolint:errcheck // relay best-effort; deadline bounds lifetime
 				done <- struct{}{}
 			}
-			go relay(target, client)
+			go relay(target, clientRW)
 			go relay(client, target)
 			<-done
 			<-done
