@@ -1115,8 +1115,9 @@ type NodePortPublishingStrategy struct {
 	// +required
 	Address string `json:"address"`
 
-	// port is the port of the NodePort service. If <=0, the port is dynamically
-	// assigned when the service is created.
+	// port is the port of the NodePort service.
+	// If omitted, the port is dynamically assigned when the service is created.
+	// +kubebuilder:validation:XValidation:rule="self != 0", message="port must not be 0, omit the field to have the port dynamically assigned"
 	// +optional
 	Port int32 `json:"port,omitempty"`
 }

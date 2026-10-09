@@ -119,6 +119,94 @@ tests:
               address: "fd2e:6f44:5dd8:c956:0000:0000:0000:0014"
     expectedError: "address must be a valid hostname, IPv4, or IPv6 address"
 
+  - name: When servicePublishingStrategy is nodePort and port is 0 it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "kas.example.com"
+              port: 0
+        - service: Ignition
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "127.0.0.1"
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "fd2e:6f44:5dd8:c956::14"
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "fd2e:6f44:5dd8:c956:0000:0000:0000:0014"
+    expectedError: "port must not be 0, omit the field to have the port dynamically assigned"
+
+  # Negative ports are not rejected on purpose: a minimum would invalidate existing
+  # resources that already hold one. Only 0 is rejected, because it is dropped on
+  # serialization and so breaks the immutability of spec.services on round trip.
+  - name: When servicePublishingStrategy is nodePort and port is non-zero it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "kas.example.com"
+              port: 31000
+        - service: Ignition
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "127.0.0.1"
+              port: -1
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "fd2e:6f44:5dd8:c956::14"
+              port: -2147483648
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: NodePort
+            nodePort:
+              address: "fd2e:6f44:5dd8:c956:0000:0000:0000:0014"
+
   - name: When a type Route is set with the nodePort configuration it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
