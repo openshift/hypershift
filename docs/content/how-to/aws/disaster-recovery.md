@@ -13,5 +13,3 @@ title: Disaster Recovery (Moved)
     - **[Same-cluster Restore](../disaster-recovery/scenarios/same-cluster-restore.md)** — Restore on the same Management cluster.
     - **[OADP Backup and Restore](../disaster-recovery/methods/oadp.md)** — OADP method reference with AWS backup manifests.
     - **[Troubleshooting](../disaster-recovery/troubleshooting.md)** — Common DR issues and fixes.
-
-    The migration helper script is maintained at [contrib/migration/migrate-hcp.sh](https://github.com/openshift/hypershift/blob/main/contrib/migration/migrate-hcp.sh).
