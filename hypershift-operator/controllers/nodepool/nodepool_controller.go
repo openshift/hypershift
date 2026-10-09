@@ -165,6 +165,15 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Secret{}, builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&capiv1.Machine{}, handler.EnqueueRequestsFromMapFunc(r.enqueueKubeVirtUserDataSecret), builder.WithPredicates(
+			predicate.Or(capiDeletionOnlyPredicate(), capiUserDataStateChangedPredicate()),
+		)).
+		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(r.enqueueKubeVirtUserDataSecret), builder.WithPredicates(
+			predicate.Or(capiDeletionOnlyPredicate(), capiUserDataStateChangedPredicate()),
+		)).
+		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(r.enqueueKubeVirtUserDataSecret), builder.WithPredicates(
+			predicate.Or(capiDeletionOnlyPredicate(), capiUserDataStateChangedPredicate()),
+		)).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
