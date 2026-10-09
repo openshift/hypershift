@@ -76,7 +76,7 @@ func CAPICRDOverridesWithStorageVersion(storageVersion string) map[string]CAPICR
 	}
 	for _, name := range capoConversionOnlyCRDNames {
 		overrides[name] = CAPICRDOverrideEntry{
-			StorageVersion:  "v1beta1",
+			StorageVersion:  "v1beta2",
 			NeedsConversion: true,
 		}
 	}
