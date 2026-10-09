@@ -463,9 +463,10 @@ func capiProviderUnavailable(ctx context.Context, c client.Client, controlPlaneN
 // the underlying VM (e.g., due to invalid or expired credentials).
 func hasDeletionFailedCondition(azureMachine *capiazure.AzureMachine) bool {
 	for _, condition := range azureMachine.Status.Conditions {
-		if condition.Type == capiv1.ReadyCondition &&
+		if condition.Type == capiazure.VMRunningCondition &&
 			condition.Status == corev1.ConditionFalse &&
-			condition.Reason == capiazure.DeletionFailedReason {
+			(condition.Reason == capiazure.DeletionFailedReason ||
+				condition.Reason == capiazure.VMDeletingReason) {
 			return true
 		}
 	}
