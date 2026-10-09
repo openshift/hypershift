@@ -26,6 +26,7 @@ import (
 type HCPEtcdBackupStatusApplyConfiguration struct {
 	Conditions         []v1.ConditionApplyConfiguration                   `json:"conditions,omitempty"`
 	SnapshotURL        *string                                            `json:"snapshotURL,omitempty"`
+	ShardSnapshots     []HCPEtcdShardSnapshotApplyConfiguration           `json:"shardSnapshots,omitempty"`
 	EncryptionMetadata *HCPEtcdBackupEncryptionMetadataApplyConfiguration `json:"encryptionMetadata,omitempty"`
 }
 
@@ -53,6 +54,19 @@ func (b *HCPEtcdBackupStatusApplyConfiguration) WithConditions(values ...*v1.Con
 // If called multiple times, the SnapshotURL field is set to the value of the last call.
 func (b *HCPEtcdBackupStatusApplyConfiguration) WithSnapshotURL(value string) *HCPEtcdBackupStatusApplyConfiguration {
 	b.SnapshotURL = &value
+	return b
+}
+
+// WithShardSnapshots adds the given value to the ShardSnapshots field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the ShardSnapshots field.
+func (b *HCPEtcdBackupStatusApplyConfiguration) WithShardSnapshots(values ...*HCPEtcdShardSnapshotApplyConfiguration) *HCPEtcdBackupStatusApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithShardSnapshots")
+		}
+		b.ShardSnapshots = append(b.ShardSnapshots, *values[i])
+	}
 	return b
 }
 

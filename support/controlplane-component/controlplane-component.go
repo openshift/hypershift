@@ -231,13 +231,19 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 	}
 
 	// delete all resources.
-	// When using WithAssetDir, the raw manifest names may not match the
+	// When using WithAssetDir, the raw manifest names may not match the final
+	// resource names after template rendering.
 	// When using WithTemplateData, template rendering produces correctly-named
 	// objects at load time. Do NOT call adapt functions during delete — the
 	// delete path runs when a component's predicate returns false (e.g. Azure
 	// CCM on an AWS cluster), and adapt functions may assume platform-specific
 	// config exists, causing nil pointer panics.
 	if err := assets.ForEachManifest(c.AssetDirName(), func(manifestName string) error {
+		adapter, exist := c.manifestsAdapters[manifestName]
+		if exist && adapter.skip {
+			return nil
+		}
+
 		obj, _, err := c.loadManifest(manifestName)
 		if err != nil {
 			return err
