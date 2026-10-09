@@ -28,6 +28,7 @@ const (
 	VnetIDDescription                 = "Full resource ID of an existing VNET to use for the cluster (e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<name>). If omitted, a new VNET will be created."
 	SubnetIDDescription               = "Full resource ID of an existing subnet where VMs will be placed. If omitted for cluster creation, a new subnet will be created."
 	NetworkSecurityGroupIDDescription = "Full resource ID of an existing Network Security Group for the default NodePool. If omitted, a new NSG will be created."
+	IPForwardingDescription           = "Enable IP forwarding on the NodePool VM network interfaces, allowing nodes to send and receive traffic for addresses not assigned to them (e.g. networks advertised over BGP, or directly routable VM addresses). Valid values: Enabled, Disabled."
 
 	// Identity
 	WorkloadIdentitiesFileDescription = "Path to a JSON file containing workload identity client IDs that map Azure identities to HyperShift components. Required for self-managed Azure clusters using workload identity authentication."

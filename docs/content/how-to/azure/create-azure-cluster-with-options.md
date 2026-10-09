@@ -146,6 +146,60 @@ hypershift create nodepool azure \
 --disk-storage-account-type Standard_LRS
 ```
 
+## Enabling IP Forwarding on Azure VMs
+
+By default, Azure enforces a source and destination address check on every VM network interface: the
+platform silently drops packets whose source or destination IP address is not assigned to the VM.
+That prevents a node from forwarding traffic on behalf of other networks — for example prefixes
+advertised to the node over BGP, or VM addresses that are directly routable within the virtual
+network.
+
+Set `ipForwarding` on a NodePool to relax that check. The field is opt-in: when it is omitted, the
+Azure default applies and the VMs do not forward traffic.
+
+!!! warning
+
+    Changing `ipForwarding` on an existing NodePool changes the generated machine template and
+    therefore **replaces the VMs in the NodePool**. Expect the usual drain, surge, and node churn of
+    a rolling replacement.
+
+    For NodePools using `upgradeType: InPlace`, changing this value affects only nodes created after
+    the change; existing nodes keep their original setting. See
+    [NodePool rollouts](../../reference/nodepool-rollouts.md) for details.
+
+!!! note
+
+    This is unrelated to the cluster network operator's `ipForwarding` setting, which controls
+    OVN-Kubernetes gateway behavior inside the cluster.
+
+Set the `ip-forwarding` flag when creating a NodePool:
+```
+hypershift create nodepool azure \
+--name <name_of_nodepool> \
+--cluster-name <cluster_name> \
+--replicas <number_of_replicas> \
+--release-image <release_image> \
+--ip-forwarding Enabled
+```
+
+Or set the field directly on the NodePool CR:
+```
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: <name_of_nodepool>
+  namespace: clusters
+spec:
+  platform:
+    type: Azure
+    azure:
+      ipForwarding: Enabled
+      vmSize: Standard_D4s_v5
+      ...
+```
+
+Supported values are `Enabled` and `Disabled`.
+
 ## Enabling KMS encryption
 This section walks through how to:
 

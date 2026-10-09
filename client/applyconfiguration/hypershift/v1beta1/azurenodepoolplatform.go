@@ -17,6 +17,10 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // AzureNodePoolPlatformApplyConfiguration represents a declarative configuration of the AzureNodePoolPlatform type for use
 // with apply.
 type AzureNodePoolPlatformApplyConfiguration struct {
@@ -27,6 +31,7 @@ type AzureNodePoolPlatformApplyConfiguration struct {
 	EncryptionAtHost *string                                `json:"encryptionAtHost,omitempty"`
 	SubnetID         *string                                `json:"subnetID,omitempty"`
 	Diagnostics      *DiagnosticsApplyConfiguration         `json:"diagnostics,omitempty"`
+	IPForwarding     *hypershiftv1beta1.AzureIPForwarding   `json:"ipForwarding,omitempty"`
 }
 
 // AzureNodePoolPlatformApplyConfiguration constructs a declarative configuration of the AzureNodePoolPlatform type for use with
@@ -88,5 +93,13 @@ func (b *AzureNodePoolPlatformApplyConfiguration) WithSubnetID(value string) *Az
 // If called multiple times, the Diagnostics field is set to the value of the last call.
 func (b *AzureNodePoolPlatformApplyConfiguration) WithDiagnostics(value *DiagnosticsApplyConfiguration) *AzureNodePoolPlatformApplyConfiguration {
 	b.Diagnostics = value
+	return b
+}
+
+// WithIPForwarding sets the IPForwarding field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the IPForwarding field is set to the value of the last call.
+func (b *AzureNodePoolPlatformApplyConfiguration) WithIPForwarding(value hypershiftv1beta1.AzureIPForwarding) *AzureNodePoolPlatformApplyConfiguration {
+	b.IPForwarding = &value
 	return b
 }

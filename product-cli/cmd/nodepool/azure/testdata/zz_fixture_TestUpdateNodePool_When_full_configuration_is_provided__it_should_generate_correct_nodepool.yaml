@@ -12,6 +12,7 @@ image:
     sku: aro_414
     version: 414.1.20240101
   type: AzureMarketplace
+ipForwarding: Enabled
 osDisk:
   diskStorageAccountType: StandardSSD_LRS
   encryptionSetID: /subscriptions/test/resourceGroups/test/providers/Microsoft.Compute/diskEncryptionSets/test-des

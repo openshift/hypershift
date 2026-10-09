@@ -24,6 +24,20 @@ type awsNodePoolPlatformNMinus1 struct {
 	Subnet AWSResourceReference `json:"subnet"` //nolint:kubeapilinter // test-only N-1 compat struct
 }
 
+// azureNodePoolPlatformNMinus1 is a shape probe for the N-1 version of AzureNodePoolPlatform,
+// before the ipForwarding field was added. It carries only the required fields, which is enough
+// to prove that an older consumer can deserialize JSON written by the current type.
+type azureNodePoolPlatformNMinus1 struct {
+	// vmSize is the Azure VM instance type.
+	VMSize string `json:"vmSize"` //nolint:kubeapilinter // test-only N-1 compat struct
+	// image is the VM image to boot.
+	Image AzureVMImage `json:"image"` //nolint:kubeapilinter // test-only N-1 compat struct
+	// osDisk is the OS disk configuration.
+	OSDisk AzureNodePoolOSDisk `json:"osDisk"` //nolint:kubeapilinter // test-only N-1 compat struct
+	// subnetID is the subnet the VMs are placed in.
+	SubnetID string `json:"subnetID"` //nolint:kubeapilinter // test-only N-1 compat struct
+}
+
 func TestNodePoolAutoScalingSerializationCompatibility(t *testing.T) {
 	tests := []struct {
 		name string
@@ -388,6 +402,137 @@ func TestAWSNodePoolPlatformSerializationCompatibility(t *testing.T) {
 			}
 			if roundTripped.CPUOptions != (CPUOptions{}) {
 				t.Errorf("CPUOptions mismatch after N-1 round-trip: got %+v, want zero value", roundTripped.CPUOptions)
+			}
+		})
+	}
+}
+
+// TestAzureNodePoolPlatformSerializationCompatibility verifies that adding ipForwarding to
+// AzureNodePoolPlatform is safe in both directions for consumers that vendor these types and
+// serialize them outside CRD validation (e.g. ARO-HCP to Cosmos DB): current JSON still
+// deserializes into an N-1 struct, N-1 JSON still deserializes into the current type, and an
+// omitted ipForwarding never reaches the wire. That last property is what keeps the generated
+// AzureMachineTemplate hash — and therefore the whole Azure fleet — stable on upgrade.
+func TestAzureNodePoolPlatformSerializationCompatibility(t *testing.T) {
+	tests := []struct {
+		name string
+		// current is the N (current) version of the struct
+		current AzureNodePoolPlatform
+		// expectedJSON is the expected JSON output from marshalling current
+		expectedJSON string
+		// nMinus1Result is the expected result when unmarshalling into the N-1 struct
+		nMinus1Result azureNodePoolPlatformNMinus1
+	}{
+		{
+			name: "When ipForwarding is set it should round-trip to N-1",
+			current: AzureNodePoolPlatform{
+				VMSize: "Standard_D4s_v5",
+				Image: AzureVMImage{
+					Type:    ImageID,
+					ImageID: ptr.To("test-image-id"),
+				},
+				OSDisk: AzureNodePoolOSDisk{
+					SizeGiB:                120,
+					DiskStorageAccountType: DiskStorageAccountTypesPremiumLRS,
+				},
+				SubnetID:     "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				IPForwarding: AzureIPForwardingEnabled,
+			},
+			expectedJSON: `{"vmSize":"Standard_D4s_v5","image":{"type":"ImageID","imageID":"test-image-id"},"osDisk":{"sizeGiB":120,"diskStorageAccountType":"Premium_LRS"},"subnetID":"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet","ipForwarding":"Enabled"}`,
+			nMinus1Result: azureNodePoolPlatformNMinus1{
+				VMSize: "Standard_D4s_v5",
+				Image: AzureVMImage{
+					Type:    ImageID,
+					ImageID: ptr.To("test-image-id"),
+				},
+				OSDisk: AzureNodePoolOSDisk{
+					SizeGiB:                120,
+					DiskStorageAccountType: DiskStorageAccountTypesPremiumLRS,
+				},
+				SubnetID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+			},
+		},
+		{
+			name: "When ipForwarding is omitted it should preserve N-1 JSON shape",
+			current: AzureNodePoolPlatform{
+				VMSize: "Standard_D4s_v5",
+				Image: AzureVMImage{
+					Type:    ImageID,
+					ImageID: ptr.To("test-image-id"),
+				},
+				OSDisk: AzureNodePoolOSDisk{
+					SizeGiB:                120,
+					DiskStorageAccountType: DiskStorageAccountTypesPremiumLRS,
+				},
+				SubnetID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+			},
+			expectedJSON: `{"vmSize":"Standard_D4s_v5","image":{"type":"ImageID","imageID":"test-image-id"},"osDisk":{"sizeGiB":120,"diskStorageAccountType":"Premium_LRS"},"subnetID":"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"}`,
+			nMinus1Result: azureNodePoolPlatformNMinus1{
+				VMSize: "Standard_D4s_v5",
+				Image: AzureVMImage{
+					Type:    ImageID,
+					ImageID: ptr.To("test-image-id"),
+				},
+				OSDisk: AzureNodePoolOSDisk{
+					SizeGiB:                120,
+					DiskStorageAccountType: DiskStorageAccountTypesPremiumLRS,
+				},
+				SubnetID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.current)
+			if err != nil {
+				t.Fatalf("failed to marshal current struct: %v", err)
+			}
+			if string(data) != tt.expectedJSON {
+				t.Errorf("unexpected JSON output: got %s, want %s", string(data), tt.expectedJSON)
+			}
+
+			var nMinus1 azureNodePoolPlatformNMinus1
+			if err := json.Unmarshal(data, &nMinus1); err != nil {
+				t.Fatalf("N-1 failed to unmarshal JSON from N: %v", err)
+			}
+			if nMinus1.VMSize != tt.nMinus1Result.VMSize {
+				t.Errorf("N-1 vmSize mismatch: got %s, want %s", nMinus1.VMSize, tt.nMinus1Result.VMSize)
+			}
+			if !reflect.DeepEqual(nMinus1.Image, tt.nMinus1Result.Image) {
+				t.Errorf("N-1 image mismatch: got %+v, want %+v", nMinus1.Image, tt.nMinus1Result.Image)
+			}
+			if !reflect.DeepEqual(nMinus1.OSDisk, tt.nMinus1Result.OSDisk) {
+				t.Errorf("N-1 osDisk mismatch: got %+v, want %+v", nMinus1.OSDisk, tt.nMinus1Result.OSDisk)
+			}
+			if nMinus1.SubnetID != tt.nMinus1Result.SubnetID {
+				t.Errorf("N-1 subnetID mismatch: got %s, want %s", nMinus1.SubnetID, tt.nMinus1Result.SubnetID)
+			}
+
+			nMinus1Data, err := json.Marshal(tt.nMinus1Result)
+			if err != nil {
+				t.Fatalf("failed to marshal N-1 struct: %v", err)
+			}
+			var roundTripped AzureNodePoolPlatform
+			if err := json.Unmarshal(nMinus1Data, &roundTripped); err != nil {
+				t.Fatalf("N failed to unmarshal JSON from N-1: %v", err)
+			}
+			if roundTripped.VMSize != tt.nMinus1Result.VMSize {
+				t.Errorf("VMSize mismatch after N-1 round-trip: got %s, want %s", roundTripped.VMSize, tt.nMinus1Result.VMSize)
+			}
+			if !reflect.DeepEqual(roundTripped.Image, tt.nMinus1Result.Image) {
+				t.Errorf("Image mismatch after N-1 round-trip: got %+v, want %+v", roundTripped.Image, tt.nMinus1Result.Image)
+			}
+			if !reflect.DeepEqual(roundTripped.OSDisk, tt.nMinus1Result.OSDisk) {
+				t.Errorf("OSDisk mismatch after N-1 round-trip: got %+v, want %+v", roundTripped.OSDisk, tt.nMinus1Result.OSDisk)
+			}
+			if roundTripped.SubnetID != tt.nMinus1Result.SubnetID {
+				t.Errorf("SubnetID mismatch after N-1 round-trip: got %s, want %s", roundTripped.SubnetID, tt.nMinus1Result.SubnetID)
+			}
+			// Data written by an N-1 consumer carries no ipForwarding key, so the current type
+			// must decode it as the zero value and leave IP forwarding off.
+			if roundTripped.IPForwarding != "" {
+				t.Errorf("IPForwarding mismatch after N-1 round-trip: got %q, want zero value", roundTripped.IPForwarding)
 			}
 		})
 	}
