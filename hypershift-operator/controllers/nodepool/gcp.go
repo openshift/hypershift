@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -274,13 +274,13 @@ func configureGCPLabels(hcGCPPlatform *hyperv1.GCPPlatformSpec, gcpPlatform *hyp
 	labels := make(map[string]string)
 
 	// Add cluster-level resource labels
-	for _, label := range hcGCPPlatform.ResourceLabels {
-		labels[label.Key] = ptr.Deref(label.Value, "")
+	for key, value := range gcputil.ResourceLabelsToMap(hcGCPPlatform.ResourceLabels) {
+		labels[key] = value
 	}
 
 	// Add NodePool-level resource labels (overrides cluster labels)
-	for _, label := range gcpPlatform.ResourceLabels {
-		labels[label.Key] = ptr.Deref(label.Value, "")
+	for key, value := range gcputil.ResourceLabelsToMap(gcpPlatform.ResourceLabels) {
+		labels[key] = value
 	}
 
 	// Add HyperShift-specific labels for resource identification
