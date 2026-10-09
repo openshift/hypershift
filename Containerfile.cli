@@ -18,8 +18,12 @@ RUN make product-cli-release && \
     # Remove raw binaries, keep only tar.gz files \
     find ./bin -type f ! -name "*.tar.gz" -delete
 
+# PQC-enabled crypto policy for ACM 5.0 / MCE 5.0 (OpenSSL DEFAULT:PQ).
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest AS policy
+
 FROM registry.redhat.io/ubi9/nginx-124:latest
 
+COPY --from=policy /etc/crypto-policies /etc/crypto-policies
 COPY --from=builder /hypershift/bin/ /opt/app-root/src/
 
 CMD ["nginx", "-g", "daemon off;"]
