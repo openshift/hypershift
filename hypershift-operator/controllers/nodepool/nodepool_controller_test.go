@@ -929,6 +929,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 
 	for _, tc := range []struct {
 		name                  string
+		platformType          hyperv1.PlatformType // defaults to "" (NonePlatform-like); set to test platform-specific terminal reasons
 		machinesGenerator     func() []client.Object
 		expectedAllMachine    *testCondition
 		expectedAllNodes      *testCondition
@@ -1955,7 +1956,8 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "When 10 of 20 machines are not ready with different reasons it should aggregate correctly",
+			name:         "When 10 of 20 machines are not ready with different reasons it should aggregate correctly",
+			platformType: hyperv1.AWSPlatform,
 			machinesGenerator: func() []client.Object {
 				machines := make([]client.Object, 20)
 				// Use real CAPI v1beta1 and AWS CAPA reasons with realistic messages.
@@ -2026,7 +2028,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			},
 			expectedAllMachine: &testCondition{
 				Status: corev1.ConditionFalse,
-				Reason: "InstanceProvisionFailed,InstanceTerminated,MachineHasFailure,NodeStartupTimeout,WaitingForInfrastructure",
+				Reason: hyperv1.NodePoolInfrastructureFailureReason,
 				Messages: []string{
 					"10 of 20 machines are not ready",
 					"Machine failing-node-0: NodeStartupTimeout: Node failed to report NodeReady condition within 20m0s",
@@ -2035,6 +2037,374 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 					"Machine failing-node-6: InstanceProvisionFailed: failed to create instance: InsufficientInstanceCapacity",
 					"Machine failing-node-8: WaitingForInfrastructure",
 				},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			name:         "When AWS machine has InstanceTerminated reason it should report InfrastructureFailure",
+			platformType: hyperv1.AWSPlatform,
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "InstanceTerminated",
+									Message: "i-0abc123def456 instance is in terminated state",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   hyperv1.NodePoolInfrastructureFailureReason,
+				Messages: []string{"1 of 1 machines are not ready", "Machine node1: InstanceTerminated: i-0abc123def456 instance is in terminated state"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			name:         "When AWS machine has InstanceProvisionFailed reason it should report InfrastructureFailure regardless of message",
+			platformType: hyperv1.AWSPlatform,
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "InstanceProvisionFailed",
+									Message: "failed to create instance: some API error",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   hyperv1.NodePoolInfrastructureFailureReason,
+				Messages: []string{"1 of 1 machines are not ready", "Machine node1: InstanceProvisionFailed: failed to create instance: some API error"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			name:         "When Azure machine has VMProvisionFailed reason it should report InfrastructureFailure",
+			platformType: hyperv1.AzurePlatform,
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "VMProvisionFailed",
+									Message: "failed to create VM: quota exceeded",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   hyperv1.NodePoolInfrastructureFailureReason,
+				Messages: []string{"1 of 1 machines are not ready", "Machine node1: VMProvisionFailed: failed to create VM: quota exceeded"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			name: "When platform has no terminal reasons a provider failure reason should not report InfrastructureFailure",
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "InstanceProvisionFailed",
+									Message: "failed to create instance",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   "InstanceProvisionFailed",
+				Messages: []string{"1 of 1 machines are not ready", "Machine node1: InstanceProvisionFailed: failed to create instance"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			name:         "When only WaitingForInfrastructure machines exist on AWS it should not report InfrastructureFailure",
+			platformType: hyperv1.AWSPlatform,
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  capiv1.WaitingForInfrastructureFallbackV1Beta1Reason,
+									Message: "",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   capiv1.WaitingForInfrastructureFallbackV1Beta1Reason,
+				Messages: []string{"1 of 1 machines are not ready", "Machine node1: WaitingForInfrastructure"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			name:         "When AWS machines mix transient and terminal failures it should report InfrastructureFailure",
+			platformType: hyperv1.AWSPlatform,
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  capiv1.WaitingForInfrastructureFallbackV1Beta1Reason,
+									Message: "",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node2",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "InstanceProvisionFailed",
+									Message: "failed to create instance",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node3",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: metav1.ConditionTrue,
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   hyperv1.NodePoolInfrastructureFailureReason,
+				Messages: []string{"2 of 3 machines are not ready", "Machine node1: WaitingForInfrastructure", "Machine node2: InstanceProvisionFailed: failed to create instance"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			name: "When machine is in Deleting state it should not report InfrastructureFailure",
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  capiv1.DeletingV1Beta1Reason,
+									Message: "Waiting for machine volumes to be detached",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   capiv1.DeletingV1Beta1Reason,
+				Messages: []string{"1 of 1 machines are not ready", "Machine node1: " + capiv1.DeletingV1Beta1Reason + ": Waiting for machine volumes to be detached"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			name: "When machine recovers from infrastructure failure it should return to AsExpected",
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							// ReadyCondition is True — the machine recovered.
+							Conditions: []metav1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: metav1.ConditionTrue,
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
 			},
 			expectedAllNodes: &testCondition{
 				Status:   corev1.ConditionTrue,
@@ -2167,6 +2537,9 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "np-name", Namespace: "myns"},
 				Spec: hyperv1.NodePoolSpec{
 					ClusterName: "cluster-name",
+					Platform: hyperv1.NodePoolPlatform{
+						Type: tc.platformType,
+					},
 				},
 			}
 
