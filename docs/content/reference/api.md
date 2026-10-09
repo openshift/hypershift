@@ -3699,6 +3699,34 @@ applications and dev/test.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureIPForwarding { #hypershift.openshift.io/v1beta1.AzureIPForwarding }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolPlatform">AzureNodePoolPlatform</a>)
+</p>
+<p>
+<p>AzureIPForwarding controls which source and destination IP addresses the network interfaces
+of the VMs in an Azure nodepool may send and receive traffic for.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AllowAllAddresses&#34;</p></td>
+<td><p>AzureIPForwardingAllowAllAddresses allows the VM network interfaces to send and receive
+traffic with any source or destination IP address, including addresses that are not
+assigned to the interface.</p>
+</td>
+</tr><tr><td><p>&#34;InterfaceAddressesOnly&#34;</p></td>
+<td><p>AzureIPForwardingInterfaceAddressesOnly restricts the VM network interfaces to traffic
+whose source or destination IP address is assigned to the interface. This is the Azure
+default.</p>
+</td>
+</tr></tbody>
+</table>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
@@ -4246,6 +4274,33 @@ Diagnostics
 <em>(Optional)</em>
 <p>diagnostics specifies the diagnostics settings for a virtual machine.
 If not specified, then Boot diagnostics will be disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ipForwarding</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureIPForwarding">
+AzureIPForwarding
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ipForwarding controls which source and destination IP addresses the VMs in the nodepool
+may send and receive network traffic for.
+Set this to AllowAllAddresses when nodes must forward traffic on behalf of other
+networks, for example networks advertised to the node over BGP, or VM addresses that are
+directly routable within the virtual network.
+AllowAllAddresses relaxes the Azure platform&rsquo;s source and destination address check on
+the VM network interfaces; InterfaceAddressesOnly leaves that check in place.
+This is unrelated to the cluster network operator&rsquo;s ipForwarding setting, which controls
+OVN-Kubernetes gateway behavior inside the cluster.
+When omitted, the Azure default applies and the VMs send and receive traffic only for
+addresses assigned to their own network interfaces.
+Changing this value replaces the VMs in the nodepool. For nodepools using the InPlace
+upgrade type, changing this value affects only nodes created after the change; existing
+nodes keep their original setting.</p>
 </td>
 </tr>
 </tbody>

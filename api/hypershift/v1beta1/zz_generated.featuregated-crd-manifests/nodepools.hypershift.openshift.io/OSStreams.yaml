@@ -989,6 +989,26 @@ spec:
                             AzureMarketplace
                           rule: 'has(self.type) && self.type == ''AzureMarketplace''
                             ?  true : !has(self.azureMarketplace)'
+                      ipForwarding:
+                        description: |-
+                          ipForwarding controls which source and destination IP addresses the VMs in the nodepool
+                          may send and receive network traffic for.
+                          Set this to AllowAllAddresses when nodes must forward traffic on behalf of other
+                          networks, for example networks advertised to the node over BGP, or VM addresses that are
+                          directly routable within the virtual network.
+                          AllowAllAddresses relaxes the Azure platform's source and destination address check on
+                          the VM network interfaces; InterfaceAddressesOnly leaves that check in place.
+                          This is unrelated to the cluster network operator's ipForwarding setting, which controls
+                          OVN-Kubernetes gateway behavior inside the cluster.
+                          When omitted, the Azure default applies and the VMs send and receive traffic only for
+                          addresses assigned to their own network interfaces.
+                          Changing this value replaces the VMs in the nodepool. For nodepools using the InPlace
+                          upgrade type, changing this value affects only nodes created after the change; existing
+                          nodes keep their original setting.
+                        enum:
+                        - InterfaceAddressesOnly
+                        - AllowAllAddresses
+                        type: string
                       osDisk:
                         description: |-
                           osDisk provides configuration for the OS disk for the nodepool.
