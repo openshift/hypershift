@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,6 +51,59 @@ func TestLoadDeploymentManifest(t *testing.T) {
 
 			deployment, err := LoadDeploymentManifest(tc.componentName)
 			tc.validate(g, deployment, err)
+		})
+	}
+
+	for _, catalog := range []struct {
+		name   string
+		memory string
+	}{
+		{name: "certified-operators-catalog", memory: "160Mi"},
+		{name: "community-operators-catalog", memory: "160Mi"},
+		{name: "redhat-operators-catalog", memory: "420Mi"},
+	} {
+		t.Run(fmt.Sprintf("When loading %s, it should budget bounded exec probes without changing resources", catalog.name), func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			deployment, err := LoadDeploymentManifest(catalog.name)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
+			registry := deployment.Spec.Template.Spec.Containers[0]
+			g.Expect(registry.Name).To(Equal("registry"))
+			for _, probe := range []struct {
+				name         string
+				probe        *corev1.Probe
+				initialDelay int32
+				failures     int32
+			}{
+				{name: "liveness", probe: registry.LivenessProbe, initialDelay: 10, failures: 3},
+				{name: "readiness", probe: registry.ReadinessProbe, initialDelay: 5, failures: 3},
+				{name: "startup", probe: registry.StartupProbe, failures: 120},
+			} {
+				g.Expect(probe.probe).To(Equal(&corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{Exec: &corev1.ExecAction{Command: []string{
+						"grpc_health_probe", "-addr=:50051", "-connect-timeout=1s", "-rpc-timeout=2s",
+					}}},
+					TimeoutSeconds:      5,
+					InitialDelaySeconds: probe.initialDelay,
+					PeriodSeconds:       10,
+					SuccessThreshold:    1,
+					FailureThreshold:    probe.failures,
+				}), "%s probe", probe.name)
+			}
+			startupAllowance := registry.StartupProbe.PeriodSeconds * registry.StartupProbe.FailureThreshold
+			g.Expect(startupAllowance).To(Equal(int32(1200)), "allow twenty minutes of startup retries without weakening the healthy RPC requirement")
+			g.Expect(deployment.Spec.ProgressDeadlineSeconds).To(HaveValue(Equal(int32(1800))))
+			g.Expect(*deployment.Spec.ProgressDeadlineSeconds).To(BeNumerically(">", startupAllowance), "allow scheduling, image pulls, and init containers in addition to startup retries")
+			g.Expect(registry.Resources).To(Equal(corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse(catalog.memory),
+				},
+			}))
+			for _, container := range deployment.Spec.Template.Spec.InitContainers {
+				g.Expect(container.Resources).To(Equal(corev1.ResourceRequirements{}), "%s resources", container.Name)
+			}
 		})
 	}
 }
