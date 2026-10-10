@@ -99,6 +99,27 @@ func TestFilter_Apply(t *testing.T) {
 			},
 		},
 		{
+			name:          "When MetricsSetTelemetry is used with kube-scheduler, it should drop all metrics",
+			metricsSet:    metrics.MetricsSetTelemetry,
+			componentName: "kube-scheduler",
+			families: map[string]*dto.MetricFamily{
+				"scheduler_schedule_attempts_total": createMetricFamily("scheduler_schedule_attempts_total"),
+				"scheduler_pending_pods":            createMetricFamily("scheduler_pending_pods"),
+				"scheduler_goroutines":              createMetricFamily("scheduler_goroutines"),
+			},
+			wantNames: []string{},
+		},
+		{
+			name:          "When MetricsSetTelemetry is used with openshift-route-controller-manager, it should drop all metrics",
+			metricsSet:    metrics.MetricsSetTelemetry,
+			componentName: "openshift-route-controller-manager",
+			families: map[string]*dto.MetricFamily{
+				"route_controller_metric": createMetricFamily("route_controller_metric"),
+				"workqueue_depth":         createMetricFamily("workqueue_depth"),
+			},
+			wantNames: []string{},
+		},
+		{
 			name:          "When MetricsSetTelemetry is used with cluster-version-operator, it should filter correctly",
 			metricsSet:    metrics.MetricsSetTelemetry,
 			componentName: "cluster-version-operator",
@@ -242,90 +263,105 @@ func TestFilter_getOrCompile_HandlesEmptyRegex(t *testing.T) {
 	}
 }
 
-func TestGetKeepRegexForComponent(t *testing.T) {
+func TestGetFilterRegexForComponent(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name          string
 		componentName string
 		metricsSet    metrics.MetricsSet
-		wantEmpty     bool
+		wantRegex     string
+		wantHasConfig bool
 		wantContains  string
 	}{
 		{
-			name:          "When kube-apiserver with Telemetry, it should return non-empty regex",
+			name:          "When kube-apiserver with Telemetry, it should return keep regex",
 			componentName: "kube-apiserver",
 			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
+			wantHasConfig: true,
 			wantContains:  "apiserver_storage_objects",
 		},
 		{
-			name:          "When etcd with Telemetry, it should return non-empty regex",
+			name:          "When etcd with Telemetry, it should return keep regex",
 			componentName: "etcd",
 			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
+			wantHasConfig: true,
 			wantContains:  "etcd_disk_wal_fsync_duration_seconds_bucket",
 		},
 		{
-			name:          "When kube-controller-manager with Telemetry, it should return non-empty regex",
+			name:          "When kube-controller-manager with Telemetry, it should return keep regex",
 			componentName: "kube-controller-manager",
 			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
+			wantHasConfig: true,
 			wantContains:  "pv_collector_total_pv_count",
 		},
 		{
-			name:          "When openshift-apiserver with Telemetry, it should return non-empty regex",
+			name:          "When kube-scheduler with Telemetry, it should return drop-all (empty regex with config)",
+			componentName: "kube-scheduler",
+			metricsSet:    metrics.MetricsSetTelemetry,
+			wantRegex:     "",
+			wantHasConfig: true,
+		},
+		{
+			name:          "When openshift-apiserver with Telemetry, it should return keep regex",
 			componentName: "openshift-apiserver",
 			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
+			wantHasConfig: true,
 			wantContains:  "apiserver_storage_objects",
 		},
 		{
-			name:          "When openshift-controller-manager with Telemetry, it should return non-empty regex",
+			name:          "When openshift-controller-manager with Telemetry, it should return keep regex",
 			componentName: "openshift-controller-manager",
 			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
+			wantHasConfig: true,
 			wantContains:  "openshift_build_status_phase_total",
 		},
 		{
-			name:          "When cluster-version-operator with Telemetry, it should return non-empty regex",
+			name:          "When openshift-route-controller-manager with Telemetry, it should return drop-all",
+			componentName: "openshift-route-controller-manager",
+			metricsSet:    metrics.MetricsSetTelemetry,
+			wantRegex:     "",
+			wantHasConfig: true,
+		},
+		{
+			name:          "When cluster-version-operator with Telemetry, it should return keep regex",
 			componentName: "cluster-version-operator",
 			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
+			wantHasConfig: true,
 			wantContains:  "cluster_version",
 		},
 		{
-			name:          "When olm-operator with Telemetry, it should return non-empty regex",
+			name:          "When olm-operator with Telemetry, it should return keep regex",
 			componentName: "olm-operator",
 			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
+			wantHasConfig: true,
 			wantContains:  "csv_succeeded",
 		},
 		{
-			name:          "When catalog-operator with Telemetry, it should return non-empty regex",
+			name:          "When catalog-operator with Telemetry, it should return keep regex",
 			componentName: "catalog-operator",
 			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
+			wantHasConfig: true,
 			wantContains:  "subscription_sync_total",
 		},
 		{
-			name:          "When node-tuning-operator with Telemetry, it should return non-empty regex",
+			name:          "When node-tuning-operator with Telemetry, it should return keep regex",
 			componentName: "node-tuning-operator",
 			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     false,
+			wantHasConfig: true,
 			wantContains:  "nto_profile_calculated_total",
 		},
 		{
-			name:          "When unknown component, it should return empty string",
+			name:          "When unknown component, it should return no config",
 			componentName: "unknown-component",
 			metricsSet:    metrics.MetricsSetTelemetry,
-			wantEmpty:     true,
+			wantHasConfig: false,
 		},
 		{
-			name:          "When kube-apiserver with MetricsSetAll, it should return empty string",
+			name:          "When kube-apiserver with MetricsSetAll, it should return no config",
 			componentName: "kube-apiserver",
 			metricsSet:    metrics.MetricsSetAll,
-			wantEmpty:     true,
+			wantHasConfig: false,
 		},
 	}
 
@@ -333,19 +369,19 @@ func TestGetKeepRegexForComponent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := getKeepRegexForComponent(tt.componentName, tt.metricsSet)
+			got, hasConfig := getFilterRegexForComponent(tt.componentName, tt.metricsSet)
 
-			if tt.wantEmpty {
-				if got != "" {
-					t.Errorf("getKeepRegexForComponent() = %q, want empty string", got)
-				}
-			} else {
-				if got == "" {
-					t.Error("getKeepRegexForComponent() returned empty string, want non-empty")
-				}
-				if tt.wantContains != "" && !strings.Contains(got, tt.wantContains) {
-					t.Errorf("getKeepRegexForComponent() = %q, want to contain %q", got, tt.wantContains)
-				}
+			if hasConfig != tt.wantHasConfig {
+				t.Errorf("getFilterRegexForComponent() hasConfig = %v, want %v", hasConfig, tt.wantHasConfig)
+			}
+			if !tt.wantHasConfig {
+				return
+			}
+			if tt.wantContains != "" && !strings.Contains(got, tt.wantContains) {
+				t.Errorf("getFilterRegexForComponent() = %q, want to contain %q", got, tt.wantContains)
+			}
+			if tt.wantContains == "" && got != tt.wantRegex {
+				t.Errorf("getFilterRegexForComponent() = %q, want %q", got, tt.wantRegex)
 			}
 		})
 	}
@@ -376,13 +412,14 @@ func TestFilter_Apply_ConcurrentAccess(t *testing.T) {
 	}
 }
 
-func TestGetKeepRegexForComponent_ValidRegex(t *testing.T) {
+func TestGetFilterRegexForComponent_ValidRegex(t *testing.T) {
 	t.Parallel()
 
 	components := []string{
 		"kube-apiserver",
 		"etcd",
 		"kube-controller-manager",
+		"kube-scheduler",
 		"openshift-apiserver",
 		"openshift-controller-manager",
 		"openshift-route-controller-manager",
@@ -396,9 +433,12 @@ func TestGetKeepRegexForComponent_ValidRegex(t *testing.T) {
 		t.Run(component, func(t *testing.T) {
 			t.Parallel()
 
-			regexStr := getKeepRegexForComponent(component, metrics.MetricsSetTelemetry)
+			regexStr, hasConfig := getFilterRegexForComponent(component, metrics.MetricsSetTelemetry)
+			if !hasConfig {
+				t.Skip("Component has no relabel config for Telemetry set")
+			}
 			if regexStr == "" {
-				t.Skip("Component has no keep regex for Telemetry set")
+				t.Skip("Component uses drop-all rule")
 			}
 
 			// Verify the regex compiles successfully
