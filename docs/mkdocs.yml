@@ -181,6 +181,7 @@ nav:
       - how-to/aws/etc-backup-restore.md
       - how-to/aws/external-dns.md
       - 'Global Pull Secret': how-to/aws/global-pull-secret.md
+      - how-to/aws/managed-dns.md
       - 'Other SDN providers': how-to/aws/other-sdn-providers.md
       - how-to/aws/shared-vpc.md
       - 'Troubleshooting':
