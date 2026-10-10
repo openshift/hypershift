@@ -63,14 +63,14 @@ require (
 	github.com/onsi/gomega v1.42.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/openshift/api v0.0.0-20260930220732-5588d747a72b
+	github.com/openshift/api v0.0.0-20260922100147-3a6e03c5a473
 	github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
 	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
-	github.com/openshift/cluster-node-tuning-operator v0.0.0-20260701110644-508d51a6f2bd
+	github.com/openshift/cluster-node-tuning-operator v0.0.0-20260825115124-078cde8b7f7f
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
-	github.com/openshift/hypershift/api v0.0.0-20260224085943-34e30acde920
+	github.com/openshift/hypershift/api v0.0.0-20260824191009-a7f22d5ea3e5
 	github.com/openshift/library-go v0.0.0-20261001035620-0eb5e87de1be
 	github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b
 	github.com/operator-framework/api v0.45.0
@@ -299,8 +299,8 @@ require (
 	k8s.io/component-helpers v0.37.0 // indirect
 	k8s.io/csi-translation-lib v0.36.2 // indirect
 	k8s.io/kms v0.37.1 // indirect
-	k8s.io/kube-openapi v0.35.1 // indirect
-	k8s.io/kubelet v0.36.2 // indirect
+	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
+	k8s.io/kubelet v0.36.4 // indirect
 	k8s.io/streaming v0.37.1 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.2.4 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
@@ -310,12 +310,12 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 )
 
+// Prevent root-only client and library dependencies from raising the selected API compatibility pin.
+exclude github.com/openshift/api v0.0.0-20260930220732-5588d747a72b
+
 replace github.com/openshift/hypershift/api => ./api
 
 // Use our openshift version of karpenter instead of upstream
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417
 
 replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260721214330-2b8ed744bf1c
-
-// Temporary: NTO main requires kube-openapi v0.35.1 (fake tag that only resolves via NTO's own replace)
-replace k8s.io/kube-openapi v0.35.1 => k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288

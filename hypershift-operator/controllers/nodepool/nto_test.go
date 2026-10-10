@@ -198,6 +198,27 @@ spec:
     realTime: true
 status: {}
 `
+	perfprofWithOvsDpdk := `apiVersion: performance.openshift.io/v2
+kind: PerformanceProfile
+metadata:
+    name: perfprofWithOvsDpdk
+spec:
+    cpu:
+        isolated: 1,3-39,41,43-79
+        reserved: 0,2,40,42
+        ovsDpdk: 80-81
+    machineConfigPoolSelector:
+        machineconfiguration.openshift.io/role: worker-cnf
+    nodeSelector:
+        node-role.kubernetes.io/worker-cnf: ""
+    numa:
+        topologyPolicy: restricted
+    realTimeKernel:
+        enabled: true
+    workloadHints:
+        highPowerConsumption: false
+        realTime: true
+`
 
 	namespace := "test"
 	testCases := []struct {
@@ -208,6 +229,7 @@ status: {}
 		perfprofExpect     string
 		perfProfNameExpect string
 		error              bool
+		errorContains      string
 	}{
 		{
 			name: "When a single valid TunedConfig is provided, it should return the defaulted config",
@@ -334,6 +356,35 @@ status: {}
 			perfprofExpect:     perfprofOneDefaulted,
 			perfProfNameExpect: "perfprofOne",
 			error:              false,
+		},
+		{
+			name: "When a PerformanceProfileConfig specifies ovsDpdk CPUs, it should reject the unsupported field before forwarding",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TuningConfig: []corev1.LocalObjectReference{
+						{
+							Name: "perfprofWithOvsDpdk",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tuningConfig: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "perfprofWithOvsDpdk",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: perfprofWithOvsDpdk,
+					},
+				},
+			},
+			error:         true,
+			errorContains: "PerformanceProfile spec.cpu.ovsDpdk is not supported in NodePool tuningConfig",
 		},
 		{
 			name: "When more than one PerformanceProfileConfig is provided, it should fail",
@@ -466,6 +517,12 @@ status: {}
 
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
+				if tc.errorContains != "" {
+					g.Expect(err).To(MatchError(ContainSubstring(tc.errorContains)))
+					g.Expect(td).To(BeEmpty())
+					g.Expect(pp).To(BeEmpty())
+					g.Expect(ppName).To(BeEmpty())
+				}
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred())

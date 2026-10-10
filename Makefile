@@ -20,6 +20,7 @@ GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
 YQ := $(abspath $(TOOLS_BIN_DIR)/yq)
 VERIFY_API_DEPS := $(abspath $(TOOLS_BIN_DIR)/verify-api-deps)
+VERIFY_API_DEPS_SRC := $(shell find $(TOOLS_DIR)/verify-api-deps -name '*.go' ! -name '*_test.go' 2>/dev/null)
 CRD_SCHEMA_CHECK := $(abspath $(TOOLS_BIN_DIR)/crd-schema-check)
 
 CODESPELL_VER := 2.4.1
@@ -209,7 +210,7 @@ $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 $(MOCKGEN): ${TOOLS_DIR}/go.mod
 	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
 
-$(VERIFY_API_DEPS): $(TOOLS_DIR)/go.mod # Build verify-api-deps tool
+$(VERIFY_API_DEPS): $(TOOLS_DIR)/go.mod $(VERIFY_API_DEPS_SRC) # Build verify-api-deps tool
 	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/verify-api-deps ./verify-api-deps
 
 $(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
@@ -689,7 +690,8 @@ verify-codespell: codespell ## Verify codespell.
 	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
 
 .PHONY: verify-api-deps
-verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependencies against allowlist.
+verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependency allowlist and shared requirements/replacements.
+	cd $(TOOLS_DIR) && $(GO) test ./verify-api-deps -count=1
 	@$(VERIFY_API_DEPS)
 
 .PHONY: run-gitlint

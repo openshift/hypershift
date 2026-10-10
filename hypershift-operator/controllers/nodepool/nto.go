@@ -316,6 +316,10 @@ func validateTuningConfigManifest(manifest []byte) ([]byte, []byte, error) {
 		return manifest, nil, nil
 
 	case *performanceprofilev2.PerformanceProfile:
+		if obj.Spec.CPU != nil && obj.Spec.CPU.OvsDpdk != nil {
+			return nil, nil, fmt.Errorf("PerformanceProfile spec.cpu.ovsDpdk is not supported in NodePool tuningConfig")
+		}
+
 		validationErrors := obj.ValidateBasicFields()
 		if len(validationErrors) > 0 {
 			return nil, nil, fmt.Errorf("PerformanceProfile validation failed pp:%s : %w", obj.Name, coreerrors.Join(validationErrors.ToAggregate().Errors()...))
