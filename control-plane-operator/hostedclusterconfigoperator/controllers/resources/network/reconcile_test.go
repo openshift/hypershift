@@ -16,6 +16,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 	vxlanPort := kubevirtDefaultVXLANPort
 	genevePort := kubevirtDefaultGenevePort
 	v4InternalSubnet := kubevirtDefaultV4InternalSubnet
+	v6InternalJoinSubnet := kubevirtDefaultV6InternalJoinSubnet
 
 	fakePort := uint32(11111)
 	testsCases := []struct {
@@ -25,6 +26,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		inputPlatformType   hyperv1.PlatformType
 		disableMultiNetwork bool
 		ovnConfig           *hyperv1.OVNKubernetesConfig
+		hasIPv6Network      bool
 		expectedNetwork     *operatorv1.Network
 	}{
 		{
@@ -33,6 +35,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputNetworkType:    hyperv1.OVNKubernetes,
 			inputPlatformType:   hyperv1.KubevirtPlatform,
 			disableMultiNetwork: false,
+			hasIPv6Network:      true,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -43,6 +46,9 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
 							GenevePort:       &genevePort,
 							V4InternalSubnet: v4InternalSubnet,
+							IPv6: &operatorv1.IPv6OVNKubernetesConfig{
+								InternalJoinSubnet: v6InternalJoinSubnet,
+							},
 						},
 					},
 				},
@@ -119,6 +125,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputNetworkType:    hyperv1.OVNKubernetes,
 			inputPlatformType:   hyperv1.KubevirtPlatform,
 			disableMultiNetwork: false,
+			hasIPv6Network:      true,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -129,6 +136,9 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
 							GenevePort:       &fakePort,
 							V4InternalSubnet: kubevirtDefaultV4InternalSubnet,
+							IPv6: &operatorv1.IPv6OVNKubernetesConfig{
+								InternalJoinSubnet: v6InternalJoinSubnet,
+							},
 						},
 					},
 				},
@@ -153,6 +163,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputNetworkType:    hyperv1.OVNKubernetes,
 			inputPlatformType:   hyperv1.KubevirtPlatform,
 			disableMultiNetwork: false,
+			hasIPv6Network:      true,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -163,6 +174,9 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
 							V4InternalSubnet: "100.66.0.0/16",
 							GenevePort:       &genevePort,
+							IPv6: &operatorv1.IPv6OVNKubernetesConfig{
+								InternalJoinSubnet: v6InternalJoinSubnet,
+							},
 						},
 					},
 				},
@@ -362,6 +376,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputNetworkType:    hyperv1.OVNKubernetes,
 			inputPlatformType:   hyperv1.KubevirtPlatform,
 			disableMultiNetwork: false,
+			hasIPv6Network:      true,
 			ovnConfig: &hyperv1.OVNKubernetesConfig{
 				MTU: 1300,
 			},
@@ -375,7 +390,10 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
 							GenevePort:       &genevePort,
 							V4InternalSubnet: v4InternalSubnet,
-							MTU:              ptr.To(uint32(1300)),
+							IPv6: &operatorv1.IPv6OVNKubernetesConfig{
+								InternalJoinSubnet: v6InternalJoinSubnet,
+							},
+							MTU: ptr.To(uint32(1300)),
 						},
 					},
 				},
@@ -433,12 +451,162 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                "When IPv6 subnets configured for OVN Kubernetes it should propagate to network operator",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet:          "fd99::/64",
+					InternalTransitSwitchSubnet: "fd97:1::/64",
+				},
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							IPv6: &operatorv1.IPv6OVNKubernetesConfig{
+								InternalJoinSubnet:          "fd99::/64",
+								InternalTransitSwitchSubnet: "fd97:1::/64",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When OVN config has IPv4 and IPv6 subnets it should propagate both",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet: "192.168.1.0/24",
+				},
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet: "fd99::/64",
+				},
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							IPv4: &operatorv1.IPv4OVNKubernetesConfig{
+								InternalJoinSubnet: "192.168.1.0/24",
+							},
+							IPv6: &operatorv1.IPv6OVNKubernetesConfig{
+								InternalJoinSubnet: "fd99::/64",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When KubeVirt with OVNKubernetes and user-specified IPv6 join subnet it should not override",
+			inputNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							IPv6: &operatorv1.IPv6OVNKubernetesConfig{
+								InternalJoinSubnet: "fdaa::/64",
+							},
+						},
+					},
+				},
+			},
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
+			hasIPv6Network:      true,
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							GenevePort:       &genevePort,
+							V4InternalSubnet: v4InternalSubnet,
+							IPv6: &operatorv1.IPv6OVNKubernetesConfig{
+								InternalJoinSubnet: "fdaa::/64",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When KubeVirt with OVNKubernetes and user-specified IPv6 via ovnConfig it should override the KubeVirt default",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
+			hasIPv6Network:      true,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv6: hyperv1.OVNIPv6Config{
+					InternalJoinSubnet: "fdbb::/64",
+				},
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							GenevePort:       &genevePort,
+							V4InternalSubnet: v4InternalSubnet,
+							IPv6: &operatorv1.IPv6OVNKubernetesConfig{
+								InternalJoinSubnet: "fdbb::/64",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When KubeVirt with OVNKubernetes and no IPv6 networks it should not set IPv6 join subnet default",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
+			hasIPv6Network:      false,
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							GenevePort:       &genevePort,
+							V4InternalSubnet: v4InternalSubnet,
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			ReconcileNetworkOperator(tc.inputNetwork, tc.inputNetworkType, tc.inputPlatformType, tc.disableMultiNetwork, tc.ovnConfig)
+			ReconcileNetworkOperator(tc.inputNetwork, tc.inputNetworkType, tc.inputPlatformType, tc.disableMultiNetwork, tc.ovnConfig, tc.hasIPv6Network)
 			g.Expect(tc.inputNetwork).To(BeEquivalentTo(tc.expectedNetwork))
 		})
 	}
