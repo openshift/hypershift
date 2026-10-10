@@ -28,7 +28,7 @@ OpenShift 5.0 runs on RHEL 10. But you can't flip an entire fleet from RHEL 9 to
 
 [@jparrill](https://github.com/jparrill)'s [PR #9099](https://github.com/openshift/hypershift/pull/9099) was the centerpiece — an 814-line PR across 20 files that promoted the feature gate and wired dynamic RHEL stream resolution into the boot image path. Previously, the stream was hardcoded or resolved statically at NodePool creation time. Now, on upgrade, `resolveRHELStreamFromRelease()` inspects the target OCP release version and returns `rhel-9` for pre-5.0 and `rhel-10` for 5.0+. This matters for a specific scenario: a cluster upgrading from 4.x to 5.0 needs its NodePools to detect that the target release requires RHEL 10 boot images, even though the pool was originally created against RHEL 9.
 
-The e2e coverage was substantial. [@sdminonne](https://github.com/sdminonne)'s [PR #9033](https://github.com/openshift/hypershift/pull/9033) added 426 lines of v2 OSImageStream tests covering stream selection, upgrade behavior, and immutability constraints. [@jparrill](https://github.com/jparrill)'s follow-up [PR #9297](https://github.com/openshift/hypershift/pull/9297) retagged the tests for the new ginkgo label structure, and [@csrwng](https://github.com/csrwng)'s [PR #9206](https://github.com/openshift/hypershift/pull/9206) cleaned up a test that was violating osImageStream immutability by attempting to remove the field after setting it.
+That graduation built on substantial controller work by [@sdminonne](https://github.com/sdminonne). His [PR #8730](https://github.com/openshift/hypershift/pull/8730), merged just before this reporting window, wired `osImageStream` through NodePool validation, config-hash and rollout handling, token-secret propagation, observation-based status, and platform boot-image selection. During this reporting window, his [PR #9033](https://github.com/openshift/hypershift/pull/9033) did more than add 426 lines of v2 lifecycle tests: it also fixed OCP 5.0 RHCOS version parsing so the controller could infer and publish the correct stream from node information. The tests cover stream selection, upgrade behavior, immutability constraints, feature-gate handling, and both Replace and InPlace upgrade paths. [@jparrill](https://github.com/jparrill)'s follow-up [PR #9297](https://github.com/openshift/hypershift/pull/9297) retagged the tests for the new ginkgo label structure, and [@csrwng](https://github.com/csrwng)'s [PR #9206](https://github.com/openshift/hypershift/pull/9206) cleaned up a test that was violating osImageStream immutability by attempting to remove the field after setting it.
 
 A subtle bug surfaced during the rollout. [@bennerv](https://github.com/bennerv)'s [PR #9283](https://github.com/openshift/hypershift/pull/9283) fixed the ignition server to use the correct `v1` machine-config API for `OSImageStream` manifests — the wrong API version was causing silent failures during ignition payload generation. Meanwhile, [@bryan-cox](https://github.com/bryan-cox)'s [PR #9115](https://github.com/openshift/hypershift/pull/9115) fixed the OSImageStream e2e test itself, which was broken for OCP 5.0 because the `Makefile` test-changed target didn't account for the new version numbering scheme.
 
@@ -67,7 +67,7 @@ The follow-up [PR #9295](https://github.com/openshift/hypershift/pull/9295) adde
 [@maxcao13](https://github.com/maxcao13) also bumped the Karpenter dependencies to v1.13.0 in [PR #9170](https://github.com/openshift/hypershift/pull/9170) — a 3,576-line vendor update — and ported the core Karpenter autonode tests to the v2 e2e framework. [@fishereskew](https://github.com/fishereskew)'s [PR #9060](https://github.com/openshift/hypershift/pull/9060) fixed a `yq` dependency issue that was breaking upstream Karpenter test execution.
 
 !!! warning "Feature Gate Status"
-    The standalone deployment path is behind `KarpenterOperator` in TechPreviewNoUpgrade. The feature gate controls whether the HyperShift operator creates the standalone Deployment or continues managing Karpenter inline. The inline path remains the default and will until the standalone mode has been validated at scale.
+    The standalone deployment path is behind `KarpenterOperator` in TechPreviewNoUpgrade. The feature gate controls whether the HyperShift operator creates the standalone Deployment or continues managing Karpenter inline. The inline path remains the default until the standalone mode has been validated at scale.
 
 ---
 
@@ -86,8 +86,6 @@ Every large project accumulates conventions that live in people's heads — "tes
 - **`sippyannotation`** validates Sippy test annotation formatting.
 - **`e2eutilallowlist`** controls which packages can import internal e2e utilities.
 - **`vacuouspass`** detects test functions that always pass without actually testing anything.
-- **`contextbackground`** is separate from `guestcluster` because the fix is different: one requires threading a context, the other requires using a framework method.
-
 The follow-up [PR #9271](https://github.com/openshift/hypershift/pull/9271) enabled the plugin project-wide in a single sweep, which naturally surfaced existing violations. [@rutvik23](https://github.com/rutvik23)'s [PR #9367](https://github.com/openshift/hypershift/pull/9367) and [@bryan-cox](https://github.com/bryan-cox)'s [PR #9351](https://github.com/openshift/hypershift/pull/9351) cleaned up the lint failures, renaming test cases to match the `When..., it should...` pattern across the codebase.
 
 The plugin runs in CI as part of the standard lint workflow, with a separate test workflow ([PR #9305](https://github.com/openshift/hypershift/pull/9305)) that validates the linter's own test fixtures. The linter itself has tests — `plugin_test.go` runs each analyzer against known-good and known-bad fixtures to ensure the analyzers don't produce false positives.
@@ -189,9 +187,9 @@ The envtest infrastructure also needed updates. [@clebs](https://github.com/cleb
 | enhancements PRs | 1 |
 | release PRs | 71 |
 | Average merge time | 240.6 hours |
-| High-impact PRs | 0 |
+| Featured stories | 8 |
 | Breaking changes | 0 |
-| API changes | 0 |
+| Breaking API changes | 0 |
 | Customer-reported fixes | 10 |
 
 **Top Reviewers**
