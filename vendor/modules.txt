@@ -898,7 +898,7 @@ github.com/googleapis/gax-go/v2/callctx
 github.com/googleapis/gax-go/v2/internal
 github.com/googleapis/gax-go/v2/internallog
 github.com/googleapis/gax-go/v2/internallog/internal
-# github.com/gophercloud/gophercloud/v2 v2.12.0
+# github.com/gophercloud/gophercloud/v2 v2.14.0
 ## explicit; go 1.25.0
 github.com/gophercloud/gophercloud/v2
 # github.com/gorilla/mux v1.8.1
@@ -1001,7 +1001,7 @@ github.com/munnerz/goautoneg
 # github.com/oklog/ulid v1.3.1
 ## explicit
 github.com/oklog/ulid
-# github.com/onsi/ginkgo/v2 v2.32.0
+# github.com/onsi/ginkgo/v2 v2.32.1
 ## explicit; go 1.25.0
 github.com/onsi/ginkgo/v2
 github.com/onsi/ginkgo/v2/config
@@ -1025,7 +1025,7 @@ github.com/onsi/ginkgo/v2/internal/reporters
 github.com/onsi/ginkgo/v2/internal/testingtproxy
 github.com/onsi/ginkgo/v2/reporters
 github.com/onsi/ginkgo/v2/types
-# github.com/onsi/gomega v1.42.1
+# github.com/onsi/gomega v1.43.0
 ## explicit; go 1.25.0
 github.com/onsi/gomega
 github.com/onsi/gomega/format
@@ -2655,7 +2655,7 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/cluster-api v1.13.4
+# sigs.k8s.io/cluster-api v1.14.1 => sigs.k8s.io/cluster-api v1.13.4
 ## explicit; go 1.25.0
 sigs.k8s.io/cluster-api/api/addons/v1beta1
 sigs.k8s.io/cluster-api/api/addons/v1beta2
@@ -2696,10 +2696,11 @@ sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
 # sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
 ## explicit; go 1.24.0
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
-# sigs.k8s.io/cluster-api-provider-openstack v0.14.8
-## explicit; go 1.24.0
+# sigs.k8s.io/cluster-api-provider-openstack v0.15.0
+## explicit; go 1.26.0
 sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1
 sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1
+sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/optional
 # sigs.k8s.io/controller-runtime v0.25.0
@@ -2888,3 +2889,4 @@ sigs.k8s.io/yaml/kyaml
 # github.com/openshift/hypershift/api => ./api
 # github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417
 # sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260721214330-2b8ed744bf1c
+# sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.13.4

@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Kubernetes Authors.
+Copyright 2026 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,9 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1beta1 contains API Schema definitions for the infrastructure v1beta1 API group.
+// Package v1beta2 contains API Schema definitions for the infrastructure v1beta2 API group.
 // +kubebuilder:object:generate=true
 // +groupName=infrastructure.cluster.x-k8s.io
-// +k8s:conversion-gen=sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2
 // +k8s:openapi-gen=true
-package v1beta1
+package v1beta2

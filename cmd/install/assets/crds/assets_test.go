@@ -12,7 +12,7 @@ func TestCAPICRDOverridesWithStorageVersion(t *testing.T) {
 	t.Run("When requesting v1beta1 overrides, it should return all CRDs with v1beta1 storage", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		overrides := CAPICRDOverridesWithStorageVersion("v1beta1")
-		g.Expect(overrides).To(HaveLen(len(capiCRDNames)))
+		g.Expect(overrides).To(HaveLen(len(capiCRDNames) + len(capoConversionOnlyCRDNames)))
 		for _, name := range capiCRDNames {
 			entry, ok := overrides[name]
 			g.Expect(ok).To(BeTrue(), "missing CRD %s", name)
@@ -24,7 +24,7 @@ func TestCAPICRDOverridesWithStorageVersion(t *testing.T) {
 	t.Run("When requesting v1beta2 overrides, it should return all CRDs with v1beta2 storage", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		overrides := CAPICRDOverridesWithStorageVersion("v1beta2")
-		g.Expect(overrides).To(HaveLen(len(capiCRDNames)))
+		g.Expect(overrides).To(HaveLen(len(capiCRDNames) + len(capoConversionOnlyCRDNames)))
 		for _, name := range capiCRDNames {
 			entry, ok := overrides[name]
 			g.Expect(ok).To(BeTrue(), "missing CRD %s", name)

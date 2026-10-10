@@ -1,5 +1,5 @@
 /*
-Copyright 2023 The Kubernetes Authors.
+Copyright 2026 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,13 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
-
-import clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+package v1beta2
 
 const (
 	// InstanceReadyCondition reports on current status of the OpenStack instance. Ready indicates the instance is in a Running state.
-	InstanceReadyCondition clusterv1beta1.ConditionType = "InstanceReady"
+	InstanceReadyCondition string = "InstanceReady"
 
 	// WaitingForClusterInfrastructureReason used when machine is waiting for cluster infrastructure to be ready before proceeding.
 	WaitingForClusterInfrastructureReason = "WaitingForClusterInfrastructure"
@@ -51,7 +49,7 @@ const (
 
 const (
 	// APIServerIngressReadyCondition reports on the current status of the network ingress (Loadbalancer, Floating IP) for Control Plane machines. Ready indicates that the instance can receive requests.
-	APIServerIngressReadyCondition clusterv1beta1.ConditionType = "APIServerIngressReadyCondition"
+	APIServerIngressReadyCondition string = "APIServerIngressReady"
 
 	// LoadBalancerMemberErrorReason used when the instance could not be added as a loadbalancer member.
 	LoadBalancerMemberErrorReason = "LoadBalancerMemberError"
@@ -61,7 +59,7 @@ const (
 
 const (
 	// FloatingAddressFromPoolReadyCondition reports on the current status of the Floating IPs from ipam pool.
-	FloatingAddressFromPoolReadyCondition clusterv1beta1.ConditionType = "FloatingAddressFromPoolReady"
+	FloatingAddressFromPoolReadyCondition string = "FloatingAddressFromPoolReady"
 	// WaitingForIpamProviderReason used when machine is waiting for ipam provider to be ready before proceeding.
 	FloatingAddressFromPoolWaitingForIpamProviderReason = "WaitingForIPAMProvider"
 	// FloatingAddressFromPoolErrorReason is used when there is an error attaching an IP from the pool to an machine.
@@ -74,7 +72,7 @@ const (
 
 const (
 	// OpenStackAuthenticationSucceeded reports on the current status of the OpenStack credentials.
-	OpenStackAuthenticationSucceeded clusterv1beta1.ConditionType = "OpenStackAuthenticationSucceeded"
+	OpenStackAuthenticationSucceeded string = "OpenStackAuthenticationSucceeded"
 
 	// OpenStackAuthenticationFailedReason is used when the controller fails to authenticate with OpenStack.
 	OpenStackAuthenticationFailedReason = "OpenStackAuthenticationFailed"
@@ -83,20 +81,22 @@ const (
 const (
 	// NetworkReadyCondition reports on the current status of the cluster network infrastructure.
 	// Ready indicates that the network, subnets, and related resources have been successfully provisioned.
-	NetworkReadyCondition clusterv1beta1.ConditionType = "NetworkReady"
+	NetworkReadyCondition string = "NetworkReady"
 
 	// RouterReadyCondition reports on the current status of the cluster router infrastructure.
 	// Ready indicates that the router and its interfaces have been successfully provisioned.
-	RouterReadyCondition clusterv1beta1.ConditionType = "RouterReady"
+	RouterReadyCondition string = "RouterReady"
 
 	// SecurityGroupsReadyCondition reports on the current status of the cluster security groups.
 	// Ready indicates that all required security groups have been successfully provisioned.
-	SecurityGroupsReadyCondition clusterv1beta1.ConditionType = "SecurityGroupsReady"
+	SecurityGroupsReadyCondition string = "SecurityGroupsReady"
 
 	// APIEndpointReadyCondition reports on the current status of the cluster API endpoint.
 	// Ready indicates that the control plane endpoint has been successfully configured.
-	APIEndpointReadyCondition clusterv1beta1.ConditionType = "APIEndpointReady"
+	APIEndpointReadyCondition string = "APIEndpointReady"
 
+	// ReadyConditionReason is the reason used when the resource is ready.
+	ReadyConditionReason = "Ready"
 	// NetworkReconcileFailedReason is used when network reconciliation fails.
 	NetworkReconcileFailedReason = "NetworkCreateFailed"
 	// SubnetReconcileFailedReason is used when subnet reconciliation fails.
