@@ -134,60 +134,6 @@ func TestIsNotFound(t *testing.T) {
 	}
 }
 
-func TestTruncateName(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		maxLen   int
-		expected string
-	}{
-		{
-			name:     "When name is shorter than max, it should not truncate",
-			input:    "short-name",
-			maxLen:   63,
-			expected: "short-name",
-		},
-		{
-			name:     "When name equals max length, it should not truncate",
-			input:    "exactly-ten",
-			maxLen:   11,
-			expected: "exactly-ten",
-		},
-		{
-			name:     "When name exceeds max length, it should truncate",
-			input:    "this-is-a-very-long-name-that-exceeds-the-maximum-length-allowed",
-			maxLen:   20,
-			expected: "this-is-a-very-long-",
-		},
-		{
-			name:     "When max is 63 and name is 64 chars, it should truncate to 63",
-			input:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // 64 chars
-			maxLen:   63,
-			expected: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // 63 chars
-		},
-		{
-			name:     "When max is 0, it should return empty string",
-			input:    "any-name",
-			maxLen:   0,
-			expected: "",
-		},
-		{
-			name:     "When name is empty, it should return empty",
-			input:    "",
-			maxLen:   63,
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := truncateName(tt.input, tt.maxLen)
-			assert.Equal(t, tt.expected, result)
-			assert.LessOrEqual(t, len(result), tt.maxLen)
-		})
-	}
-}
-
 func TestGenerateZoneNames(t *testing.T) {
 	tests := []struct {
 		name                        string
@@ -450,81 +396,6 @@ func TestZoneNameLengthConstraints(t *testing.T) {
 	}
 }
 
-func TestValidateZoneName(t *testing.T) {
-	tests := []struct {
-		name        string
-		zoneName    string
-		expectError bool
-	}{
-		{
-			name:        "When zone name starts with lowercase letter, it should be valid",
-			zoneName:    "my-zone",
-			expectError: false,
-		},
-		{
-			name:        "When zone name contains only lowercase letters, it should be valid",
-			zoneName:    "myzone",
-			expectError: false,
-		},
-		{
-			name:        "When zone name contains lowercase letters and numbers, it should be valid",
-			zoneName:    "my-zone-123",
-			expectError: false,
-		},
-		{
-			name:        "When zone name contains hyphens, it should be valid",
-			zoneName:    "my-cluster-hypershift-local",
-			expectError: false,
-		},
-		{
-			name:        "When zone name starts with 'in-' (managed service pattern), it should be valid",
-			zoneName:    "in-cluster-abc123-public",
-			expectError: false,
-		},
-		{
-			name:        "When zone name starts with digit, it should be invalid",
-			zoneName:    "123-zone",
-			expectError: true,
-		},
-		{
-			name:        "When zone name starts with hyphen, it should be invalid",
-			zoneName:    "-my-zone",
-			expectError: true,
-		},
-		{
-			name:        "When zone name contains uppercase letters, it should be invalid",
-			zoneName:    "My-Zone",
-			expectError: true,
-		},
-		{
-			name:        "When zone name contains underscore, it should be invalid",
-			zoneName:    "my_zone",
-			expectError: true,
-		},
-		{
-			name:        "When zone name contains dot, it should be invalid",
-			zoneName:    "my.zone",
-			expectError: true,
-		},
-		{
-			name:        "When zone name is empty, it should be invalid",
-			zoneName:    "",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateZoneName(tt.zoneName)
-			if tt.expectError {
-				assert.Error(t, err, "validateZoneName should return error for invalid zone name: %s", tt.zoneName)
-			} else {
-				assert.NoError(t, err, "validateZoneName should not return error for valid zone name: %s", tt.zoneName)
-			}
-		})
-	}
-}
-
 func TestGenerateZoneNamesValidationErrors(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -557,6 +428,45 @@ func TestGenerateZoneNamesValidationErrors(t *testing.T) {
 			_, err := generateZoneNames(tt.clusterName, tt.baseDomain)
 			require.Error(t, err, "generateZoneNames should return error")
 			assert.Contains(t, err.Error(), tt.errorContains)
+		})
+	}
+}
+
+func TestAcmeChallengeTarget(t *testing.T) {
+	tests := []struct {
+		name       string
+		baseDomain string
+		expected   string
+	}{
+		{
+			name:       "When baseDomain is the delegated ingress subdomain, it should strip the in. label into the region zone",
+			baseDomain: "in.my-cluster-abcde.dev.gcp-hcp.openshiftapps.com",
+			expected:   "_acme-challenge.apps.my-cluster-abcde.dev.gcp-hcp.openshiftapps.com.",
+		},
+		{
+			name:       "When baseDomain already has a trailing dot, it should keep exactly one trailing dot",
+			baseDomain: "in.example.com.",
+			expected:   "_acme-challenge.apps.example.com.",
+		},
+		{
+			name:       "When baseDomain is a short delegated name, it should strip the in. label",
+			baseDomain: "in.example.com",
+			expected:   "_acme-challenge.apps.example.com.",
+		},
+		{
+			name:       "When baseDomain has no dot, it should use it as-is without panicking",
+			baseDomain: "example",
+			expected:   "_acme-challenge.apps.example.",
+		},
+		{
+			name:       "When baseDomain is not the delegated in. shape, it should not drop the first label",
+			baseDomain: "example.com",
+			expected:   "_acme-challenge.apps.example.com.",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, acmeChallengeTarget(tt.baseDomain))
 		})
 	}
 }

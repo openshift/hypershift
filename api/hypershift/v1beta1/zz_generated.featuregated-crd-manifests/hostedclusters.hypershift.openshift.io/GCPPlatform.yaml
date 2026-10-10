@@ -6203,6 +6203,32 @@ spec:
                                 - message: 'email must be a valid GCP service account
                                     email (format: name@project.iam.gserviceaccount.com)'
                                   rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')
+                              ingress:
+                                description: |-
+                                  ingress is the Google Service Account email for the cluster Ingress Operator
+                                  that manages the default IngressController's wildcard (*.apps) Cloud DNS records.
+                                  This GSA requires the following IAM roles:
+                                  - roles/dns.admin (DNS Admin - for managing records in the ingress managed zone)
+                                  - roles/compute.viewer (Compute Viewer - for reading load balancer / instance metadata)
+                                  See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+                                  Format: service-account-name@project-id.iam.gserviceaccount.com
+
+                                  This is a user-provided value referencing a pre-created Google Service Account.
+                                  Typically obtained from the output of `hypershift infra create gcp` which creates
+                                  the required service accounts with appropriate IAM roles and WIF bindings.
+
+                                  ingress is optional: it is only consumed when the Ingress capability is
+                                  enabled. When Ingress is enabled it must be set (enforced controller-side,
+                                  capability-aware, so existing clusters with Ingress disabled are unaffected).
+                                maxLength: 85
+                                minLength: 37
+                                type: string
+                                x-kubernetes-validations:
+                                - message: Ingress is immutable
+                                  rule: self == oldSelf
+                                - message: 'email must be a valid GCP service account
+                                    email (format: name@project.iam.gserviceaccount.com)'
+                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')
                               network:
                                 description: |-
                                   network is the Google Service Account email for the Cloud Network Config Controller
@@ -6322,6 +6348,11 @@ spec:
                     - message: network service account must belong to the same project
                       rule: self.workloadIdentity.serviceAccountsEmails.network.endsWith('@'
                         + self.project + '.iam.gserviceaccount.com')
+                    - message: ingress service account must belong to the same project
+                      rule: '!has(self.workloadIdentity.serviceAccountsEmails.ingress)
+                        || size(self.workloadIdentity.serviceAccountsEmails.ingress)
+                        == 0 || self.workloadIdentity.serviceAccountsEmails.ingress.endsWith(''@''
+                        + self.project + ''.iam.gserviceaccount.com'')'
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:
