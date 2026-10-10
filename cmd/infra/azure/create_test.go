@@ -20,6 +20,15 @@ func TestValidate(t *testing.T) {
 			expectedError: false,
 			description:   "Should pass when base domain is provided",
 		},
+		"When a disabled capability is misspelled it should return an error": {
+			opts: CreateInfraOptions{
+				BaseDomain:                 "example.com",
+				DisableClusterCapabilities: []string{"ImageRegstry"},
+			},
+			expectedError: true,
+			errorContains: "unknown disabled capability: ImageRegstry",
+			description:   "Should reject misspelled disabled capabilities before Azure mutations",
+		},
 		"When base domain is missing it should return an error": {
 			opts:          CreateInfraOptions{},
 			expectedError: true,

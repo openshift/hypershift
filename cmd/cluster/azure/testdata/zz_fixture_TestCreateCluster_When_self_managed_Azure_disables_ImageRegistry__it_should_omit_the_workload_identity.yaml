@@ -5,13 +5,48 @@ metadata:
 spec: {}
 status: {}
 ---
+apiVersion: v1
+data:
+  .dockerconfigjson: ZmFrZQ==
+kind: Secret
+metadata:
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: example-pull-secret
+  namespace: clusters
+---
+apiVersion: v1
+data:
+  AZURE_SUBSCRIPTION_ID: ZmFrZVN1YnNjcmlwdGlvbklE
+  AZURE_TENANT_ID: ZmFrZVRlbmFudElE
+kind: Secret
+metadata:
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: example-cloud-credentials
+  namespace: clusters
+---
+apiVersion: v1
+data:
+  key: EsYMKRLXhnaSeVGsoQXQPeBPzXLhZLR836O5IRp1NKw=
+kind: Secret
+metadata:
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: example-etcd-encryption-key
+  namespace: clusters
+type: Opaque
+---
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster
 metadata:
-  name: bryans-cluster
+  name: example
   namespace: clusters
 spec:
   autoscaling: {}
+  capabilities:
+    disabled:
+    - ImageRegistry
   configuration: {}
   controllerAvailabilityPolicy: SingleReplica
   dns:
@@ -27,6 +62,7 @@ spec:
     managementType: Managed
   fips: false
   infraID: fakeInfraID
+  issuerURL: https://issuer.example.com
   networking:
     clusterNetwork:
     - cidr: 10.132.0.0/14
@@ -37,56 +73,39 @@ spec:
   platform:
     azure:
       azureAuthenticationConfig:
-        azureAuthenticationConfigType: ManagedIdentities
-        managedIdentities:
-          controlPlane:
-            cloudProvider:
-              credentialsSecretName: ""
-              objectEncoding: utf-8
-            controlPlaneOperator:
-              credentialsSecretName: ""
-              objectEncoding: utf-8
-            disk:
-              credentialsSecretName: ""
-              objectEncoding: utf-8
-            file:
-              credentialsSecretName: ""
-              objectEncoding: utf-8
-            imageRegistry:
-              credentialsSecretName: ""
-              objectEncoding: utf-8
-            ingress:
-              credentialsSecretName: ""
-              objectEncoding: utf-8
-            managedIdentitiesKeyVault:
-              name: ""
-              tenantID: ""
-            network:
-              credentialsSecretName: ""
-              objectEncoding: utf-8
-            nodePoolManagement:
-              credentialsSecretName: ""
-              objectEncoding: utf-8
-          dataPlane:
-            diskMSIClientID: ""
-            fileMSIClientID: ""
-            imageRegistryMSIClientID: 12345678-1234-1234-1234-123456789012
+        azureAuthenticationConfigType: WorkloadIdentities
+        workloadIdentities:
+          cloudProvider:
+            clientID: 00000000-0000-0000-0000-000000000005
+          controlPlaneOperator:
+            clientID: 00000000-0000-0000-0000-000000000007
+          disk:
+            clientID: 00000000-0000-0000-0000-000000000003
+          file:
+            clientID: 00000000-0000-0000-0000-000000000002
+          ingress:
+            clientID: 00000000-0000-0000-0000-000000000001
+          network:
+            clientID: 00000000-0000-0000-0000-000000000006
+          nodePoolManagement:
+            clientID: 00000000-0000-0000-0000-000000000004
       location: fakeLocation
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID
       subscriptionID: fakeSubscriptionID
       tenantID: fakeTenantID
+      topology: Public
       vnetID: fakeVNetID
     type: Azure
   pullSecret:
-    name: bryans-cluster-pull-secret
+    name: example-pull-secret
   release:
-    image: fake-release-image
+    image: ""
   secretEncryption:
     aescbc:
       activeKey:
-        name: bryans-cluster-etcd-encryption-key
+        name: example-etcd-encryption-key
     type: aescbc
   services:
   - service: APIServer
@@ -110,11 +129,11 @@ status:
 apiVersion: hypershift.openshift.io/v1beta1
 kind: NodePool
 metadata:
-  name: bryans-cluster
+  name: example
   namespace: clusters
 spec:
   arch: amd64
-  clusterName: bryans-cluster
+  clusterName: example
   management:
     autoRepair: false
     upgradeType: Replace
@@ -123,22 +142,17 @@ spec:
   platform:
     azure:
       image:
-        azureMarketplace:
-          offer: aro4
-          publisher: azureopenshift
-          sku: aro_414
-          version: 414.92.2024021
-        type: AzureMarketplace
+        imageID: fakeBootImageID
+        type: ImageID
       osDisk:
-        diskStorageAccountType: Standard_LRS
-        persistence: Ephemeral
+        diskStorageAccountType: Premium_LRS
         sizeGiB: 120
       subnetID: fakeSubnetID
-      vmSize: Standard_DS2_v2
+      vmSize: Standard_D4s_v5
     type: Azure
   release:
-    image: fake-release-image
-  replicas: 312
+    image: ""
+  replicas: 0
 status:
   replicas: 0
 ---
