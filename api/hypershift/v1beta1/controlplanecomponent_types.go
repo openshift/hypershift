@@ -25,6 +25,8 @@ const (
 	WaitingForDependenciesReason string = "WaitingForDependencies"
 	// ReconciliationErrorReason indicates that there was an error during the reconciliation of the ControlPlaneComponent.
 	ReconciliationErrorReason string = "ReconciliationError"
+	// WaitingForTerminatingPodsReason indicates that there are still terminating pods from a previous rollout.
+	WaitingForTerminatingPodsReason string = "WaitingForTerminatingPods"
 )
 
 // ControlPlaneComponentSpec defines the desired state of ControlPlaneComponent
