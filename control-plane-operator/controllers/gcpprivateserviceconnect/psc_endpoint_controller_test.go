@@ -2,8 +2,13 @@ package gcpprivateserviceconnect
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -11,6 +16,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -20,10 +26,362 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 )
+
+func TestReconcileForwardingRuleLabels(t *testing.T) {
+	tests := []struct {
+		name             string
+		existingLabels   map[string]string
+		desiredLabels    map[string]string
+		wantSetLabels    map[string]string
+		wantSetLabelCall int
+	}{
+		{
+			name:             "When labels differ, it should update the forwarding rule labels",
+			existingLabels:   map[string]string{"preserved": "value", "managed": "old"},
+			desiredLabels:    map[string]string{"managed": "new"},
+			wantSetLabels:    map[string]string{"preserved": "value", "managed": "new"},
+			wantSetLabelCall: 1,
+		},
+		{
+			name:             "When forwarding rule labels already match, it should not call set labels",
+			existingLabels:   map[string]string{"preserved": "value", "managed": "new"},
+			desiredLabels:    map[string]string{"managed": "new"},
+			wantSetLabelCall: 0,
+		},
+		{
+			name:             "When forwarding rule and desired labels are empty, it should not call set labels",
+			wantSetLabelCall: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setLabelCalls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				setLabelCalls++
+				require.Equal(t, http.MethodPost, r.Method)
+				require.True(t, strings.HasSuffix(r.URL.Path, "/setLabels"))
+
+				var request compute.RegionSetLabelsRequest
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				assert.Equal(t, "fingerprint", request.LabelFingerprint)
+				assert.True(t, maps.Equal(tt.wantSetLabels, request.Labels))
+				assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+				_, _ = w.Write([]byte(`{"status":"DONE"}`))
+			}))
+			defer server.Close()
+
+			service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+			require.NoError(t, err)
+
+			err = reconcileForwardingRuleLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint", "fingerprint", tt.existingLabels, tt.desiredLabels, map[string]struct{}{"managed": {}})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSetLabelCall, setLabelCalls)
+		})
+	}
+}
+
+func TestReconcilePSCEndpointCreatesThenLabelsForwardingRule(t *testing.T) {
+	const (
+		customerProject       = "customer-project"
+		region                = "us-central1"
+		serviceAttachmentName = "private-router-psc-sa"
+		endpointName          = serviceAttachmentName + "-endpoint"
+	)
+
+	var (
+		getCalls      int
+		insertedRule  compute.ForwardingRule
+		setLabelCalls int
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/forwardingRules/"+endpointName):
+			getCalls++
+			if getCalls == 1 {
+				http.Error(w, `{"error":{"code":404,"message":"not found"}}`, http.StatusNotFound)
+				return
+			}
+			_, _ = w.Write([]byte(`{"name":"private-router-psc-sa-endpoint","IPAddress":"10.0.0.10","target":"projects/management-project/regions/us-central1/serviceAttachments/private-router-psc-sa","labelFingerprint":"fingerprint"}`))
+		case req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/forwardingRules"):
+			require.NoError(t, json.NewDecoder(req.Body).Decode(&insertedRule))
+			assert.Nil(t, insertedRule.Labels, "PSC forwarding rules must be created without labels")
+			_, _ = w.Write([]byte(`{"status":"DONE"}`))
+		case req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/forwardingRules/"+endpointName+"/setLabels"):
+			setLabelCalls++
+			var labels compute.RegionSetLabelsRequest
+			require.NoError(t, json.NewDecoder(req.Body).Decode(&labels))
+			assert.Equal(t, "fingerprint", labels.LabelFingerprint)
+			assert.Equal(t, map[string]string{"managed": "new"}, labels.Labels)
+			_, _ = w.Write([]byte(`{"status":"DONE"}`))
+		default:
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	gcpService, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+	require.NoError(t, err)
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, hyperv1.AddToScheme(scheme))
+	gcpPSC := &hyperv1.GCPPrivateServiceConnect{
+		ObjectMeta: metav1.ObjectMeta{Name: "psc", Namespace: "clusters-example"},
+		Status: hyperv1.GCPPrivateServiceConnectStatus{
+			ServiceAttachmentName: serviceAttachmentName,
+			ServiceAttachmentURI:  "projects/management-project/regions/us-central1/serviceAttachments/" + serviceAttachmentName,
+		},
+	}
+	reconciler := &GCPPrivateServiceConnectReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(gcpPSC).WithObjects(gcpPSC).Build(),
+	}
+	hcp := &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{
+		GCP: &hyperv1.GCPPlatformSpec{NetworkConfig: hyperv1.GCPNetworkConfig{
+			Network:                     hyperv1.GCPResourceReference{Name: "customer-network"},
+			PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "psc-subnet"},
+		}},
+	}}}
+
+	result, err := reconciler.reconcilePSCEndpoint(context.Background(), gcpPSC, hcp, gcpService, customerProject, region, map[string]string{"managed": "new"}, nil, logr.Discard())
+	require.NoError(t, err)
+	assert.True(t, result.IsZero())
+	assert.Equal(t, 2, getCalls)
+	assert.Equal(t, 1, setLabelCalls)
+	assert.Equal(t, endpointName, insertedRule.Name)
+	assert.Equal(t, "projects/customer-project/global/networks/customer-network", insertedRule.Network)
+	assert.Equal(t, "projects/customer-project/regions/us-central1/subnetworks/psc-subnet", insertedRule.Subnetwork)
+	assert.Equal(t, "projects/customer-project/regions/us-central1/addresses/private-router-psc-sa-ip", insertedRule.IPAddress)
+	assert.Equal(t, gcpPSC.Status.ServiceAttachmentURI, insertedRule.Target)
+
+	updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+	require.NoError(t, reconciler.Get(context.Background(), client.ObjectKeyFromObject(gcpPSC), updatedPSC))
+	assert.Equal(t, metav1.ConditionTrue, meta.FindStatusCondition(updatedPSC.Status.Conditions, string(hyperv1.GCPEndpointAvailable)).Status)
+}
+
+func TestReconcileAddressLabels(t *testing.T) {
+	tests := []struct {
+		name             string
+		existingLabels   map[string]string
+		desiredLabels    map[string]string
+		wantSetLabels    map[string]string
+		wantSetLabelCall int
+	}{
+		{
+			name:             "When labels differ, it should update the address labels",
+			existingLabels:   map[string]string{"preserved": "value", "managed": "old"},
+			desiredLabels:    map[string]string{"managed": "new"},
+			wantSetLabels:    map[string]string{"preserved": "value", "managed": "new"},
+			wantSetLabelCall: 1,
+		},
+		{
+			name:             "When address labels already match, it should not call set labels",
+			existingLabels:   map[string]string{"preserved": "value", "managed": "new"},
+			desiredLabels:    map[string]string{"managed": "new"},
+			wantSetLabelCall: 0,
+		},
+		{
+			name:             "When address and desired labels are empty, it should not call set labels",
+			wantSetLabelCall: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setLabelCalls := 0
+			addressResponse, err := json.Marshal(compute.Address{LabelFingerprint: "fingerprint", Labels: tt.existingLabels})
+			require.NoError(t, err)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodGet:
+					_, _ = w.Write(addressResponse)
+				case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/setLabels"):
+					setLabelCalls++
+					var request compute.RegionSetLabelsRequest
+					require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+					assert.Equal(t, "fingerprint", request.LabelFingerprint)
+					assert.True(t, maps.Equal(tt.wantSetLabels, request.Labels))
+					_, _ = w.Write([]byte(`{"status":"DONE"}`))
+				default:
+					http.Error(w, "unexpected request", http.StatusBadRequest)
+				}
+			}))
+			defer server.Close()
+
+			service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+			require.NoError(t, err)
+
+			err = reconcileAddressLabels(context.Background(), service, "customer-project", "us-central1", "psc-endpoint-ip", tt.desiredLabels, map[string]struct{}{"managed": {}})
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSetLabelCall, setLabelCalls)
+		})
+	}
+}
+
+func TestEnsureIPAddress(t *testing.T) {
+	getCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/addresses/service-attachment-ip"):
+			getCalls++
+			_, _ = w.Write([]byte(`{"labelFingerprint":"fingerprint","labels":{"preserved":"value","managed":"old"}}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/addresses/service-attachment-ip/setLabels"):
+			var request compute.RegionSetLabelsRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+			assert.True(t, maps.Equal(map[string]string{"preserved": "value", "managed": "new"}, request.Labels))
+			_, _ = w.Write([]byte(`{"status":"DONE"}`))
+		default:
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	service, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+	require.NoError(t, err)
+	reconciler := &GCPPrivateServiceConnectReconciler{}
+	psc := &hyperv1.GCPPrivateServiceConnect{Status: hyperv1.GCPPrivateServiceConnectStatus{
+		EndpointIP:            "10.0.0.1",
+		ServiceAttachmentName: "service-attachment",
+	}}
+
+	result, err := reconciler.ensureIPAddress(context.Background(), psc, &hyperv1.HostedControlPlane{}, service, "customer-project", "us-central1", map[string]string{"managed": "new"}, map[string]struct{}{"managed": {}}, logr.Discard())
+	require.NoError(t, err)
+	assert.True(t, result.IsZero())
+	assert.Equal(t, 2, getCalls)
+}
+
+func TestEnsureIPAddressCreatesAddressWithLabels(t *testing.T) {
+	const (
+		customerProject       = "customer-project"
+		region                = "us-central1"
+		serviceAttachmentName = "private-router-psc-sa"
+		ipName                = serviceAttachmentName + "-ip"
+	)
+
+	getCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/addresses/"+ipName):
+			getCalls++
+			if getCalls == 1 {
+				http.Error(w, `{"error":{"code":404,"message":"not found"}}`, http.StatusNotFound)
+				return
+			}
+			_, _ = w.Write([]byte(`{"name":"private-router-psc-sa-ip","address":"10.0.0.10"}`))
+		case req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/addresses"):
+			var address compute.Address
+			require.NoError(t, json.NewDecoder(req.Body).Decode(&address))
+			assert.Equal(t, ipName, address.Name)
+			assert.Equal(t, "INTERNAL", address.AddressType)
+			assert.Equal(t, "projects/customer-project/regions/us-central1/subnetworks/psc-subnet", address.Subnetwork)
+			assert.Equal(t, map[string]string{"managed": "new"}, address.Labels)
+			_, _ = w.Write([]byte(`{"status":"DONE"}`))
+		default:
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	gcpService, err := compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+	require.NoError(t, err)
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, hyperv1.AddToScheme(scheme))
+	gcpPSC := &hyperv1.GCPPrivateServiceConnect{
+		ObjectMeta: metav1.ObjectMeta{Name: "psc", Namespace: "clusters-example"},
+		Status:     hyperv1.GCPPrivateServiceConnectStatus{ServiceAttachmentName: serviceAttachmentName},
+	}
+	reconciler := &GCPPrivateServiceConnectReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(gcpPSC).WithObjects(gcpPSC).Build(),
+	}
+	hcp := &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{
+		GCP: &hyperv1.GCPPlatformSpec{NetworkConfig: hyperv1.GCPNetworkConfig{
+			PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "psc-subnet"},
+		}},
+	}}}
+
+	result, err := reconciler.ensureIPAddress(context.Background(), gcpPSC, hcp, gcpService, customerProject, region, map[string]string{"managed": "new"}, nil, logr.Discard())
+	require.NoError(t, err)
+	assert.True(t, result.IsZero())
+	assert.Equal(t, 2, getCalls)
+
+	updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
+	require.NoError(t, reconciler.Get(context.Background(), client.ObjectKeyFromObject(gcpPSC), updatedPSC))
+	assert.Equal(t, "10.0.0.10", updatedPSC.Status.EndpointIP)
+}
+
+func TestWaitForRegionalOperation(t *testing.T) {
+	tests := []struct {
+		name           string
+		operation      *compute.Operation
+		waitResponse   string
+		wantErr        string
+		shouldCallWait bool
+	}{
+		{
+			name:      "When set labels operation is already complete, it should succeed without waiting",
+			operation: &compute.Operation{Status: "DONE"},
+		},
+		{
+			name: "When set labels operation completes after waiting, it should succeed",
+			operation: &compute.Operation{
+				Name:   "set-labels",
+				Status: "RUNNING",
+			},
+			waitResponse:   `{"name":"set-labels","status":"DONE"}`,
+			shouldCallWait: true,
+		},
+		{
+			name: "When set labels operation returns a terminal error, it should return the error",
+			operation: &compute.Operation{
+				Status: "DONE",
+				Error:  &compute.OperationError{Errors: []*compute.OperationErrorErrors{{Message: "permission denied"}}},
+			},
+			wantErr: "operation failed",
+		},
+		{
+			name: "When waited set labels operation returns an error, it should return the error",
+			operation: &compute.Operation{
+				Name:   "set-labels",
+				Status: "PENDING",
+			},
+			waitResponse:   `{"name":"set-labels","status":"DONE","error":{"errors":[{"message":"permission denied"}]}}`,
+			wantErr:        "operation failed",
+			shouldCallWait: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var service *compute.Service
+			if tt.shouldCallWait {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, http.MethodPost, r.Method)
+					assert.True(t, strings.HasSuffix(r.URL.Path, "/regions/us-central1/operations/set-labels/wait"))
+					_, _ = w.Write([]byte(tt.waitResponse))
+				}))
+				defer server.Close()
+
+				var err error
+				service, err = compute.NewService(context.Background(), option.WithHTTPClient(server.Client()), option.WithEndpoint(server.URL+"/"))
+				require.NoError(t, err)
+			}
+
+			err := waitForRegionalOperation(context.Background(), service, "customer-project", "us-central1", tt.operation)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+		})
+	}
+}
 
 func TestConstructEndpointName(t *testing.T) {
 	r := &GCPPrivateServiceConnectReconciler{}
