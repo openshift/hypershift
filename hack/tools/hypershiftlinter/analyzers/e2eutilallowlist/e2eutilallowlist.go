@@ -18,6 +18,10 @@ var Analyzer = &analysis.Analyzer{
 
 // allowlist maps package path to set of allowed symbol names.
 var allowlist = map[string]map[string]bool{
+	"github.com/openshift/hypershift/test/e2e/util/dump": {
+		"DumpAzureMachineDiagnostics":   true,
+		"VerifyAzureMachineDiagnostics": true,
+	},
 	"github.com/openshift/hypershift/test/e2e/util": {
 		// Condition/predicate helpers
 		"Condition":                    true,

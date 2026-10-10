@@ -397,6 +397,8 @@ func (o *Options) DefaultAzureOptions() azure.RawCreateOptions {
 
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
+	// Enable diagnostics before VM creation so bootstrap failures have serial logs.
+	opts.NodePoolOpts.DiagnosticsStorageAccountType = hyperv1.AzureDiagnosticsStorageAccountTypeManaged
 	if len(o.ConfigurableClusterOptions.Zone) != 0 {
 		zones := strings.Split(o.ConfigurableClusterOptions.Zone.String(), ",")
 		// Assign all Azure zones to guest cluster
