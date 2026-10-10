@@ -989,6 +989,25 @@ spec:
                             AzureMarketplace
                           rule: 'has(self.type) && self.type == ''AzureMarketplace''
                             ?  true : !has(self.azureMarketplace)'
+                      ipForwarding:
+                        description: |-
+                          ipForwarding indicates whether the VMs in the nodepool may send and receive network
+                          traffic with a source or destination IP address that is not assigned to the VM itself.
+                          Enable this when nodes must forward traffic on behalf of other networks, for example
+                          networks advertised to the node over BGP, or VM addresses that are directly routable
+                          within the virtual network.
+                          Enabling ipForwarding relaxes the Azure platform's source and destination address check
+                          on the VM network interfaces.
+                          This is unrelated to the cluster network operator's ipForwarding setting, which controls
+                          OVN-Kubernetes gateway behavior inside the cluster.
+                          When omitted, the Azure default applies and the VMs do not forward traffic.
+                          Changing this value replaces the VMs in the nodepool. For nodepools using the InPlace
+                          upgrade type, changing this value affects only nodes created after the change; existing
+                          nodes keep their original setting.
+                        enum:
+                        - Enabled
+                        - Disabled
+                        type: string
                       osDisk:
                         description: |-
                           osDisk provides configuration for the OS disk for the nodepool.

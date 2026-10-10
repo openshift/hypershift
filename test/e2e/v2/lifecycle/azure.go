@@ -382,7 +382,8 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 						Name:    "public-nodepool-rollouts",
 						Variant: "public",
 						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
-							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-disk-encryption || nodepool-osimagestream-upgrade",
+							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-disk-encryption || " +
+							"nodepool-ip-forwarding || nodepool-osimagestream-upgrade",
 					},
 				},
 			},

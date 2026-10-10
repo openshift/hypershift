@@ -236,6 +236,13 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool, acrIdentityResourceID 
 		}
 	}
 
+	// Only Enabled flips the CAPZ field. Leaving IPForwarding unset or Disabled keeps the
+	// bool at its zero value, which omitempty drops from the marshaled spec, so the machine
+	// template hash (and therefore the template name) is unchanged for existing NodePools.
+	if nodePool.Spec.Platform.Azure.IPForwarding == hyperv1.AzureIPForwardingEnabled {
+		azureMachineTemplate.Template.Spec.EnableIPForwarding = true
+	}
+
 	if nodePool.Spec.Platform.Azure.OSDisk.Persistence == hyperv1.EphemeralDiskPersistence {
 		// This is set to "None" if not explicitly set - https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/f44d953844de58e4b6fe8f51d88b0bf75a04e9ec/api/v1beta1/azuremachine_default.go#L54
 		// "VMs and VM Scale Set Instances using an ephemeral OS disk support only Readonly caching."

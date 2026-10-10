@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/openshift/hypershift/support/testutil"
@@ -62,6 +64,7 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 				"--disk-storage-account-type=StandardSSD_LRS",
 				"--enable-ephemeral-disk=true",
 				"--encryption-at-host=Enabled",
+				"--ip-forwarding=Enabled",
 			},
 		},
 	} {
@@ -298,6 +301,75 @@ func TestValidateImageGeneration(t *testing.T) {
 					t.Errorf("Expected validation to pass, but got error: %v", err)
 				}
 			}
+		})
+	}
+}
+
+// TestValidateIPForwarding covers the --ip-forwarding accept/reject paths, including the unset
+// case: omitting the flag must validate and must leave the platform field empty so that nothing
+// is written into the generated NodePool.
+func TestValidateIPForwarding(t *testing.T) {
+	testCases := []struct {
+		name          string
+		ipForwarding  string
+		shouldError   bool
+		expectedError string
+	}{
+		{
+			name:         "When Enabled is specified it should pass validation",
+			ipForwarding: "Enabled",
+		},
+		{
+			name:         "When Disabled is specified it should pass validation",
+			ipForwarding: "Disabled",
+		},
+		{
+			name:         "When ip forwarding is unset it should pass validation",
+			ipForwarding: "",
+		},
+		{
+			name:          "When lowercase enabled is specified it should fail validation",
+			ipForwarding:  "enabled",
+			shouldError:   true,
+			expectedError: "flag --ip-forwarding has an invalid value; accepted values are 'Enabled' and 'Disabled'",
+		},
+		{
+			name:          "When a boolean value is specified it should fail validation",
+			ipForwarding:  "true",
+			shouldError:   true,
+			expectedError: "flag --ip-forwarding has an invalid value; accepted values are 'Enabled' and 'Disabled'",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			opts := DefaultOptions()
+			opts.IPForwarding = tc.ipForwarding
+			opts.MarketplacePublisher = testMarketplacePublisher
+			opts.MarketplaceOffer = testMarketplaceOffer
+			opts.MarketplaceSKU = testMarketplaceSKU
+			opts.MarketplaceVersion = testMarketplaceVersion
+			opts.InstanceType = testInstanceType
+			opts.SubnetID = testSubnetID
+
+			validated, err := opts.Validate(t.Context(), nil)
+			if tc.shouldError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal(tc.expectedError))
+				return
+			}
+
+			g.Expect(err).ToNot(HaveOccurred())
+
+			completed, err := validated.Complete(t.Context(), nil)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			platform := completed.(*CompletedAzurePlatformCreateOptions).NodePoolPlatform(&hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{Arch: hyperv1.ArchitectureAMD64},
+			})
+			g.Expect(string(platform.IPForwarding)).To(Equal(tc.ipForwarding))
 		})
 	}
 }

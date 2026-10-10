@@ -1,7 +1,7 @@
 # Create a Self-Managed Azure HostedCluster
 
 !!! note "Developer Preview in OCP 4.21"
-    
+
     Self-managed Azure HostedClusters are available as a Developer Preview feature in OpenShift Container Platform 4.21.
 
 This document describes how to create a self-managed Azure HostedCluster using workload identities for authentication.
@@ -202,7 +202,7 @@ hypershift create nodepool azure \
 ```
 
 !!! important "Key Configuration Options"
-    
+
     - `--infra-json`: Path to infrastructure output from `hypershift create infra azure` (includes workload identities)
     - `--assign-service-principal-roles`: Automatically assigns required Azure roles to workload identities
     - `--sa-token-issuer-private-key-path`: Path to the private key for service account token signing
@@ -211,6 +211,59 @@ hypershift create nodepool azure \
     - `--marketplace-publisher/offer/sku/version`: (Optional) Explicit Azure Marketplace image. Must specify all four flags together, or omit all to use defaults (OCP 4.20+)
     - `--dns-zone-rg-name`: Resource group containing the DNS zone (os4-common)
     - `--diagnostics-storage-account-type Managed`: Use Azure managed storage for diagnostics
+
+## Enabling IP Forwarding on NodePool VMs
+
+Azure enforces a source and destination address check on every VM network interface by default: the
+platform silently drops packets whose source or destination IP address is not assigned to the VM.
+Nodes that must forward traffic on behalf of other networks — for example prefixes advertised to the
+node over BGP, or VM addresses that are directly routable within the virtual network — need that
+check relaxed.
+
+Set `ipForwarding` on the NodePool to opt in. When it is omitted, the Azure default applies and the
+VMs do not forward traffic.
+
+```shell
+hypershift create nodepool azure \
+    --name "$NODEPOOL_NAME" \
+    --cluster-name "$CLUSTER_NAME" \
+    --replicas 2 \
+    --ip-forwarding Enabled
+```
+
+The equivalent NodePool CR field:
+
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: $NODEPOOL_NAME
+  namespace: clusters
+spec:
+  platform:
+    type: Azure
+    azure:
+      ipForwarding: Enabled
+      vmSize: Standard_D4s_v5
+      ...
+```
+
+Supported values are `Enabled` and `Disabled`.
+
+!!! warning
+
+    Changing `ipForwarding` on an existing NodePool changes the generated machine template and
+    therefore **replaces the VMs in the NodePool**. Expect the usual drain, surge, and node churn of
+    a rolling replacement.
+
+    For NodePools using `upgradeType: InPlace`, changing this value affects only nodes created after
+    the change; existing nodes keep their original setting. See
+    [NodePool rollouts](../../reference/nodepool-rollouts.md) for details.
+
+!!! note
+
+    This is unrelated to the cluster network operator's `ipForwarding` setting, which controls
+    OVN-Kubernetes gateway behavior inside the cluster.
 
 ## Enabling KMS Encryption (etcd Encryption at Rest)
 
@@ -361,7 +414,7 @@ hypershift destroy infra azure \
 ```
 
 !!! note "Resource Cleanup"
-    
+
     The HyperShift destroy commands clean up the cluster and infrastructure resources. Workload identities and OIDC issuer created during setup can be reused for other clusters or cleaned up separately if no longer needed. See [Destroying Workload Identities](create-iam-separately.md#destroying-workload-identities).
 
 ## Related Documentation

@@ -110,7 +110,39 @@ type AzureNodePoolPlatform struct {
 	// If not specified, then Boot diagnostics will be disabled.
 	// +optional
 	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
+
+	// ipForwarding indicates whether the VMs in the nodepool may send and receive network
+	// traffic with a source or destination IP address that is not assigned to the VM itself.
+	// Enable this when nodes must forward traffic on behalf of other networks, for example
+	// networks advertised to the node over BGP, or VM addresses that are directly routable
+	// within the virtual network.
+	// Enabling ipForwarding relaxes the Azure platform's source and destination address check
+	// on the VM network interfaces.
+	// This is unrelated to the cluster network operator's ipForwarding setting, which controls
+	// OVN-Kubernetes gateway behavior inside the cluster.
+	// When omitted, the Azure default applies and the VMs do not forward traffic.
+	// Changing this value replaces the VMs in the nodepool. For nodepools using the InPlace
+	// upgrade type, changing this value affects only nodes created after the change; existing
+	// nodes keep their original setting.
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=Enabled;Disabled
+	IPForwarding AzureIPForwarding `json:"ipForwarding,omitempty"`
 }
+
+// AzureIPForwarding indicates whether IP forwarding is enabled or disabled on the
+// network interfaces of the VMs in an Azure nodepool.
+type AzureIPForwarding string
+
+const (
+	// AzureIPForwardingEnabled allows the VM network interfaces to send and receive traffic
+	// with a source or destination IP address not assigned to the VM.
+	AzureIPForwardingEnabled AzureIPForwarding = "Enabled"
+
+	// AzureIPForwardingDisabled restricts the VM network interfaces to traffic whose source
+	// or destination IP address is assigned to the VM. This is the Azure default.
+	AzureIPForwardingDisabled AzureIPForwarding = "Disabled"
+)
 
 // AzureVMImage represents the different types of boot image sources that can be provided for an Azure VM.
 // +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'ImageID' ?  has(self.imageID) : !has(self.imageID)",message="imageID is required when type is ImageID, and forbidden otherwise"
