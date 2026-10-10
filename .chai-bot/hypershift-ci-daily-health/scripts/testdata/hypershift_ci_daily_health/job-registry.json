@@ -1,0 +1,372 @@
+{
+  "api_version": "job-registry/v7",
+  "jobs": [
+    {
+      "id": "pull-ci-openshift-hypershift-main-e2e-streak",
+      "name": "pull-ci-openshift-hypershift-main-e2e-streak",
+      "type": "presubmit",
+      "repository": "openshift/hypershift",
+      "e2e_framework": "v1",
+      "versions": [],
+      "platforms": [
+        "aws"
+      ],
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-main-e2e-streak",
+      "sippy_url": null,
+      "release_controller": [],
+      "presubmit": {
+        "target_branch": "main",
+        "target_release": "5.1",
+        "required": true,
+        "always_run": true,
+        "branches": [],
+        "skip_branches": [],
+        "periodic_counterparts": [],
+        "sippy_ingestion": {
+          "enabled": true,
+          "basis": "fixture"
+        }
+      }
+    },
+    {
+      "id": "pull-ci-openshift-hypershift-release-5.0-e2e-veto",
+      "name": "pull-ci-openshift-hypershift-release-5.0-e2e-veto",
+      "type": "presubmit",
+      "repository": "openshift/hypershift",
+      "e2e_framework": "v1",
+      "versions": [],
+      "platforms": [
+        "aws"
+      ],
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-release-5.0-e2e-veto",
+      "sippy_url": null,
+      "release_controller": [],
+      "presubmit": {
+        "target_branch": "release-5.0",
+        "target_release": "5.0",
+        "required": true,
+        "always_run": true,
+        "branches": [],
+        "skip_branches": [],
+        "periodic_counterparts": [],
+        "sippy_ingestion": {
+          "enabled": false,
+          "basis": "fixture"
+        }
+      }
+    },
+    {
+      "id": "pull-ci-openshift-hypershift-main-e2e-optional",
+      "name": "pull-ci-openshift-hypershift-main-e2e-optional",
+      "type": "presubmit",
+      "repository": "openshift/hypershift",
+      "e2e_framework": "v1",
+      "versions": [],
+      "platforms": [
+        "aws"
+      ],
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-main-e2e-optional",
+      "sippy_url": null,
+      "release_controller": [],
+      "presubmit": {
+        "target_branch": "main",
+        "target_release": "5.1",
+        "required": false,
+        "always_run": true,
+        "branches": [],
+        "skip_branches": [],
+        "periodic_counterparts": [],
+        "sippy_ingestion": {
+          "enabled": true,
+          "basis": "fixture"
+        }
+      }
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-perma-aws",
+      "name": "periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-perma-aws",
+      "type": "periodic",
+      "repository": "openshift/hypershift",
+      "e2e_framework": "v1",
+      "versions": [
+        "5.1"
+      ],
+      "platforms": [
+        "aws"
+      ],
+      "variant": "periodics",
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-perma-aws",
+      "sippy_url": null,
+      "release_controller": [
+        {
+          "stream": {
+            "name": "5.1.0-0.ci",
+            "release": "5.1",
+            "kind": "ci",
+            "architecture": "amd64",
+            "end_of_life": false,
+            "sippy_url": null,
+            "release_status_url": "https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/releasestream/5.1.0-0.ci"
+          },
+          "verification": {
+            "name": "hypershift-e2e",
+            "role": "blocking",
+            "optional": false,
+            "disabled": false,
+            "async": false
+          },
+          "source": {
+            "repository": "openshift/release",
+            "path": "core-services/release-controller/_releases/release-ocp-5.1-ci.json",
+            "url": "https://example/release",
+            "declaration": "verify.hypershift-e2e"
+          }
+        }
+      ]
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-ok-aws",
+      "name": "periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-ok-aws",
+      "type": "periodic",
+      "repository": "openshift/hypershift",
+      "e2e_framework": "v1",
+      "versions": [
+        "5.0"
+      ],
+      "platforms": [
+        "aws"
+      ],
+      "variant": "periodics",
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-ok-aws",
+      "sippy_url": null,
+      "release_controller": [
+        {
+          "stream": {
+            "name": "5.0.0-0.ci",
+            "release": "5.0",
+            "kind": "ci",
+            "architecture": "amd64",
+            "end_of_life": false,
+            "sippy_url": null,
+            "release_status_url": "https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/releasestream/5.0.0-0.ci"
+          },
+          "verification": {
+            "name": "hypershift-e2e",
+            "role": "blocking",
+            "optional": false,
+            "disabled": false,
+            "async": false
+          },
+          "source": {
+            "repository": "openshift/release",
+            "path": "core-services/release-controller/_releases/release-ocp-5.0-ci.json",
+            "url": "https://example/release",
+            "declaration": "verify.hypershift-e2e"
+          }
+        }
+      ]
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-4.22-periodics-e2e-both",
+      "name": "periodic-ci-openshift-hypershift-release-4.22-periodics-e2e-both",
+      "type": "periodic",
+      "repository": "openshift/hypershift",
+      "e2e_framework": "v1",
+      "versions": [
+        "4.22"
+      ],
+      "platforms": [
+        "aws"
+      ],
+      "variant": "periodics",
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-4.22-periodics-e2e-both",
+      "sippy_url": null,
+      "release_controller": [
+        {
+          "stream": {
+            "name": "4.22.0-0.ci",
+            "release": "4.22",
+            "kind": "ci",
+            "architecture": "amd64",
+            "end_of_life": false,
+            "sippy_url": null,
+            "release_status_url": "https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/releasestream/4.22.0-0.ci"
+          },
+          "verification": {
+            "name": "hypershift-e2e",
+            "role": "blocking",
+            "optional": false,
+            "disabled": false,
+            "async": false
+          },
+          "source": {
+            "repository": "openshift/release",
+            "path": "core-services/release-controller/_releases/release-ocp-4.22-ci.json",
+            "url": "https://example/release",
+            "declaration": "verify.hypershift-e2e"
+          }
+        }
+      ]
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-4.21-periodics-e2e-nulls",
+      "name": "periodic-ci-openshift-hypershift-release-4.21-periodics-e2e-nulls",
+      "type": "periodic",
+      "repository": "openshift/hypershift",
+      "e2e_framework": "v1",
+      "versions": [
+        "4.21"
+      ],
+      "platforms": [
+        "aws"
+      ],
+      "variant": "periodics",
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-4.21-periodics-e2e-nulls",
+      "sippy_url": null,
+      "release_controller": [
+        {
+          "stream": {
+            "name": "4.21.0-0.ci",
+            "release": "4.21",
+            "kind": "ci",
+            "architecture": "amd64",
+            "end_of_life": false,
+            "sippy_url": null,
+            "release_status_url": "https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/releasestream/4.21.0-0.ci"
+          },
+          "verification": {
+            "name": "hypershift-e2e",
+            "role": "blocking",
+            "optional": false,
+            "disabled": false,
+            "async": false
+          },
+          "source": {
+            "repository": "openshift/release",
+            "path": "core-services/release-controller/_releases/release-ocp-4.21-ci.json",
+            "url": "https://example/release",
+            "declaration": "verify.hypershift-e2e"
+          }
+        }
+      ]
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-4.19-periodics-e2e-old",
+      "name": "periodic-ci-openshift-hypershift-release-4.19-periodics-e2e-old",
+      "type": "periodic",
+      "repository": "openshift/hypershift",
+      "e2e_framework": "v1",
+      "versions": [
+        "4.19"
+      ],
+      "platforms": [
+        "aws"
+      ],
+      "variant": "periodics",
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-4.19-periodics-e2e-old",
+      "sippy_url": null,
+      "release_controller": [
+        {
+          "stream": {
+            "name": "4.19.0-0.ci",
+            "release": "4.19",
+            "kind": "ci",
+            "architecture": "amd64",
+            "end_of_life": false,
+            "sippy_url": null,
+            "release_status_url": "https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/releasestream/4.19.0-0.ci"
+          },
+          "verification": {
+            "name": "hypershift-e2e",
+            "role": "blocking",
+            "optional": false,
+            "disabled": false,
+            "async": false
+          },
+          "source": {
+            "repository": "openshift/release",
+            "path": "core-services/release-controller/_releases/release-ocp-4.19-ci.json",
+            "url": "https://example/release",
+            "declaration": "verify.hypershift-e2e"
+          }
+        }
+      ]
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-cr-perma",
+      "name": "periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-cr-perma",
+      "type": "periodic",
+      "repository": "openshift/hypershift",
+      "e2e_framework": "v1",
+      "versions": [
+        "5.0"
+      ],
+      "platforms": [
+        "aws"
+      ],
+      "variant": "periodics",
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-cr-perma",
+      "sippy_url": null,
+      "release_controller": []
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-4.20-periodics-e2e-cr-ok",
+      "name": "periodic-ci-openshift-hypershift-release-4.20-periodics-e2e-cr-ok",
+      "type": "periodic",
+      "repository": "openshift/hypershift",
+      "e2e_framework": "v1",
+      "versions": [
+        "4.20"
+      ],
+      "platforms": [
+        "aws"
+      ],
+      "variant": "periodics",
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-4.20-periodics-e2e-cr-ok",
+      "sippy_url": null,
+      "release_controller": []
+    },
+    {
+      "id": "periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-informing",
+      "name": "periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-informing",
+      "type": "periodic",
+      "repository": "openshift/hypershift",
+      "e2e_framework": "v1",
+      "versions": [
+        "5.1"
+      ],
+      "platforms": [
+        "aws"
+      ],
+      "variant": "periodics",
+      "prow_job_history_url": "https://prow.ci.openshift.org/job-history/gs/test-platform-results/logs/periodic-ci-openshift-hypershift-release-5.1-periodics-e2e-informing",
+      "sippy_url": null,
+      "release_controller": [
+        {
+          "stream": {
+            "name": "5.1.0-0.ci",
+            "release": "5.1",
+            "kind": "ci",
+            "architecture": "amd64",
+            "end_of_life": false,
+            "sippy_url": null,
+            "release_status_url": "https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/releasestream/5.1.0-0.ci"
+          },
+          "verification": {
+            "name": "hypershift-e2e",
+            "role": "informing",
+            "optional": true,
+            "disabled": false,
+            "async": false
+          },
+          "source": {
+            "repository": "openshift/release",
+            "path": "core-services/release-controller/_releases/release-ocp-5.1-ci.json",
+            "url": "https://example/release",
+            "declaration": "verify.hypershift-e2e"
+          }
+        }
+      ]
+    }
+  ]
+}
