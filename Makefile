@@ -10,6 +10,11 @@ CRD_OPTIONS ?= "crd"
 RUNTIME ?= $(shell sh hack/utils.sh get_container_engine)
 
 ARTIFACT_DIR ?= /tmp/artifacts
+# Writable Go caches for verify/update in CI (test pods cannot write /go/pkg/mod or /go/pkg/sumdb).
+override GOMODCACHE := $(abspath $(ARTIFACT_DIR)/gomodcache)
+override GOPATH := $(abspath $(ARTIFACT_DIR)/gopath)
+export GOMODCACHE
+export GOPATH
 TOOLS_DIR=./hack/tools
 BIN_DIR=bin
 TOOLS_BIN_DIR := $(TOOLS_DIR)/$(BIN_DIR)
@@ -604,8 +609,12 @@ vet:
 #	cd $(TOOLS_DIR); $(PROMTOOL) check rules ../../cmd/install/assets/slos/*.yaml ../../cmd/install/assets/recordingrules/*.yaml ../../control-plane-operator/controllers/hostedcontrolplane/kas/assets/*.yaml
 
 # Updates Go modules
+.PHONY: gomodcache
+gomodcache:
+	@mkdir -p $(GOMODCACHE) $(GOPATH)/pkg
+
 .PHONY: deps
-deps:
+deps: gomodcache
 	$(GO) mod tidy
 	$(GO) mod vendor
 	$(GO) mod verify
@@ -613,7 +622,7 @@ deps:
 	(cd hack/tools && $(GO) mod tidy && $(GO) mod vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
 
 .PHONY: api-deps
-api-deps:
+api-deps: gomodcache
 	cd api && \
 	  $(GO) mod tidy && \
 	  $(GO) mod vendor && \
@@ -621,7 +630,7 @@ api-deps:
 	  $(GO) list -m -mod=readonly -json all > /dev/null
 
 .PHONY: workspace-sync
-workspace-sync:
+workspace-sync: gomodcache
 	cd hack/workspace && \
 	  $(GOWS) work sync
 
