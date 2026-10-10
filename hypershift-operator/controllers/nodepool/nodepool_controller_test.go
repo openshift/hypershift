@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -33,12 +34,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
@@ -3863,6 +3867,222 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNodePoolReconciler_Reconcile(t *testing.T) {
+	t.Run("When MachineDeployment persistence fails after CAPI computes conditions, it should patch exact ordered conditions and return the error", func(t *testing.T) {
+		g := NewWithT(t)
+		injectedErr := errors.New("injected MachineDeployment persistence failure")
+		const (
+			namespace         = "myns"
+			hostedClusterName = "cluster-name"
+			nodePoolName      = "test-nodepool"
+		)
+
+		maxUnavailable := intstr.FromInt(0)
+		maxSurge := intstr.FromInt(1)
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       nodePoolName,
+				Namespace:  namespace,
+				Generation: 17,
+				Finalizers: []string{finalizer},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: hostedClusterName,
+				Replicas:    ptr.To[int32](3),
+				Release: hyperv1.Release{
+					Image: "quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64",
+				},
+				Management: hyperv1.NodePoolManagement{
+					UpgradeType: hyperv1.UpgradeTypeReplace,
+					Replace: &hyperv1.ReplaceUpgrade{
+						Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+						RollingUpdate: &hyperv1.RollingUpdate{
+							MaxUnavailable: &maxUnavailable,
+							MaxSurge:       &maxSurge,
+						},
+					},
+				},
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSNodePoolPlatform{
+						AMI: "ami-1234567890abcdef0",
+					},
+				},
+			},
+			Status: hyperv1.NodePoolStatus{Version: "4.18.0"},
+		}
+
+		hostedCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hostedClusterName,
+				Namespace: namespace,
+				Annotations: map[string]string{
+					hyperv1.SkipReleaseImageValidation: "true",
+				},
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				InfraID: hostedClusterName,
+				Release: hyperv1.Release{Image: nodePool.Spec.Release.Image},
+				PullSecret: corev1.LocalObjectReference{
+					Name: "pull-secret",
+				},
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						Region:              "us-east-1",
+						EndpointAccess:      hyperv1.Public,
+						CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{},
+					},
+				},
+				Networking: hyperv1.ClusterNetworking{
+					ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+				},
+			},
+			Status: hyperv1.HostedClusterStatus{
+				IgnitionEndpoint: "ignition.example.com",
+				KubeConfig:       &corev1.LocalObjectReference{Name: "kk"},
+				Version: &hyperv1.ClusterVersionStatus{History: []configv1.UpdateHistory{{
+					State:   configv1.CompletedUpdate,
+					Version: "4.18.0",
+				}}},
+				Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{
+					DefaultWorkerSecurityGroupID: "sg-1234567890abcdef0",
+				}},
+			},
+		}
+
+		pullSecret, ignitionCA, _, ignitionConfig1, ignitionConfig2, ignitionConfig3 := setupTestObjects()
+		kubeconfigSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: namespace},
+			Data: map[string][]byte{"kubeconfig": []byte(`apiVersion: v1
+clusters:
+- cluster:
+    server: https://kubeconfig-host:443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    user: ""
+  name: cluster
+current-context: cluster
+kind: Config`)},
+		}
+		controlPlaneNamespace := "myns-cluster-name"
+		machineDeployment := &capiv1.MachineDeployment{
+			ObjectMeta: metav1.ObjectMeta{Name: nodePoolName, Namespace: controlPlaneNamespace},
+			Spec: capiv1.MachineDeploymentSpec{
+				Replicas: ptr.To[int32](3),
+				Template: capiv1.MachineTemplateSpec{Spec: capiv1.MachineSpec{
+					Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To("previous-user-data")},
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
+						APIGroup: "infrastructure.cluster.x-k8s.io",
+						Kind:     "AWSMachineTemplate",
+						Name:     "previous-template",
+					},
+					Version: "4.18.0",
+				}},
+			},
+			Status: capiv1.MachineDeploymentStatus{
+				AvailableReplicas: ptr.To[int32](3),
+				Conditions: []metav1.Condition{{
+					Type:    capiv1.MachinesReadyCondition,
+					Status:  metav1.ConditionTrue,
+					Reason:  "MachinesReady",
+					Message: "all machines are ready",
+				}},
+			},
+		}
+
+		objects := []client.Object{
+			nodePool,
+			hostedCluster,
+			pullSecret,
+			ignitionCA,
+			ignitionConfig1,
+			ignitionConfig2,
+			ignitionConfig3,
+			kubeconfigSecret,
+		}
+		testClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(objects...).
+			WithStatusSubresource(nodePool).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					if _, ok := obj.(*capiv1.MachineDeployment); ok {
+						return injectedErr
+					}
+					return c.Patch(ctx, obj, patch, opts...)
+				},
+			}).
+			Build()
+
+		releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
+			Version: "4.18.0",
+			Components: map[string]string{
+				haproxy.HAProxyRouterImageName: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234",
+			},
+			CanonicalComponents: map[string]string{
+				haproxy.HAProxyRouterImageName: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234",
+			},
+		}
+		r := &NodePoolReconciler{
+			Client:                  testClient,
+			ReleaseProvider:         releaseProvider,
+			HypershiftOperatorImage: "quay.io/hypershift/hypershift-operator:latest",
+			ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{Labels: map[string]string{}}},
+			},
+			CreateOrUpdateProvider: upsert.New(false),
+			recorder:               record.NewFakeRecorder(1),
+		}
+		token, err := r.token(t.Context(), hostedCluster, nodePool)
+		g.Expect(err).NotTo(HaveOccurred())
+		capi, err := newCAPI(token, hostedCluster.Spec.InfraID)
+		g.Expect(err).NotTo(HaveOccurred())
+		machineTemplate, err := capi.machineTemplateBuilders(t.Context())
+		g.Expect(err).NotTo(HaveOccurred())
+		machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(capi.UserDataSecret().Name)
+		machineDeployment.Spec.Template.Spec.InfrastructureRef.Name = machineTemplate.GetName()
+		machineDeployment.Spec.Template.Spec.Version = capi.Version()
+		g.Expect(testClient.Create(t.Context(), machineDeployment)).To(Succeed())
+
+		result, err := r.Reconcile(t.Context(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(nodePool)})
+		g.Expect(errors.Is(err, injectedErr)).To(BeTrue())
+		g.Expect(err).To(MatchError(fmt.Sprintf("failed to reconcile MachineDeployment %q: %s", client.ObjectKeyFromObject(machineDeployment).String(), injectedErr)))
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		persistedNodePool := &hyperv1.NodePool{}
+		g.Expect(testClient.Get(t.Context(), client.ObjectKeyFromObject(nodePool), persistedNodePool)).To(Succeed())
+		machineTemplates := &capiaws.AWSMachineTemplateList{}
+		g.Expect(testClient.List(t.Context(), machineTemplates, client.InNamespace(controlPlaneNamespace))).To(Succeed())
+		g.Expect(machineTemplates.Items).To(HaveLen(1))
+
+		g.Expect(len(persistedNodePool.Status.Conditions)).To(BeNumerically(">=", 2))
+		persistedCAPIConditions := append([]hyperv1.NodePoolCondition(nil), persistedNodePool.Status.Conditions[len(persistedNodePool.Status.Conditions)-2:]...)
+		for i := range persistedCAPIConditions {
+			g.Expect(persistedCAPIConditions[i].LastTransitionTime.IsZero()).To(BeFalse())
+			persistedCAPIConditions[i].LastTransitionTime = metav1.Time{}
+		}
+		g.Expect(persistedCAPIConditions).To(Equal([]hyperv1.NodePoolCondition{
+			{
+				Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+				Status:             corev1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            fmt.Sprintf("platform machine template update in progress. Target template: %s", machineTemplates.Items[0].Name),
+				ObservedGeneration: nodePool.Generation,
+			},
+			{
+				Type:               hyperv1.NodePoolReadyConditionType,
+				Status:             corev1.ConditionTrue,
+				Reason:             "MachinesReady",
+				Message:            "all machines are ready",
+				ObservedGeneration: nodePool.Generation,
+			},
+		}))
+	})
 }
 
 func TestEnqueueNodePoolsForCloudConfig(t *testing.T) {
