@@ -870,6 +870,107 @@ func TestCacheInvalidationOnCloudConfigHashChange(t *testing.T) {
 	}
 }
 
+func TestCacheInvalidationOnTrustBundleHashChange(t *testing.T) {
+	compressedConfig, err := util.CompressAndEncode([]byte("compressedConfig"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressedConfigBytes := compressedConfig.Bytes()
+
+	tokenID := uuid.New().String()
+	secretName := "test"
+
+	tests := []struct {
+		name                        string
+		cachedAdditionalTrustBundle string
+		secretAdditionalTrustBundle string
+		cachedProxyTrustedCA        string
+		secretProxyTrustedCA        string
+		expectRegeneration          bool
+	}{
+		{
+			name:                        "When additionalTrustBundleHash and proxyTrustedCAHash match cached values, it should return cached payload",
+			cachedAdditionalTrustBundle: "atb-abc",
+			secretAdditionalTrustBundle: "atb-abc",
+			cachedProxyTrustedCA:        "proxy-abc",
+			secretProxyTrustedCA:        "proxy-abc",
+			expectRegeneration:          false,
+		},
+		{
+			name:                        "When additionalTrustBundleHash differs from cached value, it should regenerate payload",
+			cachedAdditionalTrustBundle: "atb-old",
+			secretAdditionalTrustBundle: "atb-new",
+			cachedProxyTrustedCA:        "proxy-abc",
+			secretProxyTrustedCA:        "proxy-abc",
+			expectRegeneration:          true,
+		},
+		{
+			name: "When only proxyTrustedCAHash differs from cached value (e.g. in-place proxy.trustedCA " +
+				"content change, or a Secret pair kept under its existing name across a hash-formula " +
+				"migration), it should regenerate payload instead of serving a stale cached payload",
+			cachedAdditionalTrustBundle: "atb-abc",
+			secretAdditionalTrustBundle: "atb-abc",
+			cachedProxyTrustedCA:        "proxy-old",
+			secretProxyTrustedCA:        "proxy-new",
+			expectRegeneration:          true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: "test",
+					Annotations: map[string]string{
+						TokenSecretAnnotation:          "true",
+						TokenSecretTokenGenerationTime: time.Now().Format(time.RFC3339Nano),
+					},
+					CreationTimestamp: metav1.Now(),
+				},
+				Data: map[string][]byte{
+					TokenSecretTokenKey:                     []byte(tokenID),
+					TokenSecretReleaseKey:                   []byte("release"),
+					TokenSecretConfigKey:                    compressedConfigBytes,
+					TokenSecretAdditionalTrustBundleHashKey: []byte(tt.secretAdditionalTrustBundle),
+					TokenSecretProxyTrustedCAHashKey:        []byte(tt.secretProxyTrustedCA),
+				},
+			}
+
+			callCount := 0
+			provider := &countingIgnitionProvider{count: &callCount}
+
+			r := TokenSecretReconciler{
+				Client:           fake.NewClientBuilder().WithObjects(secret).Build(),
+				IgnitionProvider: provider,
+				PayloadStore:     NewPayloadStore(),
+			}
+
+			r.PayloadStore.Set(tokenID, CacheValue{
+				Payload:                   []byte("old-payload"),
+				SecretName:                secretName,
+				AdditionalTrustBundleHash: tt.cachedAdditionalTrustBundle,
+				ProxyTrustedCAHash:        tt.cachedProxyTrustedCA,
+			})
+
+			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(secret)})
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tt.expectRegeneration {
+				g.Expect(callCount).To(Equal(1), "expected GetPayload to be called for regeneration")
+				value, found := r.PayloadStore.Get(tokenID)
+				g.Expect(found).To(BeTrue())
+				g.Expect(value.AdditionalTrustBundleHash).To(Equal(tt.secretAdditionalTrustBundle))
+				g.Expect(value.ProxyTrustedCAHash).To(Equal(tt.secretProxyTrustedCA))
+			} else {
+				g.Expect(callCount).To(Equal(0), "expected cached payload to be returned without calling GetPayload")
+			}
+		})
+	}
+}
+
 func TestOldTokenFallbackWithCloudConfigHashMismatch(t *testing.T) {
 	g := NewWithT(t)
 

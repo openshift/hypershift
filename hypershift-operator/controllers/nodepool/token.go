@@ -34,13 +34,21 @@ import (
 )
 
 const (
-	TokenSecretTokenGenerationTime       = "hypershift.openshift.io/last-token-generation-time"
-	TokenSecretReleaseKey                = "release"
-	TokenSecretReleaseVersionKey         = "release-version"
-	TokenSecretTokenKey                  = "token"
-	TokenSecretPullSecretHashKey         = "pull-secret-hash"
-	TokenSecretHCConfigurationHashKey    = "hc-configuration-hash"
-	TokenSecretAdditionalTrustBundleKey  = "additional-trust-bundle-hash"
+	TokenSecretTokenGenerationTime      = "hypershift.openshift.io/last-token-generation-time"
+	TokenSecretReleaseKey               = "release"
+	TokenSecretReleaseVersionKey        = "release-version"
+	TokenSecretTokenKey                 = "token"
+	TokenSecretPullSecretHashKey        = "pull-secret-hash"
+	TokenSecretHCConfigurationHashKey   = "hc-configuration-hash"
+	TokenSecretAdditionalTrustBundleKey = "additional-trust-bundle-hash"
+	// TokenSecretProxyTrustedCAHashKey tracks spec.configuration.proxy.trustedCA ConfigMap
+	// content, mirroring TokenSecretAdditionalTrustBundleKey. It is written unconditionally on
+	// every reconcile (like TokenSecretHCConfigurationHashKey/TokenSecretCloudConfigHashKey
+	// below) so the ignition-server token-secret controller can detect a proxy trustedCA content
+	// change for a Secret pair that CAPI is intentionally keeping under its existing name (see
+	// config_hash_version.go's hash-formula migration skip) and invalidate its cached payload
+	// instead of serving stale content indefinitely until the token naturally rotates/expires.
+	TokenSecretProxyTrustedCAHashKey     = "proxy-trusted-ca-hash"
 	TokenSecretCloudConfigHashKey        = "cloud-config-hash"
 	TokenSecretConfigKey                 = "config"
 	TokenSecretAnnotation                = "hypershift.openshift.io/ignition-config"
@@ -56,15 +64,22 @@ type Token struct {
 	upsert.CreateOrUpdateProvider
 	cpoCapabilities *CPOCapabilities
 	*ConfigGenerator
-	// TODO(alberto): we don't really support content inplace changes for fields like pull secret and AdditionalTrustBundle.
-	// In fact we only trigger a rollout if the .Name referenced in the field changes.
-	// Consider removing these hash checks and consolidate with the rolloutConfig struct input.
-	// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
+	// These content hashes are stored in the token Secret for the ignition-server
+	// token-secret controller. They are separate from the rolloutConfig hash that
+	// drives NodePool rollouts (see ConfigGenerator.Hash / HashWithoutVersion).
+	// NOTE: proxy.trustedCA content is tracked in rolloutConfig but not hashed here yet.
 	pullSecretHash            []byte
 	additionalTrustBundleHash []byte
-	globalConfigHash          []byte
-	cloudConfigHash           []byte
-	userData                  *userData
+	// proxyTrustedCAHash is reused directly from ConfigGenerator.proxyTrustedCAHash (the
+	// rolloutConfig field; the same value that drives ConfigGenerator.Hash()/HashWithoutVersion() for NodePool
+	// rollouts), rather than independently re-fetching/re-hashing the ConfigMap like
+	// additionalTrustBundleHash does. It is stored in the token Secret so the ignition-server
+	// token-secret controller can detect proxy.trustedCA content drift for a Secret pair whose
+	// name does not change (see TokenSecretProxyTrustedCAHashKey).
+	proxyTrustedCAHash []byte
+	globalConfigHash   []byte
+	cloudConfigHash    []byte
+	userData           *userData
 }
 
 // userData contains the input necessary to generate the user data secret
@@ -127,6 +142,7 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 		cpoCapabilities:           cpoCapabilities,
 		pullSecretHash:            []byte(supportutil.HashSimple(pullSecretBytes)),
 		additionalTrustBundleHash: []byte(supportutil.HashSimple(additionalTrustBundle)),
+		proxyTrustedCAHash:        []byte(configGenerator.proxyTrustedCAHash),
 		globalConfigHash:          []byte(hcConfigurationHash),
 		cloudConfigHash:           []byte(cloudConfigHash),
 	}
@@ -266,6 +282,64 @@ func (t *Token) Reconcile(ctx context.Context) error {
 	return nil
 }
 
+// reconcileLegacyBootstrapSecrets keeps a previously-created token/user-data Secret pair alive and
+// up to date when CAPI is intentionally keeping a MachineDeployment/MachineSet pointed at it
+// instead of propagating the freshly computed target (see config_hash_version.go's
+// shouldSkipUserDataSecretPropagation). Without this, Token.Reconcile() only ever reconciles the
+// current target pair (named from Hash()); the live/legacy pair would never be touched again by
+// the NodePool controller, even though the ignition-server token-secret controller keeps rotating
+// its token ID independently (see TokenSecretReconciler.rotateToken). The user-data Secret's
+// embedded Authorization header would then go stale relative to the rotated token, causing any new
+// Machine that boots from that Secret (e.g. during a scale-out, or MachineHealthCheck remediation)
+// to fail to fetch its ignition payload once the old token ages out of the ignition-server's cache.
+//
+// liveUserDataSecretName is the user-data Secret name currently referenced by the
+// MachineDeployment/MachineSet. If it is empty or already matches the current target
+// (t.UserDataSecret().GetName()), there is nothing legacy to refresh and this is a no-op.
+func (t *Token) reconcileLegacyBootstrapSecrets(ctx context.Context, log logr.Logger, liveUserDataSecretName string) error {
+	if liveUserDataSecretName == "" || liveUserDataSecretName == t.UserDataSecret().GetName() {
+		return nil
+	}
+	if !strings.HasPrefix(liveUserDataSecretName, UserDataSecrePrefix) {
+		// Unexpected bootstrap Secret name; do not invent a token Secret name via TrimPrefix.
+		log.Info("Unexpected live bootstrap Secret name without user-data prefix; skipping legacy Secret refresh",
+			"userDataSecret", liveUserDataSecretName)
+		return nil
+	}
+	legacyTokenName := TokenSecretPrefix + strings.TrimPrefix(liveUserDataSecretName, UserDataSecrePrefix)
+
+	legacyTokenSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: t.controlplaneNamespace,
+			Name:      legacyTokenName,
+		},
+	}
+	if _, err := t.CreateOrUpdate(ctx, t.Client, legacyTokenSecret, func() error {
+		return t.reconcileTokenSecret(legacyTokenSecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile legacy token Secret %q: %w", legacyTokenName, err)
+	}
+
+	tokenBytes, hasToken := legacyTokenSecret.Data[TokenSecretTokenKey]
+	if !hasToken {
+		return fmt.Errorf("legacy token secret %q is missing token key", legacyTokenName)
+	}
+
+	legacyUserDataSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: t.controlplaneNamespace,
+			Name:      liveUserDataSecretName,
+		},
+	}
+	if _, err := t.CreateOrUpdate(ctx, t.Client, legacyUserDataSecret, func() error {
+		return t.reconcileUserDataSecret(log, legacyUserDataSecret, string(tokenBytes))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile legacy user-data Secret %q: %w", liveUserDataSecretName, err)
+	}
+
+	return nil
+}
+
 const UserDataSecrePrefix = "user-data"
 
 func (t *Token) UserDataSecret() *corev1.Secret {
@@ -377,6 +451,12 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 	// Otherwise if something which does not trigger a new token generation from spec.Config changes, like .IDP, both hashes would mismatch forever.
 	tokenSecret.Data[TokenSecretHCConfigurationHashKey] = t.globalConfigHash
 	tokenSecret.Data[TokenSecretCloudConfigHashKey] = t.cloudConfigHash
+	// Also kept in sync in place (see comment above): lets the ignition-server token-secret
+	// controller invalidate a cached payload when proxy.trustedCA content changes for a token
+	// Secret that CAPI is intentionally keeping under its existing name/token (hash-formula
+	// migration skip, see config_hash_version.go), instead of serving stale CA content until the
+	// token naturally rotates or expires.
+	tokenSecret.Data[TokenSecretProxyTrustedCAHashKey] = t.proxyTrustedCAHash
 
 	return nil
 }
