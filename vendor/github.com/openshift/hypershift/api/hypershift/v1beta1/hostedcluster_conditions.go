@@ -355,6 +355,11 @@ const (
 
 	InvalidAzureCredentialsReason = "InvalidAzureCredentials"
 	AzureErrorReason              = "AzureError"
+	// PrivateKeyVaultValidationPendingReason is used with ValidAzureKMSConfig when a
+	// private Key Vault cannot be probed yet because the private router that relays
+	// the connection is not available. It is transient: the next reconcile retries
+	// and resolves the condition to True or False.
+	PrivateKeyVaultValidationPendingReason = "PrivateKeyVaultValidationPending"
 
 	ExternalDNSHostNotReachableReason = "ExternalDNSHostNotReachable"
 

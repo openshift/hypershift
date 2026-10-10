@@ -170,6 +170,8 @@ const (
 
 	cpoAzureCredentials = "CPOAzureCredentials"
 	kmsAzureCredentials = "KMSAzureCredentials"
+
+	azureKMSValidationTimeout = 30 * time.Second
 )
 
 type HostedControlPlaneReconciler struct {
@@ -207,6 +209,7 @@ type HostedControlPlaneReconciler struct {
 	ImageMetadataProvider                   imageregistry.ImageMetadataProvider
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
+	newAzureKMSCredential                   func(context.Context, string, ...dataplane.Option) (azcore.TokenCredential, error)
 	clock                                   clock.Clock
 }
 
@@ -3378,19 +3381,49 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
+	// A successful probe is cached against the observed generation. The vault,
+	// the active key and the credential reference all live in the spec, so
+	// nothing that determines the result can change without bumping the
+	// generation. Re-running the probe on every reconcile (~60s) would mean
+	// recurring crypto operations, audit log entries and throttling exposure on
+	// a customer-owned resource, and the azure-kms-provider sidecar already
+	// exercises the same access path continuously at runtime. Unknown and False
+	// are deliberately not cached: those are the states reconciliation needs to
+	// converge out of.
+	if existing := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig)); existing != nil &&
+		existing.Status == metav1.ConditionTrue && existing.ObservedGeneration == hcp.Generation {
+		return
+	}
+
+	// keysTransport stays nil on every path except a private Key Vault on ARO
+	// HCP, where the keys client has to reach the vault through the private
+	// router instead of its public FQDN.
+	var keysTransport policy.Transporter
+
 	if hyperazureutil.IsAroHCPByHCP(hcp) {
-		// CPO cannot reach private Key Vault endpoints; KAS pods access them
-		// through the private router (HAProxy TCP passthrough via hostAlias).
-		// Unknown rather than True.
+		// CPO cannot reach private Key Vault endpoints directly. The private
+		// router runs on the customer VNet (via Swift) and already relays Key
+		// Vault traffic for the azure-kms-provider sidecar, which gets there
+		// through a hostAlias. Do the same in-process so the condition
+		// reflects a real probe rather than staying Unknown forever.
 		if hyperazureutil.IsPrivateKeyVault(hcp) {
-			meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.ValidAzureKMSConfig),
-				ObservedGeneration: hcp.Generation,
-				Status:             metav1.ConditionUnknown,
-				Reason:             hyperv1.StatusUnknownReason,
-				Message:            "Private Key Vault endpoint is not reachable from the management cluster",
-			})
-			return
+			keyVaultClient, err := hyperazureutil.PrivateRouterKeyVaultClient(ctx, r.Client, hcp)
+			if err != nil {
+				// The relay may still be provisioning. Report Unknown and let
+				// the next reconcile retry until the router is available. This
+				// uses its own reason so that consumers can tell a transient
+				// "not yet" apart from a validator that never ran at all.
+				meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+					Type:               string(hyperv1.ValidAzureKMSConfig),
+					ObservedGeneration: hcp.Generation,
+					Status:             metav1.ConditionUnknown,
+					Reason:             hyperv1.PrivateKeyVaultValidationPendingReason,
+					Message:            fmt.Sprintf("Private Key Vault cannot be validated yet: %v", err),
+				})
+				return
+			}
+			defer keyVaultClient.CloseIdleConnections()
+			keysTransport = keyVaultClient
 		}
 
 		key := hcp.Namespace + kmsAzureCredentials
@@ -3406,7 +3439,11 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 					fmt.Sprintf("failed to get Azure cloud configuration: %v", err))
 				return
 			}
-			cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}))
+			newCredential := r.newAzureKMSCredential
+			if newCredential == nil {
+				newCredential = dataplane.NewUserAssignedIdentityCredential
+			}
+			cred, err = newCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}))
 			if err != nil {
 				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
 					fmt.Sprintf("failed to obtain azure client credentials: %v", err))
@@ -3460,6 +3497,9 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 			Telemetry: policy.TelemetryOptions{
 				ApplicationID: hyperazureutil.CPOUserAgent,
 			},
+			// nil for public vaults, which leaves the azcore default transport
+			// in place.
+			Transport: keysTransport,
 		},
 	})
 	if err != nil {
@@ -3480,7 +3520,11 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		Algorithm: ptr.To(azkeys.EncryptionAlgorithmRSAOAEP256),
 		Value:     []byte("text"),
 	}
-	if _, err := keysClient.Encrypt(ctx, azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
+	// Bound authentication, HTTP requests and retries without canceling the
+	// cached credential's background reloader or the rest of reconciliation.
+	probeCtx, cancel := context.WithTimeout(ctx, azureKMSValidationTimeout)
+	defer cancel()
+	if _, err := keysClient.Encrypt(probeCtx, azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
 		condition = metav1.Condition{
 			Type:               string(hyperv1.ValidAzureKMSConfig),
 			ObservedGeneration: hcp.Generation,
