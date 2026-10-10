@@ -121,6 +121,10 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.reconcileDeletedNodeClass(ctx, hcp, openshiftEC2NodeClass)
 	}
 
+	if err := r.reconcileTaintConfigMap(ctx, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile taint configmap: %w", err)
+	}
+
 	hostedCluster, err := hostedClusterFromHCP(hcp, r.IgnitionEndpoint)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get HostedCluster: %w", err)
@@ -254,6 +258,26 @@ func (r *KarpenterIgnitionReconciler) reconcileDeletedNodeClass(
 	log.Info("Removed kubelet config finalizer from OpenshiftEC2NodeClass", "name", openshiftEC2NodeClass.Name)
 
 	return ctrl.Result{}, nil
+}
+
+// reconcileTaintConfigMap ensures the set-karpenter-taint ConfigMap exists in the HCP namespace.
+// Ignition configs reference it to taint nodes on firstboot until Karpenter okays them, see createInMemoryNodePool.
+func (r *KarpenterIgnitionReconciler) reconcileTaintConfigMap(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      karpenterutil.KarpenterTaintConfigMapName,
+			Namespace: hcp.Namespace,
+		},
+	}
+	_, err := r.CreateOrUpdate(ctx, r.ManagementClient, cm, func() error {
+		manifest, err := karpenterutil.KarpenterTaintConfigManifest()
+		if err != nil {
+			return fmt.Errorf("failed to generate taint config manifest: %w", err)
+		}
+		cm.Data = map[string]string{"config": manifest}
+		return nil
+	})
+	return err
 }
 
 // reconcileNodeClassToken reconciles the ignition token and user-data secrets for an OpenshiftEC2NodeClass.
