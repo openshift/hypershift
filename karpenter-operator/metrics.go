@@ -29,8 +29,8 @@ var (
 
 func getOperatorImage(client crclient.Client) (string, error) {
 	ctx := context.TODO()
-	karpenterNamespace := os.Getenv("MY_NAMESPACE")
-	karpenterPodName := os.Getenv("MY_NAME")
+	karpenterNamespace := os.Getenv("NAMESPACE")
+	karpenterPodName := os.Getenv("POD_NAME")
 	karpenterPod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: karpenterPodName, Namespace: karpenterNamespace}}
 	var err error
 	image := "not found"
