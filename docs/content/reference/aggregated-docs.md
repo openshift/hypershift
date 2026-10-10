@@ -32362,6 +32362,18 @@ This document describes how internal control plane certificates are managed in H
 
 The control-plane-operator (CPO) manages all internal PKI for the hosted control plane. These certificates secure communication between control plane components and are separate from break-glass credentials, which are managed by the control-plane-pki-operator.
 
+## Unmanaged etcd
+
+For unmanaged etcd, the external provider manages etcd certificates and their renewal. The CPO does not generate etcd signers, client, server, peer, or metrics certificates.
+
+The HTTPS endpoint and `spec.etcd.unmanaged.tls.clientSecret` are required, including when `hypershift.openshift.io/disable-pki-reconciliation` is set. The referenced Secret must contain all three keys:
+
+- `etcd-client.crt`: the client certificate used to authenticate to etcd.
+- `etcd-client.key`: the private key for the client certificate.
+- `etcd-client-ca.crt`: the CA bundle used to verify etcd's server certificate.
+
+The CPO copies these credentials into `etcd-client-tls`. The kube-apiserver, OpenShift API server, and OAuth API server use that Secret for both client authentication and CA trust, rather than the `etcd-ca` ConfigMap. Ensure the supplied CA bundle includes any certificates needed during a CA rotation.
+
 ## CA Hierarchy
 
 Each hosted control plane namespace contains **multiple independent self-signed Certificate Authorities**, each governing a distinct trust domain. There is no single shared CA — the `root-ca` signs the majority of serving certificates, while specialized CAs exist for etcd, konnectivity, KAS client authentication, and CPOv2 components.
@@ -49478,11 +49490,11 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
-may have the following key/value pairs:</p>
-<pre><code>etcd-client-ca.crt: Certificate Authority value
-etcd-client.crt: Client certificate value
-etcd-client.key: Client certificate key value
+<p>clientSecret refers to a secret for client mTLS authentication with the etcd cluster.
+The secret must contain all three of the following key/value pairs:</p>
+<pre><code>etcd-client-ca.crt: CA bundle used to verify the etcd server certificate
+etcd-client.crt: Client certificate used to authenticate to etcd
+etcd-client.key: Private key for the client certificate
 </code></pre>
 </td>
 </tr>
@@ -60502,7 +60514,7 @@ connections; &ndash;etcd-servers-overrides only overrides server URLs.</p>
 </p>
 <p>
 <p>UnmanagedEtcdSpec specifies configuration which enables the control plane to
-integrate with an eternally managed etcd cluster.</p>
+integrate with an externally managed etcd cluster.</p>
 </p>
 <table>
 <thead>
@@ -60520,10 +60532,10 @@ string
 </em>
 </td>
 <td>
-<p>endpoint is the full etcd cluster client endpoint URL. For example:</p>
+<p>endpoint is the full etcd cluster client endpoint HTTPS URL. For example:</p>
 <pre><code>https://etcd-client:2379
 </code></pre>
-<p>If the URL uses an HTTPS scheme, the TLS field is required.</p>
+<p>The tls field is required to authenticate to and verify the etcd endpoint.</p>
 </td>
 </tr>
 <tr>
@@ -60536,7 +60548,7 @@ EtcdTLSConfig
 </em>
 </td>
 <td>
-<p>tls specifies TLS configuration for HTTPS etcd client endpoints.</p>
+<p>tls specifies the required TLS configuration for the HTTPS etcd client endpoint.</p>
 </td>
 </tr>
 <tr>

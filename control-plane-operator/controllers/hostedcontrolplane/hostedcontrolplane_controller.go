@@ -1489,6 +1489,10 @@ func (r *HostedControlPlaneReconciler) reconcileCombinedPullSecret(ctx context.C
 }
 
 func (r *HostedControlPlaneReconciler) reconcileEtcdCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN) error {
+	if hcp.Spec.Etcd.ManagementType != hyperv1.Managed {
+		return nil
+	}
+
 	etcdSignerSecret := manifests.EtcdSignerSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, etcdSignerSecret, func() error {
 		return pki.ReconcileEtcdSignerSecret(etcdSignerSecret, p.OwnerRef)
@@ -1548,7 +1552,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdCerts(ctx context.Context, h
 	// Reconcile per-shard server and peer TLS secrets.
 	// Shards reuse the default etcd-client-tls secret for client auth (same CA),
 	// but need their own server/peer certs with shard-specific DNS SANs.
-	if hcp.Spec.Etcd.ManagementType == hyperv1.Managed && hcp.Spec.Etcd.Managed != nil {
+	if hcp.Spec.Etcd.Managed != nil {
 		for _, shard := range hcp.Spec.Etcd.Managed.Shards {
 			shardName := fmt.Sprintf("etcd-%s", shard.Name)
 

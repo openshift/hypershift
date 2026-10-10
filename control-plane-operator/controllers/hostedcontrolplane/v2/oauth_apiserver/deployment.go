@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -34,6 +35,14 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			return err
 		}
 		podspec.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
+		podspec.UpdateVolume("etcd-client-ca", deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
+			v.VolumeSource = corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: manifests.EtcdClientSecret(cpContext.HCP.Namespace).Name,
+					Items:      []corev1.KeyToPath{{Key: "etcd-client-ca.crt", Path: "ca.crt"}},
+				},
+			}
+		})
 	}
 
 	noProxy := []string{
