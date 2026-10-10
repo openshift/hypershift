@@ -63,3 +63,4 @@ __pycache__/
 .venv/
 venv/
 *.egg
+mise.toml
