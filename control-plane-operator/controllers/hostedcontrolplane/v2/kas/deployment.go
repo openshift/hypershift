@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -123,8 +124,19 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	// If the built-in OAuth stack is not enabled, there is no need to do the auth-related
 	// bootstrapping step.
-	if hcp.Spec.Configuration != nil && !reconcilerpolicy.ConfigOAuthEnabled(hcp.Spec.Configuration.Authentication) {
+	var authentication *configv1.AuthenticationSpec
+	if hcp.Spec.Configuration != nil {
+		authentication = hcp.Spec.Configuration.Authentication
+	}
+	if !reconcilerpolicy.ConfigOAuthEnabled(authentication) {
 		podspec.RemoveInitContainer("init-auth-bootstrap-render", &deployment.Spec.Template.Spec)
+		removeVolumeAndMounts(&deployment.Spec.Template.Spec, oauthMetadataVolumeName)
+	}
+	if !usesDirectOIDCAuthenticationConfig(authentication) {
+		removeVolumeAndMounts(&deployment.Spec.Template.Spec, authConfigVolumeName)
+	}
+	if !usesTokenWebhookAuthenticator(authentication) {
+		removeVolumeAndMounts(&deployment.Spec.Template.Spec, authTokenWebhookConfigVolumeName)
 	}
 
 	if portieris, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
@@ -216,6 +228,17 @@ func applyPlatformSpecificIdentityWebhookContainers(podSpec *corev1.PodSpec, hcp
 	return nil
 }
 
+func removeVolumeAndMounts(podSpec *corev1.PodSpec, volumeName string) {
+	podSpec.Volumes = slices.DeleteFunc(podSpec.Volumes, func(volume corev1.Volume) bool {
+		return volume.Name == volumeName
+	})
+
+	for i := range podSpec.Containers {
+		podSpec.Containers[i].VolumeMounts = slices.DeleteFunc(podSpec.Containers[i].VolumeMounts, func(mount corev1.VolumeMount) bool {
+			return mount.Name == volumeName
+		})
+	}
+}
 func resolveKASVerbosity(hcp *hyperv1.HostedControlPlane) int {
 	// New API field takes precedence
 	var level hyperv1.LogLevel

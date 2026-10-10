@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/testutil"
 
@@ -17,6 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fgtesting "k8s.io/component-base/featuregate/testing"
 )
 
 func TestResolveKASVerbosity(t *testing.T) {
@@ -137,6 +139,126 @@ func TestResolveKASVerbosity(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 			g.Expect(resolveKASVerbosity(tt.hcp)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestRemoveVolumeAndMounts(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	podSpec := &corev1.PodSpec{
+		Containers: []corev1.Container{
+			{
+				Name: ComponentName,
+				VolumeMounts: []corev1.VolumeMount{
+					{Name: oauthMetadataVolumeName},
+					{Name: "other-volume"},
+				},
+			},
+		},
+		Volumes: []corev1.Volume{
+			{Name: oauthMetadataVolumeName},
+			{Name: "other-volume"},
+		},
+	}
+
+	removeVolumeAndMounts(podSpec, oauthMetadataVolumeName)
+
+	g.Expect(podSpec.Volumes).To(ConsistOf(corev1.Volume{Name: "other-volume"}))
+	g.Expect(podSpec.Containers[0].VolumeMounts).To(ConsistOf(corev1.VolumeMount{Name: "other-volume"}))
+}
+
+func TestAdaptDeploymentAuthenticationVolumes(t *testing.T) {
+	testCases := []struct {
+		name                  string
+		configuration         *hyperv1.ClusterConfiguration
+		enableExternalWebhook bool
+		expectedVolumes       map[string]bool
+	}{
+		{
+			name: "When cluster configuration is absent, it should retain OAuth metadata and TokenReview webhook volumes",
+			expectedVolumes: map[string]bool{
+				oauthMetadataVolumeName:          true,
+				authConfigVolumeName:             false,
+				authTokenWebhookConfigVolumeName: true,
+			},
+		},
+		{
+			name:          "When integrated OAuth is configured, it should retain OAuth metadata and TokenReview webhook volumes",
+			configuration: &hyperv1.ClusterConfiguration{Authentication: &configv1.AuthenticationSpec{Type: configv1.AuthenticationTypeIntegratedOAuth}},
+			expectedVolumes: map[string]bool{
+				oauthMetadataVolumeName:          true,
+				authConfigVolumeName:             false,
+				authTokenWebhookConfigVolumeName: true,
+			},
+		},
+		{
+			name: "When direct OIDC authentication is configured, it should retain only the authentication configuration volume",
+			configuration: &hyperv1.ClusterConfiguration{Authentication: &configv1.AuthenticationSpec{
+				Type:          configv1.AuthenticationTypeOIDC,
+				OIDCProviders: []configv1.OIDCProvider{{Name: "test-provider"}},
+			}},
+			expectedVolumes: map[string]bool{
+				oauthMetadataVolumeName:          false,
+				authConfigVolumeName:             true,
+				authTokenWebhookConfigVolumeName: false,
+			},
+		},
+		{
+			name: "When external OIDC webhook authentication is configured, it should retain only the TokenReview webhook volume",
+			configuration: &hyperv1.ClusterConfiguration{Authentication: &configv1.AuthenticationSpec{
+				Type:          configv1.AuthenticationTypeOIDC,
+				OIDCProviders: []configv1.OIDCProvider{{Name: "test-provider"}},
+			}},
+			enableExternalWebhook: true,
+			expectedVolumes: map[string]bool{
+				oauthMetadataVolumeName:          false,
+				authConfigVolumeName:             false,
+				authTokenWebhookConfigVolumeName: true,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			fgtesting.SetFeatureGateDuringTest(t, featuregates.Gate(), featuregates.ExternalOIDCAsWebhook, tc.enableExternalWebhook)
+
+			volumeNames := []string{oauthMetadataVolumeName, authConfigVolumeName, authTokenWebhookConfigVolumeName}
+			volumes := make([]corev1.Volume, 0, len(volumeNames))
+			volumeMounts := make([]corev1.VolumeMount, 0, len(volumeNames))
+			for _, name := range volumeNames {
+				volumes = append(volumes, corev1.Volume{Name: name})
+				volumeMounts = append(volumeMounts, corev1.VolumeMount{Name: name})
+			}
+			deployment := &appsv1.Deployment{Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{
+					Name:         ComponentName,
+					Ports:        []corev1.ContainerPort{{ContainerPort: 6443}},
+					VolumeMounts: volumeMounts,
+				}},
+				Volumes: volumes,
+			}}}}
+			cpContext := component.WorkloadContext{
+				HCP: &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: tc.configuration,
+				}},
+				UserReleaseImageProvider: testutil.FakeImageProvider(),
+			}
+
+			g.Expect(adaptDeployment(cpContext, deployment)).To(Succeed())
+			container := findContainerByNameInPod(&deployment.Spec.Template.Spec, ComponentName)
+			g.Expect(container).NotTo(BeNil())
+			for _, name := range volumeNames {
+				expected := tc.expectedVolumes[name]
+				g.Expect(slices.ContainsFunc(deployment.Spec.Template.Spec.Volumes, func(volume corev1.Volume) bool {
+					return volume.Name == name
+				})).To(Equal(expected), "unexpected presence for volume %q", name)
+				g.Expect(slices.ContainsFunc(container.VolumeMounts, func(mount corev1.VolumeMount) bool {
+					return mount.Name == name
+				})).To(Equal(expected), "unexpected presence for volume mount %q", name)
+			}
 		})
 	}
 }

@@ -10,10 +10,53 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+func TestEnableOAuthMetadata(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		config   *hyperv1.ClusterConfiguration
+		expected bool
+	}{
+		{
+			name:     "When authentication is not configured, it should enable OAuth metadata",
+			expected: true,
+		},
+		{
+			name: "When integrated OAuth is configured, it should enable OAuth metadata",
+			config: &hyperv1.ClusterConfiguration{Authentication: &configv1.AuthenticationSpec{
+				Type: configv1.AuthenticationTypeIntegratedOAuth,
+			}},
+			expected: true,
+		},
+		{
+			name: "When external OIDC is configured, it should disable OAuth metadata",
+			config: &hyperv1.ClusterConfiguration{Authentication: &configv1.AuthenticationSpec{
+				Type: configv1.AuthenticationTypeOIDC,
+			}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			g.Expect(enableOAuthMetadata(controlplanecomponent.WorkloadContext{
+				HCP: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{Configuration: tc.config},
+				},
+			})).To(Equal(tc.expected))
+		})
+	}
+}
 
 func TestAdaptOauthMetadata(t *testing.T) {
 	t.Parallel()

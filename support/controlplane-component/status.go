@@ -45,6 +45,8 @@ var (
 		"router",
 		"ignition-server",
 		"ignition-server-proxy",
+		// Allow External OIDC webhook resources, including the CA needed by KAS, to reconcile before KAS.
+		"external-oidc-webhook",
 	)
 )
 
