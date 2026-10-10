@@ -23,7 +23,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	azureresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/azure"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/configuration"
 	gcpresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/gcp"
@@ -49,7 +48,6 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
@@ -71,7 +69,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -428,7 +425,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 	}
 
 	log.Info("reconciling install configmap")
-	if err := r.reconcileInstallConfigMap(ctx, releaseImage); err != nil {
+	if err := configuration.ReconcileInstallMetadata(ctx, configuration.NewHostedCluster(r.client, r.CreateOrUpdate), releaseImage.ComponentVersions); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile install configmap: %w", err))
 	}
 
@@ -448,7 +445,13 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 	}
 
 	log.Info("reconciling guest cluster global configuration")
-	if err := r.reconcileConfig(ctx, hcp); err != nil {
+	if err := configuration.ReconcileGlobal(ctx, configuration.NewHostedCluster(r.client, r.CreateOrUpdate), configuration.NewControlPlane(r.cpClient, r.CreateOrUpdate), configuration.GlobalConfigParams{
+		Name: hcp.Name, Namespace: hcp.Namespace, SwiftPodNetworkInstance: hcp.Annotations[hyperv1.SwiftPodNetworkInstanceAnnotation],
+		Endpoint: hcp.Status.ControlPlaneEndpoint, KubeAPIServerDNSName: hcp.Spec.KubeAPIServerDNSName,
+		InfraID: hcp.Spec.InfraID, InfrastructureAvailabilityPolicy: hcp.Spec.InfrastructureAvailabilityPolicy,
+		DNS: hcp.Spec.DNS, Platform: hcp.Spec.Platform, Networking: hcp.Spec.Networking,
+		Configuration: hcp.Spec.Configuration, IssuerURL: hcp.Spec.IssuerURL, ImageContentSources: hcp.Spec.ImageContentSources,
+	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile global configuration: %w", err))
 	}
 
@@ -509,7 +512,7 @@ func (r *reconciler) reconcileStorageAndMisc(ctx context.Context, log logr.Logge
 	}
 
 	log.Info("reconciling observed configuration")
-	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
+	errs = append(errs, configuration.ReconcileObserved(ctx, configuration.NewHostedCluster(r.client, r.CreateOrUpdate), configuration.NewControlPlane(r.cpClient, r.CreateOrUpdate), configuration.ObservedConfigParams{Namespace: hcp.Namespace, OwnerRef: config.OwnerRefFrom(hcp)})...)
 
 	return errs
 }
@@ -909,7 +912,7 @@ func (r *reconciler) reconcileNetworkingAndSecrets(ctx context.Context, hcp *hyp
 	}
 
 	log.Info("reconciling proxy CA bundle")
-	if err := r.reconcileProxyCABundle(ctx, hcp); err != nil {
+	if err := configuration.ReconcileProxyCABundle(ctx, configuration.NewHostedCluster(r.client, r.CreateOrUpdate), configuration.NewControlPlane(r.cpClient, r.CreateOrUpdate), configuration.ProxyParamsFor(hcp.Namespace, hcp.Spec.Configuration)); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy CA bundle: %w", err))
 	}
 
@@ -1099,172 +1102,6 @@ func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1
 		return monitoring.ReconcileMetricsForwarderPodMonitor(podMonitor, componentNames, routeHost)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile metrics forwarder pod monitor: %w", err)
-	}
-
-	return nil
-}
-
-func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	var errs []error
-
-	apiServerAddress := hcp.Status.ControlPlaneEndpoint.Host
-
-	if len(apiServerAddress) == 0 {
-		return fmt.Errorf("hosted control plane does not have an APIServer endpoint address")
-	}
-
-	// Infrastructure is first reconciled for its spec
-	infra := globalconfig.InfrastructureConfig()
-	var currentInfra *configv1.Infrastructure
-	if _, err := r.CreateOrUpdate(ctx, r.client, infra, func() error {
-		currentInfra = infra.DeepCopy()
-		globalconfig.ReconcileInfrastructure(infra, hcp)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile infrastructure config spec: %w", err))
-	} else {
-		// It is reconciled a second time to update its status
-		globalconfig.ReconcileInfrastructure(infra, hcp)
-		if !equality.Semantic.DeepEqual(infra.Status, currentInfra.Status) {
-			if err := r.client.Status().Update(ctx, infra); err != nil {
-				errs = append(errs, fmt.Errorf("failed to update infrastructure status: %w", err))
-			}
-		}
-	}
-
-	dns := globalconfig.DNSConfig()
-	if _, err := r.CreateOrUpdate(ctx, r.client, dns, func() error {
-		globalconfig.ReconcileDNSConfig(dns, hcp)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile dns config: %w", err))
-	}
-
-	image := globalconfig.ImageConfig()
-	if _, err := r.CreateOrUpdate(ctx, r.client, image, func() error {
-		globalconfig.ReconcileImageConfig(image, hcp)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile image config: %w", err))
-	}
-
-	ingress := globalconfig.IngressConfig()
-	if _, err := r.CreateOrUpdate(ctx, r.client, ingress, func() error {
-		globalconfig.ReconcileIngressConfig(ingress, hcp)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile ingress config: %w", err))
-	}
-
-	networkConfig := globalconfig.NetworkConfig()
-	if _, err := r.CreateOrUpdate(ctx, r.client, networkConfig, func() error {
-		if err := globalconfig.ReconcileNetworkConfig(networkConfig, hcp); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile network config: %w", err))
-		}
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to create network config: %w", err))
-	}
-
-	// Copy proxy trustedCA to guest cluster.
-	if err := r.reconcileProxyTrustedCAConfigMap(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile proxy TrustedCA configmap: %w", err))
-	}
-
-	proxy := globalconfig.ProxyConfig()
-	if _, err := r.CreateOrUpdate(ctx, r.client, proxy, func() error {
-		globalconfig.ReconcileInClusterProxyConfig(proxy, hcp.Spec.Configuration)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
-	}
-
-	err := r.reconcileImageContentPolicyType(ctx, hcp)
-	if err != nil {
-		errs = append(errs, err)
-	}
-
-	installConfigCM := manifests.InstallConfigConfigMap()
-	if _, err := r.CreateOrUpdate(ctx, r.client, installConfigCM, func() error {
-		installConfigCM.Data = map[string]string{
-			"install-config": globalconfig.NewInstallConfig(hcp).String(),
-		}
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile dns config: %w", err))
-	}
-
-	cloudCredentialConfig := manifests.CloudCredential()
-	if _, err := r.CreateOrUpdate(ctx, r.client, cloudCredentialConfig, func() error {
-		cco.ReconcileCloudCredentialConfig(cloudCredentialConfig)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile cloud credential config: %w", err))
-	}
-
-	authenticationConfig := globalconfig.AuthenticationConfiguration()
-	if _, err := r.CreateOrUpdate(ctx, r.client, authenticationConfig, func() error {
-		return globalconfig.ReconcileAuthenticationConfiguration(authenticationConfig, hcp.Spec.Configuration, hcp.Spec.IssuerURL)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile authentication config: %w", err))
-	}
-
-	apiServerConfig := globalconfig.APIServerConfiguration()
-	if _, err := r.CreateOrUpdate(ctx, r.client, apiServerConfig, func() error {
-		return globalconfig.ReconcileAPIServerConfiguration(apiServerConfig, hcp.Spec.Configuration)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile apiserver config: %w", err))
-	}
-
-	return utilerrors.NewAggregate(errs)
-}
-
-func (r *reconciler) reconcileProxyTrustedCAConfigMap(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	log := ctrl.LoggerFrom(ctx)
-
-	configMapRef := ""
-	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil {
-		configMapRef = hcp.Spec.Configuration.Proxy.TrustedCA.Name
-	}
-
-	proxy := globalconfig.ProxyConfig()
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(proxy), proxy); err != nil {
-		return err
-	}
-
-	currentConfigMapRef := proxy.Spec.TrustedCA.Name
-	if currentConfigMapRef != "" && currentConfigMapRef != configMapRef {
-		// cleanup old configMaps
-		cm := &corev1.ConfigMap{}
-		cm.Name = currentConfigMapRef
-
-		// log and ignore deletion errors, should not disrupt normal workflow
-		cm.Namespace = hcp.Namespace
-		if err := r.cpClient.Delete(ctx, cm); err != nil {
-			log.Error(err, "failed to delete configmap", "name", cm.Name, "namespace", cm.Namespace)
-		}
-
-		cm.Namespace = manifests.ProxyTrustedCAConfigMap("").Namespace
-		if err := r.client.Delete(ctx, cm); err != nil {
-			log.Error(err, "failed to delete configmap in hosted cluster", "name", cm.Name, "namespace", cm.Namespace)
-		}
-	}
-
-	if configMapRef == "" {
-		return nil
-	}
-
-	sourceCM := &corev1.ConfigMap{}
-	if err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: configMapRef}, sourceCM); err != nil {
-		return fmt.Errorf("failed to get referenced TrustedCA configmap %s/%s: %w", hcp.Namespace, configMapRef, err)
-	}
-
-	destCM := manifests.ProxyTrustedCAConfigMap(sourceCM.Name)
-	if _, err := r.CreateOrUpdate(ctx, r.client, destCM, func() error {
-		destCM.Data = sourceCM.Data
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile referenced TrustedCA config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
 	}
 
 	return nil
@@ -1974,29 +1811,6 @@ func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp 
 	return nil
 }
 
-func (r *reconciler) reconcileProxyCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	proxyCADestination := manifests.OpenShiftUserCABundle()
-	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != "" {
-		cpProxyCA := &corev1.ConfigMap{}
-		cpProxyCA.Namespace = hcp.Namespace
-		cpProxyCA.Name = hcp.Spec.Configuration.Proxy.TrustedCA.Name
-		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpProxyCA), cpProxyCA); err != nil {
-			return fmt.Errorf("cannot get proxy CA bundle ConfigMap: %w", err)
-		}
-		if _, err := r.CreateOrUpdate(ctx, r.client, proxyCADestination, func() error {
-			proxyCADestination.Data = cpProxyCA.Data
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile the proxy CA bundle ConfigMap: %w", err)
-		}
-	} else {
-		if _, err := k8sutil.DeleteIfNeeded(ctx, r.client, proxyCADestination); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func buildAWSWebIdentityCredentials(roleArn, region string) (string, error) {
 	if roleArn == "" {
 		return "", fmt.Errorf("role arn cannot be empty in AssumeRole credentials")
@@ -2346,57 +2160,6 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 	}
 
 	return errs
-}
-
-func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
-	var errs []error
-	configs := []struct {
-		name       string
-		source     client.Object
-		observedCM *corev1.ConfigMap
-	}{
-		{
-			source:     globalconfig.BuildConfig(),
-			observedCM: globalconfig.ObservedBuildConfig(hcp.Namespace),
-		},
-		{
-			source:     globalconfig.ProjectConfig(),
-			observedCM: globalconfig.ObservedProjectConfig(hcp.Namespace),
-		},
-	}
-
-	ownerRef := config.OwnerRefFrom(hcp)
-	for _, cfg := range configs {
-		err := func() error {
-			sourceConfig := cfg.source
-			if err := r.client.Get(ctx, client.ObjectKeyFromObject(sourceConfig), sourceConfig); err != nil {
-				if apierrors.IsNotFound(err) {
-					sourceConfig = nil
-				} else {
-					return fmt.Errorf("cannot get config (%s): %w", sourceConfig.GetName(), err)
-				}
-			}
-			observedConfig := cfg.observedCM
-			if sourceConfig == nil {
-				if err := r.cpClient.Delete(ctx, observedConfig); err != nil && !apierrors.IsNotFound(err) {
-					return fmt.Errorf("cannot delete observed config: %w", err)
-				}
-				return nil
-			}
-			if _, err := r.CreateOrUpdate(ctx, r.cpClient, observedConfig, func() error {
-				ownerRef.ApplyTo(observedConfig)
-				return globalconfig.ReconcileObservedConfig(observedConfig, sourceConfig)
-			}); err != nil {
-				return err
-			}
-			return nil
-		}()
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errs
-
 }
 
 func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -3255,29 +3018,6 @@ func (r *reconciler) ensurePersistentVolumesRemoved(ctx context.Context) (bool, 
 	return false, nil
 }
 
-func (r *reconciler) reconcileInstallConfigMap(ctx context.Context, releaseImage *releaseinfo.ReleaseImage) error {
-	cm := manifests.InstallConfigMap()
-	if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
-		if cm.Data == nil {
-			cm.Data = map[string]string{}
-		}
-		cm.Data["invoker"] = "hypershift"
-		// Only set 'version' if unset. This is meant to preserve the version with
-		// which the cluster was installed and not followup upgrade versions.
-		if _, hasVersion := cm.Data["version"]; !hasVersion {
-			componentVersions, err := releaseImage.ComponentVersions()
-			if err != nil {
-				return fmt.Errorf("failed to look up component versions: %w", err)
-			}
-			cm.Data["version"] = componentVersions["release"]
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile install configmap: %w", err)
-	}
-	return nil
-}
-
 func hasAttachedPVC(pod *corev1.Pod) bool {
 	for _, v := range pod.Spec.Volumes {
 		if v.PersistentVolumeClaim != nil {
@@ -3425,30 +3165,6 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 	return errs
 }
 
-// reconcileImageContentPolicyType deletes any existing ICSP since IDMS should be used for release versions >= 4.13,
-// then reconciles the ImageContentSources into an IDMS instance.
-func (r *reconciler) reconcileImageContentPolicyType(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	icsp := globalconfig.ImageContentSourcePolicy()
-
-	// Delete any current ICSP
-	_, err := k8sutil.DeleteIfNeeded(ctx, r.client, icsp)
-	if err != nil {
-		return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
-	}
-
-	// Next, reconcile the ImageDigestMirrorSet
-	idms := globalconfig.ImageDigestMirrorSet()
-	if _, err = r.CreateOrUpdate(ctx, r.client, idms, func() error {
-		return globalconfig.ReconcileImageDigestMirrors(idms, hcp)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile image digest mirror set: %w", err)
-	}
-
-	return nil
-}
-
-// allLoadBalancersRemoved checks any service of type corev1.ServiceTypeLoadBalancer exists.
-// If any one service of type corev1.ServiceTypeLoadBalancer exists, will return false or else will return true.
 func allLoadBalancersRemoved(ctx context.Context, c client.Client) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	list := &corev1.ServiceList{}
