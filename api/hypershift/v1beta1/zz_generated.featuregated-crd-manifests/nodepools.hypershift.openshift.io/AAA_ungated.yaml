@@ -310,9 +310,18 @@ spec:
               nodeDrainTimeout:
                 description: |-
                   nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
-                  The default value is 0, meaning that the node can retry drain without any time limitations.
+                  When omitted or set to 0s, the node can retry drain without any time limitations.
+                  Valid values must be a Go duration string with a unit suffix, such as "30s", "5m", or "1h".
                   Changing this field propagate inplace into existing Nodes.
                 type: string
+                x-kubernetes-validations:
+                - message: nodeDrainTimeout must be a valid duration string with a
+                    unit suffix (e.g. 30s, 5m, 1h) or '0s'
+                  optionalOldSelf: true
+                  rule: self == '0s' || matches(self, '^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$')
+                - message: nodeDrainTimeout must be a non-negative duration
+                  optionalOldSelf: true
+                  rule: duration(self) >= duration('0s')
               nodeLabels:
                 additionalProperties:
                   type: string
@@ -323,10 +332,19 @@ spec:
               nodeVolumeDetachTimeout:
                 description: |-
                   nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
-                  The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
+                  When omitted or set to 0s, the volumes will be detached from the node without any time limitations.
                   After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
+                  Valid values must be a Go duration string with a unit suffix, such as "30s", "5m", or "1h".
                   Changing this field propagate inplace into existing Nodes.
                 type: string
+                x-kubernetes-validations:
+                - message: nodeVolumeDetachTimeout must be a valid duration string
+                    with a unit suffix (e.g. 30s, 5m, 1h) or '0s'
+                  optionalOldSelf: true
+                  rule: self == '0s' || matches(self, '^(([0-9]+(\\.[0-9]+)?|\\.[0-9]+)(ns|us|µs|ms|s|m|h))+$')
+                - message: nodeVolumeDetachTimeout must be a non-negative duration
+                  optionalOldSelf: true
+                  rule: duration(self) >= duration('0s')
               pausedUntil:
                 description: |-
                   pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
