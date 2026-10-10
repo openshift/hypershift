@@ -200,8 +200,26 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 			err = backuprestore.WaitForBackupStorageLocationAvailable(testCtx, testCtx.ClusterName)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Create schedule first to test parallel execution of backup and schedule and
-			// to speed up the test execution.
+			By("Creating backup")
+			backupName = oadp.GenerateBackupName(
+				testCtx.ClusterName,
+				testCtx.ClusterNamespace,
+			)
+			backupOpts := &backuprestore.OADPBackupOptions{
+				Name:              backupName,
+				HCName:            testCtx.ClusterName,
+				HCNamespace:       testCtx.ClusterNamespace,
+				StorageLocation:   testCtx.ClusterName,
+				IncludeNamespaces: platformCfg.additionalNamespaces,
+				SnapshotMoveData:  ptr.To(true),
+			}
+			err = backuprestore.RunOADPBackup(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, backupOpts)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Waiting for backup to complete")
+			err = backuprestore.WaitForBackupCompletion(testCtx, backupName)
+			Expect(err).NotTo(HaveOccurred())
+
 			By("Creating schedule")
 			scheduleName = oadp.GenerateScheduleName(testCtx.ClusterName, testCtx.ClusterNamespace)
 			scheduleOpts := &backuprestore.OADPScheduleOptions{
@@ -223,26 +241,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 					GinkgoWriter.Printf("Failed to delete schedule %s during cleanup: %v\n", scheduleName, err)
 				}
 			})
-
-			By("Creating backup")
-			backupName = oadp.GenerateBackupName(
-				testCtx.ClusterName,
-				testCtx.ClusterNamespace,
-			)
-			backupOpts := &backuprestore.OADPBackupOptions{
-				Name:              backupName,
-				HCName:            testCtx.ClusterName,
-				HCNamespace:       testCtx.ClusterNamespace,
-				StorageLocation:   testCtx.ClusterName,
-				IncludeNamespaces: platformCfg.additionalNamespaces,
-				SnapshotMoveData:  ptr.To(true),
-			}
-			err = backuprestore.RunOADPBackup(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, backupOpts)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Waiting for backup to complete")
-			err = backuprestore.WaitForBackupCompletion(testCtx, backupName)
-			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for schedule to create a backup")
 			err = backuprestore.WaitForScheduleBackupCreated(testCtx, scheduleName)

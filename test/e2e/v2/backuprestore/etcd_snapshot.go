@@ -57,7 +57,7 @@ func MatchesHCPEtcdBackupName(hcpEtcdBackupName, oadpBackupName string) bool {
 // OADP backup name to have a BackupCompleted condition with the specified status.
 // HCPEtcdBackup names follow the pattern: oadp-<BackupName>-<random>.
 func WaitForHCPEtcdBackupCondition(testCtx *internal.TestContext, backupName string, expectedStatus metav1.ConditionStatus) error {
-	return wait.PollUntilContextTimeout(testCtx.Context, PollInterval, BackupTimeout, true, func(ctx context.Context) (bool, error) {
+	return wait.PollUntilContextTimeout(testCtx.Context, PollInterval, BackupCompletionTimeout, true, func(ctx context.Context) (bool, error) {
 		hcpEtcdBackupList := &hyperv1.HCPEtcdBackupList{}
 		if err := testCtx.MgmtClient.List(ctx, hcpEtcdBackupList, crclient.InNamespace(testCtx.ControlPlaneNamespace)); err != nil {
 			return false, fmt.Errorf("failed to list HCPEtcdBackup resources: %w", err)

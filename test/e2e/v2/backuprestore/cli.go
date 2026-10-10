@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	BackupTimeout        = 20 * time.Minute
-	RestoreTimeout       = BackupTimeout
-	OIDCTimeout          = 30 * time.Minute
-	DefaultOADPNamespace = "openshift-adp"
+	BackupTimeout           = 20 * time.Minute
+	BackupCompletionTimeout = time.Hour
+	RestoreTimeout          = BackupTimeout
+	OIDCTimeout             = 30 * time.Minute
+	DefaultOADPNamespace    = "openshift-adp"
 )
 
 var (

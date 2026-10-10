@@ -146,11 +146,11 @@ func WaitForBackupCompletion(testCtx *internal.TestContext, backupName string) e
 
 	// Wait for backup to reach a final state
 	checkFn := isBackupInFinalState(testCtx.MgmtClient, DefaultOADPNamespace, backupName)
-	err := wait.PollUntilContextTimeout(testCtx.Context, 10*time.Second, BackupTimeout, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(testCtx.Context, 10*time.Second, BackupCompletionTimeout, true, func(ctx context.Context) (bool, error) {
 		return checkFn(ctx)
 	})
 	if err != nil {
-		return fmt.Errorf("backup %s did not reach final state within %v: %w", backupName, BackupTimeout, err)
+		return fmt.Errorf("backup %s did not reach final state within %v: %w", backupName, BackupCompletionTimeout, err)
 	}
 
 	return ensureBackupSuccessful(testCtx.Context, testCtx.MgmtClient, DefaultOADPNamespace, backupName)
