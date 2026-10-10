@@ -14,13 +14,13 @@ The backup and restore tests validate the ability to:
 
 ### Required Components
 
-1. **OADP Operator**: Must be installed and running in the `openshift-adp` namespace on the management cluster
+1. **OADP Operator**: Required for standard backup/restore tests on the management cluster; the standalone Velero 1.13 compatibility test does not use it
 2. **Storage for OADP data**: Might be S3 bucket or other storage
 3. **Secret for accessing storage**
 4. **Backup Storage Location**: Configured storage location for backups (e.g., S3 bucket for AWS)
-5. **DataProtectionApplication**: This resource brings Velero pod that handles the backups
+5. **DataProtectionApplication**: Required for standard backup/restore tests; deploys the Velero pod
 6. **HyperShift CLI**: The `hypershift` binary must be available in your PATH
-7. **Platform**: Supports AWS, Agent, and KubeVirt platforms
+7. **Supported platforms**: Standard backup/restore supports AWS, Agent, and KubeVirt. The Velero 1.13 test performs full Azure hosted cluster backup and restore on AKS and ARO management clusters. The etcd snapshot test supports AWS when the `HCPEtcdBackup` CRD is installed.
 
 #### Platform-specific Prerequisites
 
@@ -347,7 +347,6 @@ Test artifacts are stored in the `ARTIFACT_DIR`:
 
 ## Known Limitations
 
-1. **Platform Support**: Supports AWS, Agent, and KubeVirt platforms. The etcd snapshot test (`BackupRestoreEtcdSnapshot`) is AWS-only
-2. **Guest Cluster Validation**: Guest cluster health checks are skipped due to OCPBUGS-59876
-3. **Continual Operations**: Continual operation verification is skipped until CNTRLPLANE-2676 is implemented
-4. **Serial Execution**: Tests must run serially as it breaks the cluster
+1. **Guest Cluster Validation**: Guest cluster health checks are skipped due to OCPBUGS-59876
+2. **Continual Operations**: Continual operation verification is skipped until CNTRLPLANE-2676 is implemented
+3. **Serial Execution**: Tests must run serially as it breaks the cluster
