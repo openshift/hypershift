@@ -25,29 +25,63 @@ if [[ -n "$AUTHFILE_PATH" && -f "$AUTHFILE_PATH" ]]; then
   AUTHFILE_ARGS=(--authfile "$AUTHFILE_PATH")
 fi
 
+# Some override images reference a private mirror of the OCP release repos
+# (e.g. the ARO ACR mirror) that is not publicly pullable. The identical
+# content (including the commit labels) is available on quay.io, so inspect
+# the public copy while still reporting the real override image ($IMAGE).
+INSPECT_IMAGE="$IMAGE"
+case "$INSPECT_IMAGE" in
+  arohcpocpprod.azurecr.io/*) INSPECT_IMAGE="quay.io/${INSPECT_IMAGE#*/}" ;;
+esac
+if [[ "$INSPECT_IMAGE" != "$IMAGE" ]]; then
+  echo "Note: inspecting public mirror copy $INSPECT_IMAGE"
+fi
+
 echo "Inspecting image..."
-INSPECT=$(skopeo inspect --no-tags --override-os linux --override-arch amd64 "${AUTHFILE_ARGS[@]}" "docker://$IMAGE") || {
-  echo "ERROR: Could not inspect image $IMAGE"
+INSPECT=$(skopeo inspect --no-tags --override-os linux --override-arch amd64 "${AUTHFILE_ARGS[@]}" "docker://$INSPECT_IMAGE") || {
+  echo "ERROR: Could not inspect image $INSPECT_IMAGE"
   exit 1
 }
 
-COMMIT=$(echo "$INSPECT" | grep -o '"vcs-ref"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"vcs-ref"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+# Determine the source commit the image was built from. Konflux images record
+# the public openshift/hypershift commit in "vcs-ref". Release-payload images
+# (ocp-v4.0-art-dev) instead put the internal ART build commit in "vcs-ref"
+# (which is not a public commit) and record the real source commit in
+# "io.openshift.build.commit.id". Try vcs-ref first (preserves existing
+# behavior) and fall back to the build commit id, using whichever resolves to
+# a commit present in the repo.
+VCS_REF=$(echo "$INSPECT" | grep -o '"vcs-ref"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')
+BUILD_COMMIT=$(echo "$INSPECT" | grep -o '"io.openshift.build.commit.id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')
 
-if [[ -z "$COMMIT" ]]; then
-  echo "ERROR: Could not find vcs-ref label in image $IMAGE"
+if [[ -z "$VCS_REF" && -z "$BUILD_COMMIT" ]]; then
+  echo "ERROR: Could not find vcs-ref or io.openshift.build.commit.id label in image $IMAGE"
   exit 1
 fi
 
-echo "Image commit: $COMMIT"
+resolve_commit() {
+  local c
+  for c in "$VCS_REF" "$BUILD_COMMIT"; do
+    if [[ -n "$c" ]] && git -C "$REPO" cat-file -e "$c" 2>/dev/null; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
 
-if ! git -C "$REPO" cat-file -e "$COMMIT" 2>/dev/null; then
+COMMIT=$(resolve_commit || true)
+if [[ -z "$COMMIT" ]]; then
   echo "Commit not found locally, fetching..."
   git -C "$REPO" fetch --all --quiet
-  if ! git -C "$REPO" cat-file -e "$COMMIT" 2>/dev/null; then
-    echo "ERROR: Commit $COMMIT not found in any remote"
-    exit 1
-  fi
+  COMMIT=$(resolve_commit || true)
 fi
+
+if [[ -z "$COMMIT" ]]; then
+  echo "ERROR: image source commit not found in any remote (vcs-ref=${VCS_REF:-none} io.openshift.build.commit.id=${BUILD_COMMIT:-none})"
+  exit 1
+fi
+
+echo "Image source commit: $COMMIT"
 
 PR_MERGE_COMMIT=$(gh pr view "$PR" --repo openshift/hypershift --json mergeCommit --jq '.mergeCommit.oid // empty')
 
