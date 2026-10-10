@@ -57,6 +57,20 @@ make test-envtest-ocp ENVTEST_OCP_K8S_VERSIONS="1.34.1"
 # These tests also run as part of `make test`
 ```
 
+The GCP guest Infrastructure tag lifecycle regression test is a Go envtest in
+`guest_infrastructure_test.go`. It installs the pinned OpenShift
+`Infrastructure` CRD fixture from `testdata/` and runs automatically in the
+OCP and vanilla Kubernetes envtest targets above, including their required CI
+jobs. To run it locally on macOS or Linux with one OCP API-server version:
+
+```bash
+make test-envtest-ocp ENVTEST_OCP_K8S_VERSIONS=1.35.1
+```
+
+The test skips Kubernetes 1.30, and vanilla Kubernetes 1.31.0 when its API
+server rejects the pinned current CRD's unrelated `universeDomain` CEL library.
+The existing HyperShift API validation suite still runs on those versions.
+
 ### Parallel execution
 
 By default, versions run sequentially. Use `ENVTEST_JOBS` to run multiple versions

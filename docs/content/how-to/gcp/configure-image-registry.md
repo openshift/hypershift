@@ -184,6 +184,18 @@ gcloud projects add-iam-policy-binding <project-id> \
   --role="roles/storage.admin"
 ```
 
+### Resource Tag Binding Fails
+
+If the HostedCluster specifies `resourceTags`, the registry operator also needs
+`roles/resourcemanager.tagUser` to attach them to its bucket. Check the guest
+registry operator status and logs for tag-binding failures, and verify that
+the `image-registry` GSA has Tag User on the hosted cluster project and on any
+organization-defined TagValues. Existing clusters do not receive new project
+IAM grants merely by upgrading HyperShift. See [Resource tag
+permissions](create-gcp-iam.md#resource-tag-permissions) for setup and
+remediation. HyperShift does not currently expose a dedicated HostedCluster
+condition for these failures.
+
 ### WIF Authentication Errors
 
 If the registry operator logs show token exchange errors (e.g., `invalid_grant` or `audience mismatch`):

@@ -47,6 +47,52 @@ type GCPResourceLabel struct {
 	Value *string `json:"value,omitempty"`
 }
 
+// GCPResourceTag selects a pre-existing Google Cloud Resource Manager tag by
+// its parent, short key, and short value. The tag must be defined in the
+// HostedCluster project or an organization before the cluster is created.
+// See https://cloud.google.com/resource-manager/docs/tags/tags-overview.
+type GCPResourceTag struct {
+	// parentID is the ID of the project or organization that defines the TagKey.
+	// When omitted, the HostedCluster's GCP project is used.
+	// An explicit value must be the HostedCluster's GCP project ID or a numeric
+	// organization ID. A numeric value is treated as an organization ID; project
+	// numbers are not supported.
+	// An organization ID consists of 1 to 32 decimal digits and must not start with 0.
+	// A project ID is 6 to 30 characters long, contains only lowercase letters, digits
+	// and hyphens, starts with a letter and must not end with a hyphen.
+	// The referenced TagKey and TagValue must already exist, and guest consumers
+	// need permission to use them.
+	//
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=32
+	// +kubebuilder:validation:XValidation:rule="self.matches('(^[1-9][0-9]{0,31}$)|(^[a-z][a-z0-9-]{4,28}[a-z0-9]$)')",message="parentID must be a numeric organization ID or a valid GCP project ID"
+	ParentID string `json:"parentID,omitempty"`
+
+	// key is required and is the short name of the pre-existing Resource Manager TagKey.
+	// A key is 1-63 characters, begins and ends with
+	// an ASCII alphanumeric character, and may contain letters, digits, '.',
+	// '_', or '-' between them.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-zA-Z0-9]([0-9A-Za-z_.-]{0,61}[a-zA-Z0-9])?$')",message="key must start and end with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_' or '-'"
+	Key string `json:"key,omitempty"`
+
+	// value is required and is the short name of the pre-existing Resource Manager TagValue for
+	// key. Exactly one value for a TagKey can be attached to a resource. A value
+	// is 1-63 characters, begins and ends with an ASCII alphanumeric character,
+	// and may contain ASCII letters and digits, `_-.@%=+:,*#&()[]{}`, and
+	// spaces between them.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-zA-Z0-9]([0-9A-Za-z_.@%=+:,*#&()\\\\[\\\\]{}\\\\- ]{0,61}[a-zA-Z0-9])?$')",message="value must start and end with an ASCII letter or digit and contain only ASCII letters, digits, spaces or the characters _-.@%=+:,*#&()[]{}"
+	Value string `json:"value,omitempty"`
+}
+
 // GCPEndpointAccessType defines the endpoint access type for GCP clusters.
 // Equivalent to AWS EndpointAccessType but adapted for GCP networking model.
 type GCPEndpointAccessType string
@@ -107,6 +153,8 @@ type GCPNetworkConfig struct {
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.storage.contains('@') && self.workloadIdentity.serviceAccountsEmails.storage.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="storage service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.imageRegistry.contains('@') && self.workloadIdentity.serviceAccountsEmails.imageRegistry.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="imageRegistry service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.network.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="network service account must belong to the same project"
+// +kubebuilder:validation:XValidation:rule="has(self.resourceTags) == has(oldSelf.resourceTags)",message="resourceTags may only be configured during installation"
+// +kubebuilder:validation:XValidation:rule="!has(self.resourceTags) || self.resourceTags.all(t, !has(t.parentID) || t.parentID.matches('^[1-9][0-9]{0,31}$') || t.parentID == self.project)",message="resourceTags parentID must be an organization ID or the GCP platform project",fieldPath=".resourceTags"
 type GCPPlatformSpec struct {
 	// project is the GCP project ID.
 	// A valid project ID must satisfy the following rules:
@@ -160,6 +208,40 @@ type GCPPlatformSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=60
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
+
+	// resourceTags are pre-existing Google Cloud Resource Manager tags to apply to
+	// GCP resources created for the hosted cluster.
+	// Currently, tags are applied to newly provisioned persistent disks and, when the
+	// image registry is enabled, to its storage bucket. Other GCP resources, such as
+	// worker VMs and their boot disks, are not tagged.
+	// The set of tagged resources is subject to change over time.
+	//
+	// When omitted, no tags are applied through this setting. When specified,
+	// the list must contain 1 to 50 entries, and each short key must be unique
+	// across the list, even when the tags have different parents. A tag's
+	// parentID defaults to the HostedCluster's GCP project if omitted.
+	// HyperShift does not add a separate system Resource Manager tag to these
+	// disks or the bucket, so it does not reserve a slot in this list. Google
+	// Cloud's per-resource limit also includes tags attached by other actors;
+	// accepting 50 entries does not guarantee all tags can be applied.
+	//
+	// The referenced tags must already exist, and the storage and imageRegistry
+	// service accounts must have permission to use them. Neither is checked when the
+	// HostedCluster is created. When a tag cannot be applied, provisioning of the
+	// affected disk or bucket can fail, and the error is reported in the persistent
+	// volume claim's events or the image registry operator's status.
+	//
+	// resourceTags can only be set when the HostedCluster is created. It cannot be
+	// added, removed or changed afterwards.
+	//
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=50
+	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="resourceTags are immutable"
+	// +kubebuilder:validation:XValidation:rule="self.all(t, self.exists_one(u, u.key == t.key))",message="resourceTags keys must be unique across all parents"
+	ResourceTags []GCPResourceTag `json:"resourceTags,omitempty"`
 
 	// workloadIdentity configures Workload Identity Federation for the cluster.
 	// This enables secure, short-lived token-based authentication without storing
@@ -348,6 +430,7 @@ type GCPServiceAccountsEmails struct {
 	// that manages GCS storage for the internal container image registry.
 	// This GSA requires the following IAM roles:
 	// - roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
+	// - roles/resourcemanager.tagUser (Tag User - for applying resource tags to the bucket)
 	// See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 	// Format: service-account-name@project-id.iam.gserviceaccount.com
 	//

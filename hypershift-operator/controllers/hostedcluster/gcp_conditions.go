@@ -9,14 +9,15 @@ import (
 	"github.com/openshift/hypershift/support/statuspatching"
 )
 
-// reconcileGCPCredentialConditions publishes the credential conditions and the
+// reconcileGCPConditions publishes the credential conditions and the
 // control plane version used to compute them in the same HC status update. Health
 // checks, metrics, and orphan cleanup therefore observe a consistent version and
 // validation result, including during deletion when later propagation is skipped.
-func (r *HostedClusterReconciler) reconcileGCPCredentialConditions(ctx context.Context, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedClusterReconciler) reconcileGCPConditions(ctx context.Context, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
 	if err := statuspatching.PatchStatus(ctx, r.Client, hc, func() error {
 		propagateControlPlaneVersion(hc, hcp)
 		platformgcp.ComputeGCPCredentialConditions(hc, hcp)
+		platformgcp.ComputeGCPResourceTagsSupportCondition(hc, hcp)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to update GCP credential status: %w", err)

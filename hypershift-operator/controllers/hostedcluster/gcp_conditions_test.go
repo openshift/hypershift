@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
-func TestReconcileGCPCredentialConditions(t *testing.T) {
+func TestReconcileGCPConditions(t *testing.T) {
 	for _, tc := range []struct {
 		name                               string
 		hcVersion, hcpVersion              string
@@ -231,7 +231,7 @@ func TestReconcileGCPCredentialConditions(t *testing.T) {
 			r := &HostedClusterReconciler{Client: c}
 			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), hc)).To(Succeed())
 			before := hc.DeepCopy()
-			err := r.reconcileGCPCredentialConditions(t.Context(), hc, hcp)
+			err := r.reconcileGCPConditions(t.Context(), hc, hcp)
 			g.Expect(patches).To(Equal(tc.expectedPatches))
 			persisted := &hyperv1.HostedCluster{}
 			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), persisted)).To(Succeed())
@@ -253,7 +253,7 @@ func TestReconcileGCPCredentialConditions(t *testing.T) {
 				g.Expect(conditions.ExpectedHCConditions(persisted)[conditionType]).To(Equal(tc.expectedHealth))
 			}
 			g.Expect(platformgcp.GetCredentialStatus(persisted)).To(Equal(tc.expectedCredentials))
-			g.Expect(r.reconcileGCPCredentialConditions(t.Context(), persisted, hcp)).To(Succeed())
+			g.Expect(r.reconcileGCPConditions(t.Context(), persisted, hcp)).To(Succeed())
 			g.Expect(patches).To(Equal(tc.expectedPatches), "unchanged reconciliation must not write status again")
 		})
 	}
@@ -262,7 +262,7 @@ func TestReconcileGCPCredentialConditions(t *testing.T) {
 		hc := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "gcp", Namespace: "clusters"}}
 		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).Build()
 		r := &HostedClusterReconciler{Client: c}
-		err := r.reconcileGCPCredentialConditions(t.Context(), hc, nil)
+		err := r.reconcileGCPConditions(t.Context(), hc, nil)
 		g.Expect(err).To(MatchError(ContainSubstring("failed to update GCP credential status")))
 		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 	})

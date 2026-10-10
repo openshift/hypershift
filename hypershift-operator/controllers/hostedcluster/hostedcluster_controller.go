@@ -502,7 +502,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// We set these conditions even if the HC is being deleted so that
 	// DeleteOrphanedMachines has a fresh signal for credential validity.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
-		if err := r.reconcileGCPCredentialConditions(ctx, hcluster, hcp); err != nil {
+		if err := r.reconcileGCPConditions(ctx, hcluster, hcp); err != nil {
 			return ctrl.Result{}, err
 		}
 	}

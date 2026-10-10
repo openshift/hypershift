@@ -56,8 +56,8 @@ The `hypershift create iam gcp` command creates WIF resources in the hosted clus
   - `controlplane` — Control Plane Operator (DNS admin, network admin)
   - `nodepool` — CAPG controller (compute instance admin, network admin)
   - `cloud-controller` — Cloud Controller Manager (load balancer admin, security admin, compute viewer)
-  - `storage` — GCP PD CSI Driver (storage admin, instance admin)
-  - `image-registry` — Image Registry Operator (storage admin)
+  - `storage` — GCP PD CSI Driver (storage admin, instance admin, Tag User)
+  - `image-registry` — Image Registry Operator (storage admin, Tag User)
   - `cloud-network` — Cloud Network Config Controller (instance admin, network user)
 
 ```bash
@@ -116,6 +116,38 @@ The command outputs JSON with the WIF configuration:
 ```
 
 Save this output — you will need the project number, pool/provider IDs, and service account emails when creating the hosted cluster.
+
+### Resource tag permissions
+
+When `resourceTags` is configured on a GCP HostedCluster, the guest GCP PD CSI
+driver uses `serviceAccountsEmails.storage` to tag new persistent disks, and the
+guest image registry operator uses `serviceAccountsEmails.imageRegistry` to tag
+its bucket. `hypershift create iam gcp` grants both Google service accounts
+`roles/resourcemanager.tagUser` on the hosted cluster project, in addition to
+their storage roles. The Cloud Resource Manager API must also be enabled in the
+project containing the resources to be tagged. See [Google Cloud tag
+requirements](https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing).
+
+The IAM template is applied only when `hypershift create iam gcp` runs. Upgrading
+HyperShift does not update IAM policy for existing clusters. Re-run the IAM
+creation command with the existing cluster's inputs, or have an administrator
+add the missing project-level role binding for the image-registry service
+account. The command checks for existing service accounts and role bindings.
+
+For an **organization-defined TagValue**, a project-level grant alone is not
+enough. An organization administrator must also grant Tag User on each
+configured TagValue to **both** service accounts. For example, repeat this
+command with the storage and image-registry GSA emails:
+
+```bash
+gcloud resource-manager tags values add-iam-policy-binding <org-id>/<key>/<value> \
+  --member="serviceAccount:<gsa-email>" \
+  --role="roles/resourcemanager.tagUser"
+```
+
+HyperShift does not create TagKeys, TagValues, or organization-level IAM
+bindings. See the [gcloud TagValue IAM
+reference](https://cloud.google.com/sdk/gcloud/reference/resource-manager/tags/values/add-iam-policy-binding).
 
 ## Destroy IAM Resources
 
