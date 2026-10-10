@@ -20,7 +20,8 @@ package v1beta1
 // AWSPlatformStatusApplyConfiguration represents a declarative configuration of the AWSPlatformStatus type for use
 // with apply.
 type AWSPlatformStatusApplyConfiguration struct {
-	DefaultWorkerSecurityGroupID *string `json:"defaultWorkerSecurityGroupID,omitempty"`
+	DefaultWorkerSecurityGroupID *string                              `json:"defaultWorkerSecurityGroupID,omitempty"`
+	DNSZones                     []AWSDNSZoneStatusApplyConfiguration `json:"dnsZones,omitempty"`
 }
 
 // AWSPlatformStatusApplyConfiguration constructs a declarative configuration of the AWSPlatformStatus type for use with
@@ -34,5 +35,18 @@ func AWSPlatformStatus() *AWSPlatformStatusApplyConfiguration {
 // If called multiple times, the DefaultWorkerSecurityGroupID field is set to the value of the last call.
 func (b *AWSPlatformStatusApplyConfiguration) WithDefaultWorkerSecurityGroupID(value string) *AWSPlatformStatusApplyConfiguration {
 	b.DefaultWorkerSecurityGroupID = &value
+	return b
+}
+
+// WithDNSZones adds the given value to the DNSZones field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the DNSZones field.
+func (b *AWSPlatformStatusApplyConfiguration) WithDNSZones(values ...*AWSDNSZoneStatusApplyConfiguration) *AWSPlatformStatusApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithDNSZones")
+		}
+		b.DNSZones = append(b.DNSZones, *values[i])
+	}
 	return b
 }

@@ -36,5 +36,21 @@ func IngressDomain(hcp *hyperv1.HostedControlPlane) string {
 			return hcp.Spec.Configuration.Ingress.Domain
 		}
 	}
+	// Managed ingress DNS publishes the apps wildcard into a dedicated
+	// CPO-managed zone rooted at the ingress zone domain. The apps domain must
+	// therefore live beneath that zone, otherwise Route53 rejects the wildcard
+	// record as not permitted in the zone.
+	if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.ManagedDNS.IngressDomainPrefix != "" {
+		return fmt.Sprintf("apps.%s", ManagedDNSIngressZoneDomain(hcp))
+	}
 	return fmt.Sprintf("apps.%s", BaseDomain(hcp))
+}
+
+// ManagedDNSIngressZoneDomain returns the managed ingress zone domain, e.g.
+// "in.<base>". The CPO creates the Route53 ingress zone at this domain and the
+// guest apps domain lives beneath it, so both must derive from this single
+// function to stay in sync. It assumes managed ingress DNS is configured on the
+// HCP, so ingressDomainPrefix is set (the field is required when managedDNS is set).
+func ManagedDNSIngressZoneDomain(hcp *hyperv1.HostedControlPlane) string {
+	return fmt.Sprintf("%s.%s", hcp.Spec.Platform.AWS.ManagedDNS.IngressDomainPrefix, BaseDomain(hcp))
 }

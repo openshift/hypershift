@@ -1,0 +1,1741 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedCluster managed DNS validation"
+crdName: hostedclusters.hypershift.openshift.io
+featureGates:
+  - AWSManagedDNS
+version: v1beta1
+tests:
+  onCreate:
+  - name: When managedDNS is set with ExternalDNS delegation it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+              delegation:
+                nsDelegationMode: ExternalDNS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When managedDNS is set with Manual delegation it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+              delegation:
+                nsDelegationMode: Manual
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When managedDNS has invalid nsDelegationMode value it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+              delegation:
+                nsDelegationMode: Invalid
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Unsupported value"
+
+  - name: When managedDNS has invalid ingressDomainPrefix it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: INVALID_PREFIX!
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "spec.platform.aws.managedDNS.ingressDomainPrefix"
+
+  - name: When managedDNS has custom valid ingressDomainPrefix it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: custom-ingress
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When managedDNS is set without delegation it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When managedDNS delegation is set without nsDelegationMode it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+              delegation: {}
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Required value"
+
+  - name: When managedDNS is set without ingressDomainPrefix it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS: {}
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "spec.platform.aws.managedDNS.ingressDomainPrefix: Required value"
+
+  onUpdate:
+  - name: When a managed DNS zone reports a valid Route53 zoneID it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+      status:
+        platform:
+          aws:
+            dnsZones:
+            - zoneID: Z1D633PJN98FT9
+              zoneType: PublicIngress
+              name: apps.example.com
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      status:
+        platform:
+          aws:
+            dnsZones:
+            - zoneID: Z1D633PJN98FT9
+              zoneType: PublicIngress
+              name: apps.example.com
+
+  - name: When a managed DNS zone reports an invalid zoneID it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+      status:
+        platform:
+          aws:
+            dnsZones:
+            - zoneID: invalid-zone-id
+              zoneType: PublicIngress
+              name: apps.example.com
+    expectedStatusError: "zoneID must be a Route53 hosted zone ID"
+
+  - name: When a managed DNS zone name has hyphenated labels it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+      status:
+        platform:
+          aws:
+            dnsZones:
+            - zoneID: Z1D633PJN98FT9
+              zoneType: PublicIngress
+              name: in.my-cluster.example.com
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      status:
+        platform:
+          aws:
+            dnsZones:
+            - zoneID: Z1D633PJN98FT9
+              zoneType: PublicIngress
+              name: in.my-cluster.example.com
+
+  - name: When a managed DNS zone name has invalid characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+      status:
+        platform:
+          aws:
+            dnsZones:
+            - zoneID: Z1D633PJN98FT9
+              zoneType: PublicIngress
+              name: in.my_cluster.example.com
+    expectedStatusError: "name must be a valid DNS domain name"
+
+  - name: When a managed DNS zone name has a label ending in a hyphen it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+      status:
+        platform:
+          aws:
+            dnsZones:
+            - zoneID: Z1D633PJN98FT9
+              zoneType: PublicIngress
+              name: in.my-cluster-.example.com
+    expectedStatusError: "name must be a valid DNS domain name"
+
+  - name: When a managed DNS zone reports valid name servers it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+      status:
+        platform:
+          aws:
+            dnsZones:
+            - zoneID: Z1D633PJN98FT9
+              zoneType: PublicIngress
+              name: in.example.com
+              nameServers:
+              - ns-1.awsdns-01.com
+              - ns-2.awsdns-02.org
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      status:
+        platform:
+          aws:
+            dnsZones:
+            - zoneID: Z1D633PJN98FT9
+              zoneType: PublicIngress
+              name: in.example.com
+              nameServers:
+              - ns-1.awsdns-01.com
+              - ns-2.awsdns-02.org
+
+  - name: When a managed DNS zone reports a name server with an invalid label it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+      status:
+        platform:
+          aws:
+            dnsZones:
+            - zoneID: Z1D633PJN98FT9
+              zoneType: PublicIngress
+              name: in.example.com
+              nameServers:
+              - -ns-1.awsdns-01.com
+    expectedStatusError: "each nameServer must be a valid DNS domain name"
+
+  - name: When ingressDomainPrefix is unchanged and delegation is added it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+              delegation:
+                nsDelegationMode: Manual
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+
+  - name: When ingressDomainPrefix is changed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: edge
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "ingressDomainPrefix is immutable"
+
+  - name: When managedDNS is removed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "managedDNS cannot be added or removed after creation"
+
+  - name: When managedDNS is added to an existing cluster it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+              persistentVolume:
+                size: 8Gi
+        platform:
+          type: AWS
+          aws:
+            region: us-east-1
+            rolesRef:
+              controlPlaneOperatorARN: arn:aws:iam::123456789012:role/cpo
+              imageRegistryARN: arn:aws:iam::123456789012:role/registry
+              ingressARN: arn:aws:iam::123456789012:role/ingress
+              kubeCloudControllerARN: arn:aws:iam::123456789012:role/kcc
+              nodePoolManagementARN: arn:aws:iam::123456789012:role/nodepool
+              storageARN: arn:aws:iam::123456789012:role/storage
+              networkARN: arn:aws:iam::123456789012:role/network
+            managedDNS:
+              ingressDomainPrefix: in
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "managedDNS cannot be added or removed after creation"

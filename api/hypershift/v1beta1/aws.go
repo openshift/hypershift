@@ -386,6 +386,7 @@ const (
 )
 
 // AWSPlatformSpec specifies configuration for clusters running on Amazon Web Services.
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=AWSManagedDNS,rule="has(oldSelf.managedDNS) == has(self.managedDNS)",message="managedDNS cannot be added or removed after creation"
 type AWSPlatformSpec struct {
 	// region is the AWS region in which the cluster resides. This configures the
 	// OCP control plane cloud integrations, and is used by NodePool to resolve
@@ -494,6 +495,21 @@ type AWSPlatformSpec struct {
 	// +kubebuilder:validation:MaxLength=512
 	// +kubebuilder:validation:Pattern=`^https://sqs(-fips)?\.([a-z0-9-]+)\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$`
 	TerminationHandlerQueueURL string `json:"terminationHandlerQueueURL,omitempty"`
+
+	// managedDNS configures managed Route53 DNS zones for this cluster.
+	// Managed DNS is enabled when this field is set, which requires
+	// ingressDomainPrefix. When enabled, the control plane operator creates and
+	// reconciles the cluster's DNS zones in the customer's AWS account instead of
+	// requiring them to be pre-created externally and passed in as zone IDs.
+	// For standard clusters this covers the .hypershift.local private zone and
+	// the public and private ingress zones. For shared VPC clusters only the
+	// public ingress zone is managed, since the .hypershift.local and private
+	// ingress zones are owned by the VPC owner.
+	// managedDNS can only be set at cluster creation; it cannot be added to or
+	// removed from an existing cluster.
+	// +optional
+	// +openshift:enable:FeatureGate=AWSManagedDNS
+	ManagedDNS AWSManagedDNSSpec `json:"managedDNS,omitzero"`
 }
 
 // AWSSharedVPC contains fields needed to create a HostedCluster using a VPC that has been
@@ -1228,6 +1244,121 @@ type AWSKMSKeyEntry struct {
 	ARN string `json:"arn,omitempty"`
 }
 
+// AWSDNSZoneType defines the purpose of a managed DNS zone.
+// +kubebuilder:validation:Enum=PublicIngress;PrivateIngress
+type AWSDNSZoneType string
+
+const (
+	PublicIngressZone  AWSDNSZoneType = "PublicIngress"
+	PrivateIngressZone AWSDNSZoneType = "PrivateIngress"
+)
+
+// AWSDNSZoneStatus represents a managed Route53 DNS zone and its metadata.
+type AWSDNSZoneStatus struct {
+	// zoneID is the Route53 hosted zone ID.
+	// Must be 2-32 characters and a valid Route53 hosted zone ID: a leading 'Z'
+	// followed by uppercase alphanumeric characters.
+	// +required
+	// +kubebuilder:validation:MinLength=2
+	// +kubebuilder:validation:MaxLength=32
+	// +kubebuilder:validation:XValidation:rule="self.matches('^Z[A-Z0-9]+$')",message="zoneID must be a Route53 hosted zone ID: a leading 'Z' followed by uppercase alphanumeric characters"
+	ZoneID string `json:"zoneID,omitempty"`
+
+	// zoneType indicates the purpose of the zone.
+	// Valid values are:
+	// "PublicIngress": the public Route53 zone holding the publicly resolvable
+	// ingress DNS records (e.g. *.apps and the console) and ACME certificate
+	// validation records.
+	// "PrivateIngress": the private Route53 zone serving VPC-internal ingress
+	// DNS resolution for the guest cluster.
+	// +required
+	ZoneType AWSDNSZoneType `json:"zoneType,omitempty"`
+
+	// name is the DNS name of the hosted zone.
+	// name must be at most 253 characters in length (the maximum length of a DNS
+	// name) and must consist only of alphanumeric characters, hyphens, and periods.
+	// Each period-separated segment must start and end with an alphanumeric character.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$')",message="name must be a valid DNS domain name consisting of alphanumeric characters, hyphens, and periods, where each segment starts and ends with an alphanumeric character"
+	Name string `json:"name,omitempty"`
+
+	// nameServers are the authoritative name servers for this zone.
+	// Used for NS delegation when external-dns is not available.
+	// When omitted, there are no name servers to report: private ingress zones
+	// never populate this field, and a public zone has none until its delegation
+	// set has been resolved.
+	// When present, contains 1-8 unique name servers. Each name server must be at
+	// most 253 characters in length and must consist only of alphanumeric characters,
+	// hyphens, and periods, where each period-separated segment starts and ends with
+	// an alphanumeric character.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=8
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:XValidation:rule="self.matches('^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$')",message="each nameServer must be a valid DNS domain name consisting of alphanumeric characters, hyphens, and periods, where each segment starts and ends with an alphanumeric character"
+	NameServers []string `json:"nameServers,omitempty"`
+}
+
+// NSDelegationMode specifies how NS delegation is performed for managed DNS zones.
+// +kubebuilder:validation:Enum=ExternalDNS;Manual
+type NSDelegationMode string
+
+const (
+	NSDelegationExternalDNS NSDelegationMode = "ExternalDNS"
+	NSDelegationManual      NSDelegationMode = "Manual"
+)
+
+// AWSManagedDNSDelegationSpec configures service-side DNS delegation for
+// certificate generation. When set, the ControlPlaneOperator creates an ACME
+// DNS01 challenge CNAME in the public ingress zone pointing back to the parent
+// zone, and handles NS delegation based on the nsDelegationMode.
+type AWSManagedDNSDelegationSpec struct {
+	// nsDelegationMode specifies how NS delegation records are created in the parent zone.
+	// "ExternalDNS": the ControlPlaneOperator creates a DNSEndpoint CR in the control plane namespace;
+	// external-dns creates NS records in the parent zone.
+	// "Manual": the consuming platform handles NS delegation using nameservers
+	// reported in HostedCluster status.
+	// +required
+	NSDelegationMode NSDelegationMode `json:"nsDelegationMode,omitempty"`
+}
+
+// AWSManagedDNSSpec configures ControlPlaneOperator-managed Route53 DNS zones
+// for ingress. When set, the ControlPlaneOperator creates public and private
+// ingress Route53 zones in the customer's AWS account using ingressDomainPrefix
+// to form the zone domain name.
+// Delegation (ACME CNAME + NS records) is configured separately via the
+// delegation field.
+type AWSManagedDNSSpec struct {
+	// ingressDomainPrefix is the subdomain prefix for the managed ingress DNS zones.
+	// The zone is created as {ingressDomainPrefix}.{clusterBaseDomain}, where
+	// {clusterBaseDomain} is the cluster base domain configured via the HostedCluster
+	// spec.dns (baseDomainPrefix and baseDomain).
+	// When delegation is configured, this prefix creates a DNS delegation boundary
+	// that separates the ingress zone from the cluster domain, enabling ACME
+	// challenge CNAME delegation back to the parent zone.
+	// Must be 1-63 characters, consist only of lowercase alphanumeric characters or
+	// hyphens, and must start and end with an alphanumeric character.
+	// ingressDomainPrefix is immutable.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')",message="ingressDomainPrefix must consist of lowercase alphanumeric characters or '-', and must start and end with an alphanumeric character"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ingressDomainPrefix is immutable"
+	IngressDomainPrefix string `json:"ingressDomainPrefix,omitempty"`
+
+	// delegation configures service-side DNS delegation for certificate generation.
+	// When set, the ControlPlaneOperator creates an ACME DNS01 challenge CNAME in the
+	// public ingress zone and handles NS delegation based on the nsDelegationMode.
+	// When absent, only zones are created and the consuming platform handles
+	// delegation and certificate management.
+	// +optional
+	Delegation AWSManagedDNSDelegationSpec `json:"delegation,omitzero"`
+}
+
 // AWSPlatformStatus contains status specific to the AWS platform
 type AWSPlatformStatus struct {
 	// defaultWorkerSecurityGroupID is the ID of a security group created by
@@ -1236,4 +1367,15 @@ type AWSPlatformStatus struct {
 	// +optional
 	// +kubebuilder:validation:MaxLength=255
 	DefaultWorkerSecurityGroupID string `json:"defaultWorkerSecurityGroupID,omitempty"`
+
+	// dnsZones contains DNS zone information for zones managed by the control plane operator.
+	// Contains 1-2 entries keyed by zoneType, so at most one PublicIngress zone and
+	// one PrivateIngress zone.
+	// +optional
+	// +listType=map
+	// +listMapKey=zoneType
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=2
+	// +openshift:enable:FeatureGate=AWSManagedDNS
+	DNSZones []AWSDNSZoneStatus `json:"dnsZones,omitempty"`
 }
