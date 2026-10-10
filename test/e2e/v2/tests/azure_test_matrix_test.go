@@ -41,12 +41,14 @@ func TestAzureTestMatrix(t *testing.T) {
 
 	variantLanes := testMatrixVariantLanes(matrix)
 	expectedVariantLanes := map[string][]string{
-		"private":          {"parallel:private"},
-		"oauth-lb-private": {"parallel:oauth-lb-private"},
-		"public":           {"sequential:public"},
-		"oauth-lb":         {"sequential:oauth-lb"},
-		"external-oidc":    {"sequential:external-oidc"},
-		"upgrade":          {"sequential:upgrade-and-chaos"},
+		"private":           {"parallel:private"},
+		"oauth-lb-private":  {"parallel:oauth-lb-private"},
+		"karpenter":         {"parallel:karpenter"},
+		"karpenter-upgrade": {"parallel:karpenter-upgrade"},
+		"public":            {"sequential:public"},
+		"oauth-lb":          {"sequential:oauth-lb"},
+		"external-oidc":     {"sequential:external-oidc"},
+		"upgrade":           {"sequential:upgrade-and-chaos"},
 	}
 	g.Expect(variantLanes).To(Equal(expectedVariantLanes),
 		"every Azure variant must be assigned to its intended execution lane")

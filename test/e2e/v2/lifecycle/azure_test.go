@@ -51,6 +51,16 @@ func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 			variant: "external-oidc",
 			want:    1,
 		},
+		{
+			name:    "When karpenter Azure variant is configured, it should request two initial replicas",
+			variant: "karpenter",
+			want:    2,
+		},
+		{
+			name:    "When karpenter-upgrade Azure variant is configured, it should request two initial replicas",
+			variant: "karpenter-upgrade",
+			want:    2,
+		},
 	}
 
 	if len(specsByVariant) != len(tests) {

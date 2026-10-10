@@ -167,6 +167,30 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 			InitialNodePoolReplicas: &oneInitialReplica,
 			ExtraArgs:               extraArgs,
 		},
+		{
+			Variant:                 "karpenter",
+			InitialNodePoolReplicas: &twoInitialReplicas,
+			ExtraArgs: append([]string{
+				// Enables Karpenter-based node provisioning (AutoNode)
+				"--auto-node",
+				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
+				"--endpoint-access=PublicAndPrivate",
+				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
+			}, extraArgs...),
+		},
+		{
+			Variant:                 "karpenter-upgrade",
+			ReleaseImage:            n1Image,
+			InitialNodePoolReplicas: &twoInitialReplicas,
+			ExtraArgs: append([]string{
+				// Enables Karpenter-based node provisioning (AutoNode)
+				"--auto-node",
+				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
+				"--endpoint-access=PublicAndPrivate",
+				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
+				"--control-plane-availability-policy=HighlyAvailable",
+			}, extraArgs...),
+		},
 	}
 }
 
@@ -366,6 +390,21 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 				Name:        "oauth-lb-private",
 				Variant:     "oauth-lb-private",
 				LabelFilter: "self-managed-azure-oauth-lb-private",
+			},
+			{
+				Name:        "karpenter",
+				Variant:     "karpenter",
+				LabelFilter: "karpenter",
+			},
+			// TODO: It might be possible to decompose the karpenter upgrade test
+			// into pre and post upgrade specs which communicate with a well defined
+			// IPC protocol, like the pre step serializing observations which the
+			// post step can use. Then we can compose the regular upgrade test here
+			// instead of duplicating upgrade logic inside the karpenter test.
+			{
+				Name:        "karpenter-upgrade",
+				Variant:     "karpenter-upgrade",
+				LabelFilter: "karpenter-upgrade",
 			},
 		},
 		Sequential: []SequentialGroup{
