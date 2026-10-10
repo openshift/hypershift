@@ -695,6 +695,12 @@ func TestSetupCRDs(t *testing.T) {
 			},
 		},
 		{
+			name: "When PlatformOptions is set to OpenStack, it should include the OpenStack CAPI CRDs",
+			inputOptions: Options{
+				PlatformsToInstall: []string{"openstack"},
+			},
+		},
+		{
 			name: "When ExternalDNSProvider is google (uses CRD source), it should include DNSEndpoint CRD",
 			inputOptions: Options{
 				ExternalDNSProvider: "google",

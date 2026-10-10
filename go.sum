@@ -436,8 +436,6 @@ github.com/googleapis/gax-go/v2 v2.23.0 h1:Tchl7qkvE7Ip3y+ztvNufYFvkfqTe7NfLTYGI
 github.com/googleapis/gax-go/v2 v2.23.0/go.mod h1:rBQKOVJCdb8IFEzg+FCwlt1LP/xMDGuqUXhUG+XMXEg=
 github.com/googleapis/gnostic v0.5.1/go.mod h1:6U4PtQXGIEt/Z3h5MAT7FNofLnw9vXk2cUuW7uA/OeU=
 github.com/googleapis/gnostic v0.5.5/go.mod h1:7+EbHbldMins07ALC74bsA81Ovc97DwqyJO1AENw9kA=
-github.com/gophercloud/gophercloud/v2 v2.12.0 h1:Gxmc/Bog1UDKkxTcQW7MSPTDviJXpLeEgVeN5KrxoCo=
-github.com/gophercloud/gophercloud/v2 v2.12.0/go.mod h1:H7TTOxbLy8RIaHSNhI2GCrWIzw4Xpw8Xn2mBhCUT5kA=
 github.com/gorilla/mux v1.8.0/go.mod h1:DVbg23sWSpFRCP0SfiEN6jmj59UnW/n46BH5rLB71So=
 github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=
 github.com/gorilla/mux v1.8.1/go.mod h1:AKf9I4AEqPTmMytcMc0KkNouC66V3BtZ4qD5fmWSiMQ=
@@ -594,8 +592,6 @@ github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8 h1:yHA+77VmVlO
 github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8/go.mod h1:VVl1SGimADe2vlYahxxxI87JOom7MPAiZqIDDhkedBU=
 github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3 h1:cr5nU1+O8sEvZHpAAk1mTTGu3NMbgj0dC2cFxFjwmzw=
 github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3/go.mod h1:WHi2cToOBZyHQea0Yq3qVnOQRl6OMTGBPJMi0c4/GS8=
-github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1 h1:TIHSRRDDxhbsziSrQcXORPyGu66yr1Fk8vLTCo7wY+Y=
-github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1/go.mod h1:/hEmyZ903PeqntDSxLgZcje96/2lC3PmvsnUABQpR8Q=
 github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675 h1:hPFyXtaR42wqKKGMVP4G7M2vmp5iBxBqKetMguh4Td0=
 github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675/go.mod h1:0tGCwMCgKq7KhJWDGr6Tsqqb6Sk3epz/b6tfFDFK1Ug=
 github.com/openshift/cluster-node-tuning-operator v0.0.0-20260701110644-508d51a6f2bd h1:w3X/g0ZMDYvEKV1KtfytErPa88Ip2d8zFY03DNm+LaI=
@@ -615,7 +611,6 @@ github.com/operator-framework/api v0.45.0/go.mod h1:IQ4uuISTiIhV09oAurJSGD4Kabay
 github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde/go.mod h1:nZgzbfBr3hhjoZnS66nKrHmduYNpc34ny7RK4z5/HM0=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
-github.com/pelletier/go-toml v1.9.5 h1:4yBQzkHv+7BHq2PQUZF3Mx0IYxG7LsP222s7Agd3ve8=
 github.com/pelletier/go-toml/v2 v2.3.1 h1:MYEvvGnQjeNkRF1qUuGolNtNExTDwct51yp7olPtrEc=
 github.com/pelletier/go-toml/v2 v2.3.1/go.mod h1:2gIqNv+qfxSVS7cM2xJQKtLSTLUE9V8t9Stt+h56mCY=
 github.com/peterbourgon/diskv v2.0.1+incompatible h1:UBdAOUP5p4RWqPBg048CAvpKN+vxiaj6gdUUzhl4XmI=
@@ -1060,18 +1055,6 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 h1:/YpDJ4vReG7Zm
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0/go.mod h1:tJo1aepTXyR+8Xs3sUsGBDk4Ub2AM5dPAPKJx0mpm5c=
 sigs.k8s.io/cluster-api v1.13.4 h1:27PPEKSqESKeUIf475Ga6hSW1+gKxd5V5sCmMDgeBDo=
 sigs.k8s.io/cluster-api v1.13.4/go.mod h1:suV3Ixu7yUMD651EtBULa/RtwHRxU30eojF3wifGe8Y=
-sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0 h1:yQz7GBrIkPLuEJ5MXNuZ/6eUssTJK8reUnZ6t5QIPnU=
-sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0/go.mod h1:V1Wjhe8+AJ5Exk8OXGYbYX/b81XKpVVLxPls4OQxl+E=
-sigs.k8s.io/cluster-api-provider-azure v1.26.0 h1:r8j3FPec1GZ9SMx0f2Z9Pd0qXYu+qUOfR0U/TTgZ+6w=
-sigs.k8s.io/cluster-api-provider-azure v1.26.0/go.mod h1:mM4dXaUuTw0I5ko1xZIGxRKDBTQPKOg56rNwfDKyLWc=
-sigs.k8s.io/cluster-api-provider-gcp v1.13.1 h1:l4zdwsHFwcA8CP5P4NPar9fUu5kMwucKhp2IQBHduJs=
-sigs.k8s.io/cluster-api-provider-gcp v1.13.1/go.mod h1:AibsAaUkRNGjp8eBAY8MCkWg3nAt0uTTyekpYpUDhnY=
-sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1 h1:cR7WFEaNJJb6/R67o35zZXd7Vqf9eRAFiZkVDJomPI8=
-sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1/go.mod h1:/B1y/mWZSM7qzdlmnI2OWF+27dPq/VinVkWKkYEdfj4=
-sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2 h1:+DyQP1xvAD34Cce/5efG1sJFwJZ3pxwoj17oEuKv/EI=
-sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2/go.mod h1:so1WRGRRsxT4lqS0htpUqXrXLy0guBklh9UPVxoilLY=
-sigs.k8s.io/cluster-api-provider-openstack v0.14.8 h1:I6N8u0DV9TcBaZmbwHs4DPrctLhmOtK+QtLMq/bgL+k=
-sigs.k8s.io/cluster-api-provider-openstack v0.14.8/go.mod h1:cwkIi1EB+TH5tW8Rue9PLoqoqTm5Vp9Mxs1aLJmcVvo=
 sigs.k8s.io/controller-runtime v0.25.0 h1:44KgRUPew331KSJpNu8zJow3iTR5W0p/SfrHdw3lV40=
 sigs.k8s.io/controller-runtime v0.25.0/go.mod h1:4QqLdT6z/L6Olj8JJCtvztid4/fnIiYsfaTFScegctc=
 sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6/go.mod h1:p4QtZmO4uMYipTQNzagwnNoseA6OxSUutVw05NhYDRs=
