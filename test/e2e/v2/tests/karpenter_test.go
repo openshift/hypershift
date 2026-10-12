@@ -1657,7 +1657,6 @@ func KarpenterCPUOptionsNestedVirtualization(getTestCtx internal.TestContextGett
 		It("should provision EC2 instance with nested virtualization enabled", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -1710,10 +1709,11 @@ func KarpenterCPUOptionsNestedVirtualization(getTestCtx internal.TestContextGett
 				if err := hcClient.Delete(ctx, testNodePool); err != nil && !apierrors.IsNotFound(err) {
 					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", testNodePool.Name)
 				}
-				_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
+				_, _ = v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
 			})
 
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+			nodes, err := v2util.WaitForReadyNodesByLabels(ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+			Expect(err).NotTo(HaveOccurred(), "waiting for 1 ready node with labels %v", testNodeLabels)
 
 			ec2client := newEC2Client(awsCredsFile, awsRegion)
 			for _, node := range nodes {
