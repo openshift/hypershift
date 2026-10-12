@@ -617,7 +617,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 
 	deletionFailedConditions := capiv1.Conditions{
 		{
-			Type:   capiv1.ReadyCondition,
+			Type:   capiazure.VMRunningCondition,
 			Status: corev1.ConditionFalse,
 			Reason: capiazure.DeletionFailedReason,
 		},
@@ -696,6 +696,32 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 			expectedError:             false,
 		},
 		{
+			name:          "When a machine has a stale DeletionTimestamp with VMDeletingReason condition it should remove finalizers",
+			hostedCluster: managedIdentitiesHC,
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{capiazure.MachineFinalizer},
+						DeletionTimestamp: &staleDeletionTimestamp,
+					},
+					Status: capiazure.AzureMachineStatus{
+						Conditions: capiv1.Conditions{
+							{
+								Type:   capiazure.VMRunningCondition,
+								Status: corev1.ConditionFalse,
+								Reason: capiazure.VMDeletingReason,
+							},
+						},
+					},
+				},
+			},
+			capiProviderDeployment:    healthyCapiProvider,
+			expectedFinalizersRemoved: true,
+			expectedError:             false,
+		},
+		{
 			name:          "When a machine has a recent DeletionTimestamp with DeletionFailed condition it should not remove finalizers",
 			hostedCluster: managedIdentitiesHC,
 			azureMachines: []capiazure.AzureMachine{
@@ -729,8 +755,34 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 					Status: capiazure.AzureMachineStatus{
 						Conditions: capiv1.Conditions{
 							{
-								Type:   capiv1.ReadyCondition,
+								Type:   capiazure.VMRunningCondition,
 								Status: corev1.ConditionTrue,
+							},
+						},
+					},
+				},
+			},
+			capiProviderDeployment:    healthyCapiProvider,
+			expectedFinalizersRemoved: false,
+			expectedError:             false,
+		},
+		{
+			name:          "When a machine has a stale DeletionTimestamp with a Ready condition (not VMRunning) that is False with DeletionFailed reason it should not remove finalizers",
+			hostedCluster: managedIdentitiesHC,
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{capiazure.MachineFinalizer},
+						DeletionTimestamp: &staleDeletionTimestamp,
+					},
+					Status: capiazure.AzureMachineStatus{
+						Conditions: capiv1.Conditions{
+							{
+								Type:   capiv1.ReadyCondition,
+								Status: corev1.ConditionFalse,
+								Reason: capiazure.DeletionFailedReason,
 							},
 						},
 					},
@@ -1122,7 +1174,7 @@ func TestHasDeletionFailedCondition(t *testing.T) {
 		expected bool
 	}{
 		{
-			name: "When Ready is False with DeletionFailed reason, it should return true",
+			name: "When Ready (not VMRunning) is False with DeletionFailed reason, it should return false",
 			machine: capiazure.AzureMachine{
 				Status: capiazure.AzureMachineStatus{
 					Conditions: capiv1.Conditions{
@@ -1130,6 +1182,36 @@ func TestHasDeletionFailedCondition(t *testing.T) {
 							Type:   capiv1.ReadyCondition,
 							Status: corev1.ConditionFalse,
 							Reason: capiazure.DeletionFailedReason,
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When VMRunning is False with DeletionFailed reason, it should return true",
+			machine: capiazure.AzureMachine{
+				Status: capiazure.AzureMachineStatus{
+					Conditions: capiv1.Conditions{
+						{
+							Type:   capiazure.VMRunningCondition,
+							Status: corev1.ConditionFalse,
+							Reason: capiazure.DeletionFailedReason,
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When VMRunning is False with VMDeleting reason, it should return true",
+			machine: capiazure.AzureMachine{
+				Status: capiazure.AzureMachineStatus{
+					Conditions: capiv1.Conditions{
+						{
+							Type:   capiazure.VMRunningCondition,
+							Status: corev1.ConditionFalse,
+							Reason: capiazure.VMDeletingReason,
 						},
 					},
 				},
