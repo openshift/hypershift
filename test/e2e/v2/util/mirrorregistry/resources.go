@@ -50,17 +50,6 @@ func buildTLSSecret(opts Options, serving KeyPair) *corev1.Secret {
 	}
 }
 
-func buildCAConfigMap(opts Options, ca KeyPair) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      opts.Name + "-ca",
-			Namespace: opts.Namespace,
-			Labels:    resourceLabels(opts.Name),
-		},
-		Data: map[string]string{"ca.crt": string(ca.CertPEM)},
-	}
-}
-
 func buildPVC(opts Options) *corev1.PersistentVolumeClaim {
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{

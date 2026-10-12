@@ -56,28 +56,6 @@ func TestBuildTLSSecret(t *testing.T) {
 	}
 }
 
-func TestBuildCAConfigMap(t *testing.T) {
-	tests := []struct {
-		name string
-	}{
-		{name: "When a registry CA is provided, it should create the copier CA ConfigMap"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			opts := Options{Name: "mirror-registry", Namespace: "test-mirror-registry"}
-			ca, _ := testRegistryTLSMaterial(t)
-			got := buildCAConfigMap(opts, ca)
-			if got.Name != opts.Name+"-ca" || got.Namespace != opts.Namespace {
-				t.Errorf("CA ConfigMap identity = %s/%s, want %s/%s", got.Namespace, got.Name, opts.Namespace, opts.Name+"-ca")
-			}
-			if !reflect.DeepEqual(got.Data, map[string]string{"ca.crt": string(ca.CertPEM)}) {
-				t.Errorf("CA ConfigMap data = %#v, want ca.crt containing CA certificate only", got.Data)
-			}
-			assertResourceLabels(t, got.Labels, opts.Name)
-		})
-	}
-}
-
 func TestBuildPVC(t *testing.T) {
 	tests := []struct {
 		name             string
