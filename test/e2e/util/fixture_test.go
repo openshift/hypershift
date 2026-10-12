@@ -8,14 +8,14 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	awssdk "github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
-	resourcegroupstaggingapitypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
-
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	hyperapi "github.com/openshift/hypershift/support/api"
+
+	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
+	resourcegroupstaggingapitypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
