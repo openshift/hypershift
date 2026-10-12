@@ -500,14 +500,6 @@ func (*simpleCreateOrUpdater) CreateOrUpdate(ctx context.Context, c client.Clien
 	return controllerutil.CreateOrUpdate(ctx, c, obj, f)
 }
 
-type errorCreateOrUpdater struct {
-	err error
-}
-
-func (p *errorCreateOrUpdater) CreateOrUpdate(context.Context, client.Client, client.Object, controllerutil.MutateFn) (controllerutil.OperationResult, error) {
-	return controllerutil.OperationResultNone, p.err
-}
-
 func TestReconcileIngressControllerCertSource(t *testing.T) {
 	ctx := t.Context()
 
