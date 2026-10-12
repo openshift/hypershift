@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 7cde767d20febc43d242834c13d795240b929de634f471e0906d056525ecc65c
+    hypershift.openshift.io/desired-state-hash: e8db32c9ed68c02c81c312f62e106d077d337ac46b36f705530a605fbba0518e
   creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
@@ -102,6 +102,7 @@ spec:
         - 5s
         - --sync-interval-cap
         - 30s
+        - --sync-forever
         - --v
         - "3"
         - --agent-identifiers
