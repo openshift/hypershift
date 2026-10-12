@@ -235,9 +235,13 @@ func New(client crclient.Client, opts Options) (*Registry, error) {
 
 // Setup deploys the registry, mirrors the content in req, switches the
 // registry to read-only mode, exposes it through a passthrough Route and
-// verifies the public endpoint over TLS using the registry CA. Setup is
-// idempotent: calling it again reconciles all resources and mirrors req,
-// temporarily re-enabling writes on the internal endpoint only.
+// verifies the public endpoint over TLS using the registry CA.
+//
+// The Route only exists while the registry is read-only. Setup is
+// idempotent: calling it again first deletes the Route and waits until
+// public routing is withdrawn, then re-enables writes on the internal
+// endpoint, mirrors req, switches back to read-only and re-creates the
+// Route. A failure may leave the registry writable, but never exposed.
 func (r *Registry) Setup(ctx context.Context, req MirrorRequest) (*Result, error) {
 	return nil, errNotImplemented
 }
