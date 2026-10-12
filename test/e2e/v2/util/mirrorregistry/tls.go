@@ -101,18 +101,11 @@ func tlsMaterial(opts Options, host string) (ca KeyPair, serving KeyPair, err er
 		names = append(names, name)
 	}
 
-	if opts.CA != nil {
-		ca = *opts.CA
-		if _, _, err := parseCA(ca); err != nil {
-			return KeyPair{}, KeyPair{}, err
-		}
-	} else {
-		ca, err = generateCA()
-		if err != nil {
-			return KeyPair{}, KeyPair{}, err
-		}
+	if opts.CA == nil {
+		return KeyPair{}, KeyPair{}, fmt.Errorf("mirror registry CA must be resolved before preparing TLS material")
 	}
-
+	ca = *opts.CA
+	// servingCert validates the CA before signing; do not parse it twice here.
 	serving, err = servingCert(ca, opts.Name, names)
 	if err != nil {
 		return KeyPair{}, KeyPair{}, err

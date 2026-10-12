@@ -3,12 +3,16 @@ package mirrorregistry
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -127,6 +131,81 @@ func registryTestScheme(t *testing.T) *runtime.Scheme {
 		}
 	}
 	return scheme
+}
+
+func TestResolveCA(t *testing.T) {
+	storedCA, _ := testRegistryTLSMaterial(t)
+	callerCA, _ := testRegistryTLSMaterial(t)
+	expiredCA := newTestCA(t, -time.Hour)
+	readErr := apierrors.NewForbidden(corev1.Resource("secrets"), DefaultName+"-ca", errors.New("CA Secret access denied"))
+	tests := []struct {
+		name    string
+		stored  *KeyPair
+		caller  *KeyPair
+		want    *KeyPair
+		readErr error
+		wantErr string
+	}{
+		{name: "When the caller supplies a CA and one is stored, it should prefer the caller and retain the stored CA", stored: &storedCA, caller: &callerCA, want: &callerCA},
+		{name: "When only a stored CA exists, it should reuse it", stored: &storedCA, want: &storedCA},
+		{name: "When the CA Secret and namespace are absent, it should generate a verifiable CA"},
+		{name: "When the caller supplies a CA on first use, it should use it", caller: &callerCA, want: &callerCA},
+		{name: "When the stored certificate is missing, it should return an error", stored: &KeyPair{KeyPEM: storedCA.KeyPEM}, wantErr: "validate stored CA Secret"},
+		{name: "When the stored private key is missing, it should return an error", stored: &KeyPair{CertPEM: storedCA.CertPEM}, wantErr: "validate stored CA Secret"},
+		{name: "When the stored certificate is malformed, it should return an error", stored: &KeyPair{CertPEM: []byte("malformed"), KeyPEM: storedCA.KeyPEM}, wantErr: "validate stored CA Secret"},
+		{name: "When the stored key is malformed despite a caller CA, it should return an error without rotating", stored: &KeyPair{CertPEM: storedCA.CertPEM, KeyPEM: []byte("malformed")}, caller: &callerCA, wantErr: "validate stored CA Secret"},
+		{name: "When the stored key does not match the certificate, it should return an error", stored: &KeyPair{CertPEM: storedCA.CertPEM, KeyPEM: callerCA.KeyPEM}, wantErr: "validate stored CA Secret"},
+		{name: "When a stored CA has expired despite a caller CA, it should explain how to rotate it", stored: &expiredCA, caller: &callerCA, wantErr: "not currently valid"},
+		{name: "When reading the CA Secret is forbidden, it should propagate the error", readErr: readErr, wantErr: "read CA Secret"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := Options{CA: tt.caller}.withDefaults()
+			builder := fake.NewClientBuilder().WithScheme(registryTestScheme(t))
+			if tt.stored != nil {
+				builder = builder.WithObjects(buildCASecret(opts, *tt.stored))
+			}
+			if tt.readErr != nil {
+				builder = builder.WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(context.Context, crclient.WithWatch, crclient.ObjectKey, crclient.Object, ...crclient.GetOption) error {
+						return tt.readErr
+					},
+				})
+			}
+			r := &Registry{client: builder.Build(), opts: opts}
+			resolved, stored, err := r.resolveCA(t.Context())
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("resolveCA() error = %v, want %q", err, tt.wantErr)
+				}
+				if tt.stored != nil && !strings.Contains(err.Error(), "delete the Secret or its namespace to rotate the CA") {
+					t.Fatalf("resolveCA() did not explain recovery from an invalid stored CA: %v", err)
+				}
+				if tt.readErr != nil && !errors.Is(err, tt.readErr) {
+					t.Fatalf("resolveCA() did not wrap read error: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(stored, tt.stored) {
+				t.Fatal("resolveCA() did not preserve the stored CA")
+			}
+			if tt.want != nil && !reflect.DeepEqual(resolved, *tt.want) {
+				t.Fatal("resolveCA() did not select the expected CA")
+			}
+			_, certificate, err := parseCA(resolved)
+			if err != nil {
+				t.Fatal(err)
+			}
+			roots := x509.NewCertPool()
+			roots.AddCert(certificate)
+			if _, err := certificate.Verify(x509.VerifyOptions{Roots: roots}); err != nil {
+				t.Fatalf("resolved CA does not verify: %v", err)
+			}
+		})
+	}
 }
 
 func TestTeardown(t *testing.T) {
@@ -427,6 +506,53 @@ type registryRoundTripper func(*http.Request) (*http.Response, error)
 
 func (f registryRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
+func TestClientForWithdrawal(t *testing.T) {
+	resolved, _ := testRegistryTLSMaterial(t)
+	oldCA, _ := testRegistryTLSMaterial(t)
+	tests := []struct {
+		name   string
+		stored *KeyPair
+		clone  bool
+	}{
+		{name: "When no CA is stored, it should reuse the resolved CA client"},
+		{name: "When the stored and resolved CAs match, it should reuse the existing connection pool", stored: &resolved},
+		{name: "When the caller replaces the stored CA, it should clone the client and trust only the old CA", stored: &oldCA, clone: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			roots := x509.NewCertPool()
+			roots.AppendCertsFromPEM(resolved.CertPEM)
+			transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}
+			defer transport.CloseIdleConnections()
+			client := &http.Client{Transport: transport, Timeout: 10 * time.Second,
+				CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+			}
+			got := clientForWithdrawal(client, transport, resolved, tt.stored)
+			defer got.CloseIdleConnections()
+			if (got != client) != tt.clone {
+				t.Fatalf("clientForWithdrawal() cloned client = %t, want %t", got != client, tt.clone)
+			}
+			if !tt.clone {
+				return
+			}
+			gotTransport, ok := got.Transport.(*http.Transport)
+			if !ok || gotTransport == transport || gotTransport.TLSClientConfig == transport.TLSClientConfig {
+				t.Fatal("withdrawal client must have an independent transport and TLS config")
+			}
+			wantRoots := x509.NewCertPool()
+			wantRoots.AppendCertsFromPEM(oldCA.CertPEM)
+			wantResolvedRoots := x509.NewCertPool()
+			wantResolvedRoots.AppendCertsFromPEM(resolved.CertPEM)
+			if !gotTransport.TLSClientConfig.RootCAs.Equal(wantRoots) || !transport.TLSClientConfig.RootCAs.Equal(wantResolvedRoots) {
+				t.Fatal("withdrawal client must trust only the stored CA without changing the verification client's roots")
+			}
+			if got.Timeout != client.Timeout || gotTransport.TLSClientConfig.MinVersion != tls.VersionTLS12 || !errors.Is(got.CheckRedirect(nil, nil), http.ErrUseLastResponse) {
+				t.Fatal("withdrawal client did not preserve timeout, minimum TLS version and redirect policy")
+			}
+		})
+	}
+}
+
 func TestDeExpose(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -465,6 +591,64 @@ func TestDeExpose(t *testing.T) {
 			}
 		})
 	}
+	t.Run("When a caller replaces the CA while the old endpoint still serves traffic, it should trust the stored CA until routing is withdrawn", func(t *testing.T) {
+		opts := Options{}.withDefaults()
+		storedCA, _ := testRegistryTLSMaterial(t)
+		callerCA, _ := testRegistryTLSMaterial(t)
+		opts.CA = &callerCA
+		serving, err := servingCert(storedCA, opts.Name, []string{"localhost"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		certificate, err := tls.X509KeyPair(serving.CertPEM, serving.KeyPEM)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var calls atomic.Int32
+		server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			call := calls.Add(1)
+			if req.URL.Path != "/v2/" {
+				t.Errorf("withdrawal request path = %q, want /v2/", req.URL.Path)
+			}
+			if call == 1 {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		server.TLS = &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
+		server.StartTLS()
+		defer server.Close()
+		host := strings.Replace(strings.TrimPrefix(server.URL, "https://"), "127.0.0.1", "localhost", 1)
+		route := buildRoute(opts, host)
+		client := fake.NewClientBuilder().WithScheme(registryTestScheme(t)).WithObjects(route, buildCASecret(opts, storedCA)).Build()
+		r := &Registry{client: client, opts: opts}
+		resolved, stored, err := r.resolveCA(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stored == nil || !reflect.DeepEqual(resolved, callerCA) {
+			t.Fatal("resolveCA() must preserve the old CA while selecting the caller CA")
+		}
+		roots := x509.NewCertPool()
+		roots.AppendCertsFromPEM(resolved.CertPEM)
+		transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}
+		defer transport.CloseIdleConnections()
+		clientForVerify := &http.Client{Transport: transport, Timeout: 10 * time.Second}
+		withdrawalClient := clientForWithdrawal(clientForVerify, transport, resolved, stored)
+		defer withdrawalClient.CloseIdleConnections()
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancel()
+		if err := r.deExpose(ctx, withdrawalClient, host); err != nil {
+			t.Fatal(err)
+		}
+		if calls.Load() != 2 {
+			t.Fatalf("withdrawal requests = %d, want a verified HTTP 200 followed by HTTP 503", calls.Load())
+		}
+		if err := client.Get(t.Context(), crclient.ObjectKeyFromObject(route), &routev1.Route{}); !apierrors.IsNotFound(err) {
+			t.Fatalf("Route still exists after withdrawal: %v", err)
+		}
+	})
 }
 
 func TestSetup(t *testing.T) {
@@ -472,11 +656,13 @@ func TestSetup(t *testing.T) {
 		name    string
 		opts    Options
 		ingress *configv1.Ingress
+		stored  *KeyPair
 		wantErr string
 	}{
 		{name: "When the cluster Ingress is absent, it should fail before changing resources", opts: Options{Copier: testCopier{}}, wantErr: "Ingress cluster"},
 		{name: "When the ingress domain is empty, it should reject the Route host", opts: Options{Copier: testCopier{}}, ingress: &configv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}, wantErr: "ingress domain must not be empty"},
 		{name: "When the supplied CA is malformed, it should fail before deleting the Route", opts: Options{Copier: testCopier{}, IngressDomain: "apps.alesross-mc.alesross.hypershift.devcluster.openshift.com", CA: &KeyPair{CertPEM: []byte("malformed"), KeyPEM: []byte("malformed")}}, wantErr: "prepare TLS"},
+		{name: "When the stored CA is malformed, it should fail before deleting the Route", opts: Options{Copier: testCopier{}, IngressDomain: "apps.alesross-mc.alesross.hypershift.devcluster.openshift.com"}, stored: &KeyPair{CertPEM: []byte("malformed"), KeyPEM: []byte("malformed")}, wantErr: "validate stored CA Secret"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -484,6 +670,9 @@ func TestSetup(t *testing.T) {
 			builder := fake.NewClientBuilder().WithScheme(registryTestScheme(t)).WithObjects(route)
 			if tt.ingress != nil {
 				builder = builder.WithObjects(tt.ingress)
+			}
+			if tt.stored != nil {
+				builder = builder.WithObjects(buildCASecret(tt.opts.withDefaults(), *tt.stored))
 			}
 			client := builder.Build()
 			r, err := New(client, tt.opts)

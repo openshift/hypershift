@@ -35,6 +35,21 @@ func buildNamespace(opts Options) *corev1.Namespace {
 	}
 }
 
+func buildCASecret(opts Options, ca KeyPair) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      opts.Name + "-ca",
+			Namespace: opts.Namespace,
+			Labels:    resourceLabels(opts.Name),
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			"ca.crt": ca.CertPEM,
+			"ca.key": ca.KeyPEM,
+		},
+	}
+}
+
 func buildTLSSecret(opts Options, serving KeyPair) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
