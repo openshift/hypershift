@@ -217,16 +217,20 @@ type ImageCopier interface {
 }
 
 // Registry is a mirror registry fixture bound to a management cluster.
-//
-// TODO(CNTRLPLANE-3926 T5): add the management cluster client and the
-// defaulted Options as unexported fields.
-type Registry struct{}
+type Registry struct {
+	client crclient.Client
+	opts   Options
+}
 
 // New returns a Registry for the management cluster reachable through
 // client. It applies defaults to opts and validates them; it does not contact
 // the cluster.
 func New(client crclient.Client, opts Options) (*Registry, error) {
-	return nil, errNotImplemented
+	opts = opts.withDefaults()
+	if err := opts.validate(); err != nil {
+		return nil, err
+	}
+	return &Registry{client: client, opts: opts}, nil
 }
 
 // Setup deploys the registry, mirrors the content in req, switches the
