@@ -58,7 +58,7 @@ require (
 	go.etcd.io/etcd/tests/v3 v3.5.10
 	go.uber.org/mock v0.4.0
 	go.uber.org/zap v1.25.0
-	golang.org/x/crypto v0.31.0
+	golang.org/x/crypto v0.33.0
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
 	golang.org/x/net v0.33.0
 	golang.org/x/sync v0.11.0
@@ -259,7 +259,9 @@ replace golang.org/x/oauth2 => github.com/openshift/golang-oauth2 v0.26.1-0.2025
 
 // CVE-2025-22869
 // This is from tag v0.33.openshift.1
-replace golang.org/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
+replace golang.org/x/crypto => github.com/openshift-sustaining/crypto v0.33.0-sec.5
 
 // CVE-2025-30204
 replace github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
+
+replace golang.org/x/net => github.com/openshift-sustaining/net v0.35.0-sec.4
