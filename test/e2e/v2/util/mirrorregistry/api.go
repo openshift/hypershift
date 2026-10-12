@@ -82,8 +82,11 @@ type Options struct {
 	ExtraDNSNames []string
 
 	// CA is the certificate authority used to sign the serving certificate.
-	// Nil means the fixture generates a new CA. Supplying a CA allows the CA
-	// to be distributed before the registry exists.
+	// Nil means the CA stored by a previous Setup in Namespace is reused, or a
+	// new one is generated on first use. Supplying a CA allows the CA to be
+	// distributed before the registry exists. An invalid or expired stored CA
+	// makes Setup fail even when CA is supplied. To rotate it, delete the CA
+	// Secret or the namespace and distribute trust in the replacement CA.
 	CA *KeyPair
 
 	// Storage configures registry content storage.
@@ -240,8 +243,10 @@ func New(client crclient.Client, opts Options) (*Registry, error) {
 // public routing is withdrawn, then re-enables writes on the internal
 // endpoint, mirrors req, switches back to read-only and re-creates the
 // Route. A failure may leave the registry writable without a Route, but never
-// writable with a Route. Each call generates a new serving certificate and,
-// unless Options.CA is supplied, a new CA.
+// writable with a Route. Each call generates a new serving certificate signed
+// by a CA that is persisted in Namespace and reused by later calls, so trust
+// already distributed to consumers stays valid; Options.CA, when set, takes
+// precedence.
 func (r *Registry) Setup(ctx context.Context, req MirrorRequest) (*Result, error) {
 	return r.setup(ctx, req)
 }

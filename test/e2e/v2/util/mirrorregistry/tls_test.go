@@ -222,6 +222,7 @@ func TestTLSMaterial(t *testing.T) {
 			name: "When the name is empty, it should use the default name as the serving certificate CN",
 			opts: Options{
 				Namespace: "test-mirror-registry",
+				CA:        &suppliedCA,
 			},
 			host: longHost,
 			wantDNS: []string{
@@ -233,7 +234,7 @@ func TestTLSMaterial(t *testing.T) {
 			},
 		},
 		{
-			name: "When no CA is supplied, it should generate a CA and a verifiable serving certificate",
+			name: "When no CA has been resolved, it should return an error without generating one",
 			opts: Options{
 				Name:      "mirror-registry",
 				Namespace: "test-mirror-registry",
@@ -241,14 +242,8 @@ func TestTLSMaterial(t *testing.T) {
 					"mirror-registry.test-mirror-registry.svc",
 				},
 			},
-			host: longHost,
-			wantDNS: []string{
-				longHost,
-				"mirror-registry",
-				"mirror-registry.test-mirror-registry",
-				"mirror-registry.test-mirror-registry.svc",
-				"mirror-registry.test-mirror-registry.svc.cluster.local",
-			},
+			host:            longHost,
+			wantErrContains: "CA must be resolved",
 		},
 		{
 			name: "When the supplied CA is malformed, it should return an error",
