@@ -31,6 +31,31 @@ func TestBuildNamespace(t *testing.T) {
 	}
 }
 
+func TestBuildCASecret(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{name: "When a CA key pair is provided, it should persist both PEMs in a labeled Opaque Secret"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := Options{Name: "mirror-registry", Namespace: "test-mirror-registry"}
+			ca, _ := testRegistryTLSMaterial(t)
+			got := buildCASecret(opts, ca)
+			if got.Name != opts.Name+"-ca" || got.Namespace != opts.Namespace {
+				t.Errorf("CA Secret identity = %s/%s, want %s/%s", got.Namespace, got.Name, opts.Namespace, opts.Name+"-ca")
+			}
+			if got.Type != corev1.SecretTypeOpaque {
+				t.Errorf("CA Secret type = %q, want %q", got.Type, corev1.SecretTypeOpaque)
+			}
+			if !reflect.DeepEqual(got.Data, map[string][]byte{"ca.crt": ca.CertPEM, "ca.key": ca.KeyPEM}) {
+				t.Fatal("CA Secret data must contain exactly the certificate and private key PEMs")
+			}
+			assertResourceLabels(t, got.Labels, opts.Name)
+		})
+	}
+}
+
 func TestBuildTLSSecret(t *testing.T) {
 	tests := []struct {
 		name string

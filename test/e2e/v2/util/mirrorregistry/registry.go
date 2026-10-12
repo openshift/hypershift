@@ -1,6 +1,7 @@
 package mirrorregistry
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -49,7 +50,13 @@ func (r *Registry) setup(ctx context.Context, req MirrorRequest) (*Result, error
 	if err != nil {
 		return nil, fmt.Errorf("resolve Route %s/%s host: %w", r.opts.Namespace, r.opts.Name, err)
 	}
-	ca, serving, err := tlsMaterial(r.opts, host)
+	ca, stored, err := r.resolveCA(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve CA for registry %s/%s: %w", r.opts.Namespace, r.opts.Name, err)
+	}
+	tlsOpts := r.opts
+	tlsOpts.CA = &ca
+	_, serving, err := tlsMaterial(tlsOpts, host)
 	if err != nil {
 		return nil, fmt.Errorf("prepare TLS for registry %s/%s: %w", r.opts.Namespace, r.opts.Name, err)
 	}
@@ -65,7 +72,9 @@ func (r *Registry) setup(ctx context.Context, req MirrorRequest) (*Result, error
 		// A redirect is not a successful response from the registry endpoint.
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	if err := r.deExpose(ctx, httpClient, host); err != nil {
+	withdrawalClient := clientForWithdrawal(httpClient, transport, ca, stored)
+	defer withdrawalClient.CloseIdleConnections()
+	if err := r.deExpose(ctx, withdrawalClient, host); err != nil {
 		return nil, err
 	}
 	namespace := buildNamespace(r.opts)
@@ -80,7 +89,7 @@ func (r *Registry) setup(ctx context.Context, req MirrorRequest) (*Result, error
 	if err := r.reconcile(ctx, buildNamespace(r.opts)); err != nil {
 		return nil, err
 	}
-	for _, obj := range []crclient.Object{buildTLSSecret(r.opts, serving), buildPVC(r.opts), buildService(r.opts)} {
+	for _, obj := range []crclient.Object{buildCASecret(r.opts, ca), buildTLSSecret(r.opts, serving), buildPVC(r.opts), buildService(r.opts)} {
 		if err := r.reconcile(ctx, obj); err != nil {
 			return nil, err
 		}
@@ -114,6 +123,45 @@ func (r *Registry) setup(ctx context.Context, req MirrorRequest) (*Result, error
 		return nil, fmt.Errorf("build result for registry %s/%s: %w", r.opts.Namespace, r.opts.Name, err)
 	}
 	return result, nil
+}
+
+func (r *Registry) resolveCA(ctx context.Context) (resolved KeyPair, stored *KeyPair, err error) {
+	secret := &corev1.Secret{}
+	key := crclient.ObjectKey{Namespace: r.opts.Namespace, Name: r.opts.Name + "-ca"}
+	if err := r.client.Get(ctx, key, secret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return KeyPair{}, nil, fmt.Errorf("read CA Secret %s: %w", key, err)
+		}
+	} else {
+		ca := KeyPair{CertPEM: secret.Data["ca.crt"], KeyPEM: secret.Data["ca.key"]}
+		if _, _, err := parseCA(ca); err != nil {
+			return KeyPair{}, nil, fmt.Errorf("validate stored CA Secret %s (delete the Secret or its namespace to rotate the CA; consumers must trust the replacement): %w", key, err)
+		}
+		stored = &ca
+	}
+	if r.opts.CA != nil {
+		return *r.opts.CA, stored, nil
+	}
+	if stored != nil {
+		return *stored, stored, nil
+	}
+	resolved, err = generateCA()
+	return resolved, nil, err
+}
+
+// clientForWithdrawal receives already-validated CAs. A running pod still
+// serves a certificate signed by stored, even if this Setup replaces the CA.
+func clientForWithdrawal(client *http.Client, transport *http.Transport, resolved KeyPair, stored *KeyPair) *http.Client {
+	if stored == nil || bytes.Equal(stored.CertPEM, resolved.CertPEM) {
+		return client
+	}
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(stored.CertPEM)
+	withdrawalTransport := transport.Clone()
+	withdrawalTransport.TLSClientConfig.RootCAs = roots
+	clientCopy := *client
+	clientCopy.Transport = withdrawalTransport
+	return &clientCopy
 }
 
 func (r *Registry) deExpose(ctx context.Context, httpClient *http.Client, host string) error {
