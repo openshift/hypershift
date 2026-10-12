@@ -7,7 +7,6 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/go-logr/logr"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -18,6 +17,8 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/go-logr/logr"
 )
 
 func TestDestroyPlatformSpecificsRunsPostDeleteActionAfterInfra(t *testing.T) {
