@@ -251,6 +251,7 @@ func TestNew(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "When valid options are provided, it should return a registry with defaulted options", options: Options{CopierImage: "quay.io/openshift/cli:latest"}},
+		{name: "When a custom copier is provided, it should preserve that copier", options: Options{Copier: testCopier{}}},
 		{name: "When validation fails, it should return an error without a registry", options: Options{Namespace: "bad namespace", CopierImage: "quay.io/openshift/cli:latest"}, wantErr: true},
 	}
 	for _, tt := range tests {
@@ -263,10 +264,23 @@ func TestNew(t *testing.T) {
 				if got != nil {
 					t.Fatalf("New() returned registry %#v on validation error", got)
 				}
+				if !strings.Contains(err.Error(), "Namespace") {
+					t.Fatalf("New() did not surface validation error: %v", err)
+				}
 				return
 			}
 			if got == nil || got.client != client || got.opts.Namespace != DefaultNamespace || got.opts.Name != DefaultName || got.opts.Image != DefaultRegistryImage || !got.opts.Storage.Size.Equal(resource.MustParse(DefaultStorageSize)) || got.opts.CopierImage != tt.options.CopierImage {
 				t.Fatalf("New() registry = %#v, want client %p and defaulted options", got, client)
+			}
+			if tt.options.Copier != nil {
+				if got.opts.Copier != tt.options.Copier {
+					t.Fatal("New() replaced the custom copier")
+				}
+			} else {
+				copier, ok := got.opts.Copier.(*jobCopier)
+				if !ok || copier.client != client || copier.image != tt.options.CopierImage || copier.name != DefaultName {
+					t.Fatalf("New() default copier = %#v, want Job copier with defaulted name and supplied client/image", got.opts.Copier)
+				}
 			}
 		})
 	}
