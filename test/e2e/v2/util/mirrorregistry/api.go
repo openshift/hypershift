@@ -2,7 +2,6 @@ package mirrorregistry
 
 import (
 	"context"
-	"errors"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
@@ -36,10 +35,6 @@ const (
 	// port exposed by the Service.
 	RegistryPort = 5000
 )
-
-// errNotImplemented is returned by API skeleton methods until they are
-// implemented.
-var errNotImplemented = errors.New("mirrorregistry: not implemented")
 
 // KeyPair is a PEM-encoded certificate and its PEM-encoded private key.
 type KeyPair struct {
@@ -230,6 +225,9 @@ func New(client crclient.Client, opts Options) (*Registry, error) {
 	if err := opts.validate(); err != nil {
 		return nil, err
 	}
+	if opts.Copier == nil {
+		opts.Copier = newJobCopier(client, opts.CopierImage, opts.Name)
+	}
 	return &Registry{client: client, opts: opts}, nil
 }
 
@@ -241,13 +239,15 @@ func New(client crclient.Client, opts Options) (*Registry, error) {
 // idempotent: calling it again first deletes the Route and waits until
 // public routing is withdrawn, then re-enables writes on the internal
 // endpoint, mirrors req, switches back to read-only and re-creates the
-// Route. A failure may leave the registry writable, but never exposed.
+// Route. A failure may leave the registry writable without a Route, but never
+// writable with a Route. Each call generates a new serving certificate and,
+// unless Options.CA is supplied, a new CA.
 func (r *Registry) Setup(ctx context.Context, req MirrorRequest) (*Result, error) {
-	return nil, errNotImplemented
+	return r.setup(ctx, req)
 }
 
 // Teardown deletes the namespace owned by the fixture and waits until it is
 // gone. It returns nil if the namespace does not exist.
 func (r *Registry) Teardown(ctx context.Context) error {
-	return errNotImplemented
+	return r.teardown(ctx)
 }
