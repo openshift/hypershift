@@ -2,6 +2,11 @@
 #
 # capi-sync-provider.sh — sync CAPI provider API types into pkg/capi/<provider>/
 #
+# The synced module ends up with no dependency on sigs.k8s.io/cluster-api: the
+# CAPI declarations its types need are extracted into pkg/capi/<provider>/capicore/
+# from the CAPI version this provider resolves to. See the "CAPI Provider Types"
+# section of DEVELOPMENT.md for why that matters.
+#
 # To update a CAPI provider to a new upstream version:
 #   1. Edit hack/capi-vendor/<provider>/go.mod to the new version
 #   2. Run: make capi-sync-force
@@ -136,12 +141,32 @@ upstream_module() {
     esac
 }
 
-echo "Running controller-gen for deepcopy..."
 MODULE_PATH=$(upstream_module "$PROVIDER")
+
+# Extract the CAPI declarations these types need into the provider module and
+# repoint the imports at them, so the module carries no dependency on
+# sigs.k8s.io/cluster-api. Driven by the CAPI version this provider resolves
+# to, which differs between providers and must stay independent of the root
+# module's.
+echo "Localizing CAPI types for $PROVIDER..."
+CAPI_SRC=$(mod_cache_dir "sigs.k8s.io/cluster-api")
+rm -rf "$DST_DIR/capicore"
+run_go run "$COPY_TOOL" --localize \
+    --dir "$DST_DIR" \
+    --module "$MODULE_PATH" \
+    --capi-root "$CAPI_SRC"
+
+echo "Running controller-gen for deepcopy..."
 
 # controller-gen must resolve types across the main module and each
 # pkg/capi/<provider> module, which capi-workspace-run.sh sets up.
 "$ROOT/hack/capi-workspace-run.sh" \
     "$CONTROLLER_GEN" object:headerFile="$BOILERPLATE" paths="$MODULE_PATH/..."
+
+# Drop requirements the localized types no longer need. Leaving
+# sigs.k8s.io/cluster-api here would still raise the root module's floor for it
+# through MVS, which is the coupling this is meant to remove.
+echo "Tidying $PROVIDER module..."
+(cd "$DST_DIR" && GOWORK=off GOFLAGS='' go mod tidy)
 
 echo "Done syncing $PROVIDER"

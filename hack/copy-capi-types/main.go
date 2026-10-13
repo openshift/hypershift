@@ -18,6 +18,11 @@
 //
 // Everything else is banned and any declaration referencing a banned import
 // is stripped from the output.
+//
+// CAPI itself is kept during the copy but does not survive in the final
+// module: a second pass (--localize) extracts the CAPI declarations the copied
+// types need into the provider module and repoints the imports at them. See
+// the "Localize mode" section below.
 package main
 
 import (
@@ -32,6 +37,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -66,7 +73,21 @@ func main() {
 	dst := flag.String("dst", "", "destination directory for copied types")
 	var extraAllowed stringSlice
 	flag.Var(&extraAllowed, "allow", "additional allowed import prefix (can be repeated)")
+
+	localize := flag.Bool("localize", false, "localize CAPI types into the provider module instead of copying a package")
+	dir := flag.String("dir", "", "localize: provider module root (the directory holding its go.mod)")
+	module := flag.String("module", "", "localize: module path declared by that go.mod")
+	capiRoot := flag.String("capi-root", "", "localize: source root of the CAPI module this provider resolves to")
+	outName := flag.String("out", "capicore", "localize: subdirectory to hold the extracted CAPI types")
 	flag.Parse()
+
+	if *localize {
+		if *dir == "" || *module == "" || *capiRoot == "" {
+			log.Fatal("--localize requires --dir, --module and --capi-root")
+		}
+		runLocalize(*dir, *module, *capiRoot, *outName)
+		return
+	}
 
 	for _, prefix := range extraAllowed {
 		allowedImportPrefixes = append(allowedImportPrefixes, prefix)
@@ -773,4 +794,569 @@ func collectUsedPackages(file *ast.File) map[string]bool {
 		})
 	}
 	return used
+}
+
+// ---------------------------------------------------------------------------
+// Localize mode
+//
+// A provider module whose copied types still import sigs.k8s.io/cluster-api is
+// not actually decoupled from it: Go resolves one version of a module per
+// build, so those types always compile against whatever CAPI version the root
+// module selects, no matter what the provider's own go.mod says.
+//
+// Localize breaks that link. It extracts the CAPI declarations a provider
+// genuinely needs into a package inside the provider module and repoints the
+// imports at it, leaving the provider module with no CAPI dependency at all.
+// The extraction is driven by the CAPI version that provider resolves to, so
+// each provider stays pinned to its own contract and can move independently.
+//
+// Only declarations reachable from type, const and var declarations are
+// extracted, because those are what shape the generated CRDs. A function that
+// reaches further into CAPI is stripped instead of dragging a much larger type
+// closure along with it.
+// ---------------------------------------------------------------------------
+
+const capiImportPrefix = "sigs.k8s.io/cluster-api/"
+
+// capiPackage is one parsed CAPI source package that a provider draws from.
+type capiPackage struct {
+	importPath string
+	subPath    string
+	name       string
+	fset       *token.FileSet
+	srcByFile  map[string][]byte
+	fileOrder  []string
+	astByFile  map[string]*ast.File
+	// decls indexes every package-level symbol to the declaration that
+	// introduces it, and to the individual spec when the declaration is a
+	// grouped block.
+	decls map[string]*capiDecl
+}
+
+type capiDecl struct {
+	file string
+	decl *ast.GenDecl
+	spec ast.Spec
+}
+
+func runLocalize(dir, modulePath, capiRoot, outName string) {
+	providerFiles := collectProviderFiles(dir, outName)
+	if len(providerFiles) == 0 {
+		log.Fatalf("no Go files found under %s", dir)
+	}
+
+	seeds := map[string]map[string]bool{}
+	for _, path := range providerFiles {
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if err != nil {
+			log.Fatalf("parse %s: %v", path, err)
+		}
+		aliases := capiAliases(file)
+		if len(aliases) == 0 {
+			continue
+		}
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok == token.IMPORT {
+				continue
+			}
+			for pkgPath, sym := range capiRefs(gd, aliases) {
+				if seeds[pkgPath] == nil {
+					seeds[pkgPath] = map[string]bool{}
+				}
+				for s := range sym {
+					seeds[pkgPath][s] = true
+				}
+			}
+		}
+	}
+
+	if len(seeds) == 0 {
+		fmt.Println("localize: no CAPI references found; nothing to do")
+		return
+	}
+
+	pkgs := map[string]*capiPackage{}
+	closure := map[string]map[string]bool{}
+	extraImports := map[string]map[string]string{} // pkgPath -> alias -> import path
+
+	type work struct{ pkgPath, symbol string }
+	var queue []work
+	for pkgPath, syms := range seeds {
+		for s := range syms {
+			queue = append(queue, work{pkgPath, s})
+		}
+	}
+
+	for len(queue) > 0 {
+		item := queue[0]
+		queue = queue[1:]
+
+		if closure[item.pkgPath][item.symbol] {
+			continue
+		}
+		pkg, ok := pkgs[item.pkgPath]
+		if !ok {
+			pkg = loadCAPIPackage(capiRoot, item.pkgPath)
+			pkgs[item.pkgPath] = pkg
+		}
+		d, ok := pkg.decls[item.symbol]
+		if !ok {
+			log.Fatalf("localize: %s.%s not found in %s", item.pkgPath, item.symbol, pkg.subPath)
+		}
+		if closure[item.pkgPath] == nil {
+			closure[item.pkgPath] = map[string]bool{}
+		}
+		closure[item.pkgPath][item.symbol] = true
+
+		node := ast.Node(d.decl)
+		if d.spec != nil {
+			node = d.spec
+		}
+		srcFile := pkg.astByFile[d.file]
+		fileAliases := capiAliases(srcFile)
+		otherImports := nonCAPIImports(srcFile)
+
+		ast.Inspect(node, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.SelectorExpr:
+				id, ok := x.X.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				if dep, ok := fileAliases[id.Name]; ok {
+					queue = append(queue, work{dep, x.Sel.Name})
+					return false
+				}
+				if path, ok := otherImports[id.Name]; ok {
+					if extraImports[item.pkgPath] == nil {
+						extraImports[item.pkgPath] = map[string]string{}
+					}
+					extraImports[item.pkgPath][id.Name] = path
+				}
+				return false
+			case *ast.Ident:
+				if _, ok := pkg.decls[x.Name]; ok {
+					queue = append(queue, work{item.pkgPath, x.Name})
+				}
+			}
+			return true
+		})
+	}
+
+	for pkgPath, syms := range closure {
+		if len(syms) == 0 {
+			continue
+		}
+		writeLocalizedPackage(dir, outName, pkgs[pkgPath], syms, extraImports[pkgPath])
+	}
+
+	rewritten, strippedTotal := 0, 0
+	for _, path := range providerFiles {
+		changed, removed := localizeFile(path, modulePath, outName, closure)
+		if changed {
+			rewritten++
+		}
+		strippedTotal += removed
+	}
+
+	fmt.Printf("localize: %d CAPI package(s) extracted, %d provider file(s) repointed, %d decl(s) stripped\n",
+		len(closure), rewritten, strippedTotal)
+}
+
+// collectProviderFiles lists the module's Go sources, skipping the directory
+// the extracted CAPI types are written to.
+func collectProviderFiles(dir, outName string) []string {
+	var out []string
+	outDir := filepath.Join(dir, outName)
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if path == outDir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(path, ".go") {
+			out = append(out, path)
+		}
+		return nil
+	})
+	if err != nil {
+		log.Fatalf("walk %s: %v", dir, err)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// capiAliases maps each local import alias to the CAPI package it refers to.
+func capiAliases(file *ast.File) map[string]string {
+	aliases := map[string]string{}
+	for _, imp := range file.Imports {
+		path := strings.Trim(imp.Path.Value, `"`)
+		if strings.HasPrefix(path, capiImportPrefix) {
+			aliases[importAlias(imp)] = path
+		}
+	}
+	return aliases
+}
+
+func nonCAPIImports(file *ast.File) map[string]string {
+	out := map[string]string{}
+	for _, imp := range file.Imports {
+		path := strings.Trim(imp.Path.Value, `"`)
+		if !strings.HasPrefix(path, capiImportPrefix) {
+			out[importAlias(imp)] = path
+		}
+	}
+	return out
+}
+
+// capiRefs returns the CAPI symbols a node references, keyed by package path.
+func capiRefs(node ast.Node, aliases map[string]string) map[string]map[string]bool {
+	refs := map[string]map[string]bool{}
+	ast.Inspect(node, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		id, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		pkgPath, ok := aliases[id.Name]
+		if !ok {
+			return true
+		}
+		if refs[pkgPath] == nil {
+			refs[pkgPath] = map[string]bool{}
+		}
+		refs[pkgPath][sel.Sel.Name] = true
+		return false
+	})
+	return refs
+}
+
+func loadCAPIPackage(capiRoot, importPath string) *capiPackage {
+	subPath := strings.TrimPrefix(importPath, capiImportPrefix)
+	srcDir := filepath.Join(capiRoot, subPath)
+	entries, err := filepath.Glob(filepath.Join(srcDir, "*.go"))
+	if err != nil || len(entries) == 0 {
+		log.Fatalf("localize: no sources for %s under %s", importPath, srcDir)
+	}
+	sort.Strings(entries)
+
+	pkg := &capiPackage{
+		importPath: importPath,
+		subPath:    subPath,
+		fset:       token.NewFileSet(),
+		srcByFile:  map[string][]byte{},
+		astByFile:  map[string]*ast.File{},
+		decls:      map[string]*capiDecl{},
+	}
+
+	for _, path := range entries {
+		base := filepath.Base(path)
+		if strings.HasSuffix(base, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatalf("read %s: %v", path, err)
+		}
+		file, err := pkg.parse(path, src)
+		if err != nil {
+			log.Fatalf("parse %s: %v", path, err)
+		}
+		pkg.name = file.Name.Name
+		pkg.srcByFile[base] = src
+		pkg.astByFile[base] = file
+		pkg.fileOrder = append(pkg.fileOrder, base)
+
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok == token.IMPORT {
+				continue
+			}
+			single := len(gd.Specs) == 1
+			for _, spec := range gd.Specs {
+				var names []string
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					names = []string{s.Name.Name}
+				case *ast.ValueSpec:
+					for _, n := range s.Names {
+						names = append(names, n.Name)
+					}
+				}
+				for _, name := range names {
+					ref := &capiDecl{file: base, decl: gd}
+					if !single {
+						ref.spec = spec
+					}
+					pkg.decls[name] = ref
+				}
+			}
+		}
+	}
+	return pkg
+}
+
+func (p *capiPackage) parse(path string, src []byte) (*ast.File, error) {
+	return parser.ParseFile(p.fset, path, src, parser.ParseComments)
+}
+
+// writeLocalizedPackage emits the selected declarations as a single generated
+// file. Declaration text is sliced verbatim from the CAPI source so that doc
+// comments and kubebuilder markers survive, keeping the generated CRD schema
+// identical to what the upstream types produce.
+func writeLocalizedPackage(dir, outName string, pkg *capiPackage, symbols map[string]bool, imports map[string]string) {
+	type chunk struct {
+		file  string
+		order int
+		text  string
+	}
+
+	seen := map[*ast.GenDecl]bool{}
+	seenSpec := map[ast.Spec]bool{}
+	var chunks []chunk
+
+	for _, name := range sortedKeys(symbols) {
+		d := pkg.decls[name]
+		src := pkg.srcByFile[d.file]
+
+		if d.spec == nil {
+			if seen[d.decl] {
+				continue
+			}
+			seen[d.decl] = true
+			chunks = append(chunks, chunk{d.file, pkg.offset(d.decl.Pos()), pkg.slice(src, declStart(d.decl), d.decl.End())})
+			continue
+		}
+		if seenSpec[d.spec] {
+			continue
+		}
+		seenSpec[d.spec] = true
+		text := pkg.slice(src, specStart(d.spec), d.spec.End())
+		chunks = append(chunks, chunk{d.file, pkg.offset(d.spec.Pos()), fmt.Sprintf("%s (\n%s\n)", d.decl.Tok, indent(text))})
+	}
+
+	fileRank := map[string]int{}
+	for i, f := range pkg.fileOrder {
+		fileRank[f] = i
+	}
+	sort.SliceStable(chunks, func(i, j int) bool {
+		if chunks[i].file != chunks[j].file {
+			return fileRank[chunks[i].file] < fileRank[chunks[j].file]
+		}
+		return chunks[i].order < chunks[j].order
+	})
+
+	var buf bytes.Buffer
+	buf.WriteString("// Code generated by copy-capi-types. DO NOT EDIT.\n//\n")
+	fmt.Fprintf(&buf, "// Extracted from %s so that this module carries no dependency on\n", pkg.importPath)
+	buf.WriteString("// sigs.k8s.io/cluster-api. Refresh with 'make capi-sync-force'.\n\n")
+	buf.WriteString("// +kubebuilder:object:generate=true\n")
+	fmt.Fprintf(&buf, "package %s\n", pkg.name)
+
+	if len(imports) > 0 {
+		buf.WriteString("\nimport (\n")
+		for _, alias := range sortedKeys(toSet(imports)) {
+			fmt.Fprintf(&buf, "\t%s %q\n", alias, imports[alias])
+		}
+		buf.WriteString(")\n")
+	}
+	for _, c := range chunks {
+		buf.WriteString("\n")
+		buf.WriteString(c.text)
+		buf.WriteString("\n")
+	}
+
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		log.Fatalf("localize: formatting extracted %s failed: %v", pkg.importPath, err)
+	}
+
+	destDir := filepath.Join(dir, outName, pkg.subPath)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		log.Fatalf("mkdir %s: %v", destDir, err)
+	}
+	dest := filepath.Join(destDir, "zz_generated.capi_types.go")
+	if err := os.WriteFile(dest, formatted, 0644); err != nil {
+		log.Fatalf("write %s: %v", dest, err)
+	}
+	fmt.Printf("CAPI   %s -> %s (%d symbols)\n", pkg.importPath, filepath.Join(outName, pkg.subPath), len(symbols))
+}
+
+func (p *capiPackage) offset(pos token.Pos) int { return p.fset.Position(pos).Offset }
+
+func (p *capiPackage) slice(src []byte, start, end token.Pos) string {
+	return strings.TrimRight(string(src[p.offset(start):p.offset(end)]), " \t\n")
+}
+
+func declStart(d *ast.GenDecl) token.Pos {
+	if d.Doc != nil {
+		return d.Doc.Pos()
+	}
+	return d.Pos()
+}
+
+func specStart(spec ast.Spec) token.Pos {
+	switch s := spec.(type) {
+	case *ast.TypeSpec:
+		if s.Doc != nil {
+			return s.Doc.Pos()
+		}
+	case *ast.ValueSpec:
+		if s.Doc != nil {
+			return s.Doc.Pos()
+		}
+	}
+	return spec.Pos()
+}
+
+func indent(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if l != "" {
+			lines[i] = "\t" + l
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func toSet(m map[string]string) map[string]bool {
+	out := make(map[string]bool, len(m))
+	for k := range m {
+		out[k] = true
+	}
+	return out
+}
+
+// localizeFile repoints a provider file's CAPI imports at the extracted
+// package, stripping any declaration that reaches a CAPI symbol which was not
+// extracted. Returns whether the file changed and how many decls were removed.
+func localizeFile(path, modulePath, outName string, closure map[string]map[string]bool) (bool, int) {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		log.Fatalf("read %s: %v", path, err)
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+	if err != nil {
+		log.Fatalf("parse %s: %v", path, err)
+	}
+
+	aliases := capiAliases(file)
+	if len(aliases) == 0 {
+		return false, 0
+	}
+
+	funcRemove := map[*ast.FuncDecl]bool{}
+	genRemove := map[*ast.GenDecl]bool{}
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if usesUnextractedCAPI(d, aliases, closure) {
+				funcRemove[d] = true
+			}
+		case *ast.GenDecl:
+			if d.Tok == token.IMPORT {
+				continue
+			}
+			if usesUnextractedCAPI(d, aliases, closure) {
+				genRemove[d] = true
+			}
+		}
+	}
+	removed := len(funcRemove) + len(genRemove)
+	if removed > 0 {
+		cascadeRemovals(file, funcRemove, genRemove)
+		removed = len(funcRemove) + len(genRemove)
+		var funcs []*ast.FuncDecl
+		for fn := range funcRemove {
+			funcs = append(funcs, fn)
+		}
+		var gens []*ast.GenDecl
+		for gd := range genRemove {
+			gens = append(gens, gd)
+		}
+		stripped, err := stripDecls(fset, file, funcs, gens)
+		if err != nil {
+			log.Fatalf("localize: stripping %s: %v", path, err)
+		}
+		fset = token.NewFileSet()
+		file, err = parser.ParseFile(fset, path, stripped, parser.ParseComments)
+		if err != nil {
+			log.Fatalf("localize: re-parsing stripped %s: %v", path, err)
+		}
+	}
+
+	for _, imp := range file.Imports {
+		p := strings.Trim(imp.Path.Value, `"`)
+		if !strings.HasPrefix(p, capiImportPrefix) {
+			continue
+		}
+		local := modulePath + "/" + outName + "/" + strings.TrimPrefix(p, capiImportPrefix)
+		imp.Path.Value = strconv.Quote(local)
+	}
+
+	removeUnusedImports(file)
+
+	var buf bytes.Buffer
+	cfg := printer.Config{Mode: printer.UseSpaces | printer.TabIndent, Tabwidth: 8}
+	if err := cfg.Fprint(&buf, fset, file); err != nil {
+		log.Fatalf("localize: printing %s: %v", path, err)
+	}
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		log.Fatalf("localize: formatting %s: %v", path, err)
+	}
+	if bytes.Equal(formatted, src) {
+		return false, removed
+	}
+	if err := os.WriteFile(path, formatted, 0644); err != nil {
+		log.Fatalf("write %s: %v", path, err)
+	}
+	return true, removed
+}
+
+// usesUnextractedCAPI reports whether a node references a CAPI symbol that was
+// not pulled into the localized package.
+func usesUnextractedCAPI(node ast.Node, aliases map[string]string, closure map[string]map[string]bool) bool {
+	found := false
+	ast.Inspect(node, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		id, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		pkgPath, ok := aliases[id.Name]
+		if !ok {
+			return true
+		}
+		if !closure[pkgPath][sel.Sel.Name] {
+			found = true
+		}
+		return false
+	})
+	return found
 }

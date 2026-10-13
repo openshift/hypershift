@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	agentcapicore "github.com/openshift/cluster-api-provider-agent/api/capicore/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -313,7 +313,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 						Url:                    "https://" + ignitionEndpoint + "/ignition",
 						CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace},
 					},
-					ControlPlaneEndpoint: capiv1beta1.APIEndpoint{
+					ControlPlaneEndpoint: agentcapicore.APIEndpoint{
 						Port: APIEndpoint.Port,
 						Host: APIEndpoint.Host,
 					},
@@ -349,7 +349,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 						Url:                    "https://[fd2e:6f44:5dd8:c956::14]:31936/ignition",
 						CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace},
 					},
-					ControlPlaneEndpoint: capiv1beta1.APIEndpoint{
+					ControlPlaneEndpoint: agentcapicore.APIEndpoint{
 						Port: APIEndpoint.Port,
 						Host: APIEndpoint.Host,
 					},

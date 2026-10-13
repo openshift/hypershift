@@ -16,7 +16,7 @@ limitations under the License.
 
 package v1beta1
 
-import clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+import clusterv1beta1 "sigs.k8s.io/cluster-api-provider-aws/v2/capicore/api/core/v1beta1"
 
 const (
 	// PrincipalCredentialRetrievedCondition reports on whether Principal credentials could be retrieved successfully.

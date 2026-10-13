@@ -17,9 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
+	clusterv1 "github.com/openshift/cluster-api-provider-agent/api/capicore/api/core/v1beta1"
+	"github.com/openshift/cluster-api-provider-agent/api/capicore/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
-	"sigs.k8s.io/cluster-api/errors"
 )
 
 const (

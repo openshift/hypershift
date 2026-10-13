@@ -20,8 +20,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1" //nolint SA1019
-	"sigs.k8s.io/cluster-api/errors"                     //nolint SA1019
+	clusterv1 "sigs.k8s.io/cluster-api-provider-kubevirt/capicore/api/core/v1beta1" //nolint SA1019
+	"sigs.k8s.io/cluster-api-provider-kubevirt/capicore/errors"                     //nolint SA1019
 )
 
 const (

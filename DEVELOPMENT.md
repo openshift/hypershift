@@ -106,6 +106,10 @@ Upstream CAPI infrastructure provider types (e.g. `sigs.k8s.io/cluster-api-provi
 
 Each `pkg/capi/<provider>/` directory is a separate Go module with its own `go.mod`. The main module consumes them via `replace` directives in `go.mod`.
 
+A separate `go.mod` is not on its own enough to decouple a provider from CAPI. Go resolves one version of a module per build, so copied types that still imported `sigs.k8s.io/cluster-api` would compile against whatever version the **root** module selected, regardless of the provider's own `go.mod` — and the provider's requirement would act as a floor on the root, not a ceiling on itself. That also made each provider's generated CRD schema a function of the root CAPI version rather than of the version its controller was built against.
+
+So the sync extracts the CAPI declarations each provider actually needs into a `pkg/capi/<provider>/capicore/` package and repoints the imports at it, leaving the provider modules with **no dependency on `sigs.k8s.io/cluster-api` at all**. The extraction is driven by the CAPI version that provider resolves to in `hack/capi-vendor/<provider>/`, which differs between providers today, so each can move independently and the root module's CAPI version can move without touching any of them. Only declarations reachable from type, const and var declarations are extracted, since those are what shape the generated CRDs; a function reaching further into CAPI is stripped rather than dragging a much larger type closure along.
+
 Key commands:
 
 ```bash
@@ -117,7 +121,9 @@ make cluster-api-provider-aws # Generate CRDs for a specific CAPI provider
 The sync process (`hack/capi-sync-provider.sh`) for each provider:
 1. Downloads the upstream module into the Go module cache via `go mod download`
 2. Copies types from the cached module into `pkg/capi/<provider>/` using `hack/copy-capi-types/main.go`, which strips functions and types that reference banned imports (e.g. controller-runtime, cloud SDKs)
-3. Generates deepcopy functions using `controller-gen` inside a temporary Go workspace
+3. Extracts the CAPI declarations those types need into `pkg/capi/<provider>/capicore/` and repoints the imports at it (`copy-capi-types --localize`), so the module no longer depends on `sigs.k8s.io/cluster-api`
+4. Generates deepcopy functions using `controller-gen` inside a temporary Go workspace
+5. Runs `go mod tidy` on the provider module, which drops the now-unused CAPI requirement
 
 CRD generation (`hack/capi-workspace-run.sh`) similarly creates a temporary `go.work` on the fly to resolve types across the main module and `pkg/capi/<provider>` modules. No committed workspace file is required.
 
