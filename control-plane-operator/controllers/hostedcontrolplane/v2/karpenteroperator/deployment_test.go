@@ -21,6 +21,43 @@ type fakeReleaseImageProvider struct {
 	images map[string]string
 }
 
+func TestAdaptStandaloneDeploymentEndpoint(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		host string
+		port int32
+		want string
+	}{
+		{name: "When the endpoint is raw IPv6, it should bracket the host", host: "2001:db8::1", port: 6443, want: "https://[2001:db8::1]:6443"},
+		{name: "When the endpoint is IPv4, it should preserve the authority", host: "192.0.2.1", port: 6443, want: "https://192.0.2.1:6443"},
+		{name: "When the endpoint is DNS, it should preserve the authority", host: "api.example.test", port: 6443, want: "https://api.example.test:6443"},
+		{name: "When the endpoint uses an alternate port, it should retain the port", host: "2001:db8::1", port: 443, want: "https://[2001:db8::1]:443"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).ToNot(HaveOccurred(), "load the production deployment manifest")
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{ControlPlaneEndpoint: hyperv1.APIEndpoint{Host: test.host, Port: test.port}},
+			}
+			opts := &KarpenterOperatorOptions{StandaloneKarpenterOperatorEnabled: true}
+			err = opts.adaptDeployment(controlplanecomponent.WorkloadContext{
+				Context: t.Context(), HCP: hcp, ReleaseImageProvider: &fakeReleaseImageProvider{},
+			}, deployment)
+			g.Expect(err).ToNot(HaveOccurred(), "adapt standalone deployment for %q", test.host)
+			container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+			g.Expect(container).ToNot(BeNil(), "standalone operator container must exist")
+			g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: "CLUSTER_ENDPOINT", Value: test.want}), "deployment must carry the exact endpoint URL")
+		})
+	}
+}
+
 func (f *fakeReleaseImageProvider) GetImage(name string) string {
 	return f.images[name]
 }

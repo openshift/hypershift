@@ -17,6 +17,26 @@ import (
 	"github.com/blang/semver"
 )
 
+func TestManagementKASURL(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, host, want string
+		port             int32
+	}{
+		{name: "When the endpoint is raw IPv6, it should bracket the selected IP", host: "2001:db8::1", port: 6443, want: "https://[2001:db8::1]:6443"},
+		{name: "When the endpoint is IPv4, it should preserve the URL", host: "192.0.2.1", port: 6443, want: "https://192.0.2.1:6443"},
+		{name: "When the endpoint is DNS, it should preserve the hostname", host: "api.example.test", port: 6443, want: "https://api.example.test:6443"},
+		{name: "When the endpoint uses an alternate port, it should retain the port", host: "2001:db8::1", port: 443, want: "https://[2001:db8::1]:443"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			g.Expect(managementKASURL(test.host, test.port)).To(Equal(test.want), "network-policy curl target must use the exact selected authority")
+		})
+	}
+}
+
 func TestAllowedCIDRsTargetService(t *testing.T) {
 	const ns = "test-hcp"
 

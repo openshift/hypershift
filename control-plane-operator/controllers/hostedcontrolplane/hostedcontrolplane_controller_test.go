@@ -5561,20 +5561,12 @@ func TestKASHealthCheckURL(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
 			endpoint := kasHealthCheckURL(test.ingressPoint, test.port)
-			g.Expect(endpoint).To(Equal(test.wantURL))
-
-			ctx := t.Context()
-			request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(request.Method).To(Equal(http.MethodGet))
-			g.Expect(request.Context()).To(BeIdenticalTo(ctx))
-			g.Expect(request.URL.Scheme).To(Equal("https"))
-			g.Expect(request.URL.Hostname()).To(Equal(test.ingressPoint))
-			g.Expect(request.URL.Port()).To(Equal(strconv.Itoa(test.port)))
-			g.Expect(request.URL.Path).To(Equal("/healthz"))
-			g.Expect(request.URL.RawQuery).To(Equal("verbose"))
+			g.Expect(endpoint).To(Equal(test.wantURL), "health URL for host %q and port %d", test.ingressPoint, test.port)
 		})
 	}
+	g := NewWithT(t)
+	_, err := http.NewRequestWithContext(t.Context(), http.MethodGet, kasHealthCheckURL("2001:db8::1", 6443), nil)
+	g.Expect(err).ToNot(HaveOccurred(), "raw IPv6 health URL must create an HTTP request")
 }
 
 func TestHealthCheckKASEndpoint(t *testing.T) {
@@ -5648,11 +5640,11 @@ func TestHealthCheckKASEndpoint(t *testing.T) {
 			err = healthCheckKASEndpoint(ctx, host, port, nil)
 			if !tt.cancelCtx {
 				var request *http.Request
-				g.Expect(requests).To(Receive(&request))
-				g.Expect(request.Method).To(Equal(http.MethodGet))
-				g.Expect(request.Host).To(Equal(server.Listener.Addr().String()))
-				g.Expect(request.URL.Path).To(Equal("/healthz"))
-				g.Expect(request.URL.RawQuery).To(Equal("verbose"))
+				g.Expect(requests).To(Receive(&request), "health handler must receive a request")
+				g.Expect(request.Method).To(Equal(http.MethodGet), "health request must use GET")
+				g.Expect(request.Host).To(Equal(server.Listener.Addr().String()), "health request must retain the selected authority")
+				g.Expect(request.URL.Path).To(Equal("/healthz"), "health request must use the health endpoint")
+				g.Expect(request.URL.RawQuery).To(Equal("verbose"), "health request must ask for failed-check details")
 			}
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
