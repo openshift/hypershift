@@ -26549,8 +26549,9 @@ The `hypershift create infra gcp` command creates network resources in the hoste
 
     The worker firewall rule (`<infra-id>-internal-cluster`) is **not** created by
     this command. It is created and continuously reconciled by the
-    control-plane-operator (CPO) throughout the cluster lifecycle and torn down on
-    deletion. See worker firewall rules below.
+    control-plane-operator (CPO) throughout the cluster lifecycle and torn down
+    during hosted cluster deletion when cloud resource cleanup is enabled. See
+    worker firewall rules below.
 
 ```bash
 hypershift create infra gcp \
@@ -26607,8 +26608,17 @@ Save this output — you will need the `networkName` and `subnetName` values whe
 The control-plane-operator (CPO) owns the worker firewall rule
 `<infra-id>-internal-cluster`. It is created in the hosted cluster's GCP project
 and VPC, continuously reconciled while the cluster exists, and deleted during
-hosted cluster teardown (before this CLI deletes the VPC). This CLI never creates
-or deletes the firewall rule.
+hosted cluster teardown. This CLI never creates or deletes the firewall rule.
+
+Teardown happens **only when cloud resource cleanup is enabled**, i.e. when the
+HostedCluster carries the `hypershift.openshift.io/cleanup-cloud-resources=true`
+annotation. `hypershift destroy cluster` sets it by default
+(`--destroy-cloud-resources`); a plain `kubectl delete hostedcluster` does not,
+leaving the rule in place — remove it manually
+(`gcloud compute firewall-rules delete <infra-id>-internal-cluster`) before
+deleting the VPC. Teardown can also be skipped explicitly with the
+`hypershift.openshift.io/skip-gcp-firewall-rule-cleanup` annotation on the
+HostedCluster.
 
 The managed rule is an enabled `INGRESS` / `ALLOW` rule at priority `1000`,
 scoped by the `<infra-id>-worker` network tag as **both** source and target
@@ -26648,10 +26658,18 @@ To clean up infrastructure resources:
 !!! warning "Delete the hosted cluster first"
 
     Destroy the **hosted cluster** before running `hypershift destroy infra gcp`.
-    The CPO-managed worker firewall rule is torn down during hosted cluster
-    deletion; deleting the VPC while the rule still exists will fail. If cloud
-    resource cleanup was skipped (via the cleanup opt-out annotation), the managed
-    firewall rule may remain and must be removed manually before deleting the VPC.
+    Deleting the VPC fails while the CPO-managed worker firewall rule
+    (`<infra-id>-internal-cluster`) still exists. The rule is torn down during
+    hosted cluster deletion only when cloud resource cleanup is enabled —
+    `hypershift destroy cluster` enables it by default, a plain
+    `kubectl delete hostedcluster` does not. If cleanup was not enabled (or was
+    skipped explicitly via the
+    `hypershift.openshift.io/skip-gcp-firewall-rule-cleanup` annotation), remove
+    the rule manually before deleting the VPC:
+    `gcloud compute firewall-rules delete <infra-id>-internal-cluster`.
+
+    This CLI still deletes the legacy `<infra-id>-allow-kubelet` rule that older
+    CLI versions created at setup time.
 
 ```bash
 hypershift destroy infra gcp \
