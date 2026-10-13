@@ -395,3 +395,35 @@ func (n *NetworkManager) formatRouterName() string {
 func (n *NetworkManager) formatNATName() string {
 	return fmt.Sprintf("%s-nat", n.infraID)
 }
+
+// formatLegacyFirewallName returns the name of the legacy kubelet firewall rule
+// that older versions of this CLI created at infrastructure setup time.
+func (n *NetworkManager) formatLegacyFirewallName() string {
+	return fmt.Sprintf("%s-allow-kubelet", n.infraID)
+}
+
+// DeleteLegacyFirewallRule deletes the legacy kubelet firewall rule
+// (<infra-id>-allow-kubelet) created at setup time by older versions of
+// hypershift create infra gcp, before the worker firewall rule moved to CPO
+// ownership (<infra-id>-internal-cluster). The rule is no longer created, so
+// deletion tolerates it not existing.
+func (n *NetworkManager) DeleteLegacyFirewallRule(ctx context.Context) error {
+	legacyFirewallName := n.formatLegacyFirewallName()
+	n.logger.Info("Deleting legacy firewall rule", "name", legacyFirewallName)
+
+	op, err := n.computeService.Firewalls.Delete(n.projectID, legacyFirewallName).Context(ctx).Do()
+	if err != nil {
+		if isNotFoundError(err) {
+			n.logger.Info("Legacy firewall rule not found, skipping", "name", legacyFirewallName)
+			return nil
+		}
+		return fmt.Errorf("failed to delete legacy firewall rule: %w", err)
+	}
+
+	if err := n.waitForGlobalOperation(ctx, op.Name); err != nil {
+		return fmt.Errorf("failed waiting for legacy firewall rule deletion: %w", err)
+	}
+
+	n.logger.Info("Deleted legacy firewall rule", "name", legacyFirewallName)
+	return nil
+}
