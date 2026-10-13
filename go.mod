@@ -319,16 +319,13 @@ replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter 
 // Temporary: NTO main requires kube-openapi v0.35.1 (fake tag that only resolves via NTO's own replace)
 replace k8s.io/kube-openapi v0.35.1 => k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288
 
-replace github.com/openshift/cluster-api-provider-agent/api => ./pkg/capi/agent
-
-replace sigs.k8s.io/cluster-api-provider-aws/v2 => ./pkg/capi/aws
-
-replace sigs.k8s.io/cluster-api-provider-azure => ./pkg/capi/azure
-
-replace sigs.k8s.io/cluster-api-provider-gcp => ./pkg/capi/gcp
-
-replace sigs.k8s.io/cluster-api-provider-ibmcloud => ./pkg/capi/ibmcloud
-
-replace sigs.k8s.io/cluster-api-provider-kubevirt => ./pkg/capi/kubevirt
-
-replace sigs.k8s.io/cluster-api-provider-openstack => ./pkg/capi/openstack
+// CAPI provider types
+replace (
+	github.com/openshift/cluster-api-provider-agent/api => ./pkg/capi/agent
+	sigs.k8s.io/cluster-api-provider-aws/v2 => ./pkg/capi/aws
+	sigs.k8s.io/cluster-api-provider-azure => ./pkg/capi/azure
+	sigs.k8s.io/cluster-api-provider-gcp => ./pkg/capi/gcp
+	sigs.k8s.io/cluster-api-provider-ibmcloud => ./pkg/capi/ibmcloud
+	sigs.k8s.io/cluster-api-provider-kubevirt => ./pkg/capi/kubevirt
+	sigs.k8s.io/cluster-api-provider-openstack => ./pkg/capi/openstack
+)
