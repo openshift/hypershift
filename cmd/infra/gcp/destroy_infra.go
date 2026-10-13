@@ -77,11 +77,14 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 	}
 
 	// Delete resources in reverse order of creation (dependencies first)
-	// Order: NAT -> Router -> Subnet -> Network
+	// Order: NAT -> Router -> Subnet -> Legacy firewall -> Network
 	//
 	// The worker firewall rule (<infra-id>-internal-cluster) is owned by the
-	// control-plane-operator and is torn down during HCP deletion, before this
-	// CLI deletes the VPC network.
+	// control-plane-operator and is torn down during HCP deletion when cloud
+	// resource cleanup is enabled (see docs/content/how-to/gcp/create-gcp-infra.md).
+	// The legacy firewall rule (<infra-id>-allow-kubelet) was created at setup
+	// time by older versions of hypershift create infra gcp, so this CLI still
+	// deletes it to unblock VPC deletion.
 
 	// Delete Cloud NAT (by updating router to remove NAT config)
 	if err := networkManager.DeleteNAT(ctx); err != nil {
@@ -96,6 +99,12 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 	// Delete subnet
 	if err := networkManager.DeleteSubnet(ctx); err != nil {
 		return fmt.Errorf("failed to delete subnet: %w", err)
+	}
+
+	// Delete the legacy firewall rule created at setup time by older CLI
+	// versions so the VPC network can be deleted.
+	if err := networkManager.DeleteLegacyFirewallRule(ctx); err != nil {
+		return fmt.Errorf("failed to delete legacy firewall rule: %w", err)
 	}
 
 	// Delete VPC network
