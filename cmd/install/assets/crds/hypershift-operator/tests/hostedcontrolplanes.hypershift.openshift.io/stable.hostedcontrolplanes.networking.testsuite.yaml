@@ -46,6 +46,132 @@ tests:
             type: Route
             route: {}
 
+  - name: When networkType uses a case variant of a built-in provider it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: "openshiftsdn"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must use the exact spelling OVNKubernetes or OpenShiftSDN when selecting a built-in provider"
+
+  - name: When networkType uses a lowercase variant of OVNKubernetes it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: "ovnkubernetes"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must use the exact spelling OVNKubernetes or OpenShiftSDN when selecting a built-in provider"
+
+  - name: When networkType uses a mixed-case variant of OVNKubernetes it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: "OvnKubernetes"
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must use the exact spelling OVNKubernetes or OpenShiftSDN when selecting a built-in provider"
+
   - name: When networkType is empty it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -88,7 +214,7 @@ tests:
             route: {}
     expectedError: 'should be at least 1 chars long'
 
-  - name: When networkType exceeds 255 characters it should fail
+  - name: When networkType exceeds 63 characters it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedControlPlane
@@ -131,16 +257,14 @@ tests:
     expectedError: 'spec.networking.networkType: Too long'
 
   # --- allocateNodeCIDRs validation (ClusterNetworking, shared with HostedCluster) ---
-  # A non-constant value (Flannel) exercises the actual open-string capability; any value
-  # other than OpenShiftSDN/OVNKubernetes takes the same third-party CNI code path.
-  - name: When allocateNodeCIDRs is Enabled and networkType is a third-party CNI it should pass
+  - name: When allocateNodeCIDRs is Enabled and networkType is Other it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedControlPlane
       spec:
         networking:
           allocateNodeCIDRs: Enabled
-          networkType: Flannel
+          networkType: Other
         releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
         pullSecret:
           name: pull-secret
@@ -175,14 +299,14 @@ tests:
             type: Route
             route: {}
 
-  - name: When allocateNodeCIDRs is Enabled and networkType is not a third-party CNI it should fail
+  - name: When allocateNodeCIDRs is Enabled and networkType is OpenShiftSDN it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedControlPlane
       spec:
         networking:
           allocateNodeCIDRs: Enabled
-          networkType: OVNKubernetes
+          networkType: OpenShiftSDN
         releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
         pullSecret:
           name: pull-secret
@@ -216,16 +340,16 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "allocateNodeCIDRs can only be set to Enabled when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes)"
+    expectedError: "allocateNodeCIDRs can only be set to Enabled when networkType is 'Other'"
 
   # --- disableMultiNetwork validation (HostedControlPlane spec-level rule) ---
-  - name: When disableMultiNetwork is true and networkType is a third-party CNI it should pass
+  - name: When disableMultiNetwork is true and networkType is Other it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedControlPlane
       spec:
         networking:
-          networkType: Flannel
+          networkType: Other
         operatorConfiguration:
           clusterNetworkOperator:
             disableMultiNetwork: true
@@ -263,13 +387,13 @@ tests:
             type: Route
             route: {}
 
-  - name: When disableMultiNetwork is true and networkType is not a third-party CNI it should fail
+  - name: When disableMultiNetwork is true and networkType is OpenShiftSDN it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedControlPlane
       spec:
         networking:
-          networkType: OVNKubernetes
+          networkType: OpenShiftSDN
         operatorConfiguration:
           clusterNetworkOperator:
             disableMultiNetwork: true
@@ -306,7 +430,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "disableMultiNetwork can only be set to true when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes)"
+    expectedError: "disableMultiNetwork can only be set to true when networkType is 'Other'"
 
   onUpdate:
   # --- networkType immutability ---

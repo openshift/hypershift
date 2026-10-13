@@ -188,3 +188,45 @@ func TestIsMultusDisabled(t *testing.T) {
 		})
 	}
 }
+
+func TestIsBuiltInNetworkType(t *testing.T) {
+	tests := []struct {
+		name        string
+		networkType hyperv1.NetworkType
+		expected    bool
+	}{
+		{
+			name:        "When network type is OVNKubernetes, it should be recognized as built-in",
+			networkType: hyperv1.OVNKubernetes,
+			expected:    true,
+		},
+		{
+			name:        "When network type is OpenShiftSDN, it should be recognized as built-in",
+			networkType: hyperv1.OpenShiftSDN,
+			expected:    true,
+		},
+		{
+			name:        "When network type is Other, it should not be recognized as built-in",
+			networkType: hyperv1.Other,
+			expected:    false,
+		},
+		{
+			name:        "When network type is Calico, it should not be recognized as built-in",
+			networkType: hyperv1.Calico,
+			expected:    false,
+		},
+		{
+			name:        "When network type is lowercase ovnkubernetes, it should not be recognized as built-in",
+			networkType: hyperv1.NetworkType("ovnkubernetes"),
+			expected:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsBuiltInNetworkType(tt.networkType); got != tt.expected {
+				t.Errorf("IsBuiltInNetworkType(%q) = %v, want %v", tt.networkType, got, tt.expected)
+			}
+		})
+	}
+}

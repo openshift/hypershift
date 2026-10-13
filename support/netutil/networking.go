@@ -148,3 +148,8 @@ func IsDisableMultiNetwork(hcp *hyperv1.HostedControlPlane) bool {
 	}
 	return false
 }
+
+// IsBuiltInNetworkType returns true when HyperShift has first-class handling for the network provider.
+func IsBuiltInNetworkType(networkType hyperv1.NetworkType) bool {
+	return networkType == hyperv1.OVNKubernetes || networkType == hyperv1.OpenShiftSDN
+}

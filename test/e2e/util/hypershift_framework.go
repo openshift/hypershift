@@ -186,7 +186,7 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 	h.Run("ValidateHostedCluster", func(t *testing.T) {
 		// A third-party CNI (any networkType that is not built-in) is not installed by HyperShift, so
 		// nodes will not become Ready and the full cluster validation must be skipped.
-		if platform != hyperv1.NonePlatform && hostedCluster.Spec.Networking.NetworkType.IsBuiltIn() {
+		if platform != hyperv1.NonePlatform && netutil.IsBuiltInNetworkType(hostedCluster.Spec.Networking.NetworkType) {
 			// Use !IsPublicHC to detect strictly private clusters (no public API endpoint).
 			// IsPrivateHC includes PublicAndPrivate, which has a reachable API server
 			// and should use ValidatePublicCluster.
