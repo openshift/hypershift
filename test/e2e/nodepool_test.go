@@ -110,7 +110,7 @@ func TestNodePool(t *testing.T) {
 					},
 					{
 						name: "KubeVirtNodeMultinetTest",
-						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster),
+						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 					},
 					{
 						name: "OpenStackAdvancedTest",
@@ -155,10 +155,12 @@ func TestNodePool(t *testing.T) {
 				}
 			},
 			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {
-				return []NodePoolTestCase{{
-					name: "KubeVirtNodeAdvancedMultinetTest",
-					test: NewKubeVirtAdvancedMultinetTest(ctx, mgtClient, hostedCluster),
-				}}
+				return []NodePoolTestCase{
+					{
+						name: "KubeVirtNodeAdvancedMultinetTest",
+						test: NewKubeVirtAdvancedMultinetTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
+					},
+				}
 			},
 		},
 		{

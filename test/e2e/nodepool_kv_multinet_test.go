@@ -22,12 +22,14 @@ import (
 )
 
 type KubeVirtMultinetTest struct {
-	infra e2eutil.KubeVirtInfra
+	infra               e2eutil.KubeVirtInfra
+	hostedClusterClient crclient.Client
 }
 
-func NewKubeVirtMultinetTest(ctx context.Context, cl crclient.Client, hc *hyperv1.HostedCluster) *KubeVirtMultinetTest {
+func NewKubeVirtMultinetTest(ctx context.Context, cl crclient.Client, hc *hyperv1.HostedCluster, hcClient crclient.Client) *KubeVirtMultinetTest {
 	return &KubeVirtMultinetTest{
-		infra: e2eutil.NewKubeVirtInfra(ctx, cl, hc),
+		infra:               e2eutil.NewKubeVirtInfra(ctx, cl, hc),
+		hostedClusterClient: hcClient,
 	}
 }
 
@@ -39,7 +41,7 @@ func (k KubeVirtMultinetTest) Setup(t *testing.T) {
 	t.Log("Starting test KubeVirtMultinetTest")
 }
 
-func (k KubeVirtMultinetTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []corev1.Node) {
+func (k KubeVirtMultinetTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
 	g := NewWithT(t)
 
 	np := &hyperv1.NodePool{}
@@ -108,6 +110,16 @@ func (k KubeVirtMultinetTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []c
 			},
 		},
 	)
+
+	// Verify nmstate network config IS applied when using the default pod network.
+	// When the default network is attached, the pod-network-specific nmstate configuration
+	// (IPv6 autoconf disable, ARP proxy gateway) should be present on the nodes.
+	t.Log("Verifying nmstate network configuration IS applied on default pod network nodes")
+	ds := composeNmstateCheckerDaemonSet(`chroot /host nmstatectl show | grep -q "autoconf: false"`)
+	dsName := "nmstate-checker-" + nodePool.Name
+	e2eutil.CorrelateDaemonSet(ds, &nodePool, dsName)
+	g.Expect(k.hostedClusterClient.Create(k.infra.Ctx(), ds)).To(Succeed())
+	eventuallyDaemonSetRollsOut(t, k.infra.Ctx(), k.hostedClusterClient, len(nodes), np, ds)
 }
 
 func (k KubeVirtMultinetTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
