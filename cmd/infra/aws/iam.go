@@ -354,6 +354,7 @@ var (
 				"Resource": "*",
 				"Action": [
 					"ec2:DescribeCapacityReservations",
+					"ec2:DescribeDhcpOptions",
 					"ec2:DescribeImages",
 					"ec2:DescribeInstances",
 					"ec2:DescribeInstanceTypeOfferings",
@@ -361,7 +362,8 @@ var (
 					"ec2:DescribeLaunchTemplates",
 					"ec2:DescribeSecurityGroups",
 					"ec2:DescribeSpotPriceHistory",
-					"ec2:DescribeSubnets"
+					"ec2:DescribeSubnets",
+					"ec2:DescribeVpcs"
 				]
 			  },
 			  {
