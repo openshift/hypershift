@@ -196,12 +196,13 @@ func run(ctx context.Context) error {
 	}
 
 	kir := karpenterignition.KarpenterIgnitionReconciler{
-		ReleaseProvider:         releaseProvider,
-		VersionResolver:         releaseinfo.NewCincinnatiVersionResolver(),
-		ImageMetadataProvider:   imageMetaDataProvider,
-		HypershiftOperatorImage: hypershiftOperatorImage,
-		IgnitionEndpoint:        ignitionEndpoint,
-		Namespace:               namespace,
+		ControlPlaneOperatorImage: controlPlaneOperatorImage,
+		ReleaseProvider:           releaseProvider,
+		VersionResolver:           releaseinfo.NewCincinnatiVersionResolver(),
+		ImageMetadataProvider:     imageMetaDataProvider,
+		HypershiftOperatorImage:   hypershiftOperatorImage,
+		IgnitionEndpoint:          ignitionEndpoint,
+		Namespace:                 namespace,
 	}
 	if err := kir.SetupWithManager(mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup karpenter ignition controller with manager: %w", err)
