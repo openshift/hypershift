@@ -15341,8 +15341,8 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>port is the port of the NodePort service. If &lt;=0, the port is dynamically
-assigned when the service is created.</p>
+<p>port is the port of the NodePort service.
+If omitted, the port is dynamically assigned when the service is created.</p>
 </td>
 </tr>
 </tbody>
