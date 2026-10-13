@@ -5524,6 +5524,59 @@ func TestReconcileDefaultSecurityGroup_GenerationConflict(t *testing.T) {
 		"platform status should not be patched when generation changed underneath us")
 }
 
+func TestKASHealthCheckURL(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		ingressPoint string
+		port         int
+		wantURL      string
+	}{
+		{
+			name:         "When the ingress point is raw IPv6, it should bracket the address",
+			ingressPoint: "2001:db8::1",
+			port:         6443,
+			wantURL:      "https://[2001:db8::1]:6443/healthz?verbose",
+		},
+		{
+			name:         "When the ingress point is IPv4, it should preserve the address",
+			ingressPoint: "192.0.2.1",
+			port:         6443,
+			wantURL:      "https://192.0.2.1:6443/healthz?verbose",
+		},
+		{
+			name:         "When the ingress point is DNS, it should preserve the hostname",
+			ingressPoint: "api.example.test",
+			port:         6443,
+			wantURL:      "https://api.example.test:6443/healthz?verbose",
+		},
+		{
+			name:         "When the port is different, it should preserve the selected port",
+			ingressPoint: "2001:db8::1",
+			port:         443,
+			wantURL:      "https://[2001:db8::1]:443/healthz?verbose",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			endpoint := kasHealthCheckURL(test.ingressPoint, test.port)
+			g.Expect(endpoint).To(Equal(test.wantURL))
+
+			ctx := t.Context()
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(request.Method).To(Equal(http.MethodGet))
+			g.Expect(request.Context()).To(BeIdenticalTo(ctx))
+			g.Expect(request.URL.Scheme).To(Equal("https"))
+			g.Expect(request.URL.Hostname()).To(Equal(test.ingressPoint))
+			g.Expect(request.URL.Port()).To(Equal(strconv.Itoa(test.port)))
+			g.Expect(request.URL.Path).To(Equal("/healthz"))
+			g.Expect(request.URL.RawQuery).To(Equal("verbose"))
+		})
+	}
+}
+
 func TestHealthCheckKASEndpoint(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -5573,7 +5626,11 @@ func TestHealthCheckKASEndpoint(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			server := httptest.NewTLSServer(tt.handler)
+			requests := make(chan *http.Request, 1)
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests <- r
+				tt.handler(w, r)
+			}))
 			defer server.Close()
 
 			host, portStr, err := net.SplitHostPort(server.Listener.Addr().String())
@@ -5589,6 +5646,14 @@ func TestHealthCheckKASEndpoint(t *testing.T) {
 			}
 
 			err = healthCheckKASEndpoint(ctx, host, port, nil)
+			if !tt.cancelCtx {
+				var request *http.Request
+				g.Expect(requests).To(Receive(&request))
+				g.Expect(request.Method).To(Equal(http.MethodGet))
+				g.Expect(request.Host).To(Equal(server.Listener.Addr().String()))
+				g.Expect(request.URL.Path).To(Equal("/healthz"))
+				g.Expect(request.URL.RawQuery).To(Equal("verbose"))
+			}
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 				if tt.errSubstr != "" {
