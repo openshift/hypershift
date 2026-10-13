@@ -6172,3 +6172,237 @@ func TestValidateAWSKMSConfig(t *testing.T) {
 		})
 	}
 }
+
+//go:embed testdata/named-cert-cas/root-ca.pem
+var testNamedCertRootCAPEM []byte
+
+//go:embed testdata/named-cert-cas/leaf.pem
+var testNamedCertLeafPEM []byte
+
+//go:embed testdata/named-cert-cas/chain.pem
+var testNamedCertChainPEM []byte
+
+//go:embed testdata/named-cert-cas/leaf-intermediate-chain.pem
+var testNamedCertLeafIntermediateChainPEM []byte
+
+func TestGetNamedCertificateCAs(t *testing.T) {
+	rootCAPEM := testNamedCertRootCAPEM
+	leafPEM := testNamedCertLeafPEM
+	chainPEM := testNamedCertChainPEM
+
+	const namespace = "test-ns"
+
+	tests := []struct {
+		name        string
+		hcp         *hyperv1.HostedControlPlane
+		objects     []client.Object
+		expectErr   bool
+		expectCount int
+	}{
+		{
+			name: "When configuration is nil, it should return nil",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "hcp"},
+			},
+			expectCount: 0,
+		},
+		{
+			name: "When named cert has empty ServingCertificate name, it should skip it",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "hcp"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							ServingCerts: configv1.APIServerServingCerts{
+								NamedCertificates: []configv1.APIServerNamedServingCert{
+									{ServingCertificate: configv1.SecretNameReference{Name: ""}},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectCount: 0,
+		},
+		{
+			name: "When named cert Secret does not exist, it should return an error",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "hcp"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							ServingCerts: configv1.APIServerServingCerts{
+								NamedCertificates: []configv1.APIServerNamedServingCert{
+									{ServingCertificate: configv1.SecretNameReference{Name: "missing-secret"}},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "When tls.crt contains a CA chain, it should extract the CA certificates",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "hcp"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							ServingCerts: configv1.APIServerServingCerts{
+								NamedCertificates: []configv1.APIServerNamedServingCert{
+									{ServingCertificate: configv1.SecretNameReference{Name: "chain-cert"}},
+								},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "chain-cert"},
+					Data: map[string][]byte{
+						corev1.TLSCertKey: chainPEM,
+					},
+				},
+			},
+			expectCount: 1,
+		},
+		{
+			name: "When tls.crt has only a leaf and ca.crt is present, it should fall back to ca.crt",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "hcp"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							ServingCerts: configv1.APIServerServingCerts{
+								NamedCertificates: []configv1.APIServerNamedServingCert{
+									{ServingCertificate: configv1.SecretNameReference{Name: "leaf-only-cert"}},
+								},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "leaf-only-cert"},
+					Data: map[string][]byte{
+						corev1.TLSCertKey:        leafPEM,
+						certs.CASignerCertMapKey: rootCAPEM,
+					},
+				},
+			},
+			expectCount: 1,
+		},
+		{
+			name: "When tls.crt has only a leaf and no ca.crt, it should return empty and log a warning",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "hcp"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							ServingCerts: configv1.APIServerServingCerts{
+								NamedCertificates: []configv1.APIServerNamedServingCert{
+									{ServingCertificate: configv1.SecretNameReference{Name: "no-ca-cert"}},
+								},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "no-ca-cert"},
+					Data: map[string][]byte{
+						corev1.TLSCertKey: leafPEM,
+					},
+				},
+			},
+			expectCount: 0,
+		},
+		{
+			name: "When tls.crt has leaf and intermediate and ca.crt has the root, it should include both CAs",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "hcp"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							ServingCerts: configv1.APIServerServingCerts{
+								NamedCertificates: []configv1.APIServerNamedServingCert{
+									{ServingCertificate: configv1.SecretNameReference{Name: "split-chain-cert"}},
+								},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "split-chain-cert"},
+					Data: map[string][]byte{
+						corev1.TLSCertKey:        testNamedCertLeafIntermediateChainPEM,
+						certs.CASignerCertMapKey: rootCAPEM,
+					},
+				},
+			},
+			expectCount: 1,
+		},
+		{
+			name: "When multiple named certs are configured, it should extract CAs from all of them",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "hcp"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						APIServer: &configv1.APIServerSpec{
+							ServingCerts: configv1.APIServerServingCerts{
+								NamedCertificates: []configv1.APIServerNamedServingCert{
+									{ServingCertificate: configv1.SecretNameReference{Name: "cert-a"}},
+									{ServingCertificate: configv1.SecretNameReference{Name: "cert-b"}},
+								},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "cert-a"},
+					Data: map[string][]byte{
+						corev1.TLSCertKey: chainPEM,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "cert-b"},
+					Data: map[string][]byte{
+						corev1.TLSCertKey:        leafPEM,
+						certs.CASignerCertMapKey: rootCAPEM,
+					},
+				},
+			},
+			expectCount: 2,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			fakeClient := fake.NewClientBuilder().WithObjects(tc.objects...).Build()
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(t.Context()),
+			}
+
+			result, err := r.getNamedCertificateCAs(t.Context(), tc.hcp)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(result).To(HaveLen(tc.expectCount))
+			for _, s := range result {
+				g.Expect(s.Data).To(HaveKey(certs.CASignerCertMapKey))
+				g.Expect(s.Data[certs.CASignerCertMapKey]).NotTo(BeEmpty())
+			}
+		})
+	}
+}
