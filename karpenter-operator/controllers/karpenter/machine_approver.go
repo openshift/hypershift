@@ -11,7 +11,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/support/awsapi"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 
 	certificatesv1 "k8s.io/api/certificates/v1"
@@ -169,16 +168,7 @@ func (r *MachineApproverController) authorizeClientCSR(ctx context.Context, csr 
 		return claim.Status.NodeName != ""
 	})
 
-	dnsNames, err := getEC2InstancesDNSNames(ctx, filteredNodeClaims, ec2Client)
-	if err != nil {
-		return false, err
-	}
-
-	if slices.Contains(dnsNames, nodeName) {
-		return true, nil
-	}
-
-	return false, nil
+	return matchesInstanceHostname(ctx, nodeName, filteredNodeClaims, ec2Client)
 }
 
 func (r *MachineApproverController) authorizeServingCSR(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, ec2Client awsapi.EC2API) (bool, error) {
@@ -192,45 +182,7 @@ func (r *MachineApproverController) authorizeServingCSR(ctx context.Context, csr
 		return false, err
 	}
 
-	dnsNames, err := getEC2InstancesDNSNames(ctx, []karpenterv1.NodeClaim{*nodeClaim}, ec2Client)
-	if err != nil {
-		return false, err
-	}
-
-	if slices.Contains(dnsNames, nodeName) {
-		return true, nil
-	}
-
-	return false, nil
-}
-
-func getEC2InstancesDNSNames(ctx context.Context, nodeClaims []karpenterv1.NodeClaim, ec2Client awsapi.EC2API) ([]string, error) {
-	ec2InstanceIDs := []string{}
-	for _, claim := range nodeClaims {
-		providerID := claim.Status.ProviderID
-		instanceID := providerID[strings.LastIndex(providerID, "/")+1:]
-
-		ec2InstanceIDs = append(ec2InstanceIDs, instanceID)
-	}
-
-	if len(ec2InstanceIDs) == 0 {
-		return nil, nil
-	}
-
-	output, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
-		InstanceIds: ec2InstanceIDs,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	dnsNames := []string{}
-	for _, reservation := range output.Reservations {
-		for _, instance := range reservation.Instances {
-			dnsNames = append(dnsNames, aws.ToString(instance.PrivateDnsName))
-		}
-	}
-	return dnsNames, nil
+	return matchesInstanceHostname(ctx, nodeName, []karpenterv1.NodeClaim{*nodeClaim}, ec2Client)
 }
 
 func (r *MachineApproverController) approve(ctx context.Context, csr *certificatesv1.CertificateSigningRequest) error {
