@@ -3,14 +3,69 @@ package metricsproxy
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	. "github.com/onsi/gomega"
 )
+
+type scrapeRoundTripper func(*http.Request) (*http.Response, error)
+
+func (transport scrapeRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return transport(request)
+}
+
+type scrapeResponseBody struct {
+	io.Reader
+	closed bool
+}
+
+func (body *scrapeResponseBody) Close() error {
+	body.closed = true
+	return nil
+}
+
+func TestScrape(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, host, scheme, path, want string
+		port                           int32
+	}{
+		{name: "When the pod address is raw IPv6, it should request a bracketed authority", host: "2001:db8::1", port: 9090, want: "https://[2001:db8::1]:9090/metrics"},
+		{name: "When the pod address is IPv4, it should preserve the authority", host: "192.0.2.1", port: 9090, want: "https://192.0.2.1:9090/metrics"},
+		{name: "When the target is DNS, it should preserve the authority", host: "metrics.example.test", port: 9090, want: "https://metrics.example.test:9090/metrics"},
+		{name: "When HTTP and a relative path are selected, it should normalize the path", host: "2001:db8::1", port: 8080, scheme: "http", path: "custom/metrics", want: "http://[2001:db8::1]:8080/custom/metrics"},
+		{name: "When HTTPS and an absolute path are selected, it should retain them", host: "2001:db8::1", port: 8443, scheme: "https", path: "/custom/metrics", want: "https://[2001:db8::1]:8443/custom/metrics"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			target := ScrapeTarget{PodIP: test.host, Port: test.port}
+			g.Expect(scrapeURL(target, test.path, test.scheme)).To(Equal(test.want), "production scraper URL must retain the exact authority and path")
+			body := &scrapeResponseBody{Reader: strings.NewReader("# TYPE endpoint_metric gauge\nendpoint_metric 1\n")}
+			var observed *http.Request
+			client := &http.Client{Transport: scrapeRoundTripper(func(request *http.Request) (*http.Response, error) {
+				observed = request
+				return &http.Response{StatusCode: http.StatusOK, Body: body, Header: make(http.Header)}, nil
+			})}
+			ctx := t.Context()
+			result := NewScraper().scrape(ctx, client, target, test.path, test.scheme)
+			g.Expect(result.Err).ToNot(HaveOccurred(), "scrape must construct and execute its production request")
+			g.Expect(observed).ToNot(BeNil(), "client transport must receive the actual scraper request")
+			g.Expect(observed.URL.String()).To(Equal(test.want), "actual request must use the production URL")
+			g.Expect(observed.Method).To(Equal(http.MethodGet), "scrape must use GET")
+			g.Expect(observed.Context()).To(BeIdenticalTo(ctx), "scrape must retain cancellation context")
+			g.Expect(result.Families).To(HaveKey("endpoint_metric"), "response metrics must still be parsed")
+			g.Expect(body.closed).To(BeTrue(), "scrape must close the response body")
+		})
+	}
+}
 
 func TestBuildScrapeClient(t *testing.T) {
 	t.Parallel()
