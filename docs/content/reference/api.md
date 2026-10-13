@@ -7881,11 +7881,11 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
-may have the following key/value pairs:</p>
-<pre><code>etcd-client-ca.crt: Certificate Authority value
-etcd-client.crt: Client certificate value
-etcd-client.key: Client certificate key value
+<p>clientSecret refers to a secret for client mTLS authentication with the etcd cluster.
+The secret must contain all three of the following key/value pairs:</p>
+<pre><code>etcd-client-ca.crt: CA bundle used to verify the etcd server certificate
+etcd-client.crt: Client certificate used to authenticate to etcd
+etcd-client.key: Private key for the client certificate
 </code></pre>
 </td>
 </tr>
@@ -18905,7 +18905,7 @@ connections; &ndash;etcd-servers-overrides only overrides server URLs.</p>
 </p>
 <p>
 <p>UnmanagedEtcdSpec specifies configuration which enables the control plane to
-integrate with an eternally managed etcd cluster.</p>
+integrate with an externally managed etcd cluster.</p>
 </p>
 <table>
 <thead>
@@ -18923,10 +18923,10 @@ string
 </em>
 </td>
 <td>
-<p>endpoint is the full etcd cluster client endpoint URL. For example:</p>
+<p>endpoint is the full etcd cluster client endpoint HTTPS URL. For example:</p>
 <pre><code>https://etcd-client:2379
 </code></pre>
-<p>If the URL uses an HTTPS scheme, the TLS field is required.</p>
+<p>The tls field is required to authenticate to and verify the etcd endpoint.</p>
 </td>
 </tr>
 <tr>
@@ -18939,7 +18939,7 @@ EtcdTLSConfig
 </em>
 </td>
 <td>
-<p>tls specifies TLS configuration for HTTPS etcd client endpoints.</p>
+<p>tls specifies the required TLS configuration for the HTTPS etcd client endpoint.</p>
 </td>
 </tr>
 <tr>
