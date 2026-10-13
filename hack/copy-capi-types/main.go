@@ -845,6 +845,39 @@ func runLocalize(dir, modulePath, capiRoot, outName string) {
 		log.Fatalf("no Go files found under %s", dir)
 	}
 
+	seeds := collectSeeds(providerFiles)
+	if len(seeds) == 0 {
+		fmt.Println("localize: no CAPI references found; nothing to do")
+		return
+	}
+
+	pkgs, closure, extraImports := computeClosure(capiRoot, seeds)
+
+	for pkgPath, syms := range closure {
+		if len(syms) == 0 {
+			continue
+		}
+		writeLocalizedPackage(dir, outName, pkgs[pkgPath], syms, extraImports[pkgPath])
+	}
+
+	rewritten, strippedTotal := 0, 0
+	for _, path := range providerFiles {
+		changed, removed := localizeFile(path, modulePath, outName, closure)
+		if changed {
+			rewritten++
+		}
+		strippedTotal += removed
+	}
+
+	fmt.Printf("localize: %d CAPI package(s) extracted, %d provider file(s) repointed, %d decl(s) stripped\n",
+		len(closure), rewritten, strippedTotal)
+}
+
+// collectSeeds returns the CAPI symbols the provider's type, const and var
+// declarations reference, keyed by package path. Function bodies are
+// deliberately excluded: a function reaching further into CAPI is stripped
+// rather than pulling a much larger type closure into the extraction.
+func collectSeeds(providerFiles []string) map[string]map[string]bool {
 	seeds := map[string]map[string]bool{}
 	for _, path := range providerFiles {
 		fset := token.NewFileSet()
@@ -861,22 +894,26 @@ func runLocalize(dir, modulePath, capiRoot, outName string) {
 			if !ok || gd.Tok == token.IMPORT {
 				continue
 			}
-			for pkgPath, sym := range capiRefs(gd, aliases) {
+			for pkgPath, syms := range capiRefs(gd, aliases) {
 				if seeds[pkgPath] == nil {
 					seeds[pkgPath] = map[string]bool{}
 				}
-				for s := range sym {
+				for s := range syms {
 					seeds[pkgPath][s] = true
 				}
 			}
 		}
 	}
+	return seeds
+}
 
-	if len(seeds) == 0 {
-		fmt.Println("localize: no CAPI references found; nothing to do")
-		return
-	}
-
+// computeClosure walks out from the seed symbols to everything they reference,
+// loading CAPI packages on demand and following references across them. It
+// returns the loaded packages, the symbols to extract from each, and the
+// non-CAPI imports those declarations need.
+func computeClosure(capiRoot string, seeds map[string]map[string]bool) (
+	map[string]*capiPackage, map[string]map[string]bool, map[string]map[string]string,
+) {
 	pkgs := map[string]*capiPackage{}
 	closure := map[string]map[string]bool{}
 	extraImports := map[string]map[string]string{} // pkgPath -> alias -> import path
@@ -944,25 +981,7 @@ func runLocalize(dir, modulePath, capiRoot, outName string) {
 			return true
 		})
 	}
-
-	for pkgPath, syms := range closure {
-		if len(syms) == 0 {
-			continue
-		}
-		writeLocalizedPackage(dir, outName, pkgs[pkgPath], syms, extraImports[pkgPath])
-	}
-
-	rewritten, strippedTotal := 0, 0
-	for _, path := range providerFiles {
-		changed, removed := localizeFile(path, modulePath, outName, closure)
-		if changed {
-			rewritten++
-		}
-		strippedTotal += removed
-	}
-
-	fmt.Printf("localize: %d CAPI package(s) extracted, %d provider file(s) repointed, %d decl(s) stripped\n",
-		len(closure), rewritten, strippedTotal)
+	return pkgs, closure, extraImports
 }
 
 // collectProviderFiles lists the module's Go sources, skipping the directory

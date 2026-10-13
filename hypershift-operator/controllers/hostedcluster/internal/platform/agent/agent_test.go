@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 
 	configv1 "github.com/openshift/api/config/v1"
+	agentcapicore "github.com/openshift/cluster-api-provider-agent/api/capicore/api/core/v1beta1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -23,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	agentcapicore "github.com/openshift/cluster-api-provider-agent/api/capicore/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
