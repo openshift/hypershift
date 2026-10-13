@@ -31,6 +31,61 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+func TestAuthorize(t *testing.T) {
+	const nodeName = "ip-10-0-1-2.custom.example.internal"
+
+	testCases := map[string]struct {
+		signerName string
+	}{
+		"When a client CSR node name has the DHCP domain, it should be authorized": {
+			signerName: certificatesv1.KubeAPIServerClientKubeletSignerName,
+		},
+		"When a serving CSR node name has the DHCP domain, it should be authorized": {
+			signerName: certificatesv1.KubeletServingSignerName,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// A NodeClaim only has a node name once the node has registered, which happens before its serving CSR.
+			nodeClaim := &karpenterv1.NodeClaim{Status: karpenterv1.NodeClaimStatus{ProviderID: "aws:///fakeproviderID"}}
+			if tc.signerName == certificatesv1.KubeletServingSignerName {
+				nodeClaim.Status.NodeName = nodeName
+			}
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme()).
+				WithObjects(nodeClaim).
+				Build()
+
+			r := &MachineApproverController{client: fakeClient}
+
+			mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
+			mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any()).Return(
+				&ec2.DescribeInstancesOutput{
+					Reservations: []ec2types.Reservation{{Instances: []ec2types.Instance{
+						{PrivateDnsName: aws.String("ip-10-0-1-2.eu-central-1.compute.internal"), VpcId: aws.String("vpc-1")},
+					}}},
+				}, nil,
+			)
+			expectDHCPDomainName("custom.example.internal")(mockEC2)
+
+			csr := &certificatesv1.CertificateSigningRequest{
+				Spec: certificatesv1.CertificateSigningRequestSpec{
+					Request:    createCSR("system:node:" + nodeName),
+					Username:   "system:node:" + nodeName,
+					SignerName: tc.signerName,
+				},
+			}
+
+			authorized, err := r.authorize(t.Context(), csr, mockEC2)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(authorized).To(BeTrue())
+		})
+	}
+}
+
 func TestAuthorizeClientCSR(t *testing.T) {
 	fakeNodeClaim := &karpenterv1.NodeClaim{
 		Status: karpenterv1.NodeClaimStatus{
