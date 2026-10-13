@@ -24,6 +24,13 @@ COPY_TOOL="$ROOT/hack/copy-capi-types/main.go"
 BOILERPLATE="$ROOT/hack/boilerplate.go.txt"
 CONTROLLER_GEN="${CONTROLLER_GEN:-controller-gen}"
 
+# capi-workspace-run.sh runs the command from a temporary directory, so a
+# relative path containing a slash would no longer resolve. Bare names are
+# left alone; they are found via PATH, which is unaffected by the directory.
+if [[ "$CONTROLLER_GEN" == */* && "$CONTROLLER_GEN" != /* ]]; then
+    CONTROLLER_GEN="$(cd "$(dirname "$CONTROLLER_GEN")" && pwd)/$(basename "$CONTROLLER_GEN")"
+fi
+
 run_go() {
     # The copier only uses the standard library. Run outside module mode so
     # syncing also works before vendoring reflects new local replacements.
@@ -132,26 +139,9 @@ upstream_module() {
 echo "Running controller-gen for deepcopy..."
 MODULE_PATH=$(upstream_module "$PROVIDER")
 
-# Generate a temporary Go workspace so controller-gen can resolve types across
-# the main module and each pkg/capi/<provider> module.
-WORK_DIR=$(mktemp -d)
-trap 'rm -rf "$WORK_DIR"' EXIT
-ln -s "$ROOT" "$WORK_DIR/hypershift"
-GO_VERSION=$(grep '^go ' "$ROOT/go.mod" | awk '{print $2}')
-{
-    echo "go $GO_VERSION"
-    echo ""
-    echo "use ("
-    echo "    ./hypershift"
-    echo "    ./hypershift/api"
-    for mod_dir in $(find "$ROOT/pkg/capi" -name go.mod -exec dirname {} \; | sort); do
-        echo "    ./hypershift/${mod_dir#"$ROOT/"}"
-    done
-    echo ")"
-} > "$WORK_DIR/go.work"
-
-cd "$WORK_DIR"
-GOWORK="$WORK_DIR/go.work" GOFLAGS='' \
+# controller-gen must resolve types across the main module and each
+# pkg/capi/<provider> module, which capi-workspace-run.sh sets up.
+"$ROOT/hack/capi-workspace-run.sh" \
     "$CONTROLLER_GEN" object:headerFile="$BOILERPLATE" paths="$MODULE_PATH/..."
 
 echo "Done syncing $PROVIDER"
