@@ -2863,6 +2863,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.PrivateIngressControllerAnnotation,
 		hyperv1.IngressControllerLoadBalancerScope,
 		hyperv1.CleanupCloudResourcesAnnotation,
+		hyperv1.GCPFirewallSkipDeletionAnnotation,
 		hyperv1.ControlPlanePriorityClass,
 		hyperv1.APICriticalPriorityClass,
 		hyperv1.EtcdPriorityClass,
