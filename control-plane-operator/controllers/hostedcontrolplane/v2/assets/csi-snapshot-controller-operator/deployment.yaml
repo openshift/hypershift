@@ -1,0 +1,60 @@
+# *** AUTOMATICALLY GENERATED FILE - DO NOT EDIT ***
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: csi-snapshot-controller-operator
+  name: csi-snapshot-controller-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csi-snapshot-controller-operator
+  template:
+    metadata:
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      labels:
+        app: csi-snapshot-controller-operator
+    spec:
+      containers:
+      - args:
+        - start
+        - -v=2
+        - --guest-kubeconfig=/etc/guest-kubeconfig/kubeconfig
+        env:
+        - name: OPERAND_IMAGE
+          value: quay.io/openshift/origin-csi-snapshot-controller
+        - name: OPERATOR_IMAGE_VERSION
+          value: 0.0.1-snapshot
+        - name: OPERAND_IMAGE_VERSION
+          value: 0.0.1-snapshot
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        image: cluster-csi-snapshot-controller-operator
+        imagePullPolicy: IfNotPresent
+        name: csi-snapshot-controller-operator
+        resources:
+          requests:
+            cpu: 10m
+            memory: 65Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/guest-kubeconfig
+          name: guest-kubeconfig
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: csi-snapshot-controller-operator
+      volumes:
+      - name: guest-kubeconfig
+        secret:
+          secretName: service-network-admin-kubeconfig

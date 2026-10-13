@@ -1,0 +1,57 @@
+default_stages: [pre-commit, pre-push]
+default_install_hook_types: [pre-commit, pre-push]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+        name: Check for merge conflict strings
+        stages: [pre-commit]
+      - id: check-yaml
+        name: Check yaml syntax
+        args: [--allow-multiple-documents]
+        stages: [pre-commit]
+      - id: trailing-whitespace
+        name: Trim all whitespace from end of lines
+        stages: [pre-commit]
+        args:
+          - --markdown-linebreak-ext=md
+  - repo: local
+    hooks:
+      - id: make-codespell
+        name: Verify codespell
+        description: Runs `make verify-codespell` to verify codespell format.
+        entry: make verify-codespell
+        language: system
+        stages: [pre-commit]
+      - id: cpo-containerfiles-in-sync
+        name: Keep cpo-containerfiles-in-sync
+        entry: ./hack/tools/git-hooks/cpo-containerfiles-in-sync.sh
+        language: script
+        pass_filenames: false
+        args:
+          - Containerfile.control-plane
+          - Dockerfile.control-plane
+        description: Ensures the CPO container files stay in sync
+        stages: [pre-commit]
+      - id: make-lint-fix
+        name: Sort imports
+        description: Runs `make lint-fix` to sort imports.
+        entry: make lint-fix
+        language: system
+        stages: [pre-commit]
+      - id: make-verify
+        name: Run make verify
+        description: Runs `make verify`.
+        entry: make verify
+        language: system
+        stages: [pre-push]
+        require_serial: true
+      - id: make-test
+        name: Run make test
+        description: Runs `make test`.
+        entry: make test
+        language: system
+        stages: [ pre-push ]
+exclude: '^vendor/|^hack/tools/vendor/|^api/vendor/'
+fail_fast: true

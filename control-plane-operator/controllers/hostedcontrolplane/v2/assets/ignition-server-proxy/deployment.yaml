@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ignition-server-proxy
+spec:
+  selector:
+    matchLabels:
+      app: ignition-server-proxy
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: ignition-server-proxy
+    spec:
+      containers:
+      - args:
+        - -c
+        - |
+          #!/bin/bash
+          set -e
+          cat /etc/ssl/serving-cert/tls.crt /etc/ssl/serving-cert/tls.key > /tmp/tls.pem
+          cat <<EOF > /tmp/haproxy.conf
+          defaults
+            mode http
+            timeout connect 5s
+            timeout client 30s
+            timeout server 30s
+
+          frontend ignition-server
+            bind :::8443 v4v6 ssl crt /tmp/tls.pem alpn http/1.1
+            default_backend ignition_servers
+
+          backend ignition_servers
+            server ignition-server ignition-server:443 check ssl ca-file /etc/ssl/root-ca/ca.crt alpn http/1.1
+          EOF
+          haproxy -f /tmp/haproxy.conf
+        command:
+        - /bin/bash
+        image: haproxy-router
+        imagePullPolicy: IfNotPresent
+        name: haproxy
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        securityContext:
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+        volumeMounts:
+        - mountPath: /etc/ssl/serving-cert
+          name: serving-cert
+        - mountPath: /etc/ssl/root-ca
+          name: root-ca
+      volumes:
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: ignition-server-serving-cert
+      - configMap:
+          defaultMode: 420
+          name: root-ca
+        name: root-ca

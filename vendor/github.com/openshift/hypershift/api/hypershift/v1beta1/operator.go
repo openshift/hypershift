@@ -1,0 +1,200 @@
+package v1beta1
+
+import (
+	operatorv1 "github.com/openshift/api/operator/v1"
+)
+
+// +kubebuilder:validation:Enum="";Normal;Debug;Trace;TraceAll
+type LogLevel string
+
+var (
+	// Normal is the default. Normal, working log information, everything is fine, but helpful notices for auditing or
+	// common operations. In kube, this is probably glog=2.
+	Normal LogLevel = "Normal"
+
+	// Debug is used when something went wrong. Even common operations may be logged, and less helpful but more
+	// quantity of notices. In kube, this is probably glog=4.
+	Debug LogLevel = "Debug"
+
+	// Trace is used when something went really badly and even more verbose logs are needed. Logging every function
+	//call as part of a common operation, to tracing execution of a query. In kube, this is probably glog=6.
+	Trace LogLevel = "Trace"
+
+	// TraceAll is used when something is broken at the level of API content/decoding. It will dump complete body
+	// content. If you turn this on in a production cluster prepare from serious performance issues and massive amounts
+	// of logs. In kube, this is probably glog=8.
+	TraceAll LogLevel = "TraceAll"
+)
+
+// ClusterVersionOperatorSpec is the specification of the desired behavior of the Cluster Version Operator.
+type ClusterVersionOperatorSpec struct {
+	// operatorLogLevel is an intent based logging for the operator itself. It does not give fine-grained control,
+	// but it is a simple way to manage coarse grained logging choices that operators have to interpret for themselves.
+	//
+	// Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+	// Defaults to "Normal".
+	// +optional
+	// +kubebuilder:default=Normal
+	OperatorLogLevel LogLevel `json:"operatorLogLevel,omitempty"`
+}
+
+type ClusterNetworkOperatorSpec struct {
+	// disableMultiNetwork when set to true disables the Multus CNI plugin and related components
+	// in the hosted cluster. This prevents the installation of multus daemon sets in the
+	// guest cluster and the multus-admission-controller in the management cluster.
+	// Default is false (Multus is enabled).
+	// This field is immutable.
+	// This field can only be set to true when NetworkType is "Other". Setting it to true
+	// with any other NetworkType will result in a validation error during cluster creation.
+	//
+	// +optional
+	// +kubebuilder:default:=false
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="disableMultiNetwork is immutable"
+	// +immutable
+	DisableMultiNetwork *bool `json:"disableMultiNetwork,omitempty"` // nolint:kubeapilinter
+
+	// ovnKubernetesConfig holds OVN-Kubernetes specific configuration.
+	// This is only consumed when NetworkType is OVNKubernetes.
+	// +optional
+	OVNKubernetesConfig *OVNKubernetesConfig `json:"ovnKubernetesConfig,omitempty"`
+}
+
+// OVNKubernetesConfig contains OVN-Kubernetes specific configuration options.
+// https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L400-L471
+// +kubebuilder:validation:XValidation:rule="!has(self.ipv4) || !has(self.ipv4.internalJoinSubnet) || !has(self.ipv4.internalTransitSwitchSubnet) || self.ipv4.internalJoinSubnet != self.ipv4.internalTransitSwitchSubnet", message="internalJoinSubnet and internalTransitSwitchSubnet must not be the same"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.mtu) || has(self.mtu)",message="mtu is immutable once set and cannot be removed"
+// +kubebuilder:validation:MinProperties=1
+type OVNKubernetesConfig struct {
+	// ipv4 allows users to configure IP settings for IPv4 connections. When omitted,
+	// this means no opinions and the default configuration is used. Check individual
+	// fields within ipv4 for details of default values.
+	// +optional
+	IPv4 *OVNIPv4Config `json:"ipv4,omitempty"`
+
+	// mtu is the MTU to use for the tunnel interface on hosted cluster nodes.
+	// This must be 100 bytes smaller than the uplink MTU.
+	// When unset, the cluster-network-operator will determine the MTU automatically
+	// based on the infrastructure (e.g., for commercial AWS regions, it defaults
+	// to 8901 based on the 9001 uplink MTU minus 100 bytes overhead).
+	// Some non-commercial AWS regions do not support 9001 uplink MTU,
+	// requiring this field to be explicitly set to a lower value.
+	// The maximum is 9216, which is the standard jumbo frame upper limit
+	// supported by datacenter and cloud network interfaces.
+	// The minimum is 576, which is the minimum IPv4 MTU per RFC 791.
+	// This field is immutable once set.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="mtu is immutable once set"
+	// +kubebuilder:validation:Minimum=576
+	// +kubebuilder:validation:Maximum=9216
+	// +optional
+	MTU int32 `json:"mtu,omitempty"`
+}
+
+// OVNIPv4Config contains IPv4-specific configuration options for OVN-Kubernetes.
+// https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L473-L503
+// +kubebuilder:validation:MinProperties=1
+type OVNIPv4Config struct {
+	// internalTransitSwitchSubnet is a v4 subnet in IPV4 CIDR format used internally
+	// by OVN-Kubernetes for the distributed transit switch in the OVN Interconnect
+	// architecture that connects the cluster routers on each node together to enable
+	// east west traffic. The subnet chosen should not overlap with other networks
+	// specified for OVN-Kubernetes as well as other networks used on the host.
+	// When omitted, this means no opinion and the platform is left to choose a reasonable
+	// default which is subject to change over time.
+	// The current default subnet is 100.88.0.0/16
+	// The subnet must be large enough to accommodate one IP per node in your cluster
+	// The value must be in proper IPV4 CIDR format
+	// +kubebuilder:validation:MaxLength=18
+	// +kubebuilder:validation:MinLength=9
+	// +kubebuilder:validation:XValidation:rule="self.matches('^([0-9]{1,3}\\\\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$') && self.split('/')[0].split('.').all(oct, int(oct) >= 0 && int(oct) <= 255)", message="Subnet must be in a valid IPv4 CIDR format"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^.*/[0-9]+$') && int(self.split('/')[1]) <= 30", message="subnet must be in the range /0 to /30 inclusive"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]{1,3}\\\\..*') && int(self.split('/')[0].split('.')[0]) > 0", message="first IP address octet must not be 0"
+	// +optional
+	InternalTransitSwitchSubnet string `json:"internalTransitSwitchSubnet,omitempty"`
+	// internalJoinSubnet is a v4 subnet used internally by ovn-kubernetes in case the
+	// default one is being already used by something else. It must not overlap with
+	// any other subnet being used by OpenShift or by the node network. The size of the
+	// subnet must be larger than the number of nodes.
+	// The current default value is 100.64.0.0/16
+	// The subnet must be large enough to accommodate one IP per node in your cluster
+	// The value must be in proper IPV4 CIDR format
+	// +kubebuilder:validation:MaxLength=18
+	// +kubebuilder:validation:MinLength=9
+	// +kubebuilder:validation:XValidation:rule="self.matches('^([0-9]{1,3}\\\\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$') && self.split('/')[0].split('.').all(oct, int(oct) >= 0 && int(oct) <= 255)", message="Subnet must be in a valid IPv4 CIDR format (e.g., 192.168.1.1/24)"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^.*/[0-9]+$') && int(self.split('/')[1]) <= 30", message="subnet must be in the range /0 to /30 inclusive"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]{1,3}\\\\..*') && int(self.split('/')[0].split('.')[0]) > 0", message="first IP address octet must not be 0"
+	// +optional
+	InternalJoinSubnet string `json:"internalJoinSubnet,omitempty"`
+}
+
+// IngressOperatorSpec is the specification of the desired behavior of the Ingress Operator.
+type IngressOperatorSpec struct {
+	// endpointPublishingStrategy is used to publish the default ingress controller endpoints.
+	//
+	// The endpoint publishing strategy is determined by the following precedence order:
+	// 1. User-specified endpointPublishingStrategy (highest priority) - if this field is set,
+	//    it takes precedence over all other configuration methods
+	// 2. Platform-specific defaults with annotation overrides - if no user strategy is set,
+	//    the platform type determines the default strategy, which can be further modified by:
+	//    - hypershift.openshift.io/private-ingress-controller annotation (sets PrivateStrategyType)
+	//    - hypershift.openshift.io/ingress-controller-load-balancer-scope annotation (sets LoadBalancerScope)
+	// 3. Generic LoadBalancer fallback - if the platform is not recognized, defaults to
+	//    LoadBalancerService with External scope
+	//
+	// Platform-specific defaults when endpointPublishingStrategy is not set:
+	// - AWS: LoadBalancerService with External scope (or NLB if configured)
+	// - Azure, GCP: LoadBalancerService with External scope
+	// - IBMCloud: LoadBalancerService with External scope (or NodePort for UPI)
+	// - None: HostNetwork
+	// - KubeVirt: NodePortService
+	// - OpenStack: LoadBalancerService with External scope and optional FloatingIP
+	// - Other platforms: LoadBalancerService with External scope
+	//
+	// See the OpenShift Ingress Operator EndpointPublishingStrategy type for the full specification:
+	// https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go
+	// +optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
+	EndpointPublishingStrategy *operatorv1.EndpointPublishingStrategy `json:"endpointPublishingStrategy,omitempty"`
+
+	// defaultCertificate is a reference to a secret in the HostedCluster namespace
+	// that contains the default certificate served by the default ingress controller.
+	// When Routes don't specify their own certificate, defaultCertificate is used.
+	//
+	// The secret must contain the following keys and data:
+	//   tls.crt: certificate file contents
+	//   tls.key: key file contents
+	//
+	// When set, this certificate replaces the auto-generated wildcard certificate
+	// that is normally created by the control plane operator. The secret is synced
+	// from the HostedCluster namespace to the control plane, and then propagated
+	// to the hosted cluster's openshift-ingress namespace.
+	//
+	// When the referenced secret is updated, the new certificate data is
+	// automatically propagated to the hosted cluster.
+	//
+	// When not set, the control plane operator generates a wildcard certificate
+	// signed by the cluster's root CA.
+	//
+	// Note: a cluster-admin in the hosted cluster can override the default ingress
+	// controller's certificate directly. That override takes precedence and the
+	// certificate referenced here is no longer served.
+	//
+	// +optional
+	DefaultCertificate IngressDefaultCertificateReference `json:"defaultCertificate,omitzero"`
+}
+
+// IngressDefaultCertificateReference contains a reference to a TLS Secret
+// in the HostedCluster namespace used as the default serving certificate
+// for the ingress controller.
+type IngressDefaultCertificateReference struct {
+	// name is the name of the Secret containing tls.crt and tls.key.
+	// The Secret must exist in the same namespace as the HostedCluster.
+	// name must be a valid DNS subdomain name (RFC 1123): it must contain only
+	// lowercase alphanumeric characters, '-' or '.', and start and end with an
+	// alphanumeric character.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?([.][a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')",message="name must be a valid DNS subdomain name: contain no more than 253 characters, contain only lowercase alphanumeric characters, '-' or '.', and start and end with an alphanumeric character"
+	Name string `json:"name,omitempty"`
+}

@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: karpenter-operator
+  namespace: HCP_NAMESPACE
+spec:
+  namespaceSelector:
+    matchNames:
+      - HCP_NAMESPACE
+  selector:
+    matchLabels:
+      app: karpenter-operator
+  podMetricsEndpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s

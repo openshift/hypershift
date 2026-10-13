@@ -1,0 +1,923 @@
+package core
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
+	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiversion "k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
+	fakekubeclient "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/utils/ptr"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/spf13/pflag"
+)
+
+func TestBindOptions(t *testing.T) {
+	t.Run("When flags are parsed it should populate the options struct", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := DefaultOptions()
+		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		BindOptions(opts, flags)
+
+		err := flags.Parse([]string{
+			"--base-domain=example.com",
+			"--name=my-cluster",
+			"--namespace=my-ns",
+		})
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(opts.BaseDomain).To(Equal("example.com"))
+		g.Expect(opts.Name).To(Equal("my-cluster"))
+		g.Expect(opts.Namespace).To(Equal("my-ns"))
+	})
+
+	t.Run("When base-domain flag is omitted the pflag default should be empty", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := DefaultOptions()
+		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		BindOptions(opts, flags)
+
+		err := flags.Parse([]string{})
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(opts.BaseDomain).To(BeEmpty())
+	})
+}
+
+func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
+	ctx := t.Context()
+
+	fakeKubeClient := fakekubeclient.NewSimpleClientset()
+	fakeDiscovery, ok := fakeKubeClient.Discovery().(*fakediscovery.FakeDiscovery)
+	if !ok {
+		t.Fatalf("failed to convert FakeDiscovery")
+	}
+
+	fakeMetadataProvider := &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+		Result:   &dockerv1client.DockerImageConfig{},
+		Manifest: fakeimagemetadataprovider.FakeManifest{},
+	}
+
+	// if you want to fake a specific version
+	fakeDiscovery.FakedServerVersion = &apiversion.Info{
+		Platform: "linux/amd64",
+	}
+
+	tests := []struct {
+		name        string
+		opts        *RawCreateOptions
+		expected    bool
+		expectError bool
+	}{
+		{
+			name: "When a multi-arch release is passed, the function should return no errors",
+			opts: &RawCreateOptions{
+				ReleaseImage:   "quay.io/openshift-release-dev/ocp-release:4.16.13-multi",
+				PullSecretFile: "../../../hack/dev/fakePullSecret.json",
+				ReleaseStream:  "4-stable",
+				Arch:           "amd64",
+			},
+			expectError: false,
+		},
+		{
+			name: "When no release image was passed and a valid multi-arch stream is passed, the function should return no errors",
+			opts: &RawCreateOptions{
+				ReleaseImage:   "",
+				PullSecretFile: "../../../hack/dev/fakePullSecret.json",
+				ReleaseStream:  "4-stable-multi",
+				Arch:           "amd64",
+			},
+			expectError: false,
+		},
+		{
+			name: "When a single arch release is passed and the NodePool arch matches the arch of the release, the function should return no errors",
+			opts: &RawCreateOptions{
+				ReleaseImage:   "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64",
+				PullSecretFile: "../../../hack/dev/fakePullSecret.json",
+				ReleaseStream:  "4-stable",
+				Arch:           "amd64",
+			},
+			expectError: false,
+		},
+		{
+			name: "When a single arch release is passed and the NodePool arch doesn't match the arch of the release, the function should return an error",
+			opts: &RawCreateOptions{
+				ReleaseImage:   "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64",
+				PullSecretFile: "../../../hack/dev/fakePullSecret.json",
+				ReleaseStream:  "4-stable",
+				Arch:           "arm64",
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			err := validateMgmtClusterAndNodePoolCPUArchitectures(ctx, tc.opts, fakeKubeClient, fakeMetadataProvider)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+		})
+	}
+}
+
+// This test will make sure the order of the objects is correct
+// being the HC and NP the last ones and the first one is the namespace.
+func TestAsObjects(t *testing.T) {
+	tests := []struct {
+		name         string
+		resources    *resources
+		expectedFail bool
+	}{
+		{
+			name: "All resources are present",
+			resources: &resources{
+				Namespace:             &corev1.Namespace{},
+				AdditionalTrustBundle: &corev1.ConfigMap{},
+				PullSecret:            &corev1.Secret{},
+				SSHKey:                &corev1.Secret{},
+				Cluster:               &hyperv1.HostedCluster{},
+				Resources: []crclient.Object{
+					&corev1.ConfigMap{},
+					&corev1.Secret{},
+				},
+				NodePools: []*hyperv1.NodePool{{}, {}},
+			},
+			expectedFail: false,
+		},
+		{
+			name: "Namespace resource is nil",
+			resources: &resources{
+				Namespace:             nil,
+				AdditionalTrustBundle: &corev1.ConfigMap{},
+				PullSecret:            &corev1.Secret{},
+				SSHKey:                &corev1.Secret{},
+				Cluster:               &hyperv1.HostedCluster{},
+				Resources: []crclient.Object{
+					&corev1.ConfigMap{},
+					&corev1.Secret{},
+				},
+				NodePools: []*hyperv1.NodePool{{}, {}},
+			},
+			expectedFail: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			objects := tc.resources.asObjects()
+			if tc.expectedFail {
+				g.Expect(objects[0]).To(Not(Equal(tc.resources.Namespace)))
+				return
+			}
+			g.Expect(objects[0]).To(Equal(tc.resources.Namespace), "Namespace should be the first object in the slice")
+			hcPosition := len(objects) - len(tc.resources.NodePools) - 1
+			g.Expect(objects[hcPosition]).To(Equal(tc.resources.Cluster), "HostedCluster should be the secodn-to-last object in the slice")
+			g.Expect(objects[len(objects)-1]).To(Equal(tc.resources.NodePools[len(tc.resources.NodePools)-1]), "NodePools should be the last object in the slice")
+		})
+	}
+}
+
+func TestPrototypeResources(t *testing.T) {
+	g := NewWithT(t)
+	opts := &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: &ValidatedCreateOptions{
+				validatedCreateOptions: &validatedCreateOptions{
+					RawCreateOptions: &RawCreateOptions{
+						EnableClusterCapabilities:  []string{string(hyperv1.BaremetalCapability)},
+						DisableClusterCapabilities: []string{string(hyperv1.ImageRegistryCapability)},
+						KubeAPIServerDNSName:       "test-dns-name.example.com",
+					},
+				},
+			},
+		},
+	}
+	resources, err := prototypeResources(t.Context(), opts)
+	g.Expect(err).To(BeNil())
+	g.Expect(resources.Cluster.Spec.Capabilities.Disabled).
+		To(Equal([]hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}))
+	g.Expect(resources.Cluster.Spec.Capabilities.Enabled).
+		To(Equal([]hyperv1.OptionalCapability{hyperv1.BaremetalCapability}))
+	g.Expect(resources.Cluster.Spec.KubeAPIServerDNSName).To(Equal("test-dns-name.example.com"))
+}
+
+func TestValidate(t *testing.T) {
+	g := NewWithT(t)
+	ctx := t.Context()
+	tempDir := t.TempDir()
+
+	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
+
+	if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
+		t.Fatalf("failed to write pullSecret: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		rawOpts     *RawCreateOptions
+		expectedErr string
+	}{
+		{
+			name: "fails with unsupported disabled capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"UnsupportedCapability"},
+			},
+			expectedErr: "unknown disabled capability: UnsupportedCapability, accepted values are:",
+		},
+		{
+			name: "fails with unsupported enabled capability",
+			rawOpts: &RawCreateOptions{
+				Name:                      "test-hc",
+				Namespace:                 "test-hc",
+				PullSecretFile:            pullSecretFile,
+				Arch:                      "amd64",
+				EnableClusterCapabilities: []string{"UnsupportedCapability"},
+			},
+			expectedErr: "unknown enabled capability: UnsupportedCapability, accepted values are:",
+		},
+		{
+			name: "passes with valid capabilities being enabled and disabled",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				EnableClusterCapabilities:  []string{"baremetal"},
+				DisableClusterCapabilities: []string{"ImageRegistry"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes with openshift-samples capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"openshift-samples"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes with Insights capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Insights"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes with Console capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Console"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes with NodeTuning capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"NodeTuning"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "fails with an invalid DNS name as KubeAPIServerDNSName",
+			rawOpts: &RawCreateOptions{
+				Name:                 "test-hc",
+				Namespace:            "test-hc",
+				PullSecretFile:       pullSecretFile,
+				Arch:                 "amd64",
+				KubeAPIServerDNSName: "INVALID-DNS-NAME.example.com",
+			},
+			expectedErr: "KubeAPIServerDNSName failed DNS validation: a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name: "passes with KubeAPIServerDNSName",
+			rawOpts: &RawCreateOptions{
+				Name:                 "test-hc",
+				Namespace:            "test-hc",
+				PullSecretFile:       pullSecretFile,
+				Arch:                 "amd64",
+				KubeAPIServerDNSName: "test-dns-name.example.com",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "fails when ingress is disabled but console is not disabled",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress"},
+			},
+			expectedErr: "ingress capability can only be disabled if Console capability is also disabled",
+		},
+		{
+			name: "passes when both ingress and console are disabled",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress", "Console"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when only console is disabled without ingress",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Console"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when ingress and console are disabled along with other capabilities",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress", "Console", "ImageRegistry"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "fails when ingress is disabled with other capabilities but console is not disabled",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress", "ImageRegistry"},
+			},
+			expectedErr: "ingress capability can only be disabled if Console capability is also disabled",
+		},
+		{
+			name: "passes when disable-multi-network is used with network-type=Other",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "Other",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when disable-multi-network is false with any network-type",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: false,
+				NetworkType:         "OVNKubernetes",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "fails when disable-multi-network is true with network-type=OVNKubernetes",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "OVNKubernetes",
+			},
+			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OVNKubernetes')",
+		},
+		{
+			name: "fails when disable-multi-network is true with network-type=OpenShiftSDN",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "OpenShiftSDN",
+			},
+			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OpenShiftSDN')",
+		},
+		{
+			name: "fails when disable-multi-network is true with network-type=Calico",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "Calico",
+			},
+			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'Calico')",
+		},
+		{
+			name: "When ovn-kubernetes-mtu is set with OVNKubernetes, it should pass validation",
+			rawOpts: &RawCreateOptions{
+				Name:             "test-hc",
+				Namespace:        "test-hc",
+				PullSecretFile:   pullSecretFile,
+				Arch:             "amd64",
+				OVNKubernetesMTU: 1400,
+				NetworkType:      "OVNKubernetes",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "When ovn-kubernetes-mtu is set with non-OVN network type, it should fail validation",
+			rawOpts: &RawCreateOptions{
+				Name:             "test-hc",
+				Namespace:        "test-hc",
+				PullSecretFile:   pullSecretFile,
+				Arch:             "amd64",
+				OVNKubernetesMTU: 1400,
+				NetworkType:      "OpenShiftSDN",
+			},
+			expectedErr: "--ovn-kubernetes-mtu is only valid when --network-type is OVNKubernetes (got 'OpenShiftSDN')",
+		},
+		{
+			name: "When ovn-kubernetes-mtu is below minimum, it should fail validation",
+			rawOpts: &RawCreateOptions{
+				Name:             "test-hc",
+				Namespace:        "test-hc",
+				PullSecretFile:   pullSecretFile,
+				Arch:             "amd64",
+				OVNKubernetesMTU: 100,
+				NetworkType:      "OVNKubernetes",
+			},
+			expectedErr: "--ovn-kubernetes-mtu must be between 576 and 9216 (got 100)",
+		},
+		{
+			name: "When ovn-kubernetes-mtu is above maximum, it should fail validation",
+			rawOpts: &RawCreateOptions{
+				Name:             "test-hc",
+				Namespace:        "test-hc",
+				PullSecretFile:   pullSecretFile,
+				Arch:             "amd64",
+				OVNKubernetesMTU: 10000,
+				NetworkType:      "OVNKubernetes",
+			},
+			expectedErr: "--ovn-kubernetes-mtu must be between 576 and 9216 (got 10000)",
+		},
+		{
+			name: "When ovn-kubernetes-mtu is negative, it should fail validation",
+			rawOpts: &RawCreateOptions{
+				Name:             "test-hc",
+				Namespace:        "test-hc",
+				PullSecretFile:   pullSecretFile,
+				Arch:             "amd64",
+				OVNKubernetesMTU: -1,
+				NetworkType:      "OVNKubernetes",
+			},
+			expectedErr: "--ovn-kubernetes-mtu must be between 576 and 9216 (got -1)",
+		},
+		{
+			name: "passes when allocate-node-cidrs is used with network-type=Other",
+			rawOpts: &RawCreateOptions{
+				Name:              "test-hc",
+				Namespace:         "test-hc",
+				PullSecretFile:    pullSecretFile,
+				Arch:              "amd64",
+				AllocateNodeCIDRs: true,
+				NetworkType:       "Other",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when allocate-node-cidrs is false with any network-type",
+			rawOpts: &RawCreateOptions{
+				Name:              "test-hc",
+				Namespace:         "test-hc",
+				PullSecretFile:    pullSecretFile,
+				Arch:              "amd64",
+				AllocateNodeCIDRs: false,
+				NetworkType:       "OVNKubernetes",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "fails when allocate-node-cidrs is true with network-type=OVNKubernetes",
+			rawOpts: &RawCreateOptions{
+				Name:              "test-hc",
+				Namespace:         "test-hc",
+				PullSecretFile:    pullSecretFile,
+				Arch:              "amd64",
+				AllocateNodeCIDRs: true,
+				NetworkType:       "OVNKubernetes",
+			},
+			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'OVNKubernetes')",
+		},
+		{
+			name: "fails when allocate-node-cidrs is true with network-type=OpenShiftSDN",
+			rawOpts: &RawCreateOptions{
+				Name:              "test-hc",
+				Namespace:         "test-hc",
+				PullSecretFile:    pullSecretFile,
+				Arch:              "amd64",
+				AllocateNodeCIDRs: true,
+				NetworkType:       "OpenShiftSDN",
+			},
+			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'OpenShiftSDN')",
+		},
+		{
+			name: "fails when allocate-node-cidrs is true with network-type=Calico",
+			rawOpts: &RawCreateOptions{
+				Name:              "test-hc",
+				Namespace:         "test-hc",
+				PullSecretFile:    pullSecretFile,
+				Arch:              "amd64",
+				AllocateNodeCIDRs: true,
+				NetworkType:       "Calico",
+			},
+			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'Calico')",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// avoid actual client calls in Validate
+			test.rawOpts.Render = true
+			_, err := test.rawOpts.Validate(ctx)
+			if test.expectedErr == "" {
+				g.Expect(err).To(BeNil())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(test.expectedErr))
+			}
+		})
+	}
+}
+
+func TestDisableMultiNetworkFlag(t *testing.T) {
+	tests := []struct {
+		name                        string
+		disableMultiNetwork         bool
+		expectedDisableMultiNetwork *bool
+		description                 string
+	}{
+		{
+			name:                        "disable multus flag set to true",
+			disableMultiNetwork:         true,
+			expectedDisableMultiNetwork: ptr.To(true),
+			description:                 "When --disable-multi-network=true is set, DisableMultiNetwork should be true",
+		},
+		{
+			name:                        "disable multus flag set to false",
+			disableMultiNetwork:         false,
+			expectedDisableMultiNetwork: ptr.To(false),
+			description:                 "When --disable-multi-network=false is set, DisableMultiNetwork should be false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Create options with the test value, following the pattern from TestPrototypeResources
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								DisableMultiNetwork: tt.disableMultiNetwork,
+							},
+						},
+					},
+				},
+			}
+
+			// Create prototype resources using the actual function
+			resources, err := prototypeResources(context.Background(), opts)
+			g.Expect(err).To(BeNil())
+
+			// Verify the field is set correctly
+			if tt.disableMultiNetwork {
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration).ToNot(BeNil())
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator).ToNot(BeNil())
+
+				// Both should be non-nil pointers to bool
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).ToNot(BeNil())
+				g.Expect(tt.expectedDisableMultiNetwork).ToNot(BeNil())
+				g.Expect(*resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).To(Equal(*tt.expectedDisableMultiNetwork), tt.description)
+			} else {
+				if resources.Cluster.Spec.OperatorConfiguration != nil && resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator != nil {
+					// Both should be non-nil pointers to bool
+					g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).ToNot(BeNil())
+					g.Expect(tt.expectedDisableMultiNetwork).ToNot(BeNil())
+					g.Expect(*resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).To(Equal(*tt.expectedDisableMultiNetwork), tt.description)
+				}
+				// If OperatorConfiguration is nil, that's also valid since DisableMultiNetwork defaults to false
+			}
+		})
+	}
+}
+
+func TestOVNKubernetesMTUFlag(t *testing.T) {
+	t.Run("When ovn-kubernetes-mtu is set, it should propagate to OVNKubernetesConfig", func(t *testing.T) {
+		g := NewWithT(t)
+		resources, err := prototypeResources(t.Context(), &CreateOptions{
+			completedCreateOptions: &completedCreateOptions{
+				ValidatedCreateOptions: &ValidatedCreateOptions{
+					validatedCreateOptions: &validatedCreateOptions{
+						RawCreateOptions: &RawCreateOptions{
+							OVNKubernetesMTU: 1400,
+						},
+					},
+				},
+			},
+		})
+		g.Expect(err).To(BeNil())
+		g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.MTU).To(Equal(int32(1400)))
+	})
+
+	t.Run("When ovn-kubernetes-mtu is not set, it should not create OVNKubernetesConfig", func(t *testing.T) {
+		g := NewWithT(t)
+		resources, err := prototypeResources(t.Context(), &CreateOptions{
+			completedCreateOptions: &completedCreateOptions{
+				ValidatedCreateOptions: &ValidatedCreateOptions{
+					validatedCreateOptions: &validatedCreateOptions{
+						RawCreateOptions: &RawCreateOptions{},
+					},
+				},
+			},
+		})
+		g.Expect(err).To(BeNil())
+		g.Expect(resources.Cluster.Spec.OperatorConfiguration).To(BeNil())
+	})
+}
+
+func TestAllocateNodeCIDRsFlag(t *testing.T) {
+	tests := []struct {
+		name                      string
+		allocateNodeCIDRs         bool
+		expectedAllocateNodeCIDRs *hyperv1.AllocateNodeCIDRsMode
+		description               string
+	}{
+		{
+			name:                      "allocate-node-cidrs flag set to true",
+			allocateNodeCIDRs:         true,
+			expectedAllocateNodeCIDRs: ptr.To(hyperv1.AllocateNodeCIDRsEnabled),
+			description:               "When --allocate-node-cidrs=true is set, AllocateNodeCIDRs should be Enabled",
+		},
+		{
+			name:                      "allocate-node-cidrs flag set to false",
+			allocateNodeCIDRs:         false,
+			expectedAllocateNodeCIDRs: nil,
+			description:               "When --allocate-node-cidrs=false is set or not provided, AllocateNodeCIDRs should be nil (defaults to Disabled in webhook).",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Create options with the test value, following the pattern from TestPrototypeResources
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								AllocateNodeCIDRs: tt.allocateNodeCIDRs,
+							},
+						},
+					},
+				},
+			}
+
+			// Create prototype resources using the actual function
+			resources, err := prototypeResources(context.Background(), opts)
+			g.Expect(err).To(BeNil())
+			g.Expect(resources.Cluster.Spec.Networking).ToNot(BeNil())
+			if tt.expectedAllocateNodeCIDRs == nil {
+				g.Expect(resources.Cluster.Spec.Networking.AllocateNodeCIDRs).To(BeNil(), tt.description)
+			} else {
+				g.Expect(resources.Cluster.Spec.Networking.AllocateNodeCIDRs).ToNot(BeNil(), tt.description)
+				g.Expect(*resources.Cluster.Spec.Networking.AllocateNodeCIDRs).To(Equal(*tt.expectedAllocateNodeCIDRs), tt.description)
+			}
+
+		})
+	}
+}
+
+func TestValidateVersion(t *testing.T) {
+	tests := []struct {
+		name             string
+		versionCLI       string
+		operatorVersion  string
+		wantError        bool
+		errMessage       string
+		mutateDeployment func(*appsv1.Deployment)
+	}{
+		{
+			name:            "Commit SHAS match",
+			versionCLI:      "abc123",
+			operatorVersion: "abc123",
+			wantError:       false,
+		},
+		{
+			name:            "Mismatching SHAs",
+			versionCLI:      "abc123",
+			operatorVersion: "def456",
+			wantError:       true,
+			errMessage:      "version mismatch detected, CLI: abc123, Operator: def456",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := context.Background()
+			supportedVersions := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "supported-versions",
+					Namespace: "hypershift",
+				},
+				Data: map[string]string{
+					config.ConfigMapServerVersionKey: tc.operatorVersion,
+					config.ConfigMapVersionsKey:      `{"versions":[]}`,
+				},
+			}
+			client := fake.NewClientBuilder().WithObjects(supportedVersions).Build()
+			err := validateVersion(ctx, tc.versionCLI, client)
+			if tc.wantError {
+				g.Expect(err).To(HaveOccurred(), "Expected error for test case: %s", tc.name)
+			} else {
+				g.Expect(err).To(BeNil(), "Did not expect error for test case: %s", tc.name)
+			}
+		})
+	}
+}
+
+func TestGetServicePublishingStrategyMapping(t *testing.T) {
+	t.Parallel()
+
+	deprecatedServiceTypes := []hyperv1.ServiceType{
+		hyperv1.OVNSbDb,
+	}
+
+	requiredServiceTypes := []hyperv1.ServiceType{
+		hyperv1.APIServer,
+		hyperv1.OAuthServer,
+		hyperv1.Konnectivity,
+		hyperv1.Ignition,
+	}
+
+	requiredServiceTypesForAPIServerAddress := []hyperv1.ServiceType{
+		hyperv1.APIServer,
+		hyperv1.OAuthServer,
+		hyperv1.OIDC,
+		hyperv1.Konnectivity,
+		hyperv1.Ignition,
+	}
+
+	testAPIServerAddress := "192.168.1.1"
+
+	tests := []struct {
+		name             string
+		services         []hyperv1.ServicePublishingStrategyMapping
+		checkDeprecated  bool
+		checkRequired    bool
+		requiredTypes    []hyperv1.ServiceType
+		checkStrategy    bool
+		expectedStrategy hyperv1.PublishingStrategyType
+		expectedAddress  string
+	}{
+		{
+			name:            "When GetIngressServicePublishingStrategyMapping is called with OVNKubernetes, it should not include deprecated service types",
+			services:        GetIngressServicePublishingStrategyMapping(hyperv1.OVNKubernetes, false),
+			checkDeprecated: true,
+		},
+		{
+			name:            "When GetIngressServicePublishingStrategyMapping is called with Other network type, it should not include deprecated service types",
+			services:        GetIngressServicePublishingStrategyMapping(hyperv1.Other, false),
+			checkDeprecated: true,
+		},
+		{
+			name:            "When GetServicePublishingStrategyMappingByAPIServerAddress is called with OVNKubernetes, it should not include deprecated service types",
+			services:        GetServicePublishingStrategyMappingByAPIServerAddress(testAPIServerAddress, hyperv1.OVNKubernetes),
+			checkDeprecated: true,
+		},
+		{
+			name:            "When GetServicePublishingStrategyMappingByAPIServerAddress is called with Other network type, it should not include deprecated service types",
+			services:        GetServicePublishingStrategyMappingByAPIServerAddress(testAPIServerAddress, hyperv1.Other),
+			checkDeprecated: true,
+		},
+		{
+			name:          "When GetIngressServicePublishingStrategyMapping is called, it should include all required service types",
+			services:      GetIngressServicePublishingStrategyMapping(hyperv1.Other, false),
+			checkRequired: true,
+			requiredTypes: requiredServiceTypes,
+		},
+		{
+			name:          "When GetServicePublishingStrategyMappingByAPIServerAddress is called, it should include all required service types",
+			services:      GetServicePublishingStrategyMappingByAPIServerAddress(testAPIServerAddress, hyperv1.Other),
+			checkRequired: true,
+			requiredTypes: requiredServiceTypesForAPIServerAddress,
+		},
+		{
+			name:             "When GetServicePublishingStrategyMappingByAPIServerAddress is called, it should use NodePort strategy with the given address",
+			services:         GetServicePublishingStrategyMappingByAPIServerAddress(testAPIServerAddress, hyperv1.OVNKubernetes),
+			checkStrategy:    true,
+			expectedStrategy: hyperv1.NodePort,
+			expectedAddress:  testAPIServerAddress,
+		},
+		{
+			name:             "When GetIngressServicePublishingStrategyMapping is called without external DNS, it should use LoadBalancer for APIServer",
+			services:         GetIngressServicePublishingStrategyMapping(hyperv1.OVNKubernetes, false),
+			checkStrategy:    true,
+			expectedStrategy: hyperv1.LoadBalancer,
+		},
+		{
+			name:             "When GetIngressServicePublishingStrategyMapping is called with external DNS, it should use Route for APIServer",
+			services:         GetIngressServicePublishingStrategyMapping(hyperv1.OVNKubernetes, true),
+			checkStrategy:    true,
+			expectedStrategy: hyperv1.Route,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			if tc.checkDeprecated {
+				for _, svc := range tc.services {
+					for _, deprecated := range deprecatedServiceTypes {
+						g.Expect(svc.Service).NotTo(Equal(deprecated),
+							"service list should not contain deprecated service type %s", deprecated)
+					}
+				}
+			}
+
+			if tc.checkRequired {
+				serviceTypes := make(map[hyperv1.ServiceType]bool)
+				for _, svc := range tc.services {
+					serviceTypes[svc.Service] = true
+				}
+				for _, required := range tc.requiredTypes {
+					g.Expect(serviceTypes).To(HaveKey(required),
+						"service list should include required service type %s", required)
+				}
+			}
+
+			if tc.checkStrategy {
+				g.Expect(tc.services).NotTo(BeEmpty(), "service list should not be empty")
+				// Find APIServer entry to check its strategy
+				foundAPIServer := false
+				for _, svc := range tc.services {
+					if svc.Service == hyperv1.APIServer {
+						foundAPIServer = true
+						g.Expect(svc.ServicePublishingStrategy.Type).To(Equal(tc.expectedStrategy),
+							"APIServer should use %s strategy", tc.expectedStrategy)
+						if tc.expectedAddress != "" {
+							g.Expect(svc.ServicePublishingStrategy.NodePort).NotTo(BeNil(),
+								"NodePort config should not be nil")
+							g.Expect(svc.ServicePublishingStrategy.NodePort.Address).To(Equal(tc.expectedAddress),
+								"NodePort address should match the provided API server address")
+						}
+					}
+				}
+				g.Expect(foundAPIServer).To(BeTrue(), "service list should include APIServer")
+			}
+		})
+	}
+}

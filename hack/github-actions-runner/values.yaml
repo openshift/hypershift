@@ -1,0 +1,26 @@
+githubConfigUrl: "https://github.com/openshift/hypershift"
+githubConfigSecret: "github-app-secret"
+
+minRunners: 1
+maxRunners: 70
+
+template:
+  spec:
+    containers:
+      - name: runner
+        image: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner:latest
+        command: ["/home/runner/run.sh"]
+        resources:
+          requests:
+            cpu: "4"
+            memory: "16Gi"
+          limits:
+            cpu: "4"
+            memory: "16Gi"
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/component: runner

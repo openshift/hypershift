@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    openshift.io/node-selector: ""
+  labels:
+    name: cilium
+    openshift.io/cluster-logging: "true"
+    openshift.io/cluster-monitoring: "true"
+    openshift.io/run-level: "0"
+  name: cilium

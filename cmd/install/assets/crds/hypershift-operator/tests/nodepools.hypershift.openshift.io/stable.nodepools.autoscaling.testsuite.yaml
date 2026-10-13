@@ -1,0 +1,180 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "NodePool autoscaling validation"
+crdName: nodepools.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  # --- AutoScaling scale-from-zero validation ---
+  - name: when autoScaling min=0 on AWS platform it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        autoScaling:
+          min: 0
+          max: 3
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-01234567"
+          type: AWS
+
+  - name: when autoScaling min=0 on Azure platform it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        autoScaling:
+          min: 0
+          max: 3
+        platform:
+          azure:
+            vmSize: Standard_D4s_v4
+            image:
+              type: AzureMarketplace
+              azureMarketplace: {}
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+          type: Azure
+    expectedError: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform"
+
+  - name: when autoScaling min=0 on Agent platform it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        autoScaling:
+          min: 0
+          max: 3
+        platform:
+          agent: {}
+          type: Agent
+
+    expectedError: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform"
+
+  - name: when autoScaling min=0 on KubeVirt platform it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        autoScaling:
+          min: 0
+          max: 3
+        platform:
+          kubevirt:
+            rootVolume:
+              type: Persistent
+              persistent:
+                size: 32Gi
+          type: KubeVirt
+    expectedError: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform"
+
+  - name: when autoScaling min=1 on Azure platform it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        autoScaling:
+          min: 1
+          max: 3
+        platform:
+          azure:
+            vmSize: Standard_D4s_v4
+            image:
+              type: AzureMarketplace
+              azureMarketplace: {}
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+          type: Azure
+
+  - name: when autoScaling min=1 on AWS platform it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        autoScaling:
+          min: 1
+          max: 3
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS
+
+  - name: when autoScaling is not set it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 1
+        platform:
+          aws:
+            instanceProfile: a-profile
+            instanceType: m6a.2xlarge
+            rootVolume:
+              size: 120
+              type: gp3
+            subnet:
+              id: "subnet-any"
+          type: AWS

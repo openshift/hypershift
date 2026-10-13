@@ -1,0 +1,7 @@
+instanceProfile: test-infra-worker
+instanceType: m5.large
+rootVolume:
+  size: 120
+  type: gp3
+subnet:
+  id: subnet-test123

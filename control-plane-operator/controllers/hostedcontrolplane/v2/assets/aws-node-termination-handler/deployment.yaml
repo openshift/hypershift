@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aws-node-termination-handler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aws-node-termination-handler
+  template:
+    metadata:
+      labels:
+        app: aws-node-termination-handler
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      containers:
+      - name: aws-node-termination-handler
+        image: aws-node-termination-handler
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: ENABLE_SPOT_INTERRUPTION_DRAINING
+          value: "true"
+        - name: ENABLE_SCHEDULED_EVENT_DRAINING
+          value: "true"
+        - name: ENABLE_REBALANCE_MONITORING
+          value: "true"
+        - name: ENABLE_REBALANCE_DRAINING
+          value: "true"
+        - name: ENABLE_SQS_TERMINATION_DRAINING
+          value: "true"
+        - name: AWS_REGION
+          value: ""
+        - name: QUEUE_URL
+          value: ""
+        - name: DELETE_SQS_MSG_IF_NODE_NOT_FOUND
+          value: "false"
+        - name: DRY_RUN
+          value: "false"
+        - name: CORDON_ONLY
+          value: "false"
+        - name: TAINT_NODE
+          value: "true"
+        - name: EXCLUDE_FROM_LOAD_BALANCERS
+          value: "false"
+        - name: JSON_LOGGING
+          value: "false"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: WEBHOOK_URL
+          value: ""
+        - name: WORKERS
+          value: "10"
+        - name: METADATA_TRIES
+          value: "3"
+        - name: KUBERNETES_SERVICE_HOST
+          value: ""
+        - name: KUBERNETES_SERVICE_PORT
+          value: ""
+        - name: AWS_SHARED_CREDENTIALS_FILE
+          value: "/etc/aws/credentials"
+        - name: ENABLE_KUBERNETES_EVENTS
+          value: "true"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: token
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        - name: credentials
+          mountPath: /etc/aws
+      # token-minter-kube mints a token for Kubernetes API access to the guest cluster.
+      # It also extracts the CA certificate from the kubeconfig and writes it to the token volume
+      # so the AWS Node Termination Handler can verify TLS connections to the guest cluster API.
+      - name: token-minter-kube
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        # we use openshift-cluster-version/default service account to avoid the need to create a new one.
+        # We need to authenticate with a SA because the terminantion handler has hardcoded in cluster client credentials.
+        # https://github.com/aws/aws-node-termination-handler/pull/1230
+        args:
+        - |
+          # Extract CA certificate from kubeconfig and write to expected location
+          grep certificate-authority-data /etc/kubernetes/kubeconfig | awk '{print $2}' | base64 -d > /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+
+          /usr/bin/control-plane-operator token-minter \
+            --service-account-namespace=openshift-cluster-version \
+            --service-account-name=default \
+            --token-audience= \
+            --token-file=/var/run/secrets/kubernetes.io/serviceaccount/token \
+            --kubeconfig=/etc/kubernetes/kubeconfig
+        volumeMounts:
+        - name: token
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+        - name: svc-kubeconfig
+          mountPath: /etc/kubernetes
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: token
+        emptyDir:
+          medium: Memory
+      - name: svc-kubeconfig
+        secret:
+          secretName: service-network-admin-kubeconfig
+          defaultMode: 0640
+      - name: credentials
+        secret:
+          secretName: aws-node-termination-handler-creds
+      nodeSelector:
+        kubernetes.io/os: linux

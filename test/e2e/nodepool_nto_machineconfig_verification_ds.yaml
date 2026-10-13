@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nto-machineconfig-update-checker
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: nto-machineconfig-update-checker
+  template:
+    metadata:
+      labels:
+        name: nto-machineconfig-update-checker
+    spec:
+      tolerations:
+      - operator: Exists
+      containers:
+      - name: nto-machineconfig-update-checker
+        image: alpine
+        command:
+        - /bin/sleep
+        - 24h
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - 'cat /proc/cmdline | grep "hugepagesz=2M hugepages=4"'
+        volumeMounts:
+        - name: host
+          mountPath: /host
+          readOnly: true
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: host
+        hostPath:
+          path: /

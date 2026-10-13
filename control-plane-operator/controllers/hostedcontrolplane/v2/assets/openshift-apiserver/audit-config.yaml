@@ -1,0 +1,7 @@
+apiVersion: v1
+data:
+  policy.yaml: ""
+  profile: ""
+kind: ConfigMap
+metadata:
+  name: openshift-apiserver-audit

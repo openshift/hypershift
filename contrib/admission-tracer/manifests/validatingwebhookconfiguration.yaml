@@ -1,0 +1,30 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+  name: admissiontracer.hypershift.openshift.io
+  namespace: hypershift
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: admission-tracer
+      namespace: hypershift
+      path: /awsendpointservices
+  name: awsendpointservices.hypershift.openshift.io
+  rules:
+  - apiGroups:
+    - hypershift.openshift.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - awsendpointservices
+    - awsendpointservices/status
+    scope: Namespaced
+  sideEffects: None
+  timeoutSeconds: 10

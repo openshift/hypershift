@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: cluster-version-operator
+    k8s-app: cluster-version-operator
+  name: cluster-version-operator
+spec:
+  ipFamilyPolicy: PreferDualStack
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: https
+  selector:
+    app: cluster-version-operator
+    k8s-app: cluster-version-operator
+  type: ClusterIP

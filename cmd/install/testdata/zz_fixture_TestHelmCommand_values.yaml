@@ -1,0 +1,25 @@
+aws:
+  private:
+    credsSecret: ""
+    credsSecretKey: ""
+    region: ""
+azure:
+  keyVault:
+    clientId: ""
+externaldns:
+  awsZonesCacheDuration: ""
+  credsSecret: ""
+  domainFilter: ""
+  googleProject: ""
+  image: ""
+  interval: ""
+  txtOwnerId: ""
+image: ""
+imagetag: ""
+oidc:
+  s3:
+    credsSecret: ""
+    credsSecretKey: ""
+    name: ""
+    region: ""
+registryOverrides: ""

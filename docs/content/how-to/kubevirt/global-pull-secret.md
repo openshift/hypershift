@@ -1,0 +1,1 @@
+../common/global-pull-secret.md
