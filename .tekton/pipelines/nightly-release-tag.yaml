@@ -29,10 +29,23 @@ spec:
     component with neither a mapped release-version nor a describable revision is
     still a hard error.
 
+    git describe reports the commit distance unpadded, and <count>-g<sha> is a
+    single semver pre-release identifier. Because it also carries the hash it is
+    alphanumeric, and alphanumeric identifiers are compared lexically rather than
+    numerically, so 100-g... sorts below 98-g.... The count is zero padded to
+    COUNT_WIDTH digits to make the lexical order the numeric one.
+
+    Padding rather than giving the count its own numeric identifier - a dot
+    instead of the second hyphen, which would sort correctly with no width to
+    outgrow - because the release controller parses prowjob names with
+    ^(?P<prerelease>[a-z0-9-]+)\.(?P<stream>...), which expects <count>-g<sha> to
+    be one identifier and the dot to introduce the stream. Splitting on a dot
+    makes that expression fail to match.
+
     The nightly tag is the version plus a semver pre-release segment, and how that
     segment is introduced depends on the version:
-      0.0.1                 -> 0.0.1-0.nightly-<ts>
-      0.1.85-98-g812f9129e  -> 0.1.85-98-g812f9129e.nightly-<ts>
+      0.0.1                   -> 0.0.1-0.nightly-<ts>
+      0.1.85-0098-g812f9129e  -> 0.1.85-0098-g812f9129e.nightly-<ts>
     A described revision that is not an exact tag already carries a pre-release
     segment (the commit distance and hash), so the nightly extends it with a dot
     rather than opening a second one with -0.
@@ -350,6 +363,12 @@ spec:
           GIT_CACHE=/var/workdir/git-cache
           mkdir -p "${GIT_CACHE}"
 
+          # Digits the commit distance in a described version is padded to. Wide
+          # enough that it is not reached between two tags of this repository -
+          # consecutive tags are a few hundred commits apart - because a count
+          # that outgrows it sorts below every padded one.
+          COUNT_WIDTH=4
+
           # describe_source_revision <url> <revision>, printing the describe output on
           # stdout and returning non-zero if the revision cannot be described. Callers
           # fall back to the hard error below, so every git failure here is non-fatal
@@ -378,6 +397,45 @@ spec:
             git -C "${dir}" describe --tags "${revision}" 2>/dev/null
           }
 
+          # pad_describe_count <described>, printing it with the commit distance zero
+          # padded to COUNT_WIDTH digits so that the lexical comparison semver applies
+          # to the alphanumeric <count>-g<sha> identifier orders by distance. Input
+          # that is not in that form - an exact tag match, which git describe reports
+          # with no suffix - is printed unchanged.
+          pad_describe_count() {
+            local described="$1" prefix count sha padded
+
+            case "${described}" in
+              *-*-g*) ;;
+              *) printf '%s' "${described}"; return 0 ;;
+            esac
+
+            # Split from the right: a tag may itself contain hyphens, as a pre-release
+            # tag like v1.0.0-rc1 does, so the count and hash are the last two fields
+            # rather than the second and third.
+            sha="${described##*-}"
+            prefix="${described%-*}"
+            count="${prefix##*-}"
+            prefix="${prefix%-*}"
+
+            # The *-*-g* test above is loose enough to admit a tag that merely contains
+            # a -g segment, so only pad what is really a count.
+            case "${count}" in
+              ''|*[!0-9]*) printf '%s' "${described}"; return 0 ;;
+            esac
+
+            if [ "${#count}" -gt "${COUNT_WIDTH}" ]; then
+              echo "WARNING: commit distance ${count} exceeds COUNT_WIDTH=${COUNT_WIDTH}; this tag will sort below the padded ones. Widen COUNT_WIDTH." >&2
+              printf '%s' "${described}"
+              return 0
+            fi
+
+            # 10# so that a count already carrying leading zeros is not read as octal,
+            # which keeps this idempotent.
+            padded=$(printf "%0${COUNT_WIDTH}d" "$((10#${count}))")
+            printf '%s-%s-%s' "${prefix}" "${padded}" "${sha}"
+          }
+
           for i in $(seq 0 $((NUM - 1))); do
             component=$(jq -c --argjson i "$i" '.components[$i]' "${SNAPSHOT_SPEC_FILE}")
             NAME=$(jq -r '.name // empty' <<< "${component}")
@@ -401,6 +459,10 @@ spec:
                 # git describe reports the tag verbatim, and this repository's are v-prefixed.
                 # The imagestream tag is built from a bare version, so drop a leading v.
                 RELEASE_VERSION="${RELEASE_VERSION#v}"
+                # Pad before the hyphen test below, which padding cannot change: a
+                # described revision has a hyphen either way, and an exact tag match
+                # has none and is left alone.
+                RELEASE_VERSION=$(pad_describe_count "${RELEASE_VERSION}")
                 if [ -n "${RELEASE_VERSION}" ]; then
                   echo "Derived release-version: ${RELEASE_VERSION}"
                   # A described version off a tag is already a pre-release, because the
