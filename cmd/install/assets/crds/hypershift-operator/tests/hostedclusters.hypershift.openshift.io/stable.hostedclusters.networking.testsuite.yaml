@@ -43,6 +43,123 @@ tests:
             type: Route
             route: {}
 
+  - name: When networkType uses a case variant of a built-in provider it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: "ovnkubernetes"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must use the exact spelling OVNKubernetes or OpenShiftSDN when selecting a built-in provider"
+
+  - name: When networkType uses a mixed-case variant of OVNKubernetes it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: "OvnKubernetes"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must use the exact spelling OVNKubernetes or OpenShiftSDN when selecting a built-in provider"
+
+  - name: When networkType starts with a non-alphanumeric character it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: "-Calico"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must start and end with a letter or digit and contain only letters, digits, '.', '_' or '-'"
+
   - name: When networkType is empty it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -82,7 +199,7 @@ tests:
             route: {}
     expectedError: 'should be at least 1 chars long'
 
-  - name: When networkType exceeds 255 characters it should fail
+  - name: When networkType exceeds 63 characters it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedCluster
@@ -402,16 +519,16 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "allocateNodeCIDRs can only be set to Enabled when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes)"
+    expectedError: "allocateNodeCIDRs can only be set to Enabled when networkType is 'Other'"
 
-  - name: When allocateNodeCIDRs is Enabled and networkType is a third-party CNI it should pass
+  - name: When allocateNodeCIDRs is Enabled and networkType is OpenShiftSDN it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedCluster
       spec:
         networking:
           allocateNodeCIDRs: Enabled
-          networkType: Calico
+          networkType: OpenShiftSDN
         dns:
           baseDomain: example.com
         platform:
@@ -442,6 +559,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
+    expectedError: "allocateNodeCIDRs can only be set to Enabled when networkType is 'Other'"
 
   # --- Operator configuration validation ---
   - name: When disableMultiNetwork is set to false it should pass
@@ -564,15 +682,15 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "disableMultiNetwork can only be set to true when networkType is a third-party CNI (any value other than OpenShiftSDN or OVNKubernetes)"
+    expectedError: "disableMultiNetwork can only be set to true when networkType is 'Other'"
 
-  - name: When disableMultiNetwork is true and networkType is a third-party CNI it should pass
+  - name: When disableMultiNetwork is true and networkType is OpenShiftSDN it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedCluster
       spec:
         networking:
-          networkType: Calico
+          networkType: OpenShiftSDN
         operatorConfiguration:
           clusterNetworkOperator:
             disableMultiNetwork: true
@@ -606,6 +724,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
+    expectedError: "disableMultiNetwork can only be set to true when networkType is 'Other'"
 
   - name: When disableMultiNetwork is false and networkType is OVNKubernetes it should pass
     initial: |
