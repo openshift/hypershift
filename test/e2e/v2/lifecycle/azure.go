@@ -195,6 +195,9 @@ func (a *AzurePlatformConfig) CreateArgs() []string {
 	return args
 }
 
+// CreateArgsForVariant returns nil: Azure create args do not depend on the variant.
+func (a *AzurePlatformConfig) CreateArgsForVariant(variant string) []string { return nil }
+
 // PreCreate deploys infrastructure that must be ready before clusters
 // are created (e.g., the Keycloak OIDC provider for the external-oidc variant).
 func (a *AzurePlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error {

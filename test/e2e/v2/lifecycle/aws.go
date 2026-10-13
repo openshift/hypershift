@@ -129,6 +129,9 @@ func (a *AWSPlatformConfig) CreateArgs() []string {
 	return args
 }
 
+// CreateArgsForVariant returns nil: AWS create args do not depend on the variant.
+func (a *AWSPlatformConfig) CreateArgsForVariant(variant string) []string { return nil }
+
 func (a *AWSPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error {
 	return nil
 }

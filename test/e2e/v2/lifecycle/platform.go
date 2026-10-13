@@ -176,6 +176,12 @@ type PlatformConfig interface {
 	// "hypershift create cluster <platform>".
 	CreateArgs() []string
 
+	// CreateArgsForVariant returns per-variant create flags resolved
+	// during PreCreate (e.g. GCP per-variant WIF/SA infra). It is called
+	// once per cluster, after PreCreate, with the cluster's variant.
+	// Platforms whose create args do not depend on the variant return nil.
+	CreateArgsForVariant(variant string) []string
+
 	// PreCreate runs platform-specific setup before clusters are
 	// created (e.g., deploying OIDC providers that must be ready
 	// before the cluster exists).
@@ -228,8 +234,10 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 			Zones:     envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
 			ProwJobId: envOrDefault("PROW_JOB_ID", ""),
 		}, sharedDir), nil
+	case "gcp":
+		return NewGCPPlatformConfig(sharedDir), nil
 	default:
-		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws)", platform)
+		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws, gcp)", platform)
 	}
 }
 
