@@ -434,6 +434,7 @@ nav:
   - contribute/index.md
   - 'Repositories': contribute/repositories.md
   - 'HO/CPO Release Process': contribute/release-process.md
+  - 'HO Nightly Releases': contribute/nightly-release-controller.md
   - 'OCP Branching Tasks': contribute/branch-process.md
   - 'Custom Images': contribute/custom-images.md
   - 'Add a Capability': contribute/add-a-capability.md
