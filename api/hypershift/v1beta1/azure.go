@@ -110,7 +110,42 @@ type AzureNodePoolPlatform struct {
 	// If not specified, then Boot diagnostics will be disabled.
 	// +optional
 	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
+
+	// ipForwarding controls which source and destination IP addresses the VMs in the nodepool
+	// may send and receive network traffic for.
+	// Set this to AllowAllAddresses when nodes must forward traffic on behalf of other
+	// networks, for example networks advertised to the node over BGP, or VM addresses that are
+	// directly routable within the virtual network.
+	// AllowAllAddresses relaxes the Azure platform's source and destination address check on
+	// the VM network interfaces; InterfaceAddressesOnly leaves that check in place.
+	// This is unrelated to the cluster network operator's ipForwarding setting, which controls
+	// OVN-Kubernetes gateway behavior inside the cluster.
+	// When omitted, the Azure default applies and the VMs send and receive traffic only for
+	// addresses assigned to their own network interfaces.
+	// Changing this value replaces the VMs in the nodepool. For nodepools using the InPlace
+	// upgrade type, changing this value affects only nodes created after the change; existing
+	// nodes keep their original setting.
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=InterfaceAddressesOnly;AllowAllAddresses
+	IPForwarding AzureIPForwarding `json:"ipForwarding,omitempty"`
 }
+
+// AzureIPForwarding controls which source and destination IP addresses the network interfaces
+// of the VMs in an Azure nodepool may send and receive traffic for.
+type AzureIPForwarding string
+
+const (
+	// AzureIPForwardingInterfaceAddressesOnly restricts the VM network interfaces to traffic
+	// whose source or destination IP address is assigned to the interface. This is the Azure
+	// default.
+	AzureIPForwardingInterfaceAddressesOnly AzureIPForwarding = "InterfaceAddressesOnly"
+
+	// AzureIPForwardingAllowAllAddresses allows the VM network interfaces to send and receive
+	// traffic with any source or destination IP address, including addresses that are not
+	// assigned to the interface.
+	AzureIPForwardingAllowAllAddresses AzureIPForwarding = "AllowAllAddresses"
+)
 
 // AzureVMImage represents the different types of boot image sources that can be provided for an Azure VM.
 // +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'ImageID' ?  has(self.imageID) : !has(self.imageID)",message="imageID is required when type is ImageID, and forbidden otherwise"
