@@ -53,6 +53,7 @@ var ocpVersionToKubeVersion = map[string]semver.Version{
 	"4.21.0": semver.MustParse("1.34.0"),
 	"4.22.0": semver.MustParse("1.35.0"),
 	"4.23.0": semver.MustParse("1.36.0"),
+	"5.0.0":  semver.MustParse("1.36.0"),
 }
 
 func GetKubeVersionForSupportedVersion(supportedVersion semver.Version) (*semver.Version, error) {
