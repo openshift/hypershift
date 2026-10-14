@@ -26,8 +26,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -59,7 +59,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 	When("[Feature:AWSSecurityGroups] a day-2 resource tag is added to the HostedCluster spec", func() {
 		It("should apply the tag to the default worker security group via AWS API", Label("AWS"), func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version420)
+			tc.SkipIfVersionBelow(v2util.Version420)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -94,7 +94,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 			Expect(hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN).NotTo(BeEmpty(),
 				"HostedCluster should have ControlPlaneOperatorARN set")
 
-			cleanup, err := e2eutil.PutRolePolicy(tc.Context, awsCredsFile, region,
+			cleanup, err := v2util.PutRolePolicy(tc.Context, awsCredsFile, region,
 				hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
 			Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
 			DeferCleanup(func() {
@@ -106,7 +106,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 
 			originalTags := append([]hyperv1.AWSClusterResourceTag(nil), hc.Spec.Platform.AWS.ResourceTags...)
 
-			err = e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
 					Key:   day2TagKey,
 					Value: day2TagValue,
@@ -114,7 +114,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster with day-2 tag")
 			DeferCleanup(func() {
-				err := e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				err := v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSClusterResourceTag(nil), originalTags...)
 				})
 				if err != nil && !apierrors.IsNotFound(err) {
@@ -136,7 +136,7 @@ func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			Eventually(func(g Gomega) {
-				sg, err := e2eutil.GetDefaultSecurityGroup(tc.Context, awsCredsFile, region, sgID)
+				sg, err := v2util.GetDefaultSecurityGroup(tc.Context, awsCredsFile, region, sgID)
 				g.Expect(err).NotTo(HaveOccurred(), "failed to get default security group")
 				g.Expect(sg.Tags).To(ContainElement(ec2types.Tag{
 					Key:   aws.String(day2TagKey),
@@ -213,7 +213,7 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 	Context("[Feature:AWSNLB] AWS CCM NLB Security Group", Label("AWS", "CCM"), func() {
 		BeforeEach(func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version423)
+			tc.SkipIfVersionBelow(v2util.Version423)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 		})
 
@@ -359,7 +359,7 @@ func AWSResourceTagOverridePolicyTest(getTestCtx internal.TestContextGetter) {
 			ctx := tc.Context
 
 			originalTags := append([]hyperv1.AWSClusterResourceTag(nil), hc.Spec.Platform.AWS.ResourceTags...)
-			err = e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = v2util.UpdateObject(ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags,
 					hyperv1.AWSClusterResourceTag{
 						Key:            "e2e-tag-deny",
@@ -375,7 +375,7 @@ func AWSResourceTagOverridePolicyTest(getTestCtx internal.TestContextGetter) {
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster with override policy tags")
 			DeferCleanup(func() {
-				err := e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				err := v2util.UpdateObject(ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSClusterResourceTag(nil), originalTags...)
 				})
 				if err != nil && !apierrors.IsNotFound(err) {
@@ -402,7 +402,8 @@ func AWSResourceTagOverridePolicyTest(getTestCtx internal.TestContextGetter) {
 				cleanupNodePool(ctx, tc.MgmtClient, np)
 			})
 
-			e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+			_, err = v2util.WaitForReadyNodesByNodePool(ctx, hcClient, np, hc.Spec.Platform.Type)
+			Expect(err).NotTo(HaveOccurred(), "failed waiting for nodes after NodePool tag update")
 
 			Eventually(func(g Gomega) {
 				fresh := &hyperv1.NodePool{}
@@ -482,7 +483,7 @@ func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContex
 	When("[Feature:AWSSecurityGroups] a day-2 resource tag with spaces is added to the HostedCluster spec", func() {
 		It("should apply the tag with spaces to the default worker security group via AWS API", Label("AWS"), func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version420)
+			tc.SkipIfVersionBelow(v2util.Version420)
 			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
@@ -517,7 +518,7 @@ func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContex
 			Expect(hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN).NotTo(BeEmpty(),
 				"HostedCluster should have ControlPlaneOperatorARN set")
 
-			cleanup, err := e2eutil.PutRolePolicy(tc.Context, awsCredsFile, region,
+			cleanup, err := v2util.PutRolePolicy(tc.Context, awsCredsFile, region,
 				hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
 			Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
 			DeferCleanup(func() {
@@ -529,7 +530,7 @@ func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContex
 
 			originalTags := append([]hyperv1.AWSClusterResourceTag(nil), hc.Spec.Platform.AWS.ResourceTags...)
 
-			err = e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
 					Key:   day2TagKey,
 					Value: day2TagValue,
@@ -537,7 +538,7 @@ func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContex
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster with day-2 tag containing spaces")
 			DeferCleanup(func() {
-				err := e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				err := v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSClusterResourceTag(nil), originalTags...)
 				})
 				if err != nil && !apierrors.IsNotFound(err) {
@@ -563,7 +564,7 @@ func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContex
 			})
 
 			Eventually(func(g Gomega) {
-				sg, err := e2eutil.GetDefaultSecurityGroup(tc.Context, awsCredsFile, region, sgID)
+				sg, err := v2util.GetDefaultSecurityGroup(tc.Context, awsCredsFile, region, sgID)
 				g.Expect(err).NotTo(HaveOccurred(), "failed to get default security group")
 				g.Expect(sg.Tags).To(ContainElement(ec2types.Tag{
 					Key:   aws.String(day2TagKey),
@@ -621,7 +622,7 @@ func NodePoolDay2TagsWithSpacesTest(getTestCtx internal.TestContextGetter) {
 			day2TagValue := "e2e np space value"
 
 			originalTags := append([]hyperv1.AWSNodePoolResourceTag(nil), defaultNP.Spec.Platform.AWS.ResourceTags...)
-			err = e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, defaultNP, func(obj *hyperv1.NodePool) {
+			err = v2util.UpdateObject(ctx, tc.MgmtClient, defaultNP, func(obj *hyperv1.NodePool) {
 				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags, hyperv1.AWSNodePoolResourceTag{
 					Key:   day2TagKey,
 					Value: day2TagValue,
@@ -629,7 +630,7 @@ func NodePoolDay2TagsWithSpacesTest(getTestCtx internal.TestContextGetter) {
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to update NodePool with day-2 tag containing spaces")
 			DeferCleanup(func() {
-				err := e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, defaultNP, func(obj *hyperv1.NodePool) {
+				err := v2util.UpdateObject(ctx, tc.MgmtClient, defaultNP, func(obj *hyperv1.NodePool) {
 					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSNodePoolResourceTag(nil), originalTags...)
 				})
 				if err != nil && !apierrors.IsNotFound(err) {

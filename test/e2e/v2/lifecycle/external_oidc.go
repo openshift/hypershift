@@ -14,7 +14,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/pkg/manifests"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -83,8 +82,8 @@ func (s *externalOIDCSetup) postVersionRollout(ctx context.Context, cl crclient.
 		return fmt.Errorf("creating console client secret: %w", err)
 	}
 
-	extOIDCConfig := &e2eutil.ExtOIDCConfig{
-		ExternalOIDCProvider:     e2eutil.ProviderKeycloak,
+	extOIDCConfig := &v2util.ExtOIDCConfig{
+		ExternalOIDCProvider:     v2util.ProviderKeycloak,
 		OIDCProviderName:         "keycloak oidc server",
 		CliClientID:              s.keycloakConfig.CLIClientID,
 		ConsoleClientID:          s.keycloakConfig.ConsoleClientID,

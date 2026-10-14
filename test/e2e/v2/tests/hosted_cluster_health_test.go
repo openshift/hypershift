@@ -27,8 +27,8 @@ import (
 	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/imageregistry"
 	hyperutil "github.com/openshift/hypershift/support/util"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -57,14 +57,14 @@ func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) 
 
 			expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
 			delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
-			if !tc.VersionAtLeast(e2eutil.Version421) {
+			if !tc.VersionAtLeast(v2util.Version421) {
 				delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
 			}
-			if !tc.VersionAtLeast(e2eutil.Version422) {
+			if !tc.VersionAtLeast(v2util.Version422) {
 				delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
 				delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
 			}
-			if !tc.VersionAtLeast(e2eutil.Version423) {
+			if !tc.VersionAtLeast(v2util.Version423) {
 				delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
 			}
 
@@ -86,7 +86,7 @@ func EnsureCAPIFinalizersTest(getTestCtx internal.TestContextGetter) {
 	When("CAPI components are deployed", func() {
 		It("should have component finalizers on all CAPI deployments", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version422)
+			tc.SkipIfVersionBelow(v2util.Version422)
 			Expect(cpconst.CAPIComponents).NotTo(BeEmpty(),
 				"expected CAPI components to be defined in HostedControlPlaneConfiguration")
 			for _, name := range cpconst.CAPIComponents {
@@ -106,7 +106,7 @@ func EnsureFeatureGateStatusTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster version is completed", func() {
 		It("should have feature gate status matching cluster version", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version419)
+			tc.SkipIfVersionBelow(v2util.Version419)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -163,7 +163,7 @@ func ValidateConfigurationStatusTest(getTestCtx internal.TestContextGetter) {
 			tc := getTestCtx()
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			tc.SkipIfVersionBelow(e2eutil.Version421)
+			tc.SkipIfVersionBelow(v2util.Version421)
 
 			hcClient, err := tc.GetHostedClusterClient(hostedCluster)
 			Expect(err).NotTo(HaveOccurred())

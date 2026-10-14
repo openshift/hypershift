@@ -21,8 +21,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 )
 
 // GCPWorkloadIdentityTest registers tests that validate GCP workload identity webhook mutation.
@@ -31,7 +31,7 @@ func GCPWorkloadIdentityTest(getTestCtx internal.TestContextGetter) {
 		BeforeEach(func() {
 			testCtx := getTestCtx()
 			testCtx.SkipIfNotPlatform(hyperv1.GCPPlatform)
-			testCtx.SkipIfVersionBelow(e2eutil.Version51)
+			testCtx.SkipIfVersionBelow(v2util.Version51)
 		})
 
 		It("[Skipped:Disconnected] should mutate pods with workload identity federated credentials", func() {
@@ -41,7 +41,7 @@ func GCPWorkloadIdentityTest(getTestCtx internal.TestContextGetter) {
 			hostedClusterClient, err := testCtx.GetHostedClusterClient(hc)
 			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
 
-			e2eutil.ValidateGCPWorkloadIdentityWebhookMutation(GinkgoTB(), Default, testCtx.Context, hostedClusterClient)
+			Expect(v2util.ValidateGCPWorkloadIdentityWebhookMutation(testCtx.Context, hostedClusterClient)).To(Succeed())
 		})
 	})
 }

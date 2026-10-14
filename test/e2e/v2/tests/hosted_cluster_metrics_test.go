@@ -35,7 +35,7 @@ import (
 	npmetrics "github.com/openshift/hypershift/pkg/metrics/nodepool"
 	azureutil "github.com/openshift/hypershift/support/azureutil"
 	supportforwarder "github.com/openshift/hypershift/support/forwarder"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -79,7 +79,7 @@ func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
-			mgmtRestConfig, err := e2eutil.GetConfig()
+			mgmtRestConfig, err := v2util.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "should be able to load management cluster REST config")
 
 			clientset, err := kubernetes.NewForConfig(mgmtRestConfig)
@@ -147,7 +147,7 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 	When("metrics forwarding is enabled", Label("Informing"), func() {
 		It("should deploy the metrics pipeline and scrape kube-apiserver metrics end-to-end", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version422)
+			tc.SkipIfVersionBelow(v2util.Version422)
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -228,7 +228,7 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 	When("cluster has worker nodes", func() {
 		It("should have a functional node-tuning-operator metrics endpoint", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version422)
+			tc.SkipIfVersionBelow(v2util.Version422)
 
 			svc := &corev1.Service{}
 			err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
@@ -275,7 +275,7 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 			Expect(targetPort).NotTo(BeEmpty(), "ServiceMonitor should have a /metrics endpoint with a target port")
 
 			By("Verifying the HTTPS metrics endpoint returns Prometheus data")
-			mgmtRestConfig, err := e2eutil.GetConfig()
+			mgmtRestConfig, err := v2util.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "should be able to load management cluster REST config")
 			clientset, err := kubernetes.NewForConfig(mgmtRestConfig)
 			Expect(err).NotTo(HaveOccurred(), "should be able to create kubernetes clientset")
@@ -318,7 +318,7 @@ func EnsureKubeSchedulerMetricsEndpointTest(getTestCtx internal.TestContextGette
 	When("kube-scheduler is running", func() {
 		It("should have functional kube-scheduler metrics endpoints", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version423)
+			tc.SkipIfVersionBelow(v2util.Version423)
 
 			// 1. Validate Service exists and has the "client" port
 			svc := &corev1.Service{}
@@ -391,7 +391,7 @@ func ValidateCPOMetricsTest(getTestCtx internal.TestContextGetter) {
 		BeforeEach(func() {
 			tc = getTestCtx()
 			tc.SkipIfPlatform(hyperv1.NonePlatform)
-			tc.SkipIfVersionBelow(e2eutil.Version51)
+			tc.SkipIfVersionBelow(v2util.Version51)
 		})
 
 		It("should contain availability and latency data from CPO", func() {
@@ -400,7 +400,7 @@ func ValidateCPOMetricsTest(getTestCtx internal.TestContextGetter) {
 				kasmetrics.KASRequestDurationMetricName,
 			}
 
-			mgmtRestConfig, err := e2eutil.GetConfig()
+			mgmtRestConfig, err := v2util.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "should be able to load management cluster REST config")
 			clientset, err := kubernetes.NewForConfig(mgmtRestConfig)
 			Expect(err).NotTo(HaveOccurred(), "should be able to create kubernetes clientset")
@@ -478,7 +478,7 @@ func fetchMetricsViaPortForward(ctx context.Context, mgmtClient crclient.Client,
 		return "", fmt.Errorf("failed to parse metrics-client certificate: %w", err)
 	}
 
-	restConfig, err := e2eutil.GetConfig()
+	restConfig, err := v2util.GetConfig()
 	if err != nil {
 		return "", fmt.Errorf("failed to get rest config: %w", err)
 	}

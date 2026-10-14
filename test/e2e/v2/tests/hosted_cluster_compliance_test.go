@@ -22,8 +22,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	"github.com/openshift/hypershift/support/netutil"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -86,7 +86,7 @@ func EnsureKASConnectionCheckerSpecTest(getTestCtx internal.TestContextGetter) {
 		It("should have safe-to-evict annotation, no tolerations, and topology spread constraint", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 
-			if !tc.VersionAtLeast(e2eutil.Version423) {
+			if !tc.VersionAtLeast(v2util.Version423) {
 				Skip("kas-connection-checker spec changes require CPO >= 4.23")
 			}
 

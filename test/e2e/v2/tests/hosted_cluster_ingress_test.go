@@ -32,7 +32,7 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/capabilities"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -99,7 +99,7 @@ func ValidateIngressOperatorConfigurationTest(getTestCtx internal.TestContextGet
 	When("hosted cluster has IngressOperator EndpointPublishingStrategy configured", func() {
 		It("should reflect the custom strategy in the hosted cluster IngressController", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version421)
+			tc.SkipIfVersionBelow(v2util.Version421)
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -166,12 +166,12 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 
 			originalOperatorConfig := hc.Spec.OperatorConfiguration.DeepCopy()
 			DeferCleanup(func() {
-				Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				Expect(v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 					obj.Spec.OperatorConfiguration = originalOperatorConfig
 				})).To(Succeed(), "cleanup: failed to restore operator configuration")
 			})
 			By("Referencing the source certificate on the HostedCluster")
-			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			Expect(v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				if obj.Spec.OperatorConfiguration == nil {
 					obj.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
 				}
@@ -266,7 +266,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			if err != nil {
 				GinkgoWriter.Printf("WARNING: failed to get HostedCluster for cleanup: %v\n", err)
 			} else {
-				err = e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				err = v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 					if originalDefaultCert.Name != "" {
 						if obj.Spec.OperatorConfiguration == nil {
 							obj.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
@@ -324,7 +324,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			By("Setting defaultCertificate on the HostedCluster")
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
-			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			Expect(v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				if obj.Spec.OperatorConfiguration == nil {
 					obj.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
 				}
@@ -416,7 +416,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			Expect(newCertPEM).NotTo(Equal(certPEM), "rotated cert should differ from original")
 
 			By("Updating the source secret in the HostedCluster namespace")
-			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, &corev1.Secret{
+			Expect(v2util.UpdateObject(tc.Context, tc.MgmtClient, &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      certSecretName,
 					Namespace: tc.ClusterNamespace,
@@ -502,7 +502,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			By("Pointing defaultCertificate at the malformed secret")
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			Expect(v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = hyperv1.IngressDefaultCertificateReference{Name: badSecretName}
 			})).To(Succeed())
 
@@ -528,7 +528,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			By("Restoring defaultCertificate to the valid source secret")
 			hc, err = tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			Expect(v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = hyperv1.IngressDefaultCertificateReference{Name: certSecretName}
 			})).To(Succeed())
 		})
@@ -585,7 +585,7 @@ func ServiceProviderDefaultIngressServingCertificateLifecycleTest(getTestCtx int
 			By("Clearing defaultCertificate on the HostedCluster")
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			Expect(v2util.UpdateObject(tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				if obj.Spec.OperatorConfiguration != nil && obj.Spec.OperatorConfiguration.IngressOperator != nil {
 					obj.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate = hyperv1.IngressDefaultCertificateReference{}
 				}

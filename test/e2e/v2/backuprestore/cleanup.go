@@ -11,8 +11,8 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -182,7 +182,7 @@ func removeNamespaceObjectFinalizers(testCtx *internal.TestContext, namespace st
 		return fmt.Errorf("failed to get namespace %s: %w", namespace, err)
 	}
 
-	restConfig, err := util.GetConfig()
+	restConfig, err := v2util.GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get REST config: %w", err)
 	}
