@@ -53,6 +53,7 @@ type DestroyOptions struct {
 	AWSPlatform           AWSPlatformDestroyOptions
 	AzurePlatform         AzurePlatformDestroyOptions
 	PowerVSPlatform       PowerVSPlatformDestroyOptions
+	GCPPlatform           GCPPlatformDestroyOptions
 	InfraID               string
 	DestroyCloudResources bool
 	Log                   logr.Logger
@@ -96,6 +97,22 @@ type PowerVSPlatformDestroyOptions struct {
 	PER                    bool
 	TransitGatewayLocation string
 	TransitGateway         string
+}
+
+type GCPPlatformDestroyOptions struct {
+	ProjectID                     string
+	Region                        string
+	NetworkName                   string
+	SubnetName                    string
+	RouterName                    string
+	NATName                       string
+	FirewallRuleName              string
+	WorkloadIdentityProjectNumber string
+	WorkloadIdentityPoolID        string
+	WorkloadIdentityProviderID    string
+	ServiceAccountEmails          hyperv1.GCPServiceAccountsEmails
+	PreserveIAM                   bool
+	PreserveInfra                 bool
 }
 
 func GetCluster(ctx context.Context, c client.Client, o *DestroyOptions) (*hyperv1.HostedCluster, error) {

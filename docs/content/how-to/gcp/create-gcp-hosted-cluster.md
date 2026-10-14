@@ -25,6 +25,9 @@ hypershift create cluster gcp \
   --network=<vpc-name> \
   --subnet=<subnet-name> \
   --private-service-connect-subnet=<psc-subnet> \
+  --router-name=<router-name> \
+  --nat-name=<nat-name> \
+  --firewall-rule-name=<firewall-rule-name> \
   --endpoint-access=PublicAndPrivate \
   --workload-identity-project-number=<project-number> \
   --workload-identity-pool-id=<pool-id> \
@@ -75,6 +78,9 @@ hypershift create cluster gcp \
 | `--network` | Yes | VPC network name (from `create infra gcp` output) |
 | `--subnet` | Yes | Subnet for worker nodes (from `create infra gcp` output: `subnetName`) |
 | `--private-service-connect-subnet` | Yes | Subnet for PSC endpoints (same as `--subnet`) |
+| `--router-name` | Yes | Cloud Router name (from `create infra gcp` output: `routerName`) |
+| `--nat-name` | Yes | Cloud NAT name (from `create infra gcp` output: `natName`) |
+| `--firewall-rule-name` | Yes | Firewall rule name (from `create infra gcp` output: `firewallRuleName`) |
 | `--endpoint-access` | Yes | `Private` or `PublicAndPrivate` |
 | `--workload-identity-project-number` | Yes | GCP project number (from `create iam gcp` output) |
 | `--workload-identity-pool-id` | Yes | WIF pool ID (from `create iam gcp` output) |
@@ -163,6 +169,20 @@ oc patch hostedcluster <cluster-name> -n <namespace> \
 
 For advanced scenarios (custom bucket, pre-existing bucket, troubleshooting WIF auth), see [Configure Image Registry on GCP](configure-image-registry.md).
 
+## Networking Cleanup Metadata
+
+The required `--router-name`, `--nat-name`, and `--firewall-rule-name` creation flags ensure networking references are available for automatic cleanup. The CLI records their exact names in a versioned HostedCluster annotation:
+
+```yaml
+metadata:
+  annotations:
+    hypershift.openshift.io/gcp-infra-resources: '{"version":1,"router":"example-router","nat":"example-nat","firewallRule":"example-allow-kubelet"}'
+```
+
+Project, region, network, subnet, and IAM references continue to come from the existing HostedCluster spec. No additional CRD fields or operator changes are required. Creation commands and CI scripts must supply all three cleanup names from the infrastructure output. HostedClusters created by older CLIs without this annotation require `--preserve-infra` and a separate `destroy infra gcp` command.
+
+Destroy validates the annotation before starting cluster deletion. Missing, incomplete, invalid, or unsupported metadata blocks infrastructure cleanup unless `--preserve-infra` is set. These annotations are mutable: keep the recorded names accurate and only reference infrastructure dedicated to this cluster. The CLI trusts the recorded references without querying GCP to validate their relationships. It captures the names before deletion and never derives them from the HostedCluster InfraID.
+
 ## Destroy Hosted Cluster
 
 ```bash
@@ -171,18 +191,21 @@ hypershift destroy cluster gcp \
   --namespace=<namespace>
 ```
 
-After the cluster is destroyed, clean up the infrastructure and IAM resources:
+When the HostedCluster has the networking cleanup annotation recorded at creation, `hypershift destroy cluster gcp` removes its IAM and network resources as part of cluster destruction. Networking, service accounts, and project role bindings use `spec.platform.gcp.project`. The Workload Identity pool and provider use the existing `spec.platform.gcp.workloadIdentity.projectNumber`, which can identify a different project. The CLI requires GCP credentials with cleanup permissions in the relevant projects. Missing or invalid workload identity project numbers block IAM cleanup before cluster deletion unless `--preserve-iam` is set. For HostedClusters without the networking annotation, preserve infrastructure during cluster deletion and clean it up using the original infrastructure InfraID:
 
 ```bash
+hypershift destroy cluster gcp \
+  --name=<cluster-name> \
+  --namespace=<namespace> \
+  --preserve-infra
+
 hypershift destroy infra gcp \
-  --infra-id=<infra-id> \
+  --infra-id=<original-infra-id> \
   --project-id=<hosted-cluster-project-id> \
   --region=<region>
-
-hypershift destroy iam gcp \
-  --infra-id=<infra-id> \
-  --project-id=<hosted-cluster-project-id>
 ```
+
+If an older HostedCluster is also missing its workload identity references or service account emails, add `--preserve-iam` and use `hypershift destroy iam gcp --infra-id=<original-iam-infra-id> --project-id=<original-iam-project-id>` after cluster deletion. The standalone cleanup commands use the InfraID and project from their corresponding `create infra` or `create iam` command. If the pool/provider and service accounts were provisioned in separate projects outside `create iam gcp`, clean them up separately in their respective projects; the standalone IAM command assumes its resources share one project.
 
 ## Troubleshooting
 
