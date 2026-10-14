@@ -346,7 +346,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
-	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := resolveControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
