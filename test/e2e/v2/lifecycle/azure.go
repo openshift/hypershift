@@ -11,13 +11,8 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -51,7 +46,7 @@ type AzurePlatformConfig struct {
 	marketplaceSKU       string
 	marketplaceVersion   string
 
-	keycloakConfig *v2util.KeycloakConfig
+	externalOIDC externalOIDCSetup
 }
 
 // NewAzurePlatformConfig reads Azure-specific configuration from
@@ -65,6 +60,7 @@ func NewAzurePlatformConfig(sharedDir string) *AzurePlatformConfig {
 		workloadIdentities: envOrDefault("AZURE_WORKLOAD_IDENTITIES_FILE", defaultWorkloadIdentities),
 		dnsZoneRG:          defaultAzureDNSZoneRG,
 		sharedDir:          sharedDir,
+		externalOIDC:       externalOIDCSetup{sharedDir: sharedDir},
 
 		marketplacePublisher: os.Getenv("HYPERSHIFT_AZURE_MARKETPLACE_IMAGE_PUBLISHER"),
 		marketplaceOffer:     os.Getenv("HYPERSHIFT_AZURE_MARKETPLACE_IMAGE_OFFER"),
@@ -198,13 +194,7 @@ func (a *AzurePlatformConfig) CreateArgs() []string {
 // PreCreate deploys infrastructure that must be ready before clusters
 // are created (e.g., the Keycloak OIDC provider for the external-oidc variant).
 func (a *AzurePlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error {
-	kcConfig, err := v2util.DeployKeycloak(ctx, cl, "https://placeholder.example.com/auth/callback")
-	if err != nil {
-		return fmt.Errorf("deploying keycloak in pre-create: %w", err)
-	}
-	a.keycloakConfig = kcConfig
-	log.Printf("Keycloak deployed: issuer=%s", kcConfig.IssuerURL)
-	return nil
+	return a.externalOIDC.preCreate(ctx, cl)
 }
 
 // PostCreate runs variant-specific post-creation hooks for each cluster
@@ -230,12 +220,7 @@ func (a *AzurePlatformConfig) PostAvailable(ctx context.Context, cl crclient.Wit
 }
 
 func (a *AzurePlatformConfig) PostVersionRollout(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error {
-	if oidcName, ok := clusterNames["external-oidc"]; ok {
-		if err := a.postCreateExternalOIDC(ctx, cl, namespace, oidcName); err != nil {
-			return err
-		}
-	}
-	return nil
+	return a.externalOIDC.postVersionRollout(ctx, cl, namespace, clusterNames)
 }
 
 func (a *AzurePlatformConfig) postCreatePublic(ctx context.Context, cl crclient.Client, namespace, name string) error {
@@ -260,89 +245,6 @@ func (a *AzurePlatformConfig) postCreatePublic(ctx context.Context, cl crclient.
 		return fmt.Errorf("patching HostedCluster %s/%s OperatorConfiguration: %w", namespace, name, err)
 	}
 	log.Printf("Patched public cluster %s/%s with OperatorConfiguration", namespace, name)
-	return nil
-}
-
-func (a *AzurePlatformConfig) postCreateExternalOIDC(ctx context.Context, cl crclient.Client, namespace, name string) error {
-	hc := &hyperv1.HostedCluster{}
-	if err := cl.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: name}, hc); err != nil {
-		return fmt.Errorf("getting HostedCluster %s/%s for OIDC setup: %w", namespace, name, err)
-	}
-
-	kcConfig := a.keycloakConfig
-	if kcConfig == nil {
-		return fmt.Errorf("keycloak config not available; PreCreate must run before PostCreate")
-	}
-
-	consoleRedirectURI := fmt.Sprintf("https://console-openshift-console.apps.%s.%s/auth/callback",
-		hc.Name, hc.Spec.DNS.BaseDomain)
-	if err := v2util.UpdateKeycloakConsoleClient(ctx, consoleRedirectURI); err != nil {
-		return fmt.Errorf("updating keycloak console client redirect URI: %w", err)
-	}
-
-	caCM := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "oidc-ca",
-			Namespace: namespace,
-		},
-		Data: map[string]string{
-			"ca-bundle.crt": string(kcConfig.CABundle),
-		},
-	}
-	if err := v2util.CreateOrUpdate(ctx, cl, caCM); err != nil {
-		return fmt.Errorf("creating OIDC CA configmap: %w", err)
-	}
-
-	consoleSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "console-secret",
-			Namespace: namespace,
-		},
-		Type: corev1.SecretTypeOpaque,
-		StringData: map[string]string{
-			"clientSecret": kcConfig.ConsoleClientSecret,
-		},
-	}
-	if err := v2util.CreateOrUpdate(ctx, cl, consoleSecret); err != nil {
-		return fmt.Errorf("creating console client secret: %w", err)
-	}
-
-	extOIDCConfig := &e2eutil.ExtOIDCConfig{
-		ExternalOIDCProvider:     e2eutil.ProviderKeycloak,
-		OIDCProviderName:         "keycloak oidc server",
-		CliClientID:              kcConfig.CLIClientID,
-		ConsoleClientID:          kcConfig.ConsoleClientID,
-		IssuerURL:                kcConfig.IssuerURL,
-		GroupPrefix:              "oidc-groups-test:",
-		UserPrefix:               "oidc-user-test:",
-		ConsoleClientSecretName:  "console-secret",
-		ConsoleClientSecretValue: kcConfig.ConsoleClientSecret,
-		IssuerCAConfigmapName:    "oidc-ca",
-		TestUsers:                kcConfig.TestUsers,
-	}
-
-	patch := crclient.MergeFrom(hc.DeepCopy())
-	if hc.Spec.Configuration == nil {
-		hc.Spec.Configuration = &hyperv1.ClusterConfiguration{}
-	}
-	hc.Spec.Configuration.Authentication = extOIDCConfig.GetAuthenticationConfig()
-	if err := cl.Patch(ctx, hc, patch); err != nil {
-		return fmt.Errorf("patching HostedCluster %s/%s with OIDC config: %w", namespace, name, err)
-	}
-	log.Printf("Patched HostedCluster %s/%s with External OIDC config", namespace, name)
-
-	if a.sharedDir != "" {
-		caPath := filepath.Join(a.sharedDir, "external_oidc_ca_bundle")
-		if err := os.WriteFile(caPath, kcConfig.CABundle, 0600); err != nil {
-			return fmt.Errorf("writing CA bundle to %s: %w", caPath, err)
-		}
-		testUsersPath := filepath.Join(a.sharedDir, "external_oidc_test_users")
-		if err := os.WriteFile(testUsersPath, []byte(kcConfig.TestUsers), 0600); err != nil {
-			return fmt.Errorf("writing test users to %s: %w", testUsersPath, err)
-		}
-		log.Printf("Wrote External OIDC CA bundle and test users to SHARED_DIR")
-	}
-
 	return nil
 }
 
@@ -465,14 +367,7 @@ func (a *AzurePlatformConfig) SetupTestEnv(sharedDir string) {
 	}
 	os.Setenv("AZURE_PRIVATE_NAT_SUBNET_ID", azurePrivateNATSubnetID)
 
-	// External OIDC
-	caPath := filepath.Join(sharedDir, "external_oidc_ca_bundle")
-	if _, err := os.Stat(caPath); err == nil {
-		os.Setenv("E2E_EXTERNAL_OIDC_CA_BUNDLE_FILE", caPath)
-	}
-	if data, err := os.ReadFile(filepath.Join(sharedDir, "external_oidc_test_users")); err == nil {
-		os.Setenv("E2E_EXTERNAL_OIDC_TEST_USERS", strings.TrimSpace(string(data)))
-	}
+	setupExternalOIDCTestEnv(sharedDir)
 }
 
 func (a *AzurePlatformConfig) DestroyArgs() []string {

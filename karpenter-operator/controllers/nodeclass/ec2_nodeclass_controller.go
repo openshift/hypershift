@@ -68,8 +68,6 @@ var (
 
 type EC2NodeClassReconciler struct {
 	Namespace string
-	// SkipUpstreamCRD leaves the upstream CRD ownership to the standalone operator.
-	SkipUpstreamCRD bool
 
 	managementClient client.Client
 	guestClient      client.Client
@@ -231,13 +229,10 @@ func (r *EC2NodeClassReconciler) reconcileCRDs(ctx context.Context, onlyCreate b
 	errs := []error{}
 	var op controllerutil.OperationResult
 	var err error
-	desiredCRDs := []*apiextensionsv1.CustomResourceDefinition{
+	for _, desired := range []*apiextensionsv1.CustomResourceDefinition{
+		crdEC2NodeClass,
 		crdOpenshiftEC2NodeClass,
-	}
-	if !r.SkipUpstreamCRD {
-		desiredCRDs = append([]*apiextensionsv1.CustomResourceDefinition{crdEC2NodeClass}, desiredCRDs...)
-	}
-	for _, desired := range desiredCRDs {
+	} {
 		// We need to deep copy because Create/CreateOrUpdate mutates the object
 		crd := desired.DeepCopy()
 		if onlyCreate {
@@ -340,6 +335,7 @@ func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2
 		MetadataOptions:                  karpenterMetadataOptionsFromNodeClassSpec(openshiftEC2NodeClass.Spec),
 		CapacityReservationSelectorTerms: karpenterCapacityReservationSelectorTermsFromNodeClassSpec(openshiftEC2NodeClass.Spec),
 		Kubelet:                          karpenterKubeletConfigurationFromNodeClassSpec(openshiftEC2NodeClass.Spec),
+		CPUOptions:                       karpenterCPUOptionsFromNodeClassSpec(openshiftEC2NodeClass.Spec),
 	}
 
 	// Set instance profile from HostedCluster annotation (platform-controlled)

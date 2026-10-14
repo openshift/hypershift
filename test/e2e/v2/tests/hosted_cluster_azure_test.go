@@ -707,7 +707,7 @@ func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
 			}
 		})
 
-		It("should create oauth-openshift Service as LoadBalancer with an allocated endpoint", Label(internal.InformingLabel), func() {
+		It("should create oauth-openshift Service as LoadBalancer with an allocated endpoint", func() {
 			ctx := testCtx.Context
 
 			e2eutil.EventuallyObject(GinkgoTB(), ctx, "oauth-openshift Service is LoadBalancer with endpoint",
@@ -721,7 +721,7 @@ func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
 			)
 		})
 
-		It("should have Azure internal LB annotation on oauth-openshift Service", Label(internal.InformingLabel), func() {
+		It("should have Azure internal LB annotation on oauth-openshift Service", func() {
 			ctx := testCtx.Context
 			e2eutil.EventuallyObject(GinkgoTB(), ctx, "oauth-openshift Service has Azure internal LB annotation",
 				func(ctx context.Context) (*corev1.Service, error) {
@@ -743,7 +743,7 @@ func AzureOAuthLoadBalancerPrivateTest(getTestCtx internal.TestContextGetter) {
 			)
 		})
 
-		It("should complete OAuth token flow through LoadBalancer endpoint", Label(internal.InformingLabel), func() {
+		It("should complete OAuth token flow through LoadBalancer endpoint", func() {
 			ctx := testCtx.Context
 			oauthHost := e2eutil.WaitForOAuthLoadBalancerEndpoint(GinkgoTB(), ctx, testCtx.MgmtClient, hc)
 			pfTransport := e2eutil.SetupOAuthPortForwardTransport(GinkgoTB(), ctx, testCtx.MgmtClient, hc, oauthHost)

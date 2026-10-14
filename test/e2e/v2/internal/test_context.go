@@ -70,8 +70,8 @@ func (tc *TestContext) GetHostedCluster() (*hyperv1.HostedCluster, error) {
 }
 
 // GetHostedClusterVersion fetches the HostedCluster and parses its version.
-// Returns an error if the cluster cannot be fetched or the version cannot be
-// parsed.
+// Returns an error if the cluster cannot be fetched or the version is missing or
+// cannot be parsed. Normalizes patch, prerelease, and build fields for minor-version checks.
 func (tc *TestContext) GetHostedClusterVersion() (semver.Version, error) {
 	hc, err := tc.GetHostedCluster()
 	if err != nil {
@@ -87,7 +87,7 @@ func (tc *TestContext) GetHostedClusterVersion() (semver.Version, error) {
 		releaseVersion.Build = nil
 		return releaseVersion, nil
 	}
-	return semver.Version{}, nil
+	return semver.Version{}, fmt.Errorf("HostedCluster %s/%s has no version in status history", hc.Namespace, hc.Name)
 }
 
 // GetHostedClusterRESTConfig returns the REST config for the hosted cluster.

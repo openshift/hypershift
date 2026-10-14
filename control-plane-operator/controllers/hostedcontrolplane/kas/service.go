@@ -291,23 +291,6 @@ func ReconcileInternalRoute(route *routev1.Route, owner *metav1.OwnerReference) 
 	return netutil.ReconcileInternalRoute(route, "", cpomanifests.KubeAPIServerService("").Name)
 }
 
-func ReconcileKonnectivityServerLocalService(svc *corev1.Service, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(svc)
-	svc.Spec.Selector = kasLabels()
-	var portSpec corev1.ServicePort
-	if len(svc.Spec.Ports) > 0 {
-		portSpec = svc.Spec.Ports[0]
-	} else {
-		svc.Spec.Ports = []corev1.ServicePort{portSpec}
-	}
-	portSpec.Port = int32(KonnectivityServerLocalPort)
-	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(KonnectivityServerLocalPort)
-	svc.Spec.Type = corev1.ServiceTypeClusterIP
-	svc.Spec.Ports[0] = portSpec
-	return nil
-}
-
 func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy, hcp *hyperv1.HostedControlPlane) error {
 	ownerRef.ApplyTo(svc)
 	svc.Spec.Selector = kasLabels()

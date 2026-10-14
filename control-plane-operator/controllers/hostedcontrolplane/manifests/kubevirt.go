@@ -12,53 +12,8 @@ import (
 
 const KubevirtCSIDriverTenantNamespaceStr = "openshift-cluster-csi-drivers"
 
-func KubevirtCSIDriverController(ns string) *appsv1.Deployment {
-	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kubevirt-csi-controller",
-			Namespace: ns,
-		},
-	}
-}
-
-func KubevirtCSIDriverInfraConfigMap(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "driver-config",
-			Namespace: ns,
-		},
-	}
-}
-
-func KubevirtCSIDriverTenantKubeConfig(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kubevirt-csi-controller-tenant-kubeconfig",
-			Namespace: ns,
-		},
-	}
-}
-
 func KubevirtCSIDriverInfraSA(ns string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kubevirt-csi",
-			Namespace: ns,
-		},
-	}
-}
-
-func KubevirtCSIDriverInfraRole(ns string) *rbacv1.Role {
-	return &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kubevirt-csi",
-			Namespace: ns,
-		},
-	}
-}
-
-func KubevirtCSIDriverInfraRoleBinding(ns string) *rbacv1.RoleBinding {
-	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kubevirt-csi",
 			Namespace: ns,

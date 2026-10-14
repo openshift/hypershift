@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: ca84f2790983a17d6ece9d302a70b8b8701e8e4304107cf94756f6cdc327452d
+    hypershift.openshift.io/desired-state-hash: bcb29d7d45378a6b71739189770a274e4cccd255a6fdedf05d89bc70b3798795
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: machine-approver
@@ -75,6 +75,7 @@ spec:
         - --disable-status-controller
         - --machine-namespace=hcp-namespace
         - --tls-min-version=VersionTLS13
+        - --tls-curve-preferences=4588,29,23,24
         command:
         - /usr/bin/machine-approver
         image: cluster-machine-approver

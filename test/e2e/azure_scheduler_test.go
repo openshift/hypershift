@@ -110,23 +110,6 @@ func updateClusterSizingConfig(ctx context.Context, t *testing.T, g Gomega, mgtC
 	t.Logf("Updated clusterSizingConfig.")
 }
 
-func checkHCSizeLabel(ctx context.Context, t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	// Check that the HostedCluster size label is small
-	e2eutil.EventuallyObject(t, ctx, "HostedCluster size is set to small",
-		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
-			hc := &hyperv1.HostedCluster{}
-			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
-			return hc, err
-		},
-		[]e2eutil.Predicate[*hyperv1.HostedCluster]{
-			func(hostedCluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
-				want, got := "small", hostedCluster.Labels[hyperv1.HostedClusterSizeLabel]
-				return want == got, fmt.Sprintf("expected HostedCluster size label to be %q, got %q", want, got), nil
-			},
-		}, e2eutil.WithTimeout(1*time.Minute), e2eutil.WithInterval(5*time.Second),
-	)
-}
-
 func scaleNodePool(ctx context.Context, t *testing.T, g Gomega, mgtClient, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	// Get associated NodePool
 	nodepools := &hyperv1.NodePoolList{}

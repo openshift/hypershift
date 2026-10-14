@@ -487,6 +487,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &karpenterv1.CapacityReservationApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("CapacityReservationSelectorTerm"):
 		return &karpenterv1.CapacityReservationSelectorTermApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("CPUOptions"):
+		return &karpenterv1.CPUOptionsApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubeletConfiguration"):
 		return &karpenterv1.KubeletConfigurationApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("MetadataOptions"):
