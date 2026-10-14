@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hcpmanifests "github.com/openshift/hypershift/pkg/manifests"
 	etcdrecoverymanifests "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
@@ -9746,6 +9747,127 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			pullSecret := controlplaneoperator.PullSecret("cp-ns")
 			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
 			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
+		})
+	}
+}
+
+func TestResolveControlPlaneOperatorImage(t *testing.T) {
+	// t.Setenv is used below for the CPO override table path, which rules out
+	// t.Parallel for this test and its subtests.
+	t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "0")
+
+	const (
+		hypershiftOperatorImage = "quay.io/hypershift/hypershift-operator:latest"
+		// overrideTableVersion is a release version with an Azure entry in the
+		// embedded CPO override table.
+		overrideTableVersion = "4.20.0"
+		cpoSourceRepo        = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant"
+		cpoMirrorRepo        = "arohcpocpdev.azurecr.io/quay-cache/redhat-user-workloads/crt-redhat-acm-tenant"
+	)
+
+	// Read the image from the override table rather than hardcoding it, so the
+	// test keeps working when the CPO images in overrides.yaml are bumped.
+	cpoOverrideImage := controlplaneoperatoroverrides.CPOImage(string(hyperv1.AzurePlatform), overrideTableVersion)
+	NewWithT(t).Expect(cpoOverrideImage).To(HavePrefix(cpoSourceRepo+"/"),
+		"the Azure CPO override table should have an entry for %s under %s; update overrideTableVersion if that release was dropped",
+		overrideTableVersion, cpoSourceRepo)
+	mirroredCPOImage := cpoMirrorRepo + strings.TrimPrefix(cpoOverrideImage, cpoSourceRepo)
+
+	mirrorOverrides := map[string]string{
+		"quay.io/openshift-release-dev/ocp-v4.0-art-dev": "arohcpocpdev.azurecr.io/openshift-release-dev/ocp-v4.0-art-dev",
+		cpoSourceRepo: cpoMirrorRepo,
+	}
+
+	testCases := []struct {
+		name            string
+		annotation      string
+		enableOverrides bool
+		overrides       map[string]string
+		lookupErr       error
+		expectedImage   string
+		expectErr       bool
+	}{
+		{
+			name:          "When the CPO image is overridden by annotation and a registry override matches, it should return the mirrored image",
+			annotation:    cpoOverrideImage,
+			overrides:     mirrorOverrides,
+			expectedImage: mirroredCPOImage,
+		},
+		{
+			name:            "When the CPO image comes from the override table and a registry override matches, it should return the mirrored image",
+			enableOverrides: true,
+			overrides:       mirrorOverrides,
+			expectedImage:   mirroredCPOImage,
+		},
+		{
+			name:            "When the CPO image comes from the override table and no registry override matches, it should return the image unchanged",
+			enableOverrides: true,
+			overrides:       map[string]string{"registry.redhat.io/redhat": "arohcpocpdev.azurecr.io/redhat"},
+			expectedImage:   cpoOverrideImage,
+		},
+		{
+			name:          "When the CPO image is already mirrored, it should return the image unchanged",
+			annotation:    mirroredCPOImage,
+			overrides:     mirrorOverrides,
+			expectedImage: mirroredCPOImage,
+		},
+		{
+			name:          "When no registry override matches the CPO image, it should return the image unchanged",
+			annotation:    cpoOverrideImage,
+			overrides:     map[string]string{"registry.redhat.io/redhat": "arohcpocpdev.azurecr.io/redhat"},
+			expectedImage: cpoOverrideImage,
+		},
+		{
+			name:          "When no registry overrides are configured, it should return the image unchanged",
+			annotation:    cpoOverrideImage,
+			overrides:     nil,
+			expectedImage: cpoOverrideImage,
+		},
+		{
+			name:      "When the release image lookup fails, it should return an error",
+			overrides: mirrorOverrides,
+			lookupErr: errors.New("failed to look up release image"),
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "any"},
+				Spec: hyperv1.HostedClusterSpec{
+					Release:  hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.20.0-x86_64"},
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform},
+				},
+			}
+			if tc.annotation != "" {
+				hcluster.Annotations = map[string]string{hyperv1.ControlPlaneOperatorImageAnnotation: tc.annotation}
+			}
+			if tc.enableOverrides {
+				t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "1")
+			}
+
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+			mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			mockedProvider.EXPECT().GetRegistryOverrides().Return(tc.overrides).AnyTimes()
+			if tc.lookupErr != nil {
+				mockedProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, tc.lookupErr).AnyTimes()
+			} else {
+				mockedProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(testutils.InitReleaseImageOrDie(overrideTableVersion), nil).AnyTimes()
+			}
+
+			image, err := resolveControlPlaneOperatorImage(t.Context(), hcluster, mockedProvider, hypershiftOperatorImage, nil)
+
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred(), "it should return an error when the release image lookup fails")
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred(), "it should resolve the control plane operator image")
+			g.Expect(image).To(Equal(tc.expectedImage), "it should apply the registry overrides to the control plane operator image")
 		})
 	}
 }
