@@ -306,7 +306,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 		}...)
 	} else {
 		filesToAdd = append(filesToAdd, fileToAdd{
-			source: generateKubernetesDefaultProxyPod(cpoImage, net.JoinHostPort(internalAPIAddress, strconv.Itoa(int(internalAPIPort))), proxyAddr, net.JoinHostPort(externalAPIAddress, strconv.Itoa(int(externalAPIPort)))),
+			source: generateKubernetesDefaultProxyPod(cpoImage, fmt.Sprintf("%s:%d", internalAPIAddress, internalAPIPort), proxyAddr, fmt.Sprintf("%s:%d", externalAPIAddress, externalAPIPort)),
 			name:   "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml",
 			mode:   0644,
 		})

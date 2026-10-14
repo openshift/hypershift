@@ -600,18 +600,14 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 			return nil, fmt.Errorf("failed to fetch proxy CA trust bundle: %w", err)
 		}
 		l.Info("Obtained proxy CA trust bundle")
-		result.HTTPSProxyURL = proxyURL("https", privateIP)
+		result.HTTPSProxyURL = fmt.Sprintf("https://%s:3128", privateIP)
 		result.CA = proxyCA
 	}
 
-	result.HTTPProxyURL = proxyURL("http", privateIP)
+	result.HTTPProxyURL = fmt.Sprintf("http://%s:3128", privateIP)
 	result.PrivateKey = base64.StdEncoding.EncodeToString(privateSSHKey)
 
 	return &result, nil
-}
-
-func proxyURL(scheme, host string) string {
-	return scheme + "://" + net.JoinHostPort(host, "3128")
 }
 
 func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vpcOwnerSession, clusterSession *aws.Config, publicSubnetIDs []string, output *CreateInfraOutput) error {

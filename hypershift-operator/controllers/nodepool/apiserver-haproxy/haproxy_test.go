@@ -1,7 +1,6 @@
 package haproxy
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -27,48 +26,6 @@ import (
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/vincent-petithory/dataurl"
 )
-
-func TestAPIServerProxyConfig(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name, internal, external, wantListen, wantAPI string
-		internalPort, externalPort                    int32
-	}{
-		{name: "When both addresses are raw IPv6, it should bracket both proxy flags", internal: "fd00::1", external: "2001:db8::1", internalPort: 6443, externalPort: 443, wantListen: "[fd00::1]:6443", wantAPI: "[2001:db8::1]:443"},
-		{name: "When both addresses are IPv4, it should preserve both proxy flags", internal: "172.20.0.1", external: "192.0.2.1", internalPort: 6443, externalPort: 443, wantListen: "172.20.0.1:6443", wantAPI: "192.0.2.1:443"},
-		{name: "When both addresses are DNS, it should preserve both proxy flags", internal: "internal.example.test", external: "api.example.test", internalPort: 8443, externalPort: 6443, wantListen: "internal.example.test:8443", wantAPI: "api.example.test:6443"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			g := NewWithT(t)
-			manifest, err := apiServerProxyConfig("unused-haproxy", "quay.io/hypershift/cpo:latest", "test-cluster",
-				test.external, test.internal, test.externalPort, test.internalPort, "http://proxy.example.test:3128", "", "10.0.0.0/16", "10.128.0.0/14", hyperv1.AWSPlatform, false)
-			g.Expect(err).ToNot(HaveOccurred(), "render ignition for %q", test.external)
-			var ignition ignitionapi.Config
-			g.Expect(json.Unmarshal(manifest, &ignition)).To(Succeed(), "decode actual ignition output")
-			var pod corev1.Pod
-			found := false
-			for _, file := range ignition.Storage.Files {
-				if file.Path != "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml" {
-					continue
-				}
-				g.Expect(file.Contents.Source).ToNot(BeNil(), "static pod must have inline content")
-				contents, err := dataurl.DecodeString(*file.Contents.Source)
-				g.Expect(err).ToNot(HaveOccurred(), "decode static pod data URL")
-				g.Expect(yaml.Unmarshal(contents.Data, &pod)).To(Succeed(), "decode rendered proxy Pod")
-				found = true
-			}
-			g.Expect(found).To(BeTrue(), "ignition must include the proxy static Pod")
-			g.Expect(pod.Spec.Containers).To(HaveLen(1), "proxy selection must render one CONNECT proxy container")
-			g.Expect(pod.Spec.Containers[0].Command).To(Equal([]string{
-				"control-plane-operator", "kubernetes-default-proxy", "--listen-addr=" + test.wantListen,
-				"--proxy-addr=proxy.example.test:3128", "--apiserver-addr=" + test.wantAPI,
-			}), "rendered command must pass exact listener and CONNECT authorities")
-			g.Expect(pod.Spec.HostNetwork).To(BeTrue(), "proxy must retain host networking")
-		})
-	}
-}
 
 func TestAPIServerHAProxyConfig(t *testing.T) {
 	image := "ha-proxy-image:latest"

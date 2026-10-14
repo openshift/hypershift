@@ -1268,10 +1268,6 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 	})
 }
 
-func managementKASURL(host string, port int32) string {
-	return "https://" + net.JoinHostPort(host, strconv.Itoa(int(port)))
-}
-
 func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNetworkPolicies", func(t *testing.T) {
 		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
@@ -1296,7 +1292,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			kasAddress := ""
 			for _, subset := range kubernetesEndpoint.Subsets {
 				if len(subset.Addresses) > 0 && len(subset.Ports) > 0 {
-					kasAddress = managementKASURL(subset.Addresses[0].IP, subset.Ports[0].Port)
+					kasAddress = fmt.Sprintf("https://%s:%v", subset.Addresses[0].IP, subset.Ports[0].Port)
 					break
 				}
 			}
