@@ -53,7 +53,7 @@ type AzurePlatformConfig struct {
 // environment variables with CI defaults.
 func NewAzurePlatformConfig(sharedDir string) *AzurePlatformConfig {
 	cfg := &AzurePlatformConfig{
-		creds:              envOrDefault("AZURE_CREDS", defaultAzureCreds),
+		creds:              AzureCredentialsFileFromEnv(),
 		location:           envOrDefault("HYPERSHIFT_AZURE_LOCATION", defaultAzureLocation),
 		oidcIssuerURL:      envOrDefault("AZURE_OIDC_ISSUER_URL", defaultOIDCIssuerURL),
 		saTokenKeyPath:     envOrDefault("AZURE_SA_TOKEN_ISSUER_KEY_PATH", defaultSATokenKeyPath),
@@ -100,6 +100,12 @@ func NewAzurePlatformConfig(sharedDir string) *AzurePlatformConfig {
 	}
 
 	return cfg
+}
+
+// AzureCredentialsFileFromEnv returns the configured Azure credentials path,
+// using the self-managed E2E default when AZURE_CREDS is unset.
+func AzureCredentialsFileFromEnv() string {
+	return envOrDefault("AZURE_CREDS", defaultAzureCreds)
 }
 
 func (a *AzurePlatformConfig) Name() string { return "azure" }
@@ -169,6 +175,7 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 func (a *AzurePlatformConfig) CreateArgs() []string {
 	args := []string{
 		"--azure-creds=" + a.creds,
+		"--diagnostics-storage-account-type=Managed",
 		"--location=" + a.location,
 		"--oidc-issuer-url=" + a.oidcIssuerURL,
 		"--sa-token-issuer-private-key-path=" + a.saTokenKeyPath,
@@ -262,7 +269,7 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 			{
 				Name:        "private",
 				Variant:     "private",
-				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance || azure-machine-diagnostics",
 			},
 			{
 				Name:        "oauth-lb-private",
@@ -277,13 +284,13 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 					{
 						Name:        "public",
 						Variant:     "public",
-						LabelFilter: "self-managed-azure-public || hosted-cluster-node-communication || hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress",
+						LabelFilter: "azure-machine-diagnostics || self-managed-azure-public || hosted-cluster-node-communication || hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress",
 						Skip:        "KAS allowed CIDRs",
 					},
 					{
 						Name:    "public-nodepool-rollouts",
 						Variant: "public",
-						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
+						LabelFilter: "azure-machine-diagnostics-bootstrap || nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
 							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-disk-encryption || nodepool-osimagestream-upgrade",
 					},
 				},
@@ -376,6 +383,10 @@ func (a *AzurePlatformConfig) DestroyArgs() []string {
 		"--location=" + a.location,
 		"--dns-zone-rg-name=" + a.dnsZoneRG,
 	}
+}
+
+func (a *AzurePlatformConfig) DumpArgs() []string {
+	return []string{"--azure-creds=" + a.creds}
 }
 
 func envOrDefault(key, defaultVal string) string {

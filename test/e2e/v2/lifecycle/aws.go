@@ -281,3 +281,7 @@ func (a *AWSPlatformConfig) DestroyArgs() []string {
 		"--base-domain=" + baseDomain,
 	}
 }
+
+func (a *AWSPlatformConfig) DumpArgs() []string {
+	return nil
+}

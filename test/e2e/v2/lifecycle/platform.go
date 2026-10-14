@@ -213,6 +213,9 @@ type PlatformConfig interface {
 	// DestroyArgs returns platform-specific args for
 	// "hypershift destroy cluster <platform>".
 	DestroyArgs() []string
+
+	// DumpArgs returns platform-specific args for "hypershift dump cluster".
+	DumpArgs() []string
 }
 
 // NewPlatformConfig creates a PlatformConfig for the given platform

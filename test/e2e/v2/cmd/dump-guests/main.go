@@ -48,6 +48,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read cluster manifest: %v", err)
 	}
+	platform, err := lifecycle.NewPlatformConfig(os.Getenv("HYPERSHIFT_PLATFORM"), sharedDir)
+	if err != nil {
+		log.Fatalf("Failed to initialize platform config: %v", err)
+	}
 
 	log.Printf("Dumping %d clusters from manifest", len(manifest.Clusters))
 
@@ -56,7 +60,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			dumpCluster(*hypershiftBinary, artifactDir, entry.Name, entry.Namespace)
+			dumpCluster(*hypershiftBinary, artifactDir, entry.Name, entry.Namespace, platform.DumpArgs())
 		}()
 	}
 	wg.Wait()
@@ -64,20 +68,14 @@ func main() {
 	log.Println("All cluster dumps complete")
 }
 
-func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string) {
+func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string, platformArgs []string) {
 	dumpDir := filepath.Join(artifactDir, clusterName)
 	if err := os.MkdirAll(dumpDir, 0755); err != nil {
 		log.Printf("WARNING: Failed to create artifact directory %s: %v", dumpDir, err)
 		return
 	}
 
-	args := []string{
-		"dump", "cluster",
-		"--artifact-dir=" + dumpDir,
-		"--dump-guest-cluster=true",
-		"--name=" + clusterName,
-		"--namespace=" + namespace,
-	}
+	args := dumpClusterArgs(dumpDir, clusterName, namespace, platformArgs)
 
 	log.Printf("Dumping cluster %s -> %s", clusterName, dumpDir)
 	log.Printf("Running: %s %v", hypershiftBinary, args)
@@ -87,8 +85,18 @@ func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string) {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		log.Printf("WARNING: Failed to dump cluster %s: %v", clusterName, err)
-		return
+	} else {
+		log.Printf("Successfully dumped cluster %s", clusterName)
 	}
+}
 
-	log.Printf("Successfully dumped cluster %s", clusterName)
+func dumpClusterArgs(dumpDir, clusterName, namespace string, platformArgs []string) []string {
+	args := []string{
+		"dump", "cluster",
+		"--artifact-dir=" + dumpDir,
+		"--dump-guest-cluster=true",
+		"--name=" + clusterName,
+		"--namespace=" + namespace,
+	}
+	return append(args, platformArgs...)
 }
