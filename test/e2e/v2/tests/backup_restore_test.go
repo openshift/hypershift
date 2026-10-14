@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/oadp"
 	"github.com/openshift/hypershift/support/conditions"
@@ -78,10 +79,11 @@ var backupRestorePlatforms = map[hyperv1.PlatformType]backupRestorePlatformConfi
 		postRestoreHook: func(testCtx *internal.TestContext) error {
 			awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
 			fixOpts := &backuprestore.FixDrOidcIamOptions{
-				HCName:       testCtx.ClusterName,
-				HCNamespace:  testCtx.ClusterNamespace,
-				AWSCredsFile: awsCredsFile,
-				Timeout:      backuprestore.OIDCTimeout,
+				HCName:         testCtx.ClusterName,
+				HCNamespace:    testCtx.ClusterNamespace,
+				KubeconfigPath: testCtx.KubeconfigPath,
+				AWSCredsFile:   awsCredsFile,
+				Timeout:        backuprestore.OIDCTimeout,
 			}
 			return backuprestore.RunFixDrOidcIam(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, fixOpts)
 		},
@@ -610,9 +612,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 		// function captures logs before that window closes.
 		It("should have etcd-init container logs showing successful snapshot restore", func() {
 			By("Polling for etcd-init container completion and verifying restore logs")
-			restConfig, err := util.GetConfig()
-			Expect(err).NotTo(HaveOccurred(), "failed to get REST config for pod log access")
-			kubeClient, err := kubernetes.NewForConfig(restConfig)
+			Expect(testCtx.MgmtRESTConfig).NotTo(BeNil(), "management REST config should be set on test context")
+			kubeClient, err := kubernetes.NewForConfig(testCtx.MgmtRESTConfig)
 			Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset")
 
 			err = backuprestore.WaitForEtcdInitAndVerifyLogs(testCtx.Context, GinkgoLogr.WithName("etcd-init"), kubeClient, testCtx.ControlPlaneNamespace)
@@ -649,5 +650,175 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 			Expect(err).NotTo(HaveOccurred(), "all etcd members should form a single cluster after restore")
 		})
 
+	})
+})
+
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore] CrossClusterRestore", Label("cross-cluster-restore"), Ordered, Serial, func() {
+
+	var (
+		platformCfg        backupRestorePlatformConfig
+		sourceCtx          *internal.TestContext
+		targetCtx          *internal.TestContext
+		backupName         string
+		expectedConditions []util.Condition
+	)
+
+	BeforeAll(func() {
+		ctx := internal.GetTestContext()
+		Expect(ctx).NotTo(BeNil(), "suite test context should be initialized")
+
+		sourceKubeconfig := internal.GetEnvVarValue("KUBECONFIG_SOURCE")
+		targetKubeconfig := internal.GetEnvVarValue("KUBECONFIG_TARGET")
+		Expect(sourceKubeconfig).NotTo(BeEmpty(), "KUBECONFIG_SOURCE must point to the source management cluster")
+		Expect(targetKubeconfig).NotTo(BeEmpty(), "KUBECONFIG_TARGET must point to the target management cluster")
+
+		var err error
+		sourceCtx, err = internal.SetupTestContextFromKubeconfig(ctx.Context, sourceKubeconfig)
+		Expect(err).NotTo(HaveOccurred(), "failed to initialize source management context")
+		targetCtx, err = internal.SetupTestContextFromKubeconfig(ctx.Context, targetKubeconfig)
+		Expect(err).NotTo(HaveOccurred(), "failed to initialize target management context")
+		Expect(sourceCtx.MgmtRESTConfig.Host).NotTo(Equal(targetCtx.MgmtRESTConfig.Host), "source and target kubeconfigs must point to different management clusters")
+
+		hostedCluster, err := sourceCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+			Skip(fmt.Sprintf("Cross-cluster restore is currently supported only on AWS, got %s", hostedCluster.Spec.Platform.Type))
+		}
+		_, err = targetCtx.GetHostedCluster()
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "target management cluster should not already contain HostedCluster %s/%s, got error %v", targetCtx.ClusterNamespace, targetCtx.ClusterName, err)
+		cfg, supported := backupRestorePlatforms[hostedCluster.Spec.Platform.Type]
+		if !supported {
+			Skip(fmt.Sprintf("Backup/restore test not supported on platform %s", hostedCluster.Spec.Platform.Type))
+		}
+		platformCfg = cfg
+	})
+
+	Context(ContextPreBackupControlPlane, func() {
+		It("should have control plane healthy before backup", func() {
+			validateBeforeEach(sourceCtx)
+			expectedConditions = validatePreBackupControlPlane(sourceCtx, platformCfg.excludeWorkloads)
+		})
+	})
+
+	Context(ContextBackup, func() {
+		It("should create backup successfully", func() {
+			validateBeforeEach(sourceCtx)
+			By("Waiting for BackupStorageLocation to be Available")
+			err := backuprestore.WaitForBackupStorageLocationAvailable(sourceCtx, sourceCtx.ClusterName)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating backup")
+			backupName = oadp.GenerateBackupName(
+				sourceCtx.ClusterName,
+				sourceCtx.ClusterNamespace,
+			)
+			backupOpts := &backuprestore.OADPBackupOptions{
+				KubeconfigPath:    sourceCtx.KubeconfigPath,
+				Name:              backupName,
+				HCName:            sourceCtx.ClusterName,
+				HCNamespace:       sourceCtx.ClusterNamespace,
+				StorageLocation:   sourceCtx.ClusterName,
+				IncludeNamespaces: platformCfg.additionalNamespaces,
+				SnapshotMoveData:  ptr.To(true),
+			}
+			err = backuprestore.RunOADPBackup(sourceCtx.Context, GinkgoLogr.WithName("backup-restore"), sourceCtx.ArtifactDir, backupOpts)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Waiting for backup to complete")
+			err = backuprestore.WaitForBackupCompletion(sourceCtx, backupName)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context(ContextPostBackupControlPlane, func() {
+		It("should have control plane healthy after backup", func() {
+			err := internal.WaitForControlPlaneDeploymentsReadiness(sourceCtx, 5*time.Minute, platformCfg.excludeWorkloads)
+			Expect(err).NotTo(HaveOccurred())
+			err = internal.WaitForControlPlaneStatefulSetsReadiness(sourceCtx, 5*time.Minute, platformCfg.excludeWorkloads)
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context(ContextBreakControlPlane, func() {
+		It("should stop ExternalDNS on both management clusters and break the hosted cluster", func() {
+			By("Scaling the target ExternalDNS Deployment to zero")
+			err := backuprestore.ScaleDownExternalDNS(targetCtx)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Leave source ExternalDNS at zero until CI tears down the source manager.
+			// Otherwise, it could reconcile the retained DNS names away from the target.
+			By("Scaling the source ExternalDNS Deployment to zero")
+			err = backuprestore.ScaleDownExternalDNS(sourceCtx)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Breaking the source HostedCluster while preserving machines")
+			err = backuprestore.BreakHostedClusterPreservingMachines(sourceCtx, GinkgoLogr.WithName("cleanup"))
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context(ContextRestore, func() {
+		It("should restore from backup successfully", func() {
+			validateBeforeEach(targetCtx)
+			By("Waiting for the target BackupStorageLocation to be Available")
+			err := backuprestore.WaitForBackupStorageLocationAvailable(targetCtx, targetCtx.ClusterName)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Creating Restore")
+			restoreName := oadp.GenerateRestoreName(targetCtx.ClusterName, targetCtx.ClusterNamespace)
+			restoreOpts := &backuprestore.OADPRestoreOptions{
+				KubeconfigPath:    targetCtx.KubeconfigPath,
+				Name:              restoreName,
+				FromBackup:        backupName,
+				HCName:            targetCtx.ClusterName,
+				HCNamespace:       targetCtx.ClusterNamespace,
+				IncludeNamespaces: platformCfg.additionalNamespaces,
+			}
+			executeRestore(targetCtx, restoreOpts, platformCfg.postRestoreHook)
+		})
+	})
+
+	Context(ContextPostRestoreControlPlane, func() {
+		It("should admit target Routes before starting target ExternalDNS", func() {
+			hostedCluster, err := targetCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			endpoints, err := backuprestore.PublicServiceRouteEndpoints(hostedCluster)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Waiting for public service Routes to be admitted by the target router")
+			Eventually(func(g Gomega) {
+				for _, endpoint := range endpoints {
+					route := &routev1.Route{}
+					err := targetCtx.MgmtClient.Get(targetCtx.Context, crclient.ObjectKey{
+						Namespace: targetCtx.ControlPlaneNamespace,
+						Name:      endpoint.RouteName,
+					}, route)
+					g.Expect(err).NotTo(HaveOccurred(), "failed to get %s Route for public %s DNS name %s", endpoint.Service, endpoint.RouteName, endpoint.DNSName)
+					g.Expect(route.Spec.Host).To(Equal(endpoint.DNSName), "restored %s Route should preserve its configured DNS hostname", endpoint.Service)
+					g.Expect(route.Status.Ingress).NotTo(BeEmpty(), "restored %s Route should have an ingress", endpoint.Service)
+					ingress := route.Status.Ingress[0]
+					g.Expect(ingress.RouterCanonicalHostname).NotTo(BeEmpty(), "restored %s Route should have a router canonical hostname", endpoint.Service)
+					admitted := false
+					for _, condition := range ingress.Conditions {
+						if condition.Type == routev1.RouteAdmitted && condition.Status == corev1.ConditionTrue {
+							admitted = true
+							break
+						}
+					}
+					g.Expect(admitted).To(BeTrue(), "restored %s Route should be admitted", endpoint.Service)
+				}
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed())
+
+			// This makes ExternalDNS start reconciling the retained DNS names from scratch and avoids using a stale cache
+			// that only expires after 1 hour (see --txt-cache-interval in HypershiftOperator assets).
+			By("Scaling the target ExternalDNS Deployment to one ready pod")
+			err = backuprestore.ScaleUpExternalDNS(targetCtx)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should have control plane healthy after restore", func() {
+			validateBeforeEach(targetCtx)
+			validatePostRestoreControlPlane(targetCtx, platformCfg.excludeWorkloads, expectedConditions, false)
+		})
 	})
 })

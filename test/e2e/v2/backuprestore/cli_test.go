@@ -3,13 +3,40 @@
 package backuprestore
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
+	. "github.com/onsi/gomega"
+
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 )
+
+func TestSetKubeconfig(t *testing.T) {
+	t.Run("When a role kubeconfig is provided, it should replace the inherited KUBECONFIG", func(t *testing.T) {
+		t.Setenv("KUBECONFIG", "/default/kubeconfig")
+		cmd := exec.CommandContext(t.Context(), "hypershift")
+		setKubeconfig(cmd, "/target/kubeconfig")
+
+		g := NewWithT(t)
+		matches := 0
+		for _, entry := range cmd.Env {
+			if strings.HasPrefix(entry, "KUBECONFIG=") {
+				matches++
+				g.Expect(entry).To(Equal("KUBECONFIG=/target/kubeconfig"))
+			}
+		}
+		g.Expect(matches).To(Equal(1))
+	})
+
+	t.Run("When no role kubeconfig is provided, it should leave the process environment unchanged", func(t *testing.T) {
+		cmd := exec.CommandContext(t.Context(), "hypershift")
+		setKubeconfig(cmd, "")
+		NewWithT(t).Expect(cmd.Env).To(BeNil())
+	})
+}
 
 func TestBuildBackupArgs(t *testing.T) {
 	tests := []struct {
