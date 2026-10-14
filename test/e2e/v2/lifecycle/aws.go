@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	"github.com/openshift/hypershift/test/e2e/v2/util/mirrorregistry"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
@@ -26,6 +28,8 @@ type AWSPlatformConfig struct {
 	additionalTags []string
 	sharedDir      string
 	externalOIDC   externalOIDCSetup
+
+	newMirrorRegistry func(crclient.Client, mirrorregistry.Options) (mirrorRegistry, error)
 }
 
 type AWSPlatformOptions struct {
@@ -52,6 +56,9 @@ func NewAWSPlatformConfig(opts AWSPlatformOptions, sharedDir string) *AWSPlatfor
 		additionalTags: tags,
 		zones:          zones,
 		externalOIDC:   externalOIDCSetup{sharedDir: sharedDir},
+		newMirrorRegistry: func(cl crclient.Client, opts mirrorregistry.Options) (mirrorRegistry, error) {
+			return mirrorregistry.New(cl, opts)
+		},
 	}
 
 	log.Printf("AWS platform config: region=%s, zones=%v, additionalTags=%v", cfg.region, cfg.zones, cfg.additionalTags)
@@ -211,11 +218,57 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 			InitialNodePoolReplicas: &oneInitialReplica,
 			CreateArgs:              clusterArgs(),
 		},
+		{
+			// Consumes the trust bundle and imageContentSources written to
+			// SHARED_DIR by the mirror registry fixture in PreCreate.
+			Variant:                 "image-mirroring",
+			DestroyArgs:             destroyArgs,
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs: clusterArgs(
+				"--additional-trust-bundle="+filepath.Join(a.sharedDir, "mirror-registry-ca.pem"),
+				"--image-content-sources="+filepath.Join(a.sharedDir, "mirror-registry-ics.yaml"),
+			),
+		},
 	}
 }
 
+// PreCreate deploys the external OIDC provider and the mirror registry fixture
+// before any cluster is created. The image-mirroring variant reads the fixture
+// artifacts from SHARED_DIR at creation time.
 func (a *AWSPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error {
-	return a.externalOIDC.preCreate(ctx, cl)
+	if err := a.externalOIDC.preCreate(ctx, cl); err != nil {
+		return err
+	}
+	return a.setupImageMirroring(ctx, cl)
+}
+
+func (a *AWSPlatformConfig) setupImageMirroring(ctx context.Context, cl crclient.Client) error {
+	if a.sharedDir == "" {
+		return fmt.Errorf("image mirroring requires a shared directory")
+	}
+	// This lane copies only two small public-image mappings, not full release
+	// payloads. Twenty minutes bounds the entire setup, including readiness
+	// waits, even though the generic copier allows thirty minutes per Job.
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
+	defer cancel()
+	copierImage, err := cliImage(ctx, cl)
+	if err != nil {
+		return err
+	}
+	registry, err := a.newMirrorRegistry(cl, mirrorregistry.Options{CopierImage: copierImage})
+	if err != nil {
+		return fmt.Errorf("initialize mirror registry: %w", err)
+	}
+	// The public image needs no source pull secret. Mirror both its real
+	// repository and a virtual source that cannot fall back to upstream.
+	result, err := registry.Setup(ctx, mirrorregistry.MirrorRequest{Images: []mirrorregistry.ImageMapping{
+		{From: mirrorregistry.DefaultRegistryImage},
+		{From: mirrorregistry.DefaultRegistryImage, SourceRepository: "mirror-source.hypershift-e2e.invalid/libpod/registry"},
+	}})
+	if err != nil {
+		return fmt.Errorf("set up mirror registry: %w", err)
+	}
+	return writeMirrorRegistryResult(a.sharedDir, result)
 }
 
 func (a *AWSPlatformConfig) PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error {
@@ -260,6 +313,11 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 				Name:        "karpenter-upgrade",
 				Variant:     "karpenter-upgrade",
 				LabelFilter: "karpenter-upgrade",
+			},
+			{
+				Name:        "image-mirroring",
+				Variant:     "image-mirroring",
+				LabelFilter: "image-mirroring",
 			},
 		},
 		Sequential: []SequentialGroup{
