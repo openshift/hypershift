@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/certs"
 	hcpconfig "github.com/openshift/hypershift/support/config"
@@ -28,6 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	podsecurityadmissionv1 "k8s.io/pod-security-admission/admission/api/v1"
+
+	"github.com/blang/semver"
 )
 
 const (
@@ -45,6 +48,10 @@ func adaptKubeAPIServerConfig(cpContext component.WorkloadContext, config *corev
 		return err
 	}
 	configParams := NewConfigParams(cpContext.HCP, featureGates)
+	configParams.KubernetesVersion, err = kubernetesVersionForFeatureGates(featureGates, cpContext.ReleaseImageProvider)
+	if err != nil {
+		return err
+	}
 	kasConfig, err := generateConfig(configParams)
 	if err != nil {
 		return err
@@ -59,6 +66,21 @@ func adaptKubeAPIServerConfig(cpContext component.WorkloadContext, config *corev
 	}
 	config.Data[KubeAPIServerConfigKey] = string(serializedConfig)
 	return nil
+}
+
+func kubernetesVersionForFeatureGates(featureGates []string, releaseImageProvider imageprovider.ReleaseImageProvider) (string, error) {
+	if !slices.Contains(featureGates, "DRADeviceTaintRules=true") {
+		return "", nil
+	}
+	componentVersions, err := releaseImageProvider.ComponentVersions()
+	if err != nil {
+		return "", fmt.Errorf("failed to get control plane component versions: %w", err)
+	}
+	kubernetesVersion := componentVersions["kubernetes"]
+	if kubernetesVersion == "" {
+		return "", fmt.Errorf("control plane Kubernetes component version is missing")
+	}
+	return kubernetesVersion, nil
 }
 
 type kubeAPIServerArgs map[string]kcpv1.Arguments
@@ -247,6 +269,15 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 		}
 		if gate == "DynamicResourceAllocation=true" {
 			runtimeConfig = append(runtimeConfig, "resource.k8s.io/v1beta1=true")
+		}
+		if gate == "DRADeviceTaintRules=true" {
+			kubeVersion, err := semver.ParseTolerant(p.KubernetesVersion)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse Kubernetes version %q for DRADeviceTaintRules: %w", p.KubernetesVersion, err)
+			}
+			if kubeVersion.Major == 1 && kubeVersion.Minor == 36 {
+				runtimeConfig = append(runtimeConfig, "resource.k8s.io/v1beta2=true")
+			}
 		}
 		if gate == "VolumeAttributesClass=true" {
 			runtimeConfig = append(runtimeConfig, "storage.k8s.io/v1beta1=true")
