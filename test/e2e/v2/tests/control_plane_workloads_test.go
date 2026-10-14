@@ -72,6 +72,12 @@ var podCrashTolerations = map[string]int32{
 	// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
 	"kubevirt-csi":                  20,
 	"aws-ebs-csi-driver-controller": 1,
+	// Allow 1 restart for csi-snapshot-controller: the snapshot-controller starts with
+	// CSIVolumeGroupSnapshot=true and requires the volumegroupsnapshots CRD, which is
+	// registered by the csi-snapshot-controller-operator. During initial rollout or
+	// upgrade the operator's leader election can take longer than the controller's
+	// 30-second startup deadline, causing one crash before the CRD is available.
+	"csi-snapshot-controller": 1,
 	// Allow 1 restart for network-node-identity webhook startup timing
 	"network-node-identity": 1,
 	// Temporary workaround for https://issues.redhat.com/browse/CNV-76520
