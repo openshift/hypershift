@@ -153,6 +153,14 @@ var cpObjects = []client.Object{
 	fakePackageServerService(),
 }
 
+func cpObjectsWithControlPlaneReleaseImage(image string) []client.Object {
+	objects := append([]client.Object{}, cpObjects...)
+	hcp := fakeHCP()
+	hcp.Spec.ControlPlaneReleaseImage = &image
+	objects[0] = hcp
+	return objects
+}
+
 // TestReconcileErrorHandling verifies that the reconcile loop proceeds when
 // errors occur.  The test uses a fake  client with a specific list of initial
 // objects in order to establish a baseline number of expected client create
@@ -175,6 +183,8 @@ func TestReconcileErrorHandling(t *testing.T) {
 	errorExceptions := []string{
 		"global pull secret syncer signaled to shutdown",
 	}
+	cpReleaseImage := "quay.io/openshift-release-dev/ocp-release:5.1.0-x86_64"
+	cpObjects := cpObjectsWithControlPlaneReleaseImage(cpReleaseImage)
 
 	var totalCreates int
 	{
@@ -193,6 +203,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Version: "5.1.0",
 				Components: map[string]string{
 					"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
 				},
@@ -227,6 +238,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Version: "5.1.0",
 				Components: map[string]string{
 					"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
 				},

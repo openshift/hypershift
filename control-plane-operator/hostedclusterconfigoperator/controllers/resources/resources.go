@@ -418,6 +418,18 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
 	}
 
+	controlPlaneReleaseVersion := releaseImageVersion
+	if hcp.Spec.ControlPlaneReleaseImage != nil {
+		controlPlaneReleaseImage, err := r.releaseProvider.Lookup(ctx, *hcp.Spec.ControlPlaneReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to lookup control plane release image %s: %w", *hcp.Spec.ControlPlaneReleaseImage, err)
+		}
+		controlPlaneReleaseVersion, err = semver.Parse(controlPlaneReleaseImage.Version())
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to parse control plane release image version: %w", err)
+		}
+	}
+
 	// The exception for IBMCloudPlatform is due to the fact that the IBM will include new certificates for HCCO from 4.17 version
 	if !(hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && (releaseImageVersion.Major == 4 && releaseImageVersion.Minor < 17)) {
 		// Apply new ValidatingAdmissionPolicy to restrict the modification/deletion of certain
@@ -438,6 +450,8 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 	}
 
 	log.Info("reconciling clusterversion")
+	params.FeatureSet = hcp.Spec.Configuration.GetFeatureGateSelection().FeatureSet
+	params.ControlPlaneReleaseVersion = controlPlaneReleaseVersion
 	if err := configuration.Reconcile(ctx, r.client, r.CreateOrUpdate, params, configuration.ClusterVersion); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile clusterversion: %w", err))
 	}
