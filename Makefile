@@ -424,6 +424,7 @@ test-changed:
 	else \
 		CHANGED_PKGS=""; \
 		for pkg in $$CHANGED_DIRS; do \
+			if [ ! -d "$$pkg" ]; then continue; fi; \
 			list_out=$$($(GO) list "$$pkg" 2>&1) && { CHANGED_PKGS="$$CHANGED_PKGS $$pkg"; continue; }; \
 			case "$$list_out" in \
 				*"build constraints exclude"*|*"no Go files"*) ;; \
@@ -431,7 +432,7 @@ test-changed:
 			esac; \
 		done; \
 		if [ -z "$$CHANGED_PKGS" ]; then \
-			echo "Changed packages all excluded by build constraints, skipping tests."; \
+			echo "Changed packages are removed or excluded by build constraints, skipping tests."; \
 		else \
 			echo "Running tests for changed packages: $$CHANGED_PKGS"; \
 			$(GO) test -parallel=$(NUM_CORES) -count=1 -timeout=30m $$CHANGED_PKGS; \
