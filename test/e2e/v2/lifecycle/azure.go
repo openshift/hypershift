@@ -277,7 +277,7 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 					{
 						Name:        "public",
 						Variant:     "public",
-						LabelFilter: "self-managed-azure-public || hosted-cluster-node-communication || hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress",
+						LabelFilter: "self-managed-azure-public || hosted-cluster-node-communication || hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress || etcd-encryption-reencryption",
 						Skip:        "KAS allowed CIDRs",
 					},
 					{
