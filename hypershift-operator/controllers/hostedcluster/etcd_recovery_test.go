@@ -343,6 +343,145 @@ func TestFindFailingEtcdPod(t *testing.T) {
 			expectFound: false,
 		},
 		{
+			name:      "When etcd pod has DisruptionTarget with DeletionByTaintManager, it should return that pod",
+			namespace: "clusters-test",
+			pods: []crclient.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-0", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-1", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						// Pod has stale Running status because the kubelet is unreachable,
+						// but the taint eviction controller has set DisruptionTarget.
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+						Conditions: []corev1.PodCondition{
+							{
+								Type:   corev1.DisruptionTarget,
+								Status: corev1.ConditionTrue,
+								Reason: "DeletionByTaintManager",
+							},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-2", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+			},
+			expectFound:  true,
+			expectedName: "etcd-1",
+		},
+		{
+			name:      "When etcd pod has DisruptionTarget with different reason, it should not detect it as failing",
+			namespace: "clusters-test",
+			pods: []crclient.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-0", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+						Conditions: []corev1.PodCondition{
+							{
+								Type:   corev1.DisruptionTarget,
+								Status: corev1.ConditionTrue,
+								Reason: "PreemptionByScheduler",
+							},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-1", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-2", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+			},
+			expectFound: false,
+		},
+		{
+			name:      "When etcd pod is terminating without DisruptionTarget, it should not detect it as failing",
+			namespace: "clusters-test",
+			pods: []crclient.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-0", Namespace: "clusters-test",
+						Labels:            map[string]string{"app": "etcd"},
+						DeletionTimestamp: &metav1.Time{},
+						Finalizers:        []string{"test-finalizer"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-1", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-2", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+			},
+			expectFound: false,
+		},
+		{
 			name:      "When a non-etcd container is failing, it should not detect the pod as failing",
 			namespace: "clusters-test",
 			pods: []crclient.Object{
