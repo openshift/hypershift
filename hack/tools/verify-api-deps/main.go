@@ -28,11 +28,6 @@ func verifyAPIDependencies() error {
 	}
 
 	apiModPath := filepath.Join(repoRoot, "api")
-	allowedAPIModules, err := loadAllowedImports(apiModPath)
-	if err != nil {
-		return fmt.Errorf("failed to load allowed imports: %w", err)
-	}
-
 	rootMod, err := loadGoMod(filepath.Join(repoRoot, "go.mod"))
 	if err != nil {
 		return err
@@ -43,7 +38,7 @@ func verifyAPIDependencies() error {
 		return err
 	}
 
-	if err := verifyAllowedAPIDependencies(apiMod.file, allowedAPIModules); err != nil {
+	if err := verifyAllowedAPIDependencies(apiMod); err != nil {
 		return err
 	}
 
@@ -72,9 +67,14 @@ func loadGoMod(path string) (*goModFile, error) {
 	}, nil
 }
 
-func verifyAllowedAPIDependencies(apiMod *modfile.File, allowedAPIModules sets.Set[string]) error {
+func verifyAllowedAPIDependencies(apiMod *goModFile) error {
+	allowedAPIModules, err := loadAllowedImports(apiMod.directory)
+	if err != nil {
+		return fmt.Errorf("failed to load allowed imports: %w", err)
+	}
+
 	var violations []string
-	for _, req := range apiMod.Require {
+	for _, req := range apiMod.file.Require {
 		if req.Indirect {
 			continue
 		}

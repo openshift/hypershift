@@ -1,19 +1,18 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 func TestVerifyAllowedAPIDependencies(t *testing.T) {
 	tests := []struct {
 		name           string
 		goMod          string
-		allowedModules sets.Set[string]
+		allowedModules string
 		wantError      string
 	}{
 		{
@@ -27,7 +26,7 @@ require (
 	github.com/openshift/api v0.0.0-20260922100147-3a6e03c5a473
 	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
 )`,
-			allowedModules: sets.New("github.com/openshift/api"),
+			allowedModules: "# Allowed API modules\n\n github.com/openshift/api \n",
 		},
 		{
 			name: "When a direct requirement is not allowed, it should report the unauthorized dependency",
@@ -38,14 +37,17 @@ go 1.26.0
 
 require github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8
 `,
-			allowedModules: sets.New[string](),
-			wantError:      "github.com/openshift/client-go",
+			wantError: "github.com/openshift/client-go",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := verifyAllowedAPIDependencies(loadTestGoMod(t, filepath.Join(t.TempDir(), "api"), test.goMod).file, test.allowedModules)
+			apiMod := loadTestGoMod(t, filepath.Join(t.TempDir(), "api"), test.goMod)
+			if err := os.WriteFile(filepath.Join(apiMod.directory, ".imports_allowed"), []byte(test.allowedModules), 0o600); err != nil {
+				t.Fatalf("failed to write test allowlist: %v", err)
+			}
+			err := verifyAllowedAPIDependencies(apiMod)
 			if test.wantError == "" {
 				if err != nil {
 					t.Fatalf("expected no error, got %v", err)
@@ -61,6 +63,25 @@ require github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8
 			}
 		})
 	}
+
+	t.Run("When the allowlist is missing, it should preserve the loading error and its cause", func(t *testing.T) {
+		apiMod := loadTestGoMod(t, filepath.Join(t.TempDir(), "api"), apiGoModWith("require example.com/shared v1.2.3"))
+		err := verifyAllowedAPIDependencies(apiMod)
+		assertError(t, err, "", []string{"failed to load allowed imports: failed to open " + filepath.Join(apiMod.directory, ".imports_allowed")}, nil)
+		if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected a wrapped missing-file error, got %v", err)
+		}
+	})
+
+	t.Run("When an allowlist line exceeds the scanner limit, it should preserve the reading error", func(t *testing.T) {
+		apiMod := loadTestGoMod(t, filepath.Join(t.TempDir(), "api"), apiGoModWith("require example.com/shared v1.2.3"))
+		allowlistPath := filepath.Join(apiMod.directory, ".imports_allowed")
+		if err := os.WriteFile(allowlistPath, []byte(strings.Repeat("x", 65536)), 0o600); err != nil {
+			t.Fatalf("failed to write test allowlist: %v", err)
+		}
+		err := verifyAllowedAPIDependencies(apiMod)
+		assertError(t, err, "", []string{"failed to load allowed imports: failed to read " + allowlistPath, "token too long"}, nil)
+	})
 }
 
 func TestVerifySharedDependencies(t *testing.T) {
