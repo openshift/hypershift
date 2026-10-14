@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -223,10 +224,15 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 	case "azure", "":
 		return NewAzurePlatformConfig(sharedDir), nil
 	case "aws":
+		imageMirroring, err := strconv.ParseBool(envOrDefault("HYPERSHIFT_E2E_IMAGE_MIRRORING", "false"))
+		if err != nil {
+			return nil, fmt.Errorf("parse HYPERSHIFT_E2E_IMAGE_MIRRORING: %w", err)
+		}
 		return NewAWSPlatformConfig(AWSPlatformOptions{
-			Region:    envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
-			Zones:     envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
-			ProwJobId: envOrDefault("PROW_JOB_ID", ""),
+			Region:         envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
+			Zones:          envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
+			ProwJobId:      envOrDefault("PROW_JOB_ID", ""),
+			ImageMirroring: imageMirroring,
 		}, sharedDir), nil
 	default:
 		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws)", platform)

@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	"github.com/openshift/hypershift/test/e2e/v2/util/mirrorregistry"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -21,12 +23,17 @@ type AWSPlatformConfig struct {
 	additionalTags []string
 	sharedDir      string
 	externalOIDC   externalOIDCSetup
+	imageMirroring bool
+
+	newMirrorRegistry func(crclient.Client, mirrorregistry.Options) (mirrorRegistry, error)
 }
 
 type AWSPlatformOptions struct {
 	Region    string
 	Zones     string
 	ProwJobId string
+	// ImageMirroring enables the mirror fixture and the image-mirroring variant.
+	ImageMirroring bool
 }
 
 func NewAWSPlatformConfig(opts AWSPlatformOptions, sharedDir string) *AWSPlatformConfig {
@@ -47,6 +54,10 @@ func NewAWSPlatformConfig(opts AWSPlatformOptions, sharedDir string) *AWSPlatfor
 		additionalTags: tags,
 		zones:          zones,
 		externalOIDC:   externalOIDCSetup{sharedDir: sharedDir},
+		imageMirroring: opts.ImageMirroring,
+		newMirrorRegistry: func(cl crclient.Client, opts mirrorregistry.Options) (mirrorRegistry, error) {
+			return mirrorregistry.New(cl, opts)
+		},
 	}
 
 	log.Printf("AWS platform config: region=%s, zones=%v, additionalTags=%v", cfg.region, cfg.zones, cfg.additionalTags)
@@ -66,7 +77,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 		extraArgs = strings.Fields(envArgs)
 	}
 	oneInitialReplica := 1
-	return []ClusterSpec{
+	specs := []ClusterSpec{
 		{
 			Variant: "public",
 			ExtraArgs: append(extraArgs, []string{
@@ -123,6 +134,15 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 			ExtraArgs:               extraArgs,
 		},
 	}
+	if a.imageMirroring {
+		specs = append(specs, ClusterSpec{
+			Variant: "image-mirroring",
+			ExtraArgs: append(append([]string(nil), extraArgs...),
+				"--additional-trust-bundle="+filepath.Join(a.sharedDir, "mirror-registry-ca.pem"),
+				"--image-content-sources="+filepath.Join(a.sharedDir, "mirror-registry-ics.yaml")),
+		})
+	}
+	return specs
 }
 
 func (a *AWSPlatformConfig) CreateArgs() []string {
@@ -142,8 +162,46 @@ func (a *AWSPlatformConfig) CreateArgs() []string {
 	return args
 }
 
+// PreCreate provisions the mirror whenever ImageMirroring is enabled. Enable it
+// only with a TEST_PLAN selecting image-mirroring: this hook does not receive the
+// plan's filtered cluster specs.
 func (a *AWSPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error {
-	return a.externalOIDC.preCreate(ctx, cl)
+	if err := a.externalOIDC.preCreate(ctx, cl); err != nil {
+		return err
+	}
+	return a.setupImageMirroring(ctx, cl)
+}
+
+func (a *AWSPlatformConfig) setupImageMirroring(ctx context.Context, cl crclient.Client) error {
+	if !a.imageMirroring {
+		return nil
+	}
+	if a.sharedDir == "" {
+		return fmt.Errorf("image mirroring requires a shared directory")
+	}
+	// This lane copies only two small public-image mappings, not full release
+	// payloads. Twenty minutes bounds the entire setup, including readiness
+	// waits, even though the generic copier allows thirty minutes per Job.
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
+	defer cancel()
+	copierImage, err := cliImage(ctx, cl)
+	if err != nil {
+		return err
+	}
+	registry, err := a.newMirrorRegistry(cl, mirrorregistry.Options{CopierImage: copierImage})
+	if err != nil {
+		return fmt.Errorf("initialize mirror registry: %w", err)
+	}
+	// The public image needs no source pull secret. Mirror both its real
+	// repository and a virtual source that cannot fall back to upstream.
+	result, err := registry.Setup(ctx, mirrorregistry.MirrorRequest{Images: []mirrorregistry.ImageMapping{
+		{From: mirrorregistry.DefaultRegistryImage},
+		{From: mirrorregistry.DefaultRegistryImage, SourceRepository: "mirror-source.hypershift-e2e.invalid/libpod/registry"},
+	}})
+	if err != nil {
+		return fmt.Errorf("set up mirror registry: %w", err)
+	}
+	return writeMirrorRegistryResult(a.sharedDir, result)
 }
 
 func (a *AWSPlatformConfig) PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error {
