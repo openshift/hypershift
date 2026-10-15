@@ -46,6 +46,28 @@ func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Pred
 	return predicate.NewPredicateFuncs(filter)
 }
 
+// IsAnnotationScopingEnabled reports whether annotation-based HostedCluster scoping is active.
+func IsAnnotationScopingEnabled() bool {
+	return os.Getenv(EnableHostedClustersAnnotationScopingEnv) == "true"
+}
+
+// IsHostedClusterInScope reports whether hc falls within the operator's configured annotation scope.
+// Returns true when scoping is disabled or both the operator scope and the cluster's annotation are empty.
+func IsHostedClusterInScope(hc *hyperv1.HostedCluster) bool {
+	if os.Getenv(EnableHostedClustersAnnotationScopingEnv) != "true" {
+		return true
+	}
+	operatorScope := os.Getenv(HostedClustersScopeAnnotationEnv)
+	hcScope := ""
+	if hc.GetAnnotations() != nil {
+		hcScope = hc.GetAnnotations()[HostedClustersScopeAnnotation]
+	}
+	if hcScope == "" && operatorScope == "" {
+		return true
+	}
+	return hcScope == operatorScope
+}
+
 // getHostedClusterScopeAnnotation will extract the "scope" annotation from the hostedcluster resource that owns the specified object.
 // Depending on the object type being passed in, slightly different paths will be used to ultimately retrieve the hostedcluster resource containing the annotation.
 // If an annotation is not found, an empty string is returned.
