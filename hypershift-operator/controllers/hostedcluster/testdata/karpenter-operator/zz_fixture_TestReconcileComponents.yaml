@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 9484352646e6db73a0f3c5ae32cc91cbd2ed51f95387a093871c1a690e3a7649
+    hypershift.openshift.io/desired-state-hash: 2331d58beab48f4e8d60b7f171a0249119be60ba665c0606e8719fb9adefdf60
   labels:
     app: karpenter-operator
     hypershift.openshift.io/managed-by: control-plane-operator
@@ -57,18 +57,18 @@ spec:
       containers:
       - args:
         - --target-kubeconfig=/mnt/kubeconfig/target-kubeconfig
-        - --namespace=$(MY_NAMESPACE)
+        - --namespace=$(NAMESPACE)
         - --hypershift-operator-image=test-image
         - --ignition-endpoint=
         - --control-plane-operator-image=cpo-image
         command:
         - /usr/bin/karpenter-operator
         env:
-        - name: MY_NAMESPACE
+        - name: NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
-        - name: MY_NAME
+        - name: POD_NAME
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
