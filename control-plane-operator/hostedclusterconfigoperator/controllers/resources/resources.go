@@ -276,6 +276,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		&configv1.ClusterVersion{},
 		&apiregistrationv1.APIService{},
 		&operatorv1.Network{},
+		&operatorv1.OpenShiftAPIServer{},
 		&admissionregistrationv1.MutatingWebhookConfiguration{},
 		&admissionregistrationv1.ValidatingWebhookConfiguration{},
 		&prometheusoperatorv1.PrometheusRule{},
@@ -473,6 +474,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 
 	errs = append(errs, r.reconcileStorageAndMisc(ctx, log, hcp, releaseImage)...)
 	r.cleanupLegacyResources(ctx, log, hcp, releaseImage, &errs)
+
+	log.Info("reconciling OpenShiftAPIServer encryption condition")
+	if err := oapi.ReconcileEncryptionCondition(ctx, r.client, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile OpenShiftAPIServer encryption condition: %w", err))
+	}
 
 	errs = append(errs, r.reconcilePlatformSpecificResources(ctx, log, hcp, releaseImage)...)
 

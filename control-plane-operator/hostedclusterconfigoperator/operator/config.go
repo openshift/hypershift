@@ -127,6 +127,7 @@ func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpN
 		&operatorv1.Storage{}:               allSelector,
 		&operatorv1.CSISnapshotController{}: allSelector,
 		&operatorv1.ClusterCSIDriver{}:      allSelector,
+		&operatorv1.OpenShiftAPIServer{}:    allSelector,
 
 		// Needed for inplace upgrader.
 		&corev1.Node{}: allSelector,
