@@ -1,0 +1,12 @@
+{
+  "name": "5.1.0-0.ci-2026-09-28-090000",
+  "phase": "Rejected",
+  "results": {
+    "blockingJobs": {
+      "hypershift-e2e": {
+        "state": "Failed",
+        "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/x"
+      }
+    }
+  }
+}
