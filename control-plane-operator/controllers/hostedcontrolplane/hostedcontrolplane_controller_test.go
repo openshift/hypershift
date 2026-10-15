@@ -5226,6 +5226,51 @@ func TestReconcileDeletion(t *testing.T) {
 	}
 }
 
+func TestKASHealthCheckURL(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		ingressPoint string
+		port         int
+		wantURL      string
+	}{
+		{
+			name:         "When the ingress point is raw IPv6, it should bracket the address",
+			ingressPoint: "2001:db8::1",
+			port:         6443,
+			wantURL:      "https://[2001:db8::1]:6443/healthz?verbose",
+		},
+		{
+			name:         "When the ingress point is IPv4, it should preserve the address",
+			ingressPoint: "192.0.2.1",
+			port:         6443,
+			wantURL:      "https://192.0.2.1:6443/healthz?verbose",
+		},
+		{
+			name:         "When the ingress point is DNS, it should preserve the hostname",
+			ingressPoint: "api.example.test",
+			port:         6443,
+			wantURL:      "https://api.example.test:6443/healthz?verbose",
+		},
+		{
+			name:         "When the port is different, it should preserve the selected port",
+			ingressPoint: "2001:db8::1",
+			port:         443,
+			wantURL:      "https://[2001:db8::1]:443/healthz?verbose",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			endpoint := kasHealthCheckURL(test.ingressPoint, test.port)
+			g.Expect(endpoint).To(Equal(test.wantURL), "health URL for host %q and port %d", test.ingressPoint, test.port)
+		})
+	}
+	g := NewWithT(t)
+	_, err := http.NewRequestWithContext(t.Context(), http.MethodGet, kasHealthCheckURL("2001:db8::1", 6443), nil)
+	g.Expect(err).ToNot(HaveOccurred(), "raw IPv6 health URL must create an HTTP request")
+}
+
 func TestHealthCheckKASEndpoint(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -5275,7 +5320,11 @@ func TestHealthCheckKASEndpoint(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			server := httptest.NewTLSServer(tt.handler)
+			requests := make(chan *http.Request, 1)
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests <- r
+				tt.handler(w, r)
+			}))
 			defer server.Close()
 
 			host, portStr, err := net.SplitHostPort(server.Listener.Addr().String())
@@ -5291,6 +5340,14 @@ func TestHealthCheckKASEndpoint(t *testing.T) {
 			}
 
 			err = healthCheckKASEndpoint(ctx, host, port)
+			if !tt.cancelCtx {
+				var request *http.Request
+				g.Expect(requests).To(Receive(&request), "health handler must receive a request")
+				g.Expect(request.Method).To(Equal(http.MethodGet), "health request must use GET")
+				g.Expect(request.Host).To(Equal(server.Listener.Addr().String()), "health request must retain the selected authority")
+				g.Expect(request.URL.Path).To(Equal("/healthz"), "health request must use the health endpoint")
+				g.Expect(request.URL.RawQuery).To(Equal("verbose"), "health request must ask for failed-check details")
+			}
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 				if tt.errSubstr != "" {

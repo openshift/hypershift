@@ -1,8 +1,9 @@
 package karpenteroperator
 
 import (
-	"fmt"
+	"net"
 	"os"
+	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -163,7 +164,7 @@ func adaptStandaloneDeployment(cpContext component.WorkloadContext, deployment *
 			},
 			corev1.EnvVar{
 				Name:  "CLUSTER_ENDPOINT",
-				Value: fmt.Sprintf("https://%s:%d", hcp.Status.ControlPlaneEndpoint.Host, hcp.Status.ControlPlaneEndpoint.Port),
+				Value: "https://" + net.JoinHostPort(hcp.Status.ControlPlaneEndpoint.Host, strconv.Itoa(int(hcp.Status.ControlPlaneEndpoint.Port))),
 			},
 			corev1.EnvVar{
 				Name:  "PLATFORM",
