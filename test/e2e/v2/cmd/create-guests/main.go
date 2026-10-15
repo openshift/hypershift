@@ -300,7 +300,6 @@ func buildCreateArgs(cfg envConfig, ns namedSpec) []string {
 		args = append(args, "--etcd-storage-class="+cfg.etcdSC)
 	}
 
-	args = append(args, cfg.platform.CreateArgs()...)
 	args = append(args, ns.ExtraArgs...)
 
 	return args
