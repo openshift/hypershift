@@ -70,7 +70,7 @@ type IgnitionPayloadSpec struct {
 	// +kubebuilder:validation:XValidation:rule=`self.matches('^(\\w+\\S+)$')`,message="releaseImage must start with a word character (letters, digits, or underscores) and contain no whitespace"
 	ReleaseImage string `json:"releaseImage,omitempty"`
 
-	// pullSecret references a Secret in the CR's namespace holding the registry pull
+	// pullSecret references a Secret in the IgnitionPayload's namespace holding the registry pull
 	// secret used to fetch the release image and embedded in the generated payload.
 	// This field is required and immutable: change the pull secret in place (via the
 	// global pull secret mechanism) rather than updating this reference, so it never
@@ -79,34 +79,36 @@ type IgnitionPayloadSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="pullSecret is immutable; update the pull secret in place via the global pull secret mechanism"
 	PullSecret SecretReference `json:"pullSecret,omitzero"`
 
-	// additionalTrustBundle optionally references a ConfigMap in the CR's namespace
+	// additionalTrustBundle optionally references a ConfigMap in the IgnitionPayload's namespace
 	// holding additional CA certificates for booting nodes to trust. The CA bundle is
 	// read from the "ca-bundle.crt" key, PEM-encoded. When omitted, no additional
 	// trust bundle is embedded in the payload.
 	// +optional
 	AdditionalTrustBundle ConfigMapReference `json:"additionalTrustBundle,omitzero"`
 
-	// osStream selects the RHEL OS stream the payload targets, by name (one of
-	// "rhel-9" or "rhel-10"). When omitted, the stream defaults to the one implied by
-	// the release version. Consumers that do not recognize the selected stream (e.g. a
-	// future stream) should treat the payload as unservable rather than guessing.
+	// osStream selects the RHEL OS stream the payload targets. Valid values are
+	// "rhel-9" (RHEL 9 boot images) and "rhel-10" (RHEL 10 boot images). When omitted,
+	// the stream defaults to the one implied by the release version (RHEL 10 for newer
+	// releases, RHEL 9 for older ones). rhel-9 is the legacy stream and is expected to
+	// be retired as supported releases move to RHEL 10; consumers that do not recognize
+	// the selected stream should treat the payload as unservable rather than guessing.
 	// +optional
 	OSStream OSImageStreamReference `json:"osStream,omitzero"`
 
-	// rolloutGlobalConfig references a CR-owned ConfigMap in the CR's namespace holding
-	// the rollout-relevant subset of the hosted cluster's global configuration,
-	// canonicalized and authored by the consumer. The content is an opaque,
-	// canonicalized representation that feeds the rollout hash. When omitted, no global
-	// configuration contributes to the payload.
+	// rolloutGlobalConfig references an IgnitionPayload-owned ConfigMap in the
+	// IgnitionPayload's namespace holding the rollout-relevant subset of the hosted
+	// cluster's global configuration, canonicalized and authored by the consumer. The
+	// content is an opaque, canonicalized representation that feeds the rollout hash.
+	// When omitted, no global configuration contributes to the payload.
 	// +optional
 	RolloutGlobalConfig ConfigMapReference `json:"rolloutGlobalConfig,omitzero"`
 
-	// rolloutConfigMaps lists ConfigMaps in the CR's namespace whose contents are
-	// rollout-relevant (user, core, and NTO machine configs). Names must be unique
-	// (enforced as a map keyed by name) and must not also appear in
+	// rolloutConfigMaps lists ConfigMaps in the IgnitionPayload's namespace whose
+	// contents are rollout-relevant (user, core, and NTO machine configs). Names must be
+	// unique (enforced as a map keyed by name) and must not also appear in
 	// managementConfigMaps. A change to any listed ConfigMap feeds the rollout hash and
-	// can therefore trigger a node rollout. When omitted, no rollout-relevant
-	// ConfigMaps contribute to the payload. At least 1 and at most 100 entries.
+	// can therefore trigger a node rollout. When omitted, no rollout-relevant ConfigMaps
+	// contribute to the payload. At least 1 and at most 100 entries.
 	// +optional
 	// +listType=map
 	// +listMapKey=name
@@ -114,13 +116,13 @@ type IgnitionPayloadSpec struct {
 	// +kubebuilder:validation:MaxItems=100
 	RolloutConfigMaps []ConfigMapReference `json:"rolloutConfigMaps,omitempty"`
 
-	// managementConfigMaps lists ConfigMaps in the CR's namespace whose contents are
-	// management-side only (e.g. the apiserver-HAProxy config). Names must be unique
-	// (enforced as a map keyed by name) and must not also appear in rolloutConfigMaps.
-	// A change to any listed ConfigMap refreshes the generated payload bytes WITHOUT
-	// advancing rolloutGeneration, so it does not trigger a node rollout. When omitted,
-	// no management-only ConfigMaps contribute to the payload. At least 1 and at most
-	// 100 entries.
+	// managementConfigMaps lists ConfigMaps in the IgnitionPayload's namespace whose
+	// contents are management-side only (e.g. the apiserver-HAProxy config). Names must
+	// be unique (enforced as a map keyed by name) and must not also appear in
+	// rolloutConfigMaps. A change to any listed ConfigMap refreshes the generated payload
+	// bytes WITHOUT advancing rolloutGeneration, so it does not trigger a node rollout.
+	// When omitted, no management-only ConfigMaps contribute to the payload. At least 1
+	// and at most 100 entries.
 	// +optional
 	// +listType=map
 	// +listMapKey=name
@@ -128,16 +130,17 @@ type IgnitionPayloadSpec struct {
 	// +kubebuilder:validation:MaxItems=100
 	ManagementConfigMaps []ConfigMapReference `json:"managementConfigMaps,omitempty"`
 
-	// retiredRolloutGeneration is a level-triggered signal that the payload at or below
-	// this rolloutGeneration has drained and its store token may be freed, except for
-	// the current rolloutGeneration which is never retired. It only ever increases. When
-	// omitted, nothing is retired. Minimum 1.
+	// retiredRolloutGeneration lets the consumer release storage for payloads it no
+	// longer needs: set it to the highest rolloutGeneration whose nodes have all been
+	// replaced, and the payloads for that generation and below are freed (the current
+	// payload is always kept). It only ever increases; when omitted, no payloads are
+	// freed. Minimum 1.
 	// +optional
 	// +kubebuilder:validation:Minimum=1
 	RetiredRolloutGeneration int64 `json:"retiredRolloutGeneration,omitempty"`
 }
 
-// ConfigMapReference references a ConfigMap by name in the CR's namespace.
+// ConfigMapReference references a ConfigMap by name in the IgnitionPayload's namespace.
 type ConfigMapReference struct {
 	// name is the name of a ConfigMap in the same namespace as this resource. It must
 	// be a valid DNS-1123 subdomain: at most 253 characters, consisting of lowercase
@@ -163,8 +166,9 @@ type IgnitionPayloadStatus struct {
 	// conditions reports generation and rollout progress. Known condition types are
 	// "PayloadGenerated" (owned by the PayloadController; its observedGeneration tracks
 	// the spec generation last processed, so consumers can tell whether current reflects
-	// the latest spec) and "IgnitionReached" (owned by the serving tier). At least 1 and
-	// at most 100 entries.
+	// the latest spec) and "IgnitionReached" (owned by the serving tier; True once a node
+	// has successfully fetched the current payload, i.e. begun booting from it). At least
+	// 1 and at most 100 entries.
 	// +optional
 	// +listType=map
 	// +listMapKey=type
@@ -209,9 +213,9 @@ type PayloadReference struct {
 	// +kubebuilder:validation:MaxLength=64
 	RolloutHash string `json:"rolloutHash,omitempty"`
 
-	// token is an opaque, non-derivable capability: the key into the PayloadStore that
-	// the booting node presents to fetch its payload. Because the payload embeds
-	// credentials, treat token as a bearer secret. It is a canonical lowercase UUID.
+	// token is the credential a booting node presents to fetch its generated payload.
+	// Because the payload embeds registry and bootstrap credentials, treat token as a
+	// bearer secret. It is an opaque, non-derivable, canonical lowercase UUID.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=36

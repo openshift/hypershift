@@ -6747,7 +6747,7 @@ and reports missing images if any.</p>
 <a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadSpec">IgnitionPayloadSpec</a>)
 </p>
 <p>
-<p>ConfigMapReference references a ConfigMap by name in the CR&rsquo;s namespace.</p>
+<p>ConfigMapReference references a ConfigMap by name in the IgnitionPayload&rsquo;s namespace.</p>
 </p>
 <table>
 <thead>
@@ -11880,7 +11880,7 @@ SecretReference
 </em>
 </td>
 <td>
-<p>pullSecret references a Secret in the CR&rsquo;s namespace holding the registry pull
+<p>pullSecret references a Secret in the IgnitionPayload&rsquo;s namespace holding the registry pull
 secret used to fetch the release image and embedded in the generated payload.
 This field is required and immutable: change the pull secret in place (via the
 global pull secret mechanism) rather than updating this reference, so it never
@@ -11898,7 +11898,7 @@ ConfigMapReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>additionalTrustBundle optionally references a ConfigMap in the CR&rsquo;s namespace
+<p>additionalTrustBundle optionally references a ConfigMap in the IgnitionPayload&rsquo;s namespace
 holding additional CA certificates for booting nodes to trust. The CA bundle is
 read from the &ldquo;ca-bundle.crt&rdquo; key, PEM-encoded. When omitted, no additional
 trust bundle is embedded in the payload.</p>
@@ -11915,10 +11915,12 @@ OSImageStreamReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>osStream selects the RHEL OS stream the payload targets, by name (one of
-&ldquo;rhel-9&rdquo; or &ldquo;rhel-10&rdquo;). When omitted, the stream defaults to the one implied by
-the release version. Consumers that do not recognize the selected stream (e.g. a
-future stream) should treat the payload as unservable rather than guessing.</p>
+<p>osStream selects the RHEL OS stream the payload targets. Valid values are
+&ldquo;rhel-9&rdquo; (RHEL 9 boot images) and &ldquo;rhel-10&rdquo; (RHEL 10 boot images). When omitted,
+the stream defaults to the one implied by the release version (RHEL 10 for newer
+releases, RHEL 9 for older ones). rhel-9 is the legacy stream and is expected to
+be retired as supported releases move to RHEL 10; consumers that do not recognize
+the selected stream should treat the payload as unservable rather than guessing.</p>
 </td>
 </tr>
 <tr>
@@ -11932,11 +11934,11 @@ ConfigMapReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>rolloutGlobalConfig references a CR-owned ConfigMap in the CR&rsquo;s namespace holding
-the rollout-relevant subset of the hosted cluster&rsquo;s global configuration,
-canonicalized and authored by the consumer. The content is an opaque,
-canonicalized representation that feeds the rollout hash. When omitted, no global
-configuration contributes to the payload.</p>
+<p>rolloutGlobalConfig references an IgnitionPayload-owned ConfigMap in the
+IgnitionPayload&rsquo;s namespace holding the rollout-relevant subset of the hosted
+cluster&rsquo;s global configuration, canonicalized and authored by the consumer. The
+content is an opaque, canonicalized representation that feeds the rollout hash.
+When omitted, no global configuration contributes to the payload.</p>
 </td>
 </tr>
 <tr>
@@ -11950,12 +11952,12 @@ configuration contributes to the payload.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>rolloutConfigMaps lists ConfigMaps in the CR&rsquo;s namespace whose contents are
-rollout-relevant (user, core, and NTO machine configs). Names must be unique
-(enforced as a map keyed by name) and must not also appear in
+<p>rolloutConfigMaps lists ConfigMaps in the IgnitionPayload&rsquo;s namespace whose
+contents are rollout-relevant (user, core, and NTO machine configs). Names must be
+unique (enforced as a map keyed by name) and must not also appear in
 managementConfigMaps. A change to any listed ConfigMap feeds the rollout hash and
-can therefore trigger a node rollout. When omitted, no rollout-relevant
-ConfigMaps contribute to the payload. At least 1 and at most 100 entries.</p>
+can therefore trigger a node rollout. When omitted, no rollout-relevant ConfigMaps
+contribute to the payload. At least 1 and at most 100 entries.</p>
 </td>
 </tr>
 <tr>
@@ -11969,13 +11971,13 @@ ConfigMaps contribute to the payload. At least 1 and at most 100 entries.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>managementConfigMaps lists ConfigMaps in the CR&rsquo;s namespace whose contents are
-management-side only (e.g. the apiserver-HAProxy config). Names must be unique
-(enforced as a map keyed by name) and must not also appear in rolloutConfigMaps.
-A change to any listed ConfigMap refreshes the generated payload bytes WITHOUT
-advancing rolloutGeneration, so it does not trigger a node rollout. When omitted,
-no management-only ConfigMaps contribute to the payload. At least 1 and at most
-100 entries.</p>
+<p>managementConfigMaps lists ConfigMaps in the IgnitionPayload&rsquo;s namespace whose
+contents are management-side only (e.g. the apiserver-HAProxy config). Names must
+be unique (enforced as a map keyed by name) and must not also appear in
+rolloutConfigMaps. A change to any listed ConfigMap refreshes the generated payload
+bytes WITHOUT advancing rolloutGeneration, so it does not trigger a node rollout.
+When omitted, no management-only ConfigMaps contribute to the payload. At least 1
+and at most 100 entries.</p>
 </td>
 </tr>
 <tr>
@@ -11987,10 +11989,11 @@ int64
 </td>
 <td>
 <em>(Optional)</em>
-<p>retiredRolloutGeneration is a level-triggered signal that the payload at or below
-this rolloutGeneration has drained and its store token may be freed, except for
-the current rolloutGeneration which is never retired. It only ever increases. When
-omitted, nothing is retired. Minimum 1.</p>
+<p>retiredRolloutGeneration lets the consumer release storage for payloads it no
+longer needs: set it to the highest rolloutGeneration whose nodes have all been
+replaced, and the payloads for that generation and below are freed (the current
+payload is always kept). It only ever increases; when omitted, no payloads are
+freed. Minimum 1.</p>
 </td>
 </tr>
 </tbody>
@@ -12027,8 +12030,9 @@ tier owns only IgnitionReached (field-scoped patch).</p>
 <p>conditions reports generation and rollout progress. Known condition types are
 &ldquo;PayloadGenerated&rdquo; (owned by the PayloadController; its observedGeneration tracks
 the spec generation last processed, so consumers can tell whether current reflects
-the latest spec) and &ldquo;IgnitionReached&rdquo; (owned by the serving tier). At least 1 and
-at most 100 entries.</p>
+the latest spec) and &ldquo;IgnitionReached&rdquo; (owned by the serving tier; True once a node
+has successfully fetched the current payload, i.e. begun booting from it). At least
+1 and at most 100 entries.</p>
 </td>
 </tr>
 <tr>
@@ -16812,9 +16816,9 @@ string
 </em>
 </td>
 <td>
-<p>token is an opaque, non-derivable capability: the key into the PayloadStore that
-the booting node presents to fetch its payload. Because the payload embeds
-credentials, treat token as a bearer secret. It is a canonical lowercase UUID.</p>
+<p>token is the credential a booting node presents to fetch its generated payload.
+Because the payload embeds registry and bootstrap credentials, treat token as a
+bearer secret. It is an opaque, non-derivable, canonical lowercase UUID.</p>
 </td>
 </tr>
 <tr>
