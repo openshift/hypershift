@@ -334,8 +334,8 @@ ignitionpayloads.hypershift.openshift.io:
   Labels: {}
   PluralName: ignitionpayloads
   PrinterColumns:
-  - jsonPath: .status.current.generation
-    name: Generation
+  - jsonPath: .status.current.rolloutGeneration
+    name: RolloutGeneration
     type: integer
   - jsonPath: .status.conditions[?(@.type=="PayloadGenerated")].status
     name: Generated

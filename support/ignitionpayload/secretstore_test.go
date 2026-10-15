@@ -18,17 +18,19 @@ func TestSecretBackedStore(t *testing.T) {
 	g := NewWithT(t)
 	ctx := context.Background()
 	c := fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
-	s := NewSecretBackedStore(c, "hcp")
+	s := newSecretBackedStore(c, "hcp")
 	owner := OwnerRef{Namespace: "hcp", Name: "np-1"}
 
 	g.Expect(s.Put(ctx, owner, "tok-1", "id-1", []byte("A"))).To(Succeed())
 
-	// Secret exists with the derived name and the data key.
+	// Secret exists under the digest-derived name. The token lives in data (never in the
+	// name or a label), and the payload is stored compressed.
 	sec := &corev1.Secret{}
-	g.Expect(c.Get(ctx, client.ObjectKey{Namespace: "hcp", Name: "ignition-payload-tok-1"}, sec)).To(Succeed())
-	g.Expect(sec.Data["payload"]).To(Equal([]byte("A")))
+	g.Expect(c.Get(ctx, client.ObjectKey{Namespace: "hcp", Name: secretName("tok-1")}, sec)).To(Succeed())
+	g.Expect(string(sec.Data["token"])).To(Equal("tok-1"))
+	g.Expect(sec.Name).ToNot(ContainSubstring("tok-1"))
 
-	// Get read-through directly from the API (no local cache in this struct).
+	// Get reads through from the API (no local cache) and decompresses.
 	got, gotOwner, err := s.Get(ctx, "tok-1")
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(got).To(Equal([]byte("A")))
@@ -44,7 +46,8 @@ func TestSecretBackedStore(t *testing.T) {
 
 	// In-place overwrite updates bytes + identity.
 	g.Expect(s.Put(ctx, owner, "tok-1", "id-2", []byte("B"))).To(Succeed())
-	got, _, _ = s.Get(ctx, "tok-1")
+	got, _, err = s.Get(ctx, "tok-1")
+	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(got).To(Equal([]byte("B")))
 	tok, err = s.FindByIdentity(ctx, owner, "id-2")
 	g.Expect(err).ToNot(HaveOccurred())
@@ -55,13 +58,18 @@ func TestSecretBackedStore(t *testing.T) {
 	_, _, err = s.Get(ctx, "tok-1")
 	g.Expect(err).To(MatchError(ErrNotFound))
 	g.Expect(s.Delete(ctx, "tok-1")).To(Succeed())
+
+	// Garbage/untrusted token input yields ErrNotFound (the token is hashed into a valid
+	// name), not an internal "invalid resource name" error.
+	_, _, err = s.Get(ctx, "../not-a-token")
+	g.Expect(err).To(MatchError(ErrNotFound))
 }
 
 func TestSecretBackedStore_LongValues(t *testing.T) {
 	g := NewWithT(t)
 	ctx := context.Background()
 	c := fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
-	s := NewSecretBackedStore(c, "hcp")
+	s := newSecretBackedStore(c, "hcp")
 
 	// 64-char identity hash (exceeds 63-char label limit).
 	longIdentity := strings.Repeat("a", 64)
@@ -71,7 +79,8 @@ func TestSecretBackedStore_LongValues(t *testing.T) {
 
 	g.Expect(s.Put(ctx, owner, "tok-long", longIdentity, []byte("long-test"))).To(Succeed())
 
-	// FindByIdentity must resolve exactly despite the label-value limit.
+	// FindByIdentity must resolve exactly despite the label-value limit (the label holds
+	// a fixed-length digest).
 	tok, err := s.FindByIdentity(ctx, owner, longIdentity)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(tok).To(Equal("tok-long"))

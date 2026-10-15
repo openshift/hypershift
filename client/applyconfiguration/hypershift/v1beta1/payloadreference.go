@@ -20,10 +20,10 @@ package v1beta1
 // PayloadReferenceApplyConfiguration represents a declarative configuration of the PayloadReference type for use
 // with apply.
 type PayloadReferenceApplyConfiguration struct {
-	ConfigHash  *string `json:"configHash,omitempty"`
-	RolloutHash *string `json:"rolloutHash,omitempty"`
-	Token       *string `json:"token,omitempty"`
-	Generation  *int64  `json:"generation,omitempty"`
+	ConfigHash        *string `json:"configHash,omitempty"`
+	RolloutHash       *string `json:"rolloutHash,omitempty"`
+	Token             *string `json:"token,omitempty"`
+	RolloutGeneration *int64  `json:"rolloutGeneration,omitempty"`
 }
 
 // PayloadReferenceApplyConfiguration constructs a declarative configuration of the PayloadReference type for use with
@@ -56,10 +56,10 @@ func (b *PayloadReferenceApplyConfiguration) WithToken(value string) *PayloadRef
 	return b
 }
 
-// WithGeneration sets the Generation field in the declarative configuration to the given value
+// WithRolloutGeneration sets the RolloutGeneration field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Generation field is set to the value of the last call.
-func (b *PayloadReferenceApplyConfiguration) WithGeneration(value int64) *PayloadReferenceApplyConfiguration {
-	b.Generation = &value
+// If called multiple times, the RolloutGeneration field is set to the value of the last call.
+func (b *PayloadReferenceApplyConfiguration) WithRolloutGeneration(value int64) *PayloadReferenceApplyConfiguration {
+	b.RolloutGeneration = &value
 	return b
 }

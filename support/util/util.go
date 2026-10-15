@@ -97,6 +97,17 @@ func Compress(payload []byte) (*bytes.Buffer, error) {
 	return out, err
 }
 
+// Decompress decompresses a given gzip-compressed byte array. It is the inverse of
+// Compress. Unlike DecodeAndDecompress it does not base64-decode: raw gzip bytes are
+// appropriate for a Secret's []byte Data field, which the API server base64-encodes on
+// the wire, so an extra base64 layer would only waste space.
+func Decompress(payload []byte) (*bytes.Buffer, error) {
+	if len(payload) == 0 {
+		return bytes.NewBuffer(nil), nil
+	}
+	return decompress(bytes.NewReader(payload))
+}
+
 // DecodeAndDecompress decompresses and base-64 decodes a given byte array. Ideal for consuming a
 // gzipped / base64-encoded byte array from a ConfigMap or Secret.
 func DecodeAndDecompress(payload []byte) (*bytes.Buffer, error) {

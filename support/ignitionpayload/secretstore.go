@@ -2,11 +2,18 @@ package ignitionpayload
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base32"
 	"fmt"
+	"strings"
+
+	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -17,15 +24,19 @@ const (
 	LabelOwnerNamespace = "hypershift.openshift.io/ignition-payload-owner-namespace"
 	LabelOwnerName      = "hypershift.openshift.io/ignition-payload-owner-name"
 	LabelIdentityHash   = "hypershift.openshift.io/ignition-payload-identity-hash"
-	LabelToken          = "hypershift.openshift.io/ignition-payload-token"
 
-	// Exact values stored in annotations (no length limit).
+	// Exact values stored in annotations (no length limit) are the source of truth for
+	// equality matching; labels carry a fixed-length digest so List selectors stay
+	// effective regardless of value length.
 	AnnotationOwnerNamespaceExact = "hypershift.openshift.io/ignition-payload-owner-namespace-exact"
 	AnnotationOwnerNameExact      = "hypershift.openshift.io/ignition-payload-owner-name-exact"
 	AnnotationIdentityHashExact   = "hypershift.openshift.io/ignition-payload-identity-hash-exact"
 
-	// maxLabelValueLength is the maximum length of a Kubernetes label value.
-	maxLabelValueLength = 63
+	// payloadDataKey holds the gzip-compressed payload bytes.
+	payloadDataKey = "payload"
+	// tokenDataKey holds the opaque bearer token. The token is kept in Secret data
+	// (never in the Secret name or a label) so it does not reach audit logs.
+	tokenDataKey = "token"
 )
 
 // SecretBackedStore is a Secret-backed PayloadStore.
@@ -34,8 +45,22 @@ type SecretBackedStore struct {
 	namespace string
 }
 
-// NewSecretBackedStore creates a new Secret-backed PayloadStore.
-func NewSecretBackedStore(c client.Client, namespace string) *SecretBackedStore {
+// NewSecretBackedStore creates a Secret-backed PayloadStore. It builds its own uncached
+// client from cfg so reads go straight to the API server regardless of any informer
+// cache state — the stateless, scaled serving tier must observe payloads the generator
+// just wrote, and the store also performs writes (so a read-only API reader is
+// insufficient).
+func NewSecretBackedStore(cfg *rest.Config, namespace string) (*SecretBackedStore, error) {
+	c, err := client.New(cfg, client.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return nil, fmt.Errorf("failed to build uncached client for payload store: %w", err)
+	}
+	return newSecretBackedStore(c, namespace), nil
+}
+
+// newSecretBackedStore wraps an existing client. It exists so tests can inject a fake
+// client; production code must use NewSecretBackedStore to obtain an uncached client.
+func newSecretBackedStore(c client.Client, namespace string) *SecretBackedStore {
 	return &SecretBackedStore{
 		client:    c,
 		namespace: namespace,
@@ -43,6 +68,13 @@ func NewSecretBackedStore(c client.Client, namespace string) *SecretBackedStore 
 }
 
 func (s *SecretBackedStore) Put(ctx context.Context, owner OwnerRef, token, identityHash string, payload []byte) error {
+	// Secret.Data is []byte; the API server base64-encodes it on the wire. We store raw
+	// gzip bytes (no extra base64) to maximize headroom under the ~1 MiB object limit.
+	compressed, err := util.Compress(payload)
+	if err != nil {
+		return fmt.Errorf("failed to compress payload: %w", err)
+	}
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      secretName(token),
@@ -50,7 +82,7 @@ func (s *SecretBackedStore) Put(ctx context.Context, owner OwnerRef, token, iden
 		},
 	}
 
-	_, err := controllerutil.CreateOrUpdate(ctx, s.client, secret, func() error {
+	_, err = controllerutil.CreateOrUpdate(ctx, s.client, secret, func() error {
 		if secret.Labels == nil {
 			secret.Labels = make(map[string]string)
 		}
@@ -61,31 +93,20 @@ func (s *SecretBackedStore) Put(ctx context.Context, owner OwnerRef, token, iden
 			secret.Data = make(map[string][]byte)
 		}
 
-		// Always store exact values in annotations.
+		// Exact values in annotations are the source of truth for equality matching.
 		secret.Annotations[AnnotationOwnerNamespaceExact] = owner.Namespace
 		secret.Annotations[AnnotationOwnerNameExact] = owner.Name
 		secret.Annotations[AnnotationIdentityHashExact] = identityHash
 
-		// Store in labels when they fit (≤maxLabelValueLength chars).
-		// Clear the label if it doesn't fit to avoid stale values on overwrite.
-		if len(owner.Namespace) <= maxLabelValueLength {
-			secret.Labels[LabelOwnerNamespace] = owner.Namespace
-		} else {
-			delete(secret.Labels, LabelOwnerNamespace)
-		}
-		if len(owner.Name) <= maxLabelValueLength {
-			secret.Labels[LabelOwnerName] = owner.Name
-		} else {
-			delete(secret.Labels, LabelOwnerName)
-		}
-		if len(identityHash) <= maxLabelValueLength {
-			secret.Labels[LabelIdentityHash] = identityHash
-		} else {
-			delete(secret.Labels, LabelIdentityHash)
-		}
-		secret.Labels[LabelToken] = token
+		// Labels carry a fixed-length digest so List selectors work even when the value
+		// exceeds the 63-character label limit (owner name, identity hash).
+		secret.Labels[LabelOwnerNamespace] = labelSafeDigest(owner.Namespace)
+		secret.Labels[LabelOwnerName] = labelSafeDigest(owner.Name)
+		secret.Labels[LabelIdentityHash] = labelSafeDigest(identityHash)
 
-		secret.Data["payload"] = payload
+		// The token is a bearer secret: keep it only in Secret data.
+		secret.Data[tokenDataKey] = []byte(token)
+		secret.Data[payloadDataKey] = compressed.Bytes()
 		return nil
 	})
 	return err
@@ -100,11 +121,16 @@ func (s *SecretBackedStore) Get(ctx context.Context, token string) (payload []by
 		return nil, OwnerRef{}, err
 	}
 
+	decompressed, err := util.Decompress(secret.Data[payloadDataKey])
+	if err != nil {
+		return nil, OwnerRef{}, fmt.Errorf("failed to decompress payload: %w", err)
+	}
+
 	owner = OwnerRef{
 		Namespace: secret.Annotations[AnnotationOwnerNamespaceExact],
 		Name:      secret.Annotations[AnnotationOwnerNameExact],
 	}
-	return secret.Data["payload"], owner, nil
+	return decompressed.Bytes(), owner, nil
 }
 
 func (s *SecretBackedStore) Delete(ctx context.Context, token string) error {
@@ -122,34 +148,21 @@ func (s *SecretBackedStore) Delete(ctx context.Context, token string) error {
 
 func (s *SecretBackedStore) FindByIdentity(ctx context.Context, owner OwnerRef, identityHash string) (token string, err error) {
 	var secrets corev1.SecretList
-	var listOpts []client.ListOption
-
-	// Build label selector: owner namespace (if it fits) + owner name (if it fits).
-	selector := client.MatchingLabels{}
-	if len(owner.Namespace) <= maxLabelValueLength {
-		selector[LabelOwnerNamespace] = owner.Namespace
+	selector := client.MatchingLabels{
+		LabelOwnerNamespace: labelSafeDigest(owner.Namespace),
+		LabelOwnerName:      labelSafeDigest(owner.Name),
+		LabelIdentityHash:   labelSafeDigest(identityHash),
 	}
-	if len(owner.Name) <= maxLabelValueLength {
-		selector[LabelOwnerName] = owner.Name
-	}
-
-	// If identity fits in a label, add it to the selector.
-	if len(identityHash) <= maxLabelValueLength {
-		selector[LabelIdentityHash] = identityHash
-	}
-
-	listOpts = append(listOpts, client.InNamespace(s.namespace), selector)
-
-	if err := s.client.List(ctx, &secrets, listOpts...); err != nil {
+	if err := s.client.List(ctx, &secrets, client.InNamespace(s.namespace), selector); err != nil {
 		return "", err
 	}
 
-	// Filter client-side by exact annotation values.
+	// Confirm against the exact annotation values (digests could in principle collide).
 	for _, sec := range secrets.Items {
 		if sec.Annotations[AnnotationOwnerNamespaceExact] == owner.Namespace &&
 			sec.Annotations[AnnotationOwnerNameExact] == owner.Name &&
 			sec.Annotations[AnnotationIdentityHashExact] == identityHash {
-			return sec.Labels[LabelToken], nil
+			return string(sec.Data[tokenDataKey]), nil
 		}
 	}
 
@@ -158,29 +171,20 @@ func (s *SecretBackedStore) FindByIdentity(ctx context.Context, owner OwnerRef, 
 
 func (s *SecretBackedStore) ListByOwner(ctx context.Context, owner OwnerRef) (tokens []string, err error) {
 	var secrets corev1.SecretList
-	var listOpts []client.ListOption
-
-	// Build label selector: owner namespace (if it fits) + owner name (if it fits).
-	selector := client.MatchingLabels{}
-	if len(owner.Namespace) <= maxLabelValueLength {
-		selector[LabelOwnerNamespace] = owner.Namespace
+	selector := client.MatchingLabels{
+		LabelOwnerNamespace: labelSafeDigest(owner.Namespace),
+		LabelOwnerName:      labelSafeDigest(owner.Name),
 	}
-	if len(owner.Name) <= maxLabelValueLength {
-		selector[LabelOwnerName] = owner.Name
-	}
-
-	listOpts = append(listOpts, client.InNamespace(s.namespace), selector)
-
-	if err := s.client.List(ctx, &secrets, listOpts...); err != nil {
+	if err := s.client.List(ctx, &secrets, client.InNamespace(s.namespace), selector); err != nil {
 		return nil, err
 	}
 
-	// Filter client-side by exact annotation values.
+	// Confirm against the exact annotation values (digests could in principle collide).
 	result := []string{}
 	for _, sec := range secrets.Items {
 		if sec.Annotations[AnnotationOwnerNamespaceExact] == owner.Namespace &&
 			sec.Annotations[AnnotationOwnerNameExact] == owner.Name {
-			result = append(result, sec.Labels[LabelToken])
+			result = append(result, string(sec.Data[tokenDataKey]))
 		}
 	}
 
@@ -188,5 +192,20 @@ func (s *SecretBackedStore) ListByOwner(ctx context.Context, owner OwnerRef) (to
 }
 
 func secretName(token string) string {
-	return fmt.Sprintf("ignition-payload-%s", token)
+	// Derive the name from a non-reversible digest of the token so the bearer token
+	// never appears in a resource name (resource names reach audit logs even at the
+	// Metadata level). Hashing also makes Get robust to arbitrary/untrusted input: any
+	// token hashes to a valid name, so a bad token yields ErrNotFound rather than an
+	// "invalid resource name" API error.
+	return fmt.Sprintf("ignition-payload-%s", labelSafeDigest(token))
+}
+
+// labelSafeDigest returns a fixed-length, label- and DNS-name-safe digest of s: the
+// lowercase, unpadded base32 encoding of its SHA-256 (52 characters). It is used for
+// Secret names and for label values that would otherwise exceed Kubernetes' 63-character
+// label limit (owner name/namespace, identity hash) or leak a secret (the token, in the
+// Secret name).
+func labelSafeDigest(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:]))
 }

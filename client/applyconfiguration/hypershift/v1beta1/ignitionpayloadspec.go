@@ -20,14 +20,14 @@ package v1beta1
 // IgnitionPayloadSpecApplyConfiguration represents a declarative configuration of the IgnitionPayloadSpec type for use
 // with apply.
 type IgnitionPayloadSpecApplyConfiguration struct {
-	ReleaseImage          *string                                `json:"releaseImage,omitempty"`
-	PullSecretName        *string                                `json:"pullSecretName,omitempty"`
-	AdditionalTrustBundle *ConfigMapReferenceApplyConfiguration  `json:"additionalTrustBundle,omitempty"`
-	OSStream              *string                                `json:"osStream,omitempty"`
-	RolloutGlobalConfig   *ConfigMapReferenceApplyConfiguration  `json:"rolloutGlobalConfig,omitempty"`
-	RolloutConfigMaps     []ConfigMapReferenceApplyConfiguration `json:"rolloutConfigMaps,omitempty"`
-	MgmtConfigMaps        []ConfigMapReferenceApplyConfiguration `json:"mgmtConfigMaps,omitempty"`
-	RetiredGeneration     *int64                                 `json:"retiredGeneration,omitempty"`
+	ReleaseImage             *string                                   `json:"releaseImage,omitempty"`
+	PullSecret               *SecretReferenceApplyConfiguration        `json:"pullSecret,omitempty"`
+	AdditionalTrustBundle    *ConfigMapReferenceApplyConfiguration     `json:"additionalTrustBundle,omitempty"`
+	OSStream                 *OSImageStreamReferenceApplyConfiguration `json:"osStream,omitempty"`
+	RolloutGlobalConfig      *ConfigMapReferenceApplyConfiguration     `json:"rolloutGlobalConfig,omitempty"`
+	RolloutConfigMaps        []ConfigMapReferenceApplyConfiguration    `json:"rolloutConfigMaps,omitempty"`
+	ManagementConfigMaps     []ConfigMapReferenceApplyConfiguration    `json:"managementConfigMaps,omitempty"`
+	RetiredRolloutGeneration *int64                                    `json:"retiredRolloutGeneration,omitempty"`
 }
 
 // IgnitionPayloadSpecApplyConfiguration constructs a declarative configuration of the IgnitionPayloadSpec type for use with
@@ -44,11 +44,11 @@ func (b *IgnitionPayloadSpecApplyConfiguration) WithReleaseImage(value string) *
 	return b
 }
 
-// WithPullSecretName sets the PullSecretName field in the declarative configuration to the given value
+// WithPullSecret sets the PullSecret field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the PullSecretName field is set to the value of the last call.
-func (b *IgnitionPayloadSpecApplyConfiguration) WithPullSecretName(value string) *IgnitionPayloadSpecApplyConfiguration {
-	b.PullSecretName = &value
+// If called multiple times, the PullSecret field is set to the value of the last call.
+func (b *IgnitionPayloadSpecApplyConfiguration) WithPullSecret(value *SecretReferenceApplyConfiguration) *IgnitionPayloadSpecApplyConfiguration {
+	b.PullSecret = value
 	return b
 }
 
@@ -63,8 +63,8 @@ func (b *IgnitionPayloadSpecApplyConfiguration) WithAdditionalTrustBundle(value 
 // WithOSStream sets the OSStream field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the OSStream field is set to the value of the last call.
-func (b *IgnitionPayloadSpecApplyConfiguration) WithOSStream(value string) *IgnitionPayloadSpecApplyConfiguration {
-	b.OSStream = &value
+func (b *IgnitionPayloadSpecApplyConfiguration) WithOSStream(value *OSImageStreamReferenceApplyConfiguration) *IgnitionPayloadSpecApplyConfiguration {
+	b.OSStream = value
 	return b
 }
 
@@ -89,23 +89,23 @@ func (b *IgnitionPayloadSpecApplyConfiguration) WithRolloutConfigMaps(values ...
 	return b
 }
 
-// WithMgmtConfigMaps adds the given value to the MgmtConfigMaps field in the declarative configuration
+// WithManagementConfigMaps adds the given value to the ManagementConfigMaps field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the MgmtConfigMaps field.
-func (b *IgnitionPayloadSpecApplyConfiguration) WithMgmtConfigMaps(values ...*ConfigMapReferenceApplyConfiguration) *IgnitionPayloadSpecApplyConfiguration {
+// If called multiple times, values provided by each call will be appended to the ManagementConfigMaps field.
+func (b *IgnitionPayloadSpecApplyConfiguration) WithManagementConfigMaps(values ...*ConfigMapReferenceApplyConfiguration) *IgnitionPayloadSpecApplyConfiguration {
 	for i := range values {
 		if values[i] == nil {
-			panic("nil value passed to WithMgmtConfigMaps")
+			panic("nil value passed to WithManagementConfigMaps")
 		}
-		b.MgmtConfigMaps = append(b.MgmtConfigMaps, *values[i])
+		b.ManagementConfigMaps = append(b.ManagementConfigMaps, *values[i])
 	}
 	return b
 }
 
-// WithRetiredGeneration sets the RetiredGeneration field in the declarative configuration to the given value
+// WithRetiredRolloutGeneration sets the RetiredRolloutGeneration field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the RetiredGeneration field is set to the value of the last call.
-func (b *IgnitionPayloadSpecApplyConfiguration) WithRetiredGeneration(value int64) *IgnitionPayloadSpecApplyConfiguration {
-	b.RetiredGeneration = &value
+// If called multiple times, the RetiredRolloutGeneration field is set to the value of the last call.
+func (b *IgnitionPayloadSpecApplyConfiguration) WithRetiredRolloutGeneration(value int64) *IgnitionPayloadSpecApplyConfiguration {
+	b.RetiredRolloutGeneration = &value
 	return b
 }

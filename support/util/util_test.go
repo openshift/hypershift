@@ -67,6 +67,40 @@ func TestCompressDecompress(t *testing.T) {
 	}
 }
 
+// TestCompressDecompressRaw covers the raw (non-base64) Compress/Decompress pair, which
+// is the inverse used for Secret []byte data (the API server base64-encodes it on the wire).
+func TestCompressDecompressRaw(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name    string
+		payload []byte
+	}{
+		{name: "When round-tripping text data, it should return the original", payload: []byte("The quick brown fox jumps over the lazy dog.")},
+		{name: "When round-tripping binary data, it should return the original", payload: []byte{0x00, 0x01, 0x02, 0xff, 0xfe, 0x00}},
+		{name: "When round-tripping empty data, it should return empty data", payload: []byte{}},
+		{name: "When round-tripping nil data, it should return empty data", payload: nil},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			compressed, err := Compress(tc.payload)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			decompressed, err := Decompress(compressed.Bytes())
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if len(tc.payload) == 0 {
+				g.Expect(decompressed.Bytes()).To(BeEmpty())
+				return
+			}
+			g.Expect(decompressed.Bytes()).To(Equal(tc.payload))
+		})
+	}
+}
+
 // Tests that a given input can be expected and encoded without errors.
 func testCompressFunc(t *testing.T, payload, expected []byte) {
 	t.Helper()
