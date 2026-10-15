@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 96be5f4080c9d854b5dbb2e453c1a086c8d70d331067000b2fd2b91fa78aea2c
+    hypershift.openshift.io/desired-state-hash: aefda0033898cb9e388e9514aca4a8112b19ea8ce61ccc9edf8efaaf01a5e666
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: olm-operator
@@ -73,6 +73,8 @@ spec:
         - /srv-cert/tls.key
         - --client-ca
         - /client-ca/ca.crt
+        - --client-ca-authorization=true
+        - --client-ca-allowed-cn=system:serviceaccount:hypershift:prometheus
         command:
         - /bin/olm
         env:
