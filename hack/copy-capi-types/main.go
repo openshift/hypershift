@@ -78,6 +78,7 @@ func main() {
 	dir := flag.String("dir", "", "localize: provider module root (the directory holding its go.mod)")
 	module := flag.String("module", "", "localize: module path declared by that go.mod")
 	capiRoot := flag.String("capi-root", "", "localize: source root of the CAPI module this provider resolves to")
+	capiAPIRoot := flag.String("capi-api-root", "", "localize: source root of the separate CAPI API module, if present")
 	outName := flag.String("out", "capicore", "localize: subdirectory to hold the extracted CAPI types")
 	flag.Parse()
 
@@ -85,7 +86,7 @@ func main() {
 		if *dir == "" || *module == "" || *capiRoot == "" {
 			log.Fatal("--localize requires --dir, --module and --capi-root")
 		}
-		runLocalize(*dir, *module, *capiRoot, *outName)
+		runLocalize(*dir, *module, *capiRoot, *capiAPIRoot, *outName)
 		return
 	}
 
@@ -839,7 +840,7 @@ type capiDecl struct {
 	spec ast.Spec
 }
 
-func runLocalize(dir, modulePath, capiRoot, outName string) {
+func runLocalize(dir, modulePath, capiRoot, capiAPIRoot, outName string) {
 	providerFiles := collectProviderFiles(dir, outName)
 	if len(providerFiles) == 0 {
 		log.Fatalf("no Go files found under %s", dir)
@@ -851,7 +852,7 @@ func runLocalize(dir, modulePath, capiRoot, outName string) {
 		return
 	}
 
-	pkgs, closure, extraImports := computeClosure(capiRoot, seeds)
+	pkgs, closure, extraImports := computeClosure(capiRoot, capiAPIRoot, seeds)
 
 	for pkgPath, syms := range closure {
 		if len(syms) == 0 {
@@ -911,7 +912,7 @@ func collectSeeds(providerFiles []string) map[string]map[string]bool {
 // loading CAPI packages on demand and following references across them. It
 // returns the loaded packages, the symbols to extract from each, and the
 // non-CAPI imports those declarations need.
-func computeClosure(capiRoot string, seeds map[string]map[string]bool) (
+func computeClosure(capiRoot, capiAPIRoot string, seeds map[string]map[string]bool) (
 	map[string]*capiPackage, map[string]map[string]bool, map[string]map[string]string,
 ) {
 	pkgs := map[string]*capiPackage{}
@@ -935,7 +936,7 @@ func computeClosure(capiRoot string, seeds map[string]map[string]bool) (
 		}
 		pkg, ok := pkgs[item.pkgPath]
 		if !ok {
-			pkg = loadCAPIPackage(capiRoot, item.pkgPath)
+			pkg = loadCAPIPackage(capiRoot, capiAPIRoot, item.pkgPath)
 			pkgs[item.pkgPath] = pkg
 		}
 		d, ok := pkg.decls[item.symbol]
@@ -1059,9 +1060,16 @@ func capiRefs(node ast.Node, aliases map[string]string) map[string]map[string]bo
 	return refs
 }
 
-func loadCAPIPackage(capiRoot, importPath string) *capiPackage {
+func capiSourceDir(capiRoot, capiAPIRoot, importPath string) string {
+	if capiAPIRoot != "" && strings.HasPrefix(importPath, capiImportPrefix+"api/") {
+		return filepath.Join(capiAPIRoot, strings.TrimPrefix(importPath, capiImportPrefix+"api/"))
+	}
+	return filepath.Join(capiRoot, strings.TrimPrefix(importPath, capiImportPrefix))
+}
+
+func loadCAPIPackage(capiRoot, capiAPIRoot, importPath string) *capiPackage {
 	subPath := strings.TrimPrefix(importPath, capiImportPrefix)
-	srcDir := filepath.Join(capiRoot, subPath)
+	srcDir := capiSourceDir(capiRoot, capiAPIRoot, importPath)
 	entries, err := filepath.Glob(filepath.Join(srcDir, "*.go"))
 	if err != nil || len(entries) == 0 {
 		log.Fatalf("localize: no sources for %s under %s", importPath, srcDir)

@@ -43,6 +43,40 @@ func TestIsAllowedImport(t *testing.T) {
 	}
 }
 
+func TestCAPISourceDir(t *testing.T) {
+	tests := []struct {
+		name        string
+		capiAPIRoot string
+		importPath  string
+		want        string
+	}{
+		{
+			name:       "When CAPI keeps API packages in the main module, it should use that module",
+			importPath: "sigs.k8s.io/cluster-api/api/core/v1beta1",
+			want:       "/capi/api/core/v1beta1",
+		},
+		{
+			name:        "When CAPI has a separate API module, it should use that module",
+			capiAPIRoot: "/capi-api",
+			importPath:  "sigs.k8s.io/cluster-api/api/core/v1beta1",
+			want:        "/capi-api/core/v1beta1",
+		},
+		{
+			name:        "When the import is outside the API module, it should use the main module",
+			capiAPIRoot: "/capi-api",
+			importPath:  "sigs.k8s.io/cluster-api/errors",
+			want:        "/capi/errors",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := capiSourceDir("/capi", tt.capiAPIRoot, tt.importPath); got != tt.want {
+				t.Errorf("capiSourceDir() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestImportAlias(t *testing.T) {
 	tests := []struct {
 		name     string
