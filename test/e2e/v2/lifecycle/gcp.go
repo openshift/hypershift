@@ -14,10 +14,14 @@ import (
 )
 
 const (
-	// defaultGCPBaseDomain is the shared CI DNS domain used as the
-	// HostedCluster base domain. Per-cluster DNS zones are provisioned by
-	// the control-plane-operator; API/OAuth records are handled via
-	// --external-dns-domain.
+	// defaultGCPBaseDomain is the shared CI DNS domain, used as the
+	// fallback base domain and as the external-dns domain under which
+	// API/OAuth records (api-<name>/<oauth-name> prefixed per cluster) are
+	// published. The HostedCluster base domain itself must be unique per
+	// cluster: the control-plane-operator names its public and private DNS
+	// zones exactly after the base domain, so a shared one would collide
+	// across clusters. PreCreate therefore derives a per-cluster domain
+	// (in.<cluster-name>.<domain>) instead.
 	defaultGCPBaseDomain = "hypershift-ci.gcp-hcp.openshiftapps.com"
 
 	// defaultGCPBootImage pins the RHCOS boot image for NodePool nodes.
@@ -45,6 +49,11 @@ type gcpVariantInfra struct {
 	networkSA         string
 	saSigningKeyPath  string
 	oidcIssuerURL     string
+
+	// baseDomain is the per-cluster HostedCluster base domain. The
+	// control-plane-operator creates public and private DNS zones named
+	// exactly after the base domain, so it must be unique per cluster.
+	baseDomain string
 }
 
 // GCPPlatformConfig holds GCP-specific configuration for the hypershift
@@ -60,6 +69,10 @@ type GCPPlatformConfig struct {
 	ciDNSDomain string
 	bootImage   string
 
+	// prowJobID identifies the CI run; per-cluster base domains are
+	// derived from the cluster names it generates.
+	prowJobID string
+
 	// variantInfra maps a cluster variant to its resolved create flags,
 	// populated by PreCreate and consumed by CreateArgsForVariant.
 	variantInfra map[string]gcpVariantInfra
@@ -74,6 +87,7 @@ func NewGCPPlatformConfig(sharedDir string) *GCPPlatformConfig {
 		zone:         os.Getenv("HYPERSHIFT_GCP_ZONE"),
 		ciDNSDomain:  os.Getenv("HYPERSHIFT_GCP_CI_DNS_DOMAIN"),
 		bootImage:    envOrDefault("HYPERSHIFT_GCP_BOOT_IMAGE", defaultGCPBootImage),
+		prowJobID:    os.Getenv("PROW_JOB_ID"),
 		variantInfra: map[string]gcpVariantInfra{},
 	}
 
@@ -93,6 +107,10 @@ func NewGCPPlatformConfig(sharedDir string) *GCPPlatformConfig {
 
 func (g *GCPPlatformConfig) Name() string { return "gcp" }
 
+// DefaultBaseDomain returns the shared CI DNS domain. It is only the
+// fallback for the global --base-domain flag; each cluster's effective
+// base domain is the per-cluster override emitted by
+// CreateArgsForVariant.
 func (g *GCPPlatformConfig) DefaultBaseDomain() string {
 	if g.ciDNSDomain != "" {
 		return g.ciDNSDomain
@@ -156,8 +174,11 @@ func (g *GCPPlatformConfig) CreateArgsForVariant(variant string) []string {
 
 // variantCreateArgs renders a gcpVariantInfra as "create cluster gcp"
 // flags. It is pure so arg construction is testable without GCP access.
+// The per-cluster --base-domain overrides the global one (pflag keeps the
+// last value).
 func variantCreateArgs(i gcpVariantInfra) []string {
 	return []string{
+		"--base-domain=" + i.baseDomain,
 		"--network=" + i.network,
 		"--private-service-connect-subnet=" + i.pscSubnet,
 		"--workload-identity-project-number=" + i.wifProjectNumber,
@@ -178,17 +199,31 @@ func variantCreateArgs(i gcpVariantInfra) []string {
 // iteration the WIF pool/provider, service accounts and network are
 // provisioned account-wide by the CI setup step and shared by every
 // variant; PreCreate reads those values from SHARED_DIR and assigns the
-// same resolved infra to each variant. A later change will instead
-// provision dedicated infra per variant here.
+// same resolved infra to each variant, deriving a per-cluster base domain
+// so CPO-managed DNS zones cannot collide across clusters. A later change
+// will instead provision dedicated infra per variant here.
 func (g *GCPPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error {
 	infra, err := g.readSharedInfra()
 	if err != nil {
 		return err
 	}
 	for _, spec := range g.ClusterSpecs("", "") {
-		g.variantInfra[spec.Variant] = infra
+		variantInfra := infra
+		variantInfra.baseDomain = g.variantBaseDomain(spec.Variant)
+		g.variantInfra[spec.Variant] = variantInfra
 	}
 	return nil
+}
+
+// variantBaseDomain returns a base domain unique to the cluster created
+// for the given variant. The control-plane-operator creates public and
+// private DNS zones named exactly after the HostedCluster base domain, so
+// a shared base domain would collide across clusters and the per-cluster
+// private zone would shadow resolution of the shared external-dns records.
+// Deriving the domain from the cluster name mirrors the
+// in.<cluster-name>.<domain> scheme of the single-cluster CI chain.
+func (g *GCPPlatformConfig) variantBaseDomain(variant string) string {
+	return "in." + DeriveClusterName(g.prowJobID, variant) + "." + g.DefaultBaseDomain()
 }
 
 // readSharedInfra reads the account-level GCP infrastructure values that

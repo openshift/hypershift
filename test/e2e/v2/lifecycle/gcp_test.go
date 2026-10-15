@@ -4,6 +4,7 @@ package lifecycle
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -116,11 +117,13 @@ func TestGCPVariantCreateArgs(t *testing.T) {
 		networkSA:         "net@sa",
 		saSigningKeyPath:  "/shared/sa-signer.key",
 		oidcIssuerURL:     "https://hypershift-ci123-oidc",
+		baseDomain:        "in.default-abc123.example.gcp-hcp.test",
 	}
 
 	// Each flag encodes a distinct cluster-creation contract that a
 	// regression could silently drop.
 	wantArgs := []string{
+		"--base-domain=in.default-abc123.example.gcp-hcp.test",
 		"--network=vpc-net",
 		"--private-service-connect-subnet=psc-subnet",
 		"--workload-identity-project-number=123456",
@@ -143,6 +146,26 @@ func TestGCPVariantCreateArgs(t *testing.T) {
 		if !slices.Contains(got, arg) {
 			t.Errorf("variantCreateArgs() %v missing %q", got, arg)
 		}
+	}
+}
+
+func TestGCPVariantBaseDomain(t *testing.T) {
+	t.Parallel()
+
+	cfg := &GCPPlatformConfig{
+		prowJobID:   "job-123",
+		ciDNSDomain: "example.gcp-hcp.test",
+	}
+
+	got := cfg.variantBaseDomain("default")
+	if !strings.HasPrefix(got, "in.default-") || !strings.HasSuffix(got, ".example.gcp-hcp.test") {
+		t.Errorf("variantBaseDomain(default) = %q, want in.default-<hash>.example.gcp-hcp.test", got)
+	}
+
+	// Each cluster must get a distinct base domain so CPO-managed DNS
+	// zones cannot collide.
+	if other := cfg.variantBaseDomain("ingress"); other == got {
+		t.Errorf("variantBaseDomain(ingress) = %q, want distinct from default %q", other, got)
 	}
 }
 
