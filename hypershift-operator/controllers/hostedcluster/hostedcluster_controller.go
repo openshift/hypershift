@@ -138,6 +138,7 @@ const (
 
 	controlPlaneOperatorSubcommandsLabel                 = "io.openshift.hypershift.control-plane-operator-subcommands"
 	controlPlaneOperatorSupportsKASCustomKubeconfigLabel = "io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubeconfig"
+	controlPlaneOperatorSupportsGCPResourceTagsLabel     = "io.openshift.hypershift.control-plane-operator-supports-gcp-resource-tags"
 
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
 	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
@@ -1451,6 +1452,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	var pullSecretBytes []byte
 	controlPlaneOperatorImage := r.HypershiftOperatorImage
 	var controlPlaneOperatorImageLabels map[string]string
+	controlPlaneOperatorImageLabelsResolved := false
 
 	report.execute("CPOImageAndNamespace", critical, func() error {
 		var err error
@@ -1466,9 +1468,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 		}
+		controlPlaneOperatorImageLabelsResolved = true
 
 		return r.reconcileControlPlaneNamespace(ctx, createOrUpdate, hcluster, controlPlaneNamespace, controlPlaneOperatorImageLabels)
 	})
+
+	if err := r.validateGCPResourceTagsSupport(ctx, hcluster, controlPlaneOperatorImageLabelsResolved, controlPlaneOperatorImageLabels); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	cpoHasUtilities := false
 	utilitiesImage := r.HypershiftOperatorImage
@@ -4526,7 +4533,6 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	}
 
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
-
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
 }
 

@@ -175,6 +175,12 @@ const (
 	// A failure here may require external user intervention to resolve.
 	ValidGCPWorkloadIdentity ConditionType = "ValidGCPWorkloadIdentity"
 
+	// GCPResourceTagsSupported indicates whether the selected control plane
+	// operator image can propagate spec.platform.gcp.resourceTags to the guest
+	// cluster. It is only set when resourceTags is configured. When it is False,
+	// the HostedCluster is not provisioned.
+	GCPResourceTagsSupported ConditionType = "GCPResourceTagsSupported"
+
 	// AWSDefaultSecurityGroupCreated indicates whether the default security group
 	// for AWS workers has been created.
 	// A failure here indicates that NodePools without a security group will be

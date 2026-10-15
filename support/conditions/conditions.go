@@ -74,6 +74,9 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 		}
 		conditions[hyperv1.ValidGCPWorkloadIdentity] = expected
 		conditions[hyperv1.ValidGCPCredentials] = expected
+		if hostedCluster.Spec.Platform.GCP != nil && len(hostedCluster.Spec.Platform.GCP.ResourceTags) > 0 {
+			conditions[hyperv1.GCPResourceTagsSupported] = metav1.ConditionTrue
+		}
 
 		// GCP Private Service Connect conditions - both GCP endpoint access modes
 		// (Private and PublicAndPrivate) use PSC, so no EndpointAccess gate is needed.
