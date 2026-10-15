@@ -792,22 +792,23 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		}
 		return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCPort)
 	case serviceStrategy.Type == hyperv1.Route:
-		externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
-			return fmt.Errorf("failed to get kube apiserver external route: %w", err)
-		}
-		if len(externalRoute.Status.Ingress) == 0 || externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
-			return fmt.Errorf("APIServer external route not admitted")
-		}
+		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+			externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
+			if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
+				return fmt.Errorf("failed to get kube apiserver external route: %w", err)
+			}
+			if len(externalRoute.Status.Ingress) == 0 || externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
+				return fmt.Errorf("APIServer external route not admitted")
+			}
 
-		endpoint := externalRoute.Status.Ingress[0].RouterCanonicalHostname
-		port := 443
-		if sharedingress.UseSharedIngress() {
-			endpoint = externalRoute.Spec.Host
-			port = sharedingress.ExternalDNSLBPort
+			endpoint := externalRoute.Status.Ingress[0].RouterCanonicalHostname
+			port := 443
+			if sharedingress.UseSharedIngress() {
+				endpoint = externalRoute.Spec.Host
+				port = sharedingress.ExternalDNSLBPort
+			}
+			return healthCheckKASEndpoint(endpoint, port)
 		}
-		return healthCheckKASEndpoint(endpoint, port)
-
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
 		port := config.KASSVCPort
@@ -995,7 +996,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 // which needs a dedicated Service type LB external to be exposed if no external DNS is supported.
 // Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
 func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
-	if sharedingress.UseSharedIngress() {
+	if sharedingress.UseSharedIngress() || hostedControlPlane.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return false
 	}
 	return labelHCPRoutes(hostedControlPlane)
@@ -1742,7 +1743,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	p := oauth.NewOAuthServiceParams(hcp)
 	oauthServerService := manifests.OauthServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, oauthServerService, func() error {
-		return oauth.ReconcileService(oauthServerService, p.OwnerRef, serviceStrategy)
+		return oauth.ReconcileService(oauthServerService, p.OwnerRef, serviceStrategy, hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth service: %w", err)
 	}
@@ -1836,7 +1837,7 @@ func (r *HostedControlPlaneReconciler) reconcileOLMPackageServerService(ctx cont
 }
 
 func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
-	if sharedingress.UseSharedIngress() {
+	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return nil
 	}
 	exposeKASThroughRouter := util.IsRouteKAS(hcp)
@@ -1969,14 +1970,14 @@ func (r *HostedControlPlaneReconciler) defaultReconcileInfrastructureStatus(ctx 
 }
 
 func (r *HostedControlPlaneReconciler) reconcileInternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPrivateHCP(hcp) {
+	if !util.IsPrivateHCP(hcp) || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.PrivateRouterService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
 }
 
 func (r *HostedControlPlaneReconciler) reconcileExternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPublicHCP(hcp) || !util.IsRouteKAS(hcp) || sharedingress.UseSharedIngress() {
+	if !util.IsPublicHCP(hcp) || !util.IsRouteKAS(hcp) || sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.RouterPublicService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
@@ -2010,7 +2011,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 		return "", 0, "", errors.New("APIServer service strategy not specified")
 	}
 
-	if sharedingress.UseSharedIngress() {
+	if sharedingress.UseSharedIngress() || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
 		return sharedingress.Hostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
 	}
 
@@ -4339,6 +4340,10 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 }
 
 func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		return nil
+	}
+
 	routeList := &routev1.RouteList{}
 	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
 		return fmt.Errorf("failed to list routes: %w", err)
@@ -4392,6 +4397,10 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 }
 
 func (r *HostedControlPlaneReconciler) admitHCPManagedRoutes(ctx context.Context, hcp *hyperv1.HostedControlPlane, privateRouterHost, externalRouterHost string) error {
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && externalRouterHost == "" {
+		externalRouterHost = "not.used"
+	}
+
 	routeList := &routev1.RouteList{}
 	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
 		return fmt.Errorf("failed to list routes: %w", err)
