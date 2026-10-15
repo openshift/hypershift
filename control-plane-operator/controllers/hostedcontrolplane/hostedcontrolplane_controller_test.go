@@ -4617,14 +4617,14 @@ func TestReconcileInfrastructureStatusCondition(t *testing.T) {
 	testNamespace := "test-namespace"
 
 	testCases := []struct {
-		name                string
-		hcp                 *hyperv1.HostedControlPlane
-		infraStatus         infra.InfrastructureStatus
-		infraErr            error
-		expectedCondStatus  metav1.ConditionStatus
-		expectedCondReason  string
-		expectedEndpoint    hyperv1.APIEndpoint
-		expectOAuthCallback bool
+		name                             string
+		hcp                              *hyperv1.HostedControlPlane
+		infraStatus                      infra.InfrastructureStatus
+		infraErr                         error
+		expectedCondStatus               metav1.ConditionStatus
+		expectedCondReason               string
+		expectedEndpoint                 hyperv1.APIEndpoint
+		expectedOAuthCallbackURLTemplate string
 	}{
 		{
 			name: "When infrastructure is ready, it should set InfrastructureReady to True and populate endpoint",
@@ -4640,6 +4640,8 @@ func TestReconcileInfrastructureStatusCondition(t *testing.T) {
 				APIPort:          6443,
 				KonnectivityHost: "konnectivity.example.com",
 				KonnectivityPort: 8091,
+				OAuthHost:        "oauth.example.com",
+				OAuthPort:        443,
 			},
 			expectedCondStatus: metav1.ConditionTrue,
 			expectedCondReason: hyperv1.AsExpectedReason,
@@ -4647,6 +4649,7 @@ func TestReconcileInfrastructureStatusCondition(t *testing.T) {
 				Host: "api.example.com",
 				Port: 6443,
 			},
+			expectedOAuthCallbackURLTemplate: "https://oauth.example.com/oauth2callback/[identity-provider-name]",
 		},
 		{
 			name: "When infrastructure is not ready, it should set InfrastructureReady to False",
@@ -4718,6 +4721,7 @@ func TestReconcileInfrastructureStatusCondition(t *testing.T) {
 
 			if tc.expectedCondStatus == metav1.ConditionTrue {
 				g.Expect(tc.hcp.Status.ControlPlaneEndpoint).To(Equal(tc.expectedEndpoint))
+				g.Expect(tc.hcp.Status.OAuthCallbackURLTemplate).To(Equal(tc.expectedOAuthCallbackURLTemplate))
 			}
 
 			if tc.expectedCondStatus == metav1.ConditionFalse && tc.infraStatus.Message == "" {

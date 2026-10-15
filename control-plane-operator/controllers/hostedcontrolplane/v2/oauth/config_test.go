@@ -77,7 +77,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			cpEndpointPort:          6443,
 			expectedLoginURL:        "https://api.example.com:6443",
 			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
-			expectedMasterPublicURL: "https://oauth.example.com:443",
+			expectedMasterPublicURL: "https://oauth.example.com",
 		},
 		{
 			name:                    "When KubeAPIServerDNSName is set, it should use the custom DNS name for LoginURL",
@@ -88,7 +88,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			kasDNSName:              "api.custom.example.com",
 			expectedLoginURL:        "https://api.custom.example.com:6443",
 			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
-			expectedMasterPublicURL: "https://oauth.example.com:443",
+			expectedMasterPublicURL: "https://oauth.example.com",
 		},
 		{
 			name:                    "When control plane endpoint is an IP and no custom DNS is set, it should use the IP for LoginURL",
@@ -98,7 +98,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			cpEndpointPort:          6443,
 			expectedLoginURL:        "https://10.0.0.1:6443",
 			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
-			expectedMasterPublicURL: "https://10.0.0.2:443",
+			expectedMasterPublicURL: "https://10.0.0.2",
 		},
 		{
 			name:                    "When login URL override annotation is set, it should take precedence over KubeAPIServerDNSName",
@@ -110,7 +110,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			loginURLOverride:        "https://ibm.override.example.com:6443",
 			expectedLoginURL:        "https://ibm.override.example.com:6443",
 			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
-			expectedMasterPublicURL: "https://oauth.example.com:443",
+			expectedMasterPublicURL: "https://oauth.example.com",
 		},
 		{
 			name:                    "When control plane endpoint is an IPv6 address, it should bracket it in the LoginURL",
@@ -120,7 +120,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			cpEndpointPort:          6443,
 			expectedLoginURL:        "https://[2001:db8::1]:6443",
 			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
-			expectedMasterPublicURL: "https://oauth.example.com:443",
+			expectedMasterPublicURL: "https://oauth.example.com",
 		},
 		{
 			name:                    "When OAuth host is an IPv6 address, it should bracket it in the MasterURL",
@@ -130,7 +130,7 @@ func TestAdaptOAuthConfig(t *testing.T) {
 			cpEndpointPort:          6443,
 			expectedLoginURL:        "https://api.example.com:6443",
 			expectedMasterURL:       fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(testNamespace), OAuthServerPort),
-			expectedMasterPublicURL: "https://[2001:db8::2]:443",
+			expectedMasterPublicURL: "https://[2001:db8::2]",
 		},
 		{
 			name:              "When TLS profile is Custom with nil Custom field, it should return error",
