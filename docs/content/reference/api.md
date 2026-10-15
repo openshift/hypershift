@@ -6102,7 +6102,7 @@ Controls the maximum queries-per-second the autoscaler may send to the
 kube-apiserver. Valid values are -1 through 1000.
 When set to -1, client-side rate limiting is disabled.
 When set to 0, the flag is passed but client-go applies its default QPS of 5.
-When omitted, the flag is not set and the autoscaler uses its default (5).</p>
+When omitted, HyperShift sets the flag to 200. An explicit value overrides this default.</p>
 </td>
 </tr>
 <tr>
@@ -6117,7 +6117,7 @@ int32
 <p>kubeClientBurst sets the &ldquo;&ndash;kube-client-burst&rdquo; flag on cluster-autoscaler.
 Controls the maximum burst of queries to the kube-apiserver.
 Valid values are 1 through 2000.
-When omitted, the flag is not set and the autoscaler uses its default (10).</p>
+When omitted, HyperShift sets the flag to 300. An explicit value overrides this default.</p>
 </td>
 </tr>
 </tbody>
