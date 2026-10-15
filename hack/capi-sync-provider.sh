@@ -88,7 +88,7 @@ allow_prefixes() {
             echo "sigs.k8s.io/cluster-api-provider-aws/v2/api/" ;;
         kubevirt:api/v1alpha1)
             echo "kubevirt.io/api" ;;
-        openstack:api/v1beta1)
+        openstack:api/v1beta1|openstack:api/v1beta2)
             echo "sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/" ;;
         openstack:api/v1alpha1)
             echo "sigs.k8s.io/cluster-api-provider-openstack/api/"
@@ -177,11 +177,19 @@ find "$DST_DIR" \( -name '*_test.go' -o -name '*conversion*' \) -exec rm -f {} +
 # module's.
 echo "Localizing CAPI types for $PROVIDER..."
 CAPI_SRC=$(mod_cache_dir "sigs.k8s.io/cluster-api")
+CAPI_API_ARGS=()
+# CAPI v1.14 moved api/* into its own module. Older providers still resolve
+# those packages inside the main CAPI module.
+if (cd "$MOD_DIR" && GO111MODULE=on GOWORK=off GOFLAGS='' go list -m sigs.k8s.io/cluster-api/api >/dev/null 2>&1); then
+    CAPI_API_SRC=$(mod_cache_dir "sigs.k8s.io/cluster-api/api")
+    CAPI_API_ARGS=(--capi-api-root "$CAPI_API_SRC")
+fi
 rm -rf "$DST_DIR/capicore"
 run_go run "$COPY_TOOL" --localize \
     --dir "$DST_DIR" \
     --module "$MODULE_PATH" \
-    --capi-root "$CAPI_SRC"
+    --capi-root "$CAPI_SRC" \
+    "${CAPI_API_ARGS[@]}"
 
 echo "Running controller-gen for deepcopy..."
 
