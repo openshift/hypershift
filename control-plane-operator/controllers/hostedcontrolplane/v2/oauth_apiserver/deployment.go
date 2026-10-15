@@ -33,6 +33,14 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			return err
 		}
 		podspec.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
+		podspec.UpdateVolume("etcd-client-ca", deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
+			v.VolumeSource = corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: manifests.EtcdClientSecret(cpContext.HCP.Namespace).Name,
+					Items:      []corev1.KeyToPath{{Key: "etcd-client-ca.crt", Path: "ca.crt"}},
+				},
+			}
+		})
 	}
 
 	noProxy := []string{
