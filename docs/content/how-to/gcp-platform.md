@@ -96,6 +96,120 @@ key is later removed from the HCP, HyperShift removes it from the Service
 annotation; it does not restore the Service's former value. Labels whose keys
 are not managed by HyperShift are preserved.
 
+### Resource Manager Tags
+
+Resource Manager tags are distinct from resource labels. Define the TagKeys and
+TagValues in the HostedCluster's GCP project or an organization before
+installation, then configure their short names. If `parentID` is omitted, the
+HostedCluster project is used; for an organization-defined tag, set `parentID`
+to its numeric organization ID:
+
+```yaml
+spec:
+  platform:
+    gcp:
+      resourceTags:
+        - key: environment
+          value: production
+        - parentID: "123456789012"
+          key: cost-center
+          value: shared
+```
+
+An explicit `parentID` must be the HostedCluster project ID or a numeric
+organization ID. A different project ID is not accepted. HyperShift does not
+check whether the referenced tag exists or whether the guest identities have
+permission to use it at admission time.
+
+Google-managed system tags, such as
+`google/system:sdp-data-sensitivity` and `google:AppHub/environment`,
+cannot be configured through `resourceTags`. Their Google-managed namespaces
+are not accepted by `parentID`. Google services may independently attach
+system tags to resources. See [Google Cloud system
+tags](https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing#system_tags).
+
+Keys and values must each be 1–63 characters long and begin and end with an
+ASCII letter or digit. Keys may also contain `.`, `_`, and `-`; values accept
+additional punctuation and spaces. When omitted, no tags are applied through
+this setting. If present, the list must contain 1–50 entries. **Each short key
+must be unique across the entire list, even when the tags have different
+parents.** Thus an organization and project tag with the same short key cannot
+both be configured with the current guest Infrastructure API. The HostedCluster
+API enforces the accepted characters.
+
+The configured tags currently apply to these resources:
+
+| Tagged resource | When tagging is attempted |
+| --- | --- |
+| GCP PD CSI persistent disks for guest PersistentVolumes | When a new disk is provisioned |
+| Image registry bucket | During bucket setup, when the image registry is enabled |
+
+They are **not** applied by this setting to worker VMs or their boot disks,
+Private Service Connect forwarding rules or IP addresses, firewall rules, DNS
+resources, or other GCP resources created by HyperShift or CAPG. Broader
+management-side resource tagging is separate work. HyperShift does not create
+TagKeys or TagValues.
+
+Google Cloud permits at most 50 directly attached Resource Manager tags per
+resource. Organization-defined and project-defined tags share this limit when
+attached to the same resource. Tags attached by administrators or external
+automation also consume these slots.
+
+Before configuring `resourceTags`, account for any other direct bindings your
+organization applies to the target disks and registry bucket. There is no fixed
+number of reserved slots: the required headroom depends on your tagging
+automation. Accepting a list at admission does not reserve capacity in Google
+Cloud or prevent another actor from attaching tags.
+
+See [Google Cloud tag
+limits](https://cloud.google.com/resource-manager/docs/limits#tag_limits).
+
+HyperShift passes these tags to the guest cluster for the two components above.
+Resource tags require OpenShift 5.1 or later, or another control plane operator
+image that supports GCP resource tag propagation. The selected image capability
+label is authoritative: when it is absent, `ReconciliationSucceeded` is
+`False` with reason `ReconciliationError`. Its message identifies
+`spec.platform.gcp.resourceTags` as requiring a supporting CPO image and lists
+blocked operations. Dependent component deployments are blocked, while core
+HostedControlPlane reconciliation and independent synchronization can continue.
+This check does not change `ValidConfiguration`.
+
+Configure tags when creating the HostedCluster: `resourceTags` cannot be added,
+removed, or changed afterward. The guest components that
+attach tags (the storage and image registry service-account identities) require
+Google Cloud Tag User on the tag value and target resource, plus the applicable
+resource-specific TagBinding permissions. HyperShift does not currently report
+a dedicated condition for missing or inaccessible TagKeys or TagValues, or for
+missing tag permissions. The `ValidGCPCredentials` and `ValidGCPWorkloadIdentity` conditions
+do not validate the guest storage and image-registry identities' tag access.
+Such failures do not block HyperShift's HostedCluster reconciliation, but they
+can prevent the guest components from creating a tagged registry bucket or
+persistent disk. Check the guest image-registry operator's status and logs, or
+the GCP PD CSI controller logs and affected PVC events, for runtime errors.
+See [Create GCP IAM Resources](gcp/create-gcp-iam.md#resource-tag-permissions)
+for the required grants and how to apply them to existing clusters.
+
+#### Recovering from tag application failures
+
+Check the guest image-registry operator status and logs, or the PD CSI
+controller logs and affected PVC events, to identify the failure.
+
+For the registry bucket, tags are attached individually after bucket creation.
+Some bindings can succeed while others fail; successfully attached tags are
+not rolled back. If external bindings exhaust the tag limit, coordinate with
+their owner to remove unnecessary bindings and prevent automation from
+immediately recreating them. The registry operator retries failed tagging
+operations during reconciliation.
+
+For missing tags or insufficient permissions, correct the referenced tag
+definitions or IAM grants. These corrections do not require changing the
+HostedCluster tag list.
+
+The HostedCluster `resourceTags` list cannot be edited after creation. If
+recovery requires changing that list rather than correcting external bindings,
+tag definitions, or permissions, recreate the HostedCluster with the corrected
+configuration.
+
 ## CAPG Integration
 
 ### Controller Deployment
