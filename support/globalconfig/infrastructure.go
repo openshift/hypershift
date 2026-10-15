@@ -113,6 +113,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			IngressIPs:           []string{},
 		}
 	case hyperv1.GCPPlatform:
+		gcpStatusAlreadyExists := infra.Status.PlatformStatus.GCP != nil
 		if infra.Status.PlatformStatus.GCP == nil {
 			infra.Status.PlatformStatus.GCP = &configv1.GCPPlatformStatus{}
 		}
@@ -134,5 +135,23 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			})
 		}
 		infra.Status.PlatformStatus.GCP.ResourceLabels = labels
+		var tags []configv1.GCPResourceTag
+		for _, tag := range hcp.Spec.Platform.GCP.ResourceTags {
+			parentID := tag.ParentID
+			if parentID == "" {
+				parentID = hcp.Spec.Platform.GCP.Project
+			}
+			tags = append(tags, configv1.GCPResourceTag{
+				ParentID: parentID,
+				Key:      tag.Key,
+				Value:    tag.Value,
+			})
+		}
+		// ResourceTags are immutable in the guest Infrastructure API. Do not
+		// backfill tags into an existing GCP status that was first written by an
+		// older control plane operator without them.
+		if !gcpStatusAlreadyExists || infra.Status.PlatformStatus.GCP.ResourceTags != nil || len(tags) == 0 {
+			infra.Status.PlatformStatus.GCP.ResourceTags = tags
+		}
 	}
 }

@@ -106,9 +106,18 @@ func TestExpectedHCConditions(t *testing.T) {
 			expected := ExpectedHCConditions(hc)
 			g.Expect(expected[hyperv1.ValidGCPWorkloadIdentity]).To(Equal(tc.expected))
 			g.Expect(expected[hyperv1.ValidGCPCredentials]).To(Equal(tc.expected))
+			g.Expect(expected).NotTo(HaveKey(hyperv1.GCPResourceTagsSupported))
 			g.Expect(expected[hyperv1.GCPEndpointAvailable]).To(Equal(metav1.ConditionTrue))
 		})
 	}
+	t.Run("When GCP resource tags are configured, it should expect their CPO image support", func(t *testing.T) {
+		g := NewWithT(t)
+		hc := &hyperv1.HostedCluster{}
+		hc.Spec.Platform.Type = hyperv1.GCPPlatform
+		hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{ResourceTags: []hyperv1.GCPResourceTag{{Key: "environment", Value: "production"}}}
+
+		g.Expect(ExpectedHCConditions(hc)[hyperv1.GCPResourceTagsSupported]).To(Equal(metav1.ConditionTrue))
+	})
 	t.Run("When the control plane upgrades from 5.0 to 5.1, it should refresh credential expectations", func(t *testing.T) {
 		g := NewWithT(t)
 		hc := &hyperv1.HostedCluster{}

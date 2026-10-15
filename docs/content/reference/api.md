@@ -6593,6 +6593,12 @@ created in the customer VPC</p>
 </tr><tr><td><p>&#34;GCPPrivateServiceConnectAvailable&#34;</p></td>
 <td><p>GCPPrivateServiceConnectAvailable indicates overall PSC infrastructure availability</p>
 </td>
+</tr><tr><td><p>&#34;GCPResourceTagsSupported&#34;</p></td>
+<td><p>GCPResourceTagsSupported indicates whether the selected control plane
+operator image can propagate spec.platform.gcp.resourceTags to the guest
+cluster. It is only set when resourceTags is configured. When it is False,
+the HostedCluster is not provisioned.</p>
+</td>
 </tr><tr><td><p>&#34;GCPServiceAttachmentAvailable&#34;</p></td>
 <td><p>GCPServiceAttachmentAvailable indicates whether the GCP Service Attachment
 has been created for the specified Internal Load Balancer in the management VPC</p>
@@ -8615,6 +8621,44 @@ For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/la
 </tr>
 <tr>
 <td>
+<code>resourceTags</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceTag">
+[]GCPResourceTag
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>resourceTags are pre-existing Google Cloud Resource Manager tags to apply to
+GCP resources created for the hosted cluster.
+Currently, tags are applied to newly provisioned persistent disks and, when the
+image registry is enabled, to its storage bucket. Other GCP resources, such as
+worker VMs and their boot disks, are not tagged.
+The set of tagged resources is subject to change over time.</p>
+<p>When omitted, no tags are applied through this setting. When specified,
+the list must contain 1 to 50 entries, and each short key must be unique
+across the list, even when the tags have different parents. A tag&rsquo;s
+parentID defaults to the HostedCluster&rsquo;s GCP project if omitted.
+Google Cloud permits at most 50 directly attached tags per resource,
+including tags attached by other actors. Coordinate with external tagging
+automation to leave sufficient capacity; admission does not reserve tag slots.</p>
+<p>The referenced tags must already exist, and the storage and imageRegistry
+service accounts must have permission to use them. Neither is checked when the
+HostedCluster is created. When a tag cannot be applied, provisioning of the
+affected disk or bucket can fail, and the error is reported in the persistent
+volume claim&rsquo;s events or the image registry operator&rsquo;s status.</p>
+<p>resourceTags can only be set when the HostedCluster is created. It cannot be
+added, removed or changed afterwards. If the configured list must change,
+the HostedCluster must be recreated.
+Resource tags require a control plane operator image that supports GCP resource
+tag propagation. When that capability is unavailable, the
+GCPResourceTagsSupported condition is False and the HostedCluster is not
+provisioned until a supporting control plane operator image is configured.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>workloadIdentity,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig">
@@ -8937,6 +8981,75 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 </tr>
 </tbody>
 </table>
+###GCPResourceTag { #hypershift.openshift.io/v1beta1.GCPResourceTag }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPResourceTag selects a pre-existing Google Cloud Resource Manager tag by
+its parent, short key, and short value. The tag must be defined in the
+HostedCluster project or an organization before the cluster is created.
+See <a href="https://cloud.google.com/resource-manager/docs/tags/tags-overview">https://cloud.google.com/resource-manager/docs/tags/tags-overview</a>.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>parentID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>parentID is the ID of the project or organization that defines the TagKey.
+When omitted, the HostedCluster&rsquo;s GCP project is used.
+An explicit value must be the HostedCluster&rsquo;s GCP project ID or a numeric
+organization ID. A numeric value is treated as an organization ID; project
+numbers are not supported.
+An organization ID consists of 1 to 32 decimal digits and must not start with 0.
+A project ID is 6 to 30 characters long, contains only lowercase letters, digits
+and hyphens, starts with a letter and must not end with a hyphen.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>key</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>key is required and is the short name of the pre-existing Resource Manager TagKey.
+A key is 1-63 characters, begins and ends with
+an ASCII alphanumeric character, and may contain letters, digits, &lsquo;.&rsquo;,
+&lsquo;_&rsquo;, or &lsquo;-&rsquo; between them.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>value</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>value is required and is the short name of the pre-existing Resource Manager TagValue for
+key. Exactly one value for a TagKey can be attached to a resource. A value
+is 1-63 characters, begins and ends with an ASCII alphanumeric character,
+and may contain ASCII letters and digits, <code>_-.@%=+:,*#&amp;()[]{}</code>, and
+spaces between them.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###GCPServiceAccountEmail { #hypershift.openshift.io/v1beta1.GCPServiceAccountEmail }
 <p>
 (<em>Appears on:</em>
@@ -9072,6 +9185,7 @@ GCPServiceAccountEmail
 that manages GCS storage for the internal container image registry.
 This GSA requires the following IAM roles:
 - roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
+- roles/resourcemanager.tagUser (Tag User - for applying resource tags to the bucket)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
