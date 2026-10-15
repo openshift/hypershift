@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -93,11 +94,19 @@ func NewGCPPlatformConfig(sharedDir string) *GCPPlatformConfig {
 
 	cfg.project = os.Getenv("HYPERSHIFT_GCP_PROJECT")
 	if cfg.project == "" {
-		cfg.project = readSharedFile(sharedDir, "hosted-cluster-project-id")
+		project, err := readSharedFile(sharedDir, "hosted-cluster-project-id")
+		if err != nil {
+			log.Printf("WARNING: reading hosted-cluster-project-id from SHARED_DIR: %v", err)
+		}
+		cfg.project = project
 	}
 	cfg.region = os.Getenv("HYPERSHIFT_GCP_REGION")
 	if cfg.region == "" {
-		cfg.region = readSharedFile(sharedDir, "gcp-region")
+		region, err := readSharedFile(sharedDir, "gcp-region")
+		if err != nil {
+			log.Printf("WARNING: reading gcp-region from SHARED_DIR: %v", err)
+		}
+		cfg.region = region
 	}
 
 	log.Printf("GCP platform config: project=%s, region=%s, zone=%s, ciDNSDomain=%s",
@@ -207,6 +216,8 @@ func (g *GCPPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch
 	if err != nil {
 		return err
 	}
+	// ClusterSpecs is called here only to enumerate the variants; the
+	// release images are supplied later by the framework.
 	for _, spec := range g.ClusterSpecs("", "") {
 		variantInfra := infra
 		variantInfra.baseDomain = g.variantBaseDomain(spec.Variant)
@@ -247,7 +258,10 @@ func (g *GCPPlatformConfig) readSharedInfra() (gcpVariantInfra, error) {
 
 	var missing []string
 	for name, dst := range required {
-		val := readSharedFile(g.sharedDir, name)
+		val, err := readSharedFile(g.sharedDir, name)
+		if err != nil {
+			return gcpVariantInfra{}, fmt.Errorf("reading GCP infra value %s from SHARED_DIR: %w", name, err)
+		}
 		if val == "" {
 			missing = append(missing, name)
 			continue
@@ -255,12 +269,16 @@ func (g *GCPPlatformConfig) readSharedInfra() (gcpVariantInfra, error) {
 		*dst = val
 	}
 	if len(missing) > 0 {
+		slices.Sort(missing)
 		return gcpVariantInfra{}, fmt.Errorf("missing GCP infra values in SHARED_DIR: %v", missing)
 	}
 
 	// The WIF provider trusts the OIDC issuer bound to the CI cluster name
 	// at provisioning time; derive the issuer URL from that same name.
-	clusterName := readSharedFile(g.sharedDir, "hosted-cluster-name")
+	clusterName, err := readSharedFile(g.sharedDir, "hosted-cluster-name")
+	if err != nil {
+		return gcpVariantInfra{}, fmt.Errorf("reading GCP infra value hosted-cluster-name from SHARED_DIR: %w", err)
+	}
 	if clusterName == "" {
 		return gcpVariantInfra{}, fmt.Errorf("missing GCP infra value in SHARED_DIR: hosted-cluster-name")
 	}
@@ -313,15 +331,20 @@ func (g *GCPPlatformConfig) SetupTestEnv(sharedDir string) {}
 // project teardown.
 func (g *GCPPlatformConfig) DestroyArgs() []string { return nil }
 
-// readSharedFile returns the trimmed contents of sharedDir/name, or ""
-// if sharedDir is empty or the file cannot be read.
-func readSharedFile(sharedDir, name string) string {
+// readSharedFile returns the trimmed contents of sharedDir/name. A missing
+// file (or an empty sharedDir) yields "", nil; any other read error is
+// returned so callers can distinguish "not written yet" from real I/O
+// problems.
+func readSharedFile(sharedDir, name string) (string, error) {
 	if sharedDir == "" {
-		return ""
+		return "", nil
 	}
 	data, err := os.ReadFile(filepath.Join(sharedDir, name))
-	if err != nil {
-		return ""
+	if os.IsNotExist(err) {
+		return "", nil
 	}
-	return strings.TrimSpace(string(data))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
 }
