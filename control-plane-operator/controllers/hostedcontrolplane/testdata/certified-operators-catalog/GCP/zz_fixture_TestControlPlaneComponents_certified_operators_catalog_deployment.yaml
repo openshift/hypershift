@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 31e4bff87acbca22d690180a037c396a93d1d0cd8b088d32811fd3e45b9e26c6
+    hypershift.openshift.io/desired-state-hash: c2b6378e964d4a1524bc18119e7a94f3bd3268fd8acb5b3758d01f09a96694ea
     image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
   labels:
@@ -131,6 +131,7 @@ spec:
         command:
         - cp
         image: operator-lifecycle-manager
+        imagePullPolicy: IfNotPresent
         name: extract-utilities
         resources: {}
         securityContext:
@@ -138,12 +139,16 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /utilities
           name: utilities
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: extract-utilities
       - args:
         - --catalog.from=/configs
         - --catalog.to=/extracted-catalog/catalog
@@ -152,6 +157,7 @@ spec:
         command:
         - /utilities/copy-content
         image: from:imagestream
+        imagePullPolicy: IfNotPresent
         name: extract-content
         resources: {}
         securityContext:
@@ -159,6 +165,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
@@ -167,6 +174,9 @@ spec:
           name: utilities
         - mountPath: /extracted-catalog
           name: catalog-content
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: extract-content
       nodeSelector:
         kubernetes.io/os: linux
       priorityClassName: hypershift-control-plane

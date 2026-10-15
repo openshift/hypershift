@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 2d905f13d75d245f3d41bb5a3b3b3f473381589a4b8ba60dfe93c50bf58d3271
+    hypershift.openshift.io/desired-state-hash: 32ab6b41748314548772eb615ef78b1fd442b05b0bcfac74600f69e9550d84f2
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd
@@ -322,8 +322,13 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: ensure-dns
       - args:
         - -c
         - |
@@ -383,6 +388,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
@@ -394,6 +400,9 @@ spec:
           name: etcd-ca
         - mountPath: /etc/etcd/clusterstate
           name: cluster-state
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: reset-member
       priorityClassName: hypershift-etcd
       restartPolicy: Always
       schedulerName: default-scheduler

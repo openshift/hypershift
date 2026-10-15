@@ -251,7 +251,7 @@ spec:
         - |
           #!/bin/sh
           cd /tmp
-          mkdir input output manifests
+          mkdir -p input output manifests
 
           touch /tmp/manifests/99_feature-gate.yaml
           cat <<EOF >/tmp/manifests/99_feature-gate.yaml
@@ -320,7 +320,7 @@ spec:
         - |
           #!/bin/sh
           cd /tmp
-          mkdir input output manifests
+          mkdir -p input output manifests
 
           /usr/bin/authentication-operator render \
             --asset-output-dir /tmp/output \

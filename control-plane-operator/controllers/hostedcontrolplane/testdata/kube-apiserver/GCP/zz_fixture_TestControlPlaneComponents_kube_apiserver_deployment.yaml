@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 600f77c26294d0059ad16a1d78a72d131d3c3c8a8b8503a6d1d349e2e200ee00
+    hypershift.openshift.io/desired-state-hash: 9da339a9418a4df878419baed74e3b979ac8af9c5e2620548cba971186b2fed3
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -402,14 +402,19 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: pre-pull-image-kube-apiserver
       - args:
         - -c
         - |
           #!/bin/sh
           cd /tmp
-          mkdir input output manifests
+          mkdir -p input output manifests
 
           touch /tmp/manifests/99_feature-gate.yaml
           cat <<EOF >/tmp/manifests/99_feature-gate.yaml
@@ -482,17 +487,21 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: init-bootstrap-render
       - args:
         - -c
         - |
           #!/bin/sh
           cd /tmp
-          mkdir input output manifests
+          mkdir -p input output manifests
 
           /usr/bin/authentication-operator render \
             --asset-output-dir /tmp/output \
@@ -528,11 +537,15 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: init-auth-bootstrap-render
       - args:
         - -c
         - |
@@ -555,8 +568,13 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: wait-for-etcd
       priorityClassName: hypershift-api-critical
       schedulerName: default-scheduler
       terminationGracePeriodSeconds: 135

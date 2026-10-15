@@ -139,6 +139,12 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	if err != nil {
 		return err
 	}
+	err = enforceImagePullPolicy(podTemplateSpec.Spec.InitContainers)
+	if err != nil {
+		return err
+	}
+	initialContainerCount := len(podTemplateSpec.Spec.Containers)
+	initialInitContainerCount := len(podTemplateSpec.Spec.InitContainers)
 
 	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, hcp, podTemplateSpec.Spec.Containers); err != nil {
 		return err
@@ -171,6 +177,12 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 			podspec.WithOptions(c.availabilityProberOpts))
 	}
 
+	if err := enforceImagePullPolicy(podTemplateSpec.Spec.InitContainers[initialInitContainerCount:]); err != nil {
+		return err
+	}
+	if err := enforceImagePullPolicy(podTemplateSpec.Spec.Containers[initialContainerCount:]); err != nil {
+		return err
+	}
 	enforceTerminationMessagePolicy(podTemplateSpec.Spec.InitContainers)
 	enforceTerminationMessagePolicy(podTemplateSpec.Spec.Containers)
 	enforceReadOnlyRootFilesystem(&podTemplateSpec.Spec)
@@ -680,10 +692,17 @@ func enforceReadOnlyRootFilesystem(podSpec *corev1.PodSpec) {
 			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		},
 	})
-	enforceReadOnlyRootFilesystemContainers(podSpec.Containers)
+	// Init containers get a container-specific subPath so sequentially-run init
+	// containers cannot observe each other's scratch output (e.g. the
+	// kube-apiserver bootstrap renderers). Before init containers were covered
+	// by these defaults, each had a private, container-local /tmp. The kubelet
+	// creates subPath directories within the emptyDir with the volume root's
+	// mode (0777), so they remain writable by non-root containers.
+	enforceReadOnlyRootFilesystemContainers(podSpec.InitContainers, true)
+	enforceReadOnlyRootFilesystemContainers(podSpec.Containers, false)
 }
 
-func enforceReadOnlyRootFilesystemContainers(containers []corev1.Container) {
+func enforceReadOnlyRootFilesystemContainers(containers []corev1.Container, containerSpecificSubPath bool) {
 	for i := range containers {
 		if containers[i].SecurityContext == nil {
 			containers[i].SecurityContext = &corev1.SecurityContext{}
@@ -691,10 +710,14 @@ func enforceReadOnlyRootFilesystemContainers(containers []corev1.Container) {
 		if !slices.ContainsFunc(containers[i].VolumeMounts, func(vm corev1.VolumeMount) bool {
 			return vm.MountPath == podspec.PodTmpDirMountPath
 		}) {
-			containers[i].VolumeMounts = append(containers[i].VolumeMounts, corev1.VolumeMount{
+			mount := corev1.VolumeMount{
 				Name:      podspec.PodTmpDirMountName,
 				MountPath: podspec.PodTmpDirMountPath,
-			})
+			}
+			if containerSpecificSubPath {
+				mount.SubPath = containers[i].Name
+			}
+			containers[i].VolumeMounts = append(containers[i].VolumeMounts, mount)
 		}
 		containers[i].SecurityContext.ReadOnlyRootFilesystem = ptr.To(true)
 	}

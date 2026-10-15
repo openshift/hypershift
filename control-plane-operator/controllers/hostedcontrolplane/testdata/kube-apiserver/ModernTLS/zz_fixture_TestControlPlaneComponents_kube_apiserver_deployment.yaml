@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: aa002a20e51608264ac0da9bb982da2883cf8a95a53266ec219d9361edbea95c
+    hypershift.openshift.io/desired-state-hash: 6493c2848d7015e46cb3639d48dbde9d4fc041909dec2cce4013038d07adc8e8
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -353,13 +353,19 @@ spec:
         imagePullPolicy: IfNotPresent
         name: pre-pull-image-kube-apiserver
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: pre-pull-image-kube-apiserver
       - args:
         - -c
         - |
           #!/bin/sh
           cd /tmp
-          mkdir input output manifests
+          mkdir -p input output manifests
 
           touch /tmp/manifests/99_feature-gate.yaml
           cat <<EOF >/tmp/manifests/99_feature-gate.yaml
@@ -426,16 +432,21 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: init-bootstrap-render
       - args:
         - -c
         - |
           #!/bin/sh
           cd /tmp
-          mkdir input output manifests
+          mkdir -p input output manifests
 
           /usr/bin/authentication-operator render \
             --asset-output-dir /tmp/output \
@@ -465,10 +476,15 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: init-auth-bootstrap-render
       - args:
         - -c
         - |
@@ -486,7 +502,13 @@ spec:
         imagePullPolicy: IfNotPresent
         name: wait-for-etcd
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: wait-for-etcd
       priorityClassName: hypershift-api-critical
       schedulerName: default-scheduler
       terminationGracePeriodSeconds: 135
