@@ -166,6 +166,19 @@ spec:
       value:
       - COMMIT_HASH=$(tasks.clone-repository.results.commit)
       - RELEASE_IMAGE_REFERENCE=$(params.output-image)
+      # Seconds since the Unix epoch, for the creationTimestamp the changelog
+      # header prints. Deliberately not named SOURCE_DATE_EPOCH: buildah treats
+      # that as a built-in arg and, when the task was given no
+      # --source-date-epoch, promotes it to one. That would restamp the image
+      # created time and the history entry timestamps of every component
+      # sharing this pipeline - a wider change than this needs.
+      #
+      # The clone task reports the committer date of the revision it checked
+      # out. Taking it from the task rather than reading it in the build keeps
+      # the value independent of whether .git survives into the build context;
+      # Containerfile.operator falls back to the checkout when the arg is
+      # absent, which is what a plain local podman build hits.
+      - IMAGE_REFERENCES_CREATION_EPOCH=$(tasks.clone-repository.results.commit-timestamp)
     - name: SOURCE_ARTIFACT
       value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
     - name: CACHI2_ARTIFACT

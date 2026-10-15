@@ -1,6 +1,10 @@
 FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
 ARG COMMIT_HASH
 ARG RELEASE_IMAGE_REFERENCE=quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator/hypershift-operator-main
+# Seconds since the Unix epoch. Deliberately not named SOURCE_DATE_EPOCH, which
+# buildah treats as a built-in arg and promotes into --source-date-epoch,
+# restamping the image created time and history entries as a side effect.
+ARG IMAGE_REFERENCES_CREATION_EPOCH
 
 WORKDIR /hypershift
 
@@ -11,11 +15,17 @@ RUN make hypershift \
   && make karpenter-operator
 
 # Render release-manifests/image-references.template.yaml, which documents what
-# oc adm release info --changelog does with the result. Only the two
-# build-specific values are substituted; the structure and the quoting that
-# keeps a numeric-looking sha a string live in the template.
-RUN mkdir -p /tmp/release-manifests \
-  && sed -e "s|__COMMIT_HASH__|${COMMIT_HASH:-$(git rev-parse HEAD)}|" \
+# oc adm release info --changelog does with the result. Only the build-specific
+# values are substituted; the structure and the quoting that keeps a
+# numeric-looking sha a string live in the template.
+#
+# Each value falls back to the checkout so that a plain `podman build` with no
+# --build-arg still produces a usable file.
+RUN COMMIT="${COMMIT_HASH:-$(git rev-parse HEAD)}" \
+  && CREATED="$(date -u -d "@${IMAGE_REFERENCES_CREATION_EPOCH:-$(git log -1 --format=%ct)}" +%Y-%m-%dT%H:%M:%SZ)" \
+  && mkdir -p /tmp/release-manifests \
+  && sed -e "s|__COMMIT_HASH__|${COMMIT}|" \
+         -e "s|__CREATION_TIMESTAMP__|${CREATED}|" \
          -e "s|__RELEASE_IMAGE_REFERENCE__|${RELEASE_IMAGE_REFERENCE}|" \
          release-manifests/image-references.template.yaml \
          > /tmp/release-manifests/image-references
