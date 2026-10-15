@@ -1089,8 +1089,12 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 	return nil
 }
 
+func kasHealthCheckURL(ingressPoint string, port int) string {
+	return fmt.Sprintf("https://%s/healthz?verbose", net.JoinHostPort(ingressPoint, strconv.Itoa(port)))
+}
+
 func healthCheckKASEndpoint(ctx context.Context, ingressPoint string, port int, metrics *kas.KASHealthMetrics) error {
-	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz?verbose", ingressPoint, port)
+	healthEndpoint := kasHealthCheckURL(ingressPoint, port)
 
 	httpClient := util.InsecureHTTPClient()
 	httpClient.Timeout = 10 * time.Second
