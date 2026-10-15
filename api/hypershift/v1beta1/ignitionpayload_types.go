@@ -72,8 +72,11 @@ type IgnitionPayloadSpec struct {
 
 	// pullSecret references a Secret in the CR's namespace holding the registry pull
 	// secret used to fetch the release image and embedded in the generated payload.
-	// This field is required.
+	// This field is required and immutable: change the pull secret in place (via the
+	// global pull secret mechanism) rather than updating this reference, so it never
+	// triggers a node rollout.
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="pullSecret is immutable; update the pull secret in place via the global pull secret mechanism"
 	PullSecret SecretReference `json:"pullSecret,omitzero"`
 
 	// additionalTrustBundle optionally references a ConfigMap in the CR's namespace
@@ -86,8 +89,7 @@ type IgnitionPayloadSpec struct {
 	// osStream selects the RHEL OS stream the payload targets, by name (one of
 	// "rhel-9" or "rhel-10"). When omitted, the stream defaults to the one implied by
 	// the release version. Consumers that do not recognize the selected stream (e.g. a
-	// future stream) should treat the payload as unservable rather than guessing. This
-	// reuses the NodePool OSImageStream model.
+	// future stream) should treat the payload as unservable rather than guessing.
 	// +optional
 	OSStream OSImageStreamReference `json:"osStream,omitzero"`
 

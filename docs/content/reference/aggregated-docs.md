@@ -53519,7 +53519,9 @@ SecretReference
 <td>
 <p>pullSecret references a Secret in the CR&rsquo;s namespace holding the registry pull
 secret used to fetch the release image and embedded in the generated payload.
-This field is required.</p>
+This field is required and immutable: change the pull secret in place (via the
+global pull secret mechanism) rather than updating this reference, so it never
+triggers a node rollout.</p>
 </td>
 </tr>
 <tr>
@@ -53553,8 +53555,7 @@ OSImageStreamReference
 <p>osStream selects the RHEL OS stream the payload targets, by name (one of
 &ldquo;rhel-9&rdquo; or &ldquo;rhel-10&rdquo;). When omitted, the stream defaults to the one implied by
 the release version. Consumers that do not recognize the selected stream (e.g. a
-future stream) should treat the payload as unservable rather than guessing. This
-reuses the NodePool OSImageStream model.</p>
+future stream) should treat the payload as unservable rather than guessing.</p>
 </td>
 </tr>
 <tr>

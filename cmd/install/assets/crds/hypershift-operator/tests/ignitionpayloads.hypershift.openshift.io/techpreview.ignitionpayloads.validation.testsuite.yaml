@@ -528,6 +528,29 @@ tests:
         retiredRolloutGeneration: 1
     expectedError: "retiredRolloutGeneration cannot decrease or be removed"
 
+  - name: When spec.pullSecret is changed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-pullsecret-immutable
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecret:
+          name: "pull-secret"
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: IgnitionPayload
+      metadata:
+        name: np-pullsecret-immutable
+        namespace: hcp-ns
+      spec:
+        releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+        pullSecret:
+          name: "other-secret"
+    expectedError: "pullSecret is immutable"
+
   # --- Valid status ---
   - name: When status.current has a valid rolloutGeneration it should pass
     initial: |
