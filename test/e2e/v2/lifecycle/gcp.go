@@ -29,6 +29,12 @@ const (
 	// TODO(GCP-440): Remove once the NodePool controller discovers the boot
 	// image from stream metadata.
 	defaultGCPBootImage = "projects/rhcos-cloud/global/images/rhcos-9-6-20250925-0-gcp-x86-64"
+
+	// maxDNSHostnameLength is the DNS protocol limit for a hostname. A base
+	// domain at or near it leaves no room for the api-/oauth- record labels,
+	// so cluster creation would fail deep in provisioning with an unhelpful
+	// error; checkBaseDomainLength fails fast instead.
+	maxDNSHostnameLength = 253
 )
 
 // gcpVariantInfra holds the GCP infrastructure values a single cluster
@@ -221,7 +227,22 @@ func (g *GCPPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch
 	for _, spec := range g.ClusterSpecs("", "") {
 		variantInfra := infra
 		variantInfra.baseDomain = g.variantBaseDomain(spec.Variant)
+		if err := checkBaseDomainLength(spec.Variant, variantInfra.baseDomain); err != nil {
+			return err
+		}
 		g.variantInfra[spec.Variant] = variantInfra
+	}
+	return nil
+}
+
+// checkBaseDomainLength rejects a generated base domain that exceeds the
+// DNS hostname limit. It is pure so the check is testable without GCP
+// access. Failing here means the CI DNS domain (or variant names) must be
+// shortened, not that the code should truncate the domain.
+func checkBaseDomainLength(variant, domain string) error {
+	if len(domain) > maxDNSHostnameLength {
+		return fmt.Errorf("base domain for variant %q is %d characters, exceeding the %d-character DNS hostname limit (use a shorter CI DNS domain): %s",
+			variant, len(domain), maxDNSHostnameLength, domain)
 	}
 	return nil
 }

@@ -169,6 +169,30 @@ func TestGCPVariantBaseDomain(t *testing.T) {
 	}
 }
 
+func TestGCPCheckBaseDomainLength(t *testing.T) {
+	t.Parallel()
+
+	if err := checkBaseDomainLength("default", "in.default-abc123.example.gcp-hcp.test"); err != nil {
+		t.Errorf("checkBaseDomainLength(short domain) = %v, want nil", err)
+	}
+
+	// A domain at the limit passes; one past it fails with the variant and
+	// domain identified, so CI config can be shortened deliberately
+	// instead of cluster creation failing opaquely.
+	if err := checkBaseDomainLength("default", strings.Repeat("a", 253)); err != nil {
+		t.Errorf("checkBaseDomainLength(253-char domain) = %v, want nil", err)
+	}
+	err := checkBaseDomainLength("default", strings.Repeat("a", 254))
+	if err == nil {
+		t.Fatal("checkBaseDomainLength(254-char domain) = nil, want error")
+	}
+	for _, want := range []string{`variant "default"`, "254", "253"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("checkBaseDomainLength error %q missing %q", err.Error(), want)
+		}
+	}
+}
+
 func TestGCPCreateArgsForVariant(t *testing.T) {
 	t.Parallel()
 
