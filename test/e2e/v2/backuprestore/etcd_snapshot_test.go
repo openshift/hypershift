@@ -203,3 +203,94 @@ func TestMatchesHCPEtcdBackupName(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateSnapshotRestoreURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		rawURL     string
+		restoreURL string
+		wantErr    bool
+	}{
+		{
+			name:       "When an S3 object uses a virtual-hosted signed URL, it should pass",
+			rawURL:     "s3://backup-bucket/snapshots/etcd.db",
+			restoreURL: "https://backup-bucket.s3.amazonaws.com/snapshots/etcd.db?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=secret",
+		},
+		{
+			name:       "When an S3 object uses a path-style signed URL, it should pass",
+			rawURL:     "s3://backup-bucket/snapshots/etcd.db",
+			restoreURL: "https://s3.amazonaws.com/backup-bucket/snapshots/etcd.db?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=secret",
+		},
+		{
+			name:       "When an S3 restore points at a different object, it should fail",
+			rawURL:     "s3://backup-bucket/snapshots/etcd.db",
+			restoreURL: "https://backup-bucket.s3.amazonaws.com/snapshots/other.db?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=secret",
+			wantErr:    true,
+		},
+		{
+			name:       "When an S3 restore URL is unsigned, it should fail",
+			rawURL:     "s3://backup-bucket/snapshots/etcd.db",
+			restoreURL: "https://backup-bucket.s3.amazonaws.com/snapshots/etcd.db",
+			wantErr:    true,
+		},
+		{
+			name:       "When an Azure blob uses a signed URL, it should pass",
+			rawURL:     "https://account.blob.core.windows.net/backups/etcd.db",
+			restoreURL: "https://account.blob.core.windows.net/backups/etcd.db?sv=2023-11-03&se=2099-01-01T00:00:00Z&sig=secret",
+		},
+		{
+			name:       "When an Azure restore points at a different blob, it should fail",
+			rawURL:     "https://account.blob.core.windows.net/backups/etcd.db",
+			restoreURL: "https://account.blob.core.windows.net/backups/other.db?sv=2023-11-03&se=2099-01-01T00:00:00Z&sig=secret",
+			wantErr:    true,
+		},
+		{
+			name:       "When an Azure restore points at another storage account, it should fail",
+			rawURL:     "https://account.blob.core.windows.net/backups/etcd.db",
+			restoreURL: "https://other.blob.core.windows.net/backups/etcd.db?sv=2023-11-03&se=2099-01-01T00:00:00Z&sig=secret",
+			wantErr:    true,
+		},
+		{
+			name:       "When an Azure restore uses the same account prefix on another host, it should fail",
+			rawURL:     "https://account.blob.core.windows.net/backups/etcd.db",
+			restoreURL: "https://account.example.com/backups/etcd.db?sv=2023-11-03&se=2099-01-01T00:00:00Z&sig=secret",
+			wantErr:    true,
+		},
+		{
+			name:       "When an Azure restore URL has no SAS signature, it should fail",
+			rawURL:     "https://account.blob.core.windows.net/backups/etcd.db",
+			restoreURL: "https://account.blob.core.windows.net/backups/etcd.db",
+			wantErr:    true,
+		},
+		{
+			name:       "When a restore URL uses HTTP, it should fail",
+			rawURL:     "s3://backup-bucket/snapshots/etcd.db",
+			restoreURL: "http://backup-bucket.s3.amazonaws.com/snapshots/etcd.db?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=secret",
+			wantErr:    true,
+		},
+		{
+			name:       "When a snapshot URL has an unsupported scheme, it should fail",
+			rawURL:     "file:///tmp/etcd.db",
+			restoreURL: "https://example.com/etcd.db?sig=secret",
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateSnapshotRestoreURL(tt.rawURL, tt.restoreURL)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected URL validation to fail")
+				}
+				if strings.Contains(err.Error(), "secret") {
+					t.Fatalf("validation error exposed signed URL credentials: %s", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

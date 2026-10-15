@@ -160,6 +160,11 @@ func init() {
 		false,
 		filepath.Join(os.Getenv("HOME"), ".aws", "credentials"),
 	)
+	RegisterEnvVar(
+		"E2E_HYPERSHIFT_OADP_PLUGIN_IMAGE",
+		"Expected HyperShift OADP plugin image in the Velero pod for backup and restore tests.",
+		false,
+	)
 	RegisterEnvVarWithDefault(
 		"E2E_SERVICE_DOMAIN",
 		"Service domain used for custom DNS endpoint testing. Optional; test is skipped when empty.",
