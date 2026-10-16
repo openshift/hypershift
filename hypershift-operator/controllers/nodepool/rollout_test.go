@@ -78,8 +78,12 @@ func newRolloutFixture(t *testing.T, strategy hyperv1.UpgradeType) *rolloutFixtu
 			Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To(int32(3)), Template: *template.DeepCopy()},
 		},
 		ms: &capiv1.MachineSet{
-			ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{nodePoolAnnotationCurrentConfigVersion: token.Hash()}},
-			Spec:       capiv1.MachineSetSpec{Template: *template.DeepCopy()},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        nodePool.Name,
+				Namespace:   token.controlplaneNamespace,
+				Annotations: map[string]string{nodePoolAnnotationCurrentConfigVersion: token.Hash()},
+			},
+			Spec: capiv1.MachineSetSpec{Template: *template.DeepCopy()},
 		},
 		template: &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "template"}},
 	}
@@ -100,7 +104,7 @@ func (f *rolloutFixture) reconcile(t *testing.T) bool {
 	c.effectiveHash = ""
 	c.SetDeployedBootstrapHash(f.bootstrapHash())
 	NewWithT(t).Expect(c.Token.Reconcile(t.Context())).To(Succeed())
-	seedRolloutAnnotation(c.nodePool, c.RolloutHashWithoutVersion())
+	seedRolloutAnnotation(c.Token)
 	if c.nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
 		return c.propagateVersionAndTemplate(logr.Discard(), f.md, f.template)
 	}

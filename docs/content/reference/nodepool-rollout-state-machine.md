@@ -42,7 +42,7 @@ Four annotations on the NodePool track the rollout lifecycle:
 | **Current Config** | `hypershift.openshift.io/nodePoolCurrentConfig` | `reconcileMachineDeploymentStatus` / `reconcileMachineSetStatus` on rollout completion | Never (overwritten) |
 | **Current Config Version** | `hypershift.openshift.io/nodePoolCurrentConfigVersion` | Same as above; records the full `Hash()` of the completed payload | Never (overwritten) |
 | **Current Rollout Config** | `hypershift.openshift.io/nodePoolCurrentRolloutConfig` | `seedRolloutAnnotation` on first reconcile; status reconciliation on completion | Never (overwritten) |
-| **In-Progress Rollout Config** | `hypershift.openshift.io/nodePoolInProgressRolloutConfig` | `propagateVersionAndTemplate` when a change is propagated to the CAPI workload | Status reconciliation on rollout completion (`delete`) |
+| **In-Progress Rollout Config** | `hypershift.openshift.io/nodePoolInProgressRolloutConfig` | `seedRolloutAnnotation` when adopting an existing rollout; propagation when a CAPI workload write succeeds | Status reconciliation on rollout completion (`delete`) |
 
 ### Annotation Lifecycle
 
@@ -56,7 +56,7 @@ Four annotations on the NodePool track the rollout lifecycle:
 ```
 
 - On a **new NodePool**, no annotations exist. `isOutdated()` returns true and secrets are created. The rollout baseline is seeded during reconciliation; propagation records the in-progress target, and completion records the completed hashes and clears the in-progress annotation.
-- On **operator upgrade**, `seedRolloutAnnotation` writes `currentRolloutConfig` if absent. The completed config version is left to status reconciliation.
+- On **operator upgrade**, `seedRolloutAnnotation` writes `currentRolloutConfig` if absent. If the deployed bootstrap hash differs from the completed hash, it also records the adopted request in `inProgressRolloutConfig`. A later config or version request can then supersede that target, even before the adopted rollout completes. The completed config version is left to status reconciliation.
 - On a **spec-driven change**, `propagateVersionAndTemplate` writes `inProgressRolloutConfig` when it updates the CAPI workload.
 - On **completion**, status reconciliation updates all config annotations and deletes `inProgressRolloutConfig`.
 
@@ -147,7 +147,7 @@ When `outdated` is true and the deployed hash is absent or already matches `Hash
 - **Meaning**: Without an in-progress annotation, the deployed hash being ahead of completion is treated as an existing rollout target. This preserves the active bootstrap secrets when adopting a rollout started by an older operator. An empty completed hash also satisfies this condition when the deployed hash is present and differs from `Hash()`.
 
 !!! note
-    This decision depends on the absence of `inProgress`, not on the presence or absence of `currentRolloutConfig`. Seeding the completed rollout baseline alone does not rule out adoption.
+    This decision depends on the absence of `inProgress`, not on the presence or absence of `currentRolloutConfig`. When migration seeds the rollout baseline, it also records `inProgress` for an existing unfinished rollout so later requests are distinguishable from the adopted request.
 
 #### 6. ContinuedRollout
 
@@ -211,6 +211,8 @@ revertPending := inProgressRollout != "" && RolloutHash() != inProgressRollout
 When any of these is true, the workload is updated to point at the user-data secret named with `EffectiveHash()` (the output of `resolveEffectiveHash`). The `inProgressRolloutConfig` annotation is set to `RolloutHash()`.
 
 When none is true, the workload is not updated. Management-side-only changes do not propagate.
+
+`reconcileWorkload` retains NodePool annotation and status changes only when the CAPI workload write succeeds. If the write fails, it restores the NodePool state from before the mutation. This matters because the main reconciler still patches the NodePool on errors: persisting an unpropagated in-progress target would make a version upgrade retry maintain the old bootstrap payload.
 
 ### Status Reconciliation
 

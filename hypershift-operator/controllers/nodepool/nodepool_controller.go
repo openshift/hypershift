@@ -477,7 +477,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
-	seedRolloutAnnotation(nodePool, token.RolloutHashWithoutVersion())
+	seedRolloutAnnotation(token)
 
 	// non automated infrastructure should not have any machine level cluster-api components
 	if !isAutomatedMachineManagement(nodePool) {
@@ -984,8 +984,10 @@ func MachineDeploymentComplete(deployment *capiv1.MachineDeployment, machineSets
 // completion), and pre-upgrade config changes are absorbed into the baseline
 // as the documented migration policy. The completed hash is left for CAPI
 // status reconciliation: a workload template can match the desired hash
-// before its rollout completes.
-func seedRolloutAnnotation(nodePool *hyperv1.NodePool, rolloutHashWithoutVersion string) {
+// before its rollout completes. An existing rollout also needs an in-progress
+// marker so subsequent requests can supersede the adopted target.
+func seedRolloutAnnotation(token *Token) {
+	nodePool := token.nodePool
 	if _, ok := nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]; ok {
 		return
 	}
@@ -998,7 +1000,15 @@ func seedRolloutAnnotation(nodePool *hyperv1.NodePool, rolloutHashWithoutVersion
 	// are absorbed into the baseline because an opaque full-hash comparison
 	// cannot distinguish user config changes from management-only drift.
 	// Once seeded, the standard rollout-hash comparison detects future changes.
-	nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = rolloutHashWithoutVersion
+	nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = token.RolloutHashWithoutVersion()
+
+	completedHash := nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+	if token.deployedBootstrapHash != "" && token.deployedBootstrapHash != completedHash && nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] == "" {
+		// The deployed target predates this operator and has not completed.
+		// Record the request we adopted now: without this marker, a later
+		// spec change would be mistaken for another adoption of the old payload.
+		nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = token.RolloutHash()
+	}
 }
 
 // extractHashFromSecretName extracts the config hash from a user-data secret

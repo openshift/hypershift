@@ -137,7 +137,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
 		ms := c.machineSet()
-		if result, err := controllerutil.CreateOrPatch(ctx, c.Client, ms, func() error {
+		if result, err := c.reconcileWorkload(ctx, ms, func() error {
 			return c.reconcileMachineSet(
 				ctx,
 				ms,
@@ -152,7 +152,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
 		md := c.machineDeployment()
-		if result, err := controllerutil.CreateOrPatch(ctx, c.Client, md, func() error {
+		if result, err := c.reconcileWorkload(ctx, md, func() error {
 			return c.reconcileMachineDeployment(
 				ctx,
 				log,
@@ -244,6 +244,20 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// reconcileWorkload keeps NodePool rollout tracking consistent with the workload
+// write. The mutation can advance or clear rollout annotations and status, and
+// the main reconciler patches the NodePool even when CAPI reconciliation fails.
+// Restore those mutations on failure so a retry cannot treat an unpropagated
+// target as an active or completed rollout.
+func (c *CAPI) reconcileWorkload(ctx context.Context, workload client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+	originalNodePool := c.nodePool.DeepCopy()
+	result, err := controllerutil.CreateOrPatch(ctx, c.Client, workload, mutate)
+	if err != nil {
+		*c.nodePool = *originalNodePool
+	}
+	return result, err
 }
 
 func (c *CAPI) cleanupMachineTemplates(ctx context.Context, log logr.Logger, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
