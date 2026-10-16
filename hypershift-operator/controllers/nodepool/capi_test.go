@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/upsert"
 
+	configv1 "github.com/openshift/api/config/v1"
 	imageapi "github.com/openshift/api/image/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -2925,14 +2926,16 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 
 func TestPropagateVersionAndTemplate(t *testing.T) {
 	testCases := []struct {
-		name                 string
-		currentBootstrapName string
-		currentVersion       string
-		templateName         string
-		currentInfraRefName  string
-		useDifferentUserData bool
-		expectedUpdating     bool
-		expectedInfraRefName string
+		name                    string
+		currentBootstrapName    string
+		currentVersion          string
+		templateName            string
+		currentInfraRefName     string
+		useDifferentUserData    bool
+		skipUserDataPropagation bool
+		configHashOutcome       configHashReconcileOutcome
+		expectedUpdating        bool
+		expectedInfraRefName    string
 	}{
 		{
 			name:                 "When user data secret name differs from current bootstrap, it should propagate version and return true",
@@ -2943,6 +2946,28 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 			useDifferentUserData: true,
 			expectedUpdating:     true,
 			expectedInfraRefName: "template-1",
+		},
+		{
+			name:                 "When user data secret name differs but config hash version migrated this reconcile, it should skip propagation",
+			currentBootstrapName: "user-data-test-np-legacyhash",
+			currentVersion:       "4.16.0",
+			templateName:         "template-1",
+			currentInfraRefName:  "template-1",
+			useDifferentUserData: true,
+			configHashOutcome:    configHashReconcileOutcome{VersionMigrated: true},
+			expectedUpdating:     false,
+			expectedInfraRefName: "template-1",
+		},
+		{
+			name:                    "When user data secret name differs but config and version annotations already match target, it should skip propagation",
+			currentBootstrapName:    "user-data-test-np-legacyhash",
+			currentVersion:          "4.17.0",
+			templateName:            "template-1",
+			currentInfraRefName:     "template-1",
+			useDifferentUserData:    true,
+			skipUserDataPropagation: true,
+			expectedUpdating:        false,
+			expectedInfraRefName:    "template-1",
 		},
 		{
 			name:                 "When machine template name differs from infra ref, it should propagate template and return true",
@@ -2987,7 +3012,20 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 
 			capi := &CAPI{
 				Token: &Token{
+					CreateOrUpdateProvider: upsert.New(false),
+					cpoCapabilities:        &CPOCapabilities{DecompressAndDecodeConfig: true},
+					userData: &userData{
+						ignitionServerEndpoint: "ignition.example.com",
+						proxy:                  &configv1.Proxy{},
+					},
 					ConfigGenerator: &ConfigGenerator{
+						Client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+						hostedCluster: &hyperv1.HostedCluster{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "test-hc",
+								Namespace: "test-ns",
+							},
+						},
 						nodePool:              nodePool,
 						controlplaneNamespace: "cp-ns",
 						rolloutConfig: &rolloutConfig{
@@ -3005,6 +3043,14 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 
 			// Compute the actual UserDataSecret name from the CAPI struct.
 			computedUserDataName := capi.UserDataSecret().Name
+
+			if tc.skipUserDataPropagation {
+				nodePool.Annotations = map[string]string{
+					nodePoolAnnotationCurrentConfig: capi.HashWithoutVersion(),
+				}
+			}
+
+			capi.SetConfigHashReconcileOutcome(tc.configHashOutcome)
 
 			// If the test wants the current bootstrap to match, use the computed name.
 			bootstrapName := tc.currentBootstrapName
@@ -3034,7 +3080,8 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 				},
 			}
 
-			result := capi.propagateVersionAndTemplate(logr.Discard(), md, templateCR)
+			result, err := capi.propagateVersionAndTemplate(t.Context(), logr.Discard(), md, templateCR)
+			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expectedUpdating))
 			g.Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(tc.expectedInfraRefName))
 
@@ -3043,8 +3090,84 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 				g.Expect(*md.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(computedUserDataName))
 				g.Expect(md.Spec.Template.Spec.Version).To(Equal("4.17.0"))
 			}
+			if tc.skipUserDataPropagation {
+				g.Expect(*md.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(bootstrapName))
+				g.Expect(md.Spec.Template.Spec.Version).To(Equal(tc.currentVersion))
+			}
 		})
 	}
+}
+
+func TestPropagateMachineSetSkipsUserDataSecretPropagation(t *testing.T) {
+	g := NewWithT(t)
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-np",
+			Namespace: "test-ns",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			Management: hyperv1.NodePoolManagement{
+				UpgradeType: hyperv1.UpgradeTypeInPlace,
+			},
+		},
+	}
+
+	capi := &CAPI{
+		Token: &Token{
+			ConfigGenerator: &ConfigGenerator{
+				nodePool:              nodePool,
+				controlplaneNamespace: "cp-ns",
+				rolloutConfig: &rolloutConfig{
+					releaseImage: &releaseinfo.ReleaseImage{
+						ImageStream: &imageapi.ImageStream{
+							ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
+						},
+					},
+				},
+			},
+		},
+	}
+	capi.SetConfigHashReconcileOutcome(configHashReconcileOutcome{})
+
+	targetConfigHash := capi.HashWithoutVersion()
+	targetVersion := capi.Version()
+	nodePool.Annotations = map[string]string{
+		nodePoolAnnotationCurrentConfig: targetConfigHash,
+	}
+
+	oldBootstrap := "user-data-test-np-legacyhash"
+	machineSet := &capiv1.MachineSet{
+		Spec: capiv1.MachineSetSpec{
+			Template: capiv1.MachineTemplateSpec{
+				Spec: capiv1.MachineSpec{
+					Bootstrap: capiv1.Bootstrap{
+						DataSecretName: ptr.To(oldBootstrap),
+					},
+					Version: targetVersion,
+				},
+			},
+		},
+	}
+
+	userDataSecret := capi.UserDataSecret()
+	g.Expect(userDataSecret.Name).NotTo(Equal(oldBootstrap))
+
+	isUpdating := false
+	currentTemplateVersion := machineSet.Spec.Template.Spec.Version
+	if userDataSecret.Name != ptr.Deref(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
+		if capi.skipUserDataSecretPropagation(targetConfigHash, targetVersion, currentTemplateVersion) {
+			// Mirrors reconcileMachineSet skip branch.
+		} else {
+			machineSet.Spec.Template.Spec.Version = targetVersion
+			machineSet.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(userDataSecret.Name)
+			isUpdating = true
+		}
+	}
+
+	g.Expect(isUpdating).To(BeFalse())
+	g.Expect(*machineSet.Spec.Template.Spec.Bootstrap.DataSecretName).To(Equal(oldBootstrap))
+	g.Expect(machineSet.Spec.Template.Spec.Version).To(Equal(targetVersion))
 }
 
 func TestReconcileMachineDeploymentStatus(t *testing.T) {

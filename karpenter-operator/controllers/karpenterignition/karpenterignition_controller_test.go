@@ -221,15 +221,17 @@ kind: Config`),
 		WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
 		Build()
 
+	recordingProvider := &recordingCPOImageProvider{FakeRegistryClientImageMetadataProvider: *fakeImageMetadataProvider}
 	r := &KarpenterIgnitionReconciler{
-		ManagementClient:        fakeManagementClient,
-		GuestClient:             fakeGuestClient,
-		ReleaseProvider:         mockedReleaseProvider,
-		VersionResolver:         &fakeVersionResolver{},
-		ImageMetadataProvider:   fakeImageMetadataProvider,
-		HypershiftOperatorImage: "test-hypershift-operator-image",
-		IgnitionEndpoint:        testIgnitionEndpoint,
-		Namespace:               testNamespace,
+		ManagementClient:          fakeManagementClient,
+		GuestClient:               fakeGuestClient,
+		ReleaseProvider:           mockedReleaseProvider,
+		VersionResolver:           &fakeVersionResolver{},
+		ImageMetadataProvider:     recordingProvider,
+		HypershiftOperatorImage:   "test-hypershift-operator-image",
+		ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+		IgnitionEndpoint:          testIgnitionEndpoint,
+		Namespace:                 testNamespace,
 	}
 
 	ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -239,6 +241,7 @@ kind: Config`),
 		NamespacedName: client.ObjectKey{Name: testNodeClassName},
 	})
 	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(recordingProvider.image).To(Equal(r.ControlPlaneOperatorImage), "capability detection must inspect the running CPO, not the release image")
 
 	expectedNodePoolName := karpenterutil.KarpenterNodePoolName(nodeClass)
 	tokenPrefix := "token-" + expectedNodePoolName + "-"
@@ -535,14 +538,15 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			ReleaseProvider:           mockedReleaseProvider,
+			VersionResolver:           resolver,
+			ImageMetadataProvider:     fakeImageMetadataProvider,
+			HypershiftOperatorImage:   "test-hypershift-operator-image",
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			IgnitionEndpoint:          testIgnitionEndpoint,
+			Namespace:                 testNamespace,
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -580,14 +584,15 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			ReleaseProvider:           mockedReleaseProvider,
+			VersionResolver:           resolver,
+			ImageMetadataProvider:     fakeImageMetadataProvider,
+			HypershiftOperatorImage:   "test-hypershift-operator-image",
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			IgnitionEndpoint:          testIgnitionEndpoint,
+			Namespace:                 testNamespace,
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -626,14 +631,15 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			ReleaseProvider:           mockedReleaseProvider,
+			VersionResolver:           resolver,
+			ImageMetadataProvider:     fakeImageMetadataProvider,
+			HypershiftOperatorImage:   "test-hypershift-operator-image",
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			IgnitionEndpoint:          testIgnitionEndpoint,
+			Namespace:                 testNamespace,
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -686,14 +692,15 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			ReleaseProvider:           mockedReleaseProvider,
+			VersionResolver:           resolver,
+			ImageMetadataProvider:     fakeImageMetadataProvider,
+			HypershiftOperatorImage:   "test-hypershift-operator-image",
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			IgnitionEndpoint:          testIgnitionEndpoint,
+			Namespace:                 testNamespace,
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -1748,15 +1755,16 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         &fakeVersionResolver{},
-			ImageMetadataProvider:   fakeImgProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
-			CreateOrUpdateProvider:  upsert.New(false),
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			ReleaseProvider:           mockedReleaseProvider,
+			VersionResolver:           &fakeVersionResolver{},
+			ImageMetadataProvider:     fakeImgProvider,
+			HypershiftOperatorImage:   "test-hypershift-operator-image",
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			IgnitionEndpoint:          testIgnitionEndpoint,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 		return r, fakeGuestClient
 	}

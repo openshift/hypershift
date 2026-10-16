@@ -14,7 +14,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -52,14 +55,7 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 	log = log.WithValues("nodePool", nodePoolName)
 
 	// only handle secret types that we know about explicitly
-	shouldHandle := false
-	for _, prefix := range []string{TokenSecretPrefix, UserDataSecrePrefix} {
-		if strings.HasPrefix(secret.Name, prefix) {
-			shouldHandle = true
-			break
-		}
-	}
-	if !shouldHandle {
+	if !isNodePoolManagedBootstrapSecret(secret.Name) {
 		return ctrl.Result{}, nil
 	}
 
@@ -170,12 +166,84 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		}
 	}
 
+	// After a trust-bundle hash-formula migration, MachineDeployment/MachineSet may still
+	// reference the previous user-data/token Secret names while annotations already use the
+	// content-based hash. Keep those live bootstrap Secrets until a real config change moves
+	// DataSecretName forward.
+	isLiveBootstrap, err := r.isLiveBootstrapSecret(ctx, nodePool, hcluster, secret.Name)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if isLiveBootstrap {
+		valid = true
+	}
+
 	if valid {
 		return ctrl.Result{}, nil
 	}
 
 	log.WithValues("options", names, "valid", valid).Info("removing secret as it does not match the expected set of names")
 	return ctrl.Result{}, cleanup(ctx, r.Client, secret)
+}
+
+func isNodePoolManagedBootstrapSecret(name string) bool {
+	return strings.HasPrefix(name, TokenSecretPrefix) || strings.HasPrefix(name, UserDataSecrePrefix)
+}
+
+func (r *secretJanitor) isLiveBootstrapSecret(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, secretName string) (bool, error) {
+	liveUserData, liveToken, err := r.liveBootstrapSecretNames(ctx, nodePool, hcluster)
+	if err != nil {
+		return false, err
+	}
+	return secretName == liveUserData || secretName == liveToken, nil
+}
+
+// liveBootstrapSecretNames returns the user-data Secret and corresponding token Secret currently
+// referenced by the NodePool's MachineDeployment or MachineSet bootstrap config.
+func (r *secretJanitor) liveBootstrapSecretNames(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (userDataName, tokenName string, err error) {
+	ns := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	var liveUserData string
+	switch nodePool.Spec.Management.UpgradeType {
+	case hyperv1.UpgradeTypeInPlace:
+		ms := &capiv1.MachineSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nodePool.GetName(),
+				Namespace: ns,
+			},
+		}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(ms), ms); err != nil {
+			if apierrors.IsNotFound(err) {
+				return "", "", nil
+			}
+			return "", "", err
+		}
+		liveUserData = ptr.Deref(ms.Spec.Template.Spec.Bootstrap.DataSecretName, "")
+	default:
+		md := &capiv1.MachineDeployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nodePool.GetName(),
+				Namespace: ns,
+			},
+		}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(md), md); err != nil {
+			if apierrors.IsNotFound(err) {
+				return "", "", nil
+			}
+			return "", "", err
+		}
+		liveUserData = ptr.Deref(md.Spec.Template.Spec.Bootstrap.DataSecretName, "")
+	}
+	if liveUserData == "" {
+		return "", "", nil
+	}
+	if !strings.HasPrefix(liveUserData, UserDataSecrePrefix) {
+		// Unexpected bootstrap Secret name; do not invent a token Secret name via TrimPrefix.
+		ctrl.LoggerFrom(ctx).Info("Unexpected bootstrap Secret name without user-data prefix; skipping token name derivation",
+			"userDataSecret", liveUserData,
+			"nodePool", client.ObjectKeyFromObject(nodePool))
+		return liveUserData, "", nil
+	}
+	return liveUserData, TokenSecretPrefix + strings.TrimPrefix(liveUserData, UserDataSecrePrefix), nil
 }
 
 // shouldKeepOldUserData determines if the old user data should be kept.
