@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
@@ -51,8 +51,8 @@ func New(payloadVersion *semver.Version) *Agent {
 
 func (p Agent) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
-
+	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint,
+) (client.Object, error) {
 	// Ensure we create the agentCluster only after ignition endpoint exists
 	// so AgentClusterInstall is only created with the right ign to boot machines.
 	// https://bugzilla.redhat.com/show_bug.cgi?id=2097895
@@ -238,7 +238,8 @@ func ReconcileCAPIProviderRole(ctx context.Context, c client.Client, createOrUpd
 
 func (Agent) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+	controlPlaneNamespace string,
+) error {
 	return nil
 }
 
@@ -266,9 +267,10 @@ func reconcileAgentCluster(agentCluster *agentv1.AgentCluster, ignEndpoint, cont
 	caSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)
 	agentCluster.Spec.IgnitionEndpoint = &agentv1.IgnitionEndpoint{
 		Url:                    "https://" + ignEndpoint + "/ignition",
-		CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace}}
+		CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace},
+	}
 
-	agentCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
+	agentCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}

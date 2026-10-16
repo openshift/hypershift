@@ -22,15 +22,6 @@ func RootCASecret(ns string) *corev1.Secret { return secretFor(ns, "root-ca") }
 
 func CSRSignerCASecret(ns string) *corev1.Secret { return secretFor(ns, "cluster-signer-ca") }
 
-func KASExternalCAConfigMap(name string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: "openshift-config",
-		},
-	}
-}
-
 func RootCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -109,15 +100,6 @@ func KonnectivityCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "konnectivity-ca-bundle",
-			Namespace: ns,
-		},
-	}
-}
-
-func OIDCCAConfigMap(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "oidc-ca",
 			Namespace: ns,
 		},
 	}
@@ -314,6 +296,22 @@ func KonnectivitySignerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "konnectivity-signer")
 }
 
+func KonnectivityServerServingSignerSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "konnectivity-server-serving-signer")
+}
+
+func KonnectivityClusterServingSignerSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "konnectivity-cluster-serving-signer")
+}
+
+func KonnectivityServerAuthSignerSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "konnectivity-server-auth-signer")
+}
+
+func KonnectivityClientAuthSignerSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "konnectivity-client-auth-signer")
+}
+
 func KonnectivityServerSecret(ns string) *corev1.Secret { return secretFor(ns, "konnectivity-server") }
 
 func KonnectivityClusterSecret(ns string) *corev1.Secret {
@@ -384,6 +382,10 @@ func AzureWorkloadIdentityWebhookServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "azure-workload-identity-webhook-serving-cert")
 }
 
+func GCPWorkloadIdentityFederationWebhookServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "gcp-workload-identity-federation-webhook-serving-cert")
+}
+
 func AzureDiskCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "azure-disk-csi-driver-controller-metrics-serving-cert")
 }
@@ -398,6 +400,14 @@ func AWSEBSCsiDriverOperatorServingCert(ns string) *corev1.Secret {
 
 func AWSEBSCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "aws-ebs-csi-driver-controller-metrics-serving-cert")
+}
+
+func GCPPDCsiDriverOperatorServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "gcp-pd-csi-driver-operator-serving-cert")
+}
+
+func GCPPDCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "gcp-pd-csi-driver-controller-metrics-serving-cert")
 }
 
 func MultusAdmissionControllerServingCert(ns string) *corev1.Secret {

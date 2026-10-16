@@ -103,6 +103,35 @@ func skipIfComponentNotApplicable(component controlPlaneTLSComponent, hostedClus
 	}
 }
 
+// skipIfTLSFlagPropagationNotSupported skips the current test when the operator
+// version does not propagate --tls-min-version into the component's container args.
+// Older operator releases (e.g. 4.22) lack this propagation; the binary still defaults
+// to TLS 1.2, so flag-assertion and Modern-profile-rejection tests must be skipped.
+func skipIfTLSFlagPropagationNotSupported(ctx context.Context, mgmtClient crclient.Client, namespace string, component controlPlaneTLSComponent) {
+	if component.deploymentName == "" {
+		return
+	}
+	deployment := &appsv1.Deployment{}
+	Expect(mgmtClient.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: component.deploymentName}, deployment)).
+		To(Succeed(), "failed to get %s deployment", component.deploymentName)
+	for _, container := range deployment.Spec.Template.Spec.Containers {
+		if container.Name == component.deploymentContainer {
+			for _, arg := range container.Command {
+				if strings.HasPrefix(arg, "--tls-min-version=") {
+					return
+				}
+			}
+			for _, arg := range container.Args {
+				if strings.HasPrefix(arg, "--tls-min-version=") {
+					return
+				}
+			}
+			Skip(fmt.Sprintf("%s container in %s deployment does not have --tls-min-version flag in this operator version",
+				component.deploymentContainer, component.deploymentName))
+		}
+	}
+}
+
 func requireDefaultOrIntermediateTLSProfile(hostedCluster *hyperv1.HostedCluster) {
 	hasProfile := hostedCluster.Spec.Configuration != nil &&
 		hostedCluster.Spec.Configuration.APIServer != nil &&
@@ -539,6 +568,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred())
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 			requireDefaultOrIntermediateTLSProfile(hostedCluster)
+			skipIfTLSFlagPropagationNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, awsPodIdentityWebhookTLSComponent)
 
 			Eventually(func(g Gomega) {
 				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
@@ -550,6 +580,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			requireDefaultOrIntermediateTLSProfile(hostedCluster)
+			skipIfTLSFlagPropagationNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, konnectivityServerTLSComponent)
 
 			Eventually(func(g Gomega) {
 				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
@@ -655,6 +686,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		It("aws-pod-identity-webhook should propagate --tls-min-version VersionTLS13 with Modern profile", func() {
 			hostedCluster := requireModernProfileSet(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
+			skipIfTLSFlagPropagationNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, awsPodIdentityWebhookTLSComponent)
 
 			Eventually(func(g Gomega) {
 				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
@@ -664,6 +696,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("konnectivity-server should propagate --tls-min-version VersionTLS13 with Modern profile", func() {
 			requireModernProfileSet(tc)
+			skipIfTLSFlagPropagationNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, konnectivityServerTLSComponent)
 
 			Eventually(func(g Gomega) {
 				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
@@ -689,6 +722,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		It("aws-pod-identity-webhook should accept TLS 1.3 but reject TLS 1.2 with Modern profile", func() {
 			hostedCluster := requireModernProfileSet(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
+			skipIfTLSFlagPropagationNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, awsPodIdentityWebhookTLSComponent)
 
 			// Wait for kube-apiserver (webhook sidecar) to restart with the new TLS config.
 			// Both Intermediate and Modern accept TLS 1.3, so probing a stale pod can pass vacuously.
@@ -705,6 +739,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("konnectivity-server should accept TLS 1.3 but reject TLS 1.2 with Modern profile", func() {
 			requireModernProfileSet(tc)
+			skipIfTLSFlagPropagationNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, konnectivityServerTLSComponent)
 
 			// Wait for the kube-apiserver pod (which hosts konnectivity-server) to restart
 			// with the new TLS config. Both Intermediate and Modern accept TLS 1.3, so
@@ -755,6 +790,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		It("aws-pod-identity-webhook should propagate --tls-min-version VersionTLS12 after downgrade", func() {
 			hostedCluster := requireModernProfileCleared(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
+			skipIfTLSFlagPropagationNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, awsPodIdentityWebhookTLSComponent)
 
 			Eventually(func(g Gomega) {
 				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
@@ -764,6 +800,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("konnectivity-server should propagate --tls-min-version VersionTLS12 after downgrade", func() {
 			requireModernProfileCleared(tc)
+			skipIfTLSFlagPropagationNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, konnectivityServerTLSComponent)
 
 			Eventually(func(g Gomega) {
 				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,

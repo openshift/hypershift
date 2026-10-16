@@ -60,18 +60,20 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 			// Azure KMS is not configured
 			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
 		} else if netutil.IsAroHCPByHC(hostedCluster) && hostedCluster.Spec.SecretEncryption.KMS.Azure.KeyVaultAccess == hyperv1.AzureKeyVaultPrivate {
-			// CPO cannot validate a private Key Vault from the management cluster;
-			// access is verified at runtime through the private router.
+			// CPO cannot validate a private Key Vault from the management cluster.
 			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
 		} else {
 			conditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionTrue
 		}
 	case hyperv1.GCPPlatform:
-		// GCP Workload Identity Federation validation - always required
-		conditions[hyperv1.ValidGCPWorkloadIdentity] = metav1.ConditionTrue
-
-		// GCP credentials validation - indicates WIF readiness
-		conditions[hyperv1.ValidGCPCredentials] = metav1.ConditionTrue
+		// Only a known unsupported version relaxes runtime validation. An
+		// undetermined version must not make an unvalidated cluster healthy.
+		expected := metav1.ConditionTrue
+		if supported, known := SupportsGCPRuntimeCredentialValidation(hostedCluster.Status.ControlPlaneVersion.Desired.Version); known && !supported {
+			expected = metav1.ConditionUnknown
+		}
+		conditions[hyperv1.ValidGCPWorkloadIdentity] = expected
+		conditions[hyperv1.ValidGCPCredentials] = expected
 
 		// GCP Private Service Connect conditions - both GCP endpoint access modes
 		// (Private and PublicAndPrivate) use PSC, so no EndpointAccess gate is needed.

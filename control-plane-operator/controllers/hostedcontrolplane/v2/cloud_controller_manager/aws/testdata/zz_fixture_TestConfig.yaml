@@ -3,6 +3,7 @@ data:
   aws.conf: |-
     [Global]
     Zone = my-zone
+    Region = my-region
     VPC = my-vpc
     KubernetesClusterID = my-infra-ID
     SubnetID = my-subnet-ID

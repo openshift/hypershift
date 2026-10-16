@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	pkgscheduler "github.com/openshift/hypershift/pkg/scheduler"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -89,7 +90,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
-							GoMemLimitLabel: "4096",
+							pkgscheduler.GoMemLimitLabel: "4096",
 						},
 					},
 				},

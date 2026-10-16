@@ -10,10 +10,11 @@ import (
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	schedulerutil "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/util"
+	pkgscheduler "github.com/openshift/hypershift/pkg/scheduler"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -37,12 +38,9 @@ import (
 )
 
 const (
-	ControlPlaneTaint                 = "hypershift.openshift.io/control-plane"
-	ControlPlaneServingComponentTaint = "hypershift.openshift.io/request-serving-component"
-	HostedClusterTaint                = "hypershift.openshift.io/cluster"
+	HostedClusterTaint = "hypershift.openshift.io/cluster"
 
 	ControlPlaneServingComponentLabel = "hypershift.openshift.io/request-serving-component"
-	OSDFleetManagerPairedNodesLabel   = "osd-fleet-manager.openshift.io/paired-nodes"
 	HostedClusterNameLabel            = "hypershift.openshift.io/cluster-name"
 	HostedClusterNamespaceLabel       = "hypershift.openshift.io/cluster-namespace"
 
@@ -134,7 +132,7 @@ func (r *DedicatedServingComponentScheduler) SetupWithManager(mgr ctrl.Manager, 
 
 	r.createOrUpdate = createOrUpdateProvider.CreateOrUpdate
 	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}, builder.WithPredicates(util.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		For(&hyperv1.HostedCluster{}, builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
@@ -256,7 +254,7 @@ func isNodePairedWith(candidate *corev1.Node, existing map[string]*corev1.Node) 
 		return true
 	}
 	for _, n := range existing {
-		if n.Labels[OSDFleetManagerPairedNodesLabel] == candidate.Labels[OSDFleetManagerPairedNodesLabel] {
+		if n.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel] == candidate.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel] {
 			return true
 		}
 	}
@@ -303,16 +301,16 @@ func (r *DedicatedServingComponentScheduler) updateHostedClusterAnnotations(ctx 
 	lbSubnets := ""
 	pairLabel := ""
 	for _, node := range nodesToUse {
-		if node.Labels[schedulerutil.GoMemLimitLabel] != "" && nodeGoMemLimit == "" {
-			nodeGoMemLimit = node.Labels[schedulerutil.GoMemLimitLabel]
+		if node.Labels[pkgscheduler.GoMemLimitLabel] != "" && nodeGoMemLimit == "" {
+			nodeGoMemLimit = node.Labels[pkgscheduler.GoMemLimitLabel]
 		}
 		if node.Labels[schedulerutil.LBSubnetsLabel] != "" && lbSubnets == "" {
 			lbSubnets = node.Labels[schedulerutil.LBSubnetsLabel]
 			// If subnets are separated by periods, replace them with commas
 			lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
 		}
-		if node.Labels[OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
-			pairLabel = node.Labels[OSDFleetManagerPairedNodesLabel]
+		if node.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
+			pairLabel = node.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel]
 		}
 	}
 
@@ -327,7 +325,7 @@ func (r *DedicatedServingComponentScheduler) updateHostedClusterAnnotations(ctx 
 	}
 	if pairLabel != "" {
 		hcluster.Annotations[hyperv1.AWSLoadBalancerTargetNodesAnnotation] =
-			fmt.Sprintf("%s=%s", OSDFleetManagerPairedNodesLabel, pairLabel)
+			fmt.Sprintf("%s=%s", pkgscheduler.OSDFleetManagerPairedNodesLabel, pairLabel)
 	}
 	if err := r.Patch(ctx, hcluster, client.MergeFrom(originalHcluster)); err != nil {
 		return fmt.Errorf("failed to update hostedcluster annotation: %w", err)
@@ -393,14 +391,14 @@ func (r *DedicatedServingComponentSchedulerAndSizer) filterNodeEvents(ctx contex
 	}
 	if _, hasHCLabel := node.Labels[hyperv1.HostedClusterLabel]; !hasHCLabel {
 		// If a node is labeled with RequestServingComponentLabel, but not with HostedClusterLabel, check for
-		// its paired node by the OSDFleetManagerPairedNodesLabel. It could be that a hostedcluster has
+		// its paired node by the pkgscheduler.OSDFleetManagerPairedNodesLabel. It could be that a hostedcluster has
 		// previously been scheduled to this pair of nodes, but a node was recreated for some reason.
-		pairLabel, isOSDFleetManagedPaired := node.Labels[OSDFleetManagerPairedNodesLabel]
+		pairLabel, isOSDFleetManagedPaired := node.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel]
 		if !isOSDFleetManagedPaired {
 			return nil
 		}
 		otherReqServingNodes := &corev1.NodeList{}
-		if err := r.List(ctx, otherReqServingNodes, client.MatchingLabels{OSDFleetManagerPairedNodesLabel: pairLabel}); err != nil {
+		if err := r.List(ctx, otherReqServingNodes, client.MatchingLabels{pkgscheduler.OSDFleetManagerPairedNodesLabel: pairLabel}); err != nil {
 			return nil
 		}
 
@@ -462,7 +460,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) Reconcile(ctx context.Conte
 		return ctrl.Result{}, nil
 	}
 
-	isPaused, duration, err := util.ProcessPausedUntilField(hc.Spec.PausedUntil, time.Now())
+	isPaused, duration, err := reconcilerpolicy.ProcessPausedUntilField(hc.Spec.PausedUntil, time.Now())
 	if err != nil {
 		log.Error(err, "error processing hosted cluster paused field")
 		return ctrl.Result{}, nil
@@ -557,10 +555,10 @@ func (r *DedicatedServingComponentSchedulerAndSizer) classifyDedicatedNodes(ctx 
 			continue
 		}
 		if node.Labels[hyperv1.HostedClusterLabel] == clusterKey(hc) {
-			if node.Labels[OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
-				pairLabel = node.Labels[OSDFleetManagerPairedNodesLabel]
+			if node.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
+				pairLabel = node.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel]
 			}
-			if node.Labels[hyperv1.NodeSizeLabel] == desiredSize && pairLabel != "" && node.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel && node.DeletionTimestamp.IsZero() {
+			if node.Labels[hyperv1.NodeSizeLabel] == desiredSize && pairLabel != "" && node.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel] == pairLabel && node.DeletionTimestamp.IsZero() {
 				goalNodes = append(goalNodes, node)
 			}
 		} else if node.Labels[hyperv1.HostedClusterLabel] == "" {
@@ -578,7 +576,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) backfillOrClaimNodes(ctx co
 		}
 		var needClusterLabel []corev1.Node
 		for _, node := range availableNodes {
-			if node.Labels[hyperv1.NodeSizeLabel] == desiredSize && node.Labels[OSDFleetManagerPairedNodesLabel] == pairLabel {
+			if node.Labels[hyperv1.NodeSizeLabel] == desiredSize && node.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel] == pairLabel {
 				needClusterLabel = append(needClusterLabel, node)
 			}
 		}
@@ -621,7 +619,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) claimPlaceholderNodes(ctx c
 	if len(candidateNodes) == 0 {
 		return ctrl.Result{}, false, nil
 	}
-	pairLabel := candidateNodes[0].Labels[OSDFleetManagerPairedNodesLabel]
+	pairLabel := candidateNodes[0].Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel]
 	if pairLabel == "" {
 		return ctrl.Result{}, true, fmt.Errorf("node %s has no pair label", candidateNodes[0].Name)
 	}
@@ -698,7 +696,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) deployAndLabelPlaceholderNo
 
 func (r *DedicatedServingComponentSchedulerAndSizer) resolvePairLabelFromNodes(nodes []corev1.Node) (string, error) {
 	if len(nodes) > 0 {
-		pairLabel := nodes[0].Labels[OSDFleetManagerPairedNodesLabel]
+		pairLabel := nodes[0].Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel]
 		if pairLabel == "" {
 			return "", fmt.Errorf("node %s has no fleetmanager pair label", nodes[0].Name)
 		}
@@ -828,12 +826,12 @@ func (r *DedicatedServingComponentSchedulerAndSizer) deletePlaceholderDeployment
 
 func (r *DedicatedServingComponentSchedulerAndSizer) takenNodePairLabels(ctx context.Context) ([]string, error) {
 	nodes := &corev1.NodeList{}
-	if err := r.List(ctx, nodes, client.HasLabels{hyperv1.HostedClusterLabel, OSDFleetManagerPairedNodesLabel}); err != nil {
+	if err := r.List(ctx, nodes, client.HasLabels{hyperv1.HostedClusterLabel, pkgscheduler.OSDFleetManagerPairedNodesLabel}); err != nil {
 		return nil, fmt.Errorf("failed to list nodes: %w", err)
 	}
 	result := sets.New[string]()
 	for _, node := range nodes.Items {
-		labelValue := node.Labels[OSDFleetManagerPairedNodesLabel]
+		labelValue := node.Labels[pkgscheduler.OSDFleetManagerPairedNodesLabel]
 		result.Insert(labelValue)
 	}
 	return sets.List(result), nil
@@ -855,7 +853,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensurePlaceholderDeployment
 	deployment.Labels[HostedClusterNamespaceLabel] = hc.Namespace
 
 	if pairLabel != "" {
-		nodeSelector[OSDFleetManagerPairedNodesLabel] = pairLabel
+		nodeSelector[pkgscheduler.OSDFleetManagerPairedNodesLabel] = pairLabel
 	} else {
 		unavailableNodePairs, err := r.takenNodePairLabels(ctx)
 		if err != nil {
@@ -869,7 +867,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensurePlaceholderDeployment
 							PlaceholderLabel: deployment.Name,
 						},
 					},
-					TopologyKey: OSDFleetManagerPairedNodesLabel,
+					TopologyKey: pkgscheduler.OSDFleetManagerPairedNodesLabel,
 				},
 			},
 		}
@@ -880,7 +878,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensurePlaceholderDeployment
 						{
 							MatchExpressions: []corev1.NodeSelectorRequirement{
 								{
-									Key:      OSDFleetManagerPairedNodesLabel,
+									Key:      pkgscheduler.OSDFleetManagerPairedNodesLabel,
 									Operator: corev1.NodeSelectorOpNotIn,
 									Values:   unavailableNodePairs,
 								},
@@ -923,7 +921,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensurePlaceholderDeployment
 						},
 					},
 				},
-				TopologyKey: OSDFleetManagerPairedNodesLabel,
+				TopologyKey: pkgscheduler.OSDFleetManagerPairedNodesLabel,
 			},
 		},
 	}
@@ -952,13 +950,13 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensurePlaceholderDeployment
 				NodeSelector: nodeSelector,
 				Tolerations: []corev1.Toleration{
 					{
-						Key:      ControlPlaneServingComponentTaint,
+						Key:      pkgscheduler.ControlPlaneServingComponentTaint,
 						Effect:   corev1.TaintEffectNoSchedule,
 						Operator: corev1.TolerationOpEqual,
 						Value:    "true",
 					},
 					{
-						Key:      ControlPlaneTaint,
+						Key:      pkgscheduler.ControlPlaneTaint,
 						Effect:   corev1.TaintEffectNoSchedule,
 						Operator: corev1.TolerationOpEqual,
 						Value:    "true",

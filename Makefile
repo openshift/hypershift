@@ -27,6 +27,7 @@ CODESPELL_BIN := codespell
 GITLINT_VER := 0.19.1
 GITLINT_BIN := gitlint
 PYYAML_VER := 6.0.3
+PYTEST_VER := 8.3.5
 
 PYTHON_VENV := $(TOOLS_BIN_DIR)/python-venv
 PYTHON_VENV_STAMP := $(PYTHON_VENV)/.installed
@@ -98,12 +99,12 @@ $(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
 
 KUBEAPILINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/kube-api-linter.so)
 $(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugin
-	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -buildmode=plugin -o $(KUBEAPILINTER_PLUGIN) sigs.k8s.io/kube-api-linter/pkg/plugin
+	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -buildmode=plugin -ldflags '-s -w' -o $(KUBEAPILINTER_PLUGIN) sigs.k8s.io/kube-api-linter/pkg/plugin
 
 HYPERSHIFTLINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/hypershiftlinter.so)
 HYPERSHIFTLINTER_SRC := $(shell find $(TOOLS_DIR)/hypershiftlinter -name '*.go' 2>/dev/null)
 $(HYPERSHIFTLINTER_PLUGIN): $(TOOLS_DIR)/go.mod $(HYPERSHIFTLINTER_SRC) # Build hypershiftlinter as Go plugin
-	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -a -buildmode=plugin -o $(HYPERSHIFTLINTER_PLUGIN) ./hypershiftlinter/cmd/plugin
+	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -a -buildmode=plugin -ldflags '-s -w' -o $(HYPERSHIFTLINTER_PLUGIN) ./hypershiftlinter/cmd/plugin
 
 # When not otherwise set, diff/lint against the upstream main branch.
 # This is always set in OpenShift CI.
@@ -175,10 +176,10 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
 
 .PHONY: verify-parallel
-verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav
+verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav ## Run the same checks as the GHA verify workflow.
+verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
 	$(MAKE) verify-git-clean
 
 .PHONY: verify
@@ -403,9 +404,13 @@ setup-envtest: $(SETUP_ENVTEST) ## Setup envtest binaries (etcd, kube-apiserver)
 NUM_CORES := $(shell getconf _NPROCESSORS_ONLN || echo 1)
 GO_TEST_FLAGS ?= -race
 
-test: generate
+test: generate test-e2ev2-unit
 	@echo "Running tests with $(NUM_CORES) parallel jobs..."
 	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
+
+.PHONY: test-e2ev2-unit
+test-e2ev2-unit:
+	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m ./test/e2e/v2/internal ./test/e2e/v2/cmd/run-tests
 
 # Run tests only for Go packages with changes relative to PULL_BASE_SHA.
 # Skips entirely if no .go files changed. No generate dependency (verify-quick handles it).
@@ -419,6 +424,7 @@ test-changed:
 	else \
 		CHANGED_PKGS=""; \
 		for pkg in $$CHANGED_DIRS; do \
+			if [ ! -d "$$pkg" ]; then continue; fi; \
 			list_out=$$($(GO) list "$$pkg" 2>&1) && { CHANGED_PKGS="$$CHANGED_PKGS $$pkg"; continue; }; \
 			case "$$list_out" in \
 				*"build constraints exclude"*|*"no Go files"*) ;; \
@@ -426,7 +432,7 @@ test-changed:
 			esac; \
 		done; \
 		if [ -z "$$CHANGED_PKGS" ]; then \
-			echo "Changed packages all excluded by build constraints, skipping tests."; \
+			echo "Changed packages are removed or excluded by build constraints, skipping tests."; \
 		else \
 			echo "Running tests for changed packages: $$CHANGED_PKGS"; \
 			$(GO) test -parallel=$(NUM_CORES) -count=1 -timeout=30m $$CHANGED_PKGS; \
@@ -449,7 +455,7 @@ ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envt
 ENVTEST_OCP_K8S_VERSIONS ?= 1.30.3 1.31.2 1.32.1 1.33.2 1.34.1 1.35.1 1.36.2
 
 # Vanilla Kubernetes versions for envtest (upstream kubebuilder assets)
-ENVTEST_KUBE_VERSIONS ?= 1.31.0 1.32.0 1.33.0 1.34.0 1.35.0 1.36.0
+ENVTEST_KUBE_VERSIONS ?= 1.31.0 1.32.0 1.33.0 1.34.0 1.35.0 1.36.0 1.37.0
 
 # Parallel envtest execution: 0 = sequential (default), N = N parallel jobs, MAX = all versions in parallel.
 ENVTEST_JOBS ?= 0
@@ -573,7 +579,7 @@ test-backup-restore: backuprestore-e2e
 	ARTIFACT_DIR=$(ARTIFACT_DIR) bin/test-backuprestore \
 	  --ginkgo.v \
 	  --ginkgo.no-color=$(OPENSHIFT_CI) \
-	  --ginkgo.junit-report="$(ARTIFACT_DIR)/junit.xml" \
+	  --e2e.junit-report="$(ARTIFACT_DIR)/junit.xml" \
 	  --ginkgo.label-filter="backup-restore" \
 	  --ginkgo.fail-fast=$(FAIL_FAST) \
 	  --ginkgo.timeout=2h
@@ -669,6 +675,16 @@ verify-docs-nav: $(PYTHON_VENV_STAMP) ## Verify docs nav entries are sorted alph
 		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-docs-nav-order.py; \
 	fi
 
+.PHONY: verify-tekton-pipeline-pairs
+verify-tekton-pipeline-pairs: $(PYTHON_VENV_STAMP) ## Verify paired Tekton PipelineRun files (PR-branch vs main-branch pipeline) stay in sync.
+	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
+		$(PYTHON_VENV)/bin/python3 -m pytest -q hack/verify-tekton-pipeline-pairs_test.py && \
+		$(PYTHON_VENV)/bin/python3 hack/verify-tekton-pipeline-pairs.py; \
+	else \
+		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/verify-tekton-pipeline-pairs_test.py && \
+		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-tekton-pipeline-pairs.py; \
+	fi
+
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
 	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
@@ -692,6 +708,12 @@ else
 	@echo "Linting commits from $(MERGE_BASE) to HEAD (local development)"
 	@$(GITLINT) --commits $(MERGE_BASE)..HEAD
 endif
+
+.PHONY: run-gitlint-commit-msg
+run-gitlint-commit-msg: $(GITLINT)
+	@test -n "$(COMMIT_MSG_FILE)" || { echo "COMMIT_MSG_FILE must be set" >&2; exit 1; }
+	@echo "Linting pending commit message from $(COMMIT_MSG_FILE)"
+	@$(GITLINT) --msg-filename "$(COMMIT_MSG_FILE)"
 
 .PHONY: cpo-container-sync
 cpo-container-sync:
@@ -718,13 +740,15 @@ $(PYTHON_VENV_STAMP):
 		uv pip install --python=$(PYTHON_VENV)/bin/python \
 			codespell==$(CODESPELL_VER) \
 			gitlint==$(GITLINT_VER) \
-			pyyaml==$(PYYAML_VER); \
+			pyyaml==$(PYYAML_VER) \
+			pytest==$(PYTEST_VER); \
 	else \
 		mkdir -p $(PYTHON_VENV) && \
 		python3 -m pip install --target=$(PYTHON_VENV) \
 			codespell==$(CODESPELL_VER) \
 			gitlint==$(GITLINT_VER) \
-			pyyaml==$(PYYAML_VER) --upgrade && \
+			pyyaml==$(PYYAML_VER) \
+			pytest==$(PYTEST_VER) --upgrade && \
 		for cmd in $(CODESPELL_BIN) $(GITLINT_BIN); do \
 			mv $(PYTHON_VENV)/bin/$$cmd $(PYTHON_VENV)/$$cmd.py && \
 			printf '#!/bin/sh\nexport PYTHONPATH="%s$${PYTHONPATH:+:$$PYTHONPATH}"\nexec python3 "%s/%s.py" "$$@"\n' \

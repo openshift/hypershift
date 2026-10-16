@@ -73,6 +73,22 @@ func GetControlPlaneWorkloads() []WorkloadSpec {
 			},
 		},
 		{
+			Type:     "Deployment",
+			Name:     "gcp-pd-csi-driver-controller",
+			Platform: &gcpPlatform,
+			PodSelector: map[string]string{
+				"app": "gcp-pd-csi-driver-controller",
+			},
+		},
+		{
+			Type:     "Deployment",
+			Name:     "gcp-pd-csi-driver-operator",
+			Platform: &gcpPlatform,
+			PodSelector: map[string]string{
+				"name": "gcp-pd-csi-driver-operator",
+			},
+		},
+		{
 			Type: "Deployment",
 			Name: "capi-provider",
 			PodSelector: map[string]string{
@@ -406,6 +422,22 @@ func GetControlPlaneWorkloads() []WorkloadSpec {
 		},
 		{
 			Type:     "Deployment",
+			Name:     "gcp-pd-csi-driver-controller",
+			Platform: &gcpPlatform,
+			PodSelector: map[string]string{
+				"app": "gcp-pd-csi-driver-controller",
+			},
+		},
+		{
+			Type:     "Deployment",
+			Name:     "gcp-pd-csi-driver-operator",
+			Platform: &gcpPlatform,
+			PodSelector: map[string]string{
+				"name": "gcp-pd-csi-driver-operator",
+			},
+		},
+		{
+			Type:     "Deployment",
 			Name:     "kubevirt-cloud-controller-manager",
 			Platform: &kubevirtPlatform,
 			PodSelector: map[string]string{
@@ -589,16 +621,6 @@ func validateControlPlaneWorkloadsByType(testCtx *TestContext, workloadTypes []s
 		}
 	}
 	return nil
-}
-
-// ValidateControlPlaneDeploymentsReadiness validates that all control plane Deployments are ready.
-func ValidateControlPlaneDeploymentsReadiness(testCtx *TestContext, excludeWorkloads []string) error {
-	return validateControlPlaneWorkloadsByType(testCtx, []string{"Deployment"}, excludeWorkloads)
-}
-
-// ValidateControlPlaneStatefulSetsReadiness validates that all control plane StatefulSets are ready.
-func ValidateControlPlaneStatefulSetsReadiness(testCtx *TestContext, excludeWorkloads []string) error {
-	return validateControlPlaneWorkloadsByType(testCtx, []string{"StatefulSet"}, excludeWorkloads)
 }
 
 // waitForControlPlaneWorkloadsByType waits for control plane workloads of specified types to be ready.

@@ -9,11 +9,11 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -240,7 +240,7 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	}
 
 	// 5. Check if reconciliation is paused (following AWS pattern)
-	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
 		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
@@ -464,9 +464,9 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileExternalServices(ctx conte
 			var svc *corev1.Service
 			switch svcType {
 			case "api":
-				svc = manifests.KubeAPIServerExternalPrivateService(hcp.Namespace)
+				svc = cpomanifests.KubeAPIServerExternalPrivateService(hcp.Namespace)
 			case "oauth":
-				svc = manifests.OauthServerExternalPrivateService(hcp.Namespace)
+				svc = cpomanifests.OauthServerExternalPrivateService(hcp.Namespace)
 			}
 			if _, err := r.CreateOrUpdate(ctx, r, svc, func() error {
 				log.Info("Reconciling external name service for GCP PSC", "service", svc.Name, "externalName", externalName)

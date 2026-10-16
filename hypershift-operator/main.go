@@ -15,12 +15,14 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -65,6 +67,7 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -94,7 +97,6 @@ import (
 
 	capiaddonsv1beta2 "sigs.k8s.io/cluster-api/api/addons/v1beta2"
 	capiv1beta2 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	ipamv1beta2 "sigs.k8s.io/cluster-api/api/ipam/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -168,6 +170,10 @@ type StartOptions struct {
 	ScaleFromZeroCreds                     string
 	EtcdBackupMaxCount                     int
 	HCPEgressBlockCIDRs                    []string
+	OTELEndpoint                           string
+	OTELSampler                            string
+	OTELSamplerArg                         string
+	OTELCorrelationAttrs                   string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -209,6 +215,10 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 	cmd.Flags().IntVar(&opts.EtcdBackupMaxCount, "etcd-backup-max-count", 5, "Maximum number of completed HCPEtcdBackup CRs to retain per HostedControlPlane")
 	cmd.Flags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times (e.g. --hcp-egress-block-cidrs=10.0.0.0/16 --hcp-egress-block-cidrs=10.1.0.0/16).")
+	cmd.Flags().StringVar(&opts.OTELEndpoint, "otel-endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "OpenTelemetry collector endpoint (OTLP/gRPC). Empty disables tracing.")
+	cmd.Flags().StringVar(&opts.OTELSampler, "otel-sampler", os.Getenv("OTEL_TRACES_SAMPLER"), "Trace sampler type (default: parentbased_always_on)")
+	cmd.Flags().StringVar(&opts.OTELSamplerArg, "otel-sampler-arg", os.Getenv("OTEL_TRACES_SAMPLER_ARG"), "Trace sampler argument (e.g. ratio 0.0-1.0)")
+	cmd.Flags().StringVar(&opts.OTELCorrelationAttrs, "otel-correlation-attrs", os.Getenv("OTEL_CORRELATION_ATTRS"), "Comma-separated span attribute names for cross-service correlation (e.g. cs.cluster.id). Each key is set to the cluster infraID on reconcile spans. Empty disables correlation.")
 
 	// Attempt to determine featureset prior to adding featuregate flags.
 	// It is safe to get the empty string from this as the empty string is the default featureset.
@@ -254,6 +264,23 @@ func NewStartCommand() *cobra.Command {
 
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
+
+	tracingShutdown, err := tracing.InitProvider(ctx, "hypershift-operator", tracing.Config{
+		Endpoint:         opts.OTELEndpoint,
+		Sampler:          opts.OTELSampler,
+		SamplerArg:       opts.OTELSamplerArg,
+		CorrelationAttrs: opts.OTELCorrelationAttrs,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to initialize tracing: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tracingShutdown(shutdownCtx); err != nil {
+			log.Error(err, "error shutting down trace provider")
+		}
+	}()
 
 	if err := validateStartOptions(opts, log); err != nil {
 		return err
@@ -302,8 +329,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	if opts.CertDir != "" {
-		if err := webhookcerts.EnsureWebhookCerts(ctx, apiReadingClient, opts.Namespace, assets.HypershiftOperatorName); err != nil {
-			return fmt.Errorf("failed to bootstrap webhook certs: %w", err)
+		if err := setupWebhookCertificates(ctx, apiReadingClient, opts.Namespace, assets.HypershiftOperatorName, opts.CertDir); err != nil {
+			return err
 		}
 	}
 
@@ -401,6 +428,80 @@ func validateStartOptions(opts *StartOptions, log logr.Logger) error {
 		log.Info("WARNING: --scale-from-zero-provider is set but --scale-from-zero-creds is empty; scale-from-zero will be disabled", "provider", opts.ScaleFromZeroProvider)
 	}
 	return nil
+}
+
+func setupWebhookCertificates(ctx context.Context, client crclient.Client, namespace, operatorName, certDir string) error {
+	// Migrate legacy service-ca resources first, before creating certs.
+	// This ensures that if a service-ca managed serving cert exists, it is deleted
+	// before EnsureWebhookCerts runs. Otherwise, EnsureWebhookCerts would see the
+	// existing cert and skip creation, then the migration would delete it, leaving
+	// no valid cert for the webhook to serve.
+	if err := webhookcerts.EnsureLegacyServiceCAMigration(ctx, client, namespace, operatorName); err != nil {
+		return fmt.Errorf("failed to migrate legacy service-ca resources: %w", err)
+	}
+
+	// Create or verify webhook certs exist. If the migration deleted a service-ca
+	// cert above, this will create a new one signed by the self-managed CA.
+	if err := webhookcerts.EnsureWebhookCerts(ctx, client, namespace, operatorName); err != nil {
+		return fmt.Errorf("failed to bootstrap webhook certs: %w", err)
+	}
+
+	// Wait for the certificate to be projected to disk before patching CRD bundles.
+	// This prevents a race where CRDs trust the new CA but the webhook still serves
+	// old certificates from stale mounted files.
+	projectionCtx, projectionCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer projectionCancel()
+	if err := waitForWebhookCertProjection(projectionCtx, client, namespace, certDir); err != nil {
+		return fmt.Errorf("failed waiting for projected webhook cert: %w", err)
+	}
+
+	// Patch CRD conversion webhook caBundles before starting the manager.
+	// This prevents a deadlock where CAPI informers cannot sync due to missing
+	// caBundles, blocking the cache and preventing the webhookcerts controller
+	// from ever starting to patch the CRDs.
+	if err := webhookcerts.EnsureCRDConversionWebhookCABundles(ctx, client, namespace, operatorName); err != nil {
+		return fmt.Errorf("failed to bootstrap CRD conversion webhook caBundles: %w", err)
+	}
+
+	return nil
+}
+
+// waitForWebhookCertProjection polls until the certificate files on disk match
+// the serving Secret, ensuring the webhook will serve the correct certificate
+// when conversion requests arrive.
+func waitForWebhookCertProjection(ctx context.Context, client crclient.Client, namespace, certDir string) error {
+	return wait.PollUntilContextCancel(ctx, time.Second, true, func(ctx context.Context) (bool, error) {
+		serving := &corev1.Secret{}
+		if err := client.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: webhookcerts.ServingCertSecretName}, serving); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return false, err
+		}
+
+		certFile := filepath.Join(certDir, corev1.TLSCertKey)
+		keyFile := filepath.Join(certDir, corev1.TLSPrivateKeyKey)
+
+		cert, err := os.ReadFile(certFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// File not projected yet, continue polling
+				return false, nil
+			}
+			return false, err
+		}
+		key, err := os.ReadFile(keyFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// File not projected yet, continue polling
+				return false, nil
+			}
+			return false, err
+		}
+
+		return bytes.Equal(cert, serving.Data[corev1.TLSCertKey]) &&
+			bytes.Equal(key, serving.Data[corev1.TLSPrivateKeyKey]), nil
+	})
 }
 
 func configureWebhookOptions(ctx context.Context, restConfig *rest.Config, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, opts *StartOptions) (webhook.Options, error) {
@@ -911,7 +1012,6 @@ func setupSupportControllers(ctx context.Context, mgr ctrl.Manager, opts *StartO
 	//   - --disable-capi-migration flag and capiStorageVersionForOpts() (cmd/install/install.go)
 	//   - CAPI_STORAGE_VERSION env var plumbing (cmd/install/assets/hypershift_operator.go, cmd/install/install.go)
 	//   - --skip-crd-migration-phases args on CAPI manager (control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager/deployment.go)
-	//   - IPAM skip override in setupCRDs() (cmd/install/install.go)
 	if os.Getenv(capicrdmigrator.CAPIStorageVersionEnvVar) == capicrdmigrator.TargetStorageVersion {
 		capicrdmigrator.RegisterMigrationMetrics(mgr.GetAPIReader(), opts.Namespace)
 		migrator := &capicrdmigrator.CRDMigrator{
@@ -927,8 +1027,6 @@ func setupSupportControllers(ctx context.Context, mgr ctrl.Manager, opts *StartO
 				&capiv1beta2.MachinePool{}:                     {},
 				&capiv1beta2.Machine{}:                         {},
 				&capiv1beta2.MachineSet{}:                      {},
-				&ipamv1beta2.IPAddressClaim{}:                  {},
-				&ipamv1beta2.IPAddress{}:                       {},
 				&capiaddonsv1beta2.ClusterResourceSetBinding{}: {},
 				&capiaddonsv1beta2.ClusterResourceSet{}:        {},
 			},

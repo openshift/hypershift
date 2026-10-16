@@ -48,9 +48,11 @@ import (
 
 func RegisterHostedClusterAWSTests(getTestCtx internal.TestContextGetter) {
 	EnsureDefaultSecurityGroupTagsTest(getTestCtx)
+	EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx)
 	EnsureInfrastructureResourceTagsTest(getTestCtx)
 	AWSCCMWithCustomizationsTest(getTestCtx)
 	AWSResourceTagOverridePolicyTest(getTestCtx)
+	NodePoolDay2TagsWithSpacesTest(getTestCtx)
 }
 
 func EnsureDefaultSecurityGroupTagsTest(getTestCtx internal.TestContextGetter) {
@@ -472,6 +474,213 @@ func AWSResourceTagOverridePolicyTest(getTestCtx internal.TestContextGetter) {
 			}
 			Expect(inspectedInstances).To(BeNumerically(">=", 1),
 				"expected to inspect at least one EC2 instance but all AWSMachines had nil InstanceID")
+		})
+	})
+}
+
+func EnsureDefaultSecurityGroupTagsWithSpacesTest(getTestCtx internal.TestContextGetter) {
+	When("[Feature:AWSSecurityGroups] a day-2 resource tag with spaces is added to the HostedCluster spec", func() {
+		It("should apply the tag with spaces to the default worker security group via AWS API", Label("AWS"), func() {
+			tc := getTestCtx()
+			tc.SkipIfVersionBelow(e2eutil.Version420)
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+
+			Expect(hc.Status.Platform).NotTo(BeNil(),
+				"HostedCluster %s/%s should have platform status", hc.Namespace, hc.Name)
+			Expect(hc.Status.Platform.AWS).NotTo(BeNil(),
+				"HostedCluster %s/%s should have AWS platform status", hc.Namespace, hc.Name)
+			sgID := hc.Status.Platform.AWS.DefaultWorkerSecurityGroupID
+			Expect(sgID).NotTo(BeEmpty(), "HostedCluster status should have DefaultWorkerSecurityGroupID set")
+
+			awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
+			Expect(awsCredsFile).NotTo(BeEmpty(), "AWS_GUEST_INFRA_CREDENTIALS_FILE must be set for AWS security group tests")
+
+			region := hc.Spec.Platform.AWS.Region
+			Expect(region).NotTo(BeEmpty(), "HostedCluster AWS region should be set")
+
+			tagsPolicy := fmt.Sprintf(`{
+				"Version": "2012-10-17",
+				"Statement": [
+					{
+						"Effect": "Allow",
+						"Action": [
+							"ec2:CreateTags",
+							"ec2:DeleteTags"
+						],
+						"Resource": "arn:aws:ec2:*:*:security-group/%s"
+					}
+				]
+			}`, sgID)
+
+			Expect(hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN).NotTo(BeEmpty(),
+				"HostedCluster should have ControlPlaneOperatorARN set")
+
+			cleanup, err := e2eutil.PutRolePolicy(tc.Context, awsCredsFile, region,
+				hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
+			Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
+			DeferCleanup(func() {
+				Expect(cleanup()).To(Succeed(), "failed to cleanup role policy for tagging default security group")
+			})
+
+			day2TagKey := "e2e day2 tag"
+			day2TagValue := "e2e day2 value"
+
+			originalTags := append([]hyperv1.AWSClusterResourceTag(nil), hc.Spec.Platform.AWS.ResourceTags...)
+
+			err = e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
+					Key:   day2TagKey,
+					Value: day2TagValue,
+				})
+			})
+			Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster with day-2 tag containing spaces")
+			DeferCleanup(func() {
+				err := e2eutil.UpdateObject(GinkgoTB(), tc.Context, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSClusterResourceTag(nil), originalTags...)
+				})
+				if err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to restore HostedCluster AWS resource tags")
+				}
+
+				hcClient, err := tc.GetHostedClusterClient(hc)
+				Expect(err).NotTo(HaveOccurred(),
+					"cleanup: failed to get hosted cluster client for %s/%s", hc.Namespace, hc.Name)
+				Eventually(func(g Gomega) {
+					infra := &configv1.Infrastructure{}
+					g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, infra)).To(Succeed(),
+						"cleanup: failed to get infrastructure/cluster from hosted cluster")
+					g.Expect(infra.Status.PlatformStatus).NotTo(BeNil(),
+						"cleanup: infrastructure/cluster should have platform status")
+					g.Expect(infra.Status.PlatformStatus.AWS).NotTo(BeNil(),
+						"cleanup: infrastructure/cluster should have AWS platform status")
+					g.Expect(infra.Status.PlatformStatus.AWS.ResourceTags).NotTo(
+						ContainElement(configv1.AWSResourceTag{Key: day2TagKey, Value: day2TagValue}),
+						"cleanup: day-2 tag with spaces should be removed from infrastructure resource",
+					)
+				}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			})
+
+			Eventually(func(g Gomega) {
+				sg, err := e2eutil.GetDefaultSecurityGroup(tc.Context, awsCredsFile, region, sgID)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to get default security group")
+				g.Expect(sg.Tags).To(ContainElement(ec2types.Tag{
+					Key:   aws.String(day2TagKey),
+					Value: aws.String(day2TagValue),
+				}), "day-2 tag with spaces should be applied to the default worker security group")
+			}, 10*time.Minute, time.Second).Should(Succeed())
+
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred(),
+				"failed to get hosted cluster client for %s/%s", hc.Namespace, hc.Name)
+			Eventually(func(g Gomega) {
+				infra := &configv1.Infrastructure{}
+				g.Expect(hcClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, infra)).To(Succeed(),
+					"failed to get infrastructure/cluster from hosted cluster")
+				g.Expect(infra.Status.PlatformStatus).NotTo(BeNil(),
+					"infrastructure/cluster should have platform status")
+				g.Expect(infra.Status.PlatformStatus.AWS).NotTo(BeNil(),
+					"infrastructure/cluster should have AWS platform status")
+				g.Expect(infra.Status.PlatformStatus.AWS.ResourceTags).To(
+					ContainElement(configv1.AWSResourceTag{Key: day2TagKey, Value: day2TagValue}),
+					"day-2 tag with spaces should propagate to the infrastructure resource",
+				)
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+		})
+	})
+}
+
+func NodePoolDay2TagsWithSpacesTest(getTestCtx internal.TestContextGetter) {
+	When("[Feature:AWSResourceTags] a day-2 NodePool tag with spaces is added", func() {
+		It("should propagate the tag with spaces to AWSMachine and EC2 instances", Label("AWS"), func() {
+			tc := getTestCtx()
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+
+			ctx := tc.Context
+
+			npList := &hyperv1.NodePoolList{}
+			Expect(tc.MgmtClient.List(ctx, npList, crclient.InNamespace(hc.Namespace))).To(Succeed(),
+				"failed to list NodePools")
+			var defaultNP *hyperv1.NodePool
+			for i := range npList.Items {
+				np := &npList.Items[i]
+				if np.Spec.ClusterName == hc.Name && np.DeletionTimestamp.IsZero() {
+					defaultNP = np
+					break
+				}
+			}
+			Expect(defaultNP).NotTo(BeNil(), "a non-deleting NodePool should exist for HostedCluster %s", hc.Name)
+			Expect(defaultNP.Spec.Platform.AWS).NotTo(BeNil(),
+				"NodePool %s/%s should have AWS platform spec", defaultNP.Namespace, defaultNP.Name)
+
+			day2TagKey := "e2e np space tag"
+			day2TagValue := "e2e np space value"
+
+			originalTags := append([]hyperv1.AWSNodePoolResourceTag(nil), defaultNP.Spec.Platform.AWS.ResourceTags...)
+			err = e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, defaultNP, func(obj *hyperv1.NodePool) {
+				obj.Spec.Platform.AWS.ResourceTags = append(obj.Spec.Platform.AWS.ResourceTags, hyperv1.AWSNodePoolResourceTag{
+					Key:   day2TagKey,
+					Value: day2TagValue,
+				})
+			})
+			Expect(err).NotTo(HaveOccurred(), "failed to update NodePool with day-2 tag containing spaces")
+			DeferCleanup(func() {
+				err := e2eutil.UpdateObject(GinkgoTB(), ctx, tc.MgmtClient, defaultNP, func(obj *hyperv1.NodePool) {
+					obj.Spec.Platform.AWS.ResourceTags = append([]hyperv1.AWSNodePoolResourceTag(nil), originalTags...)
+				})
+				if err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to restore NodePool AWS resource tags")
+				}
+			})
+
+			awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
+			Expect(awsCredsFile).NotTo(BeEmpty(), "AWS_GUEST_INFRA_CREDENTIALS_FILE must be set")
+			region := hc.Spec.Platform.AWS.Region
+
+			awsSession := awsutil.NewSession(ctx, "e2e-tag-spaces", awsCredsFile, "", "", region)
+			awsConfig := awsutil.NewConfig()
+			ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+				o.Retryer = awsConfig()
+			})
+
+			Eventually(func(g Gomega) {
+				awsMachines := &capiaws.AWSMachineList{}
+				g.Expect(tc.MgmtClient.List(ctx, awsMachines,
+					crclient.InNamespace(tc.ControlPlaneNamespace),
+					crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: defaultNP.Name})).To(Succeed(),
+					"failed to list AWSMachines for NodePool %s in namespace %s", defaultNP.Name, tc.ControlPlaneNamespace)
+				g.Expect(awsMachines.Items).NotTo(BeEmpty(),
+					"expected at least one AWSMachine for NodePool %s", defaultNP.Name)
+
+				inspectedInstances := 0
+				for _, awsMachine := range awsMachines.Items {
+					g.Expect(awsMachine.Spec.AdditionalTags).To(HaveKeyWithValue(day2TagKey, day2TagValue),
+						"AWSMachine %s should have tag with spaces", awsMachine.Name)
+
+					if awsMachine.Spec.InstanceID == nil {
+						continue
+					}
+					instance, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+						InstanceIds: []string{aws.ToString(awsMachine.Spec.InstanceID)},
+					})
+					g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance %s", aws.ToString(awsMachine.Spec.InstanceID))
+					g.Expect(instance.Reservations).NotTo(BeEmpty(),
+						"expected at least one reservation for EC2 instance %s", aws.ToString(awsMachine.Spec.InstanceID))
+					g.Expect(instance.Reservations[0].Instances).NotTo(BeEmpty(),
+						"expected at least one instance in reservation for %s", aws.ToString(awsMachine.Spec.InstanceID))
+					g.Expect(instance.Reservations[0].Instances[0].Tags).To(ContainElement(ec2types.Tag{
+						Key:   aws.String(day2TagKey),
+						Value: aws.String(day2TagValue),
+					}), "EC2 instance should have tag with spaces")
+					inspectedInstances++
+				}
+				g.Expect(inspectedInstances).To(BeNumerically(">=", 1),
+					"expected to inspect at least one EC2 instance but all AWSMachines had nil InstanceID")
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
 }

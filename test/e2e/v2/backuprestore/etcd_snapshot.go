@@ -5,12 +5,15 @@ package backuprestore
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
-	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	corev1 "k8s.io/api/core/v1"
@@ -18,7 +21,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -78,15 +85,62 @@ func WaitForHCPEtcdBackupCondition(testCtx *internal.TestContext, backupName str
 	})
 }
 
-// VerifyEtcdInitLogs retrieves the etcd-init container logs from the etcd-0 pod in the
-// control plane namespace and verifies that they contain expected snapshot restore traces.
-// The expected log lines from etcdutl/etcdctl indicate a successful snapshot restore:
-//   - "restoring snapshot" (restore started)
-//   - "restored snapshot" (restore completed)
+// WaitForEtcdInitAndVerifyLogs polls until the etcd-init container in etcd-0 has
+// terminated successfully, then reads and verifies its logs contain snapshot restore
+// traces. This must run before the post-restore health check: after restore, CPO
+// clears restoreSnapshotURL which triggers a second StatefulSet rollout that replaces
+// the pod without the etcd-init container.
 //
-// It also checks that the restore was not skipped due to existing data:
-//   - "not empty, not restoring snapshot" must NOT be present
-func VerifyEtcdInitLogs(ctx context.Context, logger logr.Logger, kubeClient kubernetes.Interface, controlPlaneNamespace string) error {
+// Behavior:
+//   - Retries when the pod is not found, the init container has not terminated yet,
+//     or the log stream cannot be opened (transient errors from pod replacement).
+//   - Returns immediately with an error if the init container exits with a nonzero
+//     code, or if the logs indicate the restore was skipped or incomplete (terminal).
+//   - Returns a timeout error if RestoreTimeout expires before the init container
+//     terminates and logs are verified.
+//
+// TODO: In a follow-up PR, move log interpretation into the etcd controller (CPOv2)
+// so the restore result is reported via a declared ConfigMap resource, decoupling the
+// test from pod lifecycle timing entirely.
+func WaitForEtcdInitAndVerifyLogs(ctx context.Context, logger logr.Logger, kubeClient kubernetes.Interface, controlPlaneNamespace string) error {
+	return wait.PollUntilContextTimeout(ctx, PollInterval, RestoreTimeout, true, func(ctx context.Context) (bool, error) {
+		pod, err := kubeClient.CoreV1().Pods(controlPlaneNamespace).Get(ctx, EtcdPodName, metav1.GetOptions{})
+		if err != nil {
+			logger.V(1).Info("waiting for etcd pod", "error", err)
+			return false, nil
+		}
+
+		for _, cs := range pod.Status.InitContainerStatuses {
+			if cs.Name != EtcdInitContainerName {
+				continue
+			}
+			if cs.State.Terminated == nil {
+				logger.V(1).Info("etcd-init container not yet terminated, waiting")
+				return false, nil
+			}
+			if cs.State.Terminated.ExitCode != 0 {
+				return false, fmt.Errorf("etcd-init container in pod %s/%s exited with code %d: %s",
+					controlPlaneNamespace, EtcdPodName, cs.State.Terminated.ExitCode, cs.State.Terminated.Reason)
+			}
+			result, readErr := readEtcdInitLogs(ctx, kubeClient, controlPlaneNamespace)
+			if readErr != nil {
+				logger.V(1).Info("failed to read etcd-init logs, retrying", "error", readErr)
+				return false, nil
+			}
+			if validationErr := validateEtcdInitResult(logger, result); validationErr != nil {
+				return false, validationErr
+			}
+			return true, nil
+		}
+
+		logger.V(1).Info("etcd-init container not found in pod status, waiting")
+		return false, nil
+	})
+}
+
+// readEtcdInitLogs retrieves and parses the etcd-init container logs from etcd-0.
+// Errors are transient (pod replaced between status check and log read).
+func readEtcdInitLogs(ctx context.Context, kubeClient kubernetes.Interface, controlPlaneNamespace string) (*etcdInitLogResult, error) {
 	podLogOpts := &corev1.PodLogOptions{
 		Container: EtcdInitContainerName,
 	}
@@ -94,15 +148,16 @@ func VerifyEtcdInitLogs(ctx context.Context, logger logr.Logger, kubeClient kube
 	req := kubeClient.CoreV1().Pods(controlPlaneNamespace).GetLogs(EtcdPodName, podLogOpts)
 	logStream, err := req.Stream(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to stream %s container logs from %s: %w", EtcdInitContainerName, EtcdPodName, err)
+		return nil, fmt.Errorf("failed to stream %s container logs from %s: %w", EtcdInitContainerName, EtcdPodName, err)
 	}
 	defer logStream.Close()
 
-	result, err := parseEtcdInitLogs(logStream)
-	if err != nil {
-		return err
-	}
+	return parseEtcdInitLogs(logStream)
+}
 
+// validateEtcdInitResult checks the parsed log result for expected restore markers.
+// Errors are terminal (the logs won't change on retry).
+func validateEtcdInitResult(logger logr.Logger, result *etcdInitLogResult) error {
 	logger.Info("etcd-init container logs scanned", "lines", result.lineCount)
 
 	if result.restoreSkipped {
@@ -123,6 +178,82 @@ func VerifyEtcdInitLogs(ctx context.Context, logger logr.Logger, kubeClient kube
 		}
 		return fmt.Errorf("etcd-init logs do not contain '%s'; snapshot restore may have failed", logRestoredSnapshot)
 	}
+
+	return nil
+}
+
+// etcdMemberListResponse represents the JSON output of etcdctl member list -w json.
+type etcdMemberListResponse struct {
+	Header  etcdResponseHeader `json:"header"`
+	Members []etcdMember       `json:"members"`
+}
+
+// etcdResponseHeader contains the cluster-level metadata from an etcd response.
+type etcdResponseHeader struct {
+	ClusterID uint64 `json:"cluster_id"`
+}
+
+// etcdMember represents a single member in an etcd cluster.
+type etcdMember struct {
+	ID         uint64   `json:"ID"`
+	Name       string   `json:"name"`
+	PeerURLs   []string `json:"peerURLs"`
+	ClientURLs []string `json:"clientURLs"`
+}
+
+// parseEtcdMemberList parses the JSON output of etcdctl member list -w json.
+func parseEtcdMemberList(jsonOutput string) (*etcdMemberListResponse, error) {
+	var response etcdMemberListResponse
+	if err := json.Unmarshal([]byte(jsonOutput), &response); err != nil {
+		return nil, fmt.Errorf("failed to parse etcdctl member list output: %w", err)
+	}
+	return &response, nil
+}
+
+// VerifyEtcdClusterHealth verifies that all etcd members form a single cluster
+// after a snapshot restore. This detects split-brain scenarios where each member
+// starts as an independent 1-member cluster due to missing --name/--initial-cluster/
+// --initial-cluster-token flags during snapshot restore.
+func VerifyEtcdClusterHealth(ctx context.Context, logger logr.Logger, mgmtClient crclient.Client, cpNamespace string) error {
+	etcdSts := cpomanifests.EtcdStatefulSet(cpNamespace)
+	if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(etcdSts), etcdSts); err != nil {
+		return fmt.Errorf("failed to get etcd StatefulSet: %w", err)
+	}
+	expectedReplicas := ptr.Deref(etcdSts.Spec.Replicas, 1)
+
+	ep := fmt.Sprintf("https://etcd-client.%s.svc:2379", cpNamespace)
+	command := []string{
+		"/bin/sh", "-c",
+		fmt.Sprintf("/usr/bin/etcdctl --cacert=/etc/etcd/tls/etcd-ca/ca.crt --cert=/etc/etcd/tls/server/server.crt --key=/etc/etcd/tls/server/server.key --endpoints=%s member list -w json 2>/dev/null", ep),
+	}
+
+	stdout, err := e2eutil.RunCommandInPod(ctx, mgmtClient, "etcd", cpNamespace, command, "etcd", 5*time.Minute)
+	if err != nil {
+		return fmt.Errorf("failed to run etcdctl member list: %w", err)
+	}
+
+	result, err := parseEtcdMemberList(stdout)
+	if err != nil {
+		return err
+	}
+
+	if int32(len(result.Members)) != expectedReplicas {
+		return fmt.Errorf("expected %d etcd members but found %d; this may indicate a split-brain cluster where each member started as an independent 1-member cluster",
+			expectedReplicas, len(result.Members))
+	}
+
+	for _, member := range result.Members {
+		if member.Name == "" {
+			return fmt.Errorf("etcd member %d has no name, indicating it has not fully started", member.ID)
+		}
+		if len(member.PeerURLs) == 0 {
+			return fmt.Errorf("etcd member %s has no peer URLs", member.Name)
+		}
+	}
+
+	logger.Info("etcd cluster health verified: all members form a single cluster",
+		"memberCount", len(result.Members),
+		"clusterID", result.Header.ClusterID)
 
 	return nil
 }

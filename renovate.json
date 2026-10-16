@@ -1,15 +1,19 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "enabled": false,
     "baseBranchPatterns": [
         "main",
+        "release-4.14",
+        "release-4.15",
         "release-4.16",
         "release-4.17",
         "release-4.18",
         "release-4.19",
         "release-4.20",
         "release-4.21",
-        "release-4.22"
+        "release-4.22",
+        "release-4.23",
+        "release-5.0",
+        "release-5.1"
     ],
     "tekton": {
         "branchConcurrentLimit": 10,
@@ -36,18 +40,62 @@
             "enabled": true
         },
         {
+            "description": "Group root Go module dependency updates on main branch",
+            "matchManagers": [
+                "gomod"
+            ],
+            "matchBaseBranches": [
+                "main"
+            ],
+            "matchFileNames": [
+                "go.mod"
+            ],
+            "groupName": "Go dependencies (operator/control-plane)"
+        },
+        {
+            "description": "Group API Go module dependency updates on main branch",
+            "matchManagers": [
+                "gomod"
+            ],
+            "matchBaseBranches": [
+                "main"
+            ],
+            "matchFileNames": [
+                "api/go.mod"
+            ],
+            "groupName": "Go dependencies (api)"
+        },
+        {
+            "description": "Group Go tooling dependency updates on main branch",
+            "matchManagers": [
+                "gomod"
+            ],
+            "matchBaseBranches": [
+                "main"
+            ],
+            "matchFileNames": [
+                "hack/tools/go.mod"
+            ],
+            "groupName": "Go dependencies (tools)"
+        },
+        {
             "description": "Enable security-only Go updates on release branches",
             "matchManagers": [
                 "gomod"
             ],
             "matchBaseBranches": [
+                "release-4.14",
+                "release-4.15",
                 "release-4.16",
                 "release-4.17",
                 "release-4.18",
                 "release-4.19",
                 "release-4.20",
                 "release-4.21",
-                "release-4.22"
+                "release-4.22",
+                "release-4.23",
+                "release-5.0",
+                "release-5.1"
             ],
             "matchUpdateTypes": [
                 "patch"

@@ -119,6 +119,7 @@ nav:
     - how-to/configure-ocp-components/oauth-serving-certificates.md
     - how-to/configure-ocp-components/custom-kas-kubeconfig.md
     - how-to/configure-ocp-components/configurable-log-levels.md
+  - 'Control Plane Sizing Guidance': how-to/cluster-sizing-guidance.md
   - how-to/per-hostedcluster-dashboard.md
   - 'Disaster Recovery':
     - how-to/disaster-recovery/index.md
@@ -211,6 +212,7 @@ nav:
       - how-to/gcp/create-gcp-iam.md
       - how-to/gcp/create-gcp-infra.md
       - how-to/gcp/configure-image-registry.md
+      - how-to/gcp/workload-identity-webhook.md
       - how-to/gcp/e2e-gke-ci-job.md
       - how-to/gcp/setup-management-cluster.md
     - 'Kubevirt':
@@ -365,6 +367,8 @@ nav:
     - 'Configure SPO with Audit Logging and Seccomp': recipes/common/spo-audit-logging-seccomp.md
     - 'ACM/MCE HyperShift Operator Overrides': recipes/common/acm-mce-hypershift-operator-overrides.md
     - 'Control Plane Metrics Forwarding': recipes/common/control-plane-metrics-forwarding.md
+  - 'KubeVirt':
+    - 'Configure Custom Ingress for KubeVirt HCP': recipes/kubevirt/custom-ingress-with-metallb.md
 - 'Reference':
   - 'Architecture':
     - reference/architecture/index.md
@@ -416,6 +420,7 @@ nav:
   - 'Openshift behaviour deviations':
     - reference/ocp-behaviour-deviations/index.md
     - 'Upgrade 4.17 > 4.18': reference/ocp-behaviour-deviations/upgrade-4.17-4.18.md
+    - 'OSImageStream Behaviour': reference/ocp-behaviour-deviations/osimagestream-discovery.md
   - 'Test Information/Debugging':
     - 'ARO HCP / AKS e2e':
       - reference/test-information-debugging/Azure/test-artifacts-directory-structure.md
@@ -424,6 +429,7 @@ nav:
   - reference/SLOs.md
   - reference/versioning-support.md
   - reference/service-publishing-strategies.md
+  - 'CAPI Provider Image Overrides': reference/capi-image-overrides.md
 - 'Contribute':
   - contribute/index.md
   - 'Repositories': contribute/repositories.md
@@ -441,6 +447,7 @@ nav:
   - 'Retrospective Guidelines': contribute/retrospective-guidelines.md
 - 'Blog':
   - blog/index.md
+  - 'August 2026 Progress Report': blog/2026-08-progress-report.md
   - 'July 2026 Progress Report': blog/2026-07-progress-report.md
   - 'June 2026 Progress Report': blog/2026-06-progress-report.md
 - 'Videos':

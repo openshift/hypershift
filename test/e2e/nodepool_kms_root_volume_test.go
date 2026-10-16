@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -86,22 +87,26 @@ func (k *KMSRootVolumeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes [
 	t.Logf("instanceID: %s", instanceID)
 
 	ec2client := ec2Client(k.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region)
-	output, err := ec2client.DescribeVolumes(k.ctx, &ec2.DescribeVolumesInput{
-		Filters: []ec2types.Filter{
-			{
-				Name:   aws.String("attachment.instance-id"),
-				Values: []string{instanceID},
+	var rootVolume ec2types.Volume
+	t.Log("Waiting for encrypted volume metadata to propagate...")
+	g.Eventually(func(g Gomega) {
+		output, err := ec2client.DescribeVolumes(k.ctx, &ec2.DescribeVolumesInput{
+			Filters: []ec2types.Filter{
+				{
+					Name:   aws.String("attachment.instance-id"),
+					Values: []string{instanceID},
+				},
+				{
+					Name:   aws.String("encrypted"),
+					Values: []string{"true"},
+				},
 			},
-			{
-				Name:   aws.String("encrypted"),
-				Values: []string{"true"},
-			},
-		},
-	})
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(output).NotTo(BeNil())
-	g.Expect(output.Volumes).NotTo(BeEmpty())
-	rootVolume := output.Volumes[0]
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(output).NotTo(BeNil())
+		g.Expect(output.Volumes).NotTo(BeEmpty())
+		rootVolume = output.Volumes[0]
+	}).WithContext(k.ctx).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 	if nodePool.Spec.Platform.AWS.RootVolume.EncryptionKey == "" {
 		resp, err := ec2client.GetEbsDefaultKmsKeyId(k.ctx, &ec2.GetEbsDefaultKmsKeyIdInput{})

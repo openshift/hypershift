@@ -7,19 +7,19 @@ import (
 	"fmt"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/pkg/manifests"
+	npconst "github.com/openshift/hypershift/pkg/nodepool"
+	"github.com/openshift/hypershift/support/netutil"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/google/go-cmp/cmp"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
-	"github.com/openshift/hypershift/support/netutil"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 )
 
 const (
@@ -115,8 +115,8 @@ func (mc *MirrorConfigsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 			list := &corev1.ConfigMapList{}
 			err := mc.hostedClusterClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 				crclient.MatchingLabels(map[string]string{
-					nodepool.KubeletConfigConfigMapLabel: "true",
-					hyperv1.NodePoolLabel:                nodePool.Name,
+					hyperv1.KubeletConfigConfigMapLabel: "true",
+					hyperv1.NodePoolLabel:               nodePool.Name,
 				}))
 			configMaps := make([]*corev1.ConfigMap, len(list.Items))
 			for i := range list.Items {
@@ -132,20 +132,20 @@ func (mc *MirrorConfigsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 		},
 		[]e2eutil.Predicate[*corev1.ConfigMap]{
 			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
-				if want, got := netutil.ShortenName(KubeletConfigMap.Name, nodePool.Name, nodepool.QualifiedNameMaxLength), configMap.Name; want != got {
+				if want, got := netutil.ShortenName(KubeletConfigMap.Name, nodePool.Name, npconst.QualifiedNameMaxLength), configMap.Name; want != got {
 					return false, fmt.Sprintf("expected kubelet config ConfigMap name to be '%s', got '%s'", want, got), nil
 				}
 				return true, fmt.Sprintf("kubelet config ConfigMap name is as expected"), nil
 			},
 			func(configMap *corev1.ConfigMap) (done bool, reasons string, err error) {
 				if diff := cmp.Diff(map[string]string{
-					nodepool.KubeletConfigConfigMapLabel: configMap.Labels[nodepool.KubeletConfigConfigMapLabel],
-					hyperv1.NodePoolLabel:                configMap.Labels[hyperv1.NodePoolLabel],
-					nodepool.NTOMirroredConfigLabel:      configMap.Labels[nodepool.NTOMirroredConfigLabel],
+					hyperv1.KubeletConfigConfigMapLabel: configMap.Labels[hyperv1.KubeletConfigConfigMapLabel],
+					hyperv1.NodePoolLabel:               configMap.Labels[hyperv1.NodePoolLabel],
+					hyperv1.NTOMirroredConfigLabel:      configMap.Labels[hyperv1.NTOMirroredConfigLabel],
 				}, map[string]string{
-					nodepool.KubeletConfigConfigMapLabel: "true",
-					hyperv1.NodePoolLabel:                nodePool.Name,
-					nodepool.NTOMirroredConfigLabel:      "true",
+					hyperv1.KubeletConfigConfigMapLabel: "true",
+					hyperv1.NodePoolLabel:               nodePool.Name,
+					hyperv1.NTOMirroredConfigLabel:      "true",
 				}); diff != "" {
 					return false, fmt.Sprintf("incorrect labels: %v", diff), nil
 				}
@@ -164,8 +164,8 @@ func (mc *MirrorConfigsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
 			list := &corev1.ConfigMapList{}
 			err := mc.hostedClusterClient.List(ctx, list, crclient.InNamespace(configManagedNamespace), crclient.MatchingLabels(map[string]string{
-				nodepool.KubeletConfigConfigMapLabel: "true",
-				hyperv1.NodePoolLabel:                nodePool.Name,
+				hyperv1.KubeletConfigConfigMapLabel: "true",
+				hyperv1.NodePoolLabel:               nodePool.Name,
 			}))
 			configMaps := make([]*corev1.ConfigMap, len(list.Items))
 			for i := range list.Items {

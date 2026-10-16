@@ -3,6 +3,7 @@ package awsutil
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/openshift/hypershift/support/awsapi"
 
@@ -12,19 +13,6 @@ import (
 
 	"github.com/pkg/errors"
 )
-
-func DefaultWorkerSGEgressRules() []ec2types.IpPermission {
-	return []ec2types.IpPermission{
-		{
-			IpProtocol: aws.String("-1"),
-			IpRanges: []ec2types.IpRange{
-				{
-					CidrIp: aws.String("0.0.0.0/0"),
-				},
-			},
-		},
-	}
-}
 
 // DefaultWorkerSGIngressRules templates out the required inbound security group rules for the default worker security
 // group. This AWS security group is attached to worker node EC2 instances and the PrivateLink VPC Endpoint for the
@@ -245,6 +233,13 @@ func UpdateResourceTags(ctx context.Context, ec2Client awsapi.EC2API, resourceID
 		// Create/Update tags in AWS.
 		if _, err := ec2Client.CreateTags(ctx, input); err != nil {
 			return errors.Wrapf(err, "failed to create tags for resource %q: %+v", resourceID, create)
+		}
+	}
+
+	// Filter out AWS-reserved tag keys (aws:* prefix) that cannot be deleted.
+	for key := range remove {
+		if strings.HasPrefix(key, "aws:") {
+			delete(remove, key)
 		}
 	}
 

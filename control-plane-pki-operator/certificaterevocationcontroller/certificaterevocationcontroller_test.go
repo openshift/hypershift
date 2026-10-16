@@ -20,6 +20,7 @@ import (
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/control-plane-pki-operator/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 
 	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/library-go/pkg/operator/certrotation"
@@ -1189,7 +1190,7 @@ func kasPodSpec() corev1.PodSpec {
 func fakeKubeClientWithKASDeployment(replicas int32) kubernetes.Interface {
 	return kubefake.NewClientset(&appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hcpmanifests.KubeAPIServerServiceName,
+			Name:      cpomanifests.KubeAPIServerServiceName,
 			Namespace: "test-ns",
 		},
 		Spec: appsv1.DeploymentSpec{

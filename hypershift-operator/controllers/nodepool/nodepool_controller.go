@@ -4,6 +4,7 @@ import (
 	"context"
 	coreerrors "errors"
 	"fmt"
+	"maps"
 	"os"
 	"regexp"
 	"sort"
@@ -11,20 +12,24 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	azureinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/azure"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/pkg/manifests"
+	npconstants "github.com/openshift/hypershift/pkg/nodepool"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -43,7 +48,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -57,6 +62,8 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -87,17 +94,12 @@ const (
 	tuningConfigKey                                      = "tuning"
 	tunedConfigMapLabel                                  = "hypershift.openshift.io/tuned-config"
 	nodeTuningGeneratedConfigLabel                       = "hypershift.openshift.io/nto-generated-machine-config"
-	PerformanceProfileConfigMapLabel                     = "hypershift.openshift.io/performanceprofile-config"
-	NodeTuningGeneratedPerformanceProfileStatusLabel     = "hypershift.openshift.io/nto-generated-performance-profile-status"
 	ContainerRuntimeConfigConfigMapLabel                 = "hypershift.openshift.io/containerruntimeconfig-config"
-	KubeletConfigConfigMapLabel                          = "hypershift.openshift.io/kubeletconfig-config"
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
 
 	labelManagedPrefix = "managed.hypershift.openshift.io"
-	// NTOMirroredConfigLabel added to objects that were mirrored from the node pool namespace into the HCP namespace
-	NTOMirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
 )
 
 type NodePoolReconciler struct {
@@ -106,7 +108,7 @@ type NodePoolReconciler struct {
 	ReleaseProvider releaseinfo.Provider
 	upsert.CreateOrUpdateProvider
 	HypershiftOperatorImage string
-	ImageMetadataProvider   supportutil.ImageMetadataProvider
+	ImageMetadataProvider   imageregistry.ImageMetadataProvider
 	KubevirtInfraClients    kvinfra.KubevirtInfraClientMap
 	EC2Client               awsapi.EC2API
 	InstanceTypeProvider    instancetype.Provider
@@ -137,16 +139,16 @@ var capiRelatedNodePoolManagedResourcesToWatch = []client.Object{
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	bldr := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.NodePool{}, builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		For(&hyperv1.NodePool{}, builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the HostedCluster IgnitionEndpoint is available.
-		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
-		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
-		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
-		Watches(&capiv1.MachineHealthCheck{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(predicate.And(mhcRemediationAllowedChangedPredicate(), supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))).
+		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&capiv1.MachineHealthCheck{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(predicate.And(mhcRemediationAllowedChangedPredicate(), reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
-		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when cloud provider config ConfigMaps change in the control plane namespace.
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForCloudConfig), builder.WithPredicates(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 			return obj.GetName() == "azure-cloud-config" || obj.GetName() == "openstack-cloud-config"
@@ -156,14 +158,14 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			MaxConcurrentReconciles: 10,
 		})
 	for _, managedResource := range r.managedResources() {
-		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))
+		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))
 	}
 	if err := bldr.Complete(r); err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
 	}
 
 	if err := ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Secret{}, builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		For(&corev1.Secret{}, builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
@@ -194,12 +196,14 @@ func (r *NodePoolReconciler) managedResources() []client.Object {
 	return managedResources
 }
 
-func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+var nodePoolTracer = tracing.Tracer("nodepool")
+
+func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// Fetch the nodePool instance
 	nodePool := &hyperv1.NodePool{}
-	err := r.Client.Get(ctx, req.NamespacedName, nodePool)
+	err = r.Client.Get(ctx, req.NamespacedName, nodePool)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("not found", "request", req.String())
@@ -207,6 +211,32 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 		log.Error(err, "error getting nodepool")
 		return ctrl.Result{}, err
+	}
+
+	startOpts := []trace.SpanStartOption{
+		trace.WithAttributes(
+			tracing.AttrNodePoolName.String(nodePool.Name),
+			tracing.AttrNodePoolNamespace.String(nodePool.Namespace),
+			tracing.AttrNodePoolClusterName.String(nodePool.Spec.ClusterName),
+		),
+	}
+	if link := tracing.SpanLinkFromAnnotations(nodePool.Annotations); link.SpanContext.IsValid() {
+		startOpts = append(startOpts, trace.WithLinks(link))
+	}
+	ctx, span := nodePoolTracer.Start(ctx, tracing.SpanNodePoolReconcile, startOpts...)
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	if nodePool.Spec.Release.Image != "" {
+		span.SetAttributes(tracing.AttrNodePoolReleaseImage.String(nodePool.Spec.Release.Image))
+	}
+	if !nodePool.DeletionTimestamp.IsZero() {
+		span.SetAttributes(tracing.AttrNodePoolDeleting.Bool(true))
 	}
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(nodePool.Namespace, nodePool.Spec.ClusterName)
@@ -234,6 +264,10 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	if hcluster.Spec.InfraID != "" {
+		span.SetAttributes(tracing.CorrelationAttrs(hcluster.Spec.InfraID)...)
+	}
+
 	// Ensure the nodePool has a finalizer for cleanup
 	if !controllerutil.ContainsFinalizer(nodePool, finalizer) {
 		controllerutil.AddFinalizer(nodePool, finalizer)
@@ -248,7 +282,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	result, err := r.reconcile(ctx, hcluster, nodePool)
+	result, err = r.reconcile(ctx, hcluster, nodePool)
 	if err != nil {
 		log.Error(err, "Failed to reconcile NodePool")
 		r.recorder.Eventf(nodePool, corev1.EventTypeWarning, "ReconcileError", "%v", err)
@@ -419,7 +453,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 	capi.scaleFromZeroPlatform = r.ScaleFromZeroPlatform
-	if isPaused, duration := supportutil.IsReconciliationPaused(log, nodePool.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, nodePool.Spec.PausedUntil); isPaused {
 		if err := capi.Pause(ctx); err != nil {
 			return ctrl.Result{}, fmt.Errorf("error pausing CAPI: %w", err)
 		}
@@ -458,21 +492,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
-	// Set scale-from-zero annotations if provider is configured and platform is supported
-	// This works for both Replace (MachineDeployment) and InPlace (MachineSet) upgrade types
-	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && r.ScaleFromZeroPlatform == nodePool.Spec.Platform.Type {
-		if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, capi); err != nil {
-			// Distinguish permanent errors (VM size doesn't exist in this region)
-			// from transient errors (API failure, cache load error) to avoid
-			// retrying indefinitely for non-existent VM sizes.
-			var vmNotFound *azureinstancetype.VMSizeNotFoundError
-			if coreerrors.As(err, &vmNotFound) {
-				log.Error(err, "Permanent error setting scale-from-zero annotations; verify the VM size exists in this region")
-				return ctrl.Result{}, nil
-			}
-			log.Error(err, "Failed to set scale-from-zero annotations, will retry")
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	// Labels and taints are required even when native capacity replaces the
+	// optional instance-type provider's resource-capacity workarounds.
+	if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, capi); err != nil {
+		// Distinguish permanent errors (VM size doesn't exist in this region)
+		// from transient errors (API failure, cache load error) to avoid
+		// retrying indefinitely for non-existent VM sizes.
+		var vmNotFound *azureinstancetype.VMSizeNotFoundError
+		if coreerrors.As(err, &vmNotFound) {
+			log.Error(err, "Permanent error setting scale-from-zero annotations; verify the VM size exists in this region")
+			return ctrl.Result{}, nil
 		}
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{}, err
+		}
+		log.Error(err, "Failed to set scale-from-zero annotations, will retry")
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	return ctrl.Result{}, nil
@@ -831,40 +866,38 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
 // are updated and available, and no old machines are running.
-//
-// In CAPI v1.11+, the controller writes status natively in v1beta2 and the v1beta1 status
-// fields come from conversion. The converted v1beta1 fields (especially UpdatedReplicas,
-// which maps from deprecated.v1beta1.updatedReplicas rather than the native upToDateReplicas)
-// can transiently disagree with the v1beta2 native fields. To guard against this, when the
-// v1beta1 fields indicate completion we cross-check against the v1beta2 status stored in the
-// Status.V1Beta2 field, which is kept current on every status-subresource write.
-func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
-	newStatus := &deployment.Status
-	v1beta1Complete := newStatus.UpdatedReplicas == *(deployment.Spec.Replicas) &&
-		newStatus.Replicas == *(deployment.Spec.Replicas) &&
-		newStatus.AvailableReplicas == *(deployment.Spec.Replicas) &&
-		newStatus.ObservedGeneration >= deployment.Generation
-	if !v1beta1Complete {
-		return false
-	}
-	return machineDeploymentCompleteFromV1Beta2Status(deployment)
-}
-
-// machineDeploymentCompleteFromV1Beta2Status verifies that the native v1beta2 status fields
-// also indicate completion. The v1beta1 Status.V1Beta2 field is populated by the v1beta2-to-v1beta1
-// conversion on every status-subresource write, so it is always current.
-// If V1Beta2 is nil (e.g. CAPI < v1.11), returns true to preserve backwards compatibility.
-func machineDeploymentCompleteFromV1Beta2Status(deployment *capiv1.MachineDeployment) bool {
-	v1beta2 := deployment.Status.V1Beta2
-	if v1beta2 == nil {
-		return true
-	}
-	if v1beta2.UpToDateReplicas == nil || v1beta2.AvailableReplicas == nil {
-		return false
-	}
+// It requires the list of MachineSets owned by the MachineDeployment to verify that only a single
+// active MachineSet remains. This guards against a race in CAPI where ObservedGeneration and status
+// counters (UpToDateReplicas, AvailableReplicas) are set before downstream controllers (Machine,
+// MachineSet) have reconciled the template change, causing the counters to be stale.
+// See https://github.com/kubernetes-sigs/cluster-api/issues/13738.
+func MachineDeploymentComplete(deployment *capiv1.MachineDeployment, machineSets []capiv1.MachineSet) bool {
 	desired := ptr.Deref(deployment.Spec.Replicas, 0)
-	return *v1beta2.UpToDateReplicas == desired &&
-		*v1beta2.AvailableReplicas == desired
+	newStatus := &deployment.Status
+
+	// differentiate the nil and 0 cases
+	if newStatus.Replicas == nil || newStatus.AvailableReplicas == nil || newStatus.UpToDateReplicas == nil {
+		return false
+	}
+
+	if *newStatus.AvailableReplicas != desired ||
+		*newStatus.Replicas != desired ||
+		*newStatus.UpToDateReplicas != desired ||
+		newStatus.ObservedGeneration < deployment.Generation {
+		return false
+	}
+
+	// Guard against stale counters: verify that no old MachineSet still has replicas.
+	// If old MachineSets still have replicas, the rollout is not complete regardless
+	// of what the MachineDeployment counters report.
+	currentRevision := deployment.Annotations[capiv1.RevisionAnnotation]
+	for i := range machineSets {
+		if machineSets[i].Annotations[capiv1.RevisionAnnotation] != currentRevision && ptr.Deref(machineSets[i].Status.Replicas, 0) > 0 {
+			return false
+		}
+	}
+
+	return true
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
@@ -941,7 +974,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj 
 	// Check if the ConfigMap is generated by an operator in the control plane namespace
 	// corresponding to this nodepool.
 	_, isNodeTuningGeneratedConfigLabel := obj.GetLabels()[nodeTuningGeneratedConfigLabel]
-	_, isNodeTuningGeneratedPerformanceProfileStatusLabel := obj.GetLabels()[NodeTuningGeneratedPerformanceProfileStatusLabel]
+	_, isNodeTuningGeneratedPerformanceProfileStatusLabel := obj.GetLabels()[npconstants.NodeTuningGeneratedPerformanceProfileStatusLabel]
 	if isNodeTuningGeneratedConfigLabel || isNodeTuningGeneratedPerformanceProfileStatusLabel {
 		nodePoolName := obj.GetLabels()[hyperv1.NodePoolLabel]
 		nodePoolNamespacedName, err := r.getNodePoolNamespacedName(nodePoolName, obj.GetNamespace())
@@ -1033,7 +1066,7 @@ func isNodePoolGeneratedTuningConfigMap(cm *corev1.ConfigMap) bool {
 	if _, ok := cm.GetLabels()[tunedConfigMapLabel]; ok {
 		return true
 	}
-	_, ok := cm.GetLabels()[PerformanceProfileConfigMapLabel]
+	_, ok := cm.GetLabels()[npconstants.PerformanceProfileConfigMapLabel]
 	return ok
 }
 
@@ -1091,7 +1124,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 	if err != nil {
 		return nil, err
 	}
-	controlPlaneOperatorImage, err := supportutil.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
@@ -1101,7 +1134,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
 
-	imageLabels := supportutil.ImageLabels(controlPlaneOperatorImageMetadata)
+	imageLabels := imageregistry.ImageLabels(controlPlaneOperatorImageMetadata)
 	result := &CPOCapabilities{}
 	_, result.DecompressAndDecodeConfig = imageLabels[controlPlaneOperatorManagesDecompressAndDecodeConfig]
 	_, result.CreateDefaultAWSSecurityGroup = imageLabels[controlPlaneOperatorCreatesDefaultAWSSecurityGroup]
@@ -1302,6 +1335,14 @@ func aggregateMachineMessages(msgs []string) string {
 	builder := strings.Builder{}
 	for _, msg := range msgs {
 		if builder.Len()+len(msg) > maxMessageLength {
+			// If nothing has been written yet, truncate the oversized message
+			// rather than dropping it entirely.
+			if builder.Len() == 0 {
+				remaining := maxMessageLength - len(endOfGlobalMessage)
+				builder.WriteString(msg[:remaining])
+				builder.WriteString(endOfGlobalMessage)
+				break
+			}
 			builder.WriteString(endOfMessage)
 			break
 		}
@@ -1332,6 +1373,9 @@ func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]st
 // reconcileScaleFromZeroAnnotations sets scale-from-zero annotations on MachineDeployment/MachineSet.
 // It supports multiple platforms by switching on the NodePool's platform type.
 func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Context, nodePool *hyperv1.NodePool, capi *CAPI) error {
+	if !isAutoscalingEnabled(nodePool) {
+		return nil
+	}
 	// Get the platform-specific machine template
 	var machineTemplate interface{}
 	switch nodePool.Spec.Platform.Type {
@@ -1357,7 +1401,7 @@ func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Conte
 		machineTemplate = azureTemplate
 
 	default:
-		return fmt.Errorf("unsupported platform for scale-from-zero: %s", nodePool.Spec.Platform.Type)
+		return nil
 	}
 
 	// Get the appropriate CAPI object (MachineSet for InPlace, MachineDeployment for Replace)
@@ -1387,11 +1431,19 @@ func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Conte
 	}
 
 	// Create a patch base before modifying the object
-	patch := client.MergeFrom(obj.DeepCopyObject().(client.Object))
+	patch := client.MergeFromWithOptions(obj.DeepCopyObject().(client.Object), client.MergeFromWithOptimisticLock{})
+	originalAnnotations := maps.Clone(obj.GetAnnotations())
+	provider := r.InstanceTypeProvider
+	if r.ScaleFromZeroPlatform != nodePool.Spec.Platform.Type {
+		provider = nil
+	}
 
 	// Set scale-from-zero annotations on the object
-	if err := setScaleFromZeroAnnotationsOnObject(ctx, r.InstanceTypeProvider, nodePool, obj, machineTemplate); err != nil {
+	if err := setScaleFromZeroAnnotationsOnObject(ctx, provider, nodePool, obj, machineTemplate); err != nil {
 		return fmt.Errorf("failed to set scale-from-zero annotations: %w", err)
+	}
+	if maps.Equal(originalAnnotations, obj.GetAnnotations()) {
+		return nil
 	}
 
 	// Patch only sends the diff, avoiding unnecessary API updates when annotations haven't changed

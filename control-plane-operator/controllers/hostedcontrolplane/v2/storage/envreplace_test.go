@@ -238,6 +238,18 @@ func TestSetOperatorImageReferences(t *testing.T) {
 			},
 		},
 		{
+			name: "When env var ends with _CONTROL_PLANE_IMAGE (GCP_PD_DRIVER_CONTROL_PLANE_IMAGE), it should use releaseImageProvider, not userReleaseImageProvider",
+			releaseImages: map[string]string{
+				"gcp-pd-csi-driver": "release-registry.io/gcp-pd-csi-driver:v1",
+			},
+			userReleaseImages: map[string]string{
+				"gcp-pd-csi-driver": "user-registry.io/gcp-pd-csi-driver:v1",
+			},
+			expectedValues: map[string]string{
+				"GCP_PD_DRIVER_CONTROL_PLANE_IMAGE": "release-registry.io/gcp-pd-csi-driver:v1",
+			},
+		},
+		{
 			name: "When HYPERSHIFT_IMAGE is set, it should use releaseImageProvider as a non-data-plane ref",
 			releaseImages: map[string]string{
 				"token-minter": "release-registry.io/token-minter:v1",

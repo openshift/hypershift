@@ -75,6 +75,15 @@ type AWSNodePoolPlatform struct {
 	//
 	// +optional
 	Placement *PlacementOptions `json:"placement,omitempty"`
+
+	// cpuOptions specifies CPU configuration for EC2 instances.
+	// Supported on C8i, M8i, and R8i instance families.
+	// When omitted, AWS defaults are used (nested virtualization is not enabled).
+	// To revert to default behavior after setting cpuOptions, remove the entire
+	// cpuOptions field rather than clearing individual sub-fields.
+	//
+	// +optional
+	CPUOptions CPUOptions `json:"cpuOptions,omitzero"`
 }
 
 // PlacementOptions specifies the placement options for the EC2 instances.
@@ -174,6 +183,31 @@ const (
 	// this HostedCluster tag when both share the same key. The HostedCluster
 	// value is preserved. This is the default behavior when the field is unset.
 	AWSResourceTagOverridePolicyDeny AWSResourceTagOverridePolicy = "Deny"
+)
+
+// CPUOptions specifies CPU configuration for EC2 instances.
+// At least one field must be specified when cpuOptions is present.
+//
+// +kubebuilder:validation:MinProperties=1
+type CPUOptions struct {
+	// nestedVirtualizationPolicy indicates whether to enable nested virtualization on the instance.
+	// Supported on C8i, M8i, and R8i instance families.
+	// When omitted, nested virtualization is not enabled (AWS default behavior).
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=Enabled;Disabled
+	NestedVirtualizationPolicy NestedVirtualizationPolicy `json:"nestedVirtualizationPolicy,omitempty"`
+}
+
+// NestedVirtualizationPolicy indicates whether nested virtualization is enabled or disabled.
+type NestedVirtualizationPolicy string
+
+const (
+	// NestedVirtualizationEnabled enables nested virtualization on the instance.
+	NestedVirtualizationEnabled NestedVirtualizationPolicy = "Enabled"
+
+	// NestedVirtualizationDisabled disables nested virtualization on the instance.
+	NestedVirtualizationDisabled NestedVirtualizationPolicy = "Disabled"
 )
 
 // MarketType describes the market type for EC2 instances.
@@ -454,10 +488,11 @@ type AWSPlatformSpec struct {
 	// before they are terminated, providing a best effort for graceful shutdown.
 	//
 	// Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).
+	// Supports FedRAMP/FIPS endpoints (sqs-fips prefix) and GovCloud regions.
 	//
 	// +optional
 	// +kubebuilder:validation:MaxLength=512
-	// +kubebuilder:validation:Pattern=`^https://sqs\.[a-z0-9-]+\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$`
+	// +kubebuilder:validation:Pattern=`^https://sqs(-fips)?\.([a-z0-9-]+)\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$`
 	TerminationHandlerQueueURL string `json:"terminationHandlerQueueURL,omitempty"`
 }
 
@@ -504,16 +539,16 @@ type AWSRoleCredentials struct {
 type AWSResourceTag struct {
 	// key is the key of the tag.
 	// Must be between 1 and 128 characters and may only contain letters, digits,
-	// and the characters _ . : / = + - @
+	// spaces, and the characters _ . : / = + - @
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=128
-	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z_.:/=+@-]+$')`,message="key must only contain letters, digits, and the characters _ . : / = + - @"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z _.:/=+@-]+$')`,message="key must only contain letters, digits, spaces, and the characters _ . : / = + - @"
 	Key string `json:"key"`
 	// value is the value of the tag.
 	// Must be between 1 and 256 characters and may only contain letters, digits,
-	// and the characters _ . : / = + - @
+	// spaces, and the characters _ . : / = + - @
 	//
 	// Some AWS service do not support empty values. Since tags are added to
 	// resources in many services, the length of the tag value must meet the
@@ -522,7 +557,7 @@ type AWSResourceTag struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
-	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z_.:/=+@-]+$')`,message="value must only contain letters, digits, and the characters _ . : / = + - @"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z _.:/=+@-]+$')`,message="value must only contain letters, digits, spaces, and the characters _ . : / = + - @"
 	Value string `json:"value"`
 }
 
@@ -532,16 +567,16 @@ type AWSResourceTag struct {
 type AWSClusterResourceTag struct {
 	// key is the key of the tag.
 	// Must be between 1 and 128 characters and may only contain letters, digits,
-	// and the characters _ . : / = + - @
+	// spaces, and the characters _ . : / = + - @
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=128
-	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z_.:/=+@-]+$')`,message="key must only contain letters, digits, and the characters _ . : / = + - @"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z _.:/=+@-]+$')`,message="key must only contain letters, digits, spaces, and the characters _ . : / = + - @"
 	Key string `json:"key,omitempty"`
 	// value is the value of the tag.
 	// Must be between 1 and 256 characters and may only contain letters, digits,
-	// and the characters _ . : / = + - @
+	// spaces, and the characters _ . : / = + - @
 	//
 	// Some AWS service do not support empty values. Since tags are added to
 	// resources in many services, the length of the tag value must meet the
@@ -550,7 +585,7 @@ type AWSClusterResourceTag struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
-	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z_.:/=+@-]+$')`,message="value must only contain letters, digits, and the characters _ . : / = + - @"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z _.:/=+@-]+$')`,message="value must only contain letters, digits, spaces, and the characters _ . : / = + - @"
 	Value string `json:"value,omitempty"`
 	// overridePolicy controls whether a NodePool-level tag with the same key can
 	// override this HostedCluster-level tag.
@@ -572,16 +607,16 @@ type AWSClusterResourceTag struct {
 type AWSNodePoolResourceTag struct {
 	// key is the key of the tag.
 	// Must be between 1 and 128 characters and may only contain letters, digits,
-	// and the characters _ . : / = + - @
+	// spaces, and the characters _ . : / = + - @
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=128
-	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z_.:/=+@-]+$')`,message="key must only contain letters, digits, and the characters _ . : / = + - @"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z _.:/=+@-]+$')`,message="key must only contain letters, digits, spaces, and the characters _ . : / = + - @"
 	Key string `json:"key,omitempty"`
 	// value is the value of the tag.
 	// Must be between 1 and 256 characters and may only contain letters, digits,
-	// and the characters _ . : / = + - @
+	// spaces, and the characters _ . : / = + - @
 	//
 	// Some AWS service do not support empty values. Since tags are added to
 	// resources in many services, the length of the tag value must meet the
@@ -590,7 +625,7 @@ type AWSNodePoolResourceTag struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
-	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z_.:/=+@-]+$')`,message="value must only contain letters, digits, and the characters _ . : / = + - @"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[0-9A-Za-z _.:/=+@-]+$')`,message="value must only contain letters, digits, spaces, and the characters _ . : / = + - @"
 	Value string `json:"value,omitempty"`
 }
 

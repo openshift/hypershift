@@ -9,14 +9,250 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/testutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func TestAdaptDeployment(t *testing.T) {
+	tests := []struct {
+		name           string
+		managementType hyperv1.EtcdManagementType
+		disablePKI     bool
+		platform       hyperv1.PlatformType
+	}{
+		{
+			name:           "When etcd is managed and PKI reconciliation is enabled, it should retain the managed CA ConfigMap",
+			managementType: hyperv1.Managed,
+			platform:       hyperv1.NonePlatform,
+		},
+		{
+			name:           "When etcd is managed and PKI reconciliation is disabled, it should retain the managed CA ConfigMap",
+			managementType: hyperv1.Managed,
+			disablePKI:     true,
+			platform:       hyperv1.NonePlatform,
+		},
+		{
+			name:           "When etcd is unmanaged and PKI reconciliation is enabled, it should mount the client Secret CA",
+			managementType: hyperv1.Unmanaged,
+			platform:       hyperv1.NonePlatform,
+		},
+		{
+			name:           "When etcd is unmanaged and PKI reconciliation is disabled, it should mount the client Secret CA",
+			managementType: hyperv1.Unmanaged,
+			disablePKI:     true,
+			platform:       hyperv1.NonePlatform,
+		},
+		{
+			name:           "When IBMCloud etcd is unmanaged and PKI reconciliation is disabled, it should mount the client Secret CA",
+			managementType: hyperv1.Unmanaged,
+			disablePKI:     true,
+			platform:       hyperv1.IBMCloudPlatform,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: tt.platform},
+					Etcd:     hyperv1.EtcdSpec{ManagementType: tt.managementType},
+				},
+			}
+			if tt.managementType == hyperv1.Unmanaged {
+				hcp.Spec.Etcd.Unmanaged = &hyperv1.UnmanagedEtcdSpec{
+					Endpoint: "https://custom-etcd.example.com:2379",
+				}
+			}
+			if tt.disablePKI {
+				hcp.Annotations = map[string]string{hyperv1.DisablePKIReconciliationAnnotation: "true"}
+			}
+
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).NotTo(HaveOccurred())
+			podSpec := &deployment.Spec.Template.Spec
+			originalCA := podspec.FindVolume("etcd-ca", podSpec.Volumes)
+			g.Expect(originalCA).NotTo(BeNil())
+			originalCA = originalCA.DeepCopy()
+			originalClientCert := podspec.FindVolume("etcd-client-crt", podSpec.Volumes)
+			g.Expect(originalClientCert).NotTo(BeNil())
+			originalClientCert = originalClientCert.DeepCopy()
+			originalContainer := podspec.FindContainer(ComponentName, podSpec.Containers)
+			g.Expect(originalContainer).NotTo(BeNil())
+			originalContainer = originalContainer.DeepCopy()
+			originalVolumeCount := len(podSpec.Volumes)
+
+			cpContext := component.WorkloadContext{
+				HCP:                      hcp,
+				UserReleaseImageProvider: testutil.FakeImageProvider(),
+			}
+			g.Expect(adaptDeployment(cpContext, deployment)).To(Succeed())
+
+			ca := podspec.FindVolume("etcd-ca", podSpec.Volumes)
+			g.Expect(ca).NotTo(BeNil())
+			if tt.managementType == hyperv1.Unmanaged {
+				g.Expect(ca.VolumeSource).To(Equal(corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: manifests.EtcdClientSecret(hcp.Namespace).Name,
+						Items:      []corev1.KeyToPath{{Key: "etcd-client-ca.crt", Path: "ca.crt"}},
+					},
+				}))
+				g.Expect(podspec.FindContainer("wait-for-etcd", podSpec.InitContainers)).To(BeNil())
+			} else {
+				g.Expect(ca).To(Equal(originalCA))
+				g.Expect(podspec.FindContainer("wait-for-etcd", podSpec.InitContainers)).NotTo(BeNil())
+			}
+			g.Expect(podSpec.Volumes).To(HaveLen(originalVolumeCount))
+
+			clientCert := podspec.FindVolume("etcd-client-crt", podSpec.Volumes)
+			g.Expect(clientCert).To(Equal(originalClientCert))
+			container := podspec.FindContainer(ComponentName, podSpec.Containers)
+			g.Expect(container).NotTo(BeNil())
+			g.Expect(podspec.FindVolumeMount("etcd-ca", container.VolumeMounts)).To(Equal(&corev1.VolumeMount{
+				Name: "etcd-ca", MountPath: "/etc/kubernetes/certs/etcd-ca",
+			}))
+			g.Expect(podspec.FindVolumeMount("etcd-client-crt", container.VolumeMounts)).To(Equal(&corev1.VolumeMount{
+				Name: "etcd-client-crt", MountPath: "/etc/kubernetes/certs/etcd",
+			}))
+			g.Expect(container.Args).To(ContainElements(originalContainer.Args))
+		})
+	}
+}
+
+func TestResolveKASVerbosity(t *testing.T) {
+	logLevel := func(l hyperv1.LogLevel) hyperv1.KubeAPIServerOperatorSpec {
+		return hyperv1.KubeAPIServerOperatorSpec{
+			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: l},
+		}
+	}
+
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected int
+	}{
+		{
+			name: "When no operatorConfiguration is set, it should default to verbosity 2",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expected: 2,
+		},
+		{
+			name: "When operatorConfiguration exists but kubeAPIServer is nil, it should default to verbosity 2",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{},
+				},
+			},
+			expected: 2,
+		},
+		{
+			name: "When kubeAPIServer logLevel is Normal, it should return verbosity 2",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: logLevel(hyperv1.Normal),
+					},
+				},
+			},
+			expected: 2,
+		},
+		{
+			name: "When kubeAPIServer logLevel is Debug, it should return verbosity 4",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: logLevel(hyperv1.Debug),
+					},
+				},
+			},
+			expected: 4,
+		},
+		{
+			name: "When kubeAPIServer logLevel is Trace, it should return verbosity 6",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: logLevel(hyperv1.Trace),
+					},
+				},
+			},
+			expected: 6,
+		},
+		{
+			name: "When kubeAPIServer logLevel is TraceAll, it should return verbosity 8",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: logLevel(hyperv1.TraceAll),
+					},
+				},
+			},
+			expected: 8,
+		},
+		{
+			name: "When only annotation is set, it should honor the annotation",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.KubeAPIServerVerbosityLevelAnnotation: "5",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expected: 5,
+		},
+		{
+			name: "When both annotation and API field are set, it should prefer API field",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.KubeAPIServerVerbosityLevelAnnotation: "5",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: logLevel(hyperv1.TraceAll),
+					},
+				},
+			},
+			expected: 8,
+		},
+		{
+			name: "When annotation has invalid value, it should default to verbosity 2",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.KubeAPIServerVerbosityLevelAnnotation: "not-a-number",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expected: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(resolveKASVerbosity(tt.hcp)).To(Equal(tt.expected))
+		})
+	}
+}
 
 // findContainerByNameInPod finds a container by name in a PodSpec and returns a pointer to it.
 // Returns nil if the container is not found.
@@ -29,6 +265,62 @@ func findContainerByNameInPod(podSpec *corev1.PodSpec, name string) *corev1.Cont
 	return nil
 }
 
+func TestAdaptDeploymentKASLogLevel(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected string
+	}{
+		{
+			name:     "When no operatorConfiguration is set, it should default to --v=2",
+			hcp:      &hyperv1.HostedControlPlane{},
+			expected: "--v=2",
+		},
+		{
+			name: "When logLevel is Debug, it should set --v=4",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
+							ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+						},
+					},
+				},
+			},
+			expected: "--v=4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			deployment := &appsv1.Deployment{
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:  ComponentName,
+									Ports: []corev1.ContainerPort{{ContainerPort: 6443}},
+								},
+							},
+						},
+					},
+				},
+			}
+			cpContext := component.WorkloadContext{
+				HCP:                      tt.hcp,
+				UserReleaseImageProvider: testutil.FakeImageProvider(),
+			}
+			err := adaptDeployment(cpContext, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+			container := findContainerByNameInPod(&deployment.Spec.Template.Spec, ComponentName)
+			g.Expect(container).NotTo(BeNil())
+			g.Expect(container.Args).To(ContainElement(tt.expected))
+		})
+	}
+}
+
 func TestAddImagePrePullInitContainers(t *testing.T) {
 	testCases := []struct {
 		name                  string
@@ -36,7 +328,7 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 		expectedPrePullImages []string
 	}{
 		{
-			name: "When kube-apiserver container exists it should pre-pull only the apiserver image",
+			name: "When kube-apiserver container exists, it should pre-pull only the apiserver image",
 			containers: []corev1.Container{
 				{Name: "kube-apiserver", Image: "registry.io/kube-apiserver:v1"},
 				{Name: "bootstrap", Image: "registry.io/controlplane-operator:v1"},
@@ -45,7 +337,7 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 			expectedPrePullImages: []string{"registry.io/kube-apiserver:v1"},
 		},
 		{
-			name: "When kube-apiserver container does not exist it should not create pre-pull init containers",
+			name: "When kube-apiserver container does not exist, it should not create pre-pull init containers",
 			containers: []corev1.Container{
 				{Name: "konnectivity-server", Image: "registry.io/konnectivity:v1"},
 				{Name: "audit-logs", Image: "registry.io/cli:v1"},
@@ -53,7 +345,7 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 			expectedPrePullImages: []string{},
 		},
 		{
-			name:                  "When there are no containers it should have no pre-pull init containers",
+			name:                  "When there are no containers, it should have no pre-pull init containers",
 			containers:            []corev1.Container{},
 			expectedPrePullImages: []string{},
 		},
@@ -113,7 +405,7 @@ func TestApplyAWSPodIdentityWebhookContainer(t *testing.T) {
 		validatePod func(*GomegaWithT, *corev1.PodSpec)
 	}{
 		{
-			name: "When TLS security profile is nil it should use default Intermediate profile",
+			name: "When TLS security profile is nil, it should use default Intermediate profile",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -134,7 +426,7 @@ func TestApplyAWSPodIdentityWebhookContainer(t *testing.T) {
 			},
 		},
 		{
-			name: "When TLS security profile is Old it should add TLS configuration",
+			name: "When TLS security profile is Old, it should add TLS configuration",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -162,7 +454,7 @@ func TestApplyAWSPodIdentityWebhookContainer(t *testing.T) {
 			},
 		},
 		{
-			name: "When TLS security profile is Intermediate it should add TLS configuration",
+			name: "When TLS security profile is Intermediate, it should add TLS configuration",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -190,7 +482,7 @@ func TestApplyAWSPodIdentityWebhookContainer(t *testing.T) {
 			},
 		},
 		{
-			name: "When TLS security profile is Modern it should add TLS 1.3 configuration",
+			name: "When TLS security profile is Modern, it should add TLS 1.3 configuration",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -218,7 +510,7 @@ func TestApplyAWSPodIdentityWebhookContainer(t *testing.T) {
 			},
 		},
 		{
-			name: "When TLS security profile is Custom with TLS 1.2 it should add tls-min-version flag",
+			name: "When TLS security profile is Custom with TLS 1.2, it should add tls-min-version flag",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -253,7 +545,7 @@ func TestApplyAWSPodIdentityWebhookContainer(t *testing.T) {
 			},
 		},
 		{
-			name: "When TLS security profile is Custom with TLS 1.3 it should add tls-min-version flag",
+			name: "When TLS security profile is Custom with TLS 1.3, it should add tls-min-version flag",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
@@ -302,12 +594,12 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 		expectedMinTLS string
 	}{
 		{
-			name:           "When TLS security profile is nil it should use default Intermediate profile for konnectivity-server",
+			name:           "When TLS security profile is nil, it should use default Intermediate profile for konnectivity-server",
 			expectedMinTLS: "VersionTLS12",
 			hcp:            &hyperv1.HostedControlPlane{},
 		},
 		{
-			name:           "When TLS security profile is Old it should set TLS 1.0 for konnectivity-server",
+			name:           "When TLS security profile is Old, it should set TLS 1.0 for konnectivity-server",
 			expectedMinTLS: "VersionTLS10",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -322,7 +614,7 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 			},
 		},
 		{
-			name:           "When TLS security profile is Intermediate it should set TLS 1.2 for konnectivity-server",
+			name:           "When TLS security profile is Intermediate, it should set TLS 1.2 for konnectivity-server",
 			expectedMinTLS: "VersionTLS12",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -337,7 +629,7 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 			},
 		},
 		{
-			name:           "When TLS security profile is Modern it should set TLS 1.3 for konnectivity-server",
+			name:           "When TLS security profile is Modern, it should set TLS 1.3 for konnectivity-server",
 			expectedMinTLS: "VersionTLS13",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -352,7 +644,7 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 			},
 		},
 		{
-			name:           "When TLS security profile is Custom with TLS 1.2 it should set TLS 1.2 for konnectivity-server",
+			name:           "When TLS security profile is Custom with TLS 1.2, it should set TLS 1.2 for konnectivity-server",
 			expectedMinTLS: "VersionTLS12",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
@@ -372,7 +664,7 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 			},
 		},
 		{
-			name:           "When TLS security profile is Custom with TLS 1.3 it should set TLS 1.3 for konnectivity-server",
+			name:           "When TLS security profile is Custom with TLS 1.3, it should set TLS 1.3 for konnectivity-server",
 			expectedMinTLS: "VersionTLS13",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{

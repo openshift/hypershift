@@ -138,8 +138,9 @@ spec:
                           Karpenter provisioner.
                         properties:
                           aws:
-                            description: aws specifies the AWS-specific configuration
-                              for Karpenter.
+                            description: |-
+                              aws specifies the AWS-specific configuration for Karpenter.
+                              Required when platform is "AWS", and forbidden otherwise.
                             properties:
                               roleARN:
                                 description: "roleARN specifies the ARN of the IAM
@@ -230,11 +231,42 @@ spec:
                             required:
                             - roleARN
                             type: object
+                          azure:
+                            description: |-
+                              azure specifies the Azure-specific configuration for Karpenter.
+                              Required when platform is "Azure", and forbidden otherwise.
+                            properties:
+                              clientID:
+                                description: |-
+                                  clientID is the client ID of the user-assigned managed identity Karpenter uses
+                                  to provision and manage Azure VMs in the hosted cluster's subscription.
+
+                                  The identity must have a federated credential that trusts the hosted cluster
+                                  OIDC issuer for subject system:serviceaccount:kube-system:karpenter.
+
+                                  The identity must be granted Virtual Machine Contributor, Network Contributor,
+                                  and Managed Identity Operator on the cluster resource group (and Network Contributor
+                                  on the VNet resource group when it differs).
+
+                                  The client ID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                                maxLength: 36
+                                minLength: 36
+                                pattern: ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: the client ID of a managed identity must
+                                    be a valid UUID. It should be 5 groups of hyphen
+                                    separated hexadecimal characters in the form 8-4-4-4-12.
+                                  rule: self.matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
+                            required:
+                            - clientID
+                            type: object
                           platform:
                             description: platform specifies the infrastructure platform
                               that Karpenter should provision nodes on.
                             enum:
                             - AWS
+                            - Azure
                             maxLength: 100
                             type: string
                         required:
@@ -244,6 +276,9 @@ spec:
                         - message: aws is required when platform is AWS, and forbidden
                             otherwise
                           rule: 'self.platform == ''AWS'' ? has(self.aws) : !has(self.aws)'
+                        - message: azure is required when platform is Azure, and forbidden
+                            otherwise
+                          rule: 'self.platform == ''Azure'' ? has(self.azure) : !has(self.azure)'
                       name:
                         description: name specifies the name of the provisioner to
                           use for automatic node management.
@@ -312,6 +347,28 @@ spec:
                     maxItems: 3
                     minItems: 1
                     type: array
+                  kubeClientBurst:
+                    description: |-
+                      kubeClientBurst sets the "--kube-client-burst" flag on cluster-autoscaler.
+                      Controls the maximum burst of queries to the kube-apiserver.
+                      Valid values are 1 through 2000.
+                      When omitted, the flag is not set and the autoscaler uses its default (10).
+                    format: int32
+                    maximum: 2000
+                    minimum: 1
+                    type: integer
+                  kubeClientQPS:
+                    description: |-
+                      kubeClientQPS sets the "--kube-client-qps" flag on cluster-autoscaler.
+                      Controls the maximum queries-per-second the autoscaler may send to the
+                      kube-apiserver. Valid values are -1 through 1000.
+                      When set to -1, client-side rate limiting is disabled.
+                      When set to 0, the flag is passed but client-go applies its default QPS of 5.
+                      When omitted, the flag is not set and the autoscaler uses its default (5).
+                    format: int32
+                    maximum: 1000
+                    minimum: -1
+                    type: integer
                   maxFreeDifferenceRatioPercent:
                     description: |-
                       maxFreeDifferenceRatioPercent sets the maximum difference ratio for free resources between similar node groups. This parameter controls how strict the similarity check is when comparing node groups for load balancing.
@@ -3077,26 +3134,26 @@ spec:
                     properties:
                       endpoint:
                         description: |-
-                          endpoint is the full etcd cluster client endpoint URL. For example:
+                          endpoint is the full etcd cluster client endpoint HTTPS URL. For example:
 
                               https://etcd-client:2379
 
-                          If the URL uses an HTTPS scheme, the TLS field is required.
+                          The tls field is required to authenticate to and verify the etcd endpoint.
                         maxLength: 255
                         pattern: ^https://
                         type: string
                       tls:
-                        description: tls specifies TLS configuration for HTTPS etcd
-                          client endpoints.
+                        description: tls specifies the required TLS configuration
+                          for the HTTPS etcd client endpoint.
                         properties:
                           clientSecret:
                             description: |-
-                              clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
-                              may have the following key/value pairs:
+                              clientSecret refers to a secret for client mTLS authentication with the etcd cluster.
+                              The secret must contain all three of the following key/value pairs:
 
-                                  etcd-client-ca.crt: Certificate Authority value
-                                  etcd-client.crt: Client certificate value
-                                  etcd-client.key: Client certificate key value
+                                  etcd-client-ca.crt: CA bundle used to verify the etcd server certificate
+                                  etcd-client.crt: Client certificate used to authenticate to etcd
+                                  etcd-client.key: Private key for the client certificate
                             properties:
                               name:
                                 default: ""
@@ -3464,13 +3521,15 @@ spec:
                       networkType specifies the SDN provider used for cluster networking.
                       Defaults to OVNKubernetes.
                       This field is required and immutable.
-                      kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
                     enum:
                     - OpenShiftSDN
                     - Calico
                     - OVNKubernetes
                     - Other
                     type: string
+                    x-kubernetes-validations:
+                    - message: networkType is immutable
+                      rule: self == oldSelf
                   serviceNetwork:
                     default:
                     - cidr: 172.31.0.0/16
@@ -3819,6 +3878,50 @@ spec:
                       ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
                       This allows configuring how the default ingress controller endpoints are published.
                     properties:
+                      defaultCertificate:
+                        description: |-
+                          defaultCertificate is a reference to a secret in the HostedCluster namespace
+                          that contains the default certificate served by the default ingress controller.
+                          When Routes don't specify their own certificate, defaultCertificate is used.
+
+                          The secret must contain the following keys and data:
+                            tls.crt: certificate file contents
+                            tls.key: key file contents
+
+                          When set, this certificate replaces the auto-generated wildcard certificate
+                          that is normally created by the control plane operator. The secret is synced
+                          from the HostedCluster namespace to the control plane, and then propagated
+                          to the hosted cluster's openshift-ingress namespace.
+
+                          When the referenced secret is updated, the new certificate data is
+                          automatically propagated to the hosted cluster.
+
+                          When not set, the control plane operator generates a wildcard certificate
+                          signed by the cluster's root CA.
+
+                          Note: a cluster-admin in the hosted cluster can override the default ingress
+                          controller's certificate directly. That override takes precedence and the
+                          certificate referenced here is no longer served.
+                        properties:
+                          name:
+                            description: |-
+                              name is the name of the Secret containing tls.crt and tls.key.
+                              The Secret must exist in the same namespace as the HostedCluster.
+                              name must be a valid DNS subdomain name (RFC 1123): it must contain only
+                              lowercase alphanumeric characters, '-' or '.', and start and end with an
+                              alphanumeric character.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: 'name must be a valid DNS subdomain name: contain
+                                no more than 253 characters, contain only lowercase
+                                alphanumeric characters, ''-'' or ''.'', and start
+                                and end with an alphanumeric character'
+                              rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?([.][a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                        required:
+                        - name
+                        type: object
                       endpointPublishingStrategy:
                         description: |-
                           endpointPublishingStrategy is used to publish the default ingress controller endpoints.
@@ -4697,14 +4800,14 @@ spec:
                               description: |-
                                 key is the key of the tag.
                                 Must be between 1 and 128 characters and may only contain letters, digits,
-                                and the characters _ . : / = + - @
+                                spaces, and the characters _ . : / = + - @
                               maxLength: 128
                               minLength: 1
                               type: string
                               x-kubernetes-validations:
-                              - message: 'key must only contain letters, digits, and
-                                  the characters _ . : / = + - @'
-                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
+                              - message: 'key must only contain letters, digits, spaces,
+                                  and the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                             overridePolicy:
                               description: |-
                                 overridePolicy controls whether a NodePool-level tag with the same key can
@@ -4722,7 +4825,7 @@ spec:
                               description: |-
                                 value is the value of the tag.
                                 Must be between 1 and 256 characters and may only contain letters, digits,
-                                and the characters _ . : / = + - @
+                                spaces, and the characters _ . : / = + - @
 
                                 Some AWS service do not support empty values. Since tags are added to
                                 resources in many services, the length of the tag value must meet the
@@ -4732,8 +4835,8 @@ spec:
                               type: string
                               x-kubernetes-validations:
                               - message: 'value must only contain letters, digits,
-                                  and the characters _ . : / = + - @'
-                                rule: self.matches('^[0-9A-Za-z_.:/=+@-]+$')
+                                  spaces, and the characters _ . : / = + - @'
+                                rule: self.matches('^[0-9A-Za-z _.:/=+@-]+$')
                           required:
                           - key
                           - value
@@ -5047,8 +5150,9 @@ spec:
                           before they are terminated, providing a best effort for graceful shutdown.
 
                           Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).
+                          Supports FedRAMP/FIPS endpoints (sqs-fips prefix) and GovCloud regions.
                         maxLength: 512
-                        pattern: ^https://sqs\.[a-z0-9-]+\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$
+                        pattern: ^https://sqs(-fips)?\.([a-z0-9-]+)\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$
                         type: string
                     required:
                     - region
@@ -5885,8 +5989,8 @@ spec:
                                   If not provided, the controller will auto-create a NAT subnet in the HC's VNet.
                                   The expected format is:
                                     /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
-                                  The maximum length is 355 characters.
-                                maxLength: 355
+                                  The maximum length is 357 characters: 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).
+                                maxLength: 357
                                 minLength: 1
                                 type: string
                                 x-kubernetes-validations:
@@ -5978,22 +6082,26 @@ spec:
                           rule: self == oldSelf
                       subnetID:
                         description: |-
-                          subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
-                          different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
-                          exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must exist under the same subscription ID,
-                          HostedCluster.Spec.Platform.Azure.SubscriptionID.
+                          subnetID is the ID of an existing subnet where the HostedCluster's nodes will be created. It must exist in the same
+                          network as VnetID and under the same subscription as SubscriptionID.
                           subnetID is immutable once set.
                           The subnetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`.
-                          The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                          The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
                           The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
                           The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
                           The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
-                        maxLength: 355
+
+                          MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).
+                        maxLength: 357
                         minLength: 1
                         type: string
                         x-kubernetes-validations:
-                        - message: encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`
+                        - message: subnetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`
                           rule: size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')
+                        - message: the subscriptionId in the subnetID must be a valid
+                            UUID. It should be 5 groups of hyphen separated hexadecimal
+                            characters in the form 8-4-4-4-12
+                          rule: self.split('/')[2].matches('^([0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}|[{][0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}])$')
                         - message: The resourceGroupName should be between 1 and 90
                             characters, consisting only of alphanumeric characters,
                             hyphens, underscores, periods and parenthesis
@@ -6588,7 +6696,7 @@ spec:
                   This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
                   The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
                   Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
-                  Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+                  Attempting to use a release with a skew against a NodePool release bigger than N-3 for the y-stream will result in leaving the NodePool in an unsupported state.
                   Changing this field will trigger a rollout of the control plane components.
                   The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.
                 properties:
@@ -7122,9 +7230,10 @@ spec:
                                   || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')
                             port:
                               description: |-
-                                port is the port of the NodePort service. If <=0, the port is dynamically
-                                assigned when the service is created.
+                                port is the port of the NodePort service.
+                                If omitted, the port is dynamically assigned when the service is created.
                               format: int32
+                              minimum: 1
                               type: integer
                           required:
                           - address

@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	npmetrics "github.com/openshift/hypershift/pkg/metrics/nodepool"
 	"github.com/openshift/hypershift/support/api"
 
 	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -312,9 +313,9 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			for _, metricValue := range allMetricsValues {
 				if metricValue != nil && metricValue.Name != nil {
 					switch *metricValue.Name {
-					case VCpusCountByHClusterMetricName:
+					case npmetrics.VCpusCountByHClusterMetricName:
 						vCpusCountMetricValue = metricValue
-					case VCpusComputationErrorByHClusterMetricName:
+					case npmetrics.VCpusComputationErrorByHClusterMetricName:
 						vCpusComputationErrorMetricValue = metricValue
 					}
 				}
@@ -336,7 +337,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			}
 
 			expectedVCpusCountMetricValue := &dto.MetricFamily{
-				Name: ptr.To(VCpusCountByHClusterMetricName),
+				Name: ptr.To(npmetrics.VCpusCountByHClusterMetricName),
 				Help: ptr.To(VCpusCountByHClusterMetricHelp),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
@@ -347,7 +348,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 
 			if tc.expectedVCpusCountErrorReason != "" {
 				expectedVCpusComputationErrorMetricValue = &dto.MetricFamily{
-					Name: ptr.To(VCpusComputationErrorByHClusterMetricName),
+					Name: ptr.To(npmetrics.VCpusComputationErrorByHClusterMetricName),
 					Help: ptr.To(VCpusComputationErrorByHClusterMetricHelp),
 					Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 					Metric: []*dto.Metric{{
@@ -723,9 +724,9 @@ func TestReportVCpusWithKarpenterAutoNode(t *testing.T) {
 			for _, metricValue := range allMetricsValues {
 				if metricValue != nil && metricValue.Name != nil {
 					switch *metricValue.Name {
-					case VCpusCountByHClusterMetricName:
+					case npmetrics.VCpusCountByHClusterMetricName:
 						vCpusCountMetricValue = metricValue
-					case VCpusComputationErrorByHClusterMetricName:
+					case npmetrics.VCpusComputationErrorByHClusterMetricName:
 						vCpusComputationErrorMetricValue = metricValue
 					}
 				}
@@ -739,7 +740,7 @@ func TestReportVCpusWithKarpenterAutoNode(t *testing.T) {
 			}
 
 			expectedVCpusCountMetricValue := &dto.MetricFamily{
-				Name: ptr.To(VCpusCountByHClusterMetricName),
+				Name: ptr.To(npmetrics.VCpusCountByHClusterMetricName),
 				Help: ptr.To(VCpusCountByHClusterMetricHelp),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
@@ -750,7 +751,7 @@ func TestReportVCpusWithKarpenterAutoNode(t *testing.T) {
 
 			if tc.expectedVCpusCountErrorReason != "" {
 				expectedVCpusComputationErrorMetricValue = &dto.MetricFamily{
-					Name: ptr.To(VCpusComputationErrorByHClusterMetricName),
+					Name: ptr.To(npmetrics.VCpusComputationErrorByHClusterMetricName),
 					Help: ptr.To(VCpusComputationErrorByHClusterMetricHelp),
 					Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 					Metric: []*dto.Metric{{

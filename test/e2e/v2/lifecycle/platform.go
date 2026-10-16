@@ -17,6 +17,10 @@ type ClusterSpec struct {
 	Variant      string   `json:"variant"`
 	ExtraArgs    []string `json:"extraArgs,omitempty"`
 	ReleaseImage string   `json:"releaseImage,omitempty"` // override (empty = use default)
+
+	// InitialNodePoolReplicas overrides the default initial NodePool replica count.
+	// A nil value uses HYPERSHIFT_NODE_COUNT.
+	InitialNodePoolReplicas *int `json:"initialNodePoolReplicas,omitempty"`
 }
 
 // TestGroup describes one logical group of e2e tests to execute.
@@ -63,10 +67,12 @@ type TestMatrix struct {
 	Sequential []SequentialGroup `json:"sequential,omitempty"`
 }
 
-// Validate checks that all group names within the matrix are unique
-// and safe for use as JUnit filename components.
+// Validate checks that all group names within the matrix are unique and safe
+// for use as JUnit filename components. It also rejects variants assigned to
+// different top-level execution lanes, because those lanes run concurrently.
 func (m TestMatrix) Validate() error {
 	seen := make(map[string]bool)
+	variantLanes := make(map[string]string)
 	var errs []error
 	check := func(name string) {
 		if err := validateGroupName(name); err != nil {
@@ -77,12 +83,22 @@ func (m TestMatrix) Validate() error {
 		}
 		seen[name] = true
 	}
+	checkVariant := func(variant, lane string) {
+		if previousLane, ok := variantLanes[variant]; ok && previousLane != lane {
+			errs = append(errs, fmt.Errorf("variant %q is used by concurrent lanes %q and %q", variant, previousLane, lane))
+			return
+		}
+		variantLanes[variant] = lane
+	}
 	for _, g := range m.Parallel {
 		check(g.Name)
+		checkVariant(g.Variant, "parallel/"+g.Name)
 	}
-	for _, sg := range m.Sequential {
+	for i, sg := range m.Sequential {
+		lane := fmt.Sprintf("sequential/%d/%s", i, sg.Name)
 		for _, step := range sg.Steps {
 			check(step.Name)
+			checkVariant(step.Variant, lane)
 		}
 	}
 	return errors.Join(errs...)
@@ -208,8 +224,9 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 		return NewAzurePlatformConfig(sharedDir), nil
 	case "aws":
 		return NewAWSPlatformConfig(AWSPlatformOptions{
-			Region: envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
-			Zones:  envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
+			Region:    envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
+			Zones:     envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
+			ProwJobId: envOrDefault("PROW_JOB_ID", ""),
 		}, sharedDir), nil
 	default:
 		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws)", platform)

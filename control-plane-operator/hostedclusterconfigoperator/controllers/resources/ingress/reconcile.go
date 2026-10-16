@@ -137,18 +137,62 @@ func ReconcileDefaultIngressControllerCertSecret(certSecret *corev1.Secret, sour
 	return nil
 }
 
-func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultNodePort *corev1.Service, hcp *hyperv1.HostedControlPlane) error {
-	detectedHTTPSNodePort := int32(0)
-
-	for _, port := range defaultNodePort.Spec.Ports {
-		if port.Port == 443 {
-			detectedHTTPSNodePort = port.NodePort
-			break
+// EffectiveEndpointPublishingStrategy returns the endpoint publishing strategy
+// in use by the guest default IngressController. It prefers the strategy
+// reported in the IngressController status, then the spec, then the one
+// configured in the HostedControlPlane, and finally falls back to the platform
+// default for KubeVirt (NodePortService).
+func EffectiveEndpointPublishingStrategy(ingressController *operatorv1.IngressController, hcp *hyperv1.HostedControlPlane) *operatorv1.EndpointPublishingStrategy {
+	if ingressController != nil {
+		if ingressController.Status.EndpointPublishingStrategy != nil && ingressController.Status.EndpointPublishingStrategy.Type != "" {
+			return ingressController.Status.EndpointPublishingStrategy
+		}
+		if ingressController.Spec.EndpointPublishingStrategy != nil && ingressController.Spec.EndpointPublishingStrategy.Type != "" {
+			return ingressController.Spec.EndpointPublishingStrategy
 		}
 	}
+	if hcp != nil && hcp.Spec.OperatorConfiguration != nil && hcp.Spec.OperatorConfiguration.IngressOperator != nil &&
+		hcp.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy != nil &&
+		hcp.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy.Type != "" {
+		return hcp.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy
+	}
+	return &operatorv1.EndpointPublishingStrategy{Type: operatorv1.NodePortServiceStrategyType}
+}
 
-	if detectedHTTPSNodePort == 0 {
-		return fmt.Errorf("unable to detect default ingress NodePort https port")
+// passthroughHTTPSTargetPort resolves the port on the guest nodes where the
+// default ingress routers accept HTTPS traffic, according to the endpoint
+// publishing strategy in use.
+func passthroughHTTPSTargetPort(strategy *operatorv1.EndpointPublishingStrategy, defaultNodePort *corev1.Service) (int32, error) {
+	switch strategy.Type {
+	case operatorv1.NodePortServiceStrategyType:
+		if defaultNodePort == nil {
+			return 0, fmt.Errorf("unable to detect default ingress NodePort https port: NodePort service not found")
+		}
+		for _, port := range defaultNodePort.Spec.Ports {
+			if port.Port == 443 && port.NodePort != 0 {
+				return port.NodePort, nil
+			}
+		}
+		return 0, fmt.Errorf("unable to detect default ingress NodePort https port")
+	case operatorv1.HostNetworkStrategyType:
+		// With HostNetwork the routers bind directly on the node network on
+		// the configured HTTPS port (443 by default).
+		if strategy.HostNetwork != nil && strategy.HostNetwork.HTTPSPort != 0 {
+			return strategy.HostNetwork.HTTPSPort, nil
+		}
+		return 443, nil
+	default:
+		return 0, fmt.Errorf("default ingress passthrough is not supported for endpoint publishing strategy %q", strategy.Type)
+	}
+}
+
+func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultNodePort *corev1.Service, strategy *operatorv1.EndpointPublishingStrategy, hcp *hyperv1.HostedControlPlane) error {
+	if strategy == nil {
+		strategy = &operatorv1.EndpointPublishingStrategy{Type: operatorv1.NodePortServiceStrategyType}
+	}
+	targetPort, err := passthroughHTTPSTargetPort(strategy, defaultNodePort)
+	if err != nil {
+		return fmt.Errorf("failed to resolve default ingress passthrough https target port: %w", err)
 	}
 
 	if service.Labels == nil {
@@ -159,7 +203,7 @@ func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultN
 			Name:       "https-443",
 			Protocol:   corev1.ProtocolTCP,
 			Port:       443,
-			TargetPort: intstr.FromInt(int(detectedHTTPSNodePort)),
+			TargetPort: intstr.FromInt(int(targetPort)),
 		},
 	}
 

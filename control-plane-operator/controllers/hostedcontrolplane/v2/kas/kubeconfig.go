@@ -8,22 +8,22 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
-	"github.com/openshift/hypershift/support/podspec"
 
 	corev1 "k8s.io/api/core/v1"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	KubeconfigKey = podspec.KubeconfigKey
+	KubeconfigKey = config.KubeconfigKey
 )
 
 func adaptServiceKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
@@ -228,6 +228,29 @@ func adaptAzureWorkloadIdentityWebhookKubeconfigSecret(cpContext component.Workl
 	return nil
 }
 
+func adaptGCPWorkloadIdentityFederationWebhookKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
+	csrSigner := manifests.CSRSignerCASecret(cpContext.HCP.Namespace)
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
+		return fmt.Errorf("failed to get cluster-signer-ca secret: %w", err)
+	}
+	rootCA := manifests.RootCASecret(cpContext.HCP.Namespace)
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		return fmt.Errorf("failed to get root ca cert secret: %w", err)
+	}
+	rootCACM := &corev1.ConfigMap{
+		Data: map[string]string{
+			certs.CASignerCertMapKey: string(rootCA.Data[certs.CASignerCertMapKey]),
+		},
+	}
+
+	if !cpContext.SkipCertificateSigning {
+		apiServerPort := netutil.KASPodPort(cpContext.HCP)
+		localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
+		return pki.ReconcileServiceAccountKubeconfigWithURL(secret, csrSigner, rootCACM, "openshift-authentication", "gcp-workload-identity-federation-webhook", localhostURL)
+	}
+	return nil
+}
+
 func generateKubeConfig(ca, cert *corev1.Secret, url string) ([]byte, error) {
 	caPEM := ca.Data[certs.CASignerCertMapKey]
 	crtBytes, keyBytes := cert.Data[corev1.TLSCertKey], cert.Data[corev1.TLSPrivateKeyKey]
@@ -274,9 +297,9 @@ func GenerateKubeConfig(cpContext component.WorkloadContext, cert *corev1.Secret
 
 func InClusterKASURL(platformType hyperv1.PlatformType) string {
 	if platformType == hyperv1.IBMCloudPlatform {
-		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
+		return fmt.Sprintf("https://%s:%d", cpomanifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
 	}
-	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCPort)
+	return fmt.Sprintf("https://%s:%d", cpomanifests.KubeAPIServerServiceName, config.KASSVCPort)
 }
 
 func customExternalURL(address string, port int32) string {

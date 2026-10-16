@@ -1,9 +1,14 @@
 package gcp
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -13,6 +18,13 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iam/v1"
 )
+
+// timeoutError simulates net/http's unexported tlsHandshakeTimeoutError.
+type timeoutError string
+
+func (e timeoutError) Error() string   { return string(e) }
+func (e timeoutError) Timeout() bool   { return true }
+func (e timeoutError) Temporary() bool { return true }
 
 func TestIAMManagerFormatServiceAccountMethods(t *testing.T) {
 	manager := &IAMManager{
@@ -402,11 +414,6 @@ func TestIsTransientIAMError(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "When error is a 429 rate limit error, it should return true",
-			err:      &googleapi.Error{Code: 429, Message: "A quota has been reached"},
-			expected: true,
-		},
-		{
 			name:     "When error is a 404 not found error, it should return true",
 			err:      &googleapi.Error{Code: 404, Message: "Not found"},
 			expected: true,
@@ -422,6 +429,21 @@ func TestIsTransientIAMError(t *testing.T) {
 			expected: false,
 		},
 		{
+			name:     "When error is a 400 IAM error, it should return true",
+			err:      &googleapi.Error{Code: 400, Message: "Service account does not exist"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 400 non-IAM error, it should return false",
+			err:      &googleapi.Error{Code: 400, Message: "Invalid argument"},
+			expected: false,
+		},
+		{
+			name:     "When error is a 429 rate limit error, it should return false",
+			err:      &googleapi.Error{Code: 429, Message: "Rate limited"},
+			expected: false,
+		},
+		{
 			name:     "When error is a 500 server error, it should return false",
 			err:      &googleapi.Error{Code: 500, Message: "Internal server error"},
 			expected: false,
@@ -429,6 +451,11 @@ func TestIsTransientIAMError(t *testing.T) {
 		{
 			name:     "When error is a non-googleapi error, it should return false",
 			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+		{
+			name:     "When error is a network error, it should return false",
+			err:      &net.OpError{Op: "read", Net: "tcp", Err: fmt.Errorf("connection reset by peer")},
 			expected: false,
 		},
 	}
@@ -439,6 +466,302 @@ func TestIsTransientIAMError(t *testing.T) {
 			g.Expect(isTransientIAMError(tt.err)).To(Equal(tt.expected))
 		})
 	}
+}
+
+func TestIsTransientError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "When error is nil, it should return false",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "When error is a 429 rate limit error, it should return true",
+			err:      &googleapi.Error{Code: 429, Message: "Rate limited"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 500 server error, it should return true",
+			err:      &googleapi.Error{Code: 500, Message: "Internal server error"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 502 bad gateway error, it should return true",
+			err:      &googleapi.Error{Code: 502, Message: "Bad gateway"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 503 service unavailable error, it should return true",
+			err:      &googleapi.Error{Code: 503, Message: "Service unavailable"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 504 gateway timeout error, it should return true",
+			err:      &googleapi.Error{Code: 504, Message: "Gateway timeout"},
+			expected: true,
+		},
+		{
+			name:     "When error is a transient network error, it should return true",
+			err:      &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET}},
+			expected: true,
+		},
+		{
+			name:     "When error is a 404 not found error, it should return false",
+			err:      &googleapi.Error{Code: 404, Message: "Not found"},
+			expected: false,
+		},
+		{
+			name:     "When error is a non-retryable error, it should return false",
+			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isTransientError(tt.err)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestIsTransientNetworkError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "When error is nil, it should return false",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name: "When error is a connection reset by peer, it should return true",
+			err: &net.OpError{
+				Op:  "read",
+				Net: "tcp",
+				Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET},
+			},
+			expected: true,
+		},
+		{
+			name: "When error is network unreachable, it should return true",
+			err: &net.OpError{
+				Op:  "dial",
+				Net: "tcp",
+				Err: &os.SyscallError{Syscall: "connect", Err: syscall.ENETUNREACH},
+			},
+			expected: true,
+		},
+		{
+			name:     "When error wraps a transient net.OpError, it should return true",
+			err:      fmt.Errorf("failed to get IAM policy: %w", &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET}}),
+			expected: true,
+		},
+		{
+			name:     "When error is a DNS not found, it should return false",
+			err:      &net.DNSError{Err: "no such host", Name: "example.com", IsNotFound: true},
+			expected: false,
+		},
+		{
+			name:     "When error is a temporary DNS error, it should return true",
+			err:      &net.DNSError{Err: "temporary failure", Name: "example.com", IsTemporary: true},
+			expected: true,
+		},
+		{
+			name:     "When error is a DNS timeout, it should return true",
+			err:      &net.DNSError{Err: "timeout", Name: "example.com", IsTimeout: true},
+			expected: true,
+		},
+		{
+			name:     "When error is connection refused, it should return true",
+			err:      &net.OpError{Op: "dial", Net: "tcp", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED}},
+			expected: true,
+		},
+		{
+			name:     "When error is host unreachable, it should return true",
+			err:      &net.OpError{Op: "dial", Net: "tcp", Err: &os.SyscallError{Syscall: "connect", Err: syscall.EHOSTUNREACH}},
+			expected: true,
+		},
+		{
+			name:     "When error is a syscall timeout, it should return true",
+			err:      &net.OpError{Op: "dial", Net: "tcp", Err: &os.SyscallError{Syscall: "connect", Err: syscall.ETIMEDOUT}},
+			expected: true,
+		},
+		{
+			name:     "When error is connection aborted, it should return true",
+			err:      &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNABORTED}},
+			expected: true,
+		},
+		{
+			name:     "When error is a broken pipe, it should return true",
+			err:      &net.OpError{Op: "write", Net: "tcp", Err: &os.SyscallError{Syscall: "write", Err: syscall.EPIPE}},
+			expected: true,
+		},
+		{
+			name:     "When error is io.ErrUnexpectedEOF, it should return true",
+			err:      io.ErrUnexpectedEOF,
+			expected: true,
+		},
+		{
+			name:     "When error is io.EOF, it should return true",
+			err:      io.EOF,
+			expected: true,
+		},
+		{
+			name:     "When error is a url.Error wrapping a transient error, it should return true",
+			err:      &url.Error{Op: "Post", URL: "https://iam.googleapis.com", Err: &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET}}},
+			expected: true,
+		},
+		{
+			name:     "When error is a net.Error with Timeout, it should return true",
+			err:      timeoutError("net/http: TLS handshake timeout"),
+			expected: true,
+		},
+		{
+			name:     "When error is an address error, it should return false",
+			err:      &net.AddrError{Err: "invalid address", Addr: "not-a-host"},
+			expected: false,
+		},
+		{
+			name:     "When error is a non-network error, it should return false",
+			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+		{
+			name:     "When error is an IAM API error, it should return false",
+			err:      &googleapi.Error{Code: 400, Message: "Service account does not exist"},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isTransientNetworkError(tt.err)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestIsRetryableIAMError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "When error is nil, it should return false",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "When error is a transient IAM error (404), it should return true",
+			err:      &googleapi.Error{Code: 404, Message: "Not found"},
+			expected: true,
+		},
+		{
+			name:     "When error is a transient server error (429), it should return true",
+			err:      &googleapi.Error{Code: 429, Message: "Rate limited"},
+			expected: true,
+		},
+		{
+			name:     "When error is a 504 gateway timeout, it should return true",
+			err:      &googleapi.Error{Code: 504, Message: "Gateway timeout"},
+			expected: true,
+		},
+		{
+			name:     "When error is a transient network error, it should return true",
+			err:      &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET}},
+			expected: true,
+		},
+		{
+			name:     "When error is neither IAM nor network, it should return false",
+			err:      fmt.Errorf("some other error"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(isRetryableIAMError(tt.err)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestRetryWithExponentialBackoff(t *testing.T) {
+	manager := &IAMManager{logger: logr.Discard()}
+
+	t.Run("When operation returns a non-retryable error, it should run once and propagate the error", func(t *testing.T) {
+		g := NewWithT(t)
+		calls := 0
+		permanentErr := fmt.Errorf("permanent failure")
+
+		err := manager.retryWithExponentialBackoff(context.Background(), "test-op", isTransientError, func() error {
+			calls++
+			return permanentErr
+		})
+
+		g.Expect(err).To(MatchError(permanentErr))
+		g.Expect(calls).To(Equal(1))
+	})
+
+	t.Run("When operation returns a transient error then succeeds, it should retry and return nil", func(t *testing.T) {
+		g := NewWithT(t)
+		calls := 0
+		transientErr := &net.OpError{
+			Op:  "read",
+			Net: "tcp",
+			Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET},
+		}
+
+		err := manager.retryWithExponentialBackoff(context.Background(), "test-op", isTransientError, func() error {
+			calls++
+			if calls == 1 {
+				return transientErr
+			}
+			return nil
+		})
+
+		g.Expect(err).To(BeNil())
+		g.Expect(calls).To(Equal(2))
+	})
+
+	t.Run("When context is canceled, it should stop retrying", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		calls := 0
+		transientErr := &googleapi.Error{Code: 429, Message: "Rate limited"}
+
+		cancel()
+
+		err := manager.retryWithExponentialBackoff(ctx, "test-op", isRetryableIAMError, func() error {
+			calls++
+			return transientErr
+		})
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(calls).To(Equal(1))
+	})
+
+	t.Run("When using isTransientError, a 404 should not be retried", func(t *testing.T) {
+		g := NewWithT(t)
+		calls := 0
+		notFoundErr := &googleapi.Error{Code: 404, Message: "Project not found"}
+
+		err := manager.retryWithExponentialBackoff(context.Background(), "test-op", isTransientError, func() error {
+			calls++
+			return notFoundErr
+		})
+
+		g.Expect(err).To(MatchError(notFoundErr))
+		g.Expect(calls).To(Equal(1))
+	})
 }
 
 func TestIsAlreadyExistsError(t *testing.T) {

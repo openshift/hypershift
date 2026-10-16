@@ -15,7 +15,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -111,6 +111,7 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 		},
 	}
 
+	applyAWSCPUOptions(nodePool, awsMachineTemplateSpec)
 	applyAWSPlacementOptions(nodePool, awsMachineTemplateSpec)
 
 	if hostedCluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
@@ -194,19 +195,54 @@ func buildAWSSecurityGroups(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.H
 			Filters: filters,
 		})
 	}
-	if defaultSG {
-		if hostedCluster.Status.Platform == nil || hostedCluster.Status.Platform.AWS == nil || hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "" {
-			return nil, &NotReadyError{fmt.Errorf("the default security group for the HostedCluster has not been created")}
-		}
-		sgID := hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID
+	// Default worker security group ID as recorded in HostedCluster status by the control
+	// plane operator (empty until the CPO creates it, or forever for a CPO that does not
+	// manage a default worker SG).
+	var defaultWorkerSGID string
+	if hostedCluster.Status.Platform != nil && hostedCluster.Status.Platform.AWS != nil {
+		defaultWorkerSGID = hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID
+	}
+
+	// When the CPO is known to create a default worker security group (defaultSG is derived
+	// from the CPO image capability label), block template rendering until its ID has been
+	// recorded in status. This is what tells us an SG is coming for this cluster; a CPO that
+	// does not manage a default worker SG reports defaultSG=false and is never gated here.
+	if defaultSG && defaultWorkerSGID == "" {
+		return nil, &NotReadyError{fmt.Errorf("the default security group for the HostedCluster has not been created")}
+	}
+
+	// Inject the default worker security group whenever its ID is present in status, even if
+	// the per-reconcile capability flag transiently reads false. The status ID is the
+	// authoritative, monotonic signal: keying injection on it (rather than solely on the
+	// fail-open capability flag) keeps the AWSMachineTemplate hash stable across reconciles
+	// and prevents a false->true capability flip from re-rendering the template and
+	// triggering an unwanted rolling replacement of all workers (OCPBUGS-105464).
+	if defaultWorkerSGID != "" {
 		securityGroups = append(securityGroups, capiaws.AWSResourceReference{
-			ID: &sgID,
+			ID: &defaultWorkerSGID,
 		})
 	}
 	return securityGroups, nil
 }
 
+func applyAWSCPUOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
+	if nodePool.Spec.Platform.AWS == nil {
+		return
+	}
+
+	switch nodePool.Spec.Platform.AWS.CPUOptions.NestedVirtualizationPolicy {
+	case hyperv1.NestedVirtualizationEnabled:
+		spec.Template.Spec.CPUOptions.NestedVirtualization = capiaws.NestedVirtualizationPolicyEnabled
+	case hyperv1.NestedVirtualizationDisabled:
+		spec.Template.Spec.CPUOptions.NestedVirtualization = capiaws.NestedVirtualizationPolicyDisabled
+	}
+}
+
 func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachineTemplateSpec) {
+	if nodePool.Spec.Platform.AWS == nil {
+		return
+	}
+
 	placement := nodePool.Spec.Platform.AWS.Placement
 	if placement == nil {
 		return
@@ -248,6 +284,7 @@ func applyAWSPlacementOptions(nodePool *hyperv1.NodePool, spec *capiaws.AWSMachi
 		spec.Template.Spec.CapacityReservationID = capacityReservation.ID
 		spec.Template.Spec.CapacityReservationPreference = capiaws.CapacityReservationPreference(capacityReservation.Preference)
 	}
+
 }
 
 func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, infraName string) capiaws.Tags {
@@ -508,7 +545,37 @@ func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodeP
 		}
 	}
 
+	if err := validateNestedVirtualizationInstanceType(nodePool.Spec.Platform.AWS.CPUOptions, nodePool.Spec.Platform.AWS.InstanceType); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// nestedVirtualizationSupportedInstanceFamilies are the EC2 instance families that support
+// CpuOptions.NestedVirtualization, per AWS's "Supported CPU options" documentation:
+// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/cpu-options-supported-instances-values.html
+// This includes the base family (e.g. "c8i") and its "-flex" variant (e.g. "c8i-flex"), both of
+// which were made generally available together for each family.
+var nestedVirtualizationSupportedInstanceFamilies = []string{"c8i", "m8i", "r8i"}
+
+// validateNestedVirtualizationInstanceType returns an error if cpuOptions.nestedVirtualizationPolicy
+// is set on an EC2 instance type that doesn't support it. Nested virtualization is only supported
+// on 8th generation Intel-based instance types (c8i, m8i, r8i, and their "-flex" variants).
+func validateNestedVirtualizationInstanceType(cpuOptions hyperv1.CPUOptions, instanceType string) error {
+	if cpuOptions.NestedVirtualizationPolicy != hyperv1.NestedVirtualizationEnabled {
+		// Nothing to validate: the field is unset, or explicitly disabled (a no-op on any instance type).
+		return nil
+	}
+
+	family, _, _ := strings.Cut(instanceType, ".")
+	for _, supported := range nestedVirtualizationSupportedInstanceFamilies {
+		if family == supported || family == supported+"-flex" {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("cpuOptions.nestedVirtualizationPolicy is only supported on C8i, M8i, and R8i instance families (including their -flex variants), got instanceType %q", instanceType)
 }
 
 // getWindowsAMI returns the appropriate Windows AMI for the given region from release image metadata.

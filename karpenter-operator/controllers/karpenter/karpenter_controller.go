@@ -17,11 +17,11 @@ import (
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	supportassets "github.com/openshift/hypershift/support/assets"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
@@ -33,7 +33,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -71,6 +71,9 @@ type Reconciler struct {
 	KarpenterComponent        controlplanecomponent.ControlPlaneComponent
 	ControlPlaneContext       controlplanecomponent.ControlPlaneContext
 	ReleaseProvider           releaseinfo.Provider
+	// StandaloneAdapter selects HyperShift responsibilities that are not owned by the standalone operator.
+	StandaloneAdapter bool
+
 	upsert.CreateOrUpdateProvider
 }
 
@@ -79,48 +82,50 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, man
 	r.GuestClient = mgr.GetClient()
 	r.CreateOrUpdateProvider = upsert.New(false)
 
-	// First install the CRDs so we can create a watch below.
-	if err := r.reconcileCRDs(ctx, true); err != nil {
-		return err
-	}
-
 	c, err := controller.New("karpenter", mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
 
-	// Watch CRDs guest side.
-	if err := c.Watch(source.Kind[client.Object](mgr.GetCache(), &apiextensionsv1.CustomResourceDefinition{}, handler.EnqueueRequestsFromMapFunc(
-		func(ctx context.Context, o client.Object) []ctrl.Request {
-			// Only watch our Karpenter CRDs
-			switch o.GetName() {
-			case "ec2nodeclasses.karpenter.k8s.aws",
-				"nodepools.karpenter.sh",
-				"nodeclaims.karpenter.sh":
-				return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: r.Namespace}}}
-			}
-			return nil
-		},
-	))); err != nil {
-		return fmt.Errorf("failed to watch CRDs: %w", err)
-	}
+	if !r.StandaloneAdapter {
+		// Reconcile CRDs only in the embedded karpenter operator and before registering watches.
+		if err := r.reconcileCRDs(ctx, true); err != nil {
+			return err
+		}
 
-	// Watch EC2NodeClass guest side.
-	if err := c.Watch(source.Kind(mgr.GetCache(), &awskarpenterv1.EC2NodeClass{},
-		&handler.TypedEnqueueRequestForObject[*awskarpenterv1.EC2NodeClass]{})); err != nil {
-		return fmt.Errorf("failed to watch EC2NodeClass: %w", err)
-	}
-
-	// Watch the karpenter Deployment management side.
-	if err := c.Watch(source.Kind[client.Object](managementCluster.GetCache(), &appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(
-		func(ctx context.Context, o client.Object) []ctrl.Request {
-			if o.GetNamespace() != r.Namespace || o.GetName() != "karpenter" {
+		// Watch CRDs guest side.
+		if err := c.Watch(source.Kind[client.Object](mgr.GetCache(), &apiextensionsv1.CustomResourceDefinition{}, handler.EnqueueRequestsFromMapFunc(
+			func(ctx context.Context, o client.Object) []ctrl.Request {
+				// Only watch our Karpenter CRDs
+				switch o.GetName() {
+				case "ec2nodeclasses.karpenter.k8s.aws",
+					"nodepools.karpenter.sh",
+					"nodeclaims.karpenter.sh":
+					return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: r.Namespace}}}
+				}
 				return nil
-			}
-			return []ctrl.Request{{NamespacedName: client.ObjectKeyFromObject(o)}}
-		},
-	))); err != nil {
-		return fmt.Errorf("failed to watch Deployment: %w", err)
+			},
+		))); err != nil {
+			return fmt.Errorf("failed to watch CRDs: %w", err)
+		}
+
+		// Watch EC2NodeClass guest side.
+		if err := c.Watch(source.Kind(mgr.GetCache(), &awskarpenterv1.EC2NodeClass{},
+			&handler.TypedEnqueueRequestForObject[*awskarpenterv1.EC2NodeClass]{})); err != nil {
+			return fmt.Errorf("failed to watch EC2NodeClass: %w", err)
+		}
+
+		// Watch the karpenter Deployment management side.
+		if err := c.Watch(source.Kind[client.Object](managementCluster.GetCache(), &appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(
+			func(ctx context.Context, o client.Object) []ctrl.Request {
+				if o.GetNamespace() != r.Namespace || o.GetName() != "karpenter" {
+					return nil
+				}
+				return []ctrl.Request{{NamespacedName: client.ObjectKeyFromObject(o)}}
+			},
+		))); err != nil {
+			return fmt.Errorf("failed to watch Deployment: %w", err)
+		}
 	}
 
 	namespacedPredicates := predicate.NewPredicateFuncs(func(object client.Object) bool {
@@ -257,13 +262,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile AutoNode status: %w", err)
 	}
 
+	// Standalone operator owns provider deployment, upstream CRDs, and the default NodeClass.
+	if r.StandaloneAdapter {
+		return ctrl.Result{}, nil
+	}
+
+	if hcp.Annotations[hyperkarpenterv1.KarpenterCoreE2EOverrideAnnotation] != "true" {
+		if err := r.reconcileOpenshiftEC2NodeClassDefault(ctx, hcp); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	// Setup for ControlPlaneContext and the Karpenter control plane v2 component.
 	pullSecret := common.PullSecret(hcp.Namespace)
 	if err := r.ManagementClient.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
-	releaseImage, err := r.ReleaseProvider.Lookup(ctx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
+	releaseImage, err := r.ReleaseProvider.Lookup(ctx, imageregistry.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
 	}
@@ -282,13 +298,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	r.ControlPlaneContext = cpContext
 	if r.KarpenterComponent == nil {
 		r.KarpenterComponent = karpenterv2.NewComponent()
-	}
-
-	// Don't reconcile if Karpenter E2E override is set.
-	if hcp.Annotations[hyperkarpenterv1.KarpenterCoreE2EOverrideAnnotation] != "true" {
-		if err := r.reconcileOpenshiftEC2NodeClassDefault(ctx, hcp); err != nil {
-			return ctrl.Result{}, err
-		}
 	}
 
 	if err := r.KarpenterComponent.Reconcile(r.ControlPlaneContext); err != nil {

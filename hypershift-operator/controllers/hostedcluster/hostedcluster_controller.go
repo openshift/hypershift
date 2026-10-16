@@ -24,6 +24,7 @@ import (
 	"net/netip"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,32 +43,39 @@ import (
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
-	validations "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
-	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	cpconst "github.com/openshift/hypershift/pkg/controlplane"
+	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
+	pkgetcdrecovery "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/gcpapi"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/secretproviderclass"
+	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	supportvalidations "github.com/openshift/hypershift/support/validations"
@@ -100,7 +108,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capov1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -116,16 +124,16 @@ import (
 	"github.com/google/uuid"
 	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/ini.v1"
 )
 
 const (
 	HostedClusterFinalizer              = "hypershift.openshift.io/finalizer"
-	ControlPlaneComponentFinalizer      = "hypershift.openshift.io/component-finalizer"
 	clusterDeletionRequeueDuration      = 5 * time.Second
 	ReportingGracePeriodRequeueDuration = 25 * time.Second
 
-	ImageStreamCAPI            = "cluster-capi-controllers"
 	ImageStreamAutoscalerImage = "cluster-autoscaler"
 
 	controlPlaneOperatorSubcommandsLabel                 = "io.openshift.hypershift.control-plane-operator-subcommands"
@@ -154,8 +162,7 @@ const (
 
 var (
 	// NoopReconcile is just a default mutation function that does nothing.
-	NoopReconcile  controllerutil.MutateFn = func() error { return nil }
-	CAPIComponents                         = []string{capimanagerv2.ComponentName, capiproviderv2.ComponentName}
+	NoopReconcile controllerutil.MutateFn = func() error { return nil }
 )
 
 // HostedClusterReconciler reconciles a HostedCluster object
@@ -240,19 +247,26 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		r.now = metav1.Now
 	}
 	r.createOrUpdate = createOrUpdateWithAnnotationFactory(createOrUpdate)
+
+	// Index HostedClusters by the referenced ingress default certificate Secret name
+	// so the Secret watch can map a recreated (unannotated) Secret back to its owner.
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &hyperv1.HostedCluster{}, hostedClusterIngressDefaultCertSecretIndex, indexHostedClusterByIngressDefaultCertSecret); err != nil {
+		return fmt.Errorf("failed to set up ingress default certificate secret index: %w", err)
+	}
+
 	// Set up watches for resource types the controller manages. The list basically
 	// tracks types of the resources in the clusterapi, controlplaneoperator, and
 	// ignitionserver manifests packages. Since we're receiving watch events across
 	// namespaces, the events are filtered to enqueue only those resources which
 	// are annotated as being associated with a hostedcluster (using an annotation).
 	bldr := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}, builder.WithPredicates(hyperutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		For(&hyperv1.HostedCluster{}, builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
 		})
 	for _, managedResource := range r.managedResources() {
-		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())), builder.WithPredicates(hyperutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))
+		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))
 	}
 
 	// Set based on SCC capability
@@ -356,6 +370,8 @@ func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.
 	return nil
 }
 
+var hostedClusterTracer = tracing.Tracer("hostedcluster")
+
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -370,6 +386,36 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 	}
 
+	startOpts := []trace.SpanStartOption{
+		trace.WithAttributes(
+			tracing.AttrHostedClusterName.String(hcluster.Name),
+			tracing.AttrHostedClusterNamespace.String(hcluster.Namespace),
+			tracing.AttrHostedClusterPlatform.String(string(hcluster.Spec.Platform.Type)),
+		),
+	}
+	if link := tracing.SpanLinkFromAnnotations(hcluster.Annotations); link.SpanContext.IsValid() {
+		startOpts = append(startOpts, trace.WithLinks(link))
+	}
+	ctx, span := hostedClusterTracer.Start(ctx, tracing.SpanHostedClusterReconcile, startOpts...)
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
+	if hcluster.Spec.InfraID != "" {
+		span.SetAttributes(tracing.AttrHostedClusterInfraID.String(hcluster.Spec.InfraID))
+		span.SetAttributes(tracing.CorrelationAttrs(hcluster.Spec.InfraID)...)
+	}
+	if hcluster.Spec.ClusterID != "" {
+		span.SetAttributes(tracing.AttrHostedClusterClusterID.String(hcluster.Spec.ClusterID))
+	}
+	if !hcluster.DeletionTimestamp.IsZero() {
+		span.SetAttributes(tracing.AttrHostedClusterDeleting.Bool(true))
+	}
+
 	var res reconcile.Result
 	if r.overwriteReconcile != nil {
 		res, err = r.overwriteReconcile(ctx, req, log, hcluster)
@@ -378,6 +424,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	} else {
 		res, err = r.reconcile(ctx, req, log, hcluster)
 	}
+
 	condition := metav1.Condition{
 		Type:               string(hyperv1.ReconciliationSucceeded),
 		ObservedGeneration: hcluster.Generation,
@@ -451,6 +498,15 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Bubble up ValidGCPWorkloadIdentity and ValidGCPCredentials conditions from the hostedControlPlane.
+	// We set these conditions even if the HC is being deleted so that
+	// DeleteOrphanedMachines has a fresh signal for credential validity.
+	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
+		if err := r.reconcileGCPCredentialConditions(ctx, hcluster, hcp); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane to report blocking objects on deletion.
 	if condition, changed := computeAWSDefaultSGDeletedCondition(hcluster, hcp); changed {
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
@@ -498,6 +554,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if !hcluster.DeletionTimestamp.IsZero() {
+		ctx, deleteSpan := hostedClusterTracer.Start(ctx, tracing.SpanHostedClusterDelete,
+			trace.WithAttributes(
+				tracing.AttrHostedClusterName.String(hcluster.Name),
+				tracing.AttrHostedClusterNamespace.String(hcluster.Namespace),
+			),
+		)
+		defer deleteSpan.End()
+
 		// This new condition is necessary for OCM personnel to report any cloud dangling objects to the user.
 		// The grace period is customizable using an annotation called HCDestroyGracePeriodAnnotation. It's a time.Duration annotation.
 		// This annotation will create a new condition called HostedClusterDestroyed which in conjunction with CloudResourcesDestroyed
@@ -840,6 +904,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Aggregate deprecated-configuration warnings from the HostedCluster and the HCP.
+	r.reconcileDeprecatedConfigurationStatus(hcluster, hcp)
+
 	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
 		hcluster.Status.Platform = hcp.Status.Platform
@@ -944,7 +1011,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var awsEndpointServiceList hyperv1.AWSEndpointServiceList
 		if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{
@@ -962,7 +1029,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Copy GCPEndpointAvailable and GCPServiceAttachmentAvailable conditions from the GCPPrivateServiceConnect resources.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var gcpPSCList hyperv1.GCPPrivateServiceConnectList
 		if err := r.List(ctx, &gcpPSCList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{
@@ -981,7 +1048,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Copy Azure Private Link conditions from the AzurePrivateLinkService resources.
 	// ARO HCP uses Swift networking, not Private Link Services.
 	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform && !netutil.UseSwiftNetworkingHC(hcluster) {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var azPLSList hyperv1.AzurePrivateLinkServiceList
 		if err := r.List(ctx, &azPLSList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{
@@ -1176,7 +1243,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 	}
-	meta.SetStatusCondition(&hcluster.Status.Conditions, hyperutil.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
+	meta.SetStatusCondition(&hcluster.Status.Conditions, reconcilerpolicy.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
 	// Set ValidReleaseImage condition
 	{
@@ -1305,7 +1372,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
-	if isPaused, duration := hyperutil.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
 		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -1373,7 +1440,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	//   - Core HCP chain failure / nil HCP → Phase 8 components blocked.
 	//   - Non-critical sync → never blocked, always runs.
 
-	report := &reconcileReport{}
+	report := &reconcileReport{ctx: ctx}
 
 	// Phase 5: Pull secret, CPO image resolution, and namespace setup.
 	// These are grouped because namespace PSA labels depend on CPO image labels —
@@ -1391,11 +1458,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return fmt.Errorf("failed to get pull secret: %w", err)
 		}
-		controlPlaneOperatorImage, err = hyperutil.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+		controlPlaneOperatorImage, err = imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 		}
-		controlPlaneOperatorImageLabels, err = hyperutil.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
+		controlPlaneOperatorImageLabels, err = imageregistry.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 		}
@@ -1443,6 +1510,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	report.execute("SSHKeySync", nonCritical, func() error {
 		return r.reconcileSSHKeySync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
+	})
+
+	report.execute("IngressDefaultCertSync", nonCritical, func() error {
+		return r.reconcileIngressDefaultCertSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name)
 	})
 
 	report.execute("AdditionalTrustBundle", nonCritical, func() error {
@@ -1595,6 +1666,52 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	return result, report.aggregate()
 }
 
+// reconcileDeprecatedConfigurationStatus aggregates deprecated-configuration warnings
+// from two sources and surfaces them on the generic HostedClusterConfigurationDeprecated
+// condition: mechanisms visible only on the HostedCluster, and those detected by the HCP
+// controller (which reports them on the HCP's own copy of the condition). If any fire, the
+// condition is True with all messages joined together; otherwise it is False. When the HCP
+// does not yet exist and there are no HostedCluster-only warnings, the condition is left
+// Unknown, since the HCP-sourced warnings cannot be evaluated yet. Each HostedCluster-only
+// deprecation check appends its message to the list, so new checks are easy to add.
+func (r *HostedClusterReconciler) reconcileDeprecatedConfigurationStatus(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) {
+	var messages []string
+
+	// HostedCluster-only deprecation checks go here as they are added, e.g.:
+	// if <deprecated hcluster field/annotation is set> {
+	//     messages = append(messages, "...")
+	// }
+
+	// Fold in deprecations detected by the HCP controller.
+	if hcp != nil {
+		if c := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedClusterConfigurationDeprecated)); c != nil && c.Status == metav1.ConditionTrue && c.Message != "" {
+			messages = append(messages, c.Message)
+		}
+	}
+
+	condition := metav1.Condition{
+		Type:               string(hyperv1.HostedClusterConfigurationDeprecated),
+		ObservedGeneration: hcluster.Generation,
+	}
+	switch {
+	case len(messages) > 0:
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.DeprecatedConfigurationInUseReason
+		condition.Message = strings.Join(messages, "; ")
+	case hcp == nil:
+		// No HostedCluster-only warnings and the HCP is not available yet, so the
+		// HCP-sourced warnings cannot be evaluated.
+		condition.Status = metav1.ConditionUnknown
+		condition.Reason = hyperv1.StatusUnknownReason
+		condition.Message = "The hosted control plane is not found"
+	default:
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.AsExpectedReason
+		condition.Message = "No deprecated configuration is in use"
+	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+}
+
 // reconcileCoreHCPChain reconciles the core HCP chain: reconcile the HCP object,
 // CAPI Infra CR, AWS subnets, and CAPI Cluster. These operations are sequential
 // because each depends on the previous. Returns the (potentially reassigned) HCP
@@ -1718,7 +1835,7 @@ func (r *HostedClusterReconciler) reconcileOperatorDeployments(ctx context.Conte
 		cpoHasUtilities, certRotationScale, releaseImageVersion, releaseProvider); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile control plane operator: %w", err))
 	}
-	if err := r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster); err != nil {
+	if err := r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster, releaseImageVersion); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile CAPI manager: %w", err))
 	}
 	if err := r.reconcileCAPIProvider(cpContext, hcluster, hcp, p); err != nil {
@@ -1917,11 +2034,11 @@ func (r *HostedClusterReconciler) reconcilePullSecretSync(
 		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
 	}
 	dst := controlplaneoperator.PullSecret(controlPlaneNamespace)
+	srcData, srcHasData := src.Data[".dockerconfigjson"]
+	if !srcHasData {
+		return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+	}
 	_, err := createOrUpdate(ctx, r.Client, dst, func() error {
-		srcData, srcHasData := src.Data[".dockerconfigjson"]
-		if !srcHasData {
-			return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
-		}
 		dst.Type = corev1.SecretTypeDockerConfigJson
 		if dst.Data == nil {
 			dst.Data = map[string][]byte{}
@@ -1929,7 +2046,10 @@ func (r *HostedClusterReconciler) reconcilePullSecretSync(
 		dst.Data[".dockerconfigjson"] = srcData
 		return nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // reconcileSecretEncryptionSync syncs secret encryption configuration from the
@@ -2101,6 +2221,114 @@ func (r *HostedClusterReconciler) reconcileSSHKeySync(
 		return nil
 	})
 	return err
+}
+
+// reconcileIngressDefaultCertSync syncs the user-provided ingress default
+// certificate secret from the HostedCluster namespace to the control plane
+// namespace and reports the outcome via the IngressDefaultCertificateSynced
+// condition on the HostedCluster status.
+//
+// A missing or malformed source secret is user-correctable: it is surfaced
+// through the condition (set to False) without failing reconciliation, so the
+// previously synced certificate — or the auto-generated wildcard certificate —
+// keeps serving and the HostedCluster does not become degraded.
+func (r *HostedClusterReconciler) reconcileIngressDefaultCertSync(
+	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
+	controlPlaneNamespace string,
+) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	// Skip when the ingress capability is disabled — no ingress controller will be
+	// created to consume the certificate — or when no certificate is configured.
+	if !capabilities.IsIngressCapabilityEnabled(hcluster.Spec.Capabilities) ||
+		hcluster.Spec.OperatorConfiguration == nil ||
+		hcluster.Spec.OperatorConfiguration.IngressOperator == nil ||
+		len(hcluster.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name) == 0 {
+		// Fast path: with no synced condition the feature was never active for this
+		// HostedCluster, so there is nothing to clean up. This is the common case
+		// and runs on every reconcile, so avoid the re-Get/DeepCopy that PatchStatus
+		// would otherwise do.
+		if meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced)) == nil {
+			return nil
+		}
+		// The feature was active before; clean up the stale synced secret and drop
+		// the condition.
+		staleSecret := cpomanifests.ServiceProviderDefaultIngressServingCert(controlPlaneNamespace)
+		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, staleSecret); err != nil {
+			return fmt.Errorf("failed to delete stale ingress default certificate secret: %w", err)
+		}
+		return statuspatching.PatchStatus(ctx, r.Client, hcluster, func() error {
+			meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.IngressDefaultCertificateSynced))
+			return nil
+		})
+	}
+
+	// setSyncedCondition records the outcome on the HostedCluster status using an
+	// optimistic-lock patch. It only returns an error if persisting the status fails.
+	setSyncedCondition := func(status metav1.ConditionStatus, reason, message string) error {
+		return statuspatching.PatchStatusCondition(ctx, r.Client, hcluster, &hcluster.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.IngressDefaultCertificateSynced),
+			Status:             status,
+			Reason:             reason,
+			Message:            message,
+			ObservedGeneration: hcluster.Generation,
+		})
+	}
+
+	// The IBM Cloud ingress controller does not consume a user-provided default
+	// certificate: ReconcileDefaultIngressController skips spec.defaultCertificate
+	// for IBM Cloud, so nothing in the guest cluster would use the synced secret.
+	// Skip the sync entirely and surface it, rather than reporting a successful
+	// sync that has no effect.
+	if hcluster.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		log.Info("ingress default certificate is not supported on the IBM Cloud platform; skipping sync")
+		return setSyncedCondition(metav1.ConditionFalse, hyperv1.IngressDefaultCertificatePlatformNotSupportedReason,
+			"ingress default certificate is not supported on the IBM Cloud platform")
+	}
+
+	sourceSecretName := hcluster.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name
+	var src corev1.Secret
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: sourceSecretName}, &src); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("ingress default certificate secret not found; keeping the previously synced certificate", "secret", sourceSecretName)
+			return setSyncedCondition(metav1.ConditionFalse, hyperv1.SecretNotFoundReason,
+				fmt.Sprintf("ingress default certificate secret %q not found in namespace %q", sourceSecretName, hcluster.Namespace))
+		}
+		return fmt.Errorf("failed to get ingress default certificate secret %s: %w", sourceSecretName, err)
+	}
+
+	// Annotate the referenced secret before validating it so that a later
+	// correction to a malformed secret (or any content change) enqueues the
+	// HostedCluster for reconciliation via the secret watch.
+	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+	}
+
+	// Validate the source before touching the destination so a malformed secret
+	// leaves the previously synced certificate in place.
+	for _, key := range []string{corev1.TLSCertKey, corev1.TLSPrivateKeyKey} {
+		if _, ok := src.Data[key]; !ok {
+			log.Info("ingress default certificate secret is missing a required key; keeping the previously synced certificate", "secret", sourceSecretName, "key", key)
+			return setSyncedCondition(metav1.ConditionFalse, hyperv1.IngressDefaultCertificateInvalidReason,
+				fmt.Sprintf("ingress default certificate secret %q must contain a %s key", sourceSecretName, key))
+		}
+	}
+
+	dest := cpomanifests.ServiceProviderDefaultIngressServingCert(controlPlaneNamespace)
+	if _, err := createOrUpdate(ctx, r.Client, dest, func() error {
+		dest.Type = corev1.SecretTypeTLS
+		if dest.Data == nil {
+			dest.Data = map[string][]byte{}
+		}
+		dest.Data[corev1.TLSCertKey] = src.Data[corev1.TLSCertKey]
+		dest.Data[corev1.TLSPrivateKeyKey] = src.Data[corev1.TLSPrivateKeyKey]
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to sync ingress default certificate to control plane namespace: %w", err)
+	}
+
+	return setSyncedCondition(metav1.ConditionTrue, hyperv1.AsExpectedReason,
+		fmt.Sprintf("ingress default certificate synced from secret %q", sourceSecretName))
 }
 
 // reconcileUnmanagedEtcdMTLSSync syncs the unmanaged etcd client MTLS secret
@@ -2854,7 +3082,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 }
 
 // reconcileCAPIManager orchestrates all CAPI manager components.
-func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, releaseVersion semver.Version) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(cpContext, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -2882,6 +3110,10 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 	}
 
 	imageOverride := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
+
+	if imageOverride == "" {
+		imageOverride = backwardcompat.GetBackwardCompatibleCAPIImage(releaseVersion)
+	}
 
 	capiManager := capimanagerv2.NewComponent(imageOverride)
 	if err := capiManager.Reconcile(cpContext); err != nil {
@@ -2995,8 +3227,8 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 		UtilitiesImage:              utilitiesImage,
 		HasUtilities:                cpoHasUtilities,
 		CertRotationScale:           certRotationScale,
-		RegistryOverrideCommandLine: hyperutil.ConvertRegistryOverridesToCommandLineFlag(releaseProvider.GetRegistryOverrides()),
-		OpenShiftRegistryOverrides:  hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
+		RegistryOverrideCommandLine: imageregistry.ConvertRegistryOverridesToCommandLineFlag(releaseProvider.GetRegistryOverrides()),
+		OpenShiftRegistryOverrides:  imageregistry.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
 		DefaultIngressDomain:        defaultIngressDomain,
 		FeatureSet:                  r.FeatureSet,
 	})
@@ -3010,7 +3242,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 
 func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	// We don't create this ServiceAccount, the CPO does, but we can reference it in RBAC before it's created as the system is eventually consistent
-	serviceAccount := cpomanifests.PKIOperatorServiceAccount(manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name))
+	serviceAccount := cpomanifests.PKIOperatorServiceAccount(pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name))
 
 	// Reconcile controlplane PKI operator CSR approver cluster role
 	controlPlanePKIOperatorCSRApproverClusterRole := controlplanepkioperatormanifests.CSRApproverClusterRole(hcluster)
@@ -3053,7 +3285,7 @@ func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx conte
 
 func (r *HostedClusterReconciler) reconcileKubevirtCSIClusterRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	// We don't create this ServiceAccount, it's part of the kubevirt CSI manifests, but we can reference it due to eventual consistency
-	hcpns := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	hcpns := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	serviceAccount := cpomanifests.KubevirtCSIDriverInfraSA(hcpns)
 
 	kubevirtCSIClusterRole := &rbacv1.ClusterRole{
@@ -3246,7 +3478,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	// We only create this resource once and then let CAPI own it
 	if !cluster.CreationTimestamp.IsZero() {
 		// make sure cluster is not paused.
-		cluster.Spec.Paused = false
+		cluster.Spec.Paused = ptr.To(false)
 		return nil
 	}
 	infraCRGVK, err := apiutil.GVKForObject(infraCR, api.Scheme)
@@ -3259,17 +3491,15 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	}
 	cluster.Spec = capiv1.ClusterSpec{
 		ControlPlaneEndpoint: capiv1.APIEndpoint{},
-		ControlPlaneRef: &corev1.ObjectReference{
-			APIVersion: "hypershift.openshift.io/v1beta1",
-			Kind:       "HostedControlPlane",
-			Namespace:  hcp.Namespace,
-			Name:       hcp.Name,
+		ControlPlaneRef: capiv1.ContractVersionedObjectReference{
+			APIGroup: "hypershift.openshift.io",
+			Kind:     "HostedControlPlane",
+			Name:     hcp.Name,
 		},
-		InfrastructureRef: &corev1.ObjectReference{
-			APIVersion: infraCRGVK.GroupVersion().String(),
-			Kind:       infraCRGVK.Kind,
-			Namespace:  infraCR.GetNamespace(),
-			Name:       infraCR.GetName(),
+		InfrastructureRef: capiv1.ContractVersionedObjectReference{
+			APIGroup: infraCRGVK.Group,
+			Kind:     infraCRGVK.Kind,
+			Name:     infraCR.GetName(),
 		},
 	}
 
@@ -3281,7 +3511,7 @@ func pauseCAPICluster(ctx context.Context, c client.Client, hc *hyperv1.HostedCl
 		return nil
 	}
 
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+	controlPlaneNamespace := pkgmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 	capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace, hc.Spec.InfraID)
 	err := c.Get(ctx, client.ObjectKeyFromObject(capiCluster), capiCluster)
 	if err != nil {
@@ -3291,8 +3521,8 @@ func pauseCAPICluster(ctx context.Context, c client.Client, hc *hyperv1.HostedCl
 		return nil
 	}
 
-	if capiCluster.Spec.Paused != paused {
-		capiCluster.Spec.Paused = paused
+	if ptr.Deref(capiCluster.Spec.Paused, false) != paused {
+		capiCluster.Spec.Paused = ptr.To(paused)
 		if err := c.Update(ctx, capiCluster); err != nil {
 			return fmt.Errorf("failed to update CAPI Cluster: %w", err)
 		}
@@ -3362,7 +3592,7 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	// It is also used before the HostedControlPlane is created to bootstrap
 	// the ClusterVersionStatus.
 
-	releaseImage := hyperutil.HCControlPlaneReleaseImage(hcluster)
+	releaseImage := imageregistry.HCControlPlaneReleaseImage(hcluster)
 
 	// If there's no history, rebuild it from scratch.
 	if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) == 0 {
@@ -3411,7 +3641,7 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	// state. For now it assumes when status.releaseImage matches, that rollout
 	// is definitely done.
 	//lint:ignore SA1019 consume the deprecated property until we can drop compatibility with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
-	hcpRolloutComplete := (hyperutil.HCPControlPlaneReleaseImage(hcp) == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
+	hcpRolloutComplete := (imageregistry.HCPControlPlaneReleaseImage(hcp) == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
 	if !hcpRolloutComplete {
 		return version
 	}
@@ -3611,9 +3841,18 @@ func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.
 	return nil
 }
 
-// deleteAWSEndpointServices loops over AWSEndpointServiceList items and sends a delete request for each.
-// If the HC has no valid aws credentials it removes the CPO finalizer for each AWSEndpointService.
-// It returns true if len(awsEndpointServiceList.Items) != 0.
+// deleteAWSEndpointServices deletes the AWSEndpointServices in the control plane namespace and
+// returns true while any still exist.
+//
+// The control-plane-operator deletes AWSEndpointServices and waits for its VPC endpoint cleanup
+// while the HostedControlPlane is being deleted (HostedControlPlaneReconciler.deleteAWSEndpointServices),
+// because that cleanup needs KAS-minted credentials. By the time this runs the HostedControlPlane is
+// gone, so the control-plane-operator can no longer clean up. A control-plane-operator finalizer
+// still present here means the control-plane-operator gave up (timeout or invalid credentials) or is
+// an older version without that step; it is removed so deletion can proceed.
+//
+// The hypershift-operator finalizer (VPC endpoint service cleanup) does not depend on the
+// HostedControlPlane and is always awaited.
 func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, namespace string) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
@@ -3622,6 +3861,9 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 	}
 	for _, ep := range awsEndpointServiceList.Items {
 		if ep.DeletionTimestamp != nil {
+			// ValidAWSIdentityProvider is copied from the HostedControlPlane, which no longer exists at
+			// this point, so the status is normally Unknown and the finalizer is removed immediately.
+			// The grace period only applies if credentials are still reported as valid.
 			if platformaws.GetCredentialStatus(hc) == platformaws.CredentialStatusValid && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
 				continue
 			}
@@ -3633,8 +3875,8 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 				if err := c.Update(ctx, &ep); err != nil {
 					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
 				}
+				log.Info("Removed CPO finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
 			}
-			log.Info("Removed CPO finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
 			continue
 		}
 
@@ -3767,7 +4009,7 @@ func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNa
 
 //nolint:gocyclo
 func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+	controlPlaneNamespace := pkgmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 	log := ctrl.LoggerFrom(ctx)
 
 	// Unpause CAPI cluster to allow deletion to proceed
@@ -3964,6 +4206,51 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	return true, nil
 }
 
+// hostedClusterIngressDefaultCertSecretIndex indexes HostedClusters by the name of
+// the Secret referenced via spec.operatorConfiguration.ingressOperator.defaultCertificate.
+// It lets the Secret watch map a referenced Secret back to its owner with an
+// O(matches) cache lookup, independent of the referenced-resource annotation, which
+// a freshly recreated Secret would not yet carry.
+const hostedClusterIngressDefaultCertSecretIndex = "spec.operatorConfiguration.ingressOperator.defaultCertificate.name"
+
+func indexHostedClusterByIngressDefaultCertSecret(o client.Object) []string {
+	hc, ok := o.(*hyperv1.HostedCluster)
+	if !ok {
+		return nil
+	}
+	if hc.Spec.OperatorConfiguration != nil &&
+		hc.Spec.OperatorConfiguration.IngressOperator != nil &&
+		hc.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name != "" {
+		return []string{hc.Spec.OperatorConfiguration.IngressOperator.DefaultCertificate.Name}
+	}
+	return nil
+}
+
+// hostedClustersReferencingSecret appends reconcile requests for HostedClusters
+// that reference the given Secret by name through spec (via the field index),
+// skipping any already present in requests. Unlike the referenced-resource
+// annotation, a spec reference survives delete+recreate of the Secret (the
+// recreated object carries no annotation yet). The field index keeps this an
+// O(matches) cache lookup that returns nothing for unrelated Secrets.
+func hostedClustersReferencingSecret(ctx context.Context, c client.Client, secret *corev1.Secret, requests []reconcile.Request) []reconcile.Request {
+	hcList := &hyperv1.HostedClusterList{}
+	if err := c.List(ctx, hcList,
+		client.InNamespace(secret.Namespace),
+		client.MatchingFields{hostedClusterIngressDefaultCertSecretIndex: secret.Name},
+	); err != nil {
+		ctrllog.Log.Error(err, "failed to list hosted clusters referencing secret", "secret", client.ObjectKeyFromObject(secret).String())
+		return requests
+	}
+	for i := range hcList.Items {
+		hc := &hcList.Items[i]
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}}
+		if !slices.Contains(requests, req) {
+			requests = append(requests, req)
+		}
+	}
+	return requests
+}
+
 func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace string, c client.Client) handler.MapFunc {
 	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		log := ctrllog.Log
@@ -4027,7 +4314,7 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 			}
 			return []reconcile.Request{}
 		case *batchv1.Job:
-			if typedObj.Name != etcdrecoverymanifests.EtcdRecoveryJob("").Name {
+			if typedObj.Name != pkgetcdrecovery.EtcdRecoveryJob("").Name {
 				return []reconcile.Request{}
 			}
 			name := typedObj.Labels[jobHostedClusterNameLabel]
@@ -4059,7 +4346,10 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 					}
 				}
 			}
-			return handleDefault(typedObj)
+			// Enqueue via the referenced-resource annotation, and also via the spec
+			// field index so a delete+recreate of a referenced Secret (which drops the
+			// annotation) still re-enqueues its owner.
+			return hostedClustersReferencingSecret(ctx, c, typedObj, handleDefault(typedObj))
 		default:
 			return handleDefault(typedObj)
 		}
@@ -4223,7 +4513,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	}
 
 	var currentVersion *semver.Version
-	if hc.Status.Version != nil && hc.Status.Version.Desired.Image != hyperutil.HCControlPlaneReleaseImage(hc) {
+	if hc.Status.Version != nil && hc.Status.Version.Desired.Image != imageregistry.HCControlPlaneReleaseImage(hc) {
 		releaseInfo, err := releaseProvider.Lookup(ctx, hc.Status.Version.Desired.Image, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to lookup release image: %w", err)
@@ -4775,7 +5065,7 @@ func validateNodePortPortRange(hc *hyperv1.HostedCluster) field.ErrorList {
 				errs = append(errs, field.Invalid(
 					field.NewPath(fmt.Sprintf("spec.services[%d].nodePort.port", idx)),
 					port,
-					fmt.Sprintf("port must be within the configured range %d-%d or 0 for dynamic assignment", minPort, maxPort)))
+					fmt.Sprintf("port must be within the configured range %d-%d, or omitted for dynamic assignment", minPort, maxPort)))
 			}
 		}
 	}
@@ -5087,7 +5377,7 @@ func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hclust
 	if err != nil {
 		return nil, err
 	}
-	return releaseProvider.Lookup(ctx, hyperutil.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
+	return releaseProvider.Lookup(ctx, imageregistry.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
 }
 
 func (r *HostedClusterReconciler) isAutoscalingNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) (bool, error) {
@@ -5181,7 +5471,7 @@ func (r *HostedClusterReconciler) syncKVLiveMigratableCondition(ctx context.Cont
 // 2) non-error message about the condition of the upgrade
 // 3) error indicating that the upgrade is not allowed or we were not able to determine
 func isUpgrading(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (bool, string, error) {
-	if hcluster.Status.Version == nil || hcluster.Status.Version.Desired.Image == hyperutil.HCControlPlaneReleaseImage(hcluster) {
+	if hcluster.Status.Version == nil || hcluster.Status.Version.Desired.Image == imageregistry.HCControlPlaneReleaseImage(hcluster) {
 		// cluster is either installing or at the version requested by the spec, no upgrade in progress
 		return false, "", nil
 	}
@@ -5194,7 +5484,7 @@ func isUpgrading(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.Rele
 	// Check if the upgrade is being forced
 	upgradeImage, exists := hcluster.Annotations[hyperv1.ForceUpgradeToAnnotation]
 	if exists {
-		if upgradeImage != hyperutil.HCControlPlaneReleaseImage(hcluster) {
+		if upgradeImage != imageregistry.HCControlPlaneReleaseImage(hcluster) {
 			return true, "", fmt.Errorf("force upgrade annotation is present but does not match desired release image")
 		} else {
 			return true, "upgrade is forced by annotation", nil
@@ -5551,7 +5841,7 @@ func (r *HostedClusterReconciler) reconcileMonitoringDashboard(ctx context.Conte
 	varsToReplace := map[string]string{
 		"__NAME__":                    hc.Name,
 		"__NAMESPACE__":               hc.Namespace,
-		"__CONTROL_PLANE_NAMESPACE__": manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name),
+		"__CONTROL_PLANE_NAMESPACE__": pkgmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name),
 		"__CLUSTER_ID__":              hc.Spec.ClusterID,
 	}
 	for k, v := range varsToReplace {
@@ -5732,9 +6022,9 @@ func (r *HostedClusterReconciler) reconcileCAPIFinalizers(ctx context.Context, h
 		return nil
 	}
 
-	namespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+	namespace := pkgmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 
-	for _, name := range CAPIComponents {
+	for _, name := range cpconst.CAPIComponents {
 		deployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
@@ -5752,14 +6042,14 @@ func (r *HostedClusterReconciler) reconcileCAPIFinalizers(ctx context.Context, h
 
 		update := false
 		if remove {
-			if controllerutil.ContainsFinalizer(deployment, ControlPlaneComponentFinalizer) {
+			if controllerutil.ContainsFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer) {
 				log.Info("Removing finalizer from CAPI deployment", "deployment", deployment.Name)
-				update = controllerutil.RemoveFinalizer(deployment, ControlPlaneComponentFinalizer)
+				update = controllerutil.RemoveFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer)
 			}
 		} else {
-			if !controllerutil.ContainsFinalizer(deployment, ControlPlaneComponentFinalizer) {
+			if !controllerutil.ContainsFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer) {
 				log.Info("adding finalizer to CAPI deployment")
-				update = controllerutil.AddFinalizer(deployment, ControlPlaneComponentFinalizer)
+				update = controllerutil.AddFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer)
 			}
 		}
 

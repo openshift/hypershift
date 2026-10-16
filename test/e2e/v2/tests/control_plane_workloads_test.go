@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,6 +32,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/upsert"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
@@ -44,7 +46,146 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var workloads = internal.GetControlPlaneWorkloads()
+var (
+	workloads             = internal.GetControlPlaneWorkloads()
+	desiredStateHashHexRE = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
+
+// podCrashTolerations defines the tolerated amount of restarts a pod is allowed
+// to suffer until it is considered to be crashing. Pods whose component
+// matches a key are evaluated with the associated toleration. If a pod is not
+// listed, the default toleration is used.
+var podCrashTolerations = map[string]int32{
+	// TODO: Figure out why Route kind does not exist when ingress-operator first starts
+	"ingress-operator": 20,
+	// Seeing flakes due to https://issues.redhat.com/browse/OCPBUGS-30068
+	"cloud-credential-operator": 20,
+	// Restart built into OLM by design by https://github.com/openshift/operator-framework-olm/commit/1cf358424a0cbe353428eab9a16051c6cabbd002
+	"olm-operator":                20,
+	"catalog-operator":            20,
+	"certified-operators-catalog": 20,
+	"community-operators-catalog": 20,
+	"redhat-operators-catalog":    20,
+	"redhat-marketplace-catalog":  20,
+	// Temporary workaround for https://issues.redhat.com/browse/OCPBUGS-45182
+	"openstack-manila-csi-controllerplugin": 20,
+	// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
+	"kubevirt-csi":                  20,
+	"aws-ebs-csi-driver-controller": 1,
+	// Allow 1 restart for network-node-identity webhook startup timing
+	"network-node-identity": 1,
+	// Temporary workaround for https://issues.redhat.com/browse/CNV-76520
+	"kubevirt-cloud-controller-manager": 2,
+	// Allow 1 restart for token-minter sidecar race condition: https://issues.redhat.com/browse/GCP-441
+	// TODO(GCP-447): Remove this toleration once token-minter is injected as a native sidecar init container.
+	"gcp-cloud-controller-manager": 1,
+	// During minor version upgrades the controlplane-manager rolls out the new
+	// dns-operator before CVO applies the updated ClusterRole on the hosted
+	// cluster. The 4.22 dns-operator requires NetworkPolicy and APIServer RBAC
+	// that does not exist in 4.21, so it crash-loops until CVO catches up. This
+	// is a deterministic ordering issue, not a race.
+	// See https://issues.redhat.com/browse/OCPBUGS-78539
+	"dns-operator": 5,
+	// CVO and CNO may restart once during hosted cluster initialization due to
+	// dependency ordering and hosted kube-apiserver availability timing.
+	// See https://issues.redhat.com/browse/OCPBUGS-109581
+	// See https://issues.redhat.com/browse/OCPBUGS-77042
+	// See https://issues.redhat.com/browse/OCPBUGS-18569
+	"cluster-version-operator": 1,
+	"cluster-network-operator": 1,
+}
+
+func defaultCrashTolerationForCluster(hostedCluster *hyperv1.HostedCluster) int32 {
+	defaultCrashToleration := int32(0)
+	if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		kvPlatform := hostedCluster.Spec.Platform.Kubevirt
+		// External infra can be slow at times due to the nested nature of how
+		// external infra is tested within a kubevirt HCP running within baremetal
+		// OCP. Occasionally pods will fail with "Error: context deadline exceeded"
+		// reported by the kubelet. This seems to be an infra issue with etcd
+		// latency within the external infra test environment. Tolerating a single
+		// restart for random components helps.
+		//
+		// This toleration is not used for the default local HCP KubeVirt, only
+		// external infra.
+		if kvPlatform != nil && kvPlatform.Credentials != nil {
+			defaultCrashToleration = 1
+		}
+		// In Azure infra, the CAPK pod might crash on startup because it cannot
+		// get a leader election lock lease during the early stages due to a
+		// "context deadline exceeded" error.
+		if kvPlatform != nil && hostedCluster.Annotations != nil {
+			if hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform) {
+				defaultCrashToleration = 1
+			}
+		}
+	}
+	return defaultCrashToleration
+}
+
+func crashTolerationForComponent(componentName string, defaultCrashToleration int32) int32 {
+	crashToleration := defaultCrashToleration
+	if toleration, ok := podCrashTolerations[componentName]; ok {
+		crashToleration = toleration
+	}
+	return crashToleration
+}
+
+// isCertificateTriggeredRestart checks if a kube-controller-manager restart
+// was triggered by certificate rotation.
+func isCertificateTriggeredRestart(ctx context.Context, client crclient.Client, pod *corev1.Pod) bool {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := client.List(ctx, hcpList, crclient.InNamespace(pod.Namespace)); err != nil {
+		fmt.Fprintf(GinkgoWriter, "couldn't list HostedControlPlanes; pod namespace: %s, pod name: %s, error: %v\n", pod.Namespace, pod.Name, err)
+		return false
+	}
+	for _, hcp := range hcpList.Items {
+		if restartAnnotation, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok && strings.HasPrefix(restartAnnotation, "CertHash:") {
+			return true
+		}
+	}
+	return false
+}
+
+var leaderElectionFailurePatterns = []string{
+	"election lost",
+	"failed to renew lease",
+	"stopped leading",
+}
+
+func isLeaderElectionFailure(ctx context.Context, client kubernetes.Interface, pod *corev1.Pod, containerName string) bool {
+	req := client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
+		Container: containerName,
+		Previous:  true,
+		TailLines: ptr.To[int64](100),
+	})
+	podLogs, err := req.Stream(ctx)
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "couldn't stream pod log; pod namespace: %s, pod name: %s, error: %v\n", pod.Namespace, pod.Name, err)
+		return false
+	}
+	defer podLogs.Close()
+
+	scanner := bufio.NewScanner(podLogs)
+	const (
+		bufSize          = 256 * 1024
+		maxScanTokenSize = 512 * 1024
+	)
+	scanner.Buffer(make([]byte, bufSize), maxScanTokenSize)
+	for scanner.Scan() {
+		line := strings.ToLower(scanner.Text())
+		for _, pattern := range leaderElectionFailurePatterns {
+			if strings.Contains(line, pattern) {
+				return true
+			}
+		}
+	}
+	_, _ = io.Copy(io.Discard, podLogs)
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(GinkgoWriter, "failed to read pod log; pod namespace: %s, pod name: %s, error: %v\n", pod.Namespace, pod.Name, err)
+	}
+	return false
+}
 
 func getWorkloadPods(testCtx *internal.TestContext, workload internal.WorkloadSpec) []corev1.Pod {
 	GinkgoHelper()
@@ -119,6 +260,8 @@ func SafeToEvictAnnotationsTest(getTestCtx internal.TestContextGetter) {
 			"azure-disk-csi-driver-controller",
 			"azure-file-csi-driver-operator",
 			"azure-file-csi-driver-controller",
+			"gcp-pd-csi-driver-controller",
+			"gcp-pd-csi-driver-operator",
 			"openstack-cinder-csi-driver-operator",
 			"openstack-cinder-csi-driver-controller",
 			"openstack-manila-csi-driver-operator",
@@ -203,6 +346,8 @@ func ReadOnlyRootFilesystemTest(getTestCtx internal.TestContextGetter) {
 			"azure-file-csi-driver-operator",
 			"aws-ebs-csi-driver-controller",
 			"aws-ebs-csi-driver-operator",
+			"gcp-pd-csi-driver-controller",
+			"gcp-pd-csi-driver-operator",
 			"openstack-cinder-csi-driver-controller",
 			"openstack-manila-csi-controller",
 			"csi-snapshot-controller",
@@ -279,6 +424,8 @@ func ReadOnlyRootFilesystemTmpDirMountTest(getTestCtx internal.TestContextGetter
 			"azure-file-csi-driver-operator",
 			"aws-ebs-csi-driver-controller",
 			"aws-ebs-csi-driver-operator",
+			"gcp-pd-csi-driver-controller",
+			"gcp-pd-csi-driver-operator",
 			"openstack-cinder-csi-driver-controller",
 			"openstack-manila-csi",
 			"csi-snapshot-controller",
@@ -537,6 +684,10 @@ func ServiceAccountTokenMountingTest(getTestCtx internal.TestContextGetter) {
 			// AWS-specific exemptions
 			"aws-ebs-csi-driver-controller",
 			"aws-ebs-csi-driver-operator",
+
+			// GCP-specific exemptions
+			"gcp-pd-csi-driver-controller",
+			"gcp-pd-csi-driver-operator",
 
 			// Azure-specific exemptions
 			"azure-cloud-controller-manager",
@@ -845,69 +996,8 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-func isCertificateTriggeredRestart(ctx context.Context, client crclient.Client, pod *corev1.Pod) bool {
-	hcpList := &hyperv1.HostedControlPlaneList{}
-	if err := client.List(ctx, hcpList, crclient.InNamespace(pod.Namespace)); err != nil {
-		fmt.Fprintf(GinkgoWriter, "couldn't list HostedControlPlanes; pod namespace: %s, pod name: %s, error: %v\n", pod.Namespace, pod.Name, err)
-		return false
-	}
-	for _, hcp := range hcpList.Items {
-		if restartAnnotation, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
-			if strings.HasPrefix(restartAnnotation, "CertHash:") {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func isLeaderElectionFailure(ctx context.Context, client kubernetes.Interface, pod *corev1.Pod, containerName string) bool {
-	req := client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-		Container: containerName,
-		Previous:  true,
-		TailLines: ptr.To[int64](100),
-	})
-	podLogs, err := req.Stream(ctx)
-	if err != nil {
-		fmt.Fprintf(GinkgoWriter, "couldn't stream pod log; pod namespace: %s, pod name: %s, error: %v\n", pod.Namespace, pod.Name, err)
-		return false
-	}
-	defer podLogs.Close()
-
-	scanner := bufio.NewScanner(podLogs)
-	scanner.Buffer(make([]byte, 256*1024), 512*1024)
-	for scanner.Scan() {
-		if e2eutil.MatchesLeaderElectionFailure(scanner.Text()) {
-			return true
-		}
-	}
-	_, _ = io.Copy(io.Discard, podLogs)
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(GinkgoWriter, "failed to read pod log; pod namespace: %s, pod name: %s, error: %v\n", pod.Namespace, pod.Name, err)
-	}
-	return false
-}
-
 func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 	Context("No crashing pods", func() {
-		crashTolerations := map[string]int32{
-			"ingress-operator":                      20,
-			"cloud-credential-operator":             20,
-			"olm-operator":                          20,
-			"catalog-operator":                      20,
-			"certified-operators-catalog":           20,
-			"community-operators-catalog":           20,
-			"redhat-operators-catalog":              20,
-			"redhat-marketplace-catalog":            20,
-			"openstack-manila-csi-controllerplugin": 20,
-			"kubevirt-csi":                          20,
-			"aws-ebs-csi-driver-controller":         1,
-			"network-node-identity":                 1,
-			"kubevirt-cloud-controller-manager":     2,
-			"gcp-cloud-controller-manager":          1,
-			"dns-operator":                          5,
-		}
-
 		for _, workload := range workloads {
 			Context(workload.Name, func() {
 				It("should have no crashing pods", func() {
@@ -924,27 +1014,12 @@ func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 						Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
 					}
 
-					var defaultCrashToleration int32
-					if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-						kvPlatform := hostedCluster.Spec.Platform.Kubevirt
-						if kvPlatform != nil && kvPlatform.Credentials != nil {
-							defaultCrashToleration = 1
-						}
-						if kvPlatform != nil && hostedCluster.Annotations != nil {
-							mgmtPlatform, annotationExists := hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation]
-							if annotationExists && mgmtPlatform == string(hyperv1.AzurePlatform) {
-								defaultCrashToleration = 1
-							}
-						}
-					}
-
-					toleration := defaultCrashToleration
-					if t, ok := crashTolerations[workload.Name]; ok {
-						toleration = t
-					}
+					defaultCrashToleration := defaultCrashTolerationForCluster(hostedCluster)
+					var toleration int32
 
 					var k8sClient kubernetes.Interface
 					for _, pod := range pods {
+						toleration = crashTolerationForComponent(workload.Name, defaultCrashToleration)
 						for _, containerStatus := range pod.Status.ContainerStatuses {
 							if containerStatus.RestartCount <= toleration {
 								continue
@@ -1061,6 +1136,38 @@ func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
 }
 
 // RegisterControlPlaneWorkloadsTests registers all control plane workloads tests
+func DesiredStateHashAnnotationTest(getTestCtx internal.TestContextGetter) {
+	Context("Desired state hash annotation", func() {
+		for _, w := range workloads {
+			workload := w
+			Context(workload.Name, func() {
+				It("should carry desired-state-hash annotation if managed by control-plane-operator", func() {
+					tc := getTestCtx()
+
+					deploy := &appsv1.Deployment{}
+					err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{Namespace: tc.ControlPlaneNamespace, Name: workload.Name}, deploy)
+					if apierrors.IsNotFound(err) {
+						Skip(fmt.Sprintf("Deployment %s not found in %s", workload.Name, tc.ControlPlaneNamespace))
+					}
+					Expect(err).NotTo(HaveOccurred(), "failed to get Deployment %s/%s", tc.ControlPlaneNamespace, workload.Name)
+
+					if deploy.Labels["hypershift.openshift.io/managed-by"] != "control-plane-operator" {
+						Skip(fmt.Sprintf("Deployment %s/%s is not managed by control-plane-operator", deploy.Namespace, deploy.Name))
+					}
+
+					hash, ok := deploy.Annotations[upsert.DesiredStateHashAnnotation]
+					Expect(ok).To(BeTrue(),
+						"Deployment %s/%s is missing the %s annotation",
+						deploy.Namespace, deploy.Name, upsert.DesiredStateHashAnnotation)
+					Expect(desiredStateHashHexRE.MatchString(hash)).To(BeTrue(),
+						"Deployment %s/%s has invalid desired-state-hash %q (expected 64 hex chars)",
+						deploy.Namespace, deploy.Name, hash)
+				})
+			})
+		}
+	})
+}
+
 func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	WorkloadRegistryValidationTest(getTestCtx)
 	DeploymentGenerationTest(getTestCtx)
@@ -1077,6 +1184,7 @@ func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	CustomLabelsTest(getTestCtx)
 	CustomTolerationsTest(getTestCtx)
 	SecurityContextUIDTest(getTestCtx)
+	DesiredStateHashAnnotationTest(getTestCtx)
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneWorkloads] Control Plane Workloads", Label("control-plane-workloads"), func() {

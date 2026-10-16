@@ -31,7 +31,35 @@ oc patch nodepool -n <HOSTED_CLUSTER_NAMESPACE> <NODEPOOL_NAME> --type merge -p 
     `autoScaling` and `replicas` are mutually exclusive. When enabling autoscaling, `replicas` must be set to `null`.
 
 !!! note
-    Scale-from-zero (`min: 0`) is only supported on the AWS platform. All other platforms require `min` >= 1.
+    Scale-from-zero (`min: 0`) is supported on AWS and Azure when native capacity or the corresponding instance-type discovery provider is available. Other platforms require `min` >= 1.
+
+### Labels and Taints When Scaling from Zero
+
+Without a live worker, the autoscaler needs scheduling labels and taints in addition to resource capacity. For AWS and Azure autoscaling NodePools, HyperShift reconciles `spec.nodeLabels` and `spec.taints` into the `capacity.cluster-autoscaler.kubernetes.io/labels` and `capacity.cluster-autoscaler.kubernetes.io/taints` annotations on the MachineDeployment (Replace) or MachineSet (InPlace). Native provider capacity replaces CPU/memory/GPU workaround annotations, not labels or taints; their reconciliation does not require the optional capacity-discovery provider.
+
+**Topology labels are user-configured, not discovered automatically.** If workloads use zone/region affinity, selectors, or volume topology requirements, supply the corresponding labels on the NodePool before relying on scale-from-zero. For example, for an AWS pool in `eu-central-1b`:
+
+```yaml
+spec:
+  nodeLabels:
+    topology.kubernetes.io/region: eu-central-1
+    topology.kubernetes.io/zone: eu-central-1b
+    topology.ebs.csi.aws.com/zone: eu-central-1b
+    topology.k8s.aws/zone-id: euc1-az3
+    failure-domain.beta.kubernetes.io/region: eu-central-1
+    failure-domain.beta.kubernetes.io/zone: eu-central-1b
+```
+
+Use the actual region, zone name, and zone ID for the pool's subnet in the tenant AWS account; these example values are not a universal zone-name/zone-ID mapping. Include the label keys required by your workloads, along with any custom labels. Label propagation does not validate placement against AWS. Incorrect values can misrepresent the pool to the autoscaler's simulation and result in unsuitable scale-up decisions or workloads remaining pending.
+
+Verify the generated annotation before testing scale-up:
+
+```bash
+oc -n <CONTROL_PLANE_NAMESPACE> get machinedeployment <NODEPOOL_NAME> \
+  -o go-template='{{index .metadata.annotations "capacity.cluster-autoscaler.kubernetes.io/labels"}}{{"\n"}}'
+```
+
+For InPlace pools, use `machineset` instead. Configuring only these labels or taints does not change the NodePool rollout hash or replace workers. Validate actual node labels and workload scheduling on a disposable test pool; this configuration is not a guarantee of successful scheduling.
 
 ### Verify Autoscaling is Enabled
 
@@ -92,6 +120,8 @@ oc patch hostedcluster -n <HOSTED_CLUSTER_NAMESPACE> <HOSTED_CLUSTER_NAME> --typ
 | `maxPodGracePeriod` | int | 600 | Maximum seconds to wait for graceful pod termination before scaling down. |
 | `maxNodeProvisionTime` | string | 15m | Maximum time to wait for a node to provision, in Go duration format (e.g., `15m`, `20m`). |
 | `podPriorityThreshold` | int | -10 | Pods with priority below this threshold won't trigger scale-up. |
+| `kubeClientQPS` | int | 5 | Maximum queries-per-second the autoscaler may send to the kube-apiserver (`--kube-client-qps`). Must be between -1 and 1000. `-1` disables client-side rate limiting; `0` uses the client-go default QPS of 5; `1000` is the maximum. When omitted, the flag is not set. |
+| `kubeClientBurst` | int | 10 | Maximum burst of queries to the kube-apiserver (`--kube-client-burst`). Must be between 1 and 2000. `1` is the minimum; `2000` is the maximum. When omitted, the flag is not set. |
 
 !!! note
     Defaults listed in the configuration reference tables represent the cluster autoscaler's effective behavior when the field is omitted. The only API-enforced default is `scaling`, which defaults to `ScaleUpAndScaleDown`.

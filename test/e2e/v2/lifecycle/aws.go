@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -18,11 +20,13 @@ type AWSPlatformConfig struct {
 	zones          []string
 	additionalTags []string
 	sharedDir      string
+	externalOIDC   externalOIDCSetup
 }
 
 type AWSPlatformOptions struct {
-	Region string
-	Zones  string
+	Region    string
+	Zones     string
+	ProwJobId string
 }
 
 func NewAWSPlatformConfig(opts AWSPlatformOptions, sharedDir string) *AWSPlatformConfig {
@@ -33,11 +37,16 @@ func NewAWSPlatformConfig(opts AWSPlatformOptions, sharedDir string) *AWSPlatfor
 	// non-kubernetes-namespaced tag on the infra.
 	tags := []string{fmt.Sprintf("expirationDate=%s", time.Now().Add(4*time.Hour).UTC().Format(time.RFC3339))}
 
+	if opts.ProwJobId != "" {
+		tags = append(tags, supportawsutil.HypershiftProwJobIDTagKey+"="+opts.ProwJobId)
+	}
+
 	cfg := &AWSPlatformConfig{
 		region:         opts.Region,
 		sharedDir:      sharedDir,
 		additionalTags: tags,
 		zones:          zones,
+		externalOIDC:   externalOIDCSetup{sharedDir: sharedDir},
 	}
 
 	log.Printf("AWS platform config: region=%s, zones=%v, additionalTags=%v", cfg.region, cfg.zones, cfg.additionalTags)
@@ -56,11 +65,20 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
 		extraArgs = strings.Fields(envArgs)
 	}
+	oneInitialReplica := 1
 	return []ClusterSpec{
 		{
 			Variant: "public",
 			ExtraArgs: append(extraArgs, []string{
 				"--public-only",
+				"--feature-set=TechPreviewNoUpgrade",
+			}...),
+		},
+		{
+			Variant:      "upgrade",
+			ReleaseImage: n1Image,
+			ExtraArgs: append(extraArgs, []string{
+				"--control-plane-availability-policy=HighlyAvailable",
 			}...),
 		},
 		// The KarpenterBillingConsolidationTest actually tests hostedcluster teardown
@@ -80,7 +98,29 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 				"--auto-node",
 				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
 				"--endpoint-access=PublicAndPrivate",
+				"--feature-set=TechPreviewNoUpgrade",
 			}...),
+		},
+		{
+			Variant:      "karpenter-upgrade",
+			ReleaseImage: n1Image,
+			ExtraArgs: append(extraArgs, []string{
+				// Enables Karpenter-based node provisioning (AutoNode)
+				"--auto-node",
+				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
+				"--endpoint-access=PublicAndPrivate",
+				"--control-plane-availability-policy=HighlyAvailable",
+			}...),
+		},
+		{
+			Variant:                 "autoscaling",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs:               extraArgs,
+		},
+		{
+			Variant:                 "external-oidc",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs:               extraArgs,
 		},
 	}
 }
@@ -95,7 +135,6 @@ func (a *AWSPlatformConfig) CreateArgs() []string {
 		"--toleration=key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule",
 		"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
 		"--annotations=hypershift.openshift.io/skip-release-image-validation=true",
-		"--feature-set=TechPreviewNoUpgrade",
 	}
 	for _, tag := range a.additionalTags {
 		args = append(args, "--additional-tags="+tag)
@@ -104,7 +143,7 @@ func (a *AWSPlatformConfig) CreateArgs() []string {
 }
 
 func (a *AWSPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error {
-	return nil
+	return a.externalOIDC.preCreate(ctx, cl)
 }
 
 func (a *AWSPlatformConfig) PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error {
@@ -116,7 +155,7 @@ func (a *AWSPlatformConfig) PostAvailable(ctx context.Context, cl crclient.WithW
 }
 
 func (a *AWSPlatformConfig) PostVersionRollout(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error {
-	return nil
+	return a.externalOIDC.postVersionRollout(ctx, cl, namespace, clusterNames)
 }
 
 func (a *AWSPlatformConfig) DefaultTestPlan() TestPlan {
@@ -131,20 +170,109 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 	return TestMatrix{
 		Parallel: []TestGroup{
 			{
-				Name:        "public",
-				Variant:     "public",
-				LabelFilter: "!lifecycle || hosted-cluster-aws",
-			},
-			{
 				Name:        "karpenter",
 				Variant:     "karpenter",
 				LabelFilter: "karpenter",
+			},
+			// TODO: It might be possible to decompose the karpenter upgrade test
+			// into pre and post upgrade specs which communicate with a well defined
+			// IPC protocol, like the pre step serializing observations which the
+			// post step can use. Then we can compose the regular upgrade test here
+			// instead of duplicating upgrade logic inside the karpenter test.
+			{
+				Name:        "karpenter-upgrade",
+				Variant:     "karpenter-upgrade",
+				LabelFilter: "karpenter-upgrade",
+			},
+		},
+		Sequential: []SequentialGroup{
+			{
+				Name: "public",
+				Steps: []TestGroup{
+					{
+						Name:    "public",
+						Variant: "public",
+						LabelFilter: "hosted-cluster-aws || hosted-cluster-compliance || hosted-cluster-node-communication || " +
+							"hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || " +
+							"hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress || hosted-cluster-dns || " +
+							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
+					},
+					{
+						Name:    "public-nodepool-rollouts",
+						Variant: "public",
+						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
+							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-osimagestream-upgrade || " +
+							"nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-performance-profile || nodepool-mirror-config",
+					},
+				},
+			},
+			{
+				Name: "autoscaling",
+				Steps: []TestGroup{
+					{
+						Name:        "autoscaling-nodepool-machineconfig",
+						Variant:     "autoscaling",
+						LabelFilter: "nodepool-machineconfig-rollout",
+					},
+					{
+						Name:        "autoscaling-balancing",
+						Variant:     "autoscaling",
+						LabelFilter: "nodepool-autoscaling-balancing",
+					},
+				},
+			},
+			{
+				Name: "external-oidc",
+				Steps: []TestGroup{
+					{
+						Name:        "external-oidc",
+						Variant:     "external-oidc",
+						LabelFilter: "external-oidc || global-pull-secret",
+					},
+					{
+						Name:        "external-oidc-autoscaling",
+						Variant:     "external-oidc",
+						LabelFilter: "nodepool-autoscaling-scale-up-down",
+					},
+					{
+						Name:        "external-oidc-trust-bundle",
+						Variant:     "external-oidc",
+						LabelFilter: "nodepool-trust-bundle",
+					},
+				},
+			},
+			{
+				Name: "upgrade-and-chaos",
+				Steps: []TestGroup{
+					{
+						Name:        "upgrade",
+						Variant:     "upgrade",
+						LabelFilter: "control-plane-upgrade",
+					},
+					{
+						Name:        "post-upgrade-health",
+						Variant:     "upgrade",
+						LabelFilter: "hosted-cluster-health || control-plane-workloads",
+					},
+					{
+						Name:        "control-plane-tls",
+						Variant:     "upgrade",
+						LabelFilter: "control-plane-pki-operator",
+					},
+					{
+						Name:        "etcd-chaos",
+						Variant:     "upgrade",
+						LabelFilter: "etcd-chaos",
+					},
+				},
 			},
 		},
 	}
 }
 
-func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {}
+func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {
+	setupExternalOIDCTestEnv(sharedDir)
+}
 
 func (a *AWSPlatformConfig) DestroyArgs() []string {
 	baseDomain := envOrDefault("HYPERSHIFT_BASE_DOMAIN", a.DefaultBaseDomain())

@@ -388,6 +388,9 @@ const (
 	RecommendedClusterSizeAnnotation = "hypershift.openshift.io/recommended-cluster-size"
 
 	// KubeAPIServerVerbosityLevelAnnotation allows specifying the log verbosity of kube-apiserver.
+	// Deprecated: Use spec.operatorConfiguration.kubeAPIServer.logLevel instead.
+	// When both are set, the OperatorConfiguration field takes precedence.
+	// This annotation will be removed in a future release.
 	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
 
 	// NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation indicates if the NodePool currently supports
@@ -403,6 +406,18 @@ const (
 	// This annotation signals to the NodePool controller that it is safe to use TopologySpreadConstraints on a NodePool
 	// without triggering an unexpected update of KubeVirt VMs.
 	NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-topology-spread-constraints"
+
+	// NodePoolSupportsKubevirtArchitectureAnnotation indicates that it is safe to set the VMI
+	// Architecture field and inject the kubernetes.io/arch NodeSelector on KubeVirt VMs in
+	// this NodePool without triggering an unexpected fleet-wide rolling update.
+	//
+	// Because nodePool.Spec.Arch has +kubebuilder:default:=amd64, every existing NodePool
+	// already carries Arch="amd64". Setting Architecture="amd64" on the VMI spec changes the
+	// JSON-serialised KubevirtMachineTemplateSpec, which changes the hash-derived template name
+	// and causes CAPI to replace all VMs — identical in impact to the TopologySpreadConstraints
+	// migration. The annotation is only set for new NodePools or NodePools already undergoing a
+	// version update, so idle existing NodePools are never unexpectedly disrupted.
+	NodePoolSupportsKubevirtArchitectureAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-architecture"
 
 	// IsKubeVirtRHCOSVolumeLabelName labels rhcos DataVolumes and PVCs, to be able to filter them, e.g. for backup
 	IsKubeVirtRHCOSVolumeLabelName = "hypershift.openshift.io/is-kubevirt-rhcos"
@@ -540,7 +555,7 @@ type HostedClusterSpec struct {
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
 	// The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
 	// Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
-	// Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+	// Attempting to use a release with a skew against a NodePool release bigger than N-3 for the y-stream will result in leaving the NodePool in an unsupported state.
 	// Changing this field will trigger a rollout of the control plane components.
 	// The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.
 	// +required
@@ -1100,8 +1115,9 @@ type NodePortPublishingStrategy struct {
 	// +required
 	Address string `json:"address"`
 
-	// port is the port of the NodePort service. If <=0, the port is dynamically
-	// assigned when the service is created.
+	// port is the port of the NodePort service.
+	// If omitted, the port is dynamically assigned when the service is created.
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	Port int32 `json:"port,omitempty"`
 }
@@ -1236,7 +1252,7 @@ type ClusterNetworking struct {
 	// networkType specifies the SDN provider used for cluster networking.
 	// Defaults to OVNKubernetes.
 	// This field is required and immutable.
-	// kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="networkType is immutable"
 	// +optional
 	// +kubebuilder:default:="OVNKubernetes"
 	// +immutable
@@ -1514,20 +1530,29 @@ type ProvisionerConfig struct {
 // including the target platform and platform-specific settings.
 //
 // +kubebuilder:validation:XValidation:rule="self.platform == 'AWS' ? has(self.aws) : !has(self.aws)",message="aws is required when platform is AWS, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.platform == 'Azure' ? has(self.azure) : !has(self.azure)",message="azure is required when platform is Azure, and forbidden otherwise"
 // +union
 type KarpenterConfig struct {
 	// platform specifies the infrastructure platform that Karpenter should provision nodes on.
 	//
 	// +required
 	// +unionDiscriminator
-	// +kubebuilder:validation:Enum=AWS
+	// +kubebuilder:validation:Enum=AWS;Azure
 	Platform PlatformType `json:"platform,omitempty"`
 
 	// aws specifies the AWS-specific configuration for Karpenter.
+	// Required when platform is "AWS", and forbidden otherwise.
 	//
 	// +optional
 	// +unionMember
 	AWS KarpenterAWSConfig `json:"aws,omitzero"`
+
+	// azure specifies the Azure-specific configuration for Karpenter.
+	// Required when platform is "Azure", and forbidden otherwise.
+	//
+	// +optional
+	// +unionMember
+	Azure KarpenterAzureConfig `json:"azure,omitzero"`
 }
 
 // KarpenterAWSConfig specifies AWS-specific configuration for the Karpenter provisioner.
@@ -1773,6 +1798,23 @@ type KarpenterAWSConfig struct {
 	RoleARN string `json:"roleARN,omitempty"`
 }
 
+// KarpenterAzureConfig specifies Azure-specific configuration for the Karpenter provisioner.
+type KarpenterAzureConfig struct {
+	// clientID is the client ID of the user-assigned managed identity Karpenter uses
+	// to provision and manage Azure VMs in the hosted cluster's subscription.
+	//
+	// The identity must have a federated credential that trusts the hosted cluster
+	// OIDC issuer for subject system:serviceaccount:kube-system:karpenter.
+	//
+	// The identity must be granted Virtual Machine Contributor, Network Contributor,
+	// and Managed Identity Operator on the cluster resource group (and Network Contributor
+	// on the VNet resource group when it differs).
+	//
+	// The client ID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+	// +required
+	ClientID AzureClientID `json:"clientID,omitempty"`
+}
+
 const (
 	// ProvisionerKarpenter indicates that Karpenter is used for automatic node provisioning.
 	ProvisionerKarpenter Provisioner = "Karpenter"
@@ -1962,6 +2004,28 @@ type ClusterAutoscaling struct {
 	//
 	// +optional
 	Expanders []ExpanderString `json:"expanders,omitempty"`
+
+	// kubeClientQPS sets the "--kube-client-qps" flag on cluster-autoscaler.
+	// Controls the maximum queries-per-second the autoscaler may send to the
+	// kube-apiserver. Valid values are -1 through 1000.
+	// When set to -1, client-side rate limiting is disabled.
+	// When set to 0, the flag is passed but client-go applies its default QPS of 5.
+	// When omitted, the flag is not set and the autoscaler uses its default (5).
+	//
+	// +kubebuilder:validation:Minimum=-1
+	// +kubebuilder:validation:Maximum=1000
+	// +optional
+	KubeClientQPS *int32 `json:"kubeClientQPS,omitempty"`
+
+	// kubeClientBurst sets the "--kube-client-burst" flag on cluster-autoscaler.
+	// Controls the maximum burst of queries to the kube-apiserver.
+	// Valid values are 1 through 2000.
+	// When omitted, the flag is not set and the autoscaler uses its default (10).
+	//
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2000
+	// +optional
+	KubeClientBurst int32 `json:"kubeClientBurst,omitempty"`
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance
@@ -2119,21 +2183,21 @@ type PersistentVolumeEtcdStorageSpec struct {
 }
 
 // UnmanagedEtcdSpec specifies configuration which enables the control plane to
-// integrate with an eternally managed etcd cluster.
+// integrate with an externally managed etcd cluster.
 // +openshift:validation:FeatureGateAwareXValidation:featureGate=EtcdSharding,rule="has(oldSelf.shards) == has(self.shards)",message="shards cannot be added or removed after creation"
 type UnmanagedEtcdSpec struct {
-	// endpoint is the full etcd cluster client endpoint URL. For example:
+	// endpoint is the full etcd cluster client endpoint HTTPS URL. For example:
 	//
 	//     https://etcd-client:2379
 	//
-	// If the URL uses an HTTPS scheme, the TLS field is required.
+	// The tls field is required to authenticate to and verify the etcd endpoint.
 	//
 	// +kubebuilder:validation:Pattern=`^https://`
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	Endpoint string `json:"endpoint"`
 
-	// tls specifies TLS configuration for HTTPS etcd client endpoints.
+	// tls specifies the required TLS configuration for the HTTPS etcd client endpoint.
 	// +required
 	TLS EtcdTLSConfig `json:"tls"`
 
@@ -2159,12 +2223,12 @@ type UnmanagedEtcdSpec struct {
 
 // EtcdTLSConfig specifies TLS configuration for HTTPS etcd client endpoints.
 type EtcdTLSConfig struct {
-	// clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
-	// may have the following key/value pairs:
+	// clientSecret refers to a secret for client mTLS authentication with the etcd cluster.
+	// The secret must contain all three of the following key/value pairs:
 	//
-	//     etcd-client-ca.crt: Certificate Authority value
-	//     etcd-client.crt: Client certificate value
-	//     etcd-client.key: Client certificate key value
+	//     etcd-client-ca.crt: CA bundle used to verify the etcd server certificate
+	//     etcd-client.crt: Client certificate used to authenticate to etcd
+	//     etcd-client.key: Private key for the client certificate
 	// +required
 	ClientSecret corev1.LocalObjectReference `json:"clientSecret"`
 }
@@ -2895,6 +2959,80 @@ type OperatorConfiguration struct {
 	//
 	// +optional
 	IngressOperator *IngressOperatorSpec `json:"ingressOperator,omitempty"`
+
+	// kubeAPIServer configures the kube-apiserver component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	KubeAPIServer KubeAPIServerOperatorSpec `json:"kubeAPIServer,omitzero"`
+
+	// etcd configures the etcd component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// Note: etcd supports fewer log levels than klog-based components,
+	// etcd supports only Normal and Debug log levels.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	Etcd EtcdOperatorSpec `json:"etcd,omitzero"`
+
+	// kubeControllerManager configures the kube-controller-manager component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	KubeControllerManager KubeControllerManagerOperatorSpec `json:"kubeControllerManager,omitzero"`
+
+	// kubeScheduler configures the kube-scheduler component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	KubeScheduler KubeSchedulerOperatorSpec `json:"kubeScheduler,omitzero"`
+
+	// openShiftControllerManager configures the openshift-controller-manager component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OpenShiftControllerManager OpenShiftControllerManagerOperatorSpec `json:"openShiftControllerManager,omitzero"`
+
+	// openShiftAPIServer configures the openshift-apiserver component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OpenShiftAPIServer OpenShiftAPIServerOperatorSpec `json:"openShiftAPIServer,omitzero"`
+
+	// openShiftOAuthAPIServer configures the openshift-oauth-apiserver component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OpenShiftOAuthAPIServer OpenShiftOAuthAPIServerOperatorSpec `json:"openShiftOAuthAPIServer,omitzero"`
+
+	// oauthServer configures the oauth-server component.
+	// Setting the logLevel field triggers a rolling restart of the component.
+	// When omitted, this means the user has no opinion and the platform
+	// chooses a reasonable default, which is subject to change over time.
+	// The current default log level is Normal.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	OAuthServer OAuthServerOperatorSpec `json:"oauthServer,omitzero"`
 }
 
 // +genclient

@@ -26,8 +26,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	npconst "github.com/openshift/hypershift/pkg/nodepool"
+	"github.com/openshift/hypershift/pkg/manifests"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
@@ -45,6 +45,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/yaml"
@@ -68,7 +70,7 @@ func RegisterNodePoolLifecycleTests(getTestCtx internal.TestContextGetter) {
 	NodePoolNTOPerformanceProfileTest(getTestCtx)
 	NodePoolAutoRepairTest(getTestCtx)
 	NodePoolDiskEncryptionTest(getTestCtx)
-	NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx)
+	NodePoolIPForwardingTest(getTestCtx)
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
@@ -87,7 +89,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] N
 // creates a verification DaemonSet in the hosted cluster, and waits for config update
 // complete and DaemonSet rollout.
 func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
-	It("should roll out a MachineConfig change via Replace upgrade strategy", func() {
+	It("should roll out a MachineConfig change via Replace upgrade strategy", Label("nodepool-machineconfig-rollout"), func() {
 		testCtx := getTestCtx()
 		// https://issues.redhat.com/browse/CNV-38196
 		testCtx.SkipIfPlatform(hyperv1.KubevirtPlatform)
@@ -187,7 +189,7 @@ func NodePoolMachineconfigRolloutTest(getTestCtx internal.TestContextGetter) {
 // patches the NodePool's TuningConfig, creates a verification DaemonSet,
 // and waits for rollout via Replace upgrade strategy.
 func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
-	It("should roll out an NTO Tuned config change via Replace upgrade strategy", func() {
+	It("should roll out an NTO Tuned config change via Replace upgrade strategy", Label("nodepool-nto-replace-rollout"), func() {
 		testCtx := getTestCtx()
 
 		// https://issues.redhat.com/browse/CNV-38196, https://issues.redhat.com/browse/OSASINFRA-3566
@@ -257,7 +259,7 @@ func NodePoolNTORolloutTest(getTestCtx internal.TestContextGetter) {
 
 // NodePoolNTOInPlaceTest applies an NTO Tuned config with InPlace upgrade type.
 func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
-	It("should roll out an NTO Tuned config change via InPlace upgrade strategy", func() {
+	It("should roll out an NTO Tuned config change via InPlace upgrade strategy", Label("nodepool-nto-inplace-rollout"), func() {
 		testCtx := getTestCtx()
 
 		// https://issues.redhat.com/browse/CNV-38196, https://issues.redhat.com/browse/OSASINFRA-3566
@@ -322,7 +324,7 @@ func NodePoolNTOInPlaceTest(getTestCtx internal.TestContextGetter) {
 // NodePoolReplaceUpgradeTest creates a NodePool at previous release image, waits for nodes,
 // upgrades to latest image, and waits for version to update via Replace upgrade strategy.
 func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("should upgrade a NodePool from previous to latest release via Replace strategy", func() {
+	It("should upgrade a NodePool from previous to latest release via Replace strategy", Label("nodepool-replace-version-upgrade"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -410,7 +412,7 @@ func NodePoolReplaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 // NodePoolInPlaceUpgradeTest creates a NodePool at previous release image, waits for nodes,
 // upgrades to latest image via InPlace upgrade strategy.
 func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("should upgrade a NodePool from previous to latest release via InPlace strategy", func() {
+	It("should upgrade a NodePool from previous to latest release via InPlace strategy", Label("nodepool-inplace-version-upgrade"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -492,7 +494,7 @@ func NodePoolInPlaceUpgradeTest(getTestCtx internal.TestContextGetter) {
 // (AWS) or VM size (Azure) to trigger a rolling upgrade, and verifies the machine specs
 // after upgrade. Only runs on AWS and Azure platforms.
 func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("should perform a rolling upgrade when instance type or VM size changes", func() {
+	It("should perform a rolling upgrade when instance type or VM size changes", Label("nodepool-vm-size-rollout"), func() {
 		testCtx := getTestCtx()
 
 		testCtx.SkipIfNotPlatform(hyperv1.AWSPlatform, hyperv1.AzurePlatform)
@@ -588,7 +590,7 @@ func NodePoolRollingUpgradeTest(getTestCtx internal.TestContextGetter) {
 
 // NodePoolPrevReleaseN1Test creates a NodePool at N-1 release image and waits for nodes ready.
 func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
-	It("should create a NodePool at N-1 release and have ready nodes", func() {
+	It("should create a NodePool at N-1 release and have ready nodes", Label("nodepool-n1-release"), func() {
 		testCtx := getTestCtx()
 
 		n1Image := internal.GetEnvVarValue("E2E_N1_RELEASE_IMAGE")
@@ -627,7 +629,7 @@ func NodePoolPrevReleaseN1Test(getTestCtx internal.TestContextGetter) {
 
 // NodePoolPrevReleaseN2Test creates a NodePool at N-2 release image and waits for nodes ready.
 func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
-	It("should create a NodePool at N-2 release and have ready nodes", func() {
+	It("should create a NodePool at N-2 release and have ready nodes", Label("nodepool-n2-release"), func() {
 		testCtx := getTestCtx()
 
 		n2Image := internal.GetEnvVarValue("E2E_N2_RELEASE_IMAGE")
@@ -668,7 +670,7 @@ func NodePoolPrevReleaseN2Test(getTestCtx internal.TestContextGetter) {
 // verifies the KubeletConfig gets mirrored to the hosted cluster's openshift-config-managed
 // namespace, then removes the config and verifies cleanup. Only for 4.18+.
 func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
-	It("should mirror KubeletConfig to the hosted cluster and clean up on removal", func() {
+	It("should mirror KubeletConfig to the hosted cluster and clean up on removal", Label("nodepool-mirror-config"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -722,8 +724,8 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: "true",
-						hyperv1.NodePoolLabel:                np.Name,
+						hyperv1.KubeletConfigConfigMapLabel: "true",
+						hyperv1.NodePoolLabel:               np.Name,
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
 				for i := range list.Items {
@@ -739,7 +741,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 			},
 			[]e2eutil.Predicate[*corev1.ConfigMap]{
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
-					want := netutil.ShortenName(kcConfigMap.Name, np.Name, nodepool.QualifiedNameMaxLength)
+					want := netutil.ShortenName(kcConfigMap.Name, np.Name, npconst.QualifiedNameMaxLength)
 					if want != cm.Name {
 						return false, fmt.Sprintf("expected ConfigMap name %q, got %q", want, cm.Name), nil
 					}
@@ -747,13 +749,13 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				},
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
 					if diff := cmp.Diff(map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: cm.Labels[nodepool.KubeletConfigConfigMapLabel],
-						hyperv1.NodePoolLabel:                cm.Labels[hyperv1.NodePoolLabel],
-						nodepool.NTOMirroredConfigLabel:      cm.Labels[nodepool.NTOMirroredConfigLabel],
+						hyperv1.KubeletConfigConfigMapLabel: cm.Labels[hyperv1.KubeletConfigConfigMapLabel],
+						hyperv1.NodePoolLabel:               cm.Labels[hyperv1.NodePoolLabel],
+						hyperv1.NTOMirroredConfigLabel:      cm.Labels[hyperv1.NTOMirroredConfigLabel],
 					}, map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: "true",
-						hyperv1.NodePoolLabel:                np.Name,
-						nodepool.NTOMirroredConfigLabel:      "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
+						hyperv1.NodePoolLabel:               np.Name,
+						hyperv1.NTOMirroredConfigLabel:      "true",
 					}); diff != "" {
 						return false, fmt.Sprintf("incorrect labels: %v", diff), nil
 					}
@@ -776,8 +778,8 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
-						nodepool.KubeletConfigConfigMapLabel: "true",
-						hyperv1.NodePoolLabel:                np.Name,
+						hyperv1.KubeletConfigConfigMapLabel: "true",
+						hyperv1.NodePoolLabel:               np.Name,
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
 				for i := range list.Items {
@@ -802,7 +804,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 // exists in the hosted cluster, removes the trust bundle, verifies CPO deployment no longer
 // mounts it, waits for another update cycle, and verifies user-ca-bundle is deleted (4.22+).
 func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
-	It("should propagate and remove additional trust bundle to/from the hosted cluster", func() {
+	It("should propagate and remove additional trust bundle to/from the hosted cluster", Label("nodepool-trust-bundle"), func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -1012,7 +1014,7 @@ func NodePoolTrustBundleTest(getTestCtx internal.TestContextGetter) {
 // patches the NodePool's TuningConfig, verifies the PerformanceProfile ConfigMap and
 // status ConfigMap are created in the control plane namespace, and verifies cleanup.
 func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
-	It("should create and manage NTO PerformanceProfile via NodePool TuningConfig", func() {
+	It("should create and manage NTO PerformanceProfile via NodePool TuningConfig", Label("nodepool-performance-profile"), func() {
 		testCtx := getTestCtx()
 
 		// https://issues.redhat.com/browse/OSASINFRA-3566
@@ -1068,7 +1070,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := testCtx.MgmtClient.List(ctx, list, crclient.InNamespace(cpNamespace),
 					crclient.MatchingLabels(map[string]string{
-						nodepool.PerformanceProfileConfigMapLabel: "true",
+						npconst.PerformanceProfileConfigMapLabel: "true",
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
 				for i := range list.Items {
@@ -1084,7 +1086,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 			},
 			[]e2eutil.Predicate[*corev1.ConfigMap]{
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
-					want := netutil.ShortenName(ppConfigMap.Name, np.Name, nodepool.QualifiedNameMaxLength)
+					want := netutil.ShortenName(ppConfigMap.Name, np.Name, npconst.QualifiedNameMaxLength)
 					if want != cm.Name {
 						return false, fmt.Sprintf("expected PerformanceProfile ConfigMap name %q, got %q", want, cm.Name), nil
 					}
@@ -1092,11 +1094,11 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 				},
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
 					if diff := cmp.Diff(map[string]string{
-						nodepool.PerformanceProfileConfigMapLabel: cm.Labels[nodepool.PerformanceProfileConfigMapLabel],
-						hyperv1.NodePoolLabel:                     cm.Labels[hyperv1.NodePoolLabel],
+						npconst.PerformanceProfileConfigMapLabel: cm.Labels[npconst.PerformanceProfileConfigMapLabel],
+						hyperv1.NodePoolLabel:                    cm.Labels[hyperv1.NodePoolLabel],
 					}, map[string]string{
-						nodepool.PerformanceProfileConfigMapLabel: "true",
-						hyperv1.NodePoolLabel:                     np.Name,
+						npconst.PerformanceProfileConfigMapLabel: "true",
+						hyperv1.NodePoolLabel:                    np.Name,
 					}); diff != "" {
 						return false, fmt.Sprintf("incorrect labels: %v", diff), nil
 					}
@@ -1114,7 +1116,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 					list := &corev1.ConfigMapList{}
 					err := testCtx.MgmtClient.List(ctx, list, crclient.InNamespace(cpNamespace),
 						crclient.MatchingLabels(map[string]string{
-							nodepool.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
+							npconst.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
 						}))
 					configMaps := make([]*corev1.ConfigMap, len(list.Items))
 					for i := range list.Items {
@@ -1130,7 +1132,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 				},
 				[]e2eutil.Predicate[*corev1.ConfigMap]{
 					func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
-						want := fmt.Sprintf("status-%s", netutil.ShortenName(ppConfigMap.Name, np.Name, nodepool.QualifiedNameMaxLength))
+						want := fmt.Sprintf("status-%s", netutil.ShortenName(ppConfigMap.Name, np.Name, npconst.QualifiedNameMaxLength))
 						if want != cm.Name {
 							return false, fmt.Sprintf("expected status ConfigMap name %q, got %q", want, cm.Name), nil
 						}
@@ -1154,7 +1156,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := testCtx.MgmtClient.List(ctx, list, crclient.InNamespace(cpNamespace),
 					crclient.MatchingLabels(map[string]string{
-						nodepool.PerformanceProfileConfigMapLabel: "true",
+						npconst.PerformanceProfileConfigMapLabel: "true",
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
 				for i := range list.Items {
@@ -1177,7 +1179,7 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 // NodePoolAutoRepairTest is a skeleton for platform-specific auto-repair tests.
 // The full implementation requires cloud SDK dependencies for instance termination.
 func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
-	It("should auto-repair a NodePool when a node is terminated", func() {
+	It("should auto-repair a NodePool when a node is terminated", Label("nodepool-auto-repair"), func() {
 		Skip("auto-repair instance termination not yet implemented for v2 framework")
 
 		testCtx := getTestCtx()
@@ -1222,7 +1224,7 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 
 // NodePoolDiskEncryptionTest is a skeleton for Azure disk encryption tests.
 func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
-	It("should create a NodePool with Azure DiskEncryptionSet and verify it is applied", func() {
+	It("should create a NodePool with Azure DiskEncryptionSet and verify it is applied", Label("nodepool-disk-encryption"), func() {
 		testCtx := getTestCtx()
 
 		testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
@@ -1263,6 +1265,96 @@ func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 		// in the control plane namespace. This requires importing CAPI Azure types
 		// (capiazure.AzureMachineList) and verifying DiskEncryptionSetID on each machine.
 	})
+}
+
+// NodePoolIPForwardingTest verifies that an Azure NodePool created with
+// spec.platform.azure.ipForwarding set to AllowAllAddresses propagates the setting all the way to
+// the generated AzureMachineTemplate and the AzureMachines cloned from it, and that a NodePool
+// which never asked for IP forwarding does not get it.
+func NodePoolIPForwardingTest(getTestCtx internal.TestContextGetter) {
+	It("should create a NodePool with Azure IP forwarding set to AllowAllAddresses and verify it is applied", Label("nodepool-ip-forwarding"), func() {
+		testCtx := getTestCtx()
+
+		testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
+
+		ctx := testCtx.Context
+
+		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
+		Expect(defaultNP.Spec.Platform.Azure).NotTo(BeNil(), "default NodePool should have an Azure platform")
+
+		var oneReplica int32 = 1
+		np := buildTestNodePool(defaultNP, "ip-forward", func(pool *hyperv1.NodePool) {
+			pool.Spec.Replicas = &oneReplica
+			pool.Spec.Platform.Azure.IPForwarding = hyperv1.AzureIPForwardingAllowAllAddresses
+		})
+
+		err = testCtx.MgmtClient.Create(ctx, np)
+		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
+		GinkgoWriter.Printf("Created IP forwarding NodePool %s\n", np.Name)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
+
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+
+		By("verifying the ipForwarding field survived admission")
+		createdNP := &hyperv1.NodePool{}
+		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), createdNP)).To(Succeed())
+		Expect(createdNP.Spec.Platform.Azure).NotTo(BeNil())
+		Expect(createdNP.Spec.Platform.Azure.IPForwarding).To(Equal(hyperv1.AzureIPForwardingAllowAllAddresses))
+
+		By("verifying the generated AzureMachineTemplate enables IP forwarding")
+		Expect(azureMachineTemplateForNodePool(ctx, testCtx.MgmtClient, testCtx.ControlPlaneNamespace, np.Name).
+			Spec.Template.Spec.EnableIPForwarding).
+			To(BeTrue(), "AzureMachineTemplate for NodePool %s should enable IP forwarding", np.Name)
+
+		By("verifying the AzureMachines cloned from that template enable IP forwarding")
+		azureMachines := &capiazure.AzureMachineList{}
+		Expect(testCtx.MgmtClient.List(ctx, azureMachines,
+			crclient.InNamespace(testCtx.ControlPlaneNamespace),
+			crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: np.Name})).To(Succeed())
+		Expect(azureMachines.Items).NotTo(BeEmpty(), "expected at least one AzureMachine for NodePool %s", np.Name)
+		inspected := 0
+		for _, machine := range azureMachines.Items {
+			Expect(machine.Spec.EnableIPForwarding).To(BeTrue(),
+				"AzureMachine %s should enable IP forwarding", machine.Name)
+			inspected++
+		}
+		Expect(inspected).To(BeNumerically(">", 0), "no AzureMachines were inspected")
+
+		By("verifying the default NodePool, which does not set ipForwarding, is unaffected")
+		Expect(defaultNP.Spec.Platform.Azure.IPForwarding).To(BeEmpty(),
+			"default NodePool should not have ipForwarding set")
+		Expect(azureMachineTemplateForNodePool(ctx, testCtx.MgmtClient, testCtx.ControlPlaneNamespace, defaultNP.Name).
+			Spec.Template.Spec.EnableIPForwarding).
+			To(BeFalse(), "opting one NodePool in must not enable IP forwarding on NodePool %s", defaultNP.Name)
+	})
+}
+
+// azureMachineTemplateForNodePool returns the AzureMachineTemplate currently referenced by the
+// MachineDeployment backing the named NodePool. The template name is a content hash and therefore
+// cannot be predicted, so it is resolved through the MachineDeployment's infrastructure reference.
+func azureMachineTemplateForNodePool(ctx context.Context, client crclient.Client, controlPlaneNamespace, nodePoolName string) *capiazure.AzureMachineTemplate {
+	GinkgoHelper()
+
+	md := &capiv1.MachineDeployment{}
+	Expect(client.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: nodePoolName}, md)).To(Succeed(),
+		"failed to get MachineDeployment for NodePool %s", nodePoolName)
+
+	templateName := md.Spec.Template.Spec.InfrastructureRef.Name
+	Expect(templateName).NotTo(BeEmpty(), "MachineDeployment %s should reference an infrastructure template", nodePoolName)
+
+	template := &capiazure.AzureMachineTemplate{}
+	Expect(client.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: templateName}, template)).To(Succeed(),
+		"failed to get AzureMachineTemplate %s", templateName)
+
+	return template
 }
 
 // Helper functions

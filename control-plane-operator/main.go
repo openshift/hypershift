@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/gcpprivateserviceconnect"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/healthcheck"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	endpointresolver "github.com/openshift/hypershift/control-plane-operator/endpoint-resolver"
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
@@ -31,12 +32,14 @@ import (
 	konnectivityhttpsproxy "github.com/openshift/hypershift/konnectivity-https-proxy"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
@@ -44,7 +47,6 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 	syncfgconfigmap "github.com/openshift/hypershift/sync-fg-configmap"
 	syncglobalpullsecret "github.com/openshift/hypershift/sync-global-pullsecret"
 	tokenminter "github.com/openshift/hypershift/token-minter"
@@ -67,6 +69,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -265,7 +268,7 @@ func buildImageRegistryOverrides(registryOverrides map[string]string) map[string
 
 	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
 	if ok {
-		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+		imageRegistryOverrides = imageregistry.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
 	}
 
 	if len(registryOverrides) > 0 {
@@ -505,7 +508,7 @@ func NewStartCommand() *cobra.Command {
 
 		cpReleaseProvider, userReleaseProvider := buildReleaseProviders(componentImages, registryOverrides, imageRegistryOverrides)
 
-		imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+		imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		}
 
@@ -530,6 +533,7 @@ func NewStartCommand() *cobra.Command {
 			OperateOnReleaseImage:                   os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:                    defaultIngressDomain,
 			MetricsSet:                              metricsSet,
+			KASHealthMetrics:                        kas.NewKASHealthMetrics(crmetrics.Registry),
 			CertRotationScale:                       certRotationScale,
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 			ImageMetadataProvider:                   imageMetaDataProvider,
@@ -671,7 +675,7 @@ func setupAzurePrivateControllers(ctx context.Context, mgr ctrl.Manager, hcp *hy
 			Client:                 mgr.GetClient(),
 			ControllerName:         azureOAuthObserverName,
 			ServiceNamespace:       namespace,
-			ServiceName:            manifests.OauthServerService("").Name,
+			ServiceName:            cpomanifests.OauthServerService("").Name,
 			HCPNamespace:           namespace,
 			CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
 		}).SetupWithManager(ctx, mgr); err != nil {

@@ -27,13 +27,17 @@ import (
 	testingclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/go-logr/logr/testr"
+	"github.com/go-logr/zapr"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestNewToken(t *testing.T) {
@@ -352,10 +356,11 @@ func TestTokenCleanupOutdated(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name          string
-		token         *Token
-		fakeObjects   []crclient.Object
-		expectedError string
+		name            string
+		token           *Token
+		fakeObjects     []crclient.Object
+		expectedError   string
+		expectDeleteLog bool
 	}{
 		{
 			name: "When userdata and token secret are outdated, it should delete userdata secret and add expiration timestamp to token secret",
@@ -363,7 +368,8 @@ func TestTokenCleanupOutdated(t *testing.T) {
 				ConfigGenerator: &ConfigGenerator{
 					nodePool: &hyperv1.NodePool{
 						ObjectMeta: metav1.ObjectMeta{
-							Name: nodePoolName,
+							Name:      nodePoolName,
+							Namespace: "nodepool-namespace",
 							Annotations: map[string]string{
 								nodePoolAnnotationCurrentConfigVersion: outdatedHash,
 							},
@@ -382,7 +388,8 @@ func TestTokenCleanupOutdated(t *testing.T) {
 				userdataSecret,
 				tokenSecret,
 			},
-			expectedError: "",
+			expectedError:   "",
+			expectDeleteLog: true,
 		},
 		{
 			name: "When none of the secrests exists it should succeed",
@@ -495,7 +502,17 @@ func TestTokenCleanupOutdated(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithObjects(tc.fakeObjects...).Build()
 			tc.token.Client = fakeClient
 
-			err := tc.token.cleanupOutdated(t.Context())
+			logCore, logs := observer.New(zap.InfoLevel)
+			ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zap.New(logCore)))
+			err := tc.token.cleanupOutdated(ctx)
+			deletedLogs := logs.FilterMessage("Deleted outdated Secret").All()
+			if tc.expectDeleteLog {
+				g.Expect(deletedLogs).To(HaveLen(1))
+				g.Expect(deletedLogs[0].ContextMap()).To(HaveKeyWithValue("secret", "test-namespace/user-data-test-nodepool-outdated-hash"))
+				g.Expect(deletedLogs[0].ContextMap()).To(HaveKeyWithValue("nodePool", "nodepool-namespace/test-nodepool"))
+			} else {
+				g.Expect(deletedLogs).To(BeEmpty())
+			}
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
@@ -1356,6 +1373,73 @@ func TestSetKarpenterAMILabels(t *testing.T) {
 			if _, ok := tc.expectedLabels[armKey]; !ok {
 				g.Expect(tc.userDataSecret.Labels).NotTo(HaveKey(armKey))
 			}
+		})
+	}
+}
+
+func TestReconcileUserDataSecret(t *testing.T) {
+	testCases := []struct {
+		name           string
+		token          *Token
+		userDataSecret *corev1.Secret
+		expectedError  string
+	}{
+		{
+			name: "when platform is Azure and NodePool is managed by Karpenter, it should return an error",
+			token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					hostedCluster: &hyperv1.HostedCluster{
+						Spec: hyperv1.HostedClusterSpec{
+							Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform},
+							AutoNode: hyperv1.AutoNode{
+								Provisioner: hyperv1.ProvisionerConfig{
+									Name: hyperv1.ProvisionerKarpenter,
+									Karpenter: hyperv1.KarpenterConfig{
+										Platform: hyperv1.AzurePlatform,
+										Azure: hyperv1.KarpenterAzureConfig{
+											ClientID: "12345678-1234-1234-1234-123456789012",
+										},
+									},
+								},
+							},
+						},
+					},
+					nodePool: &hyperv1.NodePool{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-nodepool",
+							Labels: map[string]string{
+								karpenterutil.ManagedByKarpenterLabel: "true",
+							},
+						},
+					},
+					rolloutConfig: &rolloutConfig{},
+				},
+				userData: &userData{},
+			},
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						karpenterutil.ManagedByKarpenterLabel: "true",
+					},
+				},
+			},
+			expectedError: "karpenter userData reconciliation is currently not supported for platform: Azure",
+		},
+	}
+
+	log := testr.New(t)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			err := tc.token.reconcileUserDataSecret(log, tc.userDataSecret, "test-token")
+			if tc.expectedError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal(tc.expectedError))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
 		})
 	}
 }

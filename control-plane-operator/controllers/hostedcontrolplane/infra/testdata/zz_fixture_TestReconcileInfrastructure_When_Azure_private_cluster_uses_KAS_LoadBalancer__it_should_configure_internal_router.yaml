@@ -76,6 +76,8 @@ routes:
 services:
   items:
   - metadata:
+      labels:
+        app: konnectivity-server
       name: konnectivity-server
       namespace: test-namespace
       ownerReferences:
@@ -146,6 +148,8 @@ services:
     status:
       loadBalancer: {}
   - metadata:
+      labels:
+        app: oauth-openshift
       name: oauth-openshift
       namespace: test-namespace
       ownerReferences:

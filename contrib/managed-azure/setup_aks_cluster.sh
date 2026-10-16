@@ -23,15 +23,50 @@ az group create \
 export AKS_CP_MI_ID=$(az identity show --name $AKS_CP_MI_NAME --resource-group $PERSISTENT_RG_NAME --query id -o tsv)
 export AKS_KUBELET_MI_ID=$(az identity show --name $AKS_KUBELET_MI_NAME --resource-group $PERSISTENT_RG_NAME --query id -o tsv)
 
-# Create AKS Cluster
+# Node VM size for the AKS cluster.
+NODE_VM_SIZE="Standard_D4s_v5"
+
+# `az aks list-vm-skus` lives in the aks-preview extension, not the core CLI.
+# Ensure it is installed (and current) so this script does not rely on Azure
+# CLI's dynamic-install behavior, which is disabled in some environments/CI.
+az extension add --name aks-preview --upgrade
+
+# Discover which availability zones support the node VM size in this region,
+# using the AKS-specific SKU list (authoritative for AKS node pools; general
+# `az vm list-skus` may report zones that AKS won't accept). The nodes are then
+# spread across those zones.
+#
+# This matters because the hypershift-sharedingress router runs 2 replicas with a
+# required pod anti-affinity on topology.kubernetes.io/zone: it needs at least 2
+# zones, or the second replica stays Pending ("didn't match pod anti-affinity
+# rules"). Zone and SKU availability varies by region and subscription, so we
+# fail fast with a clear message rather than create a cluster the router cannot
+# schedule on.
+AVAILABLE_ZONES=$(az aks list-vm-skus \
+--location "${LOCATION}" \
+--size "${NODE_VM_SIZE}" \
+--zone \
+--query "[?name=='${NODE_VM_SIZE}'].locationInfo[0].zones[]" \
+-o tsv | sort -u | tr '\n' ' ')
+
+ZONE_COUNT=$(echo ${AVAILABLE_ZONES} | wc -w | tr -d ' ')
+if [[ "${ZONE_COUNT}" -lt 2 ]]; then
+	echo "ERROR: ${NODE_VM_SIZE} in ${LOCATION} exposes ${ZONE_COUNT} availability zone(s) for this subscription; the hypershift-sharedingress router requires at least 2. Pick a region/VM size with multiple zones (e.g. eastus)." >&2
+	exit 1
+fi
+
+# Create AKS Cluster.
+# ${AVAILABLE_ZONES} is intentionally unquoted so it expands to one value per
+# zone after --zones (e.g. "--zones 1 2 3").
 az aks create \
 --resource-group ${AKS_RG} \
 --name ${AKS_CLUSTER_NAME} \
 --node-count 3 \
+--zones ${AVAILABLE_ZONES} \
 --generate-ssh-keys \
 --load-balancer-sku standard \
 --os-sku AzureLinux \
---node-vm-size Standard_D4s_v5 \
+--node-vm-size ${NODE_VM_SIZE} \
 --enable-fips-image \
 --enable-addons azure-keyvault-secrets-provider \
 --enable-secret-rotation \

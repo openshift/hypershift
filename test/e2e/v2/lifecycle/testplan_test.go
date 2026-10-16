@@ -152,6 +152,45 @@ func TestTestMatrixValidate(t *testing.T) {
 			},
 			wantError: true,
 		},
+		{
+			name: "When a variant is used by concurrent lanes, it should return an error",
+			matrix: TestMatrix{
+				Parallel: []TestGroup{
+					{Name: "public", Variant: "public"},
+				},
+				Sequential: []SequentialGroup{
+					{Name: "public-follow-up", Steps: []TestGroup{
+						{Name: "public-validation", Variant: "public"},
+					}},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "When a variant is reused by steps in one sequential lane, it should succeed",
+			matrix: TestMatrix{
+				Sequential: []SequentialGroup{
+					{Name: "public-flow", Steps: []TestGroup{
+						{Name: "public", Variant: "public"},
+						{Name: "public-follow-up", Variant: "public"},
+					}},
+				},
+			},
+		},
+		{
+			name: "When same-named sequential lanes reuse a variant, it should return an error",
+			matrix: TestMatrix{
+				Sequential: []SequentialGroup{
+					{Name: "public-flow", Steps: []TestGroup{
+						{Name: "public", Variant: "public"},
+					}},
+					{Name: "public-flow", Steps: []TestGroup{
+						{Name: "public-follow-up", Variant: "public"},
+					}},
+				},
+			},
+			wantError: true,
+		},
 	}
 
 	for _, tt := range tests {

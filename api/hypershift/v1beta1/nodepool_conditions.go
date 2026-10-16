@@ -135,6 +135,7 @@ const (
 	NodePoolInvalidArchPlatform           = "InvalidArchPlatform"
 	InvalidKubevirtMachineTemplate        = "InvalidKubevirtMachineTemplate"
 	InvalidOpenStackMachineTemplate       = "InvalidOpenStackMachineTemplate"
+	InvalidGCPMachineTemplate             = "InvalidGCPMachineTemplate"
 	CIDRConflictReason                    = "CIDRConflict"
 	NodePoolKubeVirtLiveMigratableReason  = "KubeVirtNodesNotLiveMigratable"
 	NodePoolUnsupportedSkewReason         = "UnsupportedSkew"

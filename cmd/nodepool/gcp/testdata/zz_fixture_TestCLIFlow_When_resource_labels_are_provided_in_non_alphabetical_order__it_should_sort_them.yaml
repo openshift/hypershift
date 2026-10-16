@@ -1,0 +1,11 @@
+machineType: n2-standard-4
+provisioningModel: Standard
+resourceLabels:
+- key: alpha
+  value: "3"
+- key: mango
+  value: "2"
+- key: zebra
+  value: "1"
+subnet: test-subnet
+zone: us-central1-a

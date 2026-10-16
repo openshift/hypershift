@@ -29,16 +29,17 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
-	hcpmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	hcpmanifests "github.com/openshift/hypershift/pkg/manifests"
+	etcdrecoverymanifests "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -47,7 +48,6 @@ import (
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -71,7 +71,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capov1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
-	"sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -115,7 +115,7 @@ func (rp fakeReleaseProvider) GetReleaseProvider() releaseinfo.ProviderWithOpenS
 	return rp.releaseProvider
 }
 
-func (rp fakeReleaseProvider) GetMetadataProvider() hyperutil.ImageMetadataProvider {
+func (rp fakeReleaseProvider) GetMetadataProvider() imageregistry.ImageMetadataProvider {
 	return &rp.metadataProvider
 }
 
@@ -1503,12 +1503,12 @@ func TestReconcileCAPICluster(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		name               string
-		capiCluster        *v1beta1.Cluster
+		capiCluster        *capiv1.Cluster
 		hostedCluster      *hyperv1.HostedCluster
 		hostedControlPlane *hyperv1.HostedControlPlane
 		infraCR            crclient.Object
 
-		expectedCAPICluster *v1beta1.Cluster
+		expectedCAPICluster *capiv1.Cluster
 	}{
 		{
 			name:        "When platform is IBM Cloud it should reconcile CAPI cluster correctly",
@@ -1543,7 +1543,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Namespace: "master-cluster1",
 				},
 			},
-			expectedCAPICluster: &v1beta1.Cluster{
+			expectedCAPICluster: &capiv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						k8sutil.HostedClusterAnnotation: "master/cluster1",
@@ -1551,21 +1551,20 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Namespace: "master-cluster1",
 					Name:      "cluster1",
 				},
-				Spec: v1beta1.ClusterSpec{
-					ControlPlaneEndpoint: v1beta1.APIEndpoint{},
-					ControlPlaneRef: &corev1.ObjectReference{
-						APIVersion: "hypershift.openshift.io/v1beta1",
-						Kind:       "HostedControlPlane",
-						Namespace:  "master-cluster1",
-						Name:       "cluster1",
+				Spec: capiv1.ClusterSpec{
+					ControlPlaneEndpoint: capiv1.APIEndpoint{},
+					ControlPlaneRef: capiv1.ContractVersionedObjectReference{
+						APIGroup: "hypershift.openshift.io",
+						Kind:     "HostedControlPlane",
+						Name:     "cluster1",
 					},
-					InfrastructureRef: &corev1.ObjectReference{
-						APIVersion: capibmv1.GroupVersion.String(),
-						Kind:       "IBMVPCCluster",
-						Namespace:  "master-cluster1",
-						Name:       "cluster1",
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
+						APIGroup: capibmv1.GroupVersion.Group,
+						Kind:     "IBMVPCCluster",
+						Name:     "cluster1",
 					},
 				},
+				Status: capiv1.ClusterStatus{Initialization: capiv1.ClusterInitializationStatus{}},
 			},
 		},
 		{
@@ -1601,7 +1600,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Namespace: "master-cluster1",
 				},
 			},
-			expectedCAPICluster: &v1beta1.Cluster{
+			expectedCAPICluster: &capiv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						k8sutil.HostedClusterAnnotation: "master/cluster1",
@@ -1609,21 +1608,20 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Namespace: "master-cluster1",
 					Name:      "cluster1",
 				},
-				Spec: v1beta1.ClusterSpec{
-					ControlPlaneEndpoint: v1beta1.APIEndpoint{},
-					ControlPlaneRef: &corev1.ObjectReference{
-						APIVersion: "hypershift.openshift.io/v1beta1",
-						Kind:       "HostedControlPlane",
-						Namespace:  "master-cluster1",
-						Name:       "cluster1",
+				Spec: capiv1.ClusterSpec{
+					ControlPlaneEndpoint: capiv1.APIEndpoint{},
+					ControlPlaneRef: capiv1.ContractVersionedObjectReference{
+						APIGroup: "hypershift.openshift.io",
+						Kind:     "HostedControlPlane",
+						Name:     "cluster1",
 					},
-					InfrastructureRef: &corev1.ObjectReference{
-						APIVersion: capiaws.GroupVersion.String(),
-						Kind:       "AWSCluster",
-						Namespace:  "master-cluster1",
-						Name:       "cluster1",
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
+						APIGroup: capiaws.GroupVersion.Group,
+						Kind:     "AWSCluster",
+						Name:     "cluster1",
 					},
 				},
+				Status: capiv1.ClusterStatus{Initialization: capiv1.ClusterInitializationStatus{}},
 			},
 		},
 	}
@@ -3161,7 +3159,7 @@ func TestPauseCAPICluster(t *testing.T) {
 		inputHostedCluster  *hyperv1.HostedCluster
 		inputObjects        []crclient.Object
 		paused              bool
-		expectedCAPICluster *v1beta1.Cluster
+		expectedCAPICluster *capiv1.Cluster
 	}{
 		{
 			name: "When CAPI cluster exists and is paused, it should unpause when paused=false",
@@ -3175,24 +3173,24 @@ func TestPauseCAPICluster(t *testing.T) {
 				},
 			},
 			inputObjects: []crclient.Object{
-				&v1beta1.Cluster{
+				&capiv1.Cluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: controlPlaneNamespace,
 						Name:      fakeInfraID,
 					},
-					Spec: v1beta1.ClusterSpec{
-						Paused: true,
+					Spec: capiv1.ClusterSpec{
+						Paused: ptr.To(true),
 					},
 				},
 			},
 			paused: false,
-			expectedCAPICluster: &v1beta1.Cluster{
+			expectedCAPICluster: &capiv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: controlPlaneNamespace,
 					Name:      fakeInfraID,
 				},
-				Spec: v1beta1.ClusterSpec{
-					Paused: false,
+				Spec: capiv1.ClusterSpec{
+					Paused: ptr.To(false),
 				},
 			},
 		},
@@ -3208,24 +3206,24 @@ func TestPauseCAPICluster(t *testing.T) {
 				},
 			},
 			inputObjects: []crclient.Object{
-				&v1beta1.Cluster{
+				&capiv1.Cluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: controlPlaneNamespace,
 						Name:      fakeInfraID,
 					},
-					Spec: v1beta1.ClusterSpec{
-						Paused: false,
+					Spec: capiv1.ClusterSpec{
+						Paused: ptr.To(false),
 					},
 				},
 			},
 			paused: true,
-			expectedCAPICluster: &v1beta1.Cluster{
+			expectedCAPICluster: &capiv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: controlPlaneNamespace,
 					Name:      fakeInfraID,
 				},
-				Spec: v1beta1.ClusterSpec{
-					Paused: true,
+				Spec: capiv1.ClusterSpec{
+					Paused: ptr.To(true),
 				},
 			},
 		},
@@ -3263,24 +3261,24 @@ func TestPauseCAPICluster(t *testing.T) {
 				},
 			},
 			inputObjects: []crclient.Object{
-				&v1beta1.Cluster{
+				&capiv1.Cluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: controlPlaneNamespace,
 						Name:      fakeInfraID,
 					},
-					Spec: v1beta1.ClusterSpec{
-						Paused: true,
+					Spec: capiv1.ClusterSpec{
+						Paused: ptr.To(true),
 					},
 				},
 			},
 			paused: true,
-			expectedCAPICluster: &v1beta1.Cluster{
+			expectedCAPICluster: &capiv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: controlPlaneNamespace,
 					Name:      fakeInfraID,
 				},
-				Spec: v1beta1.ClusterSpec{
-					Paused: true,
+				Spec: capiv1.ClusterSpec{
+					Paused: ptr.To(true),
 				},
 			},
 		},
@@ -6275,7 +6273,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 			},
 		},
 		{
-			name: "When port is 0 for dynamic assignment it should always be valid",
+			name: "When port is omitted (zero value) for dynamic assignment it should always be valid",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -6312,7 +6310,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(10000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(10000), "port must be within the configured range 30000-32767, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -6334,7 +6332,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(65000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(65000), "port must be within the configured range 30000-32767, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -6385,7 +6383,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(40000), "port must be within the configured range 25000-35000 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(40000), "port must be within the configured range 25000-35000, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -9521,6 +9519,207 @@ func TestDestroyGracePeriod(t *testing.T) {
 				g.Expect(result.RequeueAfter).To(Equal(tc.expectRequeueAfter),
 					"RequeueAfter should match expected grace period")
 			}
+		})
+	}
+}
+
+func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
+	const hcpDeprecationMessage = "The deprecated annotation is set; migrate to the field"
+
+	testCases := []struct {
+		name            string
+		hcp             *hyperv1.HostedControlPlane
+		expectedStatus  metav1.ConditionStatus
+		expectedReason  string
+		expectedMessage string
+	}{
+		{
+			name:            "When the HCP is not found yet, it should set the condition to Unknown",
+			hcp:             nil,
+			expectedStatus:  metav1.ConditionUnknown,
+			expectedReason:  hyperv1.StatusUnknownReason,
+			expectedMessage: "The hosted control plane is not found",
+		},
+		{
+			name: "When the HCP reports a deprecated configuration, it should aggregate the message and set the condition to True",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:    string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.DeprecatedConfigurationInUseReason,
+							Message: hcpDeprecationMessage,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperv1.DeprecatedConfigurationInUseReason,
+			expectedMessage: hcpDeprecationMessage,
+		},
+		{
+			name: "When the HCP reports no deprecated configuration, it should set the condition to False",
+			hcp: &hyperv1.HostedControlPlane{
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.HostedClusterConfigurationDeprecated),
+							Status: metav1.ConditionFalse,
+							Reason: hyperv1.AsExpectedReason,
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "No deprecated configuration is in use",
+		},
+		{
+			name:            "When the HCP is present but has no deprecation condition, it should set the condition to False",
+			hcp:             &hyperv1.HostedControlPlane{},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.AsExpectedReason,
+			expectedMessage: "No deprecated configuration is in use",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 9},
+			}
+			r := &HostedClusterReconciler{}
+			r.reconcileDeprecatedConfigurationStatus(hcluster, tc.hcp)
+
+			cond := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterConfigurationDeprecated))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Status).To(Equal(tc.expectedStatus))
+			g.Expect(cond.Reason).To(Equal(tc.expectedReason))
+			g.Expect(cond.Message).To(Equal(tc.expectedMessage))
+			g.Expect(cond.ObservedGeneration).To(Equal(hcluster.Generation))
+		})
+	}
+}
+
+func TestReconcilePullSecretSync(t *testing.T) {
+	t.Parallel()
+
+	validPullSecret := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)
+
+	tests := []struct {
+		name             string
+		existingObjects  []crclient.Object
+		interceptorFuncs *interceptor.Funcs
+		expectErr        bool
+		errContains      string
+	}{
+		{
+			name: "When pull secret exists with valid data, it should sync pull-secret to control plane namespace",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
+				},
+			},
+		},
+		{
+			name:        "When pull secret does not exist, it should return error",
+			expectErr:   true,
+			errContains: "pull secret",
+		},
+		{
+			name: "When pull secret is missing .dockerconfigjson key, it should return error",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{},
+				},
+			},
+			expectErr:   true,
+			errContains: ".dockerconfigjson",
+		},
+		{
+			name: "When ensureReferencedResourceAnnotation fails, it should return error",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
+				},
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Update: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.UpdateOption) error {
+					if s, ok := obj.(*corev1.Secret); ok && s.Name == "pull-secret" {
+						return fmt.Errorf("annotation update failed")
+					}
+					return c.Update(ctx, obj, opts...)
+				},
+			},
+			expectErr:   true,
+			errContains: "referenced resource annotation",
+		},
+		{
+			name: "When createOrUpdate for pull-secret fails, it should return error",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
+				},
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Create: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
+					if s, ok := obj.(*corev1.Secret); ok && s.Name == "pull-secret" {
+						return fmt.Errorf("create pull-secret failed")
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			},
+			expectErr:   true,
+			errContains: "create pull-secret failed",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				},
+			}
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(tc.existingObjects...)
+			if tc.interceptorFuncs != nil {
+				builder = builder.WithInterceptorFuncs(*tc.interceptorFuncs)
+			}
+			client := builder.Build()
+
+			r := &HostedClusterReconciler{
+				Client: client,
+			}
+
+			err := r.reconcilePullSecretSync(t.Context(), hcluster, ctrl.CreateOrUpdate, "cp-ns")
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.errContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+				}
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			pullSecret := controlplaneoperator.PullSecret("cp-ns")
+			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
+			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
 		})
 	}
 }

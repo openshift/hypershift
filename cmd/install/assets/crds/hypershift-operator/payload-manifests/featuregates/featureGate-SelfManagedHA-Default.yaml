@@ -35,6 +35,9 @@
                     },
                     {
                         "name": "EtcdSharding"
+                    },
+                    {
+                        "name": "DeterministicLBIP"
                     }
                 ],
                 "enabled": [
@@ -57,6 +60,9 @@
                     },
                     {
                         "name": "OSStreams"
+                    },
+                    {
+                        "name": "HCPUserFacingOperatorLogs"
                     }
                 ],
                 "version": ""

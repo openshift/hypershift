@@ -9,8 +9,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
+	"github.com/openshift/hypershift/pkg/manifests"
+	pkgetcdrecovery "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -45,7 +46,7 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 	log := ctrl.LoggerFrom(ctx)
 	hcpNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
-	recoveryJob := etcdrecoverymanifests.EtcdRecoveryJob(hcpNS)
+	recoveryJob := pkgetcdrecovery.EtcdRecoveryJob(hcpNS)
 	jobStatus, err := r.etcdRecoveryJobStatus(ctx, recoveryJob)
 	if err != nil {
 		return nil, err
@@ -289,7 +290,7 @@ func (r *HostedClusterReconciler) etcdRecoveryJobStatus(ctx context.Context, job
 func (r *HostedClusterReconciler) cleanupEtcdRecoveryObjects(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
 	hcpNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
-	recoveryJob := etcdrecoverymanifests.EtcdRecoveryJob(hcpNS)
+	recoveryJob := pkgetcdrecovery.EtcdRecoveryJob(hcpNS)
 	if _, err := k8sutil.DeleteIfNeededWithOptions(ctx, r.Client, recoveryJob, crclient.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
 		return fmt.Errorf("failed to cleanup etcd recovery job: %w", err)
 	}

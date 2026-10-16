@@ -100,7 +100,8 @@ func bindCoreOptions(opts *RawOpenStackPlatformCreateOptions, flags *pflag.FlagS
 	flags.StringArrayVar(&opts.AdditionalPorts, "openstack-node-additional-port", opts.AdditionalPorts, fmt.Sprintf(`Specify additional port that should be attached to the nodes, the "network-id" field should point to an existing neutron network ID and the "vnic-type" is the type of the port to create, it can be specified multiple times to attach to multiple ports. Supported parameters: %s, example: "network-id:40a355cb-596d-495c-8766-419d98cadd57,vnic-type:direct"`, cmdutil.Supported(PortSpec{})))
 }
 
-func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+func NewCreateCommand(coreOpts *core.CreateNodePoolOptions, clientProviders ...*cmdutil.ClientProvider) *cobra.Command {
+	clientProvider := cmdutil.ResolveClientProvider(clientProviders...)
 	platformOpts := DefaultOptions()
 
 	cmd := &cobra.Command{
@@ -120,7 +121,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return coreOpts.CreateRunFunc(opts)(cmd, args)
+		return coreOpts.CreateRunFunc(opts, clientProvider)(cmd, args)
 	}
 
 	return cmd

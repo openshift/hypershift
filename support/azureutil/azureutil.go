@@ -407,30 +407,6 @@ func GetServicePrincipalScopes(subscriptionID, managedResourceGroupName, nsgReso
 	return role, scopes
 }
 
-// GetKeyVaultDNSSuffixFromCloudType simply mimics the functionality in environments.go from the Azure SDK, github.com/Azure/go-autorest.
-// This function is used to get the DNS suffix for the Key Vault based on the cloud type.
-func GetKeyVaultDNSSuffixFromCloudType(cloud string) (string, error) {
-	return GetKeyVaultDNSSuffix(cloud, hyperv1.AzureKMSKeyVaultTypeKeyVault)
-}
-
-// GetAzureBlobDNSSuffix returns the cloud-specific DNS suffix for Azure Blob Storage.
-func GetAzureBlobDNSSuffix(cloud string) (string, error) {
-	switch strings.ToUpper(cloud) {
-	case "", "AZURECLOUD", "AZUREPUBLICCLOUD":
-		return azurePublicBlobDNSSuffix, nil
-	case "AZUREGOVERNMENTCLOUD", "AZUREUSGOVERNMENT", "AZUREUSGOVERNMENTCLOUD":
-		return azureGovernmentBlobDNSSuffix, nil
-	case "AZURECHINACLOUD":
-		return azureChinaBlobDNSSuffix, nil
-	case "AZUREGERMANCLOUD":
-		return azureGermanBlobDNSSuffix, nil
-	case "AZUREBLEUCLOUD":
-		return azureBleuBlobDNSSuffix, nil
-	default:
-		return "", fmt.Errorf("unknown Azure cloud %q", cloud)
-	}
-}
-
 // GetKeyVaultDNSSuffix returns the cloud-specific DNS suffix for Azure Key Vault or Managed HSM.
 // An empty keyVaultType is treated as KeyVault for compatibility with existing API objects.
 // Supporting another cloud requires adding its suffix here, allowing it in GetAzureEncryptionKeyInfo,

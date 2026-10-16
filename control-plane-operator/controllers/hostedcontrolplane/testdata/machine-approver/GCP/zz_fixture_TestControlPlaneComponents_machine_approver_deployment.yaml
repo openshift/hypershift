@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: e47145abaa892061acd94a69ac15730c522b2c6f82d01d436010fd914279d1a0
+    hypershift.openshift.io/desired-state-hash: 108223fdffecc252d1bdc99f413cc329813809ae13b01227a51209728c6662e1
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: machine-approver
@@ -76,6 +76,7 @@ spec:
         - --machine-namespace=hcp-namespace
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --tls-curve-preferences=4588,29,23,24
         command:
         - /usr/bin/machine-approver
         image: cluster-machine-approver

@@ -7,7 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	kasconst "github.com/openshift/hypershift/pkg/kas"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
@@ -17,6 +17,7 @@ import (
 
 	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -30,12 +31,13 @@ type AdmissionPolicy struct {
 }
 
 const (
-	AdmissionPolicyNameConfig             = "config"
-	AdmissionPolicyNameMirror             = "mirror"
-	AdmissionPolicyNameICSP               = "icsp"
-	AdmissionPolicyNameInfra              = "infra"
-	AdmissionPolicyNameNTOMirroredConfigs = "ntomirroredconfigmaps"
-	cnoSAUser                             = "system:serviceaccount:openshift-network-operator:cluster-network-operator"
+	cnoSAUser = "system:serviceaccount:openshift-network-operator:cluster-network-operator"
+
+	// systemAdminUser is the identity behind the localhost kubeconfig, which the KAS bootstrap
+	// container uses to apply the managed ClusterRoleBindings on every kube-apiserver start.
+	// Note that this is also the identity in the admin kubeconfig published on the HostedCluster,
+	// so whoever holds that kubeconfig is deliberately left able to modify those bindings.
+	systemAdminUser = "system:admin"
 
 	BaseCelExpression = "has(object.spec) && has(oldObject.spec) && object.spec == oldObject.spec"
 )
@@ -76,12 +78,16 @@ func ReconcileKASValidatingAdmissionPolicies(ctx context.Context, hcp *hyperv1.H
 		return fmt.Errorf("failed to reconcile Mirrored Configs Validating Admission Policy: %w", err)
 	}
 
+	if err := reconcileRBACValidatingAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile RBAC Validating Admission Policy: %w", err)
+	}
+
 	return nil
 }
 
 func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
 	// Config AdmissionPolicy
-	configAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameConfig}
+	configAdmissionPolicy := AdmissionPolicy{Name: kasconst.AdmissionPolicyNameConfig}
 	configAPIVersion := []string{configv1.GroupVersion.Version}
 	configAPIGroup := []string{configv1.GroupVersion.Group}
 	configResources := []string{
@@ -119,7 +125,7 @@ func reconcileInfraValidatingAdmissionPolicy(ctx context.Context, _ *hyperv1.Hos
 	// Infra AdmissionPolicy
 	// This VAP only reconciles the ValidationAdmissionPolicy for the Infrastructure resource
 	// in order to allow certain SAs to update the spec field of the resource.
-	infraAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameInfra}
+	infraAdmissionPolicy := AdmissionPolicy{Name: kasconst.AdmissionPolicyNameInfra}
 	infraAPIVersion := []string{configv1.GroupVersion.Version}
 	infraAPIGroup := []string{configv1.GroupVersion.Group}
 	infraResources := []string{"infrastructures"}
@@ -136,7 +142,7 @@ func reconcileInfraValidatingAdmissionPolicy(ctx context.Context, _ *hyperv1.Hos
 
 func reconcileMirrorValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
 	// Mirroring AdmissionPolicies
-	mirrorAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameMirror}
+	mirrorAdmissionPolicy := AdmissionPolicy{Name: kasconst.AdmissionPolicyNameMirror}
 	mirrorAPIVersion := []string{configv1.GroupVersion.Version}
 	mirrorAPIGroup := []string{configv1.GroupVersion.Group}
 	mirrorResources := []string{
@@ -156,7 +162,7 @@ func reconcileMirrorValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 	}
 
 	// ICSP lives in other API, this is why we need to create another vap and vap-binding
-	icspAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameICSP}
+	icspAdmissionPolicy := AdmissionPolicy{Name: kasconst.AdmissionPolicyNameICSP}
 	icspAPIVersion := []string{operatorv1alpha1.GroupVersion.Version}
 	icspAPIGroup := []string{operatorv1alpha1.GroupVersion.Group}
 	icspResources := []string{"imagecontentsourcepolicies"}
@@ -171,7 +177,7 @@ func reconcileMirrorValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 }
 
 func reconcileConfigMapsValidatingAdmissionPolicy(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
-	mirroredConfigsAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameNTOMirroredConfigs}
+	mirroredConfigsAdmissionPolicy := AdmissionPolicy{Name: kasconst.AdmissionPolicyNameNTOMirroredConfigs}
 	mirroredConfigsAPIVersion := []string{corev1.SchemeGroupVersion.Version}
 	mirroredConfigsAPIGroup := []string{configv1.SchemeGroupVersion.Group}
 	mirroredConfigsResources := []string{"configmaps"}
@@ -180,10 +186,33 @@ func reconcileConfigMapsValidatingAdmissionPolicy(ctx context.Context, client cl
 	mirroredConfigsAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
 	mirroredConfigsAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(mirroredConfigsResources, mirroredConfigsAPIVersion, mirroredConfigsAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
 	// we want to block changes only for configmaps with "hypershift.openshift.io/mirrored-config" label
-	mirroredConfigsAdmissionPolicy.MatchConstraints.ObjectSelector = &metav1.LabelSelector{MatchLabels: map[string]string{nodepool.NTOMirroredConfigLabel: "true"}}
+	mirroredConfigsAdmissionPolicy.MatchConstraints.ObjectSelector = &metav1.LabelSelector{MatchLabels: map[string]string{hyperv1.NTOMirroredConfigLabel: "true"}}
 	if err := mirroredConfigsAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("error reconciling mirrored ConfigMaps Validating Admission Policy: %w", err)
 	}
+	return nil
+}
+
+func reconcileRBACValidatingAdmissionPolicy(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+	rbacAdmissionPolicy := AdmissionPolicy{Name: kasconst.AdmissionPolicyNameRBAC}
+	rbacAPIVersion := []string{rbacv1.SchemeGroupVersion.Version}
+	rbacAPIGroup := []string{rbacv1.SchemeGroupVersion.Group}
+	rbacResources := []string{"clusterrolebindings"}
+
+	// Deliberately a local copy rather than the shared HCCOUserValidation: this policy widens the
+	// whitelist and must not leak that into the policies reconciled after it.
+	rbacValidation := HCCOUserValidation
+	rbacValidation.Expression = generateCelExpression(append(userWhiteList, systemAdminUser))
+	rbacAdmissionPolicy.Validations = []k8sadmissionv1.Validation{rbacValidation}
+	rbacAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(rbacResources, rbacAPIVersion, rbacAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
+	rbacAdmissionPolicy.MatchConstraints.ResourceRules[0].ResourceNames = []string{
+		"hcco-cluster-admin",
+		"kas-bootstrap-container-cluster-admin",
+	}
+	if err := rbacAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
+		return fmt.Errorf("error reconciling RBAC Validating Admission Policy: %w", err)
+	}
+
 	return nil
 }
 

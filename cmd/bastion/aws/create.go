@@ -25,6 +25,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
@@ -42,7 +44,8 @@ type CreateBastionOpts struct {
 	AdditionalTags     []string
 }
 
-func NewCreateCommand() *cobra.Command {
+func NewCreateCommand(clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	opts := &CreateBastionOpts{
 		Namespace: "clusters",
 		Wait:      true,
@@ -75,7 +78,15 @@ func NewCreateCommand() *cobra.Command {
 			return nil
 		}
 
-		if instanceID, publicIP, err := opts.Run(cmd.Context(), logger); err != nil {
+		var client crclient.Client
+		if opts.Name != "" {
+			var err error
+			client, err = clientProvider.ControllerRuntimeClientFor("")
+			if err != nil {
+				return err
+			}
+		}
+		if instanceID, publicIP, err := opts.Run(cmd.Context(), logger, client); err != nil {
 			logger.Error(err, "Failed to create bastion")
 			return err
 		} else {
@@ -105,20 +116,19 @@ func (o *CreateBastionOpts) Validate() error {
 	return nil
 }
 
-func (o *CreateBastionOpts) Run(ctx context.Context, logger logr.Logger) (string, string, error) {
+func (o *CreateBastionOpts) Run(ctx context.Context, logger logr.Logger, client crclient.Client) (string, string, error) {
 
 	var infraID, region string
 	var sshPublicKey []byte
 
 	if len(o.Name) > 0 {
 		// Find HostedCluster and get AWS creds
-		c, err := util.GetClient()
-		if err != nil {
-			return "", "", err
+		if client == nil {
+			return "", "", fmt.Errorf("management-cluster client is required when a hosted cluster name is specified")
 		}
 
 		var hostedCluster hyperv1.HostedCluster
-		if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
+		if err := client.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, &hostedCluster); err != nil {
 			return "", "", fmt.Errorf("failed to get hostedcluster: %w", err)
 		}
 		if hostedCluster.Spec.Platform.AWS == nil {
@@ -134,7 +144,7 @@ func (o *CreateBastionOpts) Run(ctx context.Context, logger logr.Logger) (string
 				return "", "", fmt.Errorf("hosted cluster does not have a public SSH key and no SSH key file was specified")
 			}
 			sshKeySecret := &corev1.Secret{}
-			if err := c.Get(ctx, types.NamespacedName{Name: hostedCluster.Spec.SSHKey.Name, Namespace: o.Namespace}, sshKeySecret); err != nil {
+			if err := client.Get(ctx, types.NamespacedName{Name: hostedCluster.Spec.SSHKey.Name, Namespace: o.Namespace}, sshKeySecret); err != nil {
 				return "", "", fmt.Errorf("cannot get secret with SSH key (%s/%s): %w", o.Namespace, hostedCluster.Spec.SSHKey.Name, err)
 			}
 			sshPublicKey = sshKeySecret.Data["id_rsa.pub"]

@@ -26,28 +26,6 @@ type inputResourceInitializer struct {
 	managementClusterCache      cache.Cache
 }
 
-func newInputResourceInitializer(mgmtClusterRESTMapper meta.RESTMapper, mgmtClusterCache cache.Cache) *inputResourceInitializer {
-	return &inputResourceInitializer{
-		managementClusterRESTMapper: mgmtClusterRESTMapper,
-		managementClusterCache:      mgmtClusterCache,
-	}
-}
-
-func (r *inputResourceInitializer) Start(ctx context.Context) error {
-	inputResources, err := r.discoverInputResources()
-	if err != nil {
-		return err
-	}
-	if err = r.checkSupportedInputResources(inputResources); err != nil {
-		return err
-	}
-	return r.startAndWaitForInformersFor(ctx, inputResources)
-}
-
-func (r *inputResourceInitializer) discoverInputResources() (map[string]*libraryinputresources.InputResources, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
 func (r *inputResourceInitializer) startAndWaitForInformersFor(ctx context.Context, inputResources map[string]*libraryinputresources.InputResources) error {
 	for operator, resources := range inputResources {
 		// note that for the POC we are only interested in ApplyConfigurationResources.ExactResources

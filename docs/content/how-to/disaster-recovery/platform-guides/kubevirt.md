@@ -44,15 +44,6 @@ spec:
           bucket: example-oadp
           prefix: backup-objects
         provider: aws
-  snapshotLocations:
-    - velero:
-        provider: aws
-        config:
-          region: region-one
-          profile: "default"
-        credential:
-          key: cloud
-          name: cloud-credentials
   configuration:
     nodeAgent:
       enable: true

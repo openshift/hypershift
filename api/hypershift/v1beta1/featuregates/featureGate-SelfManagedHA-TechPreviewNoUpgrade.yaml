@@ -51,6 +51,12 @@
                     },
                     {
                         "name": "EtcdSharding"
+                    },
+                    {
+                        "name": "HCPUserFacingOperatorLogs"
+                    },
+                    {
+                        "name": "DeterministicLBIP"
                     }
                 ],
                 "version": ""

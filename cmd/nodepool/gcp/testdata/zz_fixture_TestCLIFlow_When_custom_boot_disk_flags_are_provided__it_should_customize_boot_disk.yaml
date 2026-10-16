@@ -1,0 +1,7 @@
+bootDisk:
+  diskSizeGB: 500
+  diskType: pd-balanced
+machineType: n2-standard-16
+provisioningModel: Preemptible
+subnet: custom-subnet
+zone: europe-west1-c

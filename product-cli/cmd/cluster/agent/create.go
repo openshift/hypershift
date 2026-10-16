@@ -9,7 +9,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "agent",
 		Short:        "Creates basic functional HostedCluster resources on Agent",
@@ -29,7 +30,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := core.CreateCluster(ctx, opts, agentOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, agentOpts, clientProvider); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}

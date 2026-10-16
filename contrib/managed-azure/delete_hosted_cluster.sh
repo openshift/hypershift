@@ -29,17 +29,16 @@ CUSTOMER_VNET_RG_NAME="${PREFIX}-customer-vnet-rg"
 CUSTOMER_NSG_RG_NAME="${PREFIX}-customer-nsg-rg"
 CLUSTER_NAME="${PREFIX}-hc"
 
-# Delete the hosted cluster using hypershift destroy command
+# Delete the hosted cluster using hypershift destroy command.
+# If the HostedCluster object doesn't exist (e.g. creation failed before it was applied),
+# hypershift destroy will fail. We log the error but continue so Azure resource groups are
+# still cleaned up below.
 ${HYPERSHIFT_BINARY_PATH}/hypershift destroy cluster azure \
     --name "$CLUSTER_NAME" \
     --azure-creds "$AZURE_CREDS" \
     --resource-group-name "$MANAGED_RG_NAME" \
-    --dns-zone-rg-name "$PERSISTENT_RG_NAME"
-
-if [ $? -ne 0 ]; then
-    echo "Error: Failed to destroy hosted cluster $CLUSTER_NAME"
-    exit 1
-fi
+    --dns-zone-rg-name "$PERSISTENT_RG_NAME" || \
+    echo "Warning: hypershift destroy failed (cluster may not exist in management cluster), continuing with Azure resource group cleanup"
 
 # Clean up the customer resource groups that were created for this cluster
 

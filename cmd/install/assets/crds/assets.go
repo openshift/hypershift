@@ -23,6 +23,7 @@ import (
 //go:embed cluster-api-provider-agent/*
 //go:embed cluster-api-provider-azure/*
 //go:embed cluster-api-provider-openstack/*
+//go:embed external-dns/*
 var CRDS embed.FS
 
 const capiLabel = "cluster.x-k8s.io/v1beta1"
@@ -49,7 +50,7 @@ var capiCRDNames = []string{
 	"clusterresourcesets.addons.cluster.x-k8s.io",
 }
 
-// CAPICRDNames returns the list of CAPI CRD names that are managed by HyperShift.
+// CAPICRDNames returns the list of CAPI CRDs.
 func CAPICRDNames() []string {
 	return slices.Clone(capiCRDNames)
 }

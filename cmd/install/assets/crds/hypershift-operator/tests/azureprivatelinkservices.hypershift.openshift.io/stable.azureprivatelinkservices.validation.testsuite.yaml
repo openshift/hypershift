@@ -1,0 +1,28 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "AzurePrivateLinkService validation"
+crdName: azureprivatelinkservices.hypershift.openshift.io
+version: v1beta1
+tests:
+  onCreate:
+  - name: when guestSubnetID is a maximum-length braced subnet ID it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: AzurePrivateLinkService
+      spec:
+        subscriptionID: 12345678-1234-5678-9012-123456789012
+        resourceGroupName: test-rg
+        location: eastus
+        guestSubnetID: "/subscriptions/{12345678-1234-5678-9012-123456789012}/resourceGroups/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr/providers/Microsoft.Network/virtualNetworks/vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/subnets/ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+        guestVNetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet
+
+  - name: when guestSubnetID exceeds the maximum length it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: AzurePrivateLinkService
+      spec:
+        subscriptionID: 12345678-1234-5678-9012-123456789012
+        resourceGroupName: test-rg
+        location: eastus
+        guestSubnetID: "/subscriptions/{12345678-1234-5678-9012-123456789012}/resourceGroups/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr/providers/Microsoft.Network/virtualNetworks/vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/subnets/sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+        guestVNetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet
+    expectedError: "Too long"

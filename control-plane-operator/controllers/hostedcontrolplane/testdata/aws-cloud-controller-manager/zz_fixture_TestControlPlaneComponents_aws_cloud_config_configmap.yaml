@@ -1,11 +1,12 @@
 apiVersion: v1
 data:
-  aws.conf: "[Global]\nZone = \nVPC = \nKubernetesClusterID = \nSubnetID = \nClusterServiceLoadBalancerHealthProbeMode
-    = Shared\nNLBSecurityGroupMode = Managed"
+  aws.conf: "[Global]\nZone = \nRegion = \nVPC = \nKubernetesClusterID = \nSubnetID
+    = \nClusterServiceLoadBalancerHealthProbeMode = Shared\nNLBSecurityGroupMode =
+    Managed"
 kind: ConfigMap
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: c197f188acc298aca87cdb3a6731a0115538811ba941ec0ba4d6050550c837d3
+    hypershift.openshift.io/desired-state-hash: 5c27d5c42c138bb86d4c080a5f6ba62e149b40a5385f94b4f57a93aba012c4a3
   name: aws-cloud-config
   namespace: hcp-namespace
   ownerReferences:

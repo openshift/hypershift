@@ -31,7 +31,30 @@ hcp create cluster kubevirt \
 
 In this example, the KubeVirt VMs will have interfaces attached to the networks
 for the NetworkAttachmentDefinitions network1 and network2 which reside in
-namespace my-namespace.
+namespace my-namespace (which must be the HCP namespace where virt-launcher
+pods run — see the important note below).
+
+!!! important "NAD Namespace Requirement"
+    The NetworkAttachmentDefinition must be created in the namespace where
+    virt-launcher pods run — the **hosted control plane (HCP) namespace** — not
+    the HostedCluster namespace. The HCP namespace follows the pattern
+    `<hc-namespace>-<hc-name>` (with dots in the cluster name replaced by
+    hyphens). For external infrastructure configurations, use the namespace
+    specified in `Credentials.InfraNamespace`.
+
+    With Multus namespace isolation enabled (the OpenShift default), pods can
+    only reference NADs in their own namespace or in the `default` namespace.
+    Placing the NAD in the HostedCluster namespace will result in Multus
+    rejecting the reference at pod sandbox creation time.
+
+    To determine the correct namespace:
+
+    ```shell
+    # For centralized infrastructure (dots in cluster name become hyphens):
+    HCP_NS="${HC_NAMESPACE}-$(echo ${HC_NAME} | tr '.' '-')"
+    # For external infrastructure:
+    HCP_NS=$(oc get hostedcluster <name> -n <ns> -o jsonpath='{.spec.platform.kubevirt.credentials.infraNamespace}')
+    ```
 
 ## Using Secondary Network as Default
 

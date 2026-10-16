@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 00a8d1ed31706e591d64aa18d4ea77c51f12dcb8c6c1adfc730a9e89d2bd644e
+    hypershift.openshift.io/desired-state-hash: 65b47d4c600210272610caa66b8a6242da10ba5a09fac12d9ca2061050513615
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-scheduler
@@ -85,7 +85,6 @@ spec:
         - --secure-port=10259
         - --authentication-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
-        - -v=2
         - --tls-min-version=VersionTLS13
         - --feature-gates=AWSEFSDriverVolumeMetrics=true
         - --feature-gates=AdditionalRoutingCapabilities=true
@@ -185,6 +184,7 @@ spec:
         - --feature-gates=VSphereMultiNetworks=false
         - --feature-gates=VolumeAttributesClass=false
         - --feature-gates=VolumeGroupSnapshot=false
+        - --v=2
         command:
         - hyperkube
         - kube-scheduler
@@ -205,6 +205,15 @@ spec:
         - containerPort: 10259
           name: client
           protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 10259
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 10
         resources:
           requests:
             cpu: 25m

@@ -14,6 +14,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -22,7 +23,7 @@ import (
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -140,12 +141,15 @@ func (p *createOrUpdateProvider) update(ctx context.Context, c crclient.Client, 
 		}
 		return controllerutil.OperationResultNone, nil
 	}
+	var requested runtime.Object
 	if p.loopDetector != nil {
-		p.loopDetector.recordActualUpdate(existing, obj, key)
+		requested = obj.DeepCopyObject()
 	}
-
 	if err := c.Update(ctx, obj); err != nil {
 		return controllerutil.OperationResultNone, err
+	}
+	if p.loopDetector != nil {
+		p.loopDetector.recordActualUpdate(existing, requested, key)
 	}
 
 	return controllerutil.OperationResultUpdated, nil

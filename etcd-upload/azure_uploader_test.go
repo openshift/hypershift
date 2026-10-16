@@ -10,7 +10,8 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/openshift/hypershift/support/azureutil/velerocreds"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 )
 
@@ -190,7 +191,7 @@ func TestAzureCredential(t *testing.T) {
 
 		// msi-dataplane will parse the JSON but fail on the invalid certificate.
 		// This proves the managed-identity path is reached and the file is consumed.
-		_, err = newAzureCredential(context.Background(), credFile, AuthTypeManagedIdentity, cloud.AzurePublic)
+		_, err = newAzureCredential(context.Background(), credFile, velerocreds.AuthTypeManagedIdentity)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("managed identity credential"))
 	})
@@ -198,7 +199,7 @@ func TestAzureCredential(t *testing.T) {
 	t.Run("When auth type is managed-identity and credentials file is missing it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		_, err := newAzureCredential(context.Background(), "/nonexistent/creds.json", AuthTypeManagedIdentity, cloud.AzurePublic)
+		_, err := newAzureCredential(context.Background(), "/nonexistent/creds.json", velerocreds.AuthTypeManagedIdentity)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("managed identity credential"))
 	})
@@ -207,7 +208,7 @@ func TestAzureCredential(t *testing.T) {
 		// When no credentials file is provided, authType is ignored and
 		// DefaultAzureCredential is used. This matches the behavior where
 		// the controller doesn't pass --credentials-file.
-		_, err := newAzureCredential(context.Background(), "", AuthTypeManagedIdentity, cloud.AzurePublic)
+		_, err := newAzureCredential(context.Background(), "", velerocreds.AuthTypeManagedIdentity)
 		// DefaultAzureCredential will fail in a test environment (no Azure identity),
 		// but the error should NOT mention "managed identity credential".
 		if err != nil {
@@ -231,25 +232,33 @@ func TestAzureCredential(t *testing.T) {
 		credFile := filepath.Join(t.TempDir(), "client-secret-creds.json")
 		g.Expect(os.WriteFile(credFile, data, 0644)).To(Succeed())
 
-		credential, err := newAzureCredential(context.Background(), credFile, AuthTypeClientSecret, cloud.AzurePublic)
+		credential, err := newAzureCredential(context.Background(), credFile, velerocreds.AuthTypeClientSecret)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(credential).ToNot(BeNil())
 	})
 
-	t.Run("When auth type is client-secret and file is missing it should return an error", func(t *testing.T) {
+	t.Run("When auth type is client-secret and credentials file is dotenv format it should parse and return credential", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		_, err := newAzureCredential(context.Background(), "/nonexistent/client-secret-creds.json", AuthTypeClientSecret, cloud.AzurePublic)
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("failed to read credentials file"))
+
+		dotenv := "AZURE_SUBSCRIPTION_ID=sub-id\nAZURE_TENANT_ID=tenant-id\nAZURE_CLIENT_ID=client-id\nAZURE_CLIENT_SECRET=sp-secret\nAZURE_RESOURCE_GROUP=rg-test\n"
+		credFile := filepath.Join(t.TempDir(), "cloud")
+		g.Expect(os.WriteFile(credFile, []byte(dotenv), 0644)).To(Succeed())
+
+		credential, err := newClientSecretCredential(credFile)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(credential).ToNot(BeNil())
 	})
 
-	t.Run("When auth type is client-secret and JSON is invalid it should return an error", func(t *testing.T) {
+	t.Run("When auth type is client-secret and dotenv file is missing AZURE_TENANT_ID it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		credFile := filepath.Join(t.TempDir(), "invalid-client-secret-creds.json")
-		g.Expect(os.WriteFile(credFile, []byte("not-json"), 0644)).To(Succeed())
 
-		_, err := newAzureCredential(context.Background(), credFile, AuthTypeClientSecret, cloud.AzurePublic)
+		dotenv := "AZURE_CLIENT_ID=client-id\nAZURE_CLIENT_SECRET=sp-secret\n"
+		credFile := filepath.Join(t.TempDir(), "cloud")
+		g.Expect(os.WriteFile(credFile, []byte(dotenv), 0644)).To(Succeed())
+
+		_, err := newClientSecretCredential(credFile)
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("failed to parse credentials file"))
+		g.Expect(err.Error()).To(ContainSubstring("failed to parse credentials file as JSON"))
+		g.Expect(err.Error()).To(ContainSubstring("or dotenv (missing required fields)"))
 	})
 }

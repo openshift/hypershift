@@ -3,13 +3,14 @@ package kubevirt
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	openstack "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/openstack"
+	"github.com/openshift/hypershift/pkg/manifests"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
@@ -25,6 +26,20 @@ import (
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
+// archConflictError is a sentinel error type returned by PlatformValidation when the
+// user-supplied kubernetes.io/arch NodeSelector conflicts with nodePool.Spec.Arch.
+// Using a typed error lets the caller (setKubevirtConditions) route it to the
+// dedicated NodePoolValidArchPlatform condition without string-matching the message.
+type archConflictError struct{ msg string }
+
+func (e *archConflictError) Error() string { return e.msg }
+
+// IsArchConflictError reports whether err is an archConflictError.
+func IsArchConflictError(err error) bool {
+	var t *archConflictError
+	return errors.As(err, &t)
+}
+
 var LocalStorageVolumes = []string{
 	"private",
 	"public",
@@ -37,12 +52,18 @@ var LocalStorageVolumes = []string{
 }
 
 func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage, streamName string) (string, string, error) {
+	// Resolve the stream metadata key for the requested architecture.
+	// ArchAliases covers amd64 (→ "x86_64") and arm64 (→ "aarch64").
+	// s390x uses its own string directly as the stream key.
+	// Any other value is unsupported; callers must supply a custom containerDiskImage.
 	var archName string
 	switch nodePoolArch {
 	case hyperv1.ArchitectureS390X:
 		archName = hyperv1.ArchitectureS390X
+	case hyperv1.ArchitectureAMD64, hyperv1.ArchitectureARM64:
+		archName = hyperv1.ArchAliases[nodePoolArch]
 	default:
-		archName = hyperv1.ArchAliases[hyperv1.ArchitectureAMD64]
+		return "", "", fmt.Errorf("architecture %q does not have a KubeVirt default image; use spec.platform.kubevirt.rootVolume.image.containerDiskImage to supply a custom image", nodePoolArch)
 	}
 	streamMeta, err := releaseImage.StreamForName(streamName)
 	if err != nil {
@@ -139,7 +160,49 @@ func PlatformValidation(nodePool *hyperv1.NodePool) error {
 		}
 	}
 
+	// If the user has pinned kubernetes.io/arch in the NodeSelector to a value that
+	// differs from nodePool.Spec.Arch, the virt-launcher pod would be scheduled on a
+	// node of a different architecture than the VM's Architecture field — a mismatch
+	// that causes a runtime failure. Catch it early.
+	if nodePool.Spec.Arch != "" {
+		if userArch, ok := kvPlatform.NodeSelector[corev1.LabelArchStable]; ok && userArch != nodePool.Spec.Arch {
+			return &archConflictError{msg: fmt.Sprintf(
+				"nodePool.spec.platform.kubevirt.nodeSelector[%q] is %q but nodePool.spec.arch is %q: the values must match to avoid scheduling a VM on a mismatched architecture node",
+				corev1.LabelArchStable, userArch, nodePool.Spec.Arch)}
+		}
+	}
+
 	return nil
+}
+
+// LiveMigrationWarningCondition returns a NodePoolCondition when the configured
+// CPU model may prevent live migration of VMs, or nil when no warning applies.
+// The caller is responsible for applying the condition via SetStatusCondition.
+func LiveMigrationWarningCondition(nodePool *hyperv1.NodePool) *hyperv1.NodePoolCondition {
+	if nodePool.Spec.Platform.Kubevirt == nil ||
+		nodePool.Spec.Platform.Kubevirt.Compute == nil ||
+		nodePool.Spec.Platform.Kubevirt.Compute.Model != hyperv1.CpuModelHostPassthrough {
+		return nil
+	}
+
+	return &hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolKubeVirtLiveMigratableType,
+		Status:             corev1.ConditionFalse,
+		Reason:             hyperv1.NodePoolKubeVirtLiveMigratableReason,
+		Message:            "CPU model host-passthrough is configured; VMs using host-passthrough may not be live-migratable",
+		ObservedGeneration: nodePool.Generation,
+	}
+}
+
+// CpuModelToKubevirt translates a CpuModelType API enum value to the
+// corresponding KubeVirt CPU model string.
+func CpuModelToKubevirt(model hyperv1.CpuModelType) string {
+	switch model {
+	case hyperv1.CpuModelHostPassthrough:
+		return "host-passthrough"
+	default:
+		return string(model)
+	}
 }
 
 func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage) (*capikubevirt.VirtualMachineTemplateSpec, error) {
@@ -148,6 +211,7 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 	var (
 		memory              apiresource.Quantity
 		cores               uint32
+		cpuModel            string
 		guaranteedResources = false
 	)
 
@@ -167,22 +231,28 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 			cores = *kvPlatform.Compute.Cores
 		}
 
+		if kvPlatform.Compute.Model != "" {
+			cpuModel = CpuModelToKubevirt(kvPlatform.Compute.Model)
+		}
+
 		guaranteedResources = kvPlatform.Compute.QosClass != nil && *kvPlatform.Compute.QosClass == hyperv1.QoSClassGuaranteed
+	}
+
+	vmiSpec := kubevirtv1.VirtualMachineInstanceSpec{
+		Domain: kubevirtv1.DomainSpec{
+			Devices: kubevirtv1.Devices{
+				Interfaces: virtualMachineInterfaces(kvPlatform),
+			},
+		},
+		EvictionStrategy: ptr.To(kubevirtv1.EvictionStrategyExternal),
+		Networks:         virtualMachineNetworks(kvPlatform),
 	}
 
 	template := &capikubevirt.VirtualMachineTemplateSpec{
 		Spec: kubevirtv1.VirtualMachineSpec{
 			RunStrategy: ptr.To(kubevirtv1.RunStrategyAlways),
 			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-				Spec: kubevirtv1.VirtualMachineInstanceSpec{
-					Domain: kubevirtv1.DomainSpec{
-						Devices: kubevirtv1.Devices{
-							Interfaces: virtualMachineInterfaces(kvPlatform),
-						},
-					},
-					EvictionStrategy: ptr.To(kubevirtv1.EvictionStrategyExternal),
-					Networks:         virtualMachineNetworks(kvPlatform),
-				},
+				Spec: vmiSpec,
 			},
 		},
 	}
@@ -204,10 +274,20 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 
 		template.Spec.Template.Spec.Domain.Resources.Requests = podResources
 		template.Spec.Template.Spec.Domain.Resources.Limits = podResources
+
+		// In the guaranteed QoS path, cores are specified via resource requests/limits
+		// rather than the CPU struct. Only Model belongs in CPU here.
+		if cpuModel != "" {
+			template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Model: cpuModel}
+		}
 	} else {
 		template.Spec.Template.Spec.Domain.Memory = &kubevirtv1.Memory{Guest: &memory}
-		if cores > 0 {
-			template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Cores: cores}
+		if cores > 0 || cpuModel != "" {
+			cpu := &kubevirtv1.CPU{Model: cpuModel}
+			if cores > 0 {
+				cpu.Cores = cores
+			}
+			template.Spec.Template.Spec.Domain.CPU = cpu
 		}
 	}
 
@@ -278,10 +358,6 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 	if kvPlatform.NetworkInterfaceMultiQueue != nil &&
 		*nodePool.Spec.Platform.Kubevirt.NetworkInterfaceMultiQueue == hyperv1.MultiQueueEnable {
 		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = ptr.To(true)
-	}
-
-	if len(kvPlatform.NodeSelector) > 0 {
-		template.Spec.Template.Spec.NodeSelector = kvPlatform.NodeSelector
 	}
 
 	if len(kvPlatform.KubevirtHostDevices) > 0 {
@@ -419,6 +495,41 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 					},
 				},
 			},
+		}
+	}
+
+	// Always apply user-supplied NodeSelector entries. This preserves existing behavior
+	// for idle NodePools that do not yet carry the arch annotation.
+	if len(nodePool.Spec.Platform.Kubevirt.NodeSelector) > 0 {
+		vmTemplate.Spec.Template.Spec.NodeSelector = make(map[string]string, len(nodePool.Spec.Platform.Kubevirt.NodeSelector))
+		for k, v := range nodePool.Spec.Platform.Kubevirt.NodeSelector {
+			vmTemplate.Spec.Template.Spec.NodeSelector[k] = v
+		}
+	}
+
+	// When this annotation is present the NodePool is either new or already undergoing a version
+	// update, so it is safe to set the VMI Architecture field and inject the kubernetes.io/arch
+	// NodeSelector without triggering an unexpected fleet-wide rolling update.
+	//
+	// Machine.Type is intentionally left unset here. When Architecture is explicitly provided,
+	// the KubeVirt admission webhook automatically resolves the correct machine type from the
+	// cluster's ArchitectureConfiguration
+	// (e.g. amd64 → pc-q35-rhel9.x.x, s390x → s390-ccw-virtio-rhel9.x.x).
+	// Hardcoding Machine.Type would bypass the cluster admin's configuration.
+	if _, ok := nodePool.Annotations[hyperv1.NodePoolSupportsKubevirtArchitectureAnnotation]; ok {
+		if nodePool.Spec.Arch != "" {
+			vmTemplate.Spec.Template.Spec.Architecture = nodePool.Spec.Arch
+
+			// Inject kubernetes.io/arch into the NodeSelector so the virt-launcher pod is
+			// scheduled on an infra node of the matching architecture. On a multi-arch infra
+			// cluster this prevents an amd64 VM from landing on an s390x node (or vice versa).
+			// A user-supplied kubernetes.io/arch entry takes precedence.
+			if vmTemplate.Spec.Template.Spec.NodeSelector == nil {
+				vmTemplate.Spec.Template.Spec.NodeSelector = make(map[string]string, 1)
+			}
+			if _, alreadySet := vmTemplate.Spec.Template.Spec.NodeSelector[corev1.LabelArchStable]; !alreadySet {
+				vmTemplate.Spec.Template.Spec.NodeSelector[corev1.LabelArchStable] = nodePool.Spec.Arch
+			}
 		}
 	}
 

@@ -8,6 +8,14 @@ Technical progress reports and engineering stories from the HyperShift project.
 
 <div class="grid cards" markdown>
 
+-   :material-newspaper-variant-outline:{ .lg .middle } **August 2026 Progress Report**
+
+    ---
+
+    OSStreams graduates to Default, CAPI v1beta2 storage migration, Karpenter goes standalone, a custom HyperShift linter, Azure Managed HSM, e2e v2 framework maturity, upsert desired-state hash fix, and a massive K8s dependency bump. 279 PRs from 65 contributors.
+
+    [:octicons-arrow-right-24: Read the report](2026-08-progress-report.md)
+
 -   :material-newspaper-variant-outline:{ .lg .middle } **July 2026 Progress Report**
 
     ---

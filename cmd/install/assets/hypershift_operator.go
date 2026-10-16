@@ -30,6 +30,7 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -249,6 +250,14 @@ const (
 	GCPExternalDNSProvider   ExternalDNSProvider = "google"
 )
 
+// UsesCRDSource reports whether external-dns for this provider runs with
+// --source=crd (reading DNSEndpoint CRs) and therefore needs the DNSEndpoint
+// CRD installed. Today only google delegates NS records via DNSEndpoint;
+// add providers here as they adopt --source=crd.
+func (p ExternalDNSProvider) UsesCRDSource() bool {
+	return p == GCPExternalDNSProvider
+}
+
 type ExternalDNSDeployment struct {
 	Namespace             *corev1.Namespace
 	Image                 string
@@ -449,9 +458,19 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			"--azure-config-file=/etc/provider/credentials",
 		)
 	case GCPExternalDNSProvider:
-		// GCP-386: Add DNSEndpoint CRD source for ingress zone delegation
+		if len(o.GoogleProject) > 0 {
+			deployment.Spec.Template.Spec.Containers[0].Args = append(
+				deployment.Spec.Template.Spec.Containers[0].Args,
+				fmt.Sprintf("--google-project=%s", o.GoogleProject),
+			)
+		}
+	}
+
+	// Add CRD source for providers that need DNSEndpoint CR support
+	if o.Provider.UsesCRDSource() {
+		// Add DNSEndpoint CRD source for ingress zone delegation.
 		// This allows external-dns to process DNSEndpoint resources created by
-		// the control-plane-operator for NS record delegation to hosted clusters
+		// the control-plane-operator for NS record delegation to hosted clusters.
 		deployment.Spec.Template.Spec.Containers[0].Args = append(
 			deployment.Spec.Template.Spec.Containers[0].Args,
 			"--source=crd",
@@ -462,12 +481,6 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			"--managed-record-types=CNAME",
 			"--managed-record-types=NS",
 		)
-		if len(o.GoogleProject) > 0 {
-			deployment.Spec.Template.Spec.Containers[0].Args = append(
-				deployment.Spec.Template.Spec.Containers[0].Args,
-				fmt.Sprintf("--google-project=%s", o.GoogleProject),
-			)
-		}
 	}
 
 	// Add proxy settings if cluster has a proxy
@@ -1116,6 +1129,38 @@ func (o HyperShiftOperatorService) Build() *corev1.Service {
 					TargetPort: intstr.FromString("manager"),
 				},
 			},
+		},
+	}
+}
+
+type HyperShiftOperatorPodDisruptionBudget struct {
+	Namespace *corev1.Namespace
+}
+
+func (o HyperShiftOperatorPodDisruptionBudget) Build() *policyv1.PodDisruptionBudget {
+	return &policyv1.PodDisruptionBudget{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PodDisruptionBudget",
+			APIVersion: policyv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      HypershiftOperatorName,
+			Labels: map[string]string{
+				"name": HypershiftOperatorName,
+			},
+		},
+		Spec: policyv1.PodDisruptionBudgetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": HypershiftOperatorName,
+				},
+			},
+			// Allow one operator pod to be evicted during voluntary disruptions
+			// (e.g. node drains). With the default 2 replicas, this still keeps
+			// one pod available, while avoiding a drain deadlock with 1 replica.
+			MaxUnavailable:             ptr.To(intstr.FromInt32(1)),
+			UnhealthyPodEvictionPolicy: ptr.To(policyv1.AlwaysAllow),
 		},
 	}
 }

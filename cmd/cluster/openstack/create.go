@@ -269,7 +269,8 @@ func credentialsSecret(namespace, name string) *corev1.Secret {
 
 var _ core.Platform = (*CreateOptions)(nil)
 
-func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "openstack",
 		Short:        "Creates basic functional HostedCluster resources on OpenStack platform",
@@ -288,7 +289,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := core.CreateCluster(ctx, opts, openstackOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, openstackOpts, clientProvider); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -358,11 +359,14 @@ func extractCloud(cloudsYAMLPath, caCertPath, cloudName string) ([]byte, []byte,
 		if caCertPath == "" {
 			caCertPath = cloud["cacert"].(string)
 		}
-		// Always unset this key if present since it's not used and can therefore be confusing. We
-		// set '[Global] ca-file' in the cloud provider and CSI configs, which means takes priority
+	}
+
+	if caCertPath != "" {
+		// This config option may be ignored, depending on the component. We currently set
+		// '[Global] ca-file' in the cloud provider and Cinder CSI configs, which takes priority
 		// over configuration sourced from clouds.yaml
-		// https://github.com/kubernetes/cloud-provider-openstack/blob/v1.31.0/pkg/client/client.go#L228
-		delete(cloud, "cacert")
+		// https://github.com/kubernetes/cloud-provider-openstack/blob/v1.36.0/pkg/client/client.go#L231
+		cloud["cacert"] = "/etc/openstack/ca.crt"
 	}
 
 	var caCert []byte

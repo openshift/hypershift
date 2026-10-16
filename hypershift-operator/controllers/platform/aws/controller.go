@@ -17,8 +17,8 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/upsert"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -331,7 +331,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, fmt.Errorf("failed to get hosted cluster: %w", err)
 	}
 
-	if isPaused, duration := supportutil.IsReconciliationPaused(log, hc.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hc.Spec.PausedUntil); isPaused {
 		log.Info("Reconciliation paused", "pausedUntil", *hc.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
@@ -517,10 +517,6 @@ func (r *AWSEndpointServiceReconciler) ensureVpcEndpointService(ctx context.Cont
 			},
 		})
 		if err != nil {
-			var apiErr smithy.APIError
-			if errors.As(err, &apiErr) {
-				return "", "", errors.New(apiErr.ErrorCode())
-			}
 			return "", "", err
 		}
 		if len(output.ServiceConfigurations) == 0 {
@@ -538,10 +534,6 @@ func (r *AWSEndpointServiceReconciler) ensureVpcEndpointService(ctx context.Cont
 		Names: []string{lbName},
 	})
 	if err != nil {
-		var smithyErr smithy.APIError
-		if errors.As(err, &smithyErr) {
-			return "", "", errors.New(smithyErr.ErrorCode())
-		}
 		return "", "", err
 	}
 	if len(output.LoadBalancers) == 0 {
@@ -579,25 +571,20 @@ func (r *AWSEndpointServiceReconciler) ensureVpcEndpointService(ctx context.Cont
 	})
 	if err != nil {
 		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) {
-			if apiErr.ErrorCode() == "InvalidParameter" {
-				// TODO: optional filter by regex on error msg (could be fragile)
-				// e.g. "LBs are already associated with another VPC Endpoint Service Configuration"
-				log.Info("service endpoint might already exist, attempting adoption")
-				var adoptErr error
-				serviceName, serviceID, adoptErr = findExistingVpcEndpointService(ctx, ec2Client, aws.ToString(lbARN))
-				if adoptErr != nil {
-					log.Info("existing endpoint service not found, adoption failed", "err", adoptErr)
-					return "", "", errors.New(apiErr.ErrorCode())
-				}
-			} else {
-				return "", "", errors.New(apiErr.ErrorCode())
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "InvalidParameter" {
+			// TODO: optional filter by regex on error msg (could be fragile)
+			// e.g. "LBs are already associated with another VPC Endpoint Service Configuration"
+			log.Info("service endpoint might already exist, attempting adoption")
+			var adoptErr error
+			serviceName, serviceID, adoptErr = findExistingVpcEndpointService(ctx, ec2Client, aws.ToString(lbARN))
+			if adoptErr != nil {
+				log.Info("existing endpoint service not found, adoption failed", "err", adoptErr)
+				return "", "", err
 			}
-		}
-		if len(serviceName) == 0 {
+			log.Info("endpoint service adopted", "serviceName", serviceName)
+		} else {
 			return "", "", err
 		}
-		log.Info("endpoint service adopted", "serviceName", serviceName)
 	} else {
 		serviceName = aws.ToString(createEndpointServiceOutput.ServiceConfiguration.ServiceName)
 		serviceID = aws.ToString(createEndpointServiceOutput.ServiceConfiguration.ServiceId)
@@ -680,10 +667,6 @@ func apiTagToEC2Tag(in []hyperv1.AWSEndpointServiceResourceTag) []ec2types.Tag {
 func findExistingVpcEndpointService(ctx context.Context, ec2Client awsapi.EC2API, lbARN string) (string, string, error) {
 	output, err := ec2Client.DescribeVpcEndpointServiceConfigurations(ctx, &ec2.DescribeVpcEndpointServiceConfigurationsInput{})
 	if err != nil {
-		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) {
-			return "", "", errors.New(apiErr.ErrorCode())
-		}
 		return "", "", err
 	}
 	if len(output.ServiceConfigurations) == 0 {
@@ -851,7 +834,7 @@ func unwrapError(log logr.Logger, err error) error {
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
 		log.Info("AWS Error", "code", apiErr.ErrorCode(), "message", apiErr.ErrorMessage())
-		return fmt.Errorf("error code: %s", apiErr.ErrorCode())
+		return err
 	}
 	return err
 }

@@ -199,19 +199,6 @@ echo "Updated console client redirect URI to %s"
 	return nil
 }
 
-// CleanupKeycloak removes all Keycloak resources by deleting the keycloak namespace.
-func CleanupKeycloak(ctx context.Context, client crclient.Client) error {
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: keycloakNamespace,
-		},
-	}
-	if err := client.Delete(ctx, ns); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete keycloak namespace: %w", err)
-	}
-	return nil
-}
-
 func buildSetupConfigMap(consoleSecret, consoleRedirectURI string) *corev1.ConfigMap {
 	cliClientJSON := `{
   "clientId": "` + defaultCLIClientID + `",

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 48ebe98831bb263d28ff0046466ef57161a905ff816bb209ae6b2ca53b5eddba
+    hypershift.openshift.io/desired-state-hash: 092ffc6bcf871763587ed4d02f814da54fdefabce063479b895fe63359cfaa20
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-storage-operator
@@ -146,6 +146,8 @@ spec:
           value: token-minter
         - name: AWS_EBS_DRIVER_CONTROL_PLANE_IMAGE
           value: aws-ebs-csi-driver
+        - name: GCP_PD_DRIVER_CONTROL_PLANE_IMAGE
+          value: gcp-pd-csi-driver
         - name: AZURE_DISK_DRIVER_CONTROL_PLANE_IMAGE
           value: azure-disk-csi-driver
         - name: LIVENESS_PROBE_CONTROL_PLANE_IMAGE

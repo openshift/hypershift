@@ -1,26 +1,34 @@
 aliases:
+  acm-hypershift-approvers:
+    - yiraeChristineKim
+    - kurwang
+  acm-hypershift-reviewers:
+    - yiraeChristineKim
+    - kurwang
   api-approvers:
     - enxebre
     - csrwng
-    - sjenning
     - joelspeed
     - everettraven
+  ci-operator-config-approvers:
+    - ironcladlou
+    - mgencur
   tech-leads:
     - enxebre
     - csrwng
-    - sjenning
   e2e-approvers:
     - ironcladlou
   core-approvers:
     - enxebre
     - csrwng
-    - sjenning
     - muraee
     - bryan-cox
     - cblecker
     - jparrill
     - devguyio
     - clebs
+    - sdminonne
+    - ironcladlou
   core-reviewers:
     - enxebre
     - csrwng
@@ -81,10 +89,12 @@ aliases:
     - cblecker
     - ckandag
     - cristianoveiga
+    - daniel-rejniak
     - floresroger
     - gbarabasz
     - jimdaga
     - patjlm
+    - pvasant
   powervs-reviewers:
     - alishaIBM
     - bkhadars

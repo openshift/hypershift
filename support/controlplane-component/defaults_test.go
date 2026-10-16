@@ -12,6 +12,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
@@ -259,6 +260,121 @@ func TestComputeResourceHashConsistency(t *testing.T) {
 				g.Expect(result).To(Equal(hashValue), "Hash value must remain the same for the same data")
 			}
 		}
+	}
+}
+
+func TestApplyWatchedResourcesAnnotation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		caBundle     string
+		expectChange bool
+	}{
+		{
+			name:     "When supplied credentials are unchanged, it should retain the config hash",
+			caBundle: "supplied CA",
+		},
+		{
+			name:         "When only the supplied etcd CA changes, it should update the config hash",
+			caBundle:     "replacement CA",
+			expectChange: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			scheme := runtime.NewScheme()
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "clusters-test", Name: "etcd-client-tls"},
+				Data: map[string][]byte{
+					"etcd-client.crt":    []byte("supplied certificate"),
+					"etcd-client.key":    []byte("supplied key"),
+					"etcd-client-ca.crt": []byte("supplied CA"),
+				},
+			}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(secret), secret)).To(Succeed())
+			cpContext := ControlPlaneContext{
+				Context: t.Context(),
+				Client:  c,
+				HCP:     &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: secret.Namespace}},
+			}
+			clientVolume := secretVolume(secret.Name)
+			clientVolume.Name = "etcd-client-crt"
+			caVolume := secretVolume(secret.Name)
+			caVolume.Name = "etcd-ca"
+			caVolume.Secret.Items = []corev1.KeyToPath{{Key: "etcd-client-ca.crt", Path: "ca.crt"}}
+			podTemplate := &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Volumes: []corev1.Volume{clientVolume, caVolume}}}
+			workload := &controlPlaneWorkload[*appsv1.Deployment]{}
+
+			g.Expect(workload.applyWatchedResourcesAnnotation(cpContext, podTemplate)).To(Succeed())
+			before := podTemplate.Annotations["component.hypershift.openshift.io/config-hash"]
+			g.Expect(before).NotTo(BeEmpty())
+			secret.Data["etcd-client-ca.crt"] = []byte(tc.caBundle)
+			g.Expect(c.Update(t.Context(), secret)).To(Succeed())
+			g.Expect(workload.applyWatchedResourcesAnnotation(cpContext, podTemplate)).To(Succeed())
+			after := podTemplate.Annotations["component.hypershift.openshift.io/config-hash"]
+			if tc.expectChange {
+				g.Expect(after).NotTo(Equal(before))
+			} else {
+				g.Expect(after).To(Equal(before))
+			}
+
+			singleVolumeTemplate := &corev1.PodTemplateSpec{Spec: corev1.PodSpec{Volumes: []corev1.Volume{clientVolume}}}
+			g.Expect(workload.applyWatchedResourcesAnnotation(cpContext, singleVolumeTemplate)).To(Succeed())
+			g.Expect(after).To(Equal(singleVolumeTemplate.Annotations["component.hypershift.openshift.io/config-hash"]), "client and CA volumes must not hash the same Secret twice")
+		})
+	}
+}
+
+func TestEnforceVolumesDefaultMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		source       corev1.VolumeSource
+		expectedMode int32
+	}{
+		{
+			name:         "When a Secret volume has no mode, it should use standard Secret permissions",
+			source:       corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "etcd-client-tls"}},
+			expectedMode: 0640,
+		},
+		{
+			name: "When an etcd CA Secret volume has a custom mode, it should enforce standard Secret permissions and preserve the projection",
+			source: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
+				SecretName:  "etcd-client-tls",
+				DefaultMode: ptr.To[int32](0644),
+				Items:       []corev1.KeyToPath{{Key: "etcd-client-ca.crt", Path: "ca.crt"}},
+			}},
+			expectedMode: 0640,
+		},
+		{
+			name: "When an etcd CA ConfigMap volume has a custom mode, it should enforce standard ConfigMap permissions",
+			source: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "etcd-ca"},
+				DefaultMode:          ptr.To[int32](0600),
+			}},
+			expectedMode: 0644,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			podSpec := &corev1.PodSpec{Volumes: []corev1.Volume{{Name: "etcd-ca", VolumeSource: tc.source}}}
+			expected := podSpec.DeepCopy()
+			if expected.Volumes[0].Secret != nil {
+				expected.Volumes[0].Secret.DefaultMode = ptr.To(tc.expectedMode)
+			} else {
+				expected.Volumes[0].ConfigMap.DefaultMode = ptr.To(tc.expectedMode)
+			}
+
+			enforceVolumesDefaultMode(podSpec)
+			g.Expect(podSpec).To(Equal(expected))
+		})
 	}
 }
 

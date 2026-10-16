@@ -35,6 +35,33 @@ func TestPullSecret(t *testing.T) {
 	}
 }
 
+func TestCombinedPullSecret(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		namespace string
+	}{
+		{
+			name:      "When namespace is provided, it should return a secret named combined-pull-secret in the given namespace",
+			namespace: "test-ns",
+		},
+		{
+			name:      "When namespace is empty, it should return a secret named combined-pull-secret with empty namespace",
+			namespace: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			secret := CombinedPullSecret(tt.namespace)
+			g.Expect(secret).ToNot(BeNil())
+			g.Expect(secret.Name).To(Equal("combined-pull-secret"))
+			g.Expect(secret.Namespace).To(Equal(tt.namespace))
+		})
+	}
+}
+
 func TestDefaultServiceAccount(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

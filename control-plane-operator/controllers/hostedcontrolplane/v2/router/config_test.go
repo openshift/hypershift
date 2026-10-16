@@ -6,6 +6,7 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/testutil"
 
@@ -55,11 +56,11 @@ func TestGenerateRouterConfig(t *testing.T) {
 		ignition := route(ignitionserver.Route("").Name, withHost("ignition-server.example.com"), withSvc("ignition-server-proxy"))
 		konnectivity := namedRoute(manifests.KonnectivityServerRoute(testNS), withHost("konnectivity.example.com"), withSvc("konnectivity-server"))
 		oauthInternal := namedRoute(manifests.OauthServerInternalRoute(testNS), withHost("oauth-internal.example.com"), withSvc("openshift-oauth"))
-		oauthExternalPrivate := namedRoute(manifests.OauthServerExternalPrivateRoute(testNS), withHost("oauth-private.example.com"), withSvc("openshift-oauth"))
-		oauthExternalPublic := namedRoute(manifests.OauthServerExternalPublicRoute(testNS), withHost("oauth-public.example.com"), withSvc("openshift-oauth"))
+		oauthExternalPrivate := namedRoute(cpomanifests.OauthServerExternalPrivateRoute(testNS), withHost("oauth-private.example.com"), withSvc("openshift-oauth"))
+		oauthExternalPublic := namedRoute(cpomanifests.OauthServerExternalPublicRoute(testNS), withHost("oauth-public.example.com"), withSvc("openshift-oauth"))
 		metricsForwarder := route(manifests.MetricsForwarderRoute("").Name, withHost("metrics-forwarder.example.com"), withSvc("metrics-forwarder"), withPort(4000))
-		kasPublic := namedRoute(manifests.KubeAPIServerExternalPublicRoute(testNS), withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver"))
-		kasPrivate := namedRoute(manifests.KubeAPIServerExternalPrivateRoute(testNS), withSvc("kube-apiserver-private.example.com"), withSvc("kube-apiserver"))
+		kasPublic := namedRoute(cpomanifests.KubeAPIServerExternalPublicRoute(testNS), withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver"))
+		kasPrivate := namedRoute(cpomanifests.KubeAPIServerExternalPrivateRoute(testNS), withSvc("kube-apiserver-private.example.com"), withSvc("kube-apiserver"))
 
 		return &routev1.RouteList{
 			Items: []routev1.Route{*ignition, *konnectivity, *oauthInternal, *oauthExternalPrivate, *oauthExternalPublic, *metricsForwarder, *kasPublic, *kasPrivate},

@@ -12,7 +12,7 @@ metadata:
       && ( "control-plane-operator/***".pathChanged() ||
            "support/***".pathChanged() ||
            ".tekton/control-plane-operator*".pathChanged() ||
-           "/Containerfile.control-plane-operator".pathChanged() )
+           "/Containerfile.control-plane".pathChanged() )
     pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
   creationTimestamp:
   labels:

@@ -123,6 +123,10 @@ linters:
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'nobools: field HostedControlPlaneInitializationStatus.ControlPlaneInitialized pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
         text: 'nobools: field HostedControlPlaneStatus.ExternalManagedControlPlane pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter

@@ -1,0 +1,9 @@
+[project]
+name = "hypershift-ci-python"
+version = "0.1.0"
+description = "HyperShift CI Python image dependencies"
+requires-python = ">=3.12"
+dependencies = [
+    "google-api-python-client==2.162.0",
+    "google-auth-oauthlib==1.2.1",
+]

@@ -8,10 +8,12 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -33,10 +35,18 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			return err
 		}
 		podspec.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
+		podspec.UpdateVolume("etcd-client-ca", deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
+			v.VolumeSource = corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: manifests.EtcdClientSecret(cpContext.HCP.Namespace).Name,
+					Items:      []corev1.KeyToPath{{Key: "etcd-client-ca.crt", Path: "ca.crt"}},
+				},
+			}
+		})
 	}
 
 	noProxy := []string{
-		manifests.KubeAPIServerService("").Name,
+		cpomanifests.KubeAPIServerService("").Name,
 		etcdHostname,
 		config.AuditWebhookService,
 	}
@@ -74,6 +84,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			c.Args = append(c.Args, fmt.Sprintf("--accesstoken-inactivity-timeout=%s", tokenInactivityTimeout))
 		}
 
+		c.Args = append(c.Args, fmt.Sprintf("--v=%d", resolveOAuthAPIServerVerbosity(cpContext.HCP)))
+
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "NO_PROXY",
 			Value: strings.Join(noProxy, ","),
@@ -95,6 +107,14 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	)
 
 	return nil
+}
+
+func resolveOAuthAPIServerVerbosity(hcp *hyperv1.HostedControlPlane) int {
+	var level hyperv1.LogLevel
+	if hcp.Spec.OperatorConfiguration != nil {
+		level = hcp.Spec.OperatorConfiguration.OpenShiftOAuthAPIServer.LogLevel
+	}
+	return util.LogLevelToKlogVerbosity(level)
 }
 
 func applyAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {

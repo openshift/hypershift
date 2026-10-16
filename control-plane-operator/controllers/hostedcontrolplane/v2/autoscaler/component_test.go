@@ -98,6 +98,7 @@ func TestAdaptDeployment(t *testing.T) {
 		hcpAnnotations    map[string]string
 		AutoscalerOptions hyperv1.ClusterAutoscaling
 		ExpectedArgs      []string
+		UnexpectedArgs    []string
 		expectedReplicas  int32
 	}{
 		{
@@ -199,6 +200,103 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 			expectedReplicas: 1,
 		},
+		{
+			name: "When kubeClientQPS and kubeClientBurst are set, it should include both kube-client arguments",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				KubeClientQPS:   ptr.To[int32](50),
+				KubeClientBurst: 100,
+			},
+			ExpectedArgs: []string{
+				"--kube-client-qps=50",
+				"--kube-client-burst=100",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "When only kubeClientQPS is set, it should include kube-client-qps and omit kube-client-burst",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				KubeClientQPS: ptr.To[int32](20),
+			},
+			ExpectedArgs: []string{
+				"--kube-client-qps=20",
+			},
+			UnexpectedArgs: []string{
+				"--kube-client-burst",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "When only kubeClientBurst is set, it should include kube-client-burst and omit kube-client-qps",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				KubeClientBurst: 40,
+			},
+			ExpectedArgs: []string{
+				"--kube-client-burst=40",
+			},
+			UnexpectedArgs: []string{
+				"--kube-client-qps",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name:              "When kubeClientQPS and kubeClientBurst are omitted, it should not include kube-client arguments",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{},
+			UnexpectedArgs: []string{
+				"--kube-client-qps",
+				"--kube-client-burst",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "When kubeClientQPS is -1, it should include kube-client-qps=-1 to disable rate limiting",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				KubeClientQPS: ptr.To[int32](-1),
+			},
+			ExpectedArgs: []string{
+				"--kube-client-qps=-1",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "When kubeClientQPS is 0, it should include kube-client-qps=0 as a float",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				KubeClientQPS: ptr.To[int32](0),
+			},
+			ExpectedArgs: []string{
+				"--kube-client-qps=0",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "When kubeClientQPS is 1000, it should include kube-client-qps=1000 as a float",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				KubeClientQPS: ptr.To[int32](1000),
+			},
+			ExpectedArgs: []string{
+				"--kube-client-qps=1000",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "When kubeClientBurst is 1, it should include kube-client-burst=1",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				KubeClientBurst: 1,
+			},
+			ExpectedArgs: []string{
+				"--kube-client-burst=1",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "When kubeClientBurst is 2000, it should include kube-client-burst=2000",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				KubeClientBurst: 2000,
+			},
+			ExpectedArgs: []string{
+				"--kube-client-burst=2000",
+			},
+			expectedReplicas: 1,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -221,9 +319,12 @@ func TestAdaptDeployment(t *testing.T) {
 
 			g.Expect(deployment.Spec.Replicas).To(HaveValue(Equal(tc.expectedReplicas)))
 
+			observedArgs := deployment.Spec.Template.Spec.Containers[0].Args
 			if len(tc.ExpectedArgs) > 0 {
-				observedArgs := deployment.Spec.Template.Spec.Containers[0].Args
 				g.Expect(observedArgs).To(ContainElements(tc.ExpectedArgs))
+			}
+			for _, unexpected := range tc.UnexpectedArgs {
+				g.Expect(observedArgs).NotTo(ContainElement(ContainSubstring(unexpected)))
 			}
 		})
 	}

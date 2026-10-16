@@ -15,8 +15,8 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
-	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -68,7 +68,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 	podspec.UpdateContainer("prepare-payload", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Args = []string{
 			"-c",
-			preparePayloadScript(cpContext.HCP.Spec.Platform.Type, util.HCPOAuthEnabled(cpContext.HCP), featureSet),
+			preparePayloadScript(cpContext.HCP.Spec.Platform.Type, reconcilerpolicy.HCPOAuthEnabled(cpContext.HCP), featureSet),
 		}
 		c.Image = controlPlaneReleaseImage
 	})
@@ -297,6 +297,8 @@ func resourcesToRemove(platformType hyperv1.PlatformType) []client.Object {
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "csi-snapshot-controller-operator", Namespace: "openshift-cluster-storage-operator"}},
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "aws-ebs-csi-driver-operator", Namespace: "openshift-cluster-csi-drivers"}},
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "aws-ebs-csi-driver-controller", Namespace: "openshift-cluster-csi-drivers"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "gcp-pd-csi-driver-operator", Namespace: "openshift-cluster-csi-drivers"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "gcp-pd-csi-driver-controller", Namespace: "openshift-cluster-csi-drivers"}},
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "csi-snapshot-controller", Namespace: "openshift-cluster-storage-operator"}},
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "kube-storage-version-migrator-operator", Namespace: "openshift-kube-storage-version-migrator-operator"}},
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "migrator", Namespace: "openshift-kube-storage-version-migrator"}},

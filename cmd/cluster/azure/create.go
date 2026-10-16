@@ -41,7 +41,8 @@ func DefaultOptions() *RawCreateOptions {
 	}
 }
 
-func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "azure",
 		Short:        "Creates basic functional HostedCluster resources on Azure",
@@ -60,7 +61,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := core.CreateCluster(ctx, opts, azureOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, azureOpts, clientProvider); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -105,6 +106,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", util.OIDCIssuerURLDescription)
 	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", util.SATokenIssuerKeyPathDescription)
 	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, util.DNSZoneRGNameDescription)
+	flags.BoolVar(&opts.AutoNode, "auto-node", opts.AutoNode, "If true, this flag indicates the Hosted Cluster will support the AutoNode feature.")
 }
 
 // bindEndpointAccessFlags binds the endpoint access flags for Azure private connectivity
@@ -146,6 +148,8 @@ func BindProductFlags(opts *RawCreateOptions, flags *pflag.FlagSet) {
 
 	// OAuth publishing strategy
 	flags.StringVar(&opts.OAuthPublishingStrategy, "oauth-publishing-strategy", "Route", "Publishing strategy for the OAuth server (Route or LoadBalancer)")
+
+	flags.BoolVar(&opts.AutoNode, "auto-node", opts.AutoNode, "If true, this flag indicates the Hosted Cluster will support AutoNode feature.")
 
 	// Private connectivity flags
 	bindEndpointAccessFlags(opts, flags)
@@ -471,6 +475,23 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			KMS: &hyperv1.KMSSpec{
 				Provider: hyperv1.AZURE,
 				Azure:    azureKMSSpec,
+			},
+		}
+	}
+
+	if o.AutoNode {
+		if o.infra.KarpenterClientID == "" {
+			return fmt.Errorf("autoNode on Azure requires a Karpenter workload identity; re-run 'hypershift create iam azure' with --enable-karpenter")
+		}
+		cluster.Spec.AutoNode = hyperv1.AutoNode{
+			Provisioner: hyperv1.ProvisionerConfig{
+				Name: hyperv1.ProvisionerKarpenter,
+				Karpenter: hyperv1.KarpenterConfig{
+					Platform: hyperv1.AzurePlatform,
+					Azure: hyperv1.KarpenterAzureConfig{
+						ClientID: hyperv1.AzureClientID(o.infra.KarpenterClientID),
+					},
+				},
 			},
 		}
 	}

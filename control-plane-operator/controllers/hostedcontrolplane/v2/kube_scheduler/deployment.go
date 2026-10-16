@@ -40,7 +40,16 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			c.Args = append(c.Args, fmt.Sprintf("--policy-config-map=%s", configuration.Scheduler.Policy.Name))
 			c.Args = append(c.Args, fmt.Sprintf("--policy-config-namespace=%s", cpContext.HCP.Namespace))
 		}
+		c.Args = append(c.Args, fmt.Sprintf("--v=%d", resolveSchedulerVerbosity(cpContext.HCP)))
 	})
 
 	return nil
+}
+
+func resolveSchedulerVerbosity(hcp *hyperv1.HostedControlPlane) int {
+	var level hyperv1.LogLevel
+	if hcp.Spec.OperatorConfiguration != nil {
+		level = hcp.Spec.OperatorConfiguration.KubeScheduler.LogLevel
+	}
+	return util.LogLevelToKlogVerbosity(level)
 }

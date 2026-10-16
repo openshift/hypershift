@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
@@ -22,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	azureauth "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
 
 	"github.com/go-logr/logr"
@@ -30,6 +32,26 @@ import (
 const (
 	graphAPIEndpoint = "https://graph.microsoft.com/v1.0/servicePrincipals"
 )
+
+var graphRequestBackoff = wait.Backoff{
+	Steps:    4,
+	Duration: time.Second,
+	Factor:   2,
+	Jitter:   0.1,
+}
+
+var graphRetryStatusCodes = []int{
+	http.StatusRequestTimeout,
+	http.StatusTooManyRequests,
+	http.StatusInternalServerError,
+	http.StatusBadGateway,
+	http.StatusServiceUnavailable,
+	http.StatusGatewayTimeout,
+}
+
+type httpClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 // roleAssignmentClient abstracts the Azure role assignment operations for testability.
 type roleAssignmentClient interface {
@@ -41,8 +63,10 @@ type roleAssignmentClient interface {
 
 // RBACManager handles Azure RBAC operations
 type RBACManager struct {
-	subscriptionID string
-	creds          azcore.TokenCredential
+	subscriptionID    string
+	creds             azcore.TokenCredential
+	graphClient       httpClient
+	graphRetryBackoff wait.Backoff
 }
 
 // ServicePrincipalResponse represents the response from Microsoft Graph API
@@ -58,8 +82,10 @@ type ServicePrincipal struct {
 // NewRBACManager creates a new RBACManager
 func NewRBACManager(subscriptionID string, creds azcore.TokenCredential) *RBACManager {
 	return &RBACManager{
-		subscriptionID: subscriptionID,
-		creds:          creds,
+		subscriptionID:    subscriptionID,
+		creds:             creds,
+		graphClient:       &http.Client{},
+		graphRetryBackoff: graphRequestBackoff,
 	}
 }
 
@@ -102,6 +128,35 @@ func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *Create
 	}
 
 	return r.assignRolesForComponents(ctx, opts, components, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName)
+}
+
+// AssignKarpenterRoles grants Karpenter the built-in Azure roles needed to provision VMs.
+// Virtual Machine Contributor, Network Contributor, and Managed Identity Operator are assigned
+// on the cluster resource group. Network Contributor is also assigned on the VNet resource group
+// when it differs from the cluster resource group.
+func (r *RBACManager) AssignKarpenterRoles(ctx context.Context, opts *CreateInfraOptions, clientID, resourceGroupName, vnetResourceGroupName string) error {
+	token, err := r.getAzureToken()
+	if err != nil {
+		return err
+	}
+
+	objectID, err := r.getObjectIDFromClientID(ctx, clientID, token)
+	if err != nil {
+		return err
+	}
+
+	raClient, err := azureauth.NewRoleAssignmentsClient(r.subscriptionID, r.creds, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create role assignments client: %w", err)
+	}
+
+	for _, assignment := range r.karpenterRoleAssignments(resourceGroupName, vnetResourceGroupName) {
+		if err := r.assignRole(ctx, raClient, opts.InfraID, assignment.component, objectID, assignment.role, assignment.scope); err != nil {
+			return fmt.Errorf("failed to assign Karpenter role %s: %w", assignment.component, err)
+		}
+	}
+
+	return nil
 }
 
 // assignRolesForComponents resolves object IDs and assigns scoped roles for each component.
@@ -332,12 +387,47 @@ func (r *RBACManager) cleanupRoleAssignments(ctx context.Context, l logr.Logger,
 		}
 	}
 
+	// Cleanup Karpenter role assignments (cluster RG; Network Contributor also on VNet RG when it differs)
+	for _, assignment := range r.karpenterRoleAssignments(resourceGroupName, vnetResourceGroupName) {
+		name := util.GenerateRoleAssignmentName(infraID, assignment.component, assignment.scope)
+		if err := r.deleteRoleAssignmentByName(ctx, l, client, assignment.scope, name, assignment.component); err != nil {
+			deleteErrors = append(deleteErrors, err)
+		}
+	}
+
 	if len(deleteErrors) > 0 {
 		return fmt.Errorf("failed to delete %d role assignments during cleanup: %w", len(deleteErrors), errors.Join(deleteErrors...))
 	}
 
 	l.Info("Successfully cleaned up all role assignments", "infraID", infraID)
 	return nil
+}
+
+type karpenterRoleAssignment struct {
+	component string
+	role      string
+	scope     string
+}
+
+// karpenterRoleAssignments returns the Karpenter role assignments to create or delete.
+// Network Contributor is assigned on the cluster resource group and, when it differs,
+// again on the VNet resource group.
+func (r *RBACManager) karpenterRoleAssignments(resourceGroupName, vnetResourceGroupName string) []karpenterRoleAssignment {
+	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", r.subscriptionID, resourceGroupName)
+	assignments := []karpenterRoleAssignment{
+		{config.KarpenterVM, config.VirtualMachineContributorRoleDefinitionID, managedRG},
+		{config.KarpenterNetwork, config.NetworkContributorRoleDefinitionID, managedRG},
+		{config.KarpenterMI, config.ManagedIdentityOperatorRoleDefinitionID, managedRG},
+	}
+	if vnetResourceGroupName != "" && !strings.EqualFold(vnetResourceGroupName, resourceGroupName) {
+		vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", r.subscriptionID, vnetResourceGroupName)
+		assignments = append(assignments, karpenterRoleAssignment{
+			component: config.KarpenterNetwork,
+			role:      config.NetworkContributorRoleDefinitionID,
+			scope:     vnetRG,
+		})
+	}
+	return assignments
 }
 
 func (r *RBACManager) deleteRoleAssignmentByName(ctx context.Context, l logr.Logger, client roleAssignmentClient, scope, name, component string) error {
@@ -372,6 +462,9 @@ func (r *RBACManager) getObjectIDFromClientID(ctx context.Context, clientID stri
 	if !uuidPattern.MatchString(clientID) {
 		return "", fmt.Errorf("invalid client ID format: must be a UUID")
 	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return "", fmt.Errorf("request to Microsoft Graph canceled: %w", ctxErr)
+	}
 
 	filterQuery := "$filter=appId eq '" + clientID + "'"
 	url := graphAPIEndpoint + "?" + strings.ReplaceAll(filterQuery, " ", "%20")
@@ -386,11 +479,38 @@ func (r *RBACManager) getObjectIDFromClientID(ctx context.Context, clientID stri
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 	req.Header.Set("Content-Type", "application/json")
 
-	// Send request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	graphRequest, err := runtime.NewRequestFromRequest(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		return "", fmt.Errorf("failed to create Microsoft Graph request: %w", err)
+	}
+
+	maxRetries := r.graphRetryBackoff.Steps - 1
+	if maxRetries < 0 {
+		maxRetries = -1
+	}
+	// Use the Azure SDK policy so transport errors and transient Graph responses
+	// share retry behavior, including Retry-After and response body draining.
+	graphPipeline := runtime.NewPipeline("", "", runtime.PipelineOptions{}, &policy.ClientOptions{
+		Retry: policy.RetryOptions{
+			MaxRetries:    int32(maxRetries),
+			RetryDelay:    r.graphRetryBackoff.Duration,
+			MaxRetryDelay: r.graphRetryBackoff.Cap,
+			StatusCodes:   graphRetryStatusCodes,
+		},
+		Transport: r.graphClient,
+	})
+	resp, requestErr := graphPipeline.Do(graphRequest)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		return "", fmt.Errorf("request to Microsoft Graph canceled: %w", ctxErr)
+	}
+	if requestErr != nil {
+		return "", fmt.Errorf("failed to send Microsoft Graph request after retries: %w", requestErr)
+	}
+	if resp == nil {
+		return "", fmt.Errorf("request to Microsoft Graph returned no response")
 	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()

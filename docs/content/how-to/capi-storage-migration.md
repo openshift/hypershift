@@ -40,10 +40,14 @@ On an existing cluster, the migrator re-stores all CAPI resources at `v1beta2`.
 
 ### 2. Verifying migration completed
 
-Wait for the CRD migrator controller to finish. Check that all CAPI CRDs have `storedVersions: ["v1beta2"]`:
+Wait for the CRD migrator controller to finish. The migrator covers ten CAPI CRDs and excludes
+`ipaddressclaims.ipam.cluster.x-k8s.io` and `ipaddresses.ipam.cluster.x-k8s.io` — IPAM CRDs are
+not owned by HyperShift and are not part of this migration.
+
+Check that all migrated CAPI CRDs have `storedVersions: ["v1beta2"]`:
 
 ```bash
-for crd in clusters.cluster.x-k8s.io clusterclasses.cluster.x-k8s.io machinedeployments.cluster.x-k8s.io machines.cluster.x-k8s.io machinesets.cluster.x-k8s.io machinepools.cluster.x-k8s.io machinehealthchecks.cluster.x-k8s.io machinedrainrules.cluster.x-k8s.io ipaddressclaims.ipam.cluster.x-k8s.io ipaddresses.ipam.cluster.x-k8s.io clusterresourcesets.addons.cluster.x-k8s.io clusterresourcesetbindings.addons.cluster.x-k8s.io; do
+for crd in clusters.cluster.x-k8s.io clusterclasses.cluster.x-k8s.io machinedeployments.cluster.x-k8s.io machines.cluster.x-k8s.io machinesets.cluster.x-k8s.io machinepools.cluster.x-k8s.io machinehealthchecks.cluster.x-k8s.io machinedrainrules.cluster.x-k8s.io clusterresourcesets.addons.cluster.x-k8s.io clusterresourcesetbindings.addons.cluster.x-k8s.io; do
   echo "$crd: $(kubectl get crd $crd -o jsonpath='{.status.storedVersions}')"
 done
 ```
@@ -70,15 +74,15 @@ kubectl get cm -n hypershift capi-migration-status -o jsonpath='{.data.status}' 
 By running the above command on a completed migration you will get an output such as:
 ```json
 {
-  "totalCRDs": 12,
-  "migratedCRDs": 12,
+  "totalCRDs": 10,
+  "migratedCRDs": 10,
   "conditions": [
     {
       "type": "MigrationComplete",
       "status": "True",
       "lastTransitionTime": "2026-07-20T19:05:37Z",
       "reason": "MigrationComplete",
-      "message": "All 12 CRDs have been migrated"
+      "message": "All 10 CRDs have been migrated"
     },
     {
       "type": "Progressing",

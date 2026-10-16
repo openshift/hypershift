@@ -202,7 +202,7 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "key must only contain letters, digits, and the characters _ . : / = + - @"
+    expectedError: "key must only contain letters, digits, spaces, and the characters _ . : / = + - @"
 
   - name: when resourceTag value contains invalid characters it should fail
     initial: |
@@ -252,4 +252,4 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "value must only contain letters, digits, and the characters _ . : / = + - @"
+    expectedError: "value must only contain letters, digits, spaces, and the characters _ . : / = + - @"

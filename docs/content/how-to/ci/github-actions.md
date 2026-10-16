@@ -29,7 +29,9 @@ This pattern provides:
 
 ## 📋 Workflows
 
-All workflows run on self-hosted ARC runners and target the `main` and `release-4.22` branches.
+The PR validation workflows run on self-hosted ARC runners. Most target `main` and `release-4.22`; only the OCP and vanilla Kubernetes envtest workflows also target `release-5.0`.
+
+Pull request callers resolve their reusable workflows from `main`, while post-merge runs use the reusable workflow stored on the pushed branch. Keep branch-local matrices synchronized with `main`; `release-5.0` envtests must include Kubernetes 1.36 for consistent pull request and post-merge coverage.
 
 ### 🧹 Code Quality
 
@@ -57,27 +59,6 @@ All workflows run on self-hosted ARC runners and target the `main` and `release-
 !!! info
     The `docs-deploy.yaml` workflow is not a reusable workflow pair — it triggers via `workflow_run` after the Docs Build completes to deploy the preview. See [Documentation Preview](docs-preview.md) for details.
 
-### 🤖 PR Slash Commands
-
-These workflows are triggered by posting a **slash command** as a comment on a pull request. They are powered by [Claude Code](https://docs.anthropic.com/en/docs/claude-code) via the shared `reusable-claude-on-pr.yaml` workflow, which handles checking out the PR branch, authenticating to GCP (for Vertex AI), and running Claude with the appropriate prompt.
-
-!!! warning "Permissions"
-    Only organization **members**, **owners**, and **collaborators** can trigger these commands. Comments from external contributors are ignored.
-
-| Command | Workflow | What it does |
-|---------|----------|--------------|
-| `/rebase` | `rebase.yaml` | Rebases the PR branch onto the latest `main` and force-pushes |
-| `/restructure-commits` | `restructure-commits.yaml` | Reorganizes the PR's commits into logical units with conventional commit messages |
-
-**How it works:**
-
-1. Post the slash command (e.g., `/rebase`) as a comment on a PR.
-2. The workflow posts a 🔗 reply comment linking to the Actions run so you can follow progress.
-3. Claude checks out the PR branch, performs the requested operation, and pushes the result.
-
-!!! tip
-    Each command uses concurrency groups scoped to the PR number — re-triggering a command automatically cancels the previous run for that PR.
-
 ### 🔧 Other
 
 | Caller | Reusable | Purpose |
@@ -96,7 +77,7 @@ To add a new GHA workflow:
 
 1. **Create the reusable workflow** (e.g., `my-check-reusable.yaml`) with `on: workflow_call`. This is where all the job logic lives.
 2. **Create the caller workflow** (e.g., `my-check.yaml`) that uses the reusable workflow pinned at `@main`.
-3. Add **branch filters** for `main` and any active release branches (e.g., `release-4.22`).
+3. Add **branch filters** for `main` and each release branch where the workflow is intended to run. Do not assume every workflow should target every release branch.
 4. Use `arc-runner-set` as the runner.
 
 ### Post-merge runs

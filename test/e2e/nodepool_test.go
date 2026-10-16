@@ -32,6 +32,9 @@ var (
 type HostedClusterNodePoolTestCases struct {
 	build HostedClusterNodePoolTestCasesBuilderFn
 	setup func(t *testing.T)
+	// mutateClusterOpts allows customizing the HostedCluster creation
+	// options before the HostedCluster for these test cases is created.
+	mutateClusterOpts func(clusterOpts *e2eutil.PlatformAgnosticOptions)
 }
 
 type HostedClusterNodePoolTestCasesBuilderFn func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase
@@ -118,7 +121,7 @@ func TestNodePool(t *testing.T) {
 					},
 					{
 						name: "KubeVirtNodeMultinetTest",
-						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster),
+						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 					},
 					{
 						name: "OpenStackAdvancedTest",
@@ -155,18 +158,36 @@ func TestNodePool(t *testing.T) {
 				}
 			},
 		},
-		// This kubevirt test need to run at different hosted cluster
+		// This kubevirt test need to run at different hosted cluster.
+		// The hosted cluster is created with the default ingress controller
+		// using the HostNetwork endpoint publishing strategy so the default
+		// ingress passthrough is exercised with it too.
+		//
+		// KubeVirtNodeAdvancedMultinetTest is compatible with HostNetwork: it
+		// builds its custom EndpointSlice from the passthrough Service
+		// targetPort read at runtime (whatever the strategy resolves it to)
+		// and its DNAT rule at the dnsmasq proxy pod is port-agnostic, so
+		// traffic still reaches the guest router bound on the host network.
 		{
 			setup: func(t *testing.T) {
 				if globalOpts.Platform != hyperv1.KubevirtPlatform {
 					t.Skip("tests only supported on platform KubeVirt")
 				}
 			},
+			mutateClusterOpts: func(clusterOpts *e2eutil.PlatformAgnosticOptions) {
+				clusterOpts.BeforeApply = kubevirtHostNetworkIngressBeforeApply(clusterOpts.BeforeApply)
+			},
 			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {
-				return []NodePoolTestCase{{
-					name: "KubeVirtNodeAdvancedMultinetTest",
-					test: NewKubeVirtAdvancedMultinetTest(ctx, mgtClient, hostedCluster),
-				}}
+				return []NodePoolTestCase{
+					{
+						name: "KubeVirtNodeAdvancedMultinetTest",
+						test: NewKubeVirtAdvancedMultinetTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
+					},
+					{
+						name: "KubeVirtHostNetworkIngressPassthroughTest",
+						test: NewKubeVirtHostNetworkIngressPassthroughTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
+					},
+				}
 			},
 		},
 		{
@@ -226,12 +247,19 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 				clusterOpts.AWSPlatform.SharedRole = false
 			}
 
-			// On OpenStack, we need to create at least one replica of the default nodepool
-			// so we can create the Route53 record for the ingress router. If we don't do that,
-			// the HostedCluster conditions won't be met and the test will fail as some operators
-			// will be marked as degraded.
-			if globalOpts.Platform == hyperv1.OpenStackPlatform {
+			// On OpenStack and KubeVirt, we need to create at least one replica of the default nodepool.
+			// On OpenStack, this is needed to create the Route53 record for the ingress router.
+			// On KubeVirt, CNO requires worker nodes to probe the network MTU before it can
+			// deploy its operands (ovnkube-control-plane, network-node-identity, multus-admission-controller),
+			// without which controlPlaneVersion never reaches Completed.
+			// If we don't do that, the HostedCluster conditions won't be met and the test will
+			// fail as some operators will be marked as degraded.
+			if globalOpts.Platform == hyperv1.OpenStackPlatform || globalOpts.Platform == hyperv1.KubevirtPlatform {
 				clusterOpts.NodePoolReplicas = 1
+			}
+
+			if nodePoolTestCases.mutateClusterOpts != nil {
+				nodePoolTestCases.mutateClusterOpts(&clusterOpts)
 			}
 
 			ctx, cancel := context.WithCancel(testContext)

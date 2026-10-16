@@ -14,12 +14,19 @@ import (
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	apiversion "k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
+	kubeclient "k8s.io/client-go/kubernetes"
+	fakekubeclient "k8s.io/client-go/kubernetes/fake"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 
 	"github.com/spf13/pflag"
@@ -86,7 +93,6 @@ func TestDNSZoneRGValidation(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	t.Setenv("FAKE_CLIENT", "true")
 
 	credentialsFile, _, pullSecretFile := setupAzureTestFixtures(t)
 	tempDir := t.TempDir()
@@ -138,7 +144,7 @@ func TestDNSZoneRGValidation(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
 
-			err = core.CreateCluster(ctx, coreOpts, azureOpts)
+			err = core.CreateCluster(ctx, coreOpts, azureOpts, nil)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
@@ -179,6 +185,7 @@ func setupAzureTestFixtures(t *testing.T) (credentialsFile, infraFile, pullSecre
 		InfraID:           "fakeInfraID",
 		SecurityGroupID:   "fakeSecurityGroupID",
 		ControlPlaneMIs:   &hyperv1.AzureResourceManagedIdentities{},
+		KarpenterClientID: "12345678-1234-1234-1234-123456789012",
 	})
 	if err != nil {
 		t.Fatalf("failed to marshal infra: %v", err)
@@ -200,7 +207,6 @@ func TestRoleAssignmentWithInfraJSON(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	t.Setenv("FAKE_CLIENT", "true")
 
 	credentialsFile, infraFile, pullSecretFile := setupAzureTestFixtures(t)
 	tempDir := t.TempDir()
@@ -258,7 +264,7 @@ func TestRoleAssignmentWithInfraJSON(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
 
-			err = core.CreateCluster(ctx, coreOpts, azureOpts)
+			err = core.CreateCluster(ctx, coreOpts, azureOpts, nil)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
@@ -273,7 +279,6 @@ func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
-	t.Setenv("FAKE_CLIENT", "true")
 
 	credentialsFile, infraFile, pullSecretFile := setupAzureTestFixtures(t)
 	tempDir := t.TempDir()
@@ -453,6 +458,19 @@ func TestCreateCluster(t *testing.T) {
 				"--oauth-publishing-strategy=LoadBalancer",
 			},
 		},
+		{
+			name: "When auto-node is set, it should render HostedCluster with Azure Karpenter AutoNode",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--render-sensitive",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
+				"--auto-node",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
@@ -470,7 +488,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, azureOpts); err != nil {
+			if err := core.CreateCluster(ctx, coreOpts, azureOpts, nil); err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 
@@ -481,6 +499,70 @@ func TestCreateCluster(t *testing.T) {
 			testutil.CompareWithFixture(t, manifests)
 		})
 	}
+}
+
+func TestCreateClusterAutoNodeRequiresKarpenterClientID(t *testing.T) {
+	utilrand.Seed(1234567890)
+	certs.UnsafeSeed(1234567890)
+	ctx := framework.InterruptableContext(t.Context())
+	g := NewGomegaWithT(t)
+
+	credentialsFile, _, pullSecretFile := setupAzureTestFixtures(t)
+	tempDir := t.TempDir()
+
+	rawInfra, err := json.Marshal(&azureinfra.CreateInfraOutput{
+		BaseDomain:        "fakeBaseDomain",
+		PublicZoneID:      "fakePublicZoneID",
+		PrivateZoneID:     "fakePrivateZoneID",
+		Location:          "fakeLocation",
+		ResourceGroupName: "fakeResourceGroupName",
+		VNetID:            "fakeVNetID",
+		SubnetID:          "fakeSubnetID",
+		BootImageID:       "fakeBootImageID",
+		InfraID:           "fakeInfraID",
+		SecurityGroupID:   "fakeSecurityGroupID",
+		ControlPlaneMIs:   &hyperv1.AzureResourceManagedIdentities{},
+	})
+	g.Expect(err).NotTo(HaveOccurred())
+	infraFile := filepath.Join(tempDir, "infra.json")
+	g.Expect(os.WriteFile(infraFile, rawInfra, 0600)).To(Succeed())
+
+	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	coreOpts := core.DefaultOptions()
+	core.BindDeveloperOptions(coreOpts, flags)
+	azureOpts := DefaultOptions()
+	azurenodepool.BindOptions(azureOpts.NodePoolOpts, flags)
+	BindDeveloperOptions(azureOpts, flags)
+
+	err = flags.Parse([]string{
+		"--azure-creds=" + credentialsFile,
+		"--infra-json=" + infraFile,
+		"--name=example",
+		"--pull-secret=" + pullSecretFile,
+		"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+		"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
+		"--auto-node",
+	})
+	g.Expect(err).NotTo(HaveOccurred())
+
+	coreOpts.Render = true
+	coreOpts.RenderInto = filepath.Join(t.TempDir(), "manifests.yaml")
+
+	managementClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+	typedClient := fakekubeclient.NewClientset()
+	typedDiscovery := typedClient.Discovery().(*fakediscovery.FakeDiscovery)
+	typedDiscovery.FakedServerVersion = &apiversion.Info{Platform: "linux/amd64"}
+	clientProvider := &core.ClientProvider{
+		ControllerRuntimeClient: func(string) (crclient.Client, error) {
+			return managementClient, nil
+		},
+		KubernetesClientSet: func(string) (kubeclient.Interface, error) {
+			return typedClient, nil
+		},
+	}
+	err = core.CreateCluster(ctx, coreOpts, azureOpts, clientProvider)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("autoNode on Azure requires a Karpenter workload identity"))
 }
 
 func TestValidateOAuthPublishingStrategy(t *testing.T) {

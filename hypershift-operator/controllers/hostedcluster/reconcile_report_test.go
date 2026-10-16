@@ -1,6 +1,7 @@
 package hostedcluster
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ import (
 func TestReconcileReport(t *testing.T) {
 	t.Run("When no operations are recorded it should report no errors", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 
 		g.Expect(report.hasCriticalFailure()).To(BeFalse())
 		g.Expect(report.allErrors()).To(BeEmpty())
@@ -23,7 +24,7 @@ func TestReconcileReport(t *testing.T) {
 
 	t.Run("When all operations succeed it should report no errors", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error { return nil })
 		report.execute("SSHKeySync", nonCritical, func() error { return nil })
 
@@ -35,7 +36,7 @@ func TestReconcileReport(t *testing.T) {
 
 	t.Run("When a critical operation fails it should report critical failure", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error {
 			return fmt.Errorf("secret not found")
 		})
@@ -49,7 +50,7 @@ func TestReconcileReport(t *testing.T) {
 
 	t.Run("When a non-critical operation fails it should not report critical failure", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error { return nil })
 		report.execute("SSHKeySync", nonCritical, func() error {
 			return fmt.Errorf("key not found")
@@ -63,7 +64,7 @@ func TestReconcileReport(t *testing.T) {
 
 	t.Run("When operations are blocked it should track blocked names", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error {
 			return fmt.Errorf("secret not found")
 		})
@@ -80,7 +81,7 @@ func TestReconcileReport(t *testing.T) {
 
 	t.Run("When blocked operations are recorded it should not count as critical failure", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error { return nil })
 		report.executeOrBlock("CoreHCPChain", func() error { return nil })
 
@@ -90,7 +91,7 @@ func TestReconcileReport(t *testing.T) {
 
 	t.Run("When multiple critical operations fail it should deduplicate names", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error {
 			return fmt.Errorf("error 1")
 		})
@@ -103,7 +104,7 @@ func TestReconcileReport(t *testing.T) {
 
 	t.Run("When requeueAfter is set it should be preserved", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		d := 5 * time.Minute
 		report.requeueAfter = &d
 
@@ -115,7 +116,7 @@ func TestReconcileReport(t *testing.T) {
 func TestBlockingBehavior(t *testing.T) {
 	t.Run("When a non-critical operation fails it should allow subsequent execute calls", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("SSHKeySync", nonCritical, func() error {
 			return fmt.Errorf("key not found")
 		})
@@ -132,7 +133,7 @@ func TestBlockingBehavior(t *testing.T) {
 
 	t.Run("When a non-critical operation fails it should allow executeOrBlock calls", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("SSHKeySync", nonCritical, func() error {
 			return fmt.Errorf("key not found")
 		})
@@ -148,7 +149,7 @@ func TestBlockingBehavior(t *testing.T) {
 
 	t.Run("When a critical operation fails it should block executeOrBlock calls", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error {
 			return fmt.Errorf("secret not found")
 		})
@@ -166,7 +167,7 @@ func TestBlockingBehavior(t *testing.T) {
 func TestExecuteOrBlock(t *testing.T) {
 	t.Run("When no critical failure exists it should execute the function", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		executed := false
 		report.executeOrBlock("Op", func() error {
 			executed = true
@@ -179,7 +180,7 @@ func TestExecuteOrBlock(t *testing.T) {
 
 	t.Run("When a critical failure exists it should block and not execute the function", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("CritOp", critical, func() error {
 			return fmt.Errorf("critical failure")
 		})
@@ -195,7 +196,7 @@ func TestExecuteOrBlock(t *testing.T) {
 
 	t.Run("When no critical failure exists it should record the error", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.executeOrBlock("Op", func() error {
 			return fmt.Errorf("err1")
 		})
@@ -206,7 +207,7 @@ func TestExecuteOrBlock(t *testing.T) {
 
 	t.Run("When a critical failure exists it should block and not execute", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("CritOp", critical, func() error {
 			return fmt.Errorf("critical failure")
 		})
@@ -222,7 +223,7 @@ func TestExecuteOrBlock(t *testing.T) {
 func TestLogSummary(t *testing.T) {
 	t.Run("When only critical failures exist it should format critical failures", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error {
 			return fmt.Errorf("not found")
 		})
@@ -236,7 +237,7 @@ func TestLogSummary(t *testing.T) {
 
 	t.Run("When only blocked operations exist (no critical failure) it should return empty", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.executeOrBlock("OperatorDeployments", func() error { return nil })
 		report.executeOrBlock("Auxiliary", func() error { return nil })
 
@@ -245,7 +246,7 @@ func TestLogSummary(t *testing.T) {
 
 	t.Run("When both critical failures and blocked operations exist it should format both", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error {
 			return fmt.Errorf("not found")
 		})
@@ -258,7 +259,7 @@ func TestLogSummary(t *testing.T) {
 
 	t.Run("When no failures or blocked operations exist it should return empty string", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error { return nil })
 		report.execute("SSHKeySync", nonCritical, func() error { return nil })
 
@@ -267,7 +268,7 @@ func TestLogSummary(t *testing.T) {
 
 	t.Run("When only non-critical failures exist it should return empty string", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("SSHKeySync", nonCritical, func() error {
 			return fmt.Errorf("key not found")
 		})
@@ -279,7 +280,7 @@ func TestLogSummary(t *testing.T) {
 func TestAggregate(t *testing.T) {
 	t.Run("When critical failure exists it should return critical errors and blocked list", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error {
 			return fmt.Errorf("pull secret not found")
 		})
@@ -297,7 +298,7 @@ func TestAggregate(t *testing.T) {
 
 	t.Run("When no critical failure exists it should return all errors", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("SSHKeySync", nonCritical, func() error {
 			return fmt.Errorf("ssh key not found")
 		})
@@ -313,7 +314,7 @@ func TestAggregate(t *testing.T) {
 
 	t.Run("When no errors exist it should return nil", func(t *testing.T) {
 		g := NewWithT(t)
-		report := &reconcileReport{}
+		report := &reconcileReport{ctx: context.Background()}
 		report.execute("PullSecretSync", critical, func() error { return nil })
 		report.execute("SSHKeySync", nonCritical, func() error { return nil })
 

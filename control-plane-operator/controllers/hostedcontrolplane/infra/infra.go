@@ -14,13 +14,13 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	routerutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router/util"
-	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -91,7 +91,7 @@ func (r *Reconciler) ReconcileInfrastructure(ctx context.Context, hcp *hyperv1.H
 	if err := r.reconcileKonnectivityServerService(ctx, hcp, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile Konnectivity server service: %w", err)
 	}
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		if err := r.reconcileOAuthServerService(ctx, hcp, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile OAuth server service: %w", err)
 		}
@@ -132,7 +132,7 @@ func (r *Reconciler) ReconcileInfrastructureStatus(ctx context.Context, hcp *hyp
 	if len(msg) > 0 {
 		messages = append(messages, msg)
 	}
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		infraStatus.OAuthEnabled = true
 		if infraStatus.OAuthHost, infraStatus.OAuthPort, msg, err = r.reconcileOAuthServiceStatus(ctx, hcp); err != nil {
 			errs = append(errs, err)
@@ -214,7 +214,7 @@ func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1
 		return errors.New("APIServer service strategy not specified")
 	}
 	p := kas.NewKubeAPIServerServiceParams(hcp)
-	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
+	apiServerService := cpomanifests.KubeAPIServerService(hcp.Namespace)
 	kasSVCPort := config.KASSVCPort
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		kasSVCPort = config.KASSVCIBMCloudPort
@@ -225,7 +225,7 @@ func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1
 		// https://bugzilla.redhat.com/show_bug.cgi?id=2060650
 		// TODO(alberto): explore exposing multiple Azure frontend IPs on the load balancer.
 		kasSVCPort = config.KASSVCLBAzurePort
-		apiServerService = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
+		apiServerService = cpomanifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
 	}
 	if _, err := createOrUpdate(ctx, r.Client, apiServerService, func() error {
 		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, kasSVCPort, p.AllowedCIDRBlocks, hcp)
@@ -236,7 +236,7 @@ func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1
 	if serviceStrategy.Type == hyperv1.LoadBalancer && netutil.IsPublicHCP(hcp) && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
 		hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform && hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
 		// Create the svc clusterIP for Azure on config.KASSVCPort as expected by internal consumers.
-		kasSVC := manifests.KubeAPIServerService(hcp.Namespace)
+		kasSVC := cpomanifests.KubeAPIServerService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, kasSVC, func() error {
 			return kas.ReconcileServiceClusterIP(kasSVC, p.OwnerReference)
 		}); err != nil {
@@ -245,8 +245,8 @@ func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1
 	}
 
 	if serviceStrategy.Type == hyperv1.Route {
-		externalPublicRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
-		externalPrivateRoute := manifests.KubeAPIServerExternalPrivateRoute(hcp.Namespace)
+		externalPublicRoute := cpomanifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
+		externalPrivateRoute := cpomanifests.KubeAPIServerExternalPrivateRoute(hcp.Namespace)
 		hostname := ""
 		if serviceStrategy.Route != nil {
 			hostname = serviceStrategy.Route.Hostname
@@ -341,7 +341,7 @@ func (r *Reconciler) reconcileOAuthServerService(ctx context.Context, hcp *hyper
 		return fmt.Errorf("OAuthServer service strategy not specified")
 	}
 	p := oauth.NewOAuthServiceParams(hcp)
-	oauthServerService := manifests.OauthServerService(hcp.Namespace)
+	oauthServerService := cpomanifests.OauthServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, oauthServerService, func() error {
 		return oauth.ReconcileService(oauthServerService, p.OwnerRef, serviceStrategy, hcp.Spec.Platform.Type, netutil.IsPrivateHCP(hcp))
 	}); err != nil {
@@ -350,8 +350,8 @@ func (r *Reconciler) reconcileOAuthServerService(ctx context.Context, hcp *hyper
 	if serviceStrategy.Type != hyperv1.Route {
 		return nil
 	}
-	oauthExternalPublicRoute := manifests.OauthServerExternalPublicRoute(hcp.Namespace)
-	oauthExternalPrivateRoute := manifests.OauthServerExternalPrivateRoute(hcp.Namespace)
+	oauthExternalPublicRoute := cpomanifests.OauthServerExternalPublicRoute(hcp.Namespace)
+	oauthExternalPrivateRoute := cpomanifests.OauthServerExternalPrivateRoute(hcp.Namespace)
 	if netutil.IsPublicHCP(hcp) {
 		// Remove the external private route if it exists
 		_, err := k8sutil.DeleteIfNeeded(ctx, r.Client, oauthExternalPrivateRoute)
@@ -437,7 +437,7 @@ func (r *Reconciler) reconcileOLMPackageServerService(ctx context.Context, hcp *
 }
 
 func (r *Reconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
-	pubSvc := manifests.RouterPublicService(hcp.Namespace)
+	pubSvc := cpomanifests.RouterPublicService(hcp.Namespace)
 	privSvc := manifests.PrivateRouterService(hcp.Namespace)
 	if !routerutil.UseHCPRouter(hcp) {
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, pubSvc); err != nil {
@@ -523,19 +523,19 @@ func (r *Reconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *h
 	}
 
 	if netutil.UseSharedIngressHCP(hcp) || netutil.UseSwiftNetworkingHCP(hcp) || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
-		return sharedingress.KasRouteHostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
+		return netutil.KASRouteHostname(hcp), netutil.ExternalDNSLBPort, "", nil
 	}
 
 	var svc *corev1.Service
 	if serviceStrategy.Type == hyperv1.Route {
 		if netutil.IsPublicHCP(hcp) {
-			svc = manifests.RouterPublicService(hcp.Namespace)
+			svc = cpomanifests.RouterPublicService(hcp.Namespace)
 		} else {
 			svc = manifests.PrivateRouterService(hcp.Namespace)
 		}
 	} else {
 		if netutil.IsPublicHCP(hcp) {
-			svc = manifests.KubeAPIServerService(hcp.Namespace)
+			svc = cpomanifests.KubeAPIServerService(hcp.Namespace)
 		} else {
 			svc = manifests.KubeAPIServerPrivateService(hcp.Namespace)
 		}
@@ -552,7 +552,7 @@ func (r *Reconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *h
 		if netutil.IsPublicHCP(hcp) {
 			// Public Azure clusters use a dedicated kube-apiserverlb service.
 			// Private-only clusters use kube-apiserver-private (already set above).
-			svc = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
+			svc = cpomanifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
 		}
 	}
 
@@ -605,7 +605,7 @@ func (r *Reconciler) reconcileOAuthServiceStatus(ctx context.Context, hcp *hyper
 		return
 	}
 	var route *routev1.Route
-	svc := manifests.OauthServerService(hcp.Namespace)
+	svc := cpomanifests.OauthServerService(hcp.Namespace)
 	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 		if apierrors.IsNotFound(err) {
 			err = nil
@@ -619,7 +619,7 @@ func (r *Reconciler) reconcileOAuthServiceStatus(ctx context.Context, hcp *hyper
 	}
 	if serviceStrategy.Type == hyperv1.Route {
 		if netutil.IsPublicHCP(hcp) {
-			route = manifests.OauthServerExternalPublicRoute(hcp.Namespace)
+			route = cpomanifests.OauthServerExternalPublicRoute(hcp.Namespace)
 			if err = r.Client.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
 				if apierrors.IsNotFound(err) {
 					err = nil
@@ -629,7 +629,7 @@ func (r *Reconciler) reconcileOAuthServiceStatus(ctx context.Context, hcp *hyper
 				return
 			}
 		} else if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
-			route = manifests.OauthServerExternalPrivateRoute(hcp.Namespace)
+			route = cpomanifests.OauthServerExternalPrivateRoute(hcp.Namespace)
 			if err = r.Client.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
 				if apierrors.IsNotFound(err) {
 					err = nil
@@ -690,7 +690,7 @@ func (r *Reconciler) reconcileExternalRouterServiceStatus(ctx context.Context, h
 	if !netutil.IsPublicHCP(hcp) || !netutil.LabelHCPRoutes(hcp) || netutil.UseSharedIngressHCP(hcp) || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
-	return r.reconcileRouterServiceStatus(ctx, manifests.RouterPublicService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
+	return r.reconcileRouterServiceStatus(ctx, cpomanifests.RouterPublicService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
 }
 
 func (r *Reconciler) reconcileRouterServiceStatus(ctx context.Context, svc *corev1.Service, messageCollector events.MessageCollector) (host string, needed bool, message string, err error) {

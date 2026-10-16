@@ -98,7 +98,7 @@ spec:
                             The maximum length is based on the Service Account ID (max 30), Project (max 30), and a valid gcloud email
                             suffix ("iam.gserviceaccount.com").
                           maxLength: 85
-                          pattern: '[-_[A-Za-z0-9]+@[-_[A-Za-z0-9]+.iam.gserviceaccount.com'
+                          pattern: '[-_.[A-Za-z0-9]+@[-_.[A-Za-z0-9]+.iam.gserviceaccount.com'
                           type: string
                         managedKey:
                           description: ManagedKey references keys managed by the Cloud
@@ -110,7 +110,7 @@ spec:
                                 KMSKeyName is the name of the encryption key that is stored in Google Cloud KMS. For example:
                                 "kmsKeyName": "projects/kms_project_id/locations/region/keyRings/key_region/cryptoKeys/key
                               maxLength: 160
-                              pattern: projects\/[-_[A-Za-z0-9]+\/locations\/[-_[A-Za-z0-9]+\/keyRings\/[-_[A-Za-z0-9]+\/cryptoKeys\/[-_[A-Za-z0-9]+
+                              pattern: projects\/[-_:[A-Za-z0-9]+\/locations\/[-_[A-Za-z0-9]+\/keyRings\/[-_[A-Za-z0-9]+\/cryptoKeys\/[-_[A-Za-z0-9]+
                               type: string
                           required:
                           - kmsKeyName
@@ -393,7 +393,7 @@ spec:
                       The maximum length is based on the Service Account ID (max 30), Project (max 30), and a valid gcloud email
                       suffix ("iam.gserviceaccount.com").
                     maxLength: 85
-                    pattern: '[-_[A-Za-z0-9]+@[-_[A-Za-z0-9]+.iam.gserviceaccount.com'
+                    pattern: '[-_.[A-Za-z0-9]+@[-_.[A-Za-z0-9]+.iam.gserviceaccount.com'
                     type: string
                   managedKey:
                     description: ManagedKey references keys managed by the Cloud Key
@@ -404,7 +404,7 @@ spec:
                           KMSKeyName is the name of the encryption key that is stored in Google Cloud KMS. For example:
                           "kmsKeyName": "projects/kms_project_id/locations/region/keyRings/key_region/cryptoKeys/key
                         maxLength: 160
-                        pattern: projects\/[-_[A-Za-z0-9]+\/locations\/[-_[A-Za-z0-9]+\/keyRings\/[-_[A-Za-z0-9]+\/cryptoKeys\/[-_[A-Za-z0-9]+
+                        pattern: projects\/[-_:[A-Za-z0-9]+\/locations\/[-_[A-Za-z0-9]+\/keyRings\/[-_[A-Za-z0-9]+\/cryptoKeys\/[-_[A-Za-z0-9]+
                         type: string
                     required:
                     - kmsKeyName

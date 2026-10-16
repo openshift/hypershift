@@ -23,8 +23,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hcc "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	cpconst "github.com/openshift/hypershift/pkg/controlplane"
 	"github.com/openshift/hypershift/support/conditions"
+	"github.com/openshift/hypershift/support/imageregistry"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
@@ -67,13 +68,14 @@ func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) 
 				delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
 			}
 
+			Expect(expectedConditions).NotTo(BeEmpty(), "expected conditions for hosted cluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
 			Eventually(func(g Gomega) {
 				hc := &hyperv1.HostedCluster{}
 				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(hostedCluster), hc)).To(Succeed())
 				for condType, expectedStatus := range expectedConditions {
 					condition := meta.FindStatusCondition(hc.Status.Conditions, string(condType))
-					g.Expect(condition).NotTo(BeNil(), "condition %s should be present", condType)
-					g.Expect(condition.Status).To(Equal(expectedStatus), "condition %s should have status %s", condType, expectedStatus)
+					g.Expect(condition).NotTo(BeNil(), "condition %s should be present on hosted cluster %s/%s", condType, hostedCluster.Namespace, hostedCluster.Name)
+					g.Expect(condition.Status).To(Equal(expectedStatus), "condition %s should have status %s on hosted cluster %s/%s", condType, expectedStatus, hostedCluster.Namespace, hostedCluster.Name)
 				}
 			}, 10*time.Minute, 10*time.Second).Should(Succeed())
 		})
@@ -84,16 +86,17 @@ func EnsureCAPIFinalizersTest(getTestCtx internal.TestContextGetter) {
 	When("CAPI components are deployed", func() {
 		It("should have component finalizers on all CAPI deployments", func() {
 			tc := getTestCtx()
-			Expect(hcc.CAPIComponents).NotTo(BeEmpty(),
+			tc.SkipIfVersionBelow(e2eutil.Version422)
+			Expect(cpconst.CAPIComponents).NotTo(BeEmpty(),
 				"expected CAPI components to be defined in HostedControlPlaneConfiguration")
-			for _, name := range hcc.CAPIComponents {
+			for _, name := range cpconst.CAPIComponents {
 				deployment := &appsv1.Deployment{}
 				Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 					Name:      name,
 					Namespace: tc.ControlPlaneNamespace,
 				}, deployment)).To(Succeed(), "failed to get CAPI deployment %s", name)
-				Expect(controllerutil.ContainsFinalizer(deployment, hcc.ControlPlaneComponentFinalizer)).To(BeTrue(),
-					"CAPI deployment %s should have finalizer %s", name, hcc.ControlPlaneComponentFinalizer)
+				Expect(controllerutil.ContainsFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer)).To(BeTrue(),
+					"CAPI deployment %s should have finalizer %s", name, cpconst.ControlPlaneComponentFinalizer)
 			}
 		})
 	})
@@ -141,7 +144,7 @@ func EnsurePayloadArchSetCorrectlyTest(getTestCtx internal.TestContextGetter) {
 			hostedCluster, err := getTestCtx().GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
-			imageMetadataProvider := &hyperutil.RegistryClientImageMetadataProvider{}
+			imageMetadataProvider := &imageregistry.RegistryClientImageMetadataProvider{}
 			Eventually(func(g Gomega) {
 				hc := &hyperv1.HostedCluster{}
 				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(hostedCluster), hc)).To(Succeed())

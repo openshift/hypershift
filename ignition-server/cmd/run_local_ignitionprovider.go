@@ -10,6 +10,7 @@ import (
 
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 
@@ -95,7 +96,7 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("unable to create image file cache: %w", err)
 	}
 
-	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+	imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{
 		OpenShiftImageRegistryOverrides: map[string][]string{},
 	}
 

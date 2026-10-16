@@ -54,6 +54,12 @@
                     },
                     {
                         "name": "TLSAdherence"
+                    },
+                    {
+                        "name": "HCPUserFacingOperatorLogs"
+                    },
+                    {
+                        "name": "DeterministicLBIP"
                     }
                 ],
                 "version": ""

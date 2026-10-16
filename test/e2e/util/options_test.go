@@ -75,3 +75,14 @@ func TestComplete_BaseDomainFromEnvVar(t *testing.T) {
 		})
 	}
 }
+
+func TestComplete(t *testing.T) {
+	t.Setenv("KUBECONFIG", "/nonexistent/kubeconfig")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
+
+	opts := &Options{}
+	if err := opts.Complete(); err == nil {
+		t.Fatal("expected invalid kubeconfig to stop completion when release image is missing")
+	}
+}

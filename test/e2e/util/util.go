@@ -5,11 +5,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"reflect"
@@ -25,21 +24,24 @@ import (
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	awsprivatelink "github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
-	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
-	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	hcc "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
-	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	hcpinternalmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	cpconst "github.com/openshift/hypershift/pkg/controlplane"
+	kasconst "github.com/openshift/hypershift/pkg/kas"
+	"github.com/openshift/hypershift/pkg/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
+	hcmetrics "github.com/openshift/hypershift/pkg/metrics/hostedcluster"
 	"github.com/openshift/hypershift/support/azureutil"
-	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/forwarder"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -57,6 +59,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -73,10 +76,11 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -401,6 +405,27 @@ func WaitForGuestClient(t testing.TB, ctx context.Context, client crclient.Clien
 	return guestClient
 }
 
+// guestClientImpersonating returns a guest cluster client that impersonates the given username in
+// the system:masters group. The group keeps the request authorized, so admission is what decides
+// the outcome, while the username is one no admission policy whitelists.
+func guestClientImpersonating(t testing.TB, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, username string) crclient.Client {
+	g := NewWithT(t)
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+	guestConfig.QPS = -1
+	guestConfig.Burst = -1
+	guestConfig.Impersonate = rest.ImpersonationConfig{
+		UserName: username,
+		Groups:   []string{"system:masters"},
+	}
+
+	impersonatingClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
+	g.Expect(err).NotTo(HaveOccurred(), "could not create impersonating client for guest cluster")
+	return impersonatingClient
+}
+
 func GetGuestKubeconfigHost(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (string, error) {
 	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
@@ -485,10 +510,6 @@ func WaitForReadyNodesByNodePool(t testing.TB, ctx context.Context, client crcli
 
 func WaitForReadyNodesByLabels(t testing.TB, ctx context.Context, client crclient.Client, platform hyperv1.PlatformType, replicas int32, nodeLabels map[string]string) []corev1.Node {
 	return WaitForNReadyNodesWithOptions(t, ctx, client, replicas, platform, "", WithClientOptions(crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(nodeLabels))}))
-}
-
-func WaitForNodePoolConfigUpdateComplete(t testing.TB, ctx context.Context, client crclient.Client, np *hyperv1.NodePool) {
-	WaitForNodePoolConfigUpdateCompleteWithPlatform(t, ctx, client, np, hyperv1.NonePlatform)
 }
 
 func WaitForNodePoolConfigUpdateCompleteWithPlatform(t testing.TB, ctx context.Context, client crclient.Client, np *hyperv1.NodePool, platform hyperv1.PlatformType) {
@@ -719,31 +740,6 @@ func WaitForControlPlaneComponentRollout(t testing.TB, ctx context.Context, clie
 		},
 		WithTimeout(30*time.Minute),
 		WithInterval(10*time.Second),
-	)
-}
-
-func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
-	var predicates []Predicate[*hyperv1.HostedControlPlane]
-	for _, conditionType := range []hyperv1.ConditionType{
-		hyperv1.HostedControlPlaneAvailable,
-		hyperv1.EtcdAvailable,
-		hyperv1.KubeAPIServerAvailable,
-		hyperv1.InfrastructureReady,
-		hyperv1.ValidHostedControlPlaneConfiguration,
-	} {
-		predicates = append(predicates, ConditionPredicate[*hyperv1.HostedControlPlane](Condition{
-			Type:   string(conditionType),
-			Status: metav1.ConditionTrue,
-		}))
-	}
-
-	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-	EventuallyObject(t, ctx, fmt.Sprintf("HostedControlPlane %s/%s to be ready", namespace, hostedCluster.Name),
-		func(ctx context.Context) (*hyperv1.HostedControlPlane, error) {
-			hcp := &hyperv1.HostedControlPlane{}
-			err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hostedCluster.Name}, hcp)
-			return hcp, err
-		}, predicates, WithTimeout(30*time.Minute),
 	)
 }
 
@@ -995,6 +991,35 @@ func EnsureOAPIMountsTrustBundle(t *testing.T, ctx context.Context, mgmtClient c
 	})
 }
 
+// isKubeVirtPod returns true if the pod is a KubeVirt-managed pod that should be
+// skipped from HCP validation checks. This includes virt-launcher pods, VMI console
+// debug pods, and CDI importer pods, all of which have hardcoded labels/tolerations
+// that cannot be customized.
+func isKubeVirtPod(pod corev1.Pod) bool {
+	if pod.Labels["kubevirt.io"] == "virt-launcher" {
+		return true
+	}
+	if pod.Labels["app"] == "vmi-console-debug" {
+		return true
+	}
+	if _, ok := pod.Labels["cdi.kubevirt.io"]; ok {
+		return true
+	}
+	return false
+}
+
+// filterControlPlanePods returns only the pods that are managed by the control plane,
+// filtering out KubeVirt/CDI pods whose labels and tolerations cannot be customized.
+func filterControlPlanePods(pods []corev1.Pod) []corev1.Pod {
+	var filtered []corev1.Pod
+	for _, pod := range pods {
+		if !isKubeVirtPod(pod) {
+			filtered = append(filtered, pod)
+		}
+	}
+	return filtered
+}
+
 func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAllContainersHavePullPolicyIfNotPresent", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -1032,7 +1057,7 @@ func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *tes
 			"network-node-identity",
 			"ovnkube-control-plane",
 		}
-		for _, pod := range podList.Items {
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			skip := false
 			for _, excludedPod := range excludedPods {
 				if strings.HasPrefix(pod.Name, excludedPod) {
@@ -1041,11 +1066,6 @@ func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *tes
 				}
 			}
 			if skip {
-				continue
-			}
-
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
 				continue
 			}
 
@@ -1113,9 +1133,10 @@ func EnsureFeatureGateStatus(t *testing.T, ctx context.Context, guestClient crcl
 
 func EnsureCAPIFinalizers(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureCAPIFinalizers", func(t *testing.T) {
+		AtLeast(t, Version422)
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
-		for _, name := range hcc.CAPIComponents {
+		for _, name := range cpconst.CAPIComponents {
 			deployment := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
@@ -1127,8 +1148,8 @@ func EnsureCAPIFinalizers(t *testing.T, ctx context.Context, client crclient.Cli
 				t.Fatalf("failed to get CAPI deployment: %v", err)
 			}
 
-			if !controllerutil.ContainsFinalizer(deployment, hcc.ControlPlaneComponentFinalizer) {
-				t.Fatalf("CAPI deployment '%s' is expected to have finalizer: %s", name, hcc.ControlPlaneComponentFinalizer)
+			if !controllerutil.ContainsFinalizer(deployment, cpconst.ControlPlaneComponentFinalizer) {
+				t.Fatalf("CAPI deployment '%s' is expected to have finalizer: %s", name, cpconst.ControlPlaneComponentFinalizer)
 			}
 		}
 	})
@@ -1313,17 +1334,11 @@ func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node, nodePool *hyperv1.Nod
 	AtLeast(t, Version418)
 	g := NewWithT(t)
 
-	isRHEL9 := IsLessThan(Version50) ||
-		nodePool.Spec.OSImageStream.Name == string(hyperv1.OSImageStreamRHEL9)
-
-	validHandlers := map[string]bool{
-		"crun": false,
-	}
-	if isRHEL9 {
-		validHandlers["runc"] = false
-	}
+	expectedHandlers, err := expectedNodeRuntimeHandlers(nodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to determine expected runtime handlers")
 
 	for _, node := range nodes {
+		validHandlers := maps.Clone(expectedHandlers)
 		g.Expect(node.Status.RuntimeHandlers).NotTo(BeNil(), "node %s is missing runtime handlers", node.Name)
 		for _, handler := range node.Status.RuntimeHandlers {
 			if _, ok := validHandlers[handler.Name]; ok {
@@ -1335,6 +1350,59 @@ func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node, nodePool *hyperv1.Nod
 			g.Expect(present).To(BeTrue(), "node %s is missing runtime handler %s", node.Name, handler)
 		}
 	}
+}
+
+// expectedNodeRuntimeHandlers determines the runtime handlers expected for a NodePool.
+// The observed OS image stream is the source of truth after an upgrade. The requested
+// stream and the NodePool status version provide fallbacks for clusters where the stream
+// status is not available yet. The suite release version is the final legacy fallback,
+// but must not be used when current NodePool state is available because it can describe
+// the release from before an upgrade.
+func expectedNodeRuntimeHandlers(nodePool *hyperv1.NodePool) (map[string]bool, error) {
+	validHandlers := map[string]bool{
+		"crun": false,
+	}
+	usesRHEL9, err := usesRHEL9NodePool(nodePool)
+	if err != nil {
+		return nil, err
+	}
+	if usesRHEL9 {
+		validHandlers["runc"] = false
+	}
+	return validHandlers, nil
+}
+
+// usesRHEL9NodePool reports whether the given NodePool runs RHEL 9 nodes.
+func usesRHEL9NodePool(nodePool *hyperv1.NodePool) (bool, error) {
+	if nodePool == nil {
+		return IsLessThan(Version50), nil
+	}
+
+	// Status reports the stream observed on the nodes and therefore takes precedence
+	// over the requested stream during and after a rollout.
+	switch nodePool.Status.OSImageStream.Name {
+	case hyperv1.OSImageStreamRHEL9:
+		return true, nil
+	case hyperv1.OSImageStreamRHEL10:
+		return false, nil
+	}
+
+	switch nodePool.Spec.OSImageStream.Name {
+	case hyperv1.OSImageStreamRHEL9:
+		return true, nil
+	case hyperv1.OSImageStreamRHEL10:
+		return false, nil
+	}
+
+	if nodePool.Status.Version != "" {
+		version, err := semver.ParseTolerant(nodePool.Status.Version)
+		if err != nil {
+			return false, fmt.Errorf("invalid NodePool status.version %q: %w", nodePool.Status.Version, err)
+		}
+		return version.LT(Version50), nil
+	}
+
+	return IsLessThan(Version50), nil
 }
 
 func getComponentName(pod *corev1.Pod) string {
@@ -1484,18 +1552,6 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 		})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("Capabilities is immutable"))
-	})
-}
-
-func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
-	t.Run("EnsureSecretEncryptedUsingKMS", func(t *testing.T) {
-		ensureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient, "k8s:enc:kms:")
-	})
-}
-
-func EnsureSecretEncryptedUsingKMSV1(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
-	t.Run("EnsureSecretEncryptedUsingKMSV1", func(t *testing.T) {
-		ensureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient, "k8s:enc:kms:v1")
 	})
 }
 
@@ -1807,6 +1863,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 			{label: "app", value: "cloud-network-config-controller"}:        {},
 			{label: "app", value: "vmi-console-debug"}:                      {},
 			{label: "kubevirt.io", value: "virt-launcher"}:                  {}, // virt-launcher pods have no app label
+			{label: "app", value: "containerized-data-importer"}:            {}, // CDI importer pods have hardcoded settings
 		}
 
 		for _, pod := range hcpPods.Items {
@@ -1867,6 +1924,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 			{label: "app", value: "cloud-network-config-controller"}:        {},
 			{label: "app", value: "vmi-console-debug"}:                      {},
 			{label: "kubevirt.io", value: "virt-launcher"}:                  {}, // virt-launcher pods have no app label
+			{label: "app", value: "containerized-data-importer"}:            {}, // CDI importer pods have hardcoded settings
 			{label: "app", value: "csi-snapshot-controller"}:                {},
 			{label: "app", value: "csi-snapshot-webhook"}:                   {},
 			{label: "app", value: "packageserver"}: {
@@ -1951,362 +2009,6 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 			t.Errorf("failed to ensure guest webhooks validated, violating webhook %s was not deleted: %v", guestWebhookConf.Name, err)
 		}
 	})
-}
-
-func skipGlobalPullSecretPreconditions(t *testing.T, entryHostedCluster *hyperv1.HostedCluster, additionalPullSecretFile string) {
-	t.Helper()
-	AtLeast(t, Version419)
-	// TODO (jparrill): Change check of release version `releaseVersion.GT(Version420)` to `releaseVersion.GE(Version420)`
-	// during the backport to 4.20 of this PR https://github.com/openshift/hypershift/pull/6736
-	if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform && entryHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-		t.Skip("test only supported on platform ARO or AWS")
-	}
-
-	if entryHostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform && releaseVersion.LE(Version420) {
-		t.Skip("AWS platform not supported on version 4.20 or less")
-	}
-
-	if strings.Contains(t.Name(), "TestAutoscaling") || strings.Contains(t.Name(), "TestAutoscalingBalancing") || strings.Contains(t.Name(), "TestNodePool") {
-		t.Skip("Skip GlobalPullSecret test for NodePool and Autoscaling tests to avoid issues with the daemon set")
-	}
-
-	// due to this bug: https://issues.redhat.com/browse/OCPBUGS-63743 we should skip the TestCreateClusterCustomConfig
-	// This tests adds a custom network configuration to operatorConfiguration that causes the ovnkube-node and multus DS to crashLoop
-	// after the triggers the kubelet restart
-	if strings.Contains(t.Name(), "TestCreateClusterCustomConfig") {
-		t.Skip("Skip GlobalPullSecret test for TestCreateClusterCustomConfig to avoid issues with OVN")
-	}
-
-	if !netutil.IsPublicHC(entryHostedCluster) {
-		t.Skip("test only supported on public clusters")
-	}
-
-	if additionalPullSecretFile == "" {
-		t.Skip("additional pull secret file not provided via --e2e.additional-pull-secret-file")
-	}
-}
-
-func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster, additionalPullSecretFile string) {
-	t.Run("EnsureGlobalPullSecret", func(t *testing.T) {
-		skipGlobalPullSecretPreconditions(t, entryHostedCluster, additionalPullSecretFile)
-
-		additionalPullSecretReadOnlyE2EData, err := os.ReadFile(additionalPullSecretFile)
-		if err != nil {
-			t.Fatalf("unable to read additional pull secret file %s: %v", additionalPullSecretFile, err)
-		}
-
-		var (
-			dummyImageTagMultiarch = "quay.io/hypershift/sleep:multiarch"
-			dummyImageTag12        = "quay.io/hypershift/sleep:1.2.0"
-
-			// Additional Pull Secret
-			additionalPullSecretName      = "additional-pull-secret"
-			additionalPullSecretNamespace = "kube-system"
-			additionalPullSecretDummyData = []byte(`{"auths": {"quay.io": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
-			oldglobalPullSecretData       []byte
-			dsImage                       string
-			g                             = NewWithT(t)
-		)
-
-		guestClient := WaitForGuestClient(t, ctx, mgmtClient, entryHostedCluster)
-
-		// Get NodePool List
-		npList := &hyperv1.NodePoolList{}
-		err = mgmtClient.List(ctx, npList, crclient.InNamespace(entryHostedCluster.Namespace))
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				t.Skip("NodePool is not found, skipping EnsureGlobalPullSecret test")
-			}
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePoolList")
-		}
-
-		// Get the first NodePool
-		np := &hyperv1.NodePool{}
-		err = mgmtClient.Get(ctx, crclient.ObjectKey{Name: npList.Items[0].Name, Namespace: npList.Items[0].Namespace}, np)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-		g.Expect(np.Spec.Replicas).NotTo(BeNil(), "NodePool replicas are not set")
-
-		if np.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
-			t.Skip("InPlace upgrade type is not supported for GlobalPullSecret")
-		}
-
-		// Use NodePool replicas as the authoritative source for expected node count.
-		nodeCount := *np.Spec.Replicas
-		t.Logf("NodePool replicas: %d", nodeCount)
-
-		// Extract the DaemonSet image early so it is available for all subtests.
-		g.Eventually(func() error {
-			daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
-			if err := guestClient.Get(ctx, crclient.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
-				return err
-			}
-			dsImage = daemonSet.Spec.Template.Spec.Containers[0].Image
-			return nil
-		}, 30*time.Second, 5*time.Second).Should(Succeed(), "DaemonSet is not present")
-
-		// Verify that in-place management-cluster pull secret updates propagate to the guest cluster
-		// without triggering a NodePool rollout.
-		// Read the original pull secret and register cleanup on the parent test
-		// so the restore runs AFTER all subtests complete. This keeps the dummy
-		// entry in place while the verifier DS checks it reached disk.
-		mgmtSecret := &corev1.Secret{}
-		g.Expect(mgmtClient.Get(ctx, crclient.ObjectKey{
-			Namespace: entryHostedCluster.Namespace,
-			Name:      entryHostedCluster.Spec.PullSecret.Name,
-		}, mgmtSecret)).To(Succeed(), "failed to get management-cluster pull secret")
-
-		originalData := make([]byte, len(mgmtSecret.Data[corev1.DockerConfigJsonKey]))
-		copy(originalData, mgmtSecret.Data[corev1.DockerConfigJsonKey])
-
-		t.Cleanup(func() {
-			t.Log("Restoring original management-cluster pull secret data")
-			fresh := &corev1.Secret{}
-			if err := mgmtClient.Get(ctx, crclient.ObjectKey{
-				Namespace: entryHostedCluster.Namespace,
-				Name:      entryHostedCluster.Spec.PullSecret.Name,
-			}, fresh); err != nil {
-				t.Logf("Warning: failed to re-read pull secret for cleanup: %v", err)
-				return
-			}
-			fresh.Data[corev1.DockerConfigJsonKey] = originalData
-			if err := mgmtClient.Update(ctx, fresh); err != nil {
-				t.Logf("Warning: failed to restore pull secret: %v", err)
-			}
-		})
-
-		t.Run("When management-cluster hostedCluster.Spec.PullSecret is updated in-place it should propagate to guest without rollout", func(t *testing.T) {
-			CPOAtLeast(t, Version422, entryHostedCluster)
-			g := NewWithT(t)
-			t.Logf("Reading management-cluster pull secret %s/%s", entryHostedCluster.Namespace, entryHostedCluster.Spec.PullSecret.Name)
-
-			// Merge a dummy auth entry into the pull secret without removing existing auths
-			type dockerConfigJSON struct {
-				Auths map[string]json.RawMessage `json:"auths"`
-			}
-			var cfg dockerConfigJSON
-			g.Expect(json.Unmarshal(originalData, &cfg)).To(Succeed(), "failed to parse pull secret")
-			cfg.Auths["e2e-dummy.example.com"] = json.RawMessage(`{"auth":"e2e-dummy-token"}`)
-			modifiedData, err := json.Marshal(cfg)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to marshal modified pull secret")
-
-			t.Log("Patching management-cluster pull secret with dummy auth entry")
-			mgmtSecret.Data[corev1.DockerConfigJsonKey] = modifiedData
-			g.Expect(mgmtClient.Update(ctx, mgmtSecret)).To(Succeed(), "failed to update management-cluster pull secret")
-
-			// Wait for openshift-config/pull-secret in the guest cluster to pick up the change.
-			// Propagation path: mgmt Secret → HO syncs to CP namespace → HCCO reconciles to guest.
-			// Log each stage so failures can be triaged (OCPBUGS-98465).
-			cpNamespace := manifests.HostedControlPlaneNamespace(entryHostedCluster.Namespace, entryHostedCluster.Name)
-			t.Log("Waiting for openshift-config/pull-secret to update in guest cluster")
-			g.Eventually(func() bool {
-				// Stage 1: check if HO synced the pull secret to the CP namespace
-				cpSecret := &corev1.Secret{}
-				if err := mgmtClient.Get(ctx, crclient.ObjectKey{Name: "pull-secret", Namespace: cpNamespace}, cpSecret); err != nil {
-					t.Logf("CP namespace pull-secret not readable: %v", err)
-				} else {
-					cpHasDummy := bytes.Contains(cpSecret.Data[corev1.DockerConfigJsonKey], []byte("e2e-dummy.example.com"))
-					t.Logf("CP namespace %s/pull-secret has dummy entry: %v", cpNamespace, cpHasDummy)
-				}
-
-				// Stage 2: check if HCCO propagated to the guest cluster
-				guestSecret := &corev1.Secret{}
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: "pull-secret", Namespace: "openshift-config"}, guestSecret); err != nil {
-					t.Logf("guest openshift-config/pull-secret not readable: %v", err)
-					return false
-				}
-				return bytes.Contains(guestSecret.Data[corev1.DockerConfigJsonKey], []byte("e2e-dummy.example.com"))
-			}, 150*time.Second, 5*time.Second).Should(BeTrue(), "openshift-config/pull-secret did not propagate dummy entry")
-
-			// Wait for kube-system/original-pull-secret to pick up the change (globalps controller path)
-			t.Log("Waiting for kube-system/original-pull-secret to update in guest cluster")
-			g.Eventually(func() bool {
-				secret := hccomanifests.OriginalPullSecret()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: secret.Name, Namespace: secret.Namespace}, secret); err != nil {
-					t.Logf("guest kube-system/original-pull-secret not readable: %v", err)
-					return false
-				}
-				return bytes.Contains(secret.Data[corev1.DockerConfigJsonKey], []byte("e2e-dummy.example.com"))
-			}, 150*time.Second, 5*time.Second).Should(BeTrue(), "kube-system/original-pull-secret did not propagate dummy entry")
-
-			// Verify no NodePool rollout was triggered
-			t.Log("Verifying no NodePool rollout was triggered")
-			nodePool := &hyperv1.NodePool{}
-			g.Expect(mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), nodePool)).To(Succeed(), "failed to get NodePool")
-			for _, cond := range nodePool.Status.Conditions {
-				if cond.Type == hyperv1.NodePoolUpdatingConfigConditionType {
-					g.Expect(string(cond.Status)).To(Equal(string(metav1.ConditionFalse)),
-						"UpdatingConfig should be False — in-place pull secret update must not trigger a rollout")
-					break
-				}
-			}
-
-			nodeList := &corev1.NodeList{}
-			g.Expect(guestClient.List(ctx, nodeList, crclient.MatchingLabels{
-				hyperv1.NodePoolLabel: np.Name,
-			})).To(Succeed(), "failed to list nodes")
-			g.Expect(len(nodeList.Items)).To(Equal(int(nodeCount)), "node count changed — unexpected rollout")
-
-			t.Log("Pull secret propagated to guest cluster without triggering rollout")
-		})
-
-		// Verify the on-disk kubelet config.json reflects the updated pull secret.
-		// Separated from the propagation subtest so DS readiness failures are
-		// attributed correctly and don't mask propagation issues (OCPBUGS-98465).
-		t.Run("Check if the on-disk kubelet config.json matches the cluster pull secret", func(t *testing.T) {
-			VerifyKubeletConfigWithDaemonSet(t, ctx, guestClient, dsImage, nodeCount)
-		})
-
-		// Verify that nodes from Replace NodePools have the globalPS label applied via CAPI propagation.
-		// This label is set on the MachineDeployment template so it flows to Nodes at creation time.
-		t.Run("Check Replace nodes have globalPS label from CAPI propagation", func(t *testing.T) {
-			globalPSLabelKey := "hypershift.openshift.io/nodepool-globalps-enabled"
-			g.Eventually(func() error {
-				nodeList := &corev1.NodeList{}
-				if err := guestClient.List(ctx, nodeList, crclient.MatchingLabels{
-					hyperv1.NodePoolLabel: np.Name,
-				}); err != nil {
-					return fmt.Errorf("failed to list nodes: %w", err)
-				}
-				if len(nodeList.Items) != int(nodeCount) {
-					return fmt.Errorf("expected %d nodes for NodePool %s, got %d", nodeCount, np.Name, len(nodeList.Items))
-				}
-				for _, node := range nodeList.Items {
-					if node.Labels[globalPSLabelKey] != "true" {
-						return fmt.Errorf("node %s does not have the globalPS label", node.Name)
-					}
-				}
-				t.Logf("All %d nodes have the globalPS label", len(nodeList.Items))
-				return nil
-			}, 30*time.Second, 5*time.Second).Should(Succeed())
-		})
-
-		// Create the additional-pull-secret secret in the DataPlane using the dummy pull secret.
-		// The dummy pull secret is not authorized to pull restricted images.
-		err = createAdditionalPullSecret(ctx, guestClient, additionalPullSecretDummyData, additionalPullSecretName, additionalPullSecretNamespace)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to create additional-pull-secret secret")
-
-		// Check if HCCO generates the GlobalPullSecret secret in the kube-system namespace in the DataPlane
-		t.Run("Check if GlobalPullSecret secret is in the right place at Dataplane", func(t *testing.T) {
-			globalPullSecret := hccomanifests.GlobalPullSecret()
-			g.Eventually(func() error {
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
-					return err
-				}
-				g.Expect(globalPullSecret.Data).NotTo(BeEmpty(), "global-pull-secret secret is empty")
-				g.Expect(globalPullSecret.Data[corev1.DockerConfigJsonKey]).NotTo(BeEmpty(), "global-pull-secret secret is empty")
-				oldglobalPullSecretData = globalPullSecret.Data[corev1.DockerConfigJsonKey]
-				return nil
-			}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is not present")
-		})
-
-		t.Run("Wait for critical DaemonSets to be ready - first check", func(t *testing.T) {
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", nodeCount)).To(Succeed())
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
-			konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, nodeCount)).To(Succeed())
-		})
-
-		// Create a pod which uses the restricted image, should fail
-		t.Run("Create a pod which uses the restricted image, should fail", func(t *testing.T) {
-			shouldFail := true
-			runAndCheckPod(t, ctx, guestClient, dummyImageTagMultiarch, additionalPullSecretNamespace, "global-pull-secret-fail", shouldFail)
-		})
-
-		// Modify the additional-pull-secret secret in the DataPlane
-		t.Run("Modify the additional-pull-secret secret in the DataPlane by adding the valid pull secret", func(t *testing.T) {
-			additionalPullSecret := hccomanifests.AdditionalPullSecret()
-			err := guestClient.Get(ctx, crclient.ObjectKey{Name: additionalPullSecret.Name, Namespace: additionalPullSecret.Namespace}, additionalPullSecret)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get additional-pull-secret secret")
-			additionalPullSecret.Data[corev1.DockerConfigJsonKey] = additionalPullSecretReadOnlyE2EData
-			err = guestClient.Update(ctx, additionalPullSecret)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to update additional-pull-secret secret")
-		})
-
-		// Wait for all nodes to return to Ready state after kubelet restart triggered by pull secret update
-		t.Log("Waiting for nodes to stabilize after pull secret update")
-		WaitForReadyNodesByNodePool(t, ctx, guestClient, np, entryHostedCluster.Spec.Platform.Type)
-
-		// Check if GlobalPullSecret secret is updated in the DataPlane
-		t.Run("Check if GlobalPullSecret secret is updated in the DataPlane", func(t *testing.T) {
-			globalPullSecret := hccomanifests.GlobalPullSecret()
-			g.Eventually(func() error {
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
-					return err
-				}
-				g.Expect(globalPullSecret.Data[corev1.DockerConfigJsonKey]).NotTo(BeEmpty(), "global-pull-secret secret is empty")
-				if bytes.Equal(globalPullSecret.Data[corev1.DockerConfigJsonKey], oldglobalPullSecretData) {
-					return fmt.Errorf("global-pull-secret secret is equal to the old global-pull-secret secret, should be different")
-				}
-				return nil
-			}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is not updated")
-		})
-
-		t.Run("Wait for critical DaemonSets to be ready - second check", func(t *testing.T) {
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", nodeCount)).To(Succeed())
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
-			konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, nodeCount)).To(Succeed())
-		})
-
-		// Check if we can run a pod with the restricted image
-		t.Run("Create a pod which uses the restricted image, should succeed", func(t *testing.T) {
-			shouldFail := false
-			runAndCheckPod(t, ctx, guestClient, dummyImageTag12, additionalPullSecretNamespace, "global-pull-secret-success", shouldFail)
-		})
-
-		// Delete the additional-pull-secret secret in the DataPlane
-		t.Log("Deleting the additional-pull-secret secret in the DataPlane")
-		err = guestClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: additionalPullSecretName, Namespace: additionalPullSecretNamespace}})
-		g.Expect(err).NotTo(HaveOccurred(), "failed to delete additional-pull-secret secret")
-
-		// Check if the GlobalPullSecret secret is deleted in the DataPlane
-		t.Run("Check if the GlobalPullSecret secret is deleted in the DataPlane", func(t *testing.T) {
-			g.Eventually(func() error {
-				globalPullSecret := hccomanifests.GlobalPullSecret()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
-					if !apierrors.IsNotFound(err) {
-						return err
-					}
-					return nil
-				}
-				return fmt.Errorf("global-pull-secret secret is still present")
-			}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is still present")
-		})
-
-		// Wait for all nodes to return to Ready state after kubelet restart triggered by pull secret deletion
-		t.Log("Waiting for nodes to stabilize after pull secret deletion")
-		WaitForReadyNodesByNodePool(t, ctx, guestClient, np, entryHostedCluster.Spec.Platform.Type)
-
-		// Wait for all DaemonSets to be ready after nodes stabilize
-		t.Run("Wait for pull secret synchronization to stabilize across all nodes", func(t *testing.T) {
-			t.Log("Waiting for GlobalPullSecretDaemonSet to process the deletion and stabilize all nodes")
-			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
-		})
-
-		// Check if the config.json is updated in all of the nodes
-		t.Run("Check if the config.json is correct in all of the nodes", func(t *testing.T) {
-			VerifyKubeletConfigWithDaemonSet(t, ctx, guestClient, dsImage, nodeCount)
-		})
-	})
-}
-
-func createAdditionalPullSecret(ctx context.Context, guestClient crclient.Client, pullSecretData []byte, registrySecretName, registryNamespace string) error {
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      registrySecretName,
-			Namespace: registryNamespace,
-		},
-		Type: corev1.SecretTypeDockerConfigJson,
-		Data: map[string][]byte{
-			corev1.DockerConfigJsonKey: pullSecretData,
-		},
-	}
-
-	if err := guestClient.Create(ctx, secret); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("failed to create secret: %w", err)
-	}
-
-	return nil
 }
 
 // waitForDaemonSetReady waits for a DaemonSet to have all pods ready.
@@ -2395,7 +2097,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 
 		// Generate a custom certificate for the KAS
 		t.Log("Generating custom certificate with DNS name", customApiServerHost)
-		customCert, customKey, err := GenerateCustomCertificate([]string{customApiServerHost}, 24*time.Hour)
+		customCert, customKey, err := v2util.GenerateCustomCertificate([]string{customApiServerHost}, 24*time.Hour)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to generate custom certificate")
 
 		// Create secret with the custom certificate
@@ -2540,6 +2242,112 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			err := kbCrclient.Get(ctx, types.NamespacedName{Name: "cluster"}, infra)
 			g.Expect(err).ToNot(HaveOccurred(), "failed to get HostedCluster Infrastructure with KAS custom kubeconfig")
 			g.Expect(infra.Status.APIServerURL).To(ContainSubstring(hc.Spec.KubeAPIServerDNSName), "Infrastructure APIServerURL does not contains the KubeAPIServerDNSName set in the HostedCluster")
+		})
+		t.Run("EnsureKASReachableViaSVCURL", func(t *testing.T) {
+			g := NewWithT(t)
+			t.Log("Checking KAS is still reachable via the internal SVC URL after custom cert configuration")
+
+			// Fetch the service-network-admin-kubeconfig secret from the HCP namespace.
+			// This kubeconfig uses the in-cluster kube-apiserver service URL and validates
+			// that the KAS serving cert chain still covers the service name.
+			svcKubeconfig := hcpinternalmanifests.KASServiceKubeconfigSecret(hcpNamespace)
+			err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(svcKubeconfig), svcKubeconfig)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to get service-network-admin-kubeconfig secret from HCP namespace")
+
+			svcKubeconfigData, ok := svcKubeconfig.Data["kubeconfig"]
+			g.Expect(ok).To(BeTrue(), "service-network-admin-kubeconfig secret missing 'kubeconfig' key")
+
+			svcConfig, err := clientcmd.RESTConfigFromKubeConfig(svcKubeconfigData)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to parse service-network-admin-kubeconfig")
+
+			// The kubeconfig server URL uses the short service name (kube-apiserver:<port>)
+			// which only resolves from pods in the HCP namespace. The e2e binary runs
+			// outside that namespace, so port-forward to a running KAS pod and rewrite
+			// Host to localhost. ServerName keeps the original short service name so TLS
+			// validates the serving cert against it.
+			// Same pattern as cmd/cluster/core/dump.go (--dump-guest-cluster).
+			mgmtConfig, err := GetConfig()
+			g.Expect(err).ToNot(HaveOccurred(), "failed to get management cluster REST config")
+			mgmtClientset, err := kubeclient.NewForConfig(mgmtConfig)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to create management cluster clientset")
+
+			podPort := netutil.KASPodPortFromHostedCluster(entryHostedCluster)
+
+			// Validate connectivity to KAS via the SVC URL by performing a SelfSubjectReview.
+			// This confirms the KAS serving cert still covers the internal service name even
+			// after the custom DNS name and certificate have been configured.
+			// Fail fast on cert-specific x509 errors (the exact regression this test targets)
+			// and retry on transient connection errors.
+			// Pod selection, port-forward, and client build are inside the loop so that
+			// a KAS pod reschedule during the window re-establishes the tunnel.
+			var activeStopChan chan struct{}
+			defer func() {
+				if activeStopChan != nil {
+					close(activeStopChan)
+				}
+			}()
+			g.Eventually(func() error {
+				// Tear down previous port-forward if any.
+				if activeStopChan != nil {
+					close(activeStopChan)
+				}
+				activeStopChan = make(chan struct{})
+
+				kasPod, err := forwarder.GetRunningKubeAPIServerPod(ctx, mgmtClient, hcpNamespace)
+				if err != nil {
+					t.Logf("Failed to find running KAS pod, retrying: %v", err)
+					return err
+				}
+
+				pf := &forwarder.PortForwarder{
+					Namespace: hcpNamespace,
+					PodName:   kasPod.Name,
+					Client:    mgmtClientset,
+					Config:    mgmtConfig,
+					Out:       io.Discard,
+					ErrOut:    io.Discard,
+				}
+				if err := pf.ForwardPorts([]string{fmt.Sprintf("0:%d", podPort)}, activeStopChan); err != nil {
+					t.Logf("Port-forward failed, retrying: %v", err)
+					return err
+				}
+
+				forwardedPorts, err := pf.GetPorts()
+				if err != nil {
+					t.Logf("Failed to get forwarded ports, retrying: %v", err)
+					return err
+				}
+				if len(forwardedPorts) == 0 {
+					return fmt.Errorf("no forwarded ports returned")
+				}
+
+				attemptConfig := *svcConfig
+				attemptConfig.Host = fmt.Sprintf("https://localhost:%d", forwardedPorts[0].Local)
+				attemptConfig.TLSClientConfig.ServerName = "kube-apiserver"
+				attemptConfig.QPS = -1
+				attemptConfig.Burst = -1
+
+				svcKubeClient, err := kubeclient.NewForConfig(&attemptConfig)
+				if err != nil {
+					t.Logf("Failed to create kube client, retrying: %v", err)
+					return err
+				}
+
+				_, err = svcKubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+				if err != nil {
+					var unknownAuthorityErr x509.UnknownAuthorityError
+					var certInvalidErr x509.CertificateInvalidError
+					var hostnameErr x509.HostnameError
+					if errors.As(err, &unknownAuthorityErr) || errors.As(err, &certInvalidErr) || errors.As(err, &hostnameErr) {
+						t.Logf("x509 cert error detected (failing fast): %v", err)
+						return StopTrying("x509 cert error: serving cert does not cover the kube-apiserver service name").Wrap(err)
+					}
+					t.Logf("Transient connectivity error, retrying: %v", err)
+					return err
+				}
+				t.Log("Successfully verified KAS is reachable via SVC URL")
+				return nil
+			}, 5*time.Minute, 10*time.Second).Should(Succeed(), "KAS is not reachable via the internal SVC URL after custom cert configuration")
 		})
 
 		// removing KubeAPIDNSName from HC
@@ -2755,11 +2563,14 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 			t.Errorf("No ValidatingAdmissionPolicies found")
 		}
 		requiredVAPs := []string{
-			hccokasvap.AdmissionPolicyNameConfig,
-			hccokasvap.AdmissionPolicyNameMirror,
-			hccokasvap.AdmissionPolicyNameICSP,
-			hccokasvap.AdmissionPolicyNameInfra,
-			hccokasvap.AdmissionPolicyNameNTOMirroredConfigs,
+			kasconst.AdmissionPolicyNameConfig,
+			kasconst.AdmissionPolicyNameMirror,
+			kasconst.AdmissionPolicyNameICSP,
+			kasconst.AdmissionPolicyNameInfra,
+			kasconst.AdmissionPolicyNameNTOMirroredConfigs,
+		}
+		if IsGreaterThanOrEqualTo(Version51) {
+			requiredVAPs = append(requiredVAPs, kasconst.AdmissionPolicyNameRBAC)
 		}
 		presentVAPs := []string{}
 		for _, vap := range validatingAdmissionPolicies.Items {
@@ -2785,6 +2596,26 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		apiServerCP.Spec.Audit.Profile = configv1.AllRequestBodiesAuditProfileType
 		err = guestClient.Update(ctx, apiServerCP)
 		g.Expect(err).To(HaveOccurred(), fmt.Sprintf("Failed block apiservers configuration update: %v", err))
+	})
+	t.Run("EnsureValidatingAdmissionPoliciesBlockRBACDeletion", func(t *testing.T) {
+		CPOAtLeast(t, Version51, hc)
+		g := NewWithT(t)
+		t.Log("Checking that VAP blocks deletion of protected ClusterRoleBindings")
+		// The admin kubeconfig authenticates as system:admin, which the policy whitelists so the
+		// KAS bootstrap container can apply these bindings. Impersonate an unrelated user to
+		// exercise the path the policy actually guards.
+		impersonatingClient := guestClientImpersonating(t, ctx, mgmtClient, hc, "hypershift-e2e-rbac-vap-test")
+		for _, name := range []string{"hcco-cluster-admin", "kas-bootstrap-container-cluster-admin"} {
+			crb := &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: name}}
+			err := impersonatingClient.Get(ctx, crclient.ObjectKeyFromObject(crb), crb)
+			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to get %s ClusterRoleBinding: %v", name, err))
+			// Dry run: admission still evaluates the policy, but a cluster missing the VAP is not
+			// left without a binding HCCO depends on.
+			err = impersonatingClient.Delete(ctx, crb, crclient.DryRunAll)
+			g.Expect(err).To(HaveOccurred(), "VAP should block deletion of %s ClusterRoleBinding", name)
+			g.Expect(err.Error()).To(ContainSubstring("ValidatingAdmissionPolicy"),
+				fmt.Sprintf("rejection should come from a ValidatingAdmissionPolicy, got: %v", err))
+		}
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesDontBlockStatusModifications", func(t *testing.T) {
 		g := NewWithT(t)
@@ -2827,6 +2658,8 @@ const (
 	// TODO (jparrill): We need to separate the metrics.go from the main pkg in the hypershift-operator.
 	//     Delete these references when it's done and import it from there
 	HypershiftOperatorInfoName = "hypershift_operator_info"
+
+	cpoMetricsPort = "8080"
 )
 
 func extractDataFromFamilies(metricFamilies map[string]*dto.MetricFamily, metric, labelKey, labelValue string) []*dto.LabelPair {
@@ -2919,6 +2752,44 @@ func ValidateMetrics(t *testing.T, ctx context.Context, client crclient.Client, 
 		})
 		if err != nil {
 			t.Errorf("Failed to validate all metrics: %v", err)
+		}
+	})
+}
+
+// ValidateCPOMetrics verifies that KAS health metrics are exposed from the
+// control-plane-operator pod in the HCP namespace.
+func ValidateCPOMetrics(t *testing.T, ctx context.Context, c crclient.Client, hc *hyperv1.HostedCluster) {
+	t.Run("When KAS health metrics are exposed, it should contain availability and latency data", func(t *testing.T) {
+		AtLeast(t, Version51)
+		if hc.Spec.Platform.Type == hyperv1.NonePlatform {
+			t.Skip("skipping on None platform")
+		}
+
+		kasMetrics := []string{
+			kas.KASAvailableMetricName,
+			kas.KASRequestDurationMetricName,
+		}
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+
+		err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+			mf, err := GetMetricsFromPod(ctx, c, "control-plane-operator", "control-plane-operator", hcpNamespace, cpoMetricsPort)
+			if err != nil {
+				t.Logf("unable to get CPO metrics: %v", err)
+				return false, nil
+			}
+			for _, metricName := range kasMetrics {
+				// These metrics are emitted without labels, so check family presence directly
+				// rather than using ValidateMetricPresence which relies on label iteration.
+				family, ok := mf[metricName]
+				if !ok || len(family.Metric) == 0 {
+					t.Logf("Expected results for metric %q, found none", metricName)
+					return false, nil
+				}
+			}
+			return true, nil
+		})
+		if err != nil {
+			t.Errorf("failed to validate KAS health metrics: %v", err)
 		}
 	})
 }
@@ -3146,58 +3017,9 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 }
 
 // ValidateHostedClusterConditions checks that a HostedCluster's conditions and status fields
-// match expected values. Pass nil for uc when calling outside of an upgrade test context.
+// match expected values. Pass nil for upgradeContext when calling outside of an upgrade test context.
 func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration, upgradeContext *UpgradeContext) {
-	expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
-	// OCPBUGS-59885: Ignore KubeVirtNodesLiveMigratable in e2e; CI envs may lack RWX-capable PVCs, causing false failures
-	delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
-	if !hasWorkerNodes {
-		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
-		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
-		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
-		expectedConditions[hyperv1.DataPlaneConnectionAvailable] = metav1.ConditionUnknown
-		expectedConditions[hyperv1.ControlPlaneConnectionAvailable] = metav1.ConditionUnknown
-	}
-	if IsLessThan(Version415) {
-		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
-	}
-	if IsLessThan(Version421) {
-		delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
-	}
-
-	if IsLessThan(Version422) {
-		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
-		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
-	}
-
-	// TODO: TEMPORARY - Remove this once ControlPlaneConnectionAvailable condition is merged and stable.
-	// Exclude ControlPlaneConnectionAvailable during upgrade tests as the condition
-	// may not be present in all builds during the upgrade window.
-	if upgradeContext != nil {
-		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
-	}
-
-	if IsLessThan(Version423) {
-		delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
-	}
-
-	// TODO: TEMPORARY - Remove this once ConfigOperatorReconciliationSucceeded condition is merged and stable.
-	// Exclude ConfigOperatorReconciliationSucceeded during upgrade tests as the condition
-	// may not be present in all builds during the upgrade window.
-	if upgradeContext != nil {
-		delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
-	}
-
-	var predicates []Predicate[*hyperv1.HostedCluster]
-	for conditionType, conditionStatus := range expectedConditions {
-		predicates = append(predicates, ConditionPredicate[*hyperv1.HostedCluster](Condition{
-			Type:   string(conditionType),
-			Status: conditionStatus,
-		}))
-	}
+	predicates := []Predicate[*hyperv1.HostedCluster]{hostedClusterConditionsPredicate(hasWorkerNodes, upgradeContext)}
 
 	if IsGreaterThanOrEqualTo(Version422) {
 		cpvFieldPath := "status.controlPlaneVersion"
@@ -3219,6 +3041,68 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 			return hc, err
 		}, predicates, WithTimeout(timeout), WithoutConditionDump(),
 	)
+}
+
+// hostedClusterConditionsPredicate evaluates expectations against each freshly fetched cluster.
+func hostedClusterConditionsPredicate(hasWorkerNodes bool, upgradeContext *UpgradeContext) Predicate[*hyperv1.HostedCluster] {
+	return func(hc *hyperv1.HostedCluster) (bool, string, error) {
+		expectedConditions := conditions.ExpectedHCConditions(hc)
+		// OCPBUGS-59885: Ignore KubeVirtNodesLiveMigratable in e2e; CI envs may lack RWX-capable PVCs, causing false failures
+		delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
+		if !hasWorkerNodes {
+			expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
+			expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
+			expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
+			expectedConditions[hyperv1.DataPlaneConnectionAvailable] = metav1.ConditionUnknown
+			expectedConditions[hyperv1.ControlPlaneConnectionAvailable] = metav1.ConditionUnknown
+		}
+		if IsLessThan(Version415) {
+			// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+		}
+		if IsLessThan(Version421) {
+			delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
+		}
+
+		if IsLessThan(Version422) {
+			delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
+			delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
+		}
+
+		// TODO: TEMPORARY - Remove this once ControlPlaneConnectionAvailable condition is merged and stable.
+		// Exclude ControlPlaneConnectionAvailable during upgrade tests as the condition
+		// may not be present in all builds during the upgrade window.
+		if upgradeContext != nil {
+			delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
+		}
+
+		if IsLessThan(Version423) {
+			delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
+		}
+
+		// TODO: TEMPORARY - Remove this once ConfigOperatorReconciliationSucceeded condition is merged and stable.
+		// Exclude ConfigOperatorReconciliationSucceeded during upgrade tests as the condition
+		// may not be present in all builds during the upgrade window.
+		if upgradeContext != nil {
+			delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
+		}
+		var reasons []string
+		for conditionType, conditionStatus := range expectedConditions {
+			done, reason, err := ConditionPredicate[*hyperv1.HostedCluster](Condition{
+				Type:   string(conditionType),
+				Status: conditionStatus,
+			})(hc)
+			if err != nil {
+				return false, reason, err
+			}
+			if !done {
+				reasons = append(reasons, reason)
+			}
+		}
+		return len(reasons) == 0, strings.Join(reasons, "; "), nil
+	}
 }
 
 func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -3320,12 +3204,7 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 			},
 		}
 
-		for _, pod := range podList.Items {
-			// Skip KubeVirt VM worker node related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// SRO is being removed in 4.18, not worth correcting the tolerations on back releases
 			if pod.Labels["name"] == "shared-resource-csi-driver-operator" {
 				continue
@@ -3495,7 +3374,7 @@ func EnsurePayloadArchSetCorrectly(t *testing.T, ctx context.Context, client crc
 			},
 			[]Predicate[*hyperv1.HostedCluster]{
 				func(cluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
-					imageMetadataProvider := &hyperutil.RegistryClientImageMetadataProvider{}
+					imageMetadataProvider := &imageregistry.RegistryClientImageMetadataProvider{}
 					payloadArch, err := hyperutil.DetermineHostedClusterPayloadArch(ctx, client, cluster, imageMetadataProvider)
 					if err != nil {
 						return false, "failed to get hc payload arch", err
@@ -3522,12 +3401,7 @@ func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Clien
 		}
 
 		var podsWithoutLabel []string
-		for _, pod := range podList.Items {
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// Ensure that each pod in the HCP has the custom label
 			if value, exist := pod.Labels["hypershift-e2e-test-label"]; !exist || value != "test" {
 				podsWithoutLabel = append(podsWithoutLabel, pod.Name)
@@ -3551,12 +3425,7 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 		}
 
 		var podsWithoutToleration []string
-		for _, pod := range podList.Items {
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// Ensure that each pod in the HCP has the custom toleration
 			found := false
 			for _, toleration := range pod.Spec.Tolerations {
@@ -3590,12 +3459,7 @@ func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, h
 		}
 
 		var podsWithoutAppLabel []string
-		for _, pod := range podList.Items {
-			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
-				continue
-			}
-
+		for _, pod := range filterControlPlanePods(podList.Items) {
 			// Ensure that each pod in the HCP has an app label set
 			val, ok := pod.Labels["app"]
 			if ok && val != "" {
@@ -3883,29 +3747,6 @@ func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g 
 	})
 }
 
-// GenerateCustomCertificate generates a self-signed certificate for the given DNS names
-func GenerateCustomCertificate(dnsNames []string, validity time.Duration) ([]byte, []byte, error) {
-	if len(dnsNames) == 0 {
-		return nil, nil, fmt.Errorf("no DNS names provided")
-	}
-
-	cfg := &certs.CertCfg{
-		Subject:      pkix.Name{CommonName: dnsNames[0], Organization: []string{"kubernetes"}, OrganizationalUnit: []string{"test"}},
-		KeyUsages:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		Validity:     validity,
-		DNSNames:     dnsNames,
-		IsCA:         false,
-	}
-
-	key, crt, err := certs.GenerateSelfSignedCertificate(cfg)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate self-signed certificate: %w", err)
-	}
-
-	return certs.CertToPem(crt), certs.PrivateKeyToPem(key), nil
-}
-
 // EnsureOpenshiftSamplesCapabilityDisabled validates the expectations for when OpenShiftSamplesCapability is Disabled
 func EnsureOpenshiftSamplesCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
 	t.Run("EnsureOpenshiftSamplesCapabilityDisabled", func(t *testing.T) {
@@ -4120,94 +3961,6 @@ func EnsureIngressCapabilityDisabled(ctx context.Context, t *testing.T, clients 
 	})
 }
 
-// runAndCheckPod creates a pod which uses the restricted image and checks if it is running using sleep command.
-// It also deletes the pod after it is running.
-// Added an arguument shouldFail to check if the pod should fail to run.
-func runAndCheckPod(t *testing.T, ctx context.Context, guestClient crclient.Client, imageTag, namespace, name string, shouldFail bool) {
-	g := NewWithT(t)
-	t.Log("Creating a pod which uses the restricted image")
-
-	// Retry configuration
-	const maxRetries = 3
-	const retryDelay = 5 * time.Second
-
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-pod", name),
-			Namespace: namespace,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    fmt.Sprintf("%s-container", name),
-					Image:   imageTag,
-					Command: []string{"sleep", "10m"},
-				},
-			},
-		},
-	}
-
-	// Retry loop for pod creation
-	var createErr error
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		t.Logf("Attempt %d/%d: Creating pod", attempt, maxRetries)
-
-		// Try to create the pod
-		createErr = guestClient.Create(ctx, pod)
-		if createErr == nil {
-			t.Logf("Successfully created pod %s in namespace %s on attempt %d", pod.Name, pod.Namespace, attempt)
-			break
-		}
-
-		// If this is not the last attempt, log the error and retry
-		if attempt < maxRetries {
-			t.Logf("Failed to create pod on attempt %d: %v, retrying in %v...", attempt, createErr, retryDelay)
-			time.Sleep(retryDelay)
-
-			// Clean up any partially created pod before retrying
-			if err := guestClient.Delete(ctx, pod); err != nil && !apierrors.IsNotFound(err) {
-				t.Logf("Warning: failed to clean up pod before retry: %v", err)
-			}
-		}
-	}
-
-	// Check if all attempts failed
-	if createErr != nil {
-		t.Fatalf("Failed to create pod after %d attempts. Last error: %v", maxRetries, createErr)
-	}
-
-	t.Logf("Created pod %s in namespace %s", pod.Name, pod.Namespace)
-	g.Eventually(func() error {
-		pod := &corev1.Pod{}
-		err := guestClient.Get(ctx, crclient.ObjectKey{Name: fmt.Sprintf("%s-pod", name), Namespace: namespace}, pod)
-		if err != nil {
-			return err
-		}
-		if shouldFail {
-			if pod.Status.Phase == corev1.PodFailed ||
-				(len(pod.Status.ContainerStatuses) > 0 &&
-					((pod.Status.ContainerStatuses[0].State.Waiting != nil &&
-						pod.Status.ContainerStatuses[0].State.Waiting.Reason == "ImagePullBackOff") ||
-						(pod.Status.ContainerStatuses[0].State.Terminated != nil))) {
-				return nil
-			}
-			return fmt.Errorf("pod should fail but is not in failure state yet, current phase: %s", pod.Status.Phase)
-		} else {
-			t.Logf("Pod phase: %s, shouldFail: %t", pod.Status.Phase, shouldFail)
-			if pod.Status.Phase != corev1.PodRunning {
-				return fmt.Errorf("pod is not running yet, current phase: %s", pod.Status.Phase)
-			}
-			t.Logf("Pod is running! Continuing...")
-			return nil
-		}
-	}, 7*time.Minute, 5*time.Second).Should(Succeed(), "pod is not running")
-
-	t.Log("Pod is in the desired state, deleting it now")
-	err := guestClient.Delete(ctx, pod)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to delete pod")
-	t.Log("Deleted the pod")
-}
-
 // isCertificateTriggeredRestart checks if a kube-controller-manager restart was triggered by certificate rotation
 func isCertificateTriggeredRestart(ctx context.Context, client crclient.Client, pod *corev1.Pod) bool {
 	// Get the HostedControlPlane to check for certificate rotation annotations
@@ -4238,7 +3991,7 @@ func hasAzureCSIDriverUIDSupport(t *testing.T, ctx context.Context, client crcli
 	}
 
 	releaseProvider := releaseinfo.RegistryClientProvider{}
-	version, err := hyperutil.GetPayloadVersion(ctx, &releaseProvider, hostedCluster, pullSecret)
+	version, err := imageregistry.GetPayloadVersion(ctx, &releaseProvider, hostedCluster, pullSecret)
 	if err != nil {
 		t.Logf("Warning: Failed to get payload version for Azure CSI driver UID support check: %v. Assuming no UID support.", err)
 		return false

@@ -32,6 +32,7 @@ func (c *openshiftControllerManager) NeedsManagementKASAccess() bool {
 
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &openshiftControllerManager{}).
+		WithAdaptFunction(adaptDeployment).
 		WithManifestAdapter(
 			"config.yaml",
 			component.WithAdaptFunction(adaptConfigMap),

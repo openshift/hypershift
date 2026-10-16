@@ -16,6 +16,15 @@ func PullSecret(ns string) *corev1.Secret {
 	}
 }
 
+func CombinedPullSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "combined-pull-secret",
+			Namespace: ns,
+		},
+	}
+}
+
 func DefaultServiceAccount(ns string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{

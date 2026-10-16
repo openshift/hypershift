@@ -412,11 +412,3 @@ func ReconcileRouteStatus(route *routev1.Route, canonicalHostname string) {
 func UseSharedIngress() bool {
 	return azureutil.IsAroHCP()
 }
-
-func KasRouteHostname(hcp *hyperv1.HostedControlPlane) string {
-	kasPublishStrategy := netutil.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
-	if kasPublishStrategy.Route == nil {
-		return ""
-	}
-	return kasPublishStrategy.Route.Hostname
-}

@@ -2,8 +2,9 @@ package azure
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
-	"os"
+	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
@@ -22,6 +23,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/errors"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +34,8 @@ const (
 	privateClusterGracePeriod = 20 * time.Minute
 )
 
-func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
+func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "azure",
 		Short:        "Destroys a HostedCluster and its associated infrastructure on Azure",
@@ -48,21 +53,21 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	_ = cmd.MarkFlagRequired("dns-zone-rg-name")
 
 	logger := log.Log
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT)
+		defer stop()
 
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
-
-		if err := DestroyCluster(ctx, opts); err != nil {
-			logger.Error(err, "Failed to destroy cluster")
-			os.Exit(1)
+		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
+		if err != nil {
+			logger.Error(err, "Failed to create management cluster client")
+			return err
 		}
+
+		if err := DestroyCluster(ctx, opts, client); err != nil {
+			logger.Error(err, "Failed to destroy cluster")
+			return err
+		}
+		return nil
 	}
 
 	return cmd
@@ -97,8 +102,8 @@ func applyHostedClusterToDestroyOptions(o *core.DestroyOptions, hostedCluster *h
 	return nil
 }
 
-func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
-	hostedCluster, err := core.GetCluster(ctx, o)
+func DestroyCluster(ctx context.Context, o *core.DestroyOptions, client crclient.Client) error {
+	hostedCluster, err := core.GetCluster(ctx, client, o)
 	if err != nil {
 		return err
 	}
@@ -139,17 +144,40 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 			return fmt.Errorf("failed to create new resource groups client: %w", err)
 		}
 
-		if _, err = resourceGroupClient.Get(ctx, o.AzurePlatform.ResourceGroupName, nil); err != nil {
-			return fmt.Errorf("failed to get resource group name, '%s': %w", o.AzurePlatform.ResourceGroupName, err)
+		if err := checkResourceGroup(ctx, resourceGroupClient, o.AzurePlatform.ResourceGroupName, o.Log); err != nil {
+			return err
 		}
 	} else {
 		o.AzurePlatform.ResourceGroupName = o.Name + "-" + o.InfraID
 	}
 
-	return core.DestroyCluster(ctx, hostedCluster, o, destroyPlatformSpecifics)
+	return core.DestroyCluster(ctx, client, hostedCluster, o, destroyPlatformSpecifics)
 }
 
-func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
+type resourceGroupClient interface {
+	Get(context.Context, string, *armresources.ResourceGroupsClientGetOptions) (armresources.ResourceGroupsClientGetResponse, error)
+}
+
+func checkResourceGroup(ctx context.Context, client resourceGroupClient, resourceGroupName string, logger logr.Logger) error {
+	if _, err := client.Get(ctx, resourceGroupName, nil); err != nil {
+		if isResourceGroupNotFound(err) {
+			logger.Info("Resource group not found, continuing with cluster deletion", "resourceGroup", resourceGroupName)
+		} else {
+			return fmt.Errorf("failed to get resource group name, '%s': %w", resourceGroupName, err)
+		}
+	}
+	return nil
+}
+
+// isResourceGroupNotFound returns true if err is an Azure 404 response, indicating the
+// resource group was already deleted out-of-band (e.g. via the Azure portal or an expired
+// credential's cleanup process).
+func isResourceGroupNotFound(err error) bool {
+	var respErr *azcore.ResponseError
+	return stderrors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound
+}
+
+func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions, _ crclient.Client) error {
 	// Clean up role assignments before destroying infrastructure to avoid orphans.
 	// Match the create path resource-group names: {name}-nsg and {name}-vnet.
 	subscriptionID, azureCreds, err := util.SetupAzureCredentials(o.Log, nil, o.AzurePlatform.CredentialsFile)

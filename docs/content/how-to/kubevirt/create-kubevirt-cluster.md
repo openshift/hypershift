@@ -216,6 +216,36 @@ hcp create cluster kubevirt \
 In the example above, the KubeVirt VMs will only be scheduled to nodes that
  contain the labels labelKey1=labelVal1 and labelKey2=labelVal2.
 
+## Creating NodePools for a Specific Architecture
+
+On a multi-architecture KubeVirt infra cluster (one that has both amd64 and
+s390x nodes, for example), you can create additional NodePools that target a
+specific architecture using the `--arch` flag. The default NodePool created
+with the cluster uses the infra cluster's primary architecture; use this
+command to add a NodePool for a secondary architecture.
+
+```shell linenums="1"
+export CLUSTER_NAME=example
+export PULL_SECRET="$HOME/pull-secret"
+export MEM="6Gi"
+export CPU="2"
+export WORKER_COUNT="2"
+
+hcp create nodepool kubevirt \
+  --cluster-name $CLUSTER_NAME \
+  --name $CLUSTER_NAME-s390x \
+  --replicas $WORKER_COUNT \
+  --pull-secret $PULL_SECRET \
+  --memory $MEM \
+  --cores $CPU \
+  --arch s390x
+```
+
+When `--arch` is set, the operator:
+
+- Sets the KubeVirt VM template `spec.architecture` field so the VM is provisioned with the correct architecture.
+- Injects a `kubernetes.io/arch` NodeSelector into the VM template so virt-launcher pods are scheduled only on infra nodes of the matching architecture.
+
 ## Scaling an existing NodePool
 
 Manually scale a NodePool using the `oc scale` command:

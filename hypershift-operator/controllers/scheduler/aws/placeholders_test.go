@@ -6,6 +6,7 @@ import (
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	pkgscheduler "github.com/openshift/hypershift/pkg/scheduler"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -307,7 +308,7 @@ func TestPlaceholderUpdaterReconcile(t *testing.T) {
 									RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
 										NodeSelectorTerms: []corev1.NodeSelectorTerm{{
 											MatchExpressions: []corev1.NodeSelectorRequirement{{
-												Key:      OSDFleetManagerPairedNodesLabel,
+												Key:      pkgscheduler.OSDFleetManagerPairedNodesLabel,
 												Operator: corev1.NodeSelectorOpNotIn,
 												Values:   []string{},
 											}},
@@ -355,7 +356,7 @@ func TestPlaceholderUpdaterReconcile(t *testing.T) {
 									RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
 										NodeSelectorTerms: []corev1.NodeSelectorTerm{{
 											MatchExpressions: []corev1.NodeSelectorRequirement{{
-												Key:      OSDFleetManagerPairedNodesLabel,
+												Key:      pkgscheduler.OSDFleetManagerPairedNodesLabel,
 												Operator: corev1.NodeSelectorOpNotIn,
 												Values:   []string{"first"},
 											}},
@@ -403,7 +404,7 @@ func TestPlaceholderUpdaterReconcile(t *testing.T) {
 									RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
 										NodeSelectorTerms: []corev1.NodeSelectorTerm{{
 											MatchExpressions: []corev1.NodeSelectorRequirement{{
-												Key:      OSDFleetManagerPairedNodesLabel,
+												Key:      pkgscheduler.OSDFleetManagerPairedNodesLabel,
 												Operator: corev1.NodeSelectorOpNotIn,
 												Values:   []string{"first", "second"},
 											}},
