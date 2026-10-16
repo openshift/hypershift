@@ -1702,6 +1702,39 @@ func TestIsAzurePlatformEnabled(t *testing.T) {
 	}
 }
 
+func TestIsOpenStackPlatformEnabled(t *testing.T) {
+	tests := []struct {
+		name               string
+		platformsToInstall []string
+		expected           bool
+	}{
+		{
+			name:     "When no platforms are specified, it should enable OpenStack",
+			expected: true,
+		},
+		{
+			name:               "When OpenStack is selected, it should enable OpenStack",
+			platformsToInstall: []string{"AWS", "OpenStack"},
+			expected:           true,
+		},
+		{
+			name:               "When OpenStack is selected in lowercase, it should enable OpenStack",
+			platformsToInstall: []string{"openstack"},
+			expected:           true,
+		},
+		{
+			name:               "When OpenStack is absent, it should disable OpenStack",
+			platformsToInstall: []string{"AWS", "Azure"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(isOpenStackPlatformEnabled(tc.platformsToInstall)).To(Equal(tc.expected))
+		})
+	}
+}
+
 func TestValidatePlatformConfig(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -1952,6 +1985,22 @@ func TestValidateMiscConfig(t *testing.T) {
 		{
 			name:        "When no misc options are set, it should pass",
 			opts:        Options{},
+			expectError: false,
+		},
+		{
+			name: "When OpenStack CRDs are installed without conversion, it should fail",
+			opts: Options{
+				DisableCAPIConversionWebhook: true,
+				PlatformsToInstall:           []string{"openstack"},
+			},
+			expectError: true,
+		},
+		{
+			name: "When only AWS CRDs are installed without conversion, it should pass",
+			opts: Options{
+				DisableCAPIConversionWebhook: true,
+				PlatformsToInstall:           []string{"aws"},
+			},
 			expectError: false,
 		},
 		{
