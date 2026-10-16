@@ -824,7 +824,7 @@ func (r *HostedControlPlaneReconciler) reconcileAvailabilityAndReadyStatus(ctx c
 	var componentsErr error
 	availableCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
 	alreadyAvailable := availableCondition != nil && availableCondition.Status == metav1.ConditionTrue
-	if !alreadyAvailable {
+	if !alreadyAvailable || healthCheckErr != nil {
 		componentsNotAvailableMsg, componentsErr = r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
 	}
 
@@ -929,6 +929,9 @@ func reconcileAvailabilityStatus(
 	case healthCheckErr != nil:
 		reason = hyperv1.KASLoadBalancerNotReachableReason
 		message = healthCheckErr.Error()
+		if componentsNotAvailableMsg != "" {
+			message += "; " + componentsNotAvailableMsg
+		}
 	case componentsErr != nil:
 		reason = hyperv1.ControlPlaneComponentsNotAvailable
 		message = fmt.Sprintf("Failed to check control plane component availability: %v", componentsErr)
