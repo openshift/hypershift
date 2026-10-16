@@ -1175,6 +1175,18 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			},
 		},
 		{
+			name:          "When deprecated aws-load-balancer-subnets annotation is stale on HCP and absent on HC it should be pruned",
+			hcAnnotations: map[string]string{},
+			hcpAnnotations: map[string]string{
+				hyperv1.AWSLoadBalancerSubnetsAnnotation: "subnet-1,subnet-2",
+			},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
 			name: "When HostedCluster has aws-karpenter-default-instance-profile annotation it should propagate to HCP",
 			hcAnnotations: map[string]string{
 				hyperv1.AWSKarpenterDefaultInstanceProfile: "test-instance-profile",
