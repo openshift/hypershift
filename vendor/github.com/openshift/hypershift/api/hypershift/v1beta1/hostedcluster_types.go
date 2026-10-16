@@ -540,7 +540,8 @@ type Capabilities struct {
 // HostedClusterSpec is the desired behavior of a HostedCluster.
 
 // +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
-// +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services == oldSelf.services : true`, message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
+// +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services.map(s, s.service) == oldSelf.services.map(s, s.service) : true`, message="Services entries cannot be added or removed. Changes might result in unpredictable and disruptive behavior."
+// +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services.map(s, s.servicePublishingStrategy.type) == oldSelf.services.map(s, s.servicePublishingStrategy.type) : true`, message="Publishing strategy type is immutable and cannot be changed."
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("") == "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route")`,message="Azure managed platform (ARO HCP) requires OAuthServer to use Route"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("") != "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer" && (s.servicePublishingStrategy.type == "Route" || s.servicePublishingStrategy.type == "LoadBalancer"))`,message="Self-managed Azure requires OAuthServer to use Route or LoadBalancer"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Konnectivity" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires Konnectivity to use Route service publishing strategy"
@@ -1131,6 +1132,41 @@ type LoadBalancerPublishingStrategy struct {
 	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Hostname string `json:"hostname,omitempty"`
+
+	// loadBalancerClass sets Service.spec.loadBalancerClass to select which
+	// LB controller provisions the Service. Required when the management
+	// cluster runs multiple LB controllers (e.g., F5 for management + MetalLB
+	// for tenant workloads). Maps to the Kubernetes Service field directly.
+	// Immutable after creation — matches Kubernetes semantics.
+	// Must be a valid Kubernetes qualified-name: an optional lowercase DNS
+	// subdomain prefix followed by '/' and a name segment starting and ending
+	// with an alphanumeric character (e.g., "example.com/my-lb-class").
+	// Maximum length is 253 characters.
+	//
+	// +openshift:enable:FeatureGate=DeterministicLBIP
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\\/)?[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$')`,message="loadBalancerClass must be a valid qualified-name (e.g., example.com/my-lb-class)"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	LoadBalancerClass string `json:"loadBalancerClass,omitempty"`
+
+	// serviceAnnotations is a map of annotations passed through to the
+	// LoadBalancer Service. The user provides the exact annotations their LB
+	// provider expects (e.g., metallb.io/loadBalancerIPs,
+	// service.beta.kubernetes.io/aws-load-balancer-eip-allocations).
+	// Mutable — annotations can be added, changed, or removed after creation.
+	//
+	// Annotations are applied per-key — existing annotations set by other
+	// controllers are preserved. HyperShift does not validate annotation
+	// values — correctness is the user's responsibility, same as setting
+	// annotations on any Kubernetes Service.
+	// Minimum 1, maximum 10 annotations per service.
+	//
+	// +openshift:enable:FeatureGate=DeterministicLBIP
+	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:validation:MaxProperties=10
+	// +optional
+	ServiceAnnotations map[string]string `json:"serviceAnnotations,omitempty"`
 }
 
 // RoutePublishingStrategy specifies options for exposing a service as a Route.

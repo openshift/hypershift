@@ -580,7 +580,8 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: "Services is immutable"
+    expectedError: "Publishing strategy type is immutable and cannot be changed"
+
   - name: When services is unchanged but release image is updated it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -702,3 +703,4 @@ tests:
           servicePublishingStrategy:
             route: {}
             type: Route
+

@@ -7536,10 +7536,13 @@ spec:
                 IBMCloud
               rule: 'self.platform.type == ''IBMCloud'' ? size(self.services) >= 3
                 : size(self.services) >= 4'
-            - message: Services is immutable. Changes might result in unpredictable
-                and disruptive behavior.
-              rule: 'self.platform.type != "IBMCloud" ? self.services == oldSelf.services
-                : true'
+            - message: Services entries cannot be added or removed. Changes might
+                result in unpredictable and disruptive behavior.
+              rule: 'self.platform.type != "IBMCloud" ? self.services.map(s, s.service)
+                == oldSelf.services.map(s, s.service) : true'
+            - message: Publishing strategy type is immutable and cannot be changed.
+              rule: 'self.platform.type != "IBMCloud" ? self.services.map(s, s.servicePublishingStrategy.type)
+                == oldSelf.services.map(s, s.servicePublishingStrategy.type) : true'
             - message: Azure managed platform (ARO HCP) requires OAuthServer to use
                 Route
               rule: self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("")
