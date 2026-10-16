@@ -11,6 +11,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -73,6 +75,14 @@ func testCreateOrUpdate(ctx context.Context, c client.Client, obj client.Object,
 // the complex createOrUpdate logic (just applies the mutation).
 func testSimpleCreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
 	return controllerutil.OperationResultCreated, f()
+}
+
+func objectsFromSecrets(secrets []*corev1.Secret) []client.Object {
+	objects := make([]client.Object, 0, len(secrets))
+	for _, secret := range secrets {
+		objects = append(objects, secret.DeepCopy())
+	}
+	return objects
 }
 
 // validHostedCluster returns a baseline HostedCluster with a valid GCP WIF config.
@@ -216,6 +226,105 @@ func TestReconcileCredentials(t *testing.T) {
 	g.Expect(err).To(BeNil()) // Minimal implementation returns nil
 }
 
+func TestReconcileCredentialsCreatesAllRoleSecrets(t *testing.T) {
+	tests := []struct {
+		name        string
+		sharedEmail bool
+	}{
+		{
+			name: "distinct service account emails",
+		},
+		{
+			name:        "shared service account email",
+			sharedEmail: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hcluster := validHostedCluster()
+			if tt.sharedEmail {
+				emails := &hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails
+				emails.ControlPlane = emails.NodePool
+				emails.CloudController = emails.NodePool
+				emails.Storage = emails.NodePool
+				emails.ImageRegistry = emails.NodePool
+				emails.Network = emails.NodePool
+			}
+
+			scheme := runtime.NewScheme()
+			g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+			g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+
+			err := platform.ReconcileCredentials(
+				context.Background(),
+				fakeClient,
+				testCreateOrUpdate,
+				hcluster,
+				"test-control-plane-namespace",
+			)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			expectedSecrets := []struct {
+				secret *corev1.Secret
+				email  hyperv1.GCPServiceAccountEmail
+			}{
+				{NodePoolManagementCredsSecret("test-control-plane-namespace"), hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool},
+				{ControlPlaneOperatorCredsSecret("test-control-plane-namespace"), hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane},
+				{CloudControllerCredsSecret("test-control-plane-namespace"), hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController},
+				{GCPPDCloudCredentialsSecret("test-control-plane-namespace"), hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage},
+				{ImageRegistryCredsSecret("test-control-plane-namespace"), hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry},
+				{CNCCCredsSecret("test-control-plane-namespace"), hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network},
+			}
+			for _, expected := range expectedSecrets {
+				secret := &corev1.Secret{}
+				g.Expect(fakeClient.Get(context.Background(), client.ObjectKeyFromObject(expected.secret), secret)).ToNot(HaveOccurred(),
+					"role Secret %q should be created", expected.secret.Name)
+				g.Expect(secret.Data).To(HaveKey("application_default_credentials.json"))
+				g.Expect(string(secret.Data["application_default_credentials.json"])).To(ContainSubstring(string(expected.email)))
+			}
+		})
+	}
+}
+
+func TestReconcileCredentialsContinuesAfterUpsertError(t *testing.T) {
+	g := NewWithT(t)
+	hcluster := validHostedCluster()
+	const controlPlaneNamespace = "test-control-plane-namespace"
+
+	scheme := runtime.NewScheme()
+	g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+	baseClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	var attempts []string
+	createOrUpdate := func(ctx context.Context, c client.Client, obj client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+		attempts = append(attempts, obj.GetName())
+		if obj.GetName() == ControlPlaneOperatorCredsSecret(controlPlaneNamespace).Name {
+			return controllerutil.OperationResultNone, apierrors.NewForbidden(corev1.Resource("secrets"), obj.GetName(), fmt.Errorf("rbac denied"))
+		}
+		return testCreateOrUpdate(ctx, c, obj, mutate)
+	}
+
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+	err := platform.ReconcileCredentials(context.Background(), baseClient, createOrUpdate, hcluster, controlPlaneNamespace)
+
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to reconcile GCP cloud credential secret"))
+	g.Expect(attempts).To(HaveLen(6))
+	for _, secret := range []*corev1.Secret{
+		NodePoolManagementCredsSecret(controlPlaneNamespace),
+		CloudControllerCredsSecret(controlPlaneNamespace),
+		GCPPDCloudCredentialsSecret(controlPlaneNamespace),
+		ImageRegistryCredsSecret(controlPlaneNamespace),
+		CNCCCredsSecret(controlPlaneNamespace),
+	} {
+		g.Expect(baseClient.Get(context.Background(), client.ObjectKeyFromObject(secret), &corev1.Secret{})).ToNot(HaveOccurred(),
+			"role Secret %q should be reconciled after another role failed", secret.Name)
+	}
+}
+
 func TestReconcileCredentialsNilGCPPlatform(t *testing.T) {
 	g := NewWithT(t)
 
@@ -284,20 +393,235 @@ func TestCAPIProviderPolicyRules(t *testing.T) {
 }
 
 func TestDeleteCredentials(t *testing.T) {
+	const controlPlaneNamespace = "test-control-plane-namespace"
+
+	credentialSecrets := []*corev1.Secret{
+		NodePoolManagementCredsSecret(controlPlaneNamespace),
+		ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
+		CloudControllerCredsSecret(controlPlaneNamespace),
+		GCPPDCloudCredentialsSecret(controlPlaneNamespace),
+		ImageRegistryCredsSecret(controlPlaneNamespace),
+		CNCCCredsSecret(controlPlaneNamespace),
+	}
+	credentialSecretNames := make([]string, 0, len(credentialSecrets))
+	for _, secret := range credentialSecrets {
+		credentialSecretNames = append(credentialSecretNames, secret.Name)
+	}
+
+	tests := []struct {
+		name                   string
+		existingNames          []string
+		expectedRemainingNames []string
+		unrelatedNames         []string
+		otherNamespaceNames    []string
+		terminatingName        string
+		failDeleteName         string
+	}{
+		{
+			name:          "When all GCP credential Secrets exist, it should delete every generated Secret",
+			existingNames: credentialSecretNames,
+		},
+		{
+			name:           "When an unrelated Secret exists, it should preserve it",
+			existingNames:  append(append([]string{}, credentialSecretNames...), "unrelated-secret"),
+			unrelatedNames: []string{"unrelated-secret"},
+		},
+		{
+			name: "When no GCP credential Secrets exist, it should be idempotent",
+		},
+		{
+			name:                "When the same credential name exists in another namespace, it should preserve it",
+			existingNames:       []string{"node-management-creds"},
+			otherNamespaceNames: []string{"node-management-creds"},
+		},
+		{
+			name:                   "When a credential Secret is already terminating, it should leave it untouched",
+			existingNames:          []string{"node-management-creds"},
+			expectedRemainingNames: []string{"node-management-creds"},
+			terminatingName:        "node-management-creds",
+		},
+		{
+			name:                   "When deleting a credential Secret fails, it should return the error",
+			existingNames:          []string{"node-management-creds"},
+			expectedRemainingNames: []string{"node-management-creds"},
+			failDeleteName:         "node-management-creds",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			scheme := runtime.NewScheme()
+			g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+
+			objects := make([]client.Object, 0, len(tt.existingNames)+len(tt.otherNamespaceNames))
+			for _, name := range tt.existingNames {
+				secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: controlPlaneNamespace,
+				}}
+				if name == tt.terminatingName {
+					now := metav1.Now()
+					secret.DeletionTimestamp = &now
+					secret.Finalizers = []string{"test.finalizer"}
+				}
+				objects = append(objects, secret)
+			}
+			for _, name := range tt.otherNamespaceNames {
+				objects = append(objects, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: "other-control-plane-namespace",
+				}})
+			}
+
+			baseClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+			var testClient client.Client = baseClient
+			if tt.failDeleteName != "" {
+				testClient = interceptor.NewClient(baseClient, interceptor.Funcs{
+					Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						if obj.GetName() == tt.failDeleteName {
+							return apierrors.NewForbidden(corev1.Resource("secrets"), obj.GetName(), fmt.Errorf("rbac denied"))
+						}
+						return baseClient.Delete(ctx, obj, opts...)
+					},
+				})
+			}
+
+			platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+			err := platform.DeleteCredentials(
+				context.Background(),
+				testClient,
+				nil,
+				controlPlaneNamespace,
+			)
+
+			if tt.failDeleteName != "" {
+				g.Expect(err).To(MatchError(ContainSubstring("forbidden")))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			expectedRemainingNames := make(map[string]struct{}, len(tt.expectedRemainingNames))
+			for _, name := range tt.expectedRemainingNames {
+				expectedRemainingNames[name] = struct{}{}
+			}
+			for _, name := range credentialSecretNames {
+				secret := &corev1.Secret{}
+				err := testClient.Get(context.Background(), client.ObjectKey{
+					Name:      name,
+					Namespace: controlPlaneNamespace,
+				}, secret)
+				if _, ok := expectedRemainingNames[name]; ok {
+					g.Expect(err).ToNot(HaveOccurred(), "credential Secret %q should remain", name)
+				} else {
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "credential Secret %q should be deleted, got %v", name, err)
+				}
+			}
+			for _, name := range tt.otherNamespaceNames {
+				secret := &corev1.Secret{}
+				err := testClient.Get(context.Background(), client.ObjectKey{
+					Name:      name,
+					Namespace: "other-control-plane-namespace",
+				}, secret)
+				g.Expect(err).ToNot(HaveOccurred(), "credential Secret %q in another namespace should remain", name)
+			}
+			for _, name := range tt.unrelatedNames {
+				secret := &corev1.Secret{}
+				err := testClient.Get(context.Background(), client.ObjectKey{
+					Name:      name,
+					Namespace: controlPlaneNamespace,
+				}, secret)
+				g.Expect(err).ToNot(HaveOccurred(), "unrelated Secret %q should remain", name)
+			}
+			if tt.terminatingName != "" {
+				secret := &corev1.Secret{}
+				err := testClient.Get(context.Background(), client.ObjectKey{
+					Name:      tt.terminatingName,
+					Namespace: controlPlaneNamespace,
+				}, secret)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(secret.Finalizers).To(Equal([]string{"test.finalizer"}))
+				g.Expect(secret.DeletionTimestamp).ToNot(BeNil())
+			}
+		})
+	}
+}
+
+func TestDeleteCredentialsAttemptsAllSecretsAfterError(t *testing.T) {
 	g := NewWithT(t)
+	const controlPlaneNamespace = "test-control-plane-namespace"
+
+	credentialSecrets := []*corev1.Secret{
+		NodePoolManagementCredsSecret(controlPlaneNamespace),
+		ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
+		CloudControllerCredsSecret(controlPlaneNamespace),
+		GCPPDCloudCredentialsSecret(controlPlaneNamespace),
+		ImageRegistryCredsSecret(controlPlaneNamespace),
+		CNCCCredsSecret(controlPlaneNamespace),
+	}
+
+	scheme := runtime.NewScheme()
+	g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+	baseClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objectsFromSecrets(credentialSecrets)...).Build()
+	var deleteAttempts []string
+	testClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+		Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+			deleteAttempts = append(deleteAttempts, obj.GetName())
+			if obj.GetName() == credentialSecrets[0].Name {
+				return apierrors.NewForbidden(corev1.Resource("secrets"), obj.GetName(), fmt.Errorf("rbac denied"))
+			}
+			return baseClient.Delete(ctx, obj, opts...)
+		},
+	})
 
 	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
-	fakeClient := fake.NewClientBuilder().Build()
+	err := platform.DeleteCredentials(context.Background(), testClient, nil, controlPlaneNamespace)
 
-	// Test minimal implementation returns no error
-	err := platform.DeleteCredentials(
-		context.Background(),
-		fakeClient,
-		validHostedCluster(),
-		"test-control-plane-namespace",
-	)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("failed to clean up GCP cloud credential secret %s/%s", controlPlaneNamespace, credentialSecrets[0].Name)))
+	g.Expect(deleteAttempts).To(HaveLen(len(credentialSecrets)), "cleanup should attempt every generated Secret")
+	for _, secret := range credentialSecrets[1:] {
+		getErr := baseClient.Get(context.Background(), client.ObjectKeyFromObject(secret), &corev1.Secret{})
+		g.Expect(apierrors.IsNotFound(getErr)).To(BeTrue(), "credential Secret %q should be deleted, got %v", secret.Name, getErr)
+	}
+}
 
-	g.Expect(err).To(BeNil()) // Minimal implementation returns nil
+func TestDeleteCredentialsTreatsDeleteNotFoundAsIdempotent(t *testing.T) {
+	g := NewWithT(t)
+	const controlPlaneNamespace = "test-control-plane-namespace"
+
+	credentialSecrets := []*corev1.Secret{
+		NodePoolManagementCredsSecret(controlPlaneNamespace),
+		ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
+		CloudControllerCredsSecret(controlPlaneNamespace),
+		GCPPDCloudCredentialsSecret(controlPlaneNamespace),
+		ImageRegistryCredsSecret(controlPlaneNamespace),
+		CNCCCredsSecret(controlPlaneNamespace),
+	}
+
+	scheme := runtime.NewScheme()
+	g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+	baseClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objectsFromSecrets(credentialSecrets)...).Build()
+	var deleteAttempts []string
+	testClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+		Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+			deleteAttempts = append(deleteAttempts, obj.GetName())
+			if obj.GetName() == credentialSecrets[0].Name {
+				return apierrors.NewNotFound(corev1.Resource("secrets"), obj.GetName())
+			}
+			return baseClient.Delete(ctx, obj, opts...)
+		},
+	})
+
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+	err := platform.DeleteCredentials(context.Background(), testClient, nil, controlPlaneNamespace)
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(deleteAttempts).To(HaveLen(len(credentialSecrets)))
+	for _, secret := range credentialSecrets[1:] {
+		getErr := baseClient.Get(context.Background(), client.ObjectKeyFromObject(secret), &corev1.Secret{})
+		g.Expect(apierrors.IsNotFound(getErr)).To(BeTrue(), "credential Secret %q should be deleted, got %v", secret.Name, getErr)
+	}
 }
 
 func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
