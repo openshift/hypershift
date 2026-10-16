@@ -301,6 +301,7 @@ func buildCreateArgs(cfg envConfig, ns namedSpec) []string {
 	}
 
 	args = append(args, cfg.platform.CreateArgs()...)
+	args = append(args, cfg.platform.CreateArgsForVariant(ns.Variant)...)
 	args = append(args, ns.ExtraArgs...)
 
 	return args
