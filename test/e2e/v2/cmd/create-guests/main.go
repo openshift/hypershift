@@ -142,7 +142,7 @@ func run(ctx context.Context, cfg envConfig) error {
 	}
 	log.Printf("Using test plan %q", plan.Name)
 
-	allSpecs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
+	allSpecs := cfg.platform.ClusterSpecs(ctx, cfg.releaseImage, cfg.n1Image)
 	if err := plan.Validate(allSpecs); err != nil {
 		return err
 	}

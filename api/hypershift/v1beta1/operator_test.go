@@ -13,6 +13,88 @@ type ingressOperatorSpecNMinus1 struct {
 	EndpointPublishingStrategy json.RawMessage `json:"endpointPublishingStrategy,omitempty"` //nolint:kubeapilinter
 }
 
+// awsCSIDriverConfigNMinus1 represents the previous version of AWSCSIDriverConfig
+// without the InitialKMSKeyARN field.
+type awsCSIDriverConfigNMinus1 struct{}
+
+// csiDriverOperatorSpecNMinus1 represents the previous version of
+// CSIDriverOperatorSpec without the AWS field.
+type csiDriverOperatorSpecNMinus1 struct{}
+
+func TestCSIDriverOperatorSpecSerializationCompatibility(t *testing.T) {
+	tests := []struct {
+		name         string
+		current      CSIDriverOperatorSpec
+		expectedJSON string
+	}{
+		{
+			name:         "When the spec is zero it should serialize to an empty object",
+			current:      CSIDriverOperatorSpec{},
+			expectedJSON: `{}`,
+		},
+		{
+			name:         "When aws is set without a key it should omit initialKMSKeyARN",
+			current:      CSIDriverOperatorSpec{AWS: AWSCSIDriverConfig{}},
+			expectedJSON: `{}`,
+		},
+		{
+			name: "When initialKMSKeyARN is set it should serialize nested under aws",
+			current: CSIDriverOperatorSpec{
+				AWS: AWSCSIDriverConfig{
+					InitialKMSKeyARN: "arn:aws:kms:us-east-1:123456789012:key/abc-123",
+				},
+			},
+			expectedJSON: `{"aws":{"initialKMSKeyARN":"arn:aws:kms:us-east-1:123456789012:key/abc-123"}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.current)
+			if err != nil {
+				t.Fatalf("failed to marshal current struct: %v", err)
+			}
+			if string(data) != tt.expectedJSON {
+				t.Errorf("unexpected JSON output: got %s, want %s", string(data), tt.expectedJSON)
+			}
+
+			// N -> N-1: old code without the AWS field must ignore it and deserialize cleanly.
+			var nMinus1 csiDriverOperatorSpecNMinus1
+			if err := json.Unmarshal(data, &nMinus1); err != nil {
+				t.Fatalf("N-1 failed to unmarshal JSON from N: %v", err)
+			}
+
+			// N-1 -> N: data from old code (no csiDriverOperator fields) must deserialize
+			// into the new struct with a zero AWS config.
+			nMinus1Data, err := json.Marshal(csiDriverOperatorSpecNMinus1{})
+			if err != nil {
+				t.Fatalf("failed to marshal N-1 struct: %v", err)
+			}
+			var roundTrip CSIDriverOperatorSpec
+			if err := json.Unmarshal(nMinus1Data, &roundTrip); err != nil {
+				t.Fatalf("N failed to unmarshal JSON from N-1: %v", err)
+			}
+			if roundTrip.AWS.InitialKMSKeyARN != "" {
+				t.Errorf("expected AWS.InitialKMSKeyARN to be zero after N-1 round-trip, got %q", roundTrip.AWS.InitialKMSKeyARN)
+			}
+
+			// An N-1 AWSCSIDriverConfig (no initialKMSKeyARN) must deserialize into N
+			// with a zero key, confirming the field addition is backward compatible.
+			awsNMinus1Data, err := json.Marshal(awsCSIDriverConfigNMinus1{})
+			if err != nil {
+				t.Fatalf("failed to marshal N-1 aws struct: %v", err)
+			}
+			var awsRoundTrip AWSCSIDriverConfig
+			if err := json.Unmarshal(awsNMinus1Data, &awsRoundTrip); err != nil {
+				t.Fatalf("N failed to unmarshal aws JSON from N-1: %v", err)
+			}
+			if awsRoundTrip.InitialKMSKeyARN != "" {
+				t.Errorf("expected AWSCSIDriverConfig.InitialKMSKeyARN to be zero after N-1 round-trip, got %q", awsRoundTrip.InitialKMSKeyARN)
+			}
+		})
+	}
+}
+
 func TestIngressOperatorSpecSerializationCompatibility(t *testing.T) {
 	tests := []struct {
 		name          string

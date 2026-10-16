@@ -108,7 +108,7 @@ func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 	return "hcp-sm-azure.azure.devcluster.openshift.com"
 }
 
-func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
+func (a *AzurePlatformConfig) ClusterSpecs(_ context.Context, releaseImage, n1Image string) []ClusterSpec {
 	// Parse EXTRA_ARGS from environment if provided
 	var extraArgs []string
 	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
