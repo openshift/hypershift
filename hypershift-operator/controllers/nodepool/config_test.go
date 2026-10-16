@@ -14,6 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -22,6 +23,7 @@ import (
 	imageapi "github.com/openshift/api/image/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -144,6 +146,7 @@ spec:
 			Configuration: &globalConfig,
 		},
 	}
+	kubeconfig := withKubeconfig(hostedCluster)
 
 	testCases := []struct {
 		name                       string
@@ -463,6 +466,10 @@ spec:
 						Name: "additional-trust-bundle",
 					},
 				},
+				Status: hyperv1.HostedClusterStatus{
+					// withKubeconfig provisioned this secret for the shared fixture.
+					KubeConfig: &corev1.LocalObjectReference{Name: hostedCluster.Name + "-kubeconfig"},
+				},
 			},
 		},
 	}
@@ -474,6 +481,7 @@ spec:
 			var client crclient.Client
 			if tc.client {
 				fakeObjects := append(tc.config, coreConfigMaps...)
+				fakeObjects = append(fakeObjects, kubeconfig)
 				client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeObjects...).Build()
 			}
 
@@ -2885,4 +2893,195 @@ func TestCloudConfigHash(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("connection refused"))
 	})
+}
+
+func TestEndpointConfigString(t *testing.T) {
+	testKubeconfig := `apiVersion: v1
+kind: Config
+clusters:
+- name: cluster
+  cluster:
+    server: https://api.example.com:6443
+contexts:
+- name: context
+  context:
+    cluster: cluster
+    user: user
+current-context: context
+users:
+- name: user
+  user: {}
+`
+
+	newPublicAWSHC := func() *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public},
+				},
+			},
+		}
+	}
+
+	newAROHCPCluster := func() *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+							AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	withKubeconfigStatus := func(hc *hyperv1.HostedCluster) *hyperv1.HostedCluster {
+		hc.Status.KubeConfig = &corev1.LocalObjectReference{Name: "admin-kubeconfig"}
+		return hc
+	}
+
+	kubeconfigSecret := func(data []byte) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "admin-kubeconfig", Namespace: "test"},
+			Data:       map[string][]byte{"kubeconfig": data},
+		}
+	}
+
+	routerService := func(ingress ...corev1.LoadBalancerIngress) *corev1.Service {
+		svc := sharedingress.RouterPublicService()
+		svc.Status.LoadBalancer.Ingress = ingress
+		return svc
+	}
+
+	tests := []struct {
+		name              string
+		hcluster          *hyperv1.HostedCluster
+		objects           []crclient.Object
+		failKubeconfigGet bool
+		expectedConfig    string
+		expectedErr       string
+	}{
+		{
+			name: "private cluster omits the server component",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "test"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Private},
+					},
+				},
+			},
+			expectedConfig: "private=true",
+		},
+		{
+			name: "public cluster with advertise address and port resolves the kubeconfig server",
+			hcluster: func() *hyperv1.HostedCluster {
+				hc := withKubeconfigStatus(newPublicAWSHC())
+				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{
+					AdvertiseAddress: ptr.To("192.168.1.10"),
+					Port:             ptr.To[int32](6444),
+				}
+				return hc
+			}(),
+			objects:        []crclient.Object{kubeconfigSecret([]byte(testKubeconfig))},
+			expectedConfig: "private=false,addr=192.168.1.10,port=6444,server=https://api.example.com:6443",
+		},
+		{
+			name:           "public cluster resolves the kubeconfig server URL",
+			hcluster:       withKubeconfigStatus(newPublicAWSHC()),
+			objects:        []crclient.Object{kubeconfigSecret([]byte(testKubeconfig))},
+			expectedConfig: "private=false,server=https://api.example.com:6443",
+		},
+		{
+			name:        "public cluster without kubeconfig status fails",
+			hcluster:    newPublicAWSHC(),
+			expectedErr: "waiting on hcluster.Status.KubeConfig to be set",
+		},
+		{
+			name:        "public cluster with missing kubeconfig secret fails",
+			hcluster:    withKubeconfigStatus(newPublicAWSHC()),
+			expectedErr: "failed to get kubeconfig",
+		},
+		{
+			name:        "public cluster with unparseable kubeconfig fails",
+			hcluster:    withKubeconfigStatus(newPublicAWSHC()),
+			objects:     []crclient.Object{kubeconfigSecret([]byte("not-a-kubeconfig"))},
+			expectedErr: "failed to parse kubeconfig",
+		},
+		{
+			// Regression test for the rollout-hash flap: a transient lookup
+			// failure must fail the call instead of silently dropping the
+			// server component and changing the hash.
+			name:              "public cluster with transient kubeconfig lookup failure fails instead of changing the hash",
+			hcluster:          withKubeconfigStatus(newPublicAWSHC()),
+			objects:           []crclient.Object{kubeconfigSecret([]byte(testKubeconfig))},
+			failKubeconfigGet: true,
+			expectedErr:       "failed to get kubeconfig",
+		},
+		{
+			name:           "shared ingress cluster resolves the load balancer IP",
+			hcluster:       newAROHCPCluster(),
+			objects:        []crclient.Object{routerService(corev1.LoadBalancerIngress{IP: "10.0.0.1"})},
+			expectedConfig: "private=false,server=10.0.0.1:6443",
+		},
+		{
+			name:           "shared ingress cluster falls back to the load balancer hostname",
+			hcluster:       newAROHCPCluster(),
+			objects:        []crclient.Object{routerService(corev1.LoadBalancerIngress{Hostname: "router.example.com"})},
+			expectedConfig: "private=false,server=router.example.com:6443",
+		},
+		{
+			// A transient LB state change must not change the hash: the call
+			// fails and the reconcile retries.
+			name:        "shared ingress cluster without load balancer ingress fails",
+			hcluster:    newAROHCPCluster(),
+			objects:     []crclient.Object{routerService()},
+			expectedErr: "waiting on sharedIngress route service to report .Status.LoadBalancer.Ingress",
+		},
+		{
+			name:        "shared ingress cluster with empty ingress address fails",
+			hcluster:    newAROHCPCluster(),
+			objects:     []crclient.Object{routerService(corev1.LoadBalancerIngress{})},
+			expectedErr: "waiting on sharedIngress route service ingress to report an IP or hostname",
+		},
+		{
+			name:        "shared ingress cluster with missing router service fails",
+			hcluster:    newAROHCPCluster(),
+			expectedErr: "failed to get shared ingress router service",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.objects...)
+			if tc.failKubeconfigGet {
+				builder = builder.WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectKey, obj crclient.Object, _ ...crclient.GetOption) error {
+						if _, ok := obj.(*corev1.Secret); ok {
+							return apierrors.NewServiceUnavailable("api server unavailable")
+						}
+						return apierrors.NewNotFound(corev1.Resource("secrets"), "unreachable")
+					},
+				})
+			}
+			client := builder.Build()
+
+			config, err := endpointConfigString(t.Context(), client, tc.hcluster)
+			if tc.expectedErr != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErr))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(config).To(Equal(tc.expectedConfig))
+		})
+	}
 }

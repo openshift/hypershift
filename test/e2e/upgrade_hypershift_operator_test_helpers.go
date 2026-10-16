@@ -152,13 +152,19 @@ func captureBootstrapChain(ctx context.Context, client crclient.Client, namespac
 	return result, nil
 }
 
-// extractHashFromSecretName extracts the hash suffix from a Secret name.
-// Format: {prefix}-{nodepool-name}-{hash}
+// extractHashFromSecretName extracts the hash suffix from a user-data Secret name.
+// Format: user-data-{nodepool-name}-{hash} — the "user-data" prefix alone
+// contributes two hyphen-separated segments, so valid names have at least 4
+// parts. Token secret names (token-{nodepool-name}-{hash}) are NOT supported.
+// Keep in sync with the controller copy in
+// hypershift-operator/controllers/nodepool/nodepool_controller.go.
 func extractHashFromSecretName(name string) string {
 	parts := strings.Split(name, "-")
-	if len(parts) < 3 {
+	// Minimum 4 parts: user-data prefix (2 segments), nodepool-name, hash
+	if len(parts) < 4 {
 		return ""
 	}
+	// The hash is the last component
 	return parts[len(parts)-1]
 }
 

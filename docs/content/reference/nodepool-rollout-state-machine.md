@@ -223,3 +223,25 @@ On rollout completion (`MachineDeploymentComplete` or `machineSetInPlaceRolloutI
 
 !!! note
     The completed hash is derived from the workload's bootstrap secret name, not from `Hash()`. This is important because a reversion (A→B→A) or management drift can cause the completed payload hash to differ from the current `Hash()` even when the rollout config matches.
+
+## Comparing `UpdatingConfig` and `ConfigUpdatePending`
+
+Both conditions mention "config" and "update", but they answer different questions:
+
+- **`UpdatingConfig`** answers *"is a config rollout happening right now?"* It is `True` while the rollout hash differs from the completed baseline recorded in the `currentRolloutConfig` annotation — i.e. while nodes are actively being replaced (`Replace`) or updated in place (`InPlace`) to apply a spec-driven change.
+- **`ConfigUpdatePending`** answers *"has management-side content changed without a rollout being triggered?"* It is `True` when the full payload hash differs from the last-applied payload but the rollout hash has not changed (see [Dual-Hash System](#dual-hash-system)).
+
+| State | Meaning | Operator action |
+|---|---|---|
+| `UpdatingConfig=False`, `ConfigUpdatePending=False` | Converged: deployed nodes match both spec-driven and management-side content. | None. |
+| `UpdatingConfig=True` (`AsExpected`) | A spec-driven config change is rolling out (`Replace`) or being applied in place (`InPlace`). | Monitor until it returns to `False`. |
+| `UpdatingConfig=False`, reason `InplaceUpgradeFailed` | An in-place config rollout failed. | Investigate the MachineSet upgrade and NodePool events. |
+| `ConfigUpdatePending=True` (`ManagementConfigDrift`) | Management-side content (e.g. HAProxy image) changed without triggering a rollout. Existing and replaced nodes keep the previous management-side configuration until the next spec-driven rollout. | None required. The change rides along with the next release upgrade or user config change; trigger any spec-driven rollout to converge sooner. |
+
+The two conditions are never `True` at the same time: drift is only reported while no rollout is in progress (`hasDrift && !isUpdating`), and any in-progress rollout converges the full payload anyway.
+
+!!! note "Fresh NodePools"
+    `UpdatingConfig` stays `False` for a NodePool's entire initial rollout: the baseline is seeded from the current target (see `seedRolloutAnnotation`), so applying the initial config is not a change relative to a completed baseline. The initial rollout is surfaced by `UpdatingVersion` instead (`Status.Version` is only set at completion, so it is `True` for the whole initial rollout).
+
+!!! note "Version changes have their own condition"
+    Release version changes are surfaced by `UpdatingVersion` and are excluded from `UpdatingConfig`. A release upgrade that also changes config content can show both `UpdatingVersion=True` and `UpdatingConfig=True`.

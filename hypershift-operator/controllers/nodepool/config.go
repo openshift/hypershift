@@ -143,6 +143,11 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		}
 	}
 
+	endpointConfig, err := endpointConfigString(ctx, client, hostedCluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve the API server endpoint config: %w", err)
+	}
+
 	cg := &ConfigGenerator{
 		Client:                         client,
 		hostedCluster:                  hostedCluster,
@@ -155,7 +160,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 			globalConfig:        globalConfig,
 			rolloutGlobalConfig: rolloutGlobalConfig,
 			haproxyRawConfig:    haproxyRawConfig,
-			endpointConfig:      endpointConfigString(ctx, client, hostedCluster),
+			endpointConfig:      endpointConfig,
 			rhelStream:          rhelStream,
 		},
 	}
@@ -590,8 +595,12 @@ func (cg *ConfigGenerator) GetCloudConfigHash(ctx context.Context) (string, erro
 
 // endpointConfigString returns a stable string encoding the connectivity-
 // affecting HAProxy inputs. Changes here trigger a rollout; management-side
-// image reference changes do not.
-func endpointConfigString(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster) string {
+// image reference changes do not. Because this feeds RolloutHash(), an
+// endpoint that cannot be resolved returns an error so the reconcile fails
+// and retries, rather than silently computing a different hash: a transient
+// lookup failure would otherwise trigger a phantom rollout that reverts
+// when the lookup recovers.
+func endpointConfigString(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster) (string, error) {
 	var parts []string
 	parts = append(parts, fmt.Sprintf("private=%v", netutil.IsPrivateHC(hcluster)))
 	if hcluster.Spec.Networking.APIServer != nil {
@@ -602,21 +611,30 @@ func endpointConfigString(ctx context.Context, c client.Client, hcluster *hyperv
 			parts = append(parts, fmt.Sprintf("port=%d", *hcluster.Spec.Networking.APIServer.Port))
 		}
 	}
-	if server := resolvedAPIServerEndpoint(ctx, c, hcluster); server != "" {
+	server, err := resolvedAPIServerEndpoint(ctx, c, hcluster)
+	if err != nil {
+		return "", err
+	}
+	if server != "" {
 		parts = append(parts, "server="+server)
 	}
-	return strings.Join(parts, ",")
+	return strings.Join(parts, ","), nil
 }
 
 // resolvedAPIServerEndpoint returns the resolved API server address that
 // HAProxy will use. For shared-ingress public clusters, this is the router
-// Service load-balancer IP and the shared-ingress KAS port, which override
-// the kubeconfig URL. For other public clusters, it is the kubeconfig server
-// URL. Returns empty for private clusters or when the data is unavailable
-// (e.g., during initial cluster creation).
-func resolvedAPIServerEndpoint(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster) string {
+// Service load-balancer address (IP or hostname) and the shared-ingress KAS
+// port, which override the kubeconfig URL. For other public clusters, it is
+// the kubeconfig server URL. Returns empty for private clusters.
+//
+// Unavailable endpoint data returns an error, mirroring the HAProxy payload
+// generation (apiserver-haproxy/haproxy.go): data still being provisioned
+// (kubeconfig status, load-balancer ingress) yields a "waiting on" error,
+// and lookup or parse failures are returned as-is. The rollout hash must
+// never be computed from partially-unavailable endpoint data.
+func resolvedAPIServerEndpoint(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster) (string, error) {
 	if netutil.IsPrivateHC(hcluster) {
-		return ""
+		return "", nil
 	}
 
 	if netutil.UseSharedIngressHC(hcluster) {
@@ -624,28 +642,36 @@ func resolvedAPIServerEndpoint(ctx context.Context, c client.Client, hcluster *h
 		sharedIngressRouteSVC.Name = sharedingress.RouterPublicService().Name
 		sharedIngressRouteSVC.Namespace = sharedingress.RouterNamespace
 		if err := c.Get(ctx, client.ObjectKeyFromObject(sharedIngressRouteSVC), sharedIngressRouteSVC); err != nil {
-			return ""
+			return "", fmt.Errorf("failed to get shared ingress router service: %w", err)
 		}
 		if len(sharedIngressRouteSVC.Status.LoadBalancer.Ingress) < 1 {
-			return ""
+			return "", fmt.Errorf("waiting on sharedIngress route service to report .Status.LoadBalancer.Ingress")
 		}
-		return fmt.Sprintf("%s:%d", sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].IP, sharedingress.KASSVCLBPort)
+		// Load balancers on some providers report a hostname instead of an IP.
+		addr := sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].IP
+		if addr == "" {
+			addr = sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].Hostname
+		}
+		if addr == "" {
+			return "", fmt.Errorf("waiting on sharedIngress route service ingress to report an IP or hostname")
+		}
+		return fmt.Sprintf("%s:%d", addr, sharedingress.KASSVCLBPort), nil
 	}
 
 	if hcluster.Status.KubeConfig == nil {
-		return ""
+		return "", fmt.Errorf("waiting on hcluster.Status.KubeConfig to be set")
 	}
 	var kubeconfig corev1.Secret
 	if err := c.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Status.KubeConfig.Name}, &kubeconfig); err != nil {
-		return ""
+		return "", fmt.Errorf("failed to get kubeconfig: %w", err)
 	}
 	kubeconfigBytes, found := kubeconfig.Data["kubeconfig"]
 	if !found {
-		return ""
+		return "", fmt.Errorf("kubeconfig secret %s/%s has no 'kubeconfig' key", kubeconfig.Namespace, kubeconfig.Name)
 	}
 	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("failed to parse kubeconfig from secret %s/%s: %w", kubeconfig.Namespace, kubeconfig.Name, err)
 	}
-	return restConfig.Host
+	return restConfig.Host, nil
 }

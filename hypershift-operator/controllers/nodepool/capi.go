@@ -775,23 +775,23 @@ func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Lo
 			log.Info("Rollout config update complete",
 				"previous", previousRolloutConfig, "new", targetRolloutConfigHash)
 			nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
-			// Only treat this as a completed rollout if the annotation previously
-			// existed and changed. When the annotation was absent (first reconcile
-			// after operator upgrade), initializing it is not evidence that a
-			// rollout completed — the MachineDeployment's existing state should
-			// be preserved.
-			if previousRolloutConfig != "" {
-				rolloutConfigUpdated = true
-			}
+			// seedRolloutAnnotation guarantees the rollout annotation is
+			// present by the time this runs (it is seeded in the main reconcile
+			// before CAPI reconciliation), so a change here is always a
+			// completed rollout, never a first-time initialization.
+			rolloutConfigUpdated = true
 		}
 
-		justSeeded := previousRolloutConfig == ""
-		if rolloutConfigUpdated || versionUpdated || justSeeded {
+		if rolloutConfigUpdated || versionUpdated {
 			if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
 				log.Info("Config update complete",
 					"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
 				nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
 			}
+			// Fallback for workloads without a bootstrap secret reference to
+			// extract a hash from: record the calculated target as the
+			// completed payload. The block below corrects it to the
+			// actually-deployed hash whenever one can be extracted.
 			nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
 		}
 		// Always record the payload that actually completed before clearing the
@@ -1220,18 +1220,23 @@ func (c *CAPI) reconcileMachineSetStatus(log logr.Logger, machineSet *capiv1.Mac
 		log.Info("Rollout config upgrade complete",
 			"previous", previousRolloutConfig, "new", targetRolloutConfigHash)
 		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
-		if previousRolloutConfig != "" {
-			rolloutConfigUpdated = true
-		}
+		// seedRolloutAnnotation guarantees the rollout annotation is present
+		// by the time this runs (it is seeded in the main reconcile before
+		// CAPI reconciliation), so a change here is always a completed
+		// rollout, never a first-time initialization.
+		rolloutConfigUpdated = true
 	}
 
-	justSeeded := previousRolloutConfig == ""
-	if rolloutConfigUpdated || versionUpdated || justSeeded {
+	if rolloutConfigUpdated || versionUpdated {
 		if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != targetConfigHash {
 			log.Info("Config upgrade complete",
 				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
 			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
 		}
+		// Fallback for workloads without a bootstrap secret reference to
+		// extract a hash from: record the calculated target as the completed
+		// payload. The block below corrects it to the actually-deployed hash
+		// whenever one can be extracted.
 		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
 	}
 	// As with MachineDeployment completion, version/config equality does not

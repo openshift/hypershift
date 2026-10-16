@@ -620,6 +620,15 @@ func (r NodePoolReconciler) validGeneratedPayloadCondition(ctx context.Context, 
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
 	}
+	// Record the deployed bootstrap hash so effectiveSecrets resolves the
+	// same secret the main reconcile maintains. r.token() does not set it,
+	// and without it resolveEffectiveHash cannot see the deployed state:
+	// during an in-flight rollout with management-side drift it falls through
+	// to the current Hash() secret, which may not exist, and this condition
+	// would report False (NotFound) for the whole rollout.
+	if err := r.resolveDeployedBootstrapHash(ctx, token, nodePool, hcluster); err != nil {
+		return &ctrl.Result{}, err
+	}
 	// Use effectiveSecrets to get the correct secret name during management-side drift.
 	// When only management-side content changes (e.g., HAProxy image), the deployed
 	// secret keeps its old hash, and Token.Reconcile maintains that secret rather than
@@ -637,6 +646,12 @@ func (r NodePoolReconciler) reachedIgnitionEndpointCondition(ctx context.Context
 	token, err := r.token(ctx, hcluster, nodePool)
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
+	}
+	// Record the deployed bootstrap hash so effectiveSecrets resolves the
+	// same secret the main reconcile maintains (see
+	// validGeneratedPayloadCondition for the rationale).
+	if err := r.resolveDeployedBootstrapHash(ctx, token, nodePool, hcluster); err != nil {
+		return &ctrl.Result{}, err
 	}
 	// Use effectiveSecrets to get the correct secret name during management-side drift.
 	// When only management-side content changes (e.g., HAProxy image), the deployed

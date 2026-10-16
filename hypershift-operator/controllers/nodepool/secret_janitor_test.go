@@ -43,6 +43,7 @@ type janitorTestFixture struct {
 	nodePool        *hyperv1.NodePool
 	hostedCluster   *hyperv1.HostedCluster
 	pullSecret      *corev1.Secret
+	kubeconfig      *corev1.Secret
 	machineConfig   *corev1.ConfigMap
 	ignitionConfigs []*corev1.ConfigMap
 	ignitionCACert  *corev1.Secret
@@ -75,6 +76,7 @@ func newJanitorTestFixture(t *testing.T) *janitorTestFixture {
 			IgnitionEndpoint: "https://ignition.cluster-name.myns.devcluster.openshift.com",
 		},
 	}
+	kubeconfig := withKubeconfig(hostedCluster)
 
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{Name: "nodepool-name", Namespace: "myns"},
@@ -146,6 +148,7 @@ spec:
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
 		nodePool,
 		hostedCluster,
+		kubeconfig,
 		pullSecret,
 		machineConfig,
 		ignitionConfigs[0],
@@ -169,6 +172,7 @@ spec:
 		nodePool:        nodePool,
 		hostedCluster:   hostedCluster,
 		pullSecret:      pullSecret,
+		kubeconfig:      kubeconfig,
 		machineConfig:   machineConfig,
 		ignitionConfigs: ignitionConfigs,
 		ignitionCACert:  ignitionServerCACert,
@@ -319,7 +323,7 @@ func TestSecretJanitor_Reconcile(t *testing.T) {
 		key := client.ObjectKeyFromObject(userDataSecret)
 		deleteCalled := false
 		failingClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
-			nodePool, hostedCluster, pullSecret, machineConfig,
+			nodePool, hostedCluster, pullSecret, machineConfig, f.kubeconfig,
 			f.ignitionConfigs[0], f.ignitionConfigs[1], f.ignitionConfigs[2], ignitionServerCACert, userDataSecret,
 		).WithInterceptorFuncs(interceptor.Funcs{
 			Delete: func(_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.DeleteOption) error {
@@ -523,6 +527,7 @@ func TestSecretJanitor_Reconcile(t *testing.T) {
 		driftClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
 			driftNodePool,
 			hostedCluster,
+			f.kubeconfig,
 			pullSecret,
 			machineConfig,
 			f.ignitionConfigs[0], f.ignitionConfigs[1], f.ignitionConfigs[2],
@@ -577,6 +582,7 @@ func TestSecretJanitor_Reconcile(t *testing.T) {
 		driftClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
 			driftNodePool,
 			hostedCluster,
+			f.kubeconfig,
 			pullSecret,
 			machineConfig,
 			f.ignitionConfigs[0], f.ignitionConfigs[1], f.ignitionConfigs[2],

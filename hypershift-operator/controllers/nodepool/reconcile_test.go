@@ -68,7 +68,6 @@ func TestReconcile(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					PayloadArch: hyperv1.AMD64, IgnitionEndpoint: "ignition.zone-check.example:443",
-					KubeConfig: &corev1.LocalObjectReference{Name: "guest-kubeconfig"},
 				},
 			}
 			np := &hyperv1.NodePool{
@@ -87,7 +86,7 @@ func TestReconcile(t *testing.T) {
 			ca := ignitionserver.IgnitionCACertSecret("clusters-zone-check")
 			ca.Data = map[string][]byte{corev1.TLSCertKey: []byte("unit-test-ca")}
 			pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: hc.Spec.PullSecret.Name, Namespace: hc.Namespace}, Data: map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)}}
-			objects := []client.Object{hc, np, ca, pullSecret}
+			objects := []client.Object{hc, np, ca, pullSecret, withKubeconfig(hc)}
 			for _, name := range []string{"fips", "ssh", "apiserver-haproxy"} {
 				objects = append(objects, &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ca.Namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}},
