@@ -6374,6 +6374,46 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 	}
 }
 
+func TestAzureCallContext(t *testing.T) {
+	t.Run("When parent has no deadline, it should set azureAPITimeout", func(t *testing.T) {
+		g := NewWithT(t)
+		start := time.Now()
+		ctx, cancel := azureCallContext(context.Background())
+		defer cancel()
+
+		deadline, ok := ctx.Deadline()
+		g.Expect(ok).To(BeTrue())
+		g.Expect(deadline).To(BeTemporally("~", start.Add(azureAPITimeout), time.Second))
+	})
+
+	t.Run("When Azure call ignores no deadline, the child context should expire", func(t *testing.T) {
+		g := NewWithT(t)
+
+		parent, parentCancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+		defer parentCancel()
+		ctx, cancel := azureCallContext(parent)
+		defer cancel()
+
+		start := time.Now()
+		<-ctx.Done()
+		elapsed := time.Since(start)
+
+		g.Expect(ctx.Err()).To(MatchError(context.DeadlineExceeded))
+		g.Expect(elapsed).To(BeNumerically("<", 2*time.Second), "hung Azure call must not block reconcile for minutes")
+	})
+
+	t.Run("When parent is already cancelled, it should return immediately", func(t *testing.T) {
+		g := NewWithT(t)
+		parent, parentCancel := context.WithCancel(t.Context())
+		parentCancel()
+
+		ctx, cancel := azureCallContext(parent)
+		defer cancel()
+
+		g.Expect(ctx.Err()).To(HaveOccurred())
+	})
+}
+
 // Compile-time assertion that fakeVersionImageMetadataProvider satisfies the interface.
 var _ imageregistry.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
 
