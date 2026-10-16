@@ -72,6 +72,13 @@ type Token struct {
 	// the in-progress rollout target during management-side drift.
 	deployedBootstrapHash string
 
+	// The workload version and rollout hash identify the request persisted with
+	// its bootstrap reference, even if the subsequent NodePool patch failed.
+	// Legacy workloads have no rollout hash; their version still distinguishes
+	// an adopted rollout from a newer release request.
+	deployedVersion       string
+	deployedRolloutConfig string
+
 	// effectiveHash is the full hash that this reconcile cycle is actually
 	// maintaining secrets for. Set by resolveEffectiveHash() and used by
 	// reconcileUserDataSecret() for the TargetConfigVersionHash ignition header.
@@ -191,6 +198,15 @@ func (t *Token) getIgnitionCACert(ctx context.Context) ([]byte, error) {
 // bumps) return false — existing secrets remain valid and the MachineDeployment
 // continues to reference them.
 func (t *Token) isOutdated() bool {
+	if t.deployedVersion != "" && t.deployedVersion != t.Version() {
+		return true
+	}
+	// Prefer the request persisted with the workload. NodePool tracking can be
+	// missing or stale if its patch failed after the workload write succeeded.
+	rolloutTarget := t.rolloutTargetHash()
+	if rolloutTarget != "" && rolloutTarget != t.RolloutHash() {
+		return true
+	}
 	currentRolloutConfig := t.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
 	if currentRolloutConfig == "" {
 		// Annotation absent: either a new NodePool (need to create secrets) or
@@ -211,12 +227,18 @@ func (t *Token) isOutdated() bool {
 	}
 	versionChanged := t.Version() != t.nodePool.Status.Version
 	configChanged := t.RolloutHashWithoutVersion() != currentRolloutConfig
-	// Detect reversion: the desired rollout hash no longer matches what was
-	// propagated. This catches A→B→A where the completed baseline matches A
-	// but the workload still targets B.
-	inProgressRollout := t.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig]
-	revertPending := inProgressRollout != "" && t.RolloutHash() != inProgressRollout
-	return versionChanged || configChanged || revertPending
+	return versionChanged || configChanged
+}
+
+// rolloutTargetHash returns the request associated with the deployed payload.
+// The workload annotation is saved atomically with the bootstrap reference and
+// takes precedence over NodePool tracking, which is persisted separately.
+// Fall back to NodePool tracking for workloads created before this annotation.
+func (t *Token) rolloutTargetHash() string {
+	if t.deployedRolloutConfig != "" {
+		return t.deployedRolloutConfig
+	}
+	return t.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig]
 }
 
 func (t *Token) cleanupOutdated(ctx context.Context) error {
@@ -400,15 +422,16 @@ const (
 // Inputs:
 //   - outdated: true when isOutdated() detected a spec-driven change
 //   - t.deployedBootstrapHash: hash from the CAPI workload's current bootstrap ref
+//   - t.deployedVersion: version persisted with the workload's bootstrap ref
 //   - annotations: nodePoolAnnotationCurrentConfigVersion (completed hash),
-//     nodePoolAnnotationInProgressRolloutConfig (in-progress rollout hash)
+//     rolloutTargetHash() (workload target, falling back to NodePool tracking)
 //   - t.Hash(), t.RolloutHash(): current calculated hashes
 //
 // The resolved state is stored in t.secretState.
 func (t *Token) resolveEffectiveHash(outdated bool) secretMaintenanceState {
 	completedHash := t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
 	deployedHash := t.deployedBootstrapHash
-	inProgressRollout := t.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig]
+	inProgressRollout := t.rolloutTargetHash()
 	currentHash := t.Hash()
 
 	deployedDiffers := deployedHash != "" && deployedHash != currentHash
@@ -437,6 +460,17 @@ func (t *Token) resolveEffectiveHash(outdated bool) secretMaintenanceState {
 	// A spec-driven change was detected (outdated == true).
 
 	if deployedDiffers {
+		if t.deployedVersion != "" && t.deployedVersion != t.Version() {
+			// A legacy rollout may already be active when a newer release is
+			// requested. Its payload must not be adopted for the new version.
+			// This also handles reversions to the last completed version.
+			t.effectiveHash = currentHash
+			t.secretState = stateNewRollout
+			if deployedHash != completedHash {
+				t.secretState = stateSupersededRollout
+			}
+			return t.secretState
+		}
 		// The CAPI workload references a hash that differs from our target.
 		// Determine whether this is a pre-existing rollout to adopt, the
 		// same rollout with management drift, or a genuinely new request.

@@ -80,6 +80,11 @@ const (
 	nodePoolAnnotationUpgradeInProgressFalse  = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
 	nodePoolAnnotationMaxUnavailable          = "hypershift.openshift.io/nodePoolMaxUnavailable"
 
+	// Stored on the CAPI workload's metadata with its bootstrap reference, so
+	// request identity survives a failed subsequent NodePool patch. Keeping it
+	// off the machine template avoids triggering a rollout when it is seeded.
+	nodePoolAnnotationTargetRolloutConfig = "hypershift.openshift.io/nodePoolTargetRolloutConfig"
+
 	// ec2InstanceMetadataHTTPTokensAnnotation can be set to change the instance metadata options of the nodepool underlying EC2 instances
 	// possible values are 'required' (i.e. IMDSv2) or 'optional' which is the default.
 	ec2InstanceMetadataHTTPTokensAnnotation = "hypershift.openshift.io/ec2-instance-metadata-http-tokens"
@@ -565,7 +570,9 @@ func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.Hosted
 // the CAPI workload's bootstrap secret (MachineDeployment for Replace,
 // MachineSet for InPlace) and records it on the token. resolveEffectiveHash()
 // needs the deployed hash to maintain the in-flight rollout target when
-// management-side drift changes the calculated hash. It is shared by the main
+// management-side drift changes the calculated hash. The workload version and
+// target annotation distinguish the persisted request from a newer one, even
+// when NodePool tracking was not saved. It is shared by the main
 // reconcile and the payload conditions so both resolve effective secrets
 // against the same deployed state.
 // No hash is set when the workload does not exist yet, including when the
@@ -580,7 +587,7 @@ func (r *NodePoolReconciler) resolveDeployedBootstrapHash(ctx context.Context, t
 	if err != nil {
 		return fmt.Errorf("error getting capi client: %w", err)
 	}
-	var deployedBootstrapHash string
+	var deployedBootstrapHash, deployedVersion, deployedRolloutConfig string
 	switch nodePool.Spec.Management.UpgradeType {
 	case hyperv1.UpgradeTypeReplace:
 		md := capi.machineDeployment()
@@ -590,6 +597,8 @@ func (r *NodePoolReconciler) resolveDeployedBootstrapHash(ctx context.Context, t
 			}
 		} else if md.Spec.Template.Spec.Bootstrap.DataSecretName != nil {
 			deployedBootstrapHash = extractHashFromSecretName(*md.Spec.Template.Spec.Bootstrap.DataSecretName)
+			deployedVersion = md.Spec.Template.Spec.Version
+			deployedRolloutConfig = md.Annotations[nodePoolAnnotationTargetRolloutConfig]
 		}
 	case hyperv1.UpgradeTypeInPlace:
 		ms := capi.machineSet()
@@ -599,9 +608,13 @@ func (r *NodePoolReconciler) resolveDeployedBootstrapHash(ctx context.Context, t
 			}
 		} else if ms.Spec.Template.Spec.Bootstrap.DataSecretName != nil {
 			deployedBootstrapHash = extractHashFromSecretName(*ms.Spec.Template.Spec.Bootstrap.DataSecretName)
+			deployedVersion = ms.Spec.Template.Spec.Version
+			deployedRolloutConfig = ms.Annotations[nodePoolAnnotationTargetRolloutConfig]
 		}
 	}
 	token.SetDeployedBootstrapHash(deployedBootstrapHash)
+	token.deployedVersion = deployedVersion
+	token.deployedRolloutConfig = deployedRolloutConfig
 	return nil
 }
 
@@ -986,14 +999,23 @@ func MachineDeploymentComplete(deployment *capiv1.MachineDeployment, machineSets
 // status reconciliation: a workload template can match the desired hash
 // before its rollout completes. An existing rollout also needs an in-progress
 // marker so subsequent requests can supersede the adopted target.
+// On subsequent reconciles, recover missing or stale in-progress tracking from
+// the request persisted with the workload's bootstrap reference.
 func seedRolloutAnnotation(token *Token) {
 	nodePool := token.nodePool
-	if _, ok := nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]; ok {
-		return
-	}
-
 	if nodePool.Annotations == nil {
 		nodePool.Annotations = make(map[string]string)
+	}
+	completedHash := nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+	rolloutInProgress := token.deployedBootstrapHash != "" && token.deployedBootstrapHash != completedHash
+	hasInProgressMarker := nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] != ""
+	if token.deployedRolloutConfig != "" && (rolloutInProgress || token.Version() != nodePool.Status.Version || hasInProgressMarker) {
+		// Recover tracking from the workload if its write succeeded but the
+		// NodePool patch failed. This also replaces a stale previous request.
+		nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = token.deployedRolloutConfig
+	}
+	if _, ok := nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]; ok {
+		return
 	}
 
 	// Always seed immediately. Migration policy: pre-migration config changes
@@ -1002,8 +1024,8 @@ func seedRolloutAnnotation(token *Token) {
 	// Once seeded, the standard rollout-hash comparison detects future changes.
 	nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = token.RolloutHashWithoutVersion()
 
-	completedHash := nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
-	if token.deployedBootstrapHash != "" && token.deployedBootstrapHash != completedHash && nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] == "" {
+	versionMatches := token.deployedVersion == "" || token.deployedVersion == token.Version()
+	if rolloutInProgress && nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] == "" && versionMatches {
 		// The deployed target predates this operator and has not completed.
 		// Record the request we adopted now: without this marker, a later
 		// spec change would be mistaken for another adoption of the old payload.

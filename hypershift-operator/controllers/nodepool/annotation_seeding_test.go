@@ -102,6 +102,42 @@ func TestSeedRolloutAnnotation(t *testing.T) {
 
 	for _, strategy := range []hyperv1.UpgradeType{hyperv1.UpgradeTypeReplace, hyperv1.UpgradeTypeInPlace} {
 		for _, kind := range []string{"config", "version"} {
+			for _, requestedVersion := range []string{"4.18.7", "4.18.5"} {
+				t.Run("When migration finds an active "+string(strategy)+" "+kind+" rollout and release "+requestedVersion+" is already requested, it should deliver that release", func(t *testing.T) {
+					g := NewWithT(t)
+					f := newRolloutFixture(t, strategy)
+					c := f.capi
+					if kind == "config" {
+						c.mcoRawConfig = "user-config-B + haproxy-A"
+						c.rolloutMcoRawConfig = "user-config-B"
+					} else {
+						c.releaseImage.ImageStream.Name = "4.18.6"
+						c.nodePool.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.18.6-x86_64"
+					}
+					g.Expect(f.reconcile(t)).To(BeTrue())
+					activeHash := f.bootstrapHash()
+					activeVersion := c.Version()
+					delete(c.nodePool.Annotations, nodePoolAnnotationCurrentRolloutConfig)
+					delete(c.nodePool.Annotations, nodePoolAnnotationInProgressRolloutConfig)
+					delete(f.md.Annotations, nodePoolAnnotationTargetRolloutConfig)
+					delete(f.ms.Annotations, nodePoolAnnotationTargetRolloutConfig)
+					c.releaseImage.ImageStream.Name = requestedVersion
+					c.nodePool.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:" + requestedVersion + "-x86_64"
+					wanted := c.Hash()
+					g.Expect(f.reconcile(t)).To(Equal(activeVersion != requestedVersion))
+					g.Expect(f.bootstrapHash()).To(Equal(wanted))
+					if activeVersion == requestedVersion {
+						g.Expect(f.bootstrapHash()).To(Equal(activeHash), "migration must preserve a legacy rollout already using the requested release")
+					}
+					f.expectActiveToken(t, wanted, requestedVersion)
+					g.Expect(f.reconcile(t)).To(BeFalse())
+					f.complete(t)
+					g.Expect(c.nodePool.Status.Version).To(Equal(requestedVersion))
+					g.Expect(c.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(Equal(wanted))
+					g.Expect(c.nodePool.Annotations).NotTo(HaveKey(nodePoolAnnotationInProgressRolloutConfig))
+					g.Expect(f.reconcile(t)).To(BeFalse())
+				})
+			}
 			for _, nextChange := range []string{"config", "version"} {
 				t.Run("When a new "+nextChange+" request follows migration of an active "+string(strategy)+" "+kind+" rollout, it should supersede the adopted target", func(t *testing.T) {
 					g := NewWithT(t)
@@ -119,6 +155,8 @@ func TestSeedRolloutAnnotation(t *testing.T) {
 					activeHash := f.bootstrapHash()
 					delete(c.nodePool.Annotations, nodePoolAnnotationCurrentRolloutConfig)
 					delete(c.nodePool.Annotations, nodePoolAnnotationInProgressRolloutConfig)
+					delete(f.md.Annotations, nodePoolAnnotationTargetRolloutConfig)
+					delete(f.ms.Annotations, nodePoolAnnotationTargetRolloutConfig)
 					g.Expect(f.reconcile(t)).To(BeFalse(), "migration must preserve the deployed target")
 					g.Expect(f.bootstrapHash()).To(Equal(activeHash))
 					g.Expect(c.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(Equal(completedHash))
@@ -164,6 +202,8 @@ func TestSeedRolloutAnnotation(t *testing.T) {
 					// A legacy rollout has neither of the new tracking annotations.
 					delete(c.nodePool.Annotations, nodePoolAnnotationCurrentRolloutConfig)
 					delete(c.nodePool.Annotations, nodePoolAnnotationInProgressRolloutConfig)
+					delete(f.md.Annotations, nodePoolAnnotationTargetRolloutConfig)
+					delete(f.ms.Annotations, nodePoolAnnotationTargetRolloutConfig)
 					drift := func() { c.mcoRawConfig = c.rolloutMcoRawConfig + " + haproxy-B" }
 					if driftTiming == "before" {
 						drift()

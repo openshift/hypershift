@@ -1591,10 +1591,40 @@ func TestResolveEffectiveHash(t *testing.T) {
 		deployedHash      string
 		completedHash     string
 		inProgressRollout string
+		deployedVersion   string
+		deployedRollout   string
 		versionChanged    bool
 		expectedState     secretMaintenanceState
 		expectedHash      string
 	}{
+		{
+			name:            "When a newer release is requested during a legacy rollout, it should supersede the old payload",
+			outdated:        true,
+			deployedHash:    previousHash,
+			completedHash:   olderHash,
+			deployedVersion: "4.18.4",
+			expectedState:   stateSupersededRollout,
+			expectedHash:    currentHash,
+		},
+		{
+			name:              "When the workload target matches but NodePool tracking is stale, it should continue the deployed payload",
+			outdated:          true,
+			deployedHash:      previousHash,
+			completedHash:     olderHash,
+			inProgressRollout: "stale-request",
+			deployedRollout:   rolloutHash,
+			expectedState:     stateContinuedRollout,
+			expectedHash:      previousHash,
+		},
+		{
+			name:            "When the workload target differs and NodePool tracking is missing, it should supersede the deployed payload",
+			outdated:        true,
+			deployedHash:    previousHash,
+			completedHash:   olderHash,
+			deployedRollout: "previous-request",
+			expectedState:   stateSupersededRollout,
+			expectedHash:    currentHash,
+		},
 		{
 			name:          "When no hashes are recorded and no change is pending, it should maintain the current hash in Steady",
 			expectedState: stateSteady,
@@ -1763,6 +1793,8 @@ func TestResolveEffectiveHash(t *testing.T) {
 			token := &Token{
 				ConfigGenerator:       &cg,
 				deployedBootstrapHash: tc.deployedHash,
+				deployedVersion:       tc.deployedVersion,
+				deployedRolloutConfig: tc.deployedRollout,
 			}
 
 			g.Expect(token.resolveEffectiveHash(tc.outdated)).To(Equal(tc.expectedState))

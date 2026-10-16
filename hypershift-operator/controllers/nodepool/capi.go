@@ -647,7 +647,7 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 	versionChanged := specUpdated // at this point, specUpdated is true only if version changed
 	currentRolloutConfigHash := c.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
 	rolloutConfigChanged := currentRolloutConfigHash != "" && c.RolloutHashWithoutVersion() != currentRolloutConfigHash
-	inProgressRollout := c.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig]
+	inProgressRollout := c.rolloutTargetHash()
 	revertPending := inProgressRollout != "" && c.RolloutHash() != inProgressRollout
 	if versionChanged || rolloutConfigChanged || revertPending {
 		_, effectiveUserData := c.secretsForHash(c.EffectiveHash())
@@ -664,6 +664,12 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 		}
 		c.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = c.RolloutHash()
 	}
+	// Persist request identity with the bootstrap reference, including when
+	// adopting an existing workload. This is metadata, not template content.
+	if machineDeployment.Annotations == nil {
+		machineDeployment.Annotations = make(map[string]string)
+	}
+	machineDeployment.Annotations[nodePoolAnnotationTargetRolloutConfig] = c.RolloutHash()
 
 	// Infrastructure template: compared against the MachineDeployment's current
 	// infrastructure ref. A mismatch means a platform-level change (e.g. AMI,
@@ -702,7 +708,7 @@ func (c *CAPI) propagateVersionAndTemplateToMachineSet(log logr.Logger, machineS
 	versionChanged := specUpdated
 	currentRolloutConfigHash := c.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
 	rolloutConfigChanged := currentRolloutConfigHash != "" && c.RolloutHashWithoutVersion() != currentRolloutConfigHash
-	inProgressRollout := c.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig]
+	inProgressRollout := c.rolloutTargetHash()
 	revertPending := inProgressRollout != "" && c.RolloutHash() != inProgressRollout
 	if versionChanged || rolloutConfigChanged || revertPending {
 		_, effectiveUserData := c.secretsForHash(c.EffectiveHash())
@@ -733,6 +739,10 @@ func (c *CAPI) propagateVersionAndTemplateToMachineSet(log logr.Logger, machineS
 		}
 		c.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = c.RolloutHash()
 	}
+	if machineSet.Annotations == nil {
+		machineSet.Annotations = make(map[string]string)
+	}
+	machineSet.Annotations[nodePoolAnnotationTargetRolloutConfig] = c.RolloutHash()
 
 	// Infrastructure template: compared against the MachineSet's current
 	// infrastructure ref.

@@ -102,13 +102,25 @@ func (f *rolloutFixture) reconcile(t *testing.T) bool {
 	// Each controller reconcile constructs a new Token; do not carry its cached
 	// effective hash into the next cycle in this fixture either.
 	c.effectiveHash = ""
-	c.SetDeployedBootstrapHash(f.bootstrapHash())
+	f.observeDeployedState()
 	NewWithT(t).Expect(c.Token.Reconcile(t.Context())).To(Succeed())
 	seedRolloutAnnotation(c.Token)
 	if c.nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
 		return c.propagateVersionAndTemplate(logr.Discard(), f.md, f.template)
 	}
 	return c.propagateVersionAndTemplateToMachineSet(logr.Discard(), f.ms, f.template)
+}
+
+func (f *rolloutFixture) observeDeployedState() {
+	c := f.capi
+	c.SetDeployedBootstrapHash(f.bootstrapHash())
+	if c.nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
+		c.deployedVersion = f.md.Spec.Template.Spec.Version
+		c.deployedRolloutConfig = f.md.Annotations[nodePoolAnnotationTargetRolloutConfig]
+	} else {
+		c.deployedVersion = f.ms.Spec.Template.Spec.Version
+		c.deployedRolloutConfig = f.ms.Annotations[nodePoolAnnotationTargetRolloutConfig]
+	}
 }
 
 func (f *rolloutFixture) complete(t *testing.T) {

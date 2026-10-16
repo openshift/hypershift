@@ -1256,6 +1256,32 @@ func TestIsOutdated(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{}},
 	})
 	baseRolloutHash := baseToken.RolloutHashWithoutVersion()
+	for _, tc := range []struct {
+		name, deployedVersion, deployedRollout, nodePoolTarget string
+		missingBaseline, expected                              bool
+	}{
+		{name: "When the workload version differs from the desired completed version, it should be outdated", deployedVersion: "4.18.1", expected: true},
+		{name: "When the workload request matches but NodePool tracking is stale, it should not be outdated", deployedRollout: baseToken.RolloutHash(), nodePoolTarget: "stale"},
+		{name: "When the workload request differs and the baseline was not saved, it should be outdated", deployedRollout: "previous", missingBaseline: true, expected: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			np := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+					nodePoolAnnotationCurrentConfigVersion:    "completed",
+					nodePoolAnnotationCurrentRolloutConfig:    baseRolloutHash,
+					nodePoolAnnotationInProgressRolloutConfig: tc.nodePoolTarget,
+				}},
+				Status: hyperv1.NodePoolStatus{Version: "4.18.0"},
+			}
+			if tc.missingBaseline {
+				delete(np.Annotations, nodePoolAnnotationCurrentRolloutConfig)
+			}
+			token := makeToken("4.18.0", np)
+			token.deployedVersion = tc.deployedVersion
+			token.deployedRolloutConfig = tc.deployedRollout
+			NewWithT(t).Expect(token.isOutdated()).To(Equal(tc.expected))
+		})
+	}
 
 	testCases := []struct {
 		name     string

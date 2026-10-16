@@ -24,9 +24,9 @@ func TestExtractHashFromSecretName(t *testing.T) {
 			expected:   "xyz789",
 		},
 		{
-			name:       "When given a valid token secret name, it should extract the hash",
-			secretName: "token-secret-my-nodepool-def456",
-			expected:   "def456",
+			name:       "When given a token secret for a nodepool without hyphens, it should return empty",
+			secretName: "token-nodepool-def456",
+			expected:   "",
 		},
 		{
 			name:       "When the secret name has too few parts, it should return empty",

@@ -44,6 +44,8 @@ Four annotations on the NodePool track the rollout lifecycle:
 | **Current Rollout Config** | `hypershift.openshift.io/nodePoolCurrentRolloutConfig` | `seedRolloutAnnotation` on first reconcile; status reconciliation on completion | Never (overwritten) |
 | **In-Progress Rollout Config** | `hypershift.openshift.io/nodePoolInProgressRolloutConfig` | `seedRolloutAnnotation` when adopting an existing rollout; propagation when a CAPI workload write succeeds | Status reconciliation on rollout completion (`delete`) |
 
+The MachineDeployment or MachineSet also stores `hypershift.openshift.io/nodePoolTargetRolloutConfig` on its **top-level metadata**. This records `RolloutHash()` in the same API write as the bootstrap reference and remains after completion. It takes precedence over the NodePool's in-progress marker, so a failed NodePool patch cannot lose the request identity or make a later request adopt the wrong payload. Seeding this metadata does not change the machine template or any config hash.
+
 ### Annotation Lifecycle
 
 ```
@@ -56,7 +58,8 @@ Four annotations on the NodePool track the rollout lifecycle:
 ```
 
 - On a **new NodePool**, no annotations exist. `isOutdated()` returns true and secrets are created. The rollout baseline is seeded during reconciliation; propagation records the in-progress target, and completion records the completed hashes and clears the in-progress annotation.
-- On **operator upgrade**, `seedRolloutAnnotation` writes `currentRolloutConfig` if absent. If the deployed bootstrap hash differs from the completed hash, it also records the adopted request in `inProgressRolloutConfig`. A later config or version request can then supersede that target, even before the adopted rollout completes. The completed config version is left to status reconciliation.
+- On **operator upgrade**, `seedRolloutAnnotation` writes `currentRolloutConfig` if absent. If an unfinished legacy rollout already uses the requested release, it also records the adopted request in `inProgressRolloutConfig`. A different requested release gets a new payload, even when the request arrived before migration. A later config or version request can supersede an adopted target before completion. The completed config version is left to status reconciliation.
+- On **retry after a failed NodePool patch**, the workload's target annotation supplies the persisted request and restores missing or stale in-progress tracking. This recovery runs even when the rollout baseline already exists.
 - On a **spec-driven change**, `propagateVersionAndTemplate` writes `inProgressRolloutConfig` when it updates the CAPI workload.
 - On **completion**, status reconciliation updates all config annotations and deletes `inProgressRolloutConfig`.
 
@@ -71,10 +74,11 @@ Each reconcile cycle, `resolveEffectiveHash` (called from `Token.Reconcile()`) d
 | `outdated` | `isOutdated()` | True when a spec-driven change (version, config, or reversion) requires reconciliation of the rollout target |
 | `deployedHash` | CAPI workload's `bootstrap.dataSecretName` | The full hash extracted from the MachineDeployment or MachineSet's current bootstrap secret reference. Empty if the workload does not exist or has no bootstrap reference. |
 | `completedHash` | `nodePoolAnnotationCurrentConfigVersion` | The full hash of the last completed rollout payload |
-| `inProgress` | `nodePoolAnnotationInProgressRolloutConfig` | The rollout hash last propagated to the CAPI workload; cleared on completion |
+| `inProgress` | Workload's `nodePoolTargetRolloutConfig`, falling back to the NodePool's `nodePoolInProgressRolloutConfig` | The rollout hash associated with the deployed bootstrap reference; the workload copy remains after completion |
 | `Hash()` | Current configuration | The calculated full payload hash |
 | `RolloutHash()` | Current spec-driven configuration | The calculated rollout hash |
 | Target and completed versions | `Version()` and `nodePool.Status.Version` | A mismatch can indicate either a fresh version upgrade or one still in progress |
+| Deployed version | CAPI workload's `spec.template.spec.version` | Distinguishes a legacy rollout at the requested release from one that needs a different release payload |
 
 The decision uses two derived signals:
 
@@ -84,6 +88,8 @@ rolloutInProgress := deployedHash != completedHash || Version() != nodePool.Stat
 ```
 
 `rolloutInProgress` is consulted only when `outdated` and `deployedDiffers` are true. A version mismatch alone does not prove a rollout has already started: when the deployed and completed hashes match and `inProgress` is empty, the state is `NewRollout`.
+
+Before considering adoption or continuation, a known deployed version that differs from the requested version selects the current `Hash()`. It is `SupersededRollout` when the deployed hash is ahead of completion, otherwise `NewRollout`.
 
 ### States
 
@@ -98,7 +104,11 @@ flowchart TD
 
     Outdated -->|Yes| Deployed{"deployedDiffers?"}
     Deployed -->|No| New["NewRollout: Hash()"]
-    Deployed -->|Yes| InFlight{"rolloutInProgress?"}
+    Deployed -->|Yes| Version{"known deployed version differs from requested?"}
+    Version -->|Yes| VersionAhead{"deployedHash differs from completedHash?"}
+    VersionAhead -->|Yes| Superseded["SupersededRollout: Hash()"]
+    VersionAhead -->|No| New
+    Version -->|No| InFlight{"rolloutInProgress?"}
     InFlight -->|No| New
     InFlight -->|Yes| Marker{"inProgress present?"}
     Marker -->|No| Ahead{"deployedHash differs from completedHash?"}
@@ -106,7 +116,7 @@ flowchart TD
     Ahead -->|No| New
     Marker -->|Yes| Same{"inProgress matches RolloutHash()?"}
     Same -->|Yes| Continued["ContinuedRollout: deployedHash"]
-    Same -->|No| Superseded["SupersededRollout: Hash()"]
+    Same -->|No| Superseded
 ```
 
 When `outdated` is true and the deployed hash is absent or already matches `Hash()`, the state is always `NewRollout`, regardless of the completed hash or in-progress annotation. `CompletedDrift` and `Steady` are only selected when `outdated` is false.
@@ -136,13 +146,13 @@ When `outdated` is true and the deployed hash is absent or already matches `Hash
 
 #### 4. NewRollout
 
-- **Condition**: `outdated`, and either `!deployedDiffers`, `!rolloutInProgress`, or both `inProgress` is empty and `deployedHash == completedHash`.
+- **Condition**: `outdated`, and either `!deployedDiffers`, `!rolloutInProgress`, or `deployedHash == completedHash` with an empty `inProgress` or a different known deployed version.
 - **Action**: Create/maintain secrets under `Hash()`.
 - **Meaning**: Use the current calculated target without retaining or superseding a different active target. This covers new NodePools, fresh config or version changes after a completed rollout, and a current target that is already deployed but has not finished rolling out. The in-progress annotation may be present in this state.
 
 #### 5. AdoptedRollout
 
-- **Condition**: `outdated`, `deployedDiffers`, `inProgress` is empty, and `deployedHash != completedHash`.
+- **Condition**: `outdated`, `deployedDiffers`, `inProgress` is empty, `deployedHash != completedHash`, and the deployed version is unknown or matches the requested release.
 - **Action**: Maintain secrets under `deployedHash`.
 - **Meaning**: Without an in-progress annotation, the deployed hash being ahead of completion is treated as an existing rollout target. This preserves the active bootstrap secrets when adopting a rollout started by an older operator. An empty completed hash also satisfies this condition when the deployed hash is present and differs from `Hash()`.
 
@@ -151,13 +161,13 @@ When `outdated` is true and the deployed hash is absent or already matches `Hash
 
 #### 6. ContinuedRollout
 
-- **Condition**: `outdated`, `deployedDiffers`, `rolloutInProgress`, and a nonempty `inProgress` annotation matching `RolloutHash()`.
+- **Condition**: `outdated`, `deployedDiffers`, `rolloutInProgress`, a nonempty `inProgress` matching `RolloutHash()`, and the deployed version is unknown or matches the requested release.
 - **Action**: Maintain secrets under `deployedHash`.
 - **Meaning**: The same rollout is still pending while the calculated full hash differs from its deployed target, typically because of management-side drift. The version comparison allows this state even when the deployed and completed hashes match.
 
 #### 7. SupersededRollout
 
-- **Condition**: `outdated`, `deployedDiffers`, `rolloutInProgress`, and a nonempty `inProgress` annotation differing from `RolloutHash()`.
+- **Condition**: `outdated`, `deployedDiffers`, and either a different known deployed version with `deployedHash != completedHash`, or `rolloutInProgress` with a nonempty `inProgress` differing from `RolloutHash()`.
 - **Action**: Create/maintain secrets under `Hash()`.
 - **Meaning**: A new spec-driven target supersedes a previously recorded rollout. A fresh version upgrade without an in-progress annotation is `NewRollout` instead.
 
@@ -175,9 +185,9 @@ When the rollout completes and no further spec change is pending, the state beco
 
 `isOutdated()` determines whether a spec-driven change requires new secrets. It uses `RolloutHashWithoutVersion()` (not `Hash()`) to compare against the `currentRolloutConfig` annotation, plus a separate version comparison against `Status.Version`.
 
-An in-progress rollout hash that differs from `RolloutHash()` also makes `isOutdated()` true, allowing a reversion to supersede a pending target. The result feeds into `resolveEffectiveHash` as the `outdated` input.
+The deployed workload's version and rollout target are checked first. A version or target mismatch also makes `isOutdated()` true, allowing a reversion to supersede a pending target even when the NodePool's baseline or in-progress marker was not saved. Legacy workloads fall back to the NodePool's in-progress marker. The result feeds into `resolveEffectiveHash` as the `outdated` input.
 
-**Migration behavior**: When `currentRolloutConfig` is absent but a completed config-version annotation exists (first reconcile after operator upgrade), `isOutdated()` checks only for version changes. Config changes during migration are absorbed into the new baseline because the opaque full-hash comparison cannot distinguish user config changes from management-only drift.
+**Migration behavior**: When `currentRolloutConfig` is absent but a completed config-version annotation exists, and no rollout target has been recorded, `isOutdated()` checks only for version changes. Config changes during migration are absorbed into the new baseline because the opaque full-hash comparison cannot distinguish user config changes from management-only drift. A desired release that differs from the deployed workload's release still gets a new payload.
 
 ### `cleanupOutdated()`
 
@@ -208,9 +218,9 @@ rolloutConfigChanged := currentRolloutConfig != "" && RolloutHashWithoutVersion(
 revertPending := inProgressRollout != "" && RolloutHash() != inProgressRollout
 ```
 
-When any of these is true, the workload is updated to point at the user-data secret named with `EffectiveHash()` (the output of `resolveEffectiveHash`). The `inProgressRolloutConfig` annotation is set to `RolloutHash()`.
+Here `inProgressRollout` comes from the workload's target annotation, falling back to NodePool tracking. When any gate is true, the workload is updated to point at the user-data secret named with `EffectiveHash()` (the output of `resolveEffectiveHash`). The NodePool's `inProgressRolloutConfig` annotation is set to `RolloutHash()`. The workload's top-level target annotation is saved with its bootstrap reference, including when adopting a legacy workload.
 
-When none is true, the workload is not updated. Management-side-only changes do not propagate.
+When none is true, the workload's bootstrap reference is not updated. Management-side-only changes do not propagate.
 
 `reconcileWorkload` retains NodePool annotation and status changes only when the CAPI workload write succeeds. If the write fails, it restores the NodePool state from before the mutation. This matters because the main reconciler still patches the NodePool on errors: persisting an unpropagated in-progress target would make a version upgrade retry maintain the old bootstrap payload.
 
@@ -235,12 +245,12 @@ Both conditions mention "config" and "update", but they answer different questio
 
 | State | Meaning | Operator action |
 |---|---|---|
-| `UpdatingConfig=False`, `ConfigUpdatePending=False` | Converged: deployed nodes match both spec-driven and management-side content. | None. |
+| `UpdatingConfig=False`, `ConfigUpdatePending=False` | No config change or deferred management drift is reported. Initial provisioning or a version-only rollout may still be running. | Check `UpdatingVersion` and readiness/completion before treating the NodePool as converged. |
 | `UpdatingConfig=True` (`AsExpected`) | A spec-driven config change is rolling out (`Replace`) or being applied in place (`InPlace`). | Monitor until it returns to `False`. |
 | `UpdatingConfig=False`, reason `InplaceUpgradeFailed` | An in-place config rollout failed. | Investigate the MachineSet upgrade and NodePool events. |
 | `ConfigUpdatePending=True` (`ManagementConfigDrift`) | Management-side content (e.g. HAProxy image) changed without triggering a rollout. Existing and replaced nodes keep the previous management-side configuration until the next spec-driven rollout. | None required. The change rides along with the next release upgrade or user config change; trigger any spec-driven rollout to converge sooner. |
 
-The two conditions are never `True` at the same time: drift is only reported while no rollout is in progress (`hasDrift && !isUpdating`), and any in-progress rollout converges the full payload anyway.
+The two conditions are never `True` at the same time: drift is only reported while no config or version update is detected (`hasDrift && !isUpdating`). Management content that changes after a rollout starts is deferred while the controller maintains that rollout's existing payload. `ConfigUpdatePending` can therefore become `True` after the rollout completes; the next spec-driven rollout includes the deferred content.
 
 !!! note "Fresh NodePools"
     `UpdatingConfig` stays `False` for a NodePool's entire initial rollout: the baseline is seeded from the current target (see `seedRolloutAnnotation`), so applying the initial config is not a change relative to a completed baseline. The initial rollout is surfaced by `UpdatingVersion` instead (`Status.Version` is only set at completion, so it is `True` for the whole initial rollout).
