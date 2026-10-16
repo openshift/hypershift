@@ -15,4 +15,5 @@ func TestAllowedSymbols(t *testing.T) {
 	_ = v51
 
 	_ = e2eutil.Predicate[string](nil)
+	_ = e2eutil.WithoutConditionDump()
 }

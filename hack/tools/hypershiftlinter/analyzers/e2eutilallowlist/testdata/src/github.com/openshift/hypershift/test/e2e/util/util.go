@@ -7,6 +7,10 @@ var (
 
 type Predicate[T any] func(T) (bool, string, error)
 
+func WithoutConditionDump() any {
+	return nil
+}
+
 func GetConfig() (any, error) {
 	return nil, nil
 }

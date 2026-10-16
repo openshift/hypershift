@@ -43,6 +43,7 @@ var allowlist = map[string]map[string]bool{
 		"WithGuestConfig":              true,
 		"WithInterval":                 true,
 		"WithTimeout":                  true,
+		"WithoutConditionDump":         true,
 		"WithTransport":                true,
 		"WithTransportFactory":         true,
 
