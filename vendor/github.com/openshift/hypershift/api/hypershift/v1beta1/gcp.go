@@ -107,6 +107,7 @@ type GCPNetworkConfig struct {
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.storage.contains('@') && self.workloadIdentity.serviceAccountsEmails.storage.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="storage service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.imageRegistry.contains('@') && self.workloadIdentity.serviceAccountsEmails.imageRegistry.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="imageRegistry service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.network.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="network service account must belong to the same project"
+// +kubebuilder:validation:XValidation:rule="!has(self.workloadIdentity.serviceAccountsEmails.ingress) || size(self.workloadIdentity.serviceAccountsEmails.ingress) == 0 || self.workloadIdentity.serviceAccountsEmails.ingress.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="ingress service account must belong to the same project"
 type GCPPlatformSpec struct {
 	// project is the GCP project ID.
 	// A valid project ID must satisfy the following rules:
@@ -375,6 +376,27 @@ type GCPServiceAccountsEmails struct {
 	// +required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Network is immutable"
 	Network GCPServiceAccountEmail `json:"network,omitempty"`
+
+	// ingress is the Google Service Account email for the cluster Ingress Operator
+	// that manages the default IngressController's wildcard (*.apps) Cloud DNS records.
+	// This GSA requires the following IAM roles:
+	// - roles/dns.admin (DNS Admin - for managing records in the ingress managed zone)
+	// - roles/compute.viewer (Compute Viewer - for reading load balancer / instance metadata)
+	// See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+	// Format: service-account-name@project-id.iam.gserviceaccount.com
+	//
+	// This is a user-provided value referencing a pre-created Google Service Account.
+	// Typically obtained from the output of `hypershift infra create gcp` which creates
+	// the required service accounts with appropriate IAM roles and WIF bindings.
+	//
+	// ingress is optional: it is only consumed when the Ingress capability is
+	// enabled. When Ingress is enabled it must be set (enforced controller-side,
+	// capability-aware, so existing clusters with Ingress disabled are unaffected).
+	//
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Ingress is immutable"
+	Ingress GCPServiceAccountEmail `json:"ingress,omitempty"`
 }
 
 // GCPOnHostMaintenance defines the behavior when a host maintenance event occurs.

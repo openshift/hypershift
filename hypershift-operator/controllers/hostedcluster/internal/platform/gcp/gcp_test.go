@@ -34,6 +34,7 @@ const (
 	testStorageGSA         hyperv1.GCPServiceAccountEmail = "test-storage@test-project.iam.gserviceaccount.com"
 	testImageRegistryGSA   hyperv1.GCPServiceAccountEmail = "test-image-registry@test-project.iam.gserviceaccount.com"
 	testNetworkGSA         hyperv1.GCPServiceAccountEmail = "test-network-sa@test-project.iam.gserviceaccount.com"
+	testIngressGSA         hyperv1.GCPServiceAccountEmail = "test-ingress-sa@test-project.iam.gserviceaccount.com"
 )
 
 // testCreateOrUpdate is a test helper that implements createOrUpdate functionality
@@ -100,6 +101,7 @@ func validHostedCluster() *hyperv1.HostedCluster {
 							Storage:         testStorageGSA,
 							ImageRegistry:   testImageRegistryGSA,
 							Network:         testNetworkGSA,
+							Ingress:         testIngressGSA,
 						},
 					},
 				},
@@ -353,6 +355,22 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network = ""
 			},
 			errorMsg: "network service account email is required",
+		},
+		{
+			name: "missing ingress service account email with Ingress capability enabled",
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Ingress = ""
+			},
+			errorMsg: "ingress service account email is required when the Ingress capability is enabled",
+		},
+		{
+			name: "missing ingress service account email with Ingress capability disabled",
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Ingress = ""
+				hc.Spec.Capabilities = &hyperv1.Capabilities{
+					Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability, hyperv1.ConsoleCapability},
+				}
+			},
 		},
 	}
 

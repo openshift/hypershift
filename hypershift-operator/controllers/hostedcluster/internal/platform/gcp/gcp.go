@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/gcputil"
@@ -587,6 +588,13 @@ func validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedCluster) erro
 
 	if wif.ServiceAccountsEmails.Network == "" {
 		return fmt.Errorf("network service account email is required")
+	}
+
+	// ingress is capability-gated: it is only required when the Ingress capability
+	// is enabled. This keeps existing clusters that disable Ingress valid without a
+	// forced migration, while still catching an enabled-but-unconfigured ingress.
+	if capabilities.IsIngressCapabilityEnabled(hcluster.Spec.Capabilities) && wif.ServiceAccountsEmails.Ingress == "" {
+		return fmt.Errorf("ingress service account email is required when the Ingress capability is enabled")
 	}
 
 	return nil

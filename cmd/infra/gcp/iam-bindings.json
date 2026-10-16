@@ -74,6 +74,18 @@
       "k8sServiceAccounts": [
         {"namespace": "openshift-cloud-network-config-controller", "name": "cloud-network-config-controller"}
       ]
+    },
+    {
+      "name": "ingress-op",
+      "displayName": "Ingress Operator Service Account",
+      "description": "Service account for the cluster Ingress Operator (manages *.apps Cloud DNS records)",
+      "roles": [
+        "roles/dns.admin",
+        "roles/compute.viewer"
+      ],
+      "k8sServiceAccounts": [
+        {"namespace": "openshift-ingress-operator", "name": "ingress-operator"}
+      ]
     }
   ]
 }
