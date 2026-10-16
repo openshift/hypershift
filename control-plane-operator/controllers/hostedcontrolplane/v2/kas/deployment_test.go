@@ -130,6 +130,25 @@ func TestAdaptDeployment(t *testing.T) {
 			g.Expect(container.Args).To(ContainElements(originalContainer.Args))
 		})
 	}
+
+	t.Run("When payload versions differ, it should probe the konnectivity binary instead of gating by version", func(t *testing.T) {
+		g := NewWithT(t)
+		cpContext := component.WorkloadContext{
+			HCP:                      &hyperv1.HostedControlPlane{},
+			ReleaseImageProvider:     testutil.FakeImageProvider(testutil.WithVersion("4.22.0")),
+			UserReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion("5.0.0-rc.6")),
+		}
+		deployment := &appsv1.Deployment{Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Name: "konnectivity-server", Command: []string{"/usr/bin/proxy-server"}, Args: []string{"--existing-arg=value"},
+		}}}}}}
+		g.Expect(adaptDeployment(cpContext, deployment)).To(Succeed())
+		container := podspec.FindContainer("konnectivity-server", deployment.Spec.Template.Spec.Containers)
+		g.Expect(container.Command[:2]).To(Equal([]string{"/bin/bash", "-c"}))
+		g.Expect(container.Args[:3]).To(Equal([]string{"2", "/usr/bin/proxy-server", "--help"}))
+		g.Expect(container.Args).To(ContainElement("--existing-arg=value"))
+		g.Expect(container.Args).To(ContainElement("--tls-min-version=VersionTLS12"))
+		g.Expect(container.Args).To(ContainElement(HavePrefix("--cipher-suites=")))
+	})
 }
 
 func TestResolveKASVerbosity(t *testing.T) {
@@ -700,9 +719,10 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
 								{
-									Name:  "konnectivity-server",
-									Image: "konnectivity-server:latest",
-									Args:  []string{},
+									Name:    "konnectivity-server",
+									Command: []string{"/usr/bin/proxy-server"},
+									Image:   "konnectivity-server:latest",
+									Args:    []string{},
 								},
 							},
 						},

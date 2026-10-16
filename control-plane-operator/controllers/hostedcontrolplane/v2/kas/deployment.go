@@ -80,11 +80,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			"--server-count",
 			strconv.Itoa(int(serverCount)),
 		)
-
-		if len(tlsArgs) > 0 {
-			c.Args = append(c.Args, tlsArgs...)
-		}
 	})
+	if c := podspec.FindContainer("konnectivity-server", deployment.Spec.Template.Spec.Containers); c != nil {
+		if err := config.AppendSupportedTLSArgs(c, []string{"--help"}, tlsArgs); err != nil {
+			return err
+		}
+	}
 
 	payloadVersion := cpContext.UserReleaseImageProvider.Version()
 	bootstrapContainers := []string{
