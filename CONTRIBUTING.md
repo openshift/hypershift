@@ -47,6 +47,32 @@ Useful Prow commands:
 - `/pipeline required` - Trigger all second-phase CI jobs (e2e tests gated behind `/lgtm`)
 - `/label tide/merge-method-squash` - Squash commits on merge (useful for PRs with multiple related commits)
 
+#### Retest and override comment format
+
+When you ask CI to re-run or bypass a job, say **why** in the comment so reviewers and agents can audit the decision. Both `/retest` and `/override` comments follow the same shape:
+
+1. The command on the first line. For `/override`, the job identifier MUST be the GitHub status-context form `ci/prow/<test-name>` (quoted), **not** the full `pull-ci-openshift-hypershift-<branch>-<test-name>` prow job name — the latter is rejected with "unknown contexts/checkruns were given."
+2. A blank line.
+3. A reason line that starts with a **reason keyword in ALL CAPS**, followed by any required tracking bug and an explanation.
+
+Example (from [#9961](https://github.com/openshift/hypershift/pull/9961#issuecomment-6214025296)):
+
+```
+/override "ci/prow/e2e-v2-azure-self-managed"
+
+FLAKE OCPBUGS-132050 — This job failed on unrelated NodePool tests (OSImageStream
+"config hash annotation" empty, plus trust-bundle / MachineConfig-replace rollouts
+hitting `context deadline exceeded`), which is the known Azure self-managed flake.
+This PR only touches backup-restore e2e test files, and the backup-restore steps
+passed in the same run, so the failure is not related to this change.
+```
+
+The reason keyword is open ended, but prefer one of these well-understood ones:
+
+- **UNRELATED** — The change touches files that are not under test in any way or shape. This is a high bar: it is **not** enough to believe the change "shouldn't have" broken the test. Reserve it for cases where the files you touched are not even part of the images used by the test.
+- **FLAKE** — A known intermittent failure. Must be accompanied by a tracking bug ticket to be valid, plus an explanation of why the failure you are overriding is the **same** failure described in that ticket.
+- **INFRA** — The job ran while the underlying infrastructure was down. Must be accompanied by a tracking bug ticket showing the infra outage. Use this very rarely — it is meant for fast-tracking a fix while infra is broken.
+
 ### Required labels to merge
 
 - `approved` - From an approver via `/approve`
