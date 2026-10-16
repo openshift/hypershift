@@ -1906,7 +1906,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 								InfraNamespace: "kubevirt-kubevirt",
 								InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
 									Name: "secret",
-									Key:  "key",
+									Key:  "kubeconfig",
 								},
 							},
 						},
@@ -2094,6 +2094,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			Data: map[string][]byte{
 				"credentials":       []byte("creds"),
 				".dockerconfigjson": []byte("{}"),
+				"kubeconfig":        []byte(externalInfraKubeconfig),
 			},
 		},
 		&configv1.Network{
@@ -5393,6 +5394,9 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(tt *testing.T) {
 			mockCtrl := gomock.NewController(t)
+			// These encryption-only scenarios use local infrastructure, not an
+			// external credential reference with no backing Secret.
+			testCase.hc.Spec.Platform.Kubevirt.Credentials = nil
 			testCase.objects = append(testCase.objects, testCase.hc)
 			infra := &configv1.Infrastructure{
 				ObjectMeta: metav1.ObjectMeta{
@@ -9488,13 +9492,14 @@ func TestDestroyGracePeriod(t *testing.T) {
 
 			if !tc.expectFinalizer {
 				// When the finalizer is removed, the fake client deletes the object
-				// (DeletionTimestamp is set and no finalizers remain). The Reconcile
-				// method then fails to update the ReconciliationSucceeded condition
-				// with a NotFound error, which is the expected outcome.
+				// (DeletionTimestamp is set and no finalizers remain). Reconciliation
+				// should complete without a status-patch error for the deleted object.
 				g.Expect(errors2.IsNotFound(getErr)).To(BeTrue(),
 					"HC should be deleted after finalizer removal")
-				g.Expect(err).To(HaveOccurred(),
-					"Reconcile should error from status update on deleted object")
+				g.Expect(err).NotTo(HaveOccurred(),
+					"Reconcile should succeed after finalizer removal")
+				g.Expect(result).To(Equal(ctrl.Result{}),
+					"Reconcile should not requeue a deleted object")
 				return
 			}
 

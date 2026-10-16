@@ -75,12 +75,6 @@ linters:
         path: '^hypershift-operator/controllers/hostedcluster/etcd_recovery\.go$'
         text: '^hcpstatuspatch: do not call Status\(\)\.Update\(\) on HostedCluster;'
         source: '^\s*if\s+err\s+:=\s+r\.Client\.Status\(\)\.Update\(ctx,\s+hcluster\);\s+err\s+!=\s+nil\s+\{\s*$'
-      # Reconcile.
-      # Remove when the last matching call migrates to support/statuspatching.
-      - linters: [hypershiftlinter]
-        path: '^hypershift-operator/controllers/hostedcluster/hostedcluster_controller\.go$'
-        text: '^hcpstatuspatch: do not call Status\(\)\.Update\(\) on HostedCluster;'
-        source: '^\s*return\s+res,\s+utilerrors\.NewAggregate\(\[\]error\{err,\s+r\.Client\.Status\(\)\.Update\(ctx,\s+hcluster\)\}\)\s*$'
       # reconcile, reconcileOIDCDocumentsWithStatus, reconcileRestoredFromBackupWithStatus.
       # Remove when the last matching call migrates to support/statuspatching.
       - linters: [hypershiftlinter]

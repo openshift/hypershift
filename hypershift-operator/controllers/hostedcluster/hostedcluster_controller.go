@@ -23,7 +23,6 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -415,39 +414,33 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if !hcluster.DeletionTimestamp.IsZero() {
 		span.SetAttributes(tracing.AttrHostedClusterDeleting.Bool(true))
 	}
+	generation := hcluster.Generation
 
 	var res reconcile.Result
-	if r.overwriteReconcile != nil {
-		res, err = r.overwriteReconcile(ctx, req, log, hcluster)
-	} else if r.ReconcileLegacy {
-		res, err = r.reconcileLegacy(ctx, req, log, hcluster)
-	} else {
-		res, err = r.reconcile(ctx, req, log, hcluster)
+	// Both reconciliation implementations can discover the infrastructure cluster
+	// before copying credentials. Reject unsafe input before either path uses it.
+	if err = r.validateKubevirtCredentials(ctx, hcluster); err == nil {
+		if r.overwriteReconcile != nil {
+			res, err = r.overwriteReconcile(ctx, req, log, hcluster)
+		} else if r.ReconcileLegacy {
+			res, err = r.reconcileLegacy(ctx, req, log, hcluster)
+		} else {
+			res, err = r.reconcile(ctx, req, log, hcluster)
+		}
 	}
 
-	condition := metav1.Condition{
-		Type:               string(hyperv1.ReconciliationSucceeded),
-		ObservedGeneration: hcluster.Generation,
-		Status:             metav1.ConditionTrue,
-		Reason:             "ReconciliatonSucceeded",
-		Message:            "Reconciliation completed successfully",
-		LastTransitionTime: r.now(),
+	if err == nil && hcluster.Generation != generation {
+		// Our successful spec update queues another pass. Do not report the new
+		// generation as reconciled until that pass has evaluated it.
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
-	if err != nil {
-		condition.Status = metav1.ConditionFalse
-		condition.Reason = "ReconciliationError"
-		condition.Message = err.Error()
+	statusErr := r.patchReconcileStatus(ctx, hcluster, generation, err)
+	if apierrors.IsNotFound(statusErr) {
+		// Finalizer removal may have successfully deleted the HC. Keep any actual
+		// reconciliation error, but there is no remaining status object to patch.
+		statusErr = nil
 	}
-	old := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ReconciliationSucceeded))
-	if old != nil {
-		old.LastTransitionTime = condition.LastTransitionTime
-	}
-	if !reflect.DeepEqual(old, &condition) {
-		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-		return res, utilerrors.NewAggregate([]error{err, r.Client.Status().Update(ctx, hcluster)})
-	}
-
-	return res, err
+	return res, utilerrors.NewAggregate([]error{err, statusErr})
 }
 
 //nolint:gocyclo
@@ -1067,23 +1060,28 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Set ValidConfiguration condition
-	{
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidHostedClusterConfiguration),
-			ObservedGeneration: hcluster.Generation,
-		}
-		if err := r.validateConfigAndClusterCapabilities(ctx, hcluster); err != nil {
-			condition.Status = metav1.ConditionFalse
-			condition.Message = err.Error()
-			condition.Reason = hyperv1.InvalidConfigurationReason
+	// Resolve release-dependent validation before publishing configuration
+	// success or checking the configuration gate. Reuse this result below.
+	var releaseImage *releaseinfo.ReleaseImage
+	var releaseLookupErr error
+	var releaseImageVersion semver.Version
+	var releaseImageVersionErr error
+	resolveReleaseImage := func() {
+		releaseImage, releaseLookupErr = r.lookupReleaseImage(ctx, hcluster, releaseProvider)
+		if releaseImage == nil {
+			releaseImageVersionErr = errors.New("release image is not available")
 		} else {
-			condition.Status = metav1.ConditionTrue
-			condition.Message = "Configuration passes validation"
-			condition.Reason = hyperv1.AsExpectedReason
+			releaseImageVersion, releaseImageVersionErr = semver.Parse(releaseImage.Version())
+			if releaseImageVersionErr != nil {
+				releaseImageVersionErr = fmt.Errorf("failed to parse release image version: %w", releaseImageVersionErr)
+			}
 		}
-		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
+	managedHSM := usesAzureManagedHSM(hcluster)
+	if managedHSM {
+		resolveReleaseImage()
+	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, r.computeValidHostedClusterConfiguration(ctx, hcluster, releaseImageVersion, releaseImageVersionErr))
 
 	// Set SupportedHostedCluster condition
 	{
@@ -1295,10 +1293,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		hcluster.Status.PayloadArch = payloadArch
 	}
 
-	var releaseImage *releaseinfo.ReleaseImage
-
 	// Set Progressing condition
 	{
+		if !managedHSM {
+			// Other platforms retain their original release lookup timing.
+			resolveReleaseImage()
+		}
 		condition := metav1.Condition{
 			Type:               string(hyperv1.HostedClusterProgressing),
 			ObservedGeneration: hcluster.Generation,
@@ -1318,10 +1318,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ref.String(), nil
 		}
 
-		releaseImage, err = r.lookupReleaseImage(ctx, hcluster, releaseProvider)
-		if err != nil {
+		if releaseLookupErr != nil {
 			condition.Status = metav1.ConditionFalse
-			condition.Message = err.Error()
+			condition.Message = releaseLookupErr.Error()
 			condition.Reason = hyperv1.BlockedReason
 		} else {
 			progressing, err := isProgressing(hcluster, releaseImage, refWithDigest)
@@ -1399,6 +1398,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			// an error should be returned here because the ValidHostedClusterConfiguration status may be transient
 			return ctrl.Result{}, fmt.Errorf("configuration is invalid: %s", validConfig.Message)
 		}
+		// Incomplete release-dependent validation is reported as Unknown, but must
+		// not prevent CoreHCPChain from propagating configuration during an outage.
 		supportedHostedCluster := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.SupportedHostedCluster))
 		if supportedHostedCluster != nil && supportedHostedCluster.Status == metav1.ConditionFalse {
 			log.Error(fmt.Errorf("not supported by operator configuration"), "reconciliation is blocked", "message", supportedHostedCluster.Message)
@@ -1593,36 +1594,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Phase 8b: Release-image-dependent components.
 	// ReleaseImageVersion is critical — a zero-value version would produce
 	// wrong deployments. Failure here blocks OperatorDeployments and RBACAndPolicies.
-	var releaseImageVersion semver.Version
 	report.execute("ReleaseImageVersion", critical, func() error {
-		if releaseImage == nil {
-			return fmt.Errorf("release image is not available")
-		}
-		var err error
-		releaseImageVersion, err = semver.Parse(releaseImage.Version())
-		if err != nil {
-			return fmt.Errorf("failed to parse release image version: %w", err)
-		}
-		return nil
-	})
-
-	// Block reconciliation when Managed HSM is configured on a release that
-	// does not support it (< 4.22). Sets ValidHostedClusterConfiguration=False.
-	report.execute("ManagedHSMVersionCheck", critical, func() error {
-		if report.shouldBlock() {
-			return nil
-		}
-		if err := validateManagedHSMVersion(hcluster, releaseImageVersion); err != nil {
-			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.ValidHostedClusterConfiguration),
-				ObservedGeneration: hcluster.Generation,
-				Status:             metav1.ConditionFalse,
-				Reason:             hyperv1.InvalidConfigurationReason,
-				Message:            err.Error(),
-			})
-			return err
-		}
-		return nil
+		return releaseImageVersionErr
 	})
 
 	report.executeOrBlock("OperatorDeployments", func() error {
@@ -1880,7 +1853,16 @@ func (r *HostedClusterReconciler) reconcilePlatformCredentialsWithStatus(
 	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
 	controlPlaneNamespace string, p platform.Platform,
 ) error {
-	if err := p.ReconcileCredentials(ctx, r.Client, createOrUpdate, hcluster, controlPlaneNamespace); err != nil {
+	err := p.ReconcileCredentials(ctx, r.Client, createOrUpdate, hcluster, controlPlaneNamespace)
+	if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		statusErr := r.patchPlatformCredentialsCondition(ctx, hcluster, err)
+		if err != nil {
+			return errors.Join(fmt.Errorf("failed to reconcile platform credentials: %w", err), statusErr)
+		}
+		return statusErr
+	}
+	// Other platforms retain their existing credential-status behavior.
+	if err != nil {
 		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
 			Type:               string(hyperv1.PlatformCredentialsFound),
 			Status:             metav1.ConditionFalse,
@@ -2489,16 +2471,28 @@ func (r *HostedClusterReconciler) reconcileCustomKubeconfigSync(
 	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
 		return r.reconcileCustomExternalKubeconfig(ctx, createOrUpdate, hcp, hcluster)
 	}
-	if hcluster.Status.CustomKubeconfig != nil {
-		customKubeconfig := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: hcluster.Namespace,
-				Name:      hcluster.Status.CustomKubeconfig.Name,
-			},
+	target := hcluster.DeepCopy()
+	generation := hcluster.Generation
+	if err := statuspatching.PatchStatus(ctx, r.Client, target, func() error {
+		if target.Generation != generation {
+			return errors.New("HostedCluster changed during custom kubeconfig cleanup")
 		}
+		if target.Spec.KubeAPIServerDNSName != "" || target.Status.CustomKubeconfig == nil {
+			return nil
+		}
+		customKubeconfig := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+			Namespace: target.Namespace,
+			Name:      target.Status.CustomKubeconfig.Name,
+		}}
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, customKubeconfig); err != nil {
-			return nil, fmt.Errorf("failed to delete custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(customKubeconfig), err)
+			return fmt.Errorf("failed to delete custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(customKubeconfig), err)
 		}
+		target.Status.CustomKubeconfig = nil
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("failed to reconcile custom kubeconfig cleanup: %w", err)
+	}
+	if target.Spec.KubeAPIServerDNSName == "" {
 		hcluster.Status.CustomKubeconfig = nil
 	}
 	return nil, nil
@@ -4723,18 +4717,44 @@ func (r *HostedClusterReconciler) validateAzureConfig(hc *hyperv1.HostedCluster)
 	return nil
 }
 
+func (r *HostedClusterReconciler) computeValidHostedClusterConfiguration(ctx context.Context, hc *hyperv1.HostedCluster, releaseVersion semver.Version, releaseVersionErr error) metav1.Condition {
+	condition := metav1.Condition{
+		Type:               string(hyperv1.ValidHostedClusterConfiguration),
+		ObservedGeneration: hc.Generation,
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            "Configuration passes validation",
+	}
+	validationErr := r.validateConfigAndClusterCapabilities(ctx, hc)
+	if validationErr == nil && usesAzureManagedHSM(hc) {
+		if releaseVersionErr != nil {
+			condition.Status = metav1.ConditionUnknown
+			condition.Reason = hyperv1.StatusUnknownReason
+			condition.Message = "Managed HSM compatibility cannot be validated until the release image version is available"
+			return condition
+		}
+		validationErr = validateManagedHSMVersion(hc, releaseVersion)
+	}
+	if validationErr != nil {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.InvalidConfigurationReason
+		condition.Message = validationErr.Error()
+	}
+	return condition
+}
+
 var minManagedHSMVersion = semver.MustParse("4.22.0")
 
+func usesAzureManagedHSM(hc *hyperv1.HostedCluster) bool {
+	return hc.Spec.Platform.Type == hyperv1.AzurePlatform &&
+		hc.Spec.SecretEncryption != nil &&
+		hc.Spec.SecretEncryption.KMS != nil &&
+		hc.Spec.SecretEncryption.KMS.Azure != nil &&
+		hc.Spec.SecretEncryption.KMS.Azure.KeyVaultType == hyperv1.AzureKMSKeyVaultTypeManagedHSM
+}
+
 func validateManagedHSMVersion(hc *hyperv1.HostedCluster, releaseVersion semver.Version) error {
-	if hc.Spec.Platform.Type != hyperv1.AzurePlatform {
-		return nil
-	}
-	if hc.Spec.SecretEncryption == nil ||
-		hc.Spec.SecretEncryption.KMS == nil ||
-		hc.Spec.SecretEncryption.KMS.Azure == nil {
-		return nil
-	}
-	if hc.Spec.SecretEncryption.KMS.Azure.KeyVaultType != hyperv1.AzureKMSKeyVaultTypeManagedHSM {
+	if !usesAzureManagedHSM(hc) {
 		return nil
 	}
 	releaseVersion.Pre = nil
