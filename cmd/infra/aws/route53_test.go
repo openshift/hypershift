@@ -585,12 +585,12 @@ func TestDestroyPrivateZones(t *testing.T) {
 		name          string
 		setupListMock func(*awsapi.MockROUTE53API)
 		setupRecsMock func(*awsapi.MockROUTE53API)
-		expectError   bool
-		errorContains string
+		expectErrors  int
+		errorContains []string
 		useCtx        func() context.Context
 	}{
 		{
-			name: "When private zones exist it should delete them and return no errors",
+			name: "When private zones exist on a single page it should delete them and return no errors",
 			setupListMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(&route53.ListHostedZonesByVPCOutput{
@@ -630,11 +630,11 @@ func TestDestroyPrivateZones(t *testing.T) {
 					Return(nil, errors.New("list failed"))
 			},
 			setupRecsMock: func(_ *awsapi.MockROUTE53API) {},
-			expectError:   true,
-			errorContains: "failed to list hosted zones for vpc",
+			expectErrors:  1,
+			errorContains: []string{"failed to list hosted zones for vpc"},
 		},
 		{
-			name: "When deleteZone fails, it should return the error",
+			name: "When deleteZone fails, it should collect the error and continue",
 			setupListMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(&route53.ListHostedZonesByVPCOutput{
@@ -650,8 +650,172 @@ func TestDestroyPrivateZones(t *testing.T) {
 				m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
 					Return(nil, errors.New("records error"))
 			},
-			expectError:   true,
-			errorContains: "failed to delete private hosted zones for vpc",
+			expectErrors:  1,
+			errorContains: []string{"failed to delete private hosted zone"},
+		},
+		{
+			name: "When zones span multiple pages it should paginate and delete all zones",
+			setupListMock: func(m *awsapi.MockROUTE53API) {
+				// First call returns page 1 with a NextToken
+				firstCall := m.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesByVPCInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error) {
+						if input.NextToken != nil {
+							return nil, errors.New("unexpected NextToken on first call")
+						}
+						return &route53.ListHostedZonesByVPCOutput{
+							HostedZoneSummaries: []route53types.HostedZoneSummary{
+								{
+									HostedZoneId: aws.String("/hostedzone/ZONE1"),
+									Name:         aws.String("zone1.example.com."),
+								},
+							},
+							NextToken: aws.String("page2token"),
+						}, nil
+					})
+				// Second call returns page 2 with no NextToken
+				m.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+					After(firstCall).
+					DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesByVPCInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error) {
+						if aws.ToString(input.NextToken) != "page2token" {
+							return nil, errors.New("expected NextToken 'page2token'")
+						}
+						return &route53.ListHostedZonesByVPCOutput{
+							HostedZoneSummaries: []route53types.HostedZoneSummary{
+								{
+									HostedZoneId: aws.String("/hostedzone/ZONE2"),
+									Name:         aws.String("zone2.example.com."),
+								},
+							},
+						}, nil
+					})
+			},
+			setupRecsMock: func(m *awsapi.MockROUTE53API) {
+				// Both zones have no extra records and get deleted
+				m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
+					Times(2).
+					Return(&route53.ListResourceRecordSetsOutput{
+						ResourceRecordSets: []route53types.ResourceRecordSet{},
+					}, nil)
+				m.EXPECT().DeleteHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).
+					Times(2).
+					Return(&route53.DeleteHostedZoneOutput{}, nil)
+			},
+		},
+		{
+			name: "When some zones fail to delete it should collect errors and continue deleting others",
+			setupListMock: func(m *awsapi.MockROUTE53API) {
+				m.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&route53.ListHostedZonesByVPCOutput{
+						HostedZoneSummaries: []route53types.HostedZoneSummary{
+							{
+								HostedZoneId: aws.String("/hostedzone/FAILZONE"),
+								Name:         aws.String("fail.example.com."),
+							},
+							{
+								HostedZoneId: aws.String("/hostedzone/OKZONE"),
+								Name:         aws.String("ok.example.com."),
+							},
+						},
+					}, nil)
+			},
+			setupRecsMock: func(m *awsapi.MockROUTE53API) {
+				// First zone: deleteRecords fails
+				failCall := m.EXPECT().ListResourceRecordSets(gomock.Any(),
+					gomock.AssignableToTypeOf(&route53.ListResourceRecordSetsInput{}), gomock.Any()).
+					DoAndReturn(func(_ context.Context, input *route53.ListResourceRecordSetsInput, _ ...func(*route53.Options)) (*route53.ListResourceRecordSetsOutput, error) {
+						if aws.ToString(input.HostedZoneId) == "FAILZONE" {
+							return nil, errors.New("records error")
+						}
+						return &route53.ListResourceRecordSetsOutput{
+							ResourceRecordSets: []route53types.ResourceRecordSet{},
+						}, nil
+					})
+				// Second zone: succeeds
+				m.EXPECT().ListResourceRecordSets(gomock.Any(),
+					gomock.AssignableToTypeOf(&route53.ListResourceRecordSetsInput{}), gomock.Any()).
+					After(failCall).
+					Return(&route53.ListResourceRecordSetsOutput{
+						ResourceRecordSets: []route53types.ResourceRecordSet{},
+					}, nil)
+				m.EXPECT().DeleteHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&route53.DeleteHostedZoneOutput{}, nil)
+			},
+			expectErrors:  1,
+			errorContains: []string{"failed to delete private hosted zone FAILZONE"},
+		},
+		{
+			name: "When a zone is service-owned it should skip deletion and not error",
+			setupListMock: func(m *awsapi.MockROUTE53API) {
+				m.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&route53.ListHostedZonesByVPCOutput{
+						HostedZoneSummaries: []route53types.HostedZoneSummary{
+							{
+								HostedZoneId: aws.String("/hostedzone/EFSZONE"),
+								Name:         aws.String("efs.example.com."),
+								Owner: &route53types.HostedZoneOwner{
+									OwningService: aws.String("efs.amazonaws.com"),
+								},
+							},
+							{
+								HostedZoneId: aws.String("/hostedzone/PRIVZONE"),
+								Name:         aws.String(testZoneName + "."),
+							},
+						},
+					}, nil)
+			},
+			setupRecsMock: func(m *awsapi.MockROUTE53API) {
+				// Only the non-service-owned zone (PRIVZONE) should be deleted;
+				// the EFS service-owned zone must be skipped entirely. gomock's
+				// default expectation of exactly one call to each records API
+				// asserts the service-owned zone is never touched.
+				m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&route53.ListResourceRecordSetsOutput{
+						ResourceRecordSets: []route53types.ResourceRecordSet{},
+					}, nil)
+				m.EXPECT().DeleteHostedZone(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(&route53.DeleteHostedZoneOutput{}, nil)
+			},
+		},
+		{
+			name:   "When a later page fails to list it should retain earlier deletion errors and the list error",
+			useCtx: cancelledCtx,
+			setupListMock: func(m *awsapi.MockROUTE53API) {
+				// Page 1 returns a zone (whose deletion will fail) and a NextToken.
+				firstCall := m.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesByVPCInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error) {
+						if input.NextToken != nil {
+							return nil, errors.New("unexpected NextToken on first call")
+						}
+						return &route53.ListHostedZonesByVPCOutput{
+							HostedZoneSummaries: []route53types.HostedZoneSummary{
+								{
+									HostedZoneId: aws.String("/hostedzone/PAGE1ZONE"),
+									Name:         aws.String("page1.example.com."),
+								},
+							},
+							NextToken: aws.String("page2token"),
+						}, nil
+					})
+				// Page 2 listing fails.
+				m.EXPECT().ListHostedZonesByVPC(gomock.Any(), gomock.Any(), gomock.Any()).
+					After(firstCall).
+					DoAndReturn(func(_ context.Context, input *route53.ListHostedZonesByVPCInput, _ ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error) {
+						if aws.ToString(input.NextToken) != "page2token" {
+							return nil, errors.New("expected NextToken 'page2token'")
+						}
+						return nil, errors.New("list page 2 failed")
+					})
+			},
+			setupRecsMock: func(m *awsapi.MockROUTE53API) {
+				// The page 1 zone deletion fails, producing the first error.
+				m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(nil, errors.New("records error"))
+			},
+			expectErrors: 2,
+			errorContains: []string{
+				"failed to delete private hosted zone PAGE1ZONE",
+				"failed to list hosted zones for vpc",
+			},
 		},
 	}
 
@@ -672,10 +836,10 @@ func TestDestroyPrivateZones(t *testing.T) {
 			o := &DestroyInfraOptions{Region: "us-east-1", Log: logr.Discard()}
 			errs := o.DestroyPrivateZones(ctx, mockListClient, mockRecsClient, testVPCID)
 
-			if tt.expectError {
-				g.Expect(errs).To(ContainElement(HaveOccurred()))
-				if tt.errorContains != "" {
-					g.Expect(errs).To(ContainElement(MatchError(ContainSubstring(tt.errorContains))))
+			if tt.expectErrors > 0 {
+				g.Expect(errs).To(HaveLen(tt.expectErrors))
+				for _, substr := range tt.errorContains {
+					g.Expect(errs).To(ContainElement(MatchError(ContainSubstring(substr))))
 				}
 			} else {
 				g.Expect(errs).To(BeEmpty())
