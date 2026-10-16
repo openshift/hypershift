@@ -105,6 +105,9 @@ func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlan
 	component.Status.Resources = []hyperv1.ComponentResource{}
 	if err := assets.ForEachManifest(c.AssetDirName(), func(manifestName string) error {
 		adapter, exist := c.manifestsAdapters[manifestName]
+		if exist && adapter.skip {
+			return nil
+		}
 		if exist && adapter.predicate != nil && !adapter.predicate(workloadContrext) {
 			return nil
 		}

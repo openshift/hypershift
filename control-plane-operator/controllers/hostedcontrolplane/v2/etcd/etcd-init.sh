@@ -14,10 +14,11 @@ head -c 5 /tmp/snapshot | grep -q '<?xml' && cat /tmp/snapshot && exit 1
 
 # etcd 3.6+ (OCP 4.21+) moved snapshot restore/status from etcdctl to etcdutl.
 # Restore to a staging directory first so a mid-write failure does not corrupt /var/lib/data.
-# HOSTNAME, HCP_NAMESPACE, and ETCD_INITIAL_CLUSTER are injected by buildEtcdInitContainer
-# so each pod restores a uniquely identified member rather than the same
-# 1-member default, which would cause a split-brain cluster.
-PEER_URL="https://${HOSTNAME}.etcd-discovery.${HCP_NAMESPACE}.svc:2380"
+# HOSTNAME, HCP_NAMESPACE, ETCD_INITIAL_CLUSTER, and ETCD_DISCOVERY_SERVICE are
+# injected by buildEtcdInitContainer so each pod restores a uniquely identified
+# member in the correct default or named shard rather than the same 1-member
+# default, which would cause a split-brain cluster.
+PEER_URL="https://${HOSTNAME}.${ETCD_DISCOVERY_SERVICE}.${HCP_NAMESPACE}.svc:2380"
 
 rm -rf /var/lib/restore
 if [ -x /usr/bin/etcdutl ]; then
