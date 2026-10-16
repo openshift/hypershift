@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -110,9 +111,10 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &capiv1.Machine{}, &handler.EnqueueRequestForObject{})); err != nil {
 		return fmt.Errorf("failed to watch Machines: %w", err)
 	}
-	go func() {
-		_ = kubevirtInfraCache.Start(ctx)
-	}()
+	// Manager owns cache lifecycle so Start() failures fail the HCCO process instead of being discarded.
+	if err := addKubevirtInfraCache(opts.Manager.Add, kubevirtInfraCache); err != nil {
+		return err
+	}
 	allNodes := func(watchContext context.Context, obj client.Object) []reconcile.Request {
 		machineList := &capiv1.MachineList{}
 		if err := r.client.List(watchContext, machineList); err != nil {
@@ -149,5 +151,12 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to watch kubevirt services: %w", err)
 	}
 
+	return nil
+}
+
+func addKubevirtInfraCache(add func(manager.Runnable) error, kubevirtInfraCache manager.Runnable) error {
+	if err := add(kubevirtInfraCache); err != nil {
+		return fmt.Errorf("failed to add kubevirt infra cache: %w", err)
+	}
 	return nil
 }
