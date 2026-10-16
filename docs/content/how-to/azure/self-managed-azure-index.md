@@ -68,6 +68,8 @@ You can create workload identities using either:
 
 👉 **Guide**: [Create Azure IAM Resources](create-iam-separately.md) - OIDC issuer configuration and workload identity creation
 
+For AutoNode, add [`--enable-karpenter`](create-iam-separately.md#enabling-karpenter-identity) to `hypershift create iam azure`.
+
 ### Phase 2: Management Cluster Setup
 
 **Purpose**: Prepare your Azure OpenShift management cluster to host and manage HyperShift control planes.
@@ -99,7 +101,7 @@ This phase creates your actual hosted OpenShift clusters:
 
 **When to Complete**: After Phases 1 and 2 are fully configured and verified.
 
-👉 **Guide**: [Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md) - Includes both DNS approaches
+👉 **Guides**: [Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md) or [Create AutoNode hosted clusters](create-azure-hosted-cluster-autonode.md) with Karpenter
 
 ## Prerequisites Summary
 
@@ -167,7 +169,7 @@ Begin your self-managed Azure HyperShift deployment by following the guides in o
 
 1. **[Create Azure IAM Resources](create-iam-separately.md)** - Set up OIDC issuer, managed identities, and workload identity federation
 2. **[Setup Azure Management Cluster for HyperShift](setup-management-cluster.md)** - Install HyperShift operator (with or without External DNS)
-3. **[Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md)** - Deploy your first hosted cluster
+3. **[Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md)** - Deploy your first hosted cluster, or use [AutoNode](create-azure-hosted-cluster-autonode.md) for Karpenter-managed workers
 4. **[Deploy Azure Private Clusters](deploy-azure-private-clusters.md)** (Optional) - Configure private endpoint access with Azure Private Link
 5. **[Autoscaling](autoscaling-self-managed.md)** - Configure node pool and cluster autoscaling
 6. **[Etcd Snapshot Backup](../disaster-recovery/platform-guides/azure.md)** (Optional) - Configure etcd backup with Azure Blob Storage

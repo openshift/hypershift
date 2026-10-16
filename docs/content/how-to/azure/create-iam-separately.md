@@ -147,6 +147,24 @@ hypershift create iam azure \
 
     If you use `--enable-kms`, you must **manually** assign the `Key Vault Crypto User` role to the KMS identity on your Key Vault. The `--auto-assign-roles` flag does not cover this because the Key Vault scope is user-provided. See [Enabling KMS Encryption](create-self-managed-azure-cluster.md#enabling-kms-encryption-etcd-encryption-at-rest) for the role assignment commands.
 
+### Enabling Karpenter Identity
+
+To also create a Karpenter workload identity for AutoNode, add the `--enable-karpenter` flag:
+
+```bash
+hypershift create iam azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
+    --output-file workload-identities.json \
+    --enable-karpenter
+```
+
+The IAM output includes `karpenterClientID`. Pass the output to `create infra azure` with `--assign-identity-roles` to assign Karpenter's required Azure roles. See [Create AutoNode hosted clusters](create-azure-hosted-cluster-autonode.md) for the complete workflow.
+
 ## Private Endpoint Access
 
 The **Control Plane Operator** identity is always created by `create iam azure`. For private
@@ -284,6 +302,7 @@ Both the managed identities and their federated credentials are removed.
 |------|-------------|---------|
 | `--location` | Azure region for identities | `eastus` |
 | `--cloud` | Azure cloud environment | `AzurePublicCloud` |
+| `--enable-karpenter` | Create Karpenter workload identity for AutoNode | `false` |
 | `--enable-kms` | Create KMS identity for etcd encryption | `false` |
 
 ### Required Flags for `destroy iam azure`
@@ -399,6 +418,7 @@ hypershift destroy iam azure \
 
 ## See Also
 
+- [Create AutoNode hosted clusters](create-azure-hosted-cluster-autonode.md)
 - [Create Azure Infrastructure Separately](create-infra-separately.md)
 - [Self-Managed Azure Overview](self-managed-azure-index.md)
 - [Deploy Azure Private Clusters](deploy-azure-private-clusters.md) — End-to-end guide for private endpoint access
