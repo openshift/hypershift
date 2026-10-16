@@ -26,6 +26,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
@@ -307,7 +308,7 @@ func AWSCCMWithCustomizationsTest(getTestCtx internal.TestContextGetter) {
 					lbHostname = svc.Status.LoadBalancer.Ingress[0].Hostname
 				}, 5*time.Minute, 10*time.Second).Should(Succeed())
 
-				lbName := extractLBNameFromHostname(lbHostname)
+				lbName := supportawsutil.LoadBalancerNameFromHostname(lbHostname)
 				Expect(lbName).NotTo(BeEmpty(), "load balancer name should be extracted from hostname %s", lbHostname)
 
 				awsSession := awsutil.NewSession(tc.Context, "e2e-ccm-nlb-sg", awsCredsFile, "", "", hc.Spec.Platform.AWS.Region)
@@ -683,16 +684,6 @@ func NodePoolDay2TagsWithSpacesTest(getTestCtx internal.TestContextGetter) {
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
-}
-
-func extractLBNameFromHostname(hostname string) string {
-	firstLabel := strings.SplitN(hostname, ".", 2)[0]
-	firstLabel = strings.TrimPrefix(firstLabel, "internal-")
-	lastHyphen := strings.LastIndex(firstLabel, "-")
-	if lastHyphen == -1 {
-		return firstLabel
-	}
-	return firstLabel[:lastHyphen]
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster AWS", Label("lifecycle", "hosted-cluster-aws"), func() {
