@@ -51,11 +51,104 @@ make lint                     # Run golangci-lint
 make lint-fix                 # Auto-fix linting issues
 make verify                   # Full verification (generate, update, staticcheck, fmt, vet, lint, codespell, gitlint)
 make staticcheck              # Run staticcheck on core packages
+make deadcode                 # Report whole-program dead-code candidates (not a gate)
 make fmt                      # Format code
 make vet                      # Run go vet
 make verify-codespell         # Catch spelling errors in markdown
 make run-gitlint              # Validate commit message format across a commit range
 make pre-commit               # Full pre-PR gate (build, e2e compile, verify, test)
+```
+
+#### Dead-code reporting
+
+Run a reporting-only scan with the supported Go toolchain from the repository root:
+
+```bash
+make deadcode ARTIFACT_DIR="$PWD/.work/deadcode"
+```
+
+The target builds `golang.org/x/tools/cmd/deadcode` pinned to v0.44.0 from the
+vendored tools module, builds the report helper, and runs `generate` for ignored
+mocks. It does not modify tracked source files or delete candidates. It is not
+part of `verify`, `verify-ci`, or `pre-commit`, and does not enforce a baseline.
+
+Analysis loads root-module `./...`, all executable entry points, and test
+executables (`-test`) using tags `integration,e2e,reqserving,e2ev2,backuprestore`.
+It uses `GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor`, `GOOS=linux`,
+`GOARCH=arm64`, and `CGO_ENABLED=0`, even on a different developer host. Tools
+and mock generation explicitly use `GOHOSTOS`/`GOHOSTARCH`, not inherited or
+persisted cross-compilation targets. Before generation, the target rebuilds
+`mockgen` natively even if a cached foreign-target executable is newer than its
+Make prerequisites. `GOPACKAGESDRIVER=off` ensures standard Go
+package loading rather than an inherited or automatically discovered driver.
+Separate modules under `api/`,
+`hack/tools/`, and nested `contrib/` directories are not independent scan targets.
+
+The initial scan deliberately excludes the `envtest` tag:
+`test/envtest/generator.go` references `cfg`, `k8sClient`, and `ctx` declared only
+in `suite_test.go`, so deadcode cannot load the non-test package variant with
+that tag enabled. Other loader/type-check errors are failures, not exclusions.
+
+The artifact directory (default `/tmp/artifacts`) receives:
+
+| File | Contract |
+|------|----------|
+| `deadcode.json` | Sorted array of records with `package`, `function` (including method receiver), repository-relative `file`, and 1-based declaration `line`/`column`. Empty results are `[]`. |
+| `deadcode.txt` | The same candidates as readable `file:line:column: package.function` records; empty when there are no candidates. |
+| `deadcode-summary.txt` | Completion summary with commit, tracked dirty state, analyzer/Go versions, environment, tags, exclusions, elapsed analysis time, memory settings, and totals. |
+
+Records are sorted by package/function/file before location, so package/function
+identity is useful independently of line-number changes. Generated declarations,
+all vendor sources (including the vendored HyperShift API), copied
+`support/thirdparty/` code, and sources outside the root module are excluded from
+reported findings, **not** from dependency loading or reachability analysis.
+Non-generated test declarations in the root module remain eligible findings.
+
+Completed analysis exits zero both with candidates and without them. Tool-build,
+mock-generation, package/type-check, malformed-output, and report-writing errors
+exit nonzero with diagnostic logs; do not suppress these failures. The helper
+invalidates old reports before scanning, stages new reports, and publishes the
+completion summary last. Use a fresh artifact directory for each run: a failed
+Make prerequisite can leave artifacts from an earlier invocation untouched.
+
+The analyzer defaults to `GOMEMLIMIT=6GiB` and `GOGC=50`; explicit environment
+values override these defaults and are recorded in the summary. A Go memory
+limit is **not** an RSS or container memory limit. Whole-program analysis can
+require substantial memory. CI scheduling, resources, artifact publication, and
+runtime/memory measurements are owned by the separate CNTRLPLANE-4601 task.
+
+Candidates require human review, not automatic deletion. An unreachable method
+may still be required to satisfy an interface and cannot necessarily be deleted
+individually. Public APIs can have downstream callers absent from this
+repository. Results apply only to the selected platform/tags and executable
+roots; other configurations may reach the same code. The analyzer also does not
+fully understand `go:linkname` aliases. See the [deadcode documentation](https://pkg.go.dev/golang.org/x/tools/cmd/deadcode)
+for algorithm and interpretation limits.
+
+##### Analyzer executable trust boundary
+
+`deadcode-report` always runs the `deadcode` executable next to its own binary.
+`make deadcode` builds both binaries together from the pinned, vendored tools
+module. There is no analyzer-path CLI override or analyzer lookup through `PATH`.
+This local developer/CI tool runs with the invoking user's privileges; it is not
+a sandbox for analyzing untrusted checkouts or binaries. The executables, their
+parent directories/symlink targets, checkout, Go/Git tools, and inherited
+environment must remain trusted for the entire run.
+
+The helper converts the sibling path to an absolute filename and checks its Go
+build metadata for the analyzer's command/module identity and v0.44.0 version.
+Those checks catch incompatible tools; they are **not** signature verification,
+a cryptographic authenticity guarantee, or protection against concurrent
+replacement. Execution uses `exec.CommandContext` directly with separate
+arguments, never a shell. Spaces and shell metacharacters in the filename are
+literal, as covered by the offline reachability fixture.
+
+Run the helper's offline fixture checks explicitly because root-module tests do
+not cover the tools module:
+
+```bash
+cd hack/tools
+GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go test -race ./deadcode-report
 ```
 
 ### API and Code Generation

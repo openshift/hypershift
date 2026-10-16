@@ -16,6 +16,9 @@ TOOLS_BIN_DIR := $(TOOLS_DIR)/$(BIN_DIR)
 CONTROLLER_GEN := $(abspath $(TOOLS_BIN_DIR)/controller-gen)
 CODE_GEN := $(abspath $(TOOLS_BIN_DIR)/codegen)
 STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
+DEADCODE := $(abspath $(TOOLS_BIN_DIR)/deadcode)
+DEADCODE_REPORT := $(abspath $(TOOLS_BIN_DIR)/deadcode-report)
+DEADCODE_REPORT_SRC := $(wildcard $(TOOLS_DIR)/deadcode-report/*.go)
 GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
 YQ := $(abspath $(TOOLS_BIN_DIR)/yq)
@@ -202,6 +205,19 @@ $(CODE_GEN): $(TOOLS_DIR)/go.mod # Build code-gen from tools folder.
 
 $(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
 	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/staticcheck honnef.co/go/tools/cmd/staticcheck
+
+$(DEADCODE): $(TOOLS_DIR)/go.mod $(TOOLS_DIR)/go.sum $(TOOLS_DIR)/tools.go $(TOOLS_DIR)/vendor/modules.txt
+	cd $(TOOLS_DIR); GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) CGO_ENABLED=0 $(GO) build -o $(DEADCODE) golang.org/x/tools/cmd/deadcode
+
+$(DEADCODE_REPORT): $(TOOLS_DIR)/go.mod $(TOOLS_DIR)/go.sum $(TOOLS_DIR)/vendor/modules.txt $(DEADCODE_REPORT_SRC)
+	cd $(TOOLS_DIR); GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) CGO_ENABLED=0 $(GO) build -o $(DEADCODE_REPORT) ./deadcode-report
+
+.PHONY: deadcode
+deadcode: $(DEADCODE) $(DEADCODE_REPORT)
+	# Always replace a cached cross-compiled mockgen before executing it.
+	cd $(TOOLS_DIR); GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) CGO_ENABLED=0 $(GO) build -tags=tools -o $(MOCKGEN) go.uber.org/mock/mockgen
+	$(MAKE) generate GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH)
+	$(DEADCODE_REPORT) -artifact-dir="$(ARTIFACT_DIR)"
 
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
@@ -418,7 +434,7 @@ test-e2ev2-unit:
 test-changed:
 	@CHANGED_DIRS=$$(git diff --name-only $(PULL_BASE_SHA)...HEAD -- '*.go' | \
 		while IFS= read -r file; do dirname "$$file"; done | \
-		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -vE '^\./api(/|$$)' | grep -v '^\./hack/tools/' | grep -vE '^\./test/e2e(/|$$)'); \
+		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -vE '^\./api(/|$$)' | grep -vE '^\./hack/tools(/|$$)' | grep -vE '^\./test/e2e(/|$$)'); \
 	if [ -z "$$CHANGED_DIRS" ]; then \
 		echo "No Go files changed relative to $(PULL_BASE_SHA), skipping tests."; \
 	else \
