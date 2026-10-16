@@ -667,13 +667,13 @@ func TestSetupCRDs(t *testing.T) {
 		expectError  bool
 	}{
 		{
-			name: "When is TechPreviewNoUpgrade it should have a single nodepool CRD with the TechPreviewNoUpgrade annotation",
+			name: "When TechPreviewNoUpgrade is enabled, it should include preview CRDs",
 			inputOptions: Options{
 				TechPreviewNoUpgrade: true,
 			},
 		},
 		{
-			name:         "When is NOT TechPreviewNoUpgrade it should have a single nodepool CRD with the default annotation",
+			name:         "When TechPreviewNoUpgrade is disabled, it should include default CRDs",
 			inputOptions: Options{},
 		},
 		{
@@ -718,10 +718,17 @@ func TestSetupCRDs(t *testing.T) {
 			crds, err := setupCRDs(t.Context(), nil, tc.inputOptions, &corev1.Namespace{}, &corev1.Service{})
 			g.Expect(err).ToNot(HaveOccurred())
 			nodePoolCRDS := make([]crclient.Object, 0)
+			clusterCRDs := map[string][]*apiextensionsv1.CustomResourceDefinition{
+				"hostedclusters.hypershift.openshift.io":      nil,
+				"hostedcontrolplanes.hypershift.openshift.io": nil,
+			}
 			var machineDeploymentCRD crclient.Object
 			var awsEndpointServicesCRD crclient.Object
 			var dnsEndpointCRD crclient.Object
 			for _, crd := range crds {
+				if _, ok := clusterCRDs[crd.GetName()]; ok {
+					clusterCRDs[crd.GetName()] = append(clusterCRDs[crd.GetName()], crd.(*apiextensionsv1.CustomResourceDefinition))
+				}
 				if crd.GetName() == "nodepools.hypershift.openshift.io" {
 					nodePoolCRDS = append(nodePoolCRDS, crd)
 				}
@@ -738,6 +745,25 @@ func TestSetupCRDs(t *testing.T) {
 
 			// Smoke test to ensure that CRDs that should apply for any feature gate are present.
 			g.Expect(machineDeploymentCRD).ToNot(BeNil())
+
+			// Component route labels must only be exposed by the preview installation.
+			for crdName, matchingCRDs := range clusterCRDs {
+				g.Expect(matchingCRDs).To(HaveLen(1), "Expected exactly one %s CRD", crdName)
+				var schema *apiextensionsv1.JSONSchemaProps
+				for _, version := range matchingCRDs[0].Spec.Versions {
+					if version.Name == "v1beta1" && version.Served {
+						g.Expect(version.Schema).ToNot(BeNil(), "Expected a schema for %s v1beta1", crdName)
+						schema = version.Schema.OpenAPIV3Schema
+						break
+					}
+				}
+				g.Expect(schema).ToNot(BeNil(), "Expected a served v1beta1 schema for %s", crdName)
+				componentRoutes := schema.Properties["spec"].Properties["configuration"].Properties["ingress"].Properties["componentRoutes"]
+				g.Expect(componentRoutes.Items).ToNot(BeNil(), "Expected componentRoutes items for %s", crdName)
+				g.Expect(componentRoutes.Items.Schema).ToNot(BeNil(), "Expected a componentRoutes item schema for %s", crdName)
+				_, hasLabels := componentRoutes.Items.Schema.Properties["labels"]
+				g.Expect(hasLabels).To(Equal(tc.inputOptions.TechPreviewNoUpgrade), "Unexpected component route labels availability for %s", crdName)
+			}
 
 			// Validate the feature set specific CRDs are applied.
 			g.Expect(nodePoolCRDS).To(HaveLen(1))
