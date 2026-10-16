@@ -342,17 +342,22 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 		return nil
 	}
 
-	credentialSecrets := map[hyperv1.GCPServiceAccountEmail]*corev1.Secret{
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool:        NodePoolManagementCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane:    ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController: CloudControllerCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage:         GCPPDCloudCredentialsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry:   ImageRegistryCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network:         CNCCCredsSecret(controlPlaneNamespace),
+	// Create credential secrets for all configured service accounts
+	// Use a slice instead of a map to support shared service accounts where multiple Secrets may use the same email.
+	credentialSecrets := []struct {
+		email  hyperv1.GCPServiceAccountEmail
+		secret *corev1.Secret
+	}{
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool, NodePoolManagementCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane, ControlPlaneOperatorCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController, CloudControllerCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage, GCPPDCloudCredentialsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry, ImageRegistryCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network, CNCCCredsSecret(controlPlaneNamespace)},
 	}
 
-	for email, secret := range credentialSecrets {
-		if err := syncSecret(secret, string(email)); err != nil {
+	for _, item := range credentialSecrets {
+		if err := syncSecret(item.secret, string(item.email)); err != nil {
 			errs = append(errs, err)
 		}
 	}
