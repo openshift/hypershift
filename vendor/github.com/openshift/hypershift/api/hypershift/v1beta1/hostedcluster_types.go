@@ -1249,9 +1249,19 @@ type ClusterNetworking struct {
 	// +kubebuilder:default:={{cidr: "172.31.0.0/16"}}
 	ServiceNetwork []ServiceNetworkEntry `json:"serviceNetwork,omitempty"`
 
-	// networkType specifies the SDN provider used for cluster networking.
+	// networkType specifies the network provider used for cluster networking.
+	// HyperShift recognizes exactly "OVNKubernetes" and "OpenShiftSDN" as built-in providers.
+	// Any other value names a third-party CNI that HyperShift does not deploy; the cluster
+	// administrator is responsible for installing it. Set this field to the actual CNI provider
+	// name, such as "Calico" or "Cilium". The value "Other" remains supported for compatibility.
+	// The value must be 1-63 characters, start and end with a letter or digit, and contain only
+	// letters, digits, '.', '_' or '-'. Provider names are case-sensitive.
+	// This field is authoritative for the cluster network type. Setting networkType within
+	// spec.configuration.network has no effect; this field alone determines the network type
+	// propagated to the cluster-network-operator.
+	// Conflict validation between these fields is tracked by the TODO on ClusterConfiguration.Network below.
 	// Defaults to OVNKubernetes.
-	// This field is required and immutable.
+	// This field is immutable.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="networkType is immutable"
 	// +optional
 	// +kubebuilder:default:="OVNKubernetes"
@@ -1265,11 +1275,11 @@ type ClusterNetworking struct {
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
 
 	// allocateNodeCIDRs controls whether the kube-controller-manager manages node CIDR allocation.
-	// When using networkType=Other, it is recommended to set this field to "Enabled"
-	// if Flannel is used as the CNI, as it relies on this behavior.
+	// When networkType is "Other", it is recommended to set this field to "Enabled" if Flannel is
+	// used as the CNI, as it relies on this behavior.
 	// Default is "Disabled".
-	// This field can only be set to "Enabled" when NetworkType is "Other". Setting it to "Enabled"
-	// with any other NetworkType will result in a validation error during cluster creation.
+	// This field can only be set to "Enabled" when networkType is "Other". Setting it to "Enabled"
+	// with any other networkType will result in a validation error during cluster creation.
 	//
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="allocateNodeCIDRs is immutable and cannot be modified once set."
@@ -1343,22 +1353,33 @@ type APIServerNetworking struct {
 	AllowedCIDRBlocks []CIDRBlock `json:"allowedCIDRBlocks,omitempty"`
 }
 
-// NetworkType specifies the SDN provider used for cluster networking.
+// NetworkType specifies the network provider used for cluster networking.
+// OVNKubernetes and OpenShiftSDN are the built-in providers recognized by HyperShift and must use
+// that exact spelling. Any other value is treated as the name of a third-party CNI; set it to the
+// actual provider name you will install, such as Calico or Cilium. The value Other is also supported
+// for compatibility.
 //
-// +kubebuilder:validation:Enum=OpenShiftSDN;Calico;OVNKubernetes;Other
+// +kubebuilder:validation:MinLength=1
+// +kubebuilder:validation:MaxLength=63
+// +kubebuilder:validation:XValidation:rule=`self.matches('^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$')`,message="networkType must start and end with a letter or digit and contain only letters, digits, '.', '_' or '-'"
+// +kubebuilder:validation:XValidation:rule="self in ['OVNKubernetes','OpenShiftSDN'] || !(self.lowerAscii() in ['ovnkubernetes','openshiftsdn'])",message="networkType must use the exact spelling OVNKubernetes or OpenShiftSDN when selecting a built-in provider"
 type NetworkType string
 
 const (
-	// OpenShiftSDN specifies OpenShiftSDN as the SDN provider
+	// OpenShiftSDN specifies OpenShiftSDN as the network provider.
+	// OpenShiftSDN is a deprecated built-in provider. New clusters can only use it on the PowerVS platform, and clusters using it cannot be upgraded to a new minor version.
 	OpenShiftSDN NetworkType = "OpenShiftSDN"
 
-	// Calico specifies Calico as the SDN provider
+	// Calico specifies Calico as the network provider. Calico receives no special handling from
+	// HyperShift; a HostedCluster created with this value behaves identically to "Other", a
+	// third-party CNI that HyperShift does not deploy.
 	Calico NetworkType = "Calico"
 
-	// OVNKubernetes specifies OVN as the SDN provider
+	// OVNKubernetes specifies OVN as the network provider. This is the supported built-in provider.
 	OVNKubernetes NetworkType = "OVNKubernetes"
 
-	// Other specifies an undefined SDN provider
+	// Other specifies a third-party (bring-your-own) network provider. When set, HyperShift skips
+	// deploying a default CNI and the cluster administrator is responsible for installing one.
 	Other NetworkType = "Other"
 )
 

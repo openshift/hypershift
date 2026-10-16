@@ -5,13 +5,13 @@ version: v1beta1
 tests:
   onCreate:
   # --- Networking validation ---
-  - name: When networkType is invalid it should fail
+  - name: When networkType is an arbitrary third-party value it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedCluster
       spec:
         networking:
-          networkType: "foo"
+          networkType: "Cilium"
         dns:
           baseDomain: example.com
         platform:
@@ -42,7 +42,201 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
-    expectedError: 'Unsupported value: "foo": supported values: "OpenShiftSDN", "Calico", "OVNKubernetes", "Other"'
+
+  - name: When networkType uses a case variant of a built-in provider it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: "ovnkubernetes"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must use the exact spelling OVNKubernetes or OpenShiftSDN when selecting a built-in provider"
+
+  - name: When networkType uses a mixed-case variant of OVNKubernetes it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: "OvnKubernetes"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must use the exact spelling OVNKubernetes or OpenShiftSDN when selecting a built-in provider"
+
+  - name: When networkType starts with a non-alphanumeric character it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: "-Calico"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType must start and end with a letter or digit and contain only letters, digits, '.', '_' or '-'"
+
+  - name: When networkType is empty it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: ""
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: 'should be at least 1 chars long'
+
+  - name: When networkType exceeds 63 characters it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: 'spec.networking.networkType: Too long'
 
   - name: When the cidr is not valid it should fail
     initial: |
@@ -327,6 +521,46 @@ tests:
             route: {}
     expectedError: "allocateNodeCIDRs can only be set to Enabled when networkType is 'Other'"
 
+  - name: When allocateNodeCIDRs is Enabled and networkType is OpenShiftSDN it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          allocateNodeCIDRs: Enabled
+          networkType: OpenShiftSDN
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "allocateNodeCIDRs can only be set to Enabled when networkType is 'Other'"
+
   # --- Operator configuration validation ---
   - name: When disableMultiNetwork is set to false it should pass
     initial: |
@@ -415,6 +649,48 @@ tests:
       spec:
         networking:
           networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            disableMultiNetwork: true
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "disableMultiNetwork can only be set to true when networkType is 'Other'"
+
+  - name: When disableMultiNetwork is true and networkType is OpenShiftSDN it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OpenShiftSDN
         operatorConfiguration:
           clusterNetworkOperator:
             disableMultiNetwork: true
@@ -923,257 +1199,7 @@ tests:
             route: {}
     expectedError: "subnet must be in the range /0 to /125 inclusive"
 
-  # --- v4/v6InternalSubnet immutability ---
-  onUpdate:
-  - name: When v4InternalSubnet is changed on update it should fail
-    initial: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              v4InternalSubnet: "100.64.0.0/16"
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    updated: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              v4InternalSubnet: "10.10.0.0/16"
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    expectedError: "v4InternalSubnet is immutable once set"
-
-  - name: When v6InternalSubnet is changed on update it should fail
-    initial: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              v6InternalSubnet: "fd98::/64"
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    updated: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              v6InternalSubnet: "fd99::/64"
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    expectedError: "v6InternalSubnet is immutable once set"
-
-  - name: When v4InternalSubnet is removed on update it should fail
-    initial: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              v4InternalSubnet: "100.64.0.0/16"
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    updated: |
-      apiVersion: hypershift.openshift.io/v1beta1
-      kind: HostedCluster
-      spec:
-        networking:
-          networkType: OVNKubernetes
-        operatorConfiguration:
-          clusterNetworkOperator:
-            ovnKubernetesConfig:
-              mtu: 1400
-        dns:
-          baseDomain: example.com
-        platform:
-          type: AWS
-        pullSecret:
-          name: secret
-        release:
-          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
-        secretEncryption:
-          aescbc:
-            activeKey:
-              name: key
-          type: aescbc
-        services:
-        - service: APIServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: OAuthServer
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Konnectivity
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-        - service: Ignition
-          servicePublishingStrategy:
-            type: Route
-            route: {}
-    expectedError: "v4InternalSubnet is immutable once set and cannot be removed"
-
+  # --- ovnKubernetesConfig validation ---
   - name: When ovnKubernetesConfig is not set and networkType is not OVNKubernetes it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -1568,7 +1594,257 @@ tests:
             route: {}
     expectedError: "should have at least 1 properties"
 
+  # --- v4/v6InternalSubnet immutability ---
   onUpdate:
+  - name: When v4InternalSubnet is changed on update it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              v4InternalSubnet: "100.64.0.0/16"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              v4InternalSubnet: "10.10.0.0/16"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "v4InternalSubnet is immutable once set"
+
+  - name: When v6InternalSubnet is changed on update it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              v6InternalSubnet: "fd98::/64"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              v6InternalSubnet: "fd99::/64"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "v6InternalSubnet is immutable once set"
+
+  - name: When v4InternalSubnet is removed on update it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              v4InternalSubnet: "100.64.0.0/16"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: OVNKubernetes
+        operatorConfiguration:
+          clusterNetworkOperator:
+            ovnKubernetesConfig:
+              mtu: 1400
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "v4InternalSubnet is immutable once set and cannot be removed"
+
   - name: When ovnKubernetesConfig is removed after being set it should fail
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
@@ -1650,3 +1926,81 @@ tests:
             type: Route
             route: {}
     expectedError: "ovnKubernetesConfig is immutable once set and cannot be removed"
+
+  # --- networkType immutability ---
+  # networkType carries XValidation rule="self == oldSelf"; a non-constant value must be
+  # immutable just like the built-in values.
+  - name: When networkType is changed on update it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: "Cilium"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        networking:
+          networkType: "Calico"
+        dns:
+          baseDomain: example.com
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "networkType is immutable"
