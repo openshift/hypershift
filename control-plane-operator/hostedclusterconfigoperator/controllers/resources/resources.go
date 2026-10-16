@@ -82,6 +82,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/workqueue"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"k8s.io/utils/ptr"
 	"k8s.io/utils/set"
@@ -213,29 +214,31 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to initialize kubeClient from config: %w", err)
 	}
 
-	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
-		client:                    opts.Manager.GetClient(),
-		uncachedClient:            uncachedClient,
-		clientSet:                 clientset,
-		CreateOrUpdateProvider:    opts.TargetCreateOrUpdateProvider,
-		platformType:              opts.PlatformType,
-		rootCA:                    opts.InitialCA,
-		clusterSignerCA:           opts.ClusterSignerCA,
-		cpClient:                  opts.CPCluster.GetClient(),
-		kubevirtInfraClient:       kubevirtInfraClient,
-		hcpName:                   opts.HCPName,
-		hcpNamespace:              opts.Namespace,
-		releaseProvider:           opts.ReleaseProvider,
-		konnectivityServerAddress: opts.KonnectivityAddress,
-		konnectivityServerPort:    opts.KonnectivityPort,
-		oauthAddress:              opts.OAuthAddress,
-		oauthPort:                 opts.OAuthPort,
-		versions:                  opts.Versions,
-		operateOnReleaseImage:     opts.OperateOnReleaseImage,
-		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
-		cleanupTracker:            reconcilerpolicy.NewCleanupTracker(),
-		GetPodLogs:                getPodLogs,
-	}})
+	c, err := controller.New(ControllerName, opts.Manager, controller.Options{
+		RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](100*time.Millisecond, 2*time.Minute),
+		Reconciler: &reconciler{
+			client:                    opts.Manager.GetClient(),
+			uncachedClient:            uncachedClient,
+			clientSet:                 clientset,
+			CreateOrUpdateProvider:    opts.TargetCreateOrUpdateProvider,
+			platformType:              opts.PlatformType,
+			rootCA:                    opts.InitialCA,
+			clusterSignerCA:           opts.ClusterSignerCA,
+			cpClient:                  opts.CPCluster.GetClient(),
+			kubevirtInfraClient:       kubevirtInfraClient,
+			hcpName:                   opts.HCPName,
+			hcpNamespace:              opts.Namespace,
+			releaseProvider:           opts.ReleaseProvider,
+			konnectivityServerAddress: opts.KonnectivityAddress,
+			konnectivityServerPort:    opts.KonnectivityPort,
+			oauthAddress:              opts.OAuthAddress,
+			oauthPort:                 opts.OAuthPort,
+			versions:                  opts.Versions,
+			operateOnReleaseImage:     opts.OperateOnReleaseImage,
+			ImageMetaDataProvider:     opts.ImageMetaDataProvider,
+			cleanupTracker:            reconcilerpolicy.NewCleanupTracker(),
+			GetPodLogs:                getPodLogs,
+		}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
@@ -480,7 +483,10 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 		return result, utilerrors.NewAggregate(append(errs, err))
 	}
 
-	return ctrl.Result{}, utilerrors.NewAggregate(errs)
+	if aggregatedErr := utilerrors.NewAggregate(errs); aggregatedErr != nil {
+		return ctrl.Result{}, aggregatedErr
+	}
+	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 }
 
 func (r *reconciler) reconcileStorageAndMisc(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) []error {
