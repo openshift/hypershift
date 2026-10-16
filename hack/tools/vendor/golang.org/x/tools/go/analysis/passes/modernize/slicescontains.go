@@ -19,6 +19,7 @@ import (
 	"golang.org/x/tools/internal/astutil"
 	"golang.org/x/tools/internal/refactor"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
 )
@@ -58,12 +59,8 @@ var SlicesContainsAnalyzer = &analysis.Analyzer{
 //     statement is "found = false" (or vice versa), the
 //     loop becomes "found = [!]slices.Contains(...)".
 //
-// It may change cardinality of effects of the "needle" expression.
-// (Mostly this appears to be a desirable optimization, avoiding
-// redundantly repeated evaluation.)
-//
-// TODO(adonovan): Add a check that needle/predicate expression from
-// if-statement has no effects. Now the program behavior may change.
+// It rejects candidates whose needle/predicate expression from the if-statement
+// has side effects to avoid changes in program behavior.
 func slicescontains(pass *analysis.Pass) (any, error) {
 	// Skip the analyzer in packages where its
 	// fixes would create an import cycle.
@@ -171,6 +168,11 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 		body := ifStmt.Body
 		if len(body.List) == 0 {
 			// (We could perhaps delete the loop entirely.)
+			return
+		}
+
+		// Reject if needle/predicate expression has side effects.
+		if !typesinternal.NoEffects(info, arg2) {
 			return
 		}
 
@@ -327,12 +329,13 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 					len(assign.Rhs) == 1 {
 
 					// Have: body={ lhs = rhs; break }
+					assignBool := isTrueOrFalse(info, assign.Rhs[0])
 					if prevAssign, ok := prevStmt.(*ast.AssignStmt); ok &&
 						len(prevAssign.Lhs) == 1 &&
 						len(prevAssign.Rhs) == 1 &&
+						assignBool != 0 && // non-bool assignments don't apply in this case
 						astutil.EqualSyntax(prevAssign.Lhs[0], assign.Lhs[0]) &&
-						isTrueOrFalse(info, assign.Rhs[0]) ==
-							-isTrueOrFalse(info, prevAssign.Rhs[0]) {
+						assignBool == -isTrueOrFalse(info, prevAssign.Rhs[0]) {
 
 						// Have:
 						//    lhs = false
@@ -343,7 +346,7 @@ func slicescontains(pass *analysis.Pass) (any, error) {
 						// TODO(adonovan):
 						// - support "var lhs bool = false" and variants.
 						// - allow the break to be omitted.
-						neg := cond(isTrueOrFalse(info, assign.Rhs[0]) < 0, "!", "")
+						neg := cond(assignBool < 0, "!", "")
 						report([]analysis.TextEdit{
 							// Replace "rhs" of previous assignment by [!]slices.Contains(...)
 							{
