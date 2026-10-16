@@ -540,7 +540,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			hcp: kubevirtHCP,
 		},
 		{
-			name:             "When a machine is deleting it should mark endpointslices as not ready, serving, and terminating",
+			name:             "When a machine is deleting it should mark endpointslices as not ready, not serving, and terminating",
 			machines:         pairOfDualStackMachines(capiv1.MachinePhaseRunning, capiv1.MachinePhaseDeleting),
 			virtualMachines:  pairOfVirtualMachines,
 			services:         []corev1.Service{defaultIngressService},
@@ -818,6 +818,61 @@ func TestMachineToEndpointConditions(t *testing.T) {
 				Status: capiv1.MachineStatus{
 					Conditions: []metav1.Condition{
 						{Type: capiv1.MachineInfrastructureReadyCondition, Status: metav1.ConditionTrue},
+						{Type: capiv1.MachineNodeHealthyCondition, Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			wantReady: false,
+			wantServe: false,
+			wantTerm:  false,
+		},
+		{
+			name: "When only InfrastructureReady is true (NodeHealthy absent) and phase is Running it should fall through to phase and be ready",
+			machine: &capiv1.Machine{
+				Status: capiv1.MachineStatus{
+					Phase: string(capiv1.MachinePhaseRunning),
+					Conditions: []metav1.Condition{
+						{Type: capiv1.MachineInfrastructureReadyCondition, Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			wantReady: true,
+			wantServe: true,
+			wantTerm:  false,
+		},
+		{
+			name: "When only InfrastructureReady is true (NodeHealthy absent) and phase is empty it should not be ready",
+			machine: &capiv1.Machine{
+				Status: capiv1.MachineStatus{
+					Conditions: []metav1.Condition{
+						{Type: capiv1.MachineInfrastructureReadyCondition, Status: metav1.ConditionTrue},
+					},
+				},
+			},
+			wantReady: false,
+			wantServe: false,
+			wantTerm:  false,
+		},
+		{
+			name: "When only InfrastructureReady is false (NodeHealthy absent) it should not be ready even with phase Running",
+			machine: &capiv1.Machine{
+				Status: capiv1.MachineStatus{
+					Phase: string(capiv1.MachinePhaseRunning),
+					Conditions: []metav1.Condition{
+						{Type: capiv1.MachineInfrastructureReadyCondition, Status: metav1.ConditionFalse},
+					},
+				},
+			},
+			wantReady: false,
+			wantServe: false,
+			wantTerm:  false,
+		},
+		{
+			name: "When only NodeHealthy is false (InfrastructureReady absent) it should not be ready even with phase Running",
+			machine: &capiv1.Machine{
+				Status: capiv1.MachineStatus{
+					Phase: string(capiv1.MachinePhaseRunning),
+					Conditions: []metav1.Condition{
 						{Type: capiv1.MachineNodeHealthyCondition, Status: metav1.ConditionFalse},
 					},
 				},
