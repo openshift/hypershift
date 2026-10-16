@@ -677,15 +677,16 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 		Expect(err).NotTo(HaveOccurred(), "failed to initialize source management context")
 		targetCtx, err = internal.SetupTestContextFromKubeconfig(ctx.Context, targetKubeconfig)
 		Expect(err).NotTo(HaveOccurred(), "failed to initialize target management context")
-		Expect(sourceCtx.MgmtRESTConfig.Host).NotTo(Equal(targetCtx.MgmtRESTConfig.Host), "source and target kubeconfigs must point to different management clusters")
+		// Compare booleans so a failure does not print either management API host.
+		Expect(sourceCtx.MgmtRESTConfig.Host != targetCtx.MgmtRESTConfig.Host).To(BeTrue(), "source and target kubeconfigs must point to different management clusters")
 
 		hostedCluster, err := sourceCtx.GetHostedCluster()
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).NotTo(HaveOccurred(), "source HostedCluster should be available before backup")
 		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
 			Skip(fmt.Sprintf("Cross-cluster restore is currently supported only on AWS, got %s", hostedCluster.Spec.Platform.Type))
 		}
 		_, err = targetCtx.GetHostedCluster()
-		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "target management cluster should not already contain HostedCluster %s/%s, got error %v", targetCtx.ClusterNamespace, targetCtx.ClusterName, err)
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "target management cluster should not contain the HostedCluster before restore")
 		cfg, supported := backupRestorePlatforms[hostedCluster.Spec.Platform.Type]
 		if !supported {
 			Skip(fmt.Sprintf("Backup/restore test not supported on platform %s", hostedCluster.Spec.Platform.Type))
@@ -705,7 +706,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 			validateBeforeEach(sourceCtx)
 			By("Waiting for BackupStorageLocation to be Available")
 			err := backuprestore.WaitForBackupStorageLocationAvailable(sourceCtx, sourceCtx.ClusterName)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "source BackupStorageLocation should be Available before backup")
 
 			By("Creating backup")
 			backupName = oadp.GenerateBackupName(
@@ -722,38 +723,42 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 				SnapshotMoveData:  ptr.To(true),
 			}
 			err = backuprestore.RunOADPBackup(sourceCtx.Context, GinkgoLogr.WithName("backup-restore"), sourceCtx.ArtifactDir, backupOpts)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "source HostedCluster backup should be created")
 
 			By("Waiting for backup to complete")
 			err = backuprestore.WaitForBackupCompletion(sourceCtx, backupName)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "source HostedCluster backup should complete before teardown")
 		})
 	})
 
 	Context(ContextPostBackupControlPlane, func() {
 		It("should have control plane healthy after backup", func() {
 			err := internal.WaitForControlPlaneDeploymentsReadiness(sourceCtx, 5*time.Minute, platformCfg.excludeWorkloads)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "source control plane Deployments should remain ready after backup")
 			err = internal.WaitForControlPlaneStatefulSetsReadiness(sourceCtx, 5*time.Minute, platformCfg.excludeWorkloads)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "source control plane StatefulSets should remain ready after backup")
 		})
 	})
 
 	Context(ContextBreakControlPlane, func() {
-		It("should stop ExternalDNS on both management clusters and break the hosted cluster", func() {
+		It("should stop target ExternalDNS", func() {
 			By("Scaling the target ExternalDNS Deployment to zero")
 			err := backuprestore.ScaleDownExternalDNS(targetCtx)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "target ExternalDNS should stop before source teardown")
+		})
 
+		It("should stop source ExternalDNS", func() {
 			// Leave source ExternalDNS at zero until CI tears down the source manager.
 			// Otherwise, it could reconcile the retained DNS names away from the target.
 			By("Scaling the source ExternalDNS Deployment to zero")
-			err = backuprestore.ScaleDownExternalDNS(sourceCtx)
-			Expect(err).NotTo(HaveOccurred())
+			err := backuprestore.ScaleDownExternalDNS(sourceCtx)
+			Expect(err).NotTo(HaveOccurred(), "source ExternalDNS should stop before the HostedCluster is broken")
+		})
 
+		It("should break the source HostedCluster while preserving machines", func() {
 			By("Breaking the source HostedCluster while preserving machines")
-			err = backuprestore.BreakHostedClusterPreservingMachines(sourceCtx, GinkgoLogr.WithName("cleanup"))
-			Expect(err).NotTo(HaveOccurred())
+			err := backuprestore.BreakHostedClusterPreservingMachines(sourceCtx, GinkgoLogr.WithName("cleanup"))
+			Expect(err).NotTo(HaveOccurred(), "source HostedCluster resources should be removed while preserving machines")
 		})
 	})
 
@@ -762,7 +767,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 			validateBeforeEach(targetCtx)
 			By("Waiting for the target BackupStorageLocation to be Available")
 			err := backuprestore.WaitForBackupStorageLocationAvailable(targetCtx, targetCtx.ClusterName)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "target BackupStorageLocation should be Available before restore")
 
 			By("Creating Restore")
 			restoreName := oadp.GenerateRestoreName(targetCtx.ClusterName, targetCtx.ClusterNamespace)
@@ -781,9 +786,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 	Context(ContextPostRestoreControlPlane, func() {
 		It("should admit target Routes before starting target ExternalDNS", func() {
 			hostedCluster, err := targetCtx.GetHostedCluster()
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err == nil).To(BeTrue(), "restored HostedCluster should be available for Route admission checks")
 			endpoints, err := backuprestore.PublicServiceRouteEndpoints(hostedCluster)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err == nil).To(BeTrue(), "public service Route endpoints should be configured")
 
 			By("Waiting for public service Routes to be admitted by the target router")
 			Eventually(func(g Gomega) {
@@ -793,11 +798,12 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 						Namespace: targetCtx.ControlPlaneNamespace,
 						Name:      endpoint.RouteName,
 					}, route)
-					g.Expect(err).NotTo(HaveOccurred(), "failed to get %s Route for public %s DNS name %s", endpoint.Service, endpoint.RouteName, endpoint.DNSName)
-					g.Expect(route.Spec.Host).To(Equal(endpoint.DNSName), "restored %s Route should preserve its configured DNS hostname", endpoint.Service)
-					g.Expect(route.Status.Ingress).NotTo(BeEmpty(), "restored %s Route should have an ingress", endpoint.Service)
+					// Only report fixed service and status details; the Route and API error can contain hostnames.
+					g.Expect(err == nil).To(BeTrue(), "restored %s service Route should exist", endpoint.Service)
+					g.Expect(route.Spec.Host == endpoint.DNSName).To(BeTrue(), "restored %s service Route should retain its configured hostname", endpoint.Service)
+					g.Expect(len(route.Status.Ingress) > 0).To(BeTrue(), "restored %s service Route should have an ingress", endpoint.Service)
 					ingress := route.Status.Ingress[0]
-					g.Expect(ingress.RouterCanonicalHostname).NotTo(BeEmpty(), "restored %s Route should have a router canonical hostname", endpoint.Service)
+					g.Expect(ingress.RouterCanonicalHostname != "").To(BeTrue(), "restored %s service Route should have a router canonical hostname", endpoint.Service)
 					admitted := false
 					for _, condition := range ingress.Conditions {
 						if condition.Type == routev1.RouteAdmitted && condition.Status == corev1.ConditionTrue {
@@ -805,15 +811,15 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 							break
 						}
 					}
-					g.Expect(admitted).To(BeTrue(), "restored %s Route should be admitted", endpoint.Service)
+					g.Expect(admitted).To(BeTrue(), "restored %s service Route should be admitted", endpoint.Service)
 				}
-			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed())
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed(), "target public service Routes should be admitted with their configured hostnames before ExternalDNS restarts")
 
 			// This makes ExternalDNS start reconciling the retained DNS names from scratch and avoids using a stale cache
 			// that only expires after 1 hour (see --txt-cache-interval in HypershiftOperator assets).
 			By("Scaling the target ExternalDNS Deployment to one ready pod")
 			err = backuprestore.ScaleUpExternalDNS(targetCtx)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "target ExternalDNS should become ready after public service Routes are admitted")
 		})
 
 		It("should have control plane healthy after restore", func() {
