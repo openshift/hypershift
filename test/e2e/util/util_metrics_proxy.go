@@ -75,7 +75,7 @@ func EnsureMetricsForwarderWorking(t *testing.T, ctx context.Context, mgtClient 
 
 		// 6. Verify Prometheus is scraping kube-apiserver metrics through the forwarder.
 		t.Log("Verifying guest cluster Prometheus is scraping kube-apiserver via the metrics-forwarder")
-		err = waitForKASTargetUp(t, ctx, guestRestConfig, promPodName)
+		err = waitForComponentTargetUp(t, ctx, guestRestConfig, promPodName, "kube-apiserver")
 		g.Expect(err).NotTo(HaveOccurred(), "kube-apiserver target via metrics-forwarder should be UP in guest cluster Prometheus")
 
 		// 7. Query Prometheus for actual kube-apiserver metrics to confirm data was scraped.
@@ -96,6 +96,19 @@ func EnsureMetricsForwarderWorking(t *testing.T, ctx context.Context, mgtClient 
 			`process_resident_memory_bytes{job="apiserver"}`,
 			"process_resident_memory_bytes should be present with metricsSet=All")
 
+		// 9a. Verify kube-scheduler target is UP with metricsSet=All.
+		// Regression baseline for OCPBUGS-129091: scheduler metrics must be present
+		// with All so that their absence with Telemetry proves the drop-all filter works.
+		t.Log("Waiting for kube-scheduler target to be UP with metricsSet=All")
+		err = waitForComponentTargetUp(t, ctx, guestRestConfig, promPodName, "kube-scheduler")
+		g.Expect(err).NotTo(HaveOccurred(), "kube-scheduler target via metrics-forwarder should be UP with metricsSet=All")
+
+		// 9b. Verify scheduler_schedule_attempts_total is present with metricsSet=All.
+		t.Log("Verifying scheduler_schedule_attempts_total is present with metricsSet=All")
+		assertMetricPresent(t, ctx, g, guestRestConfig, promPodName,
+			`scheduler_schedule_attempts_total{job="kube-scheduler"}`,
+			"scheduler_schedule_attempts_total should be present with metricsSet=All")
+
 		// 10. Switch metricsSet to Telemetry to verify filtering.
 		t.Log("Switching metricsSet to Telemetry on HostedCluster")
 		err = UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
@@ -109,7 +122,7 @@ func EnsureMetricsForwarderWorking(t *testing.T, ctx context.Context, mgtClient 
 
 		// 12. Wait for the kube-apiserver target to be UP again after the rollout.
 		t.Log("Waiting for kube-apiserver target to be UP after metricsSet change")
-		err = waitForKASTargetUp(t, ctx, guestRestConfig, promPodName)
+		err = waitForComponentTargetUp(t, ctx, guestRestConfig, promPodName, "kube-apiserver")
 		g.Expect(err).NotTo(HaveOccurred(), "kube-apiserver target should be UP after metricsSet change")
 
 		// 13. Verify apiserver_request_total is still present (it's in the Telemetry keep list).
@@ -126,6 +139,21 @@ func EnsureMetricsForwarderWorking(t *testing.T, ctx context.Context, mgtClient 
 		assertMetricAbsent(t, ctx, g, guestRestConfig, promPodName,
 			`process_resident_memory_bytes{job="apiserver"}`,
 			"process_resident_memory_bytes should be filtered out with metricsSet=Telemetry")
+
+		// 15. Wait for kube-scheduler target to complete a scrape after the Telemetry rollout.
+		// Regression test for OCPBUGS-129091: the metrics-proxy filter must enforce
+		// drop-all rules for kube-scheduler in Telemetry mode.
+		t.Log("Waiting for kube-scheduler target to be UP after metricsSet change")
+		err = waitForComponentTargetUp(t, ctx, guestRestConfig, promPodName, "kube-scheduler")
+		g.Expect(err).NotTo(HaveOccurred(), "kube-scheduler target should be UP after metricsSet change")
+
+		// 16. Verify scheduler_schedule_attempts_total is absent with metricsSet=Telemetry.
+		// SchedulerRelabelConfigs returns drop .* for Telemetry, so the proxy filter
+		// should block all scheduler metrics.
+		t.Log("Verifying scheduler_schedule_attempts_total is absent with metricsSet=Telemetry")
+		assertMetricAbsent(t, ctx, g, guestRestConfig, promPodName,
+			`scheduler_schedule_attempts_total{job="kube-scheduler"}`,
+			"scheduler_schedule_attempts_total should be filtered out with metricsSet=Telemetry (OCPBUGS-129091)")
 	})
 }
 
@@ -170,10 +198,15 @@ func waitForMetricsProxyArgs(t *testing.T, ctx context.Context, g Gomega, client
 	}, timeout, 10*time.Second).Should(Succeed())
 }
 
-// waitForKASTargetUp polls the Prometheus targets API until the kube-apiserver
-// target via the metrics-forwarder is UP.
-func waitForKASTargetUp(t *testing.T, ctx context.Context, guestRestConfig *rest.Config, promPodName string) error {
+// waitForComponentTargetUp polls the Prometheus targets API until a target
+// whose scrape URL contains /metrics/<componentName> via the metrics-forwarder
+// scrape pool is healthy.
+func waitForComponentTargetUp(t *testing.T, ctx context.Context, guestRestConfig *rest.Config, promPodName, componentName string) error {
 	t.Helper()
+	targetPath := fmt.Sprintf("/metrics/%s", componentName)
+	// Record the time before polling so we can reject stale scrape results
+	// from before a proxy rollout.
+	pollStart := time.Now()
 	return wait.PollUntilContextTimeout(ctx, 15*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
 		output, execErr := execInGuestPod(ctx, guestRestConfig, monitoringNamespace, promPodName, "prometheus",
 			[]string{"curl", "-s", "http://localhost:9090/api/v1/targets"})
@@ -196,18 +229,24 @@ func waitForKASTargetUp(t *testing.T, ctx context.Context, guestRestConfig *rest
 			if !strings.Contains(target.ScrapePool, "control-plane-metrics-forwarder") {
 				continue
 			}
-			if !strings.Contains(target.ScrapeURL, "/metrics/kube-apiserver") {
+			if !strings.Contains(target.ScrapeURL, targetPath) {
 				continue
 			}
+			if target.LastScrape.Before(pollStart) {
+				t.Logf("%s target lastScrape=%s is before pollStart=%s, waiting for fresh scrape",
+					componentName, target.LastScrape.Format(time.RFC3339), pollStart.Format(time.RFC3339))
+				return false, nil
+			}
 			if target.Health == prometheusv1.HealthGood {
-				t.Logf("kube-apiserver target via metrics-forwarder is UP: scrapePool=%s", target.ScrapePool)
+				t.Logf("%s target via metrics-forwarder is UP with fresh scrape: scrapePool=%s lastScrape=%s",
+					componentName, target.ScrapePool, target.LastScrape.Format(time.RFC3339))
 				return true, nil
 			}
-			t.Logf("kube-apiserver target health=%s (will retry)", target.Health)
+			t.Logf("%s target health=%s lastScrape=%s (will retry)", componentName, target.Health, target.LastScrape.Format(time.RFC3339))
 			return false, nil
 		}
 
-		t.Log("kube-apiserver target not found in Prometheus active targets (will retry)")
+		t.Logf("%s target not found in Prometheus active targets (will retry)", componentName)
 		return false, nil
 	})
 }
@@ -239,14 +278,19 @@ func assertMetricPresent(t *testing.T, ctx context.Context, g Gomega, guestRestC
 	t.Logf("Found %d time series for %s", len(queryResp.Data.Result), query)
 }
 
-// assertMetricAbsent queries Prometheus for the given metric and asserts it has no results.
-// It retries a few times to account for stale data being flushed after a metrics-proxy rollout.
+// assertMetricAbsent verifies that no samples for the given metric have been
+// ingested in the last 2 minutes. It uses count_over_time rather than an
+// instant query to avoid false positives from Prometheus's staleness lookback
+// window: an instant query returns the last sample within lookback-delta
+// (default 5 min, sometimes longer), so freshly filtered metrics can appear
+// present long after the proxy stops forwarding them.
 func assertMetricAbsent(t *testing.T, ctx context.Context, g Gomega, guestRestConfig *rest.Config, promPodName, query, msg string) {
 	t.Helper()
+	rangeQuery := fmt.Sprintf("count_over_time(%s[2m])", query)
 	var queryResp queryAPIResponse
-	err := wait.PollUntilContextTimeout(ctx, 30*time.Second, 8*time.Minute, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, 30*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
 		output, execErr := execInGuestPod(ctx, guestRestConfig, monitoringNamespace, promPodName, "prometheus",
-			[]string{"curl", "-gs", fmt.Sprintf("http://localhost:9090/api/v1/query?query=%s", query)})
+			[]string{"curl", "-gs", fmt.Sprintf("http://localhost:9090/api/v1/query?query=%s", rangeQuery)})
 		if execErr != nil {
 			t.Logf("failed to query Prometheus for %s (will retry): %v", query, execErr)
 			return false, nil
@@ -262,14 +306,14 @@ func assertMetricAbsent(t *testing.T, ctx context.Context, g Gomega, guestRestCo
 		}
 
 		if len(queryResp.Data.Result) > 0 {
-			t.Logf("metric %s still has %d results (stale data may still be present, will retry)", query, len(queryResp.Data.Result))
+			t.Logf("metric %s still has %d series with recent samples (will retry)", query, len(queryResp.Data.Result))
 			return false, nil
 		}
 
 		return true, nil
 	})
 	g.Expect(err).NotTo(HaveOccurred(), msg)
-	t.Logf("Confirmed metric %s is absent", query)
+	t.Logf("Confirmed metric %s has no recent samples", query)
 }
 
 // waitForRunningPrometheusPod waits for the prometheus-k8s-0 pod (the well-known
