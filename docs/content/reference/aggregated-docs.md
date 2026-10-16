@@ -25909,6 +25909,18 @@ spec:
           value: engineering
 ```
 
+#### LoadBalancer Service label ownership
+
+For legacy GCP LoadBalancer Services, HyperShift reconciles
+`cloud.google.com/load-balancer-resource-labels` from
+`spec.platform.gcp.resourceLabels`.
+
+If an HCP resource-label key matches a label already present on a Service, the
+HCP value takes precedence and HyperShift adopts that key as managed. If the
+key is later removed from the HCP, HyperShift removes it from the Service
+annotation; it does not restore the Service's former value. Labels whose keys
+are not managed by HyperShift are preserved.
+
 ## CAPG Integration
 
 ### Controller Deployment
@@ -26051,6 +26063,7 @@ go test ./test/integration/gcp_test.go -v
 - GCP Resource Naming Standards
 - HyperShift Platform Development Guide
 - Workload Identity Federation
+
 
 ---
 
