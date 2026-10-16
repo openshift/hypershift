@@ -14,14 +14,16 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 )
 
 type ProxyMode string
 
 const (
-	Socks5 ProxyMode = "socks5"
-	HTTPS  ProxyMode = "https"
+	Socks5             ProxyMode = "socks5"
+	HTTPS              ProxyMode = "https"
+	DefaultServingPort int32     = 8090
 
 	// Dual mode will inject 2 konnectivity containers, one using HTTPS mode and the other using Socks5 mode.
 	Dual ProxyMode = "dual"
@@ -198,6 +200,18 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 		kubeconfingVolumeName = "kubeconfig"
 	}
 
+	servingPort := DefaultServingPort
+	switch opts.Mode {
+	case HTTPS:
+		if opts.HTTPSOptions.ServingPort != 0 {
+			servingPort = int32(opts.HTTPSOptions.ServingPort)
+		}
+	case Socks5:
+		if opts.Socks5Options.ServingPort != 0 {
+			servingPort = int32(opts.Socks5Options.ServingPort)
+		}
+	}
+
 	container := corev1.Container{
 		Name:    fmt.Sprintf("konnectivity-proxy-%s", opts.Mode),
 		Image:   image,
@@ -214,6 +228,17 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 			Name:  "KUBECONFIG",
 			Value: "/etc/kubernetes/secrets/kubeconfig/kubeconfig",
 		}},
+		StartupProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				TCPSocket: &corev1.TCPSocketAction{
+					Port: intstr.FromInt32(servingPort),
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       2,
+			FailureThreshold:    30,
+			TimeoutSeconds:      1,
+		},
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      kubeconfingVolumeName,
