@@ -55,7 +55,6 @@ make fmt                      # Format code
 make vet                      # Run go vet
 make verify-codespell         # Catch spelling errors in markdown
 make run-gitlint              # Validate commit message format across a commit range
-make pre-commit               # Full pre-PR gate (build, e2e compile, verify, test)
 ```
 
 ### API and Code Generation
@@ -99,7 +98,11 @@ This means:
 
 ## Pre-PR Gate
 
-Run `make pre-commit` before submitting a PR. It executes the full sequence: build, e2e compile, verify (formatting, linting, gitlint), and unit tests. This is the single command that catches most CI failures locally.
+Run proportionate repository-required checks targeting the changes, fix failures, confirm a clean diff/status, and provide command or review evidence.
+
+Required change-specific safety, formatting, linting, generation, and test checks still apply, including the API update requirements above. Select broader checks when the scope or risk demands them; required CI checks remain unchanged. For documentation-only changes, use applicable documentation checks and content review rather than unrelated builds or tests.
+
+Report the actual commands and results or review evidence, and explicitly identify skipped or unavailable checks. Review the complete diff for unintended changes and confirm a clean working tree after committing.
 
 ## Go Version
 
@@ -109,7 +112,7 @@ The minimum Go version is declared in [`go.mod`](go.mod). The `api/` module uses
 
 - **`api/` is a separate Go module**: Always run `make update` after modifying types in the `api/` package. See [Multi-Module Structure](#multi-module-structure) above for details.
 - **Do not modify `vendor/` directories directly**: They are managed by `go mod vendor` via `make update`.
-- Use `make verify` before submitting PRs to catch formatting/generation issues.
+- Select applicable formatting/generation checks as described in [Pre-PR Gate](#pre-pr-gate).
 - Platform-specific controllers require their respective cloud credentials for testing.
 - E2E tests need proper cloud infrastructure setup (S3 buckets, DNS zones, etc.).
 - `make generate` regenerates `*_mock.go` files in place via `go generate` — don't hand-edit mock files.
@@ -150,7 +153,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guidelines. Key
 ### Before Creating a PR
 
 1. Use the `restructure-commits` skill to organize commits by component (see [Restructuring Commits](#restructuring-commits-before-pr-submission) above)
-2. Run `make pre-commit` to build, compile e2e tests, run verification (formatting, linting, gitlint), and run unit tests
+2. Complete the proportionate validation and report the evidence described in [Pre-PR Gate](#pre-pr-gate).
 
 ### PR Title
 

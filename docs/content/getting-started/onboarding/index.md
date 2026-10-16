@@ -10,7 +10,7 @@
 1. **Start with the CRDs**: Understanding `HostedCluster`, `HostedControlPlane`, and `NodePool` is 80% of the work
 2. **Follow the data flow**: HC -> HCP -> Components. NP -> CAPI -> Cloud -> Node
 3. **Conditions are your friend**: Always check `.status.conditions` to understand what's happening
-4. **`make verify` before pushing**: Always
+4. **Validate proportionately before pushing**: Follow [Pre-PR Validation](development.md#pre-pr-validation) for required change-specific checks, fixes, full diff/status review, and validation evidence
 5. **The CP namespace is where the magic happens**: `kubectl get pods -n clusters-<name>` shows you everything
 6. **Read the tests**: Unit tests and E2E tests are the best living documentation
 7. **Use `hypershift dump`**: The diagnostic tool at `cmd/dump/` captures full cluster state for debugging
@@ -45,7 +45,7 @@ graph TD
         S3B[Understand the ignition flow<br/>Token -> Ignition Server -> Node]
         S3C[Study PKI and certificates]
         S3D[Make a real change:<br/>bug fix or small feature]
-        S3E[Run make verify<br/>and create your first PR]
+        S3E[Run proportionate required checks<br/>fix failures and review full diff<br/>confirm clean status and record evidence<br/>then create your first PR]
     end
 
     subgraph "Week 7+: Specialization"
