@@ -6,7 +6,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,6 +18,17 @@ import (
 
 func TestAdaptDeployment(t *testing.T) {
 	t.Parallel()
+	t.Run("When a custom TLS profile is missing its configuration, it should report an error", func(t *testing.T) {
+		g := NewWithT(t)
+		deployment, err := assets.LoadDeploymentManifest(ComponentName)
+		g.Expect(err).NotTo(HaveOccurred())
+		cpContext := component.WorkloadContext{HCP: &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{APIServer: &configv1.APIServerSpec{
+				TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType},
+			}},
+		}}}
+		g.Expect(adaptDeployment(cpContext, deployment)).NotTo(Succeed())
+	})
 
 	tests := []struct {
 		name              string
@@ -36,6 +50,9 @@ func TestAdaptDeployment(t *testing.T) {
 				g.Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
 				container := deployment.Spec.Template.Spec.Containers[0]
 				g.Expect(container.Name).To(Equal(ComponentName))
+				g.Expect(container.Command[:2]).To(Equal([]string{"/bin/bash", "-c"}))
+				g.Expect(container.Args[:3]).To(Equal([]string{"2", "/usr/bin/machine-approver", "--help"}))
+				g.Expect(container.Args).To(ContainElement(HavePrefix("--tls-curve-preferences=")))
 				g.Expect(container.Args).To(ContainElement("--existing-arg=value"))
 				g.Expect(container.Args).To(ContainElement("--machine-namespace=test-namespace"))
 			},
@@ -154,6 +171,9 @@ func TestAdaptDeployment(t *testing.T) {
 			containers := make([]corev1.Container, len(tc.initialContainers))
 			for i := range tc.initialContainers {
 				containers[i] = *tc.initialContainers[i].DeepCopy()
+				if containers[i].Name == ComponentName {
+					containers[i].Command = []string{"/usr/bin/machine-approver"}
+				}
 			}
 
 			deployment := &appsv1.Deployment{

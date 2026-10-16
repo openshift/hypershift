@@ -37,11 +37,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args, fmt.Sprintf("--machine-namespace=%s", hcp.Namespace))
-
-		if len(tlsArgs) > 0 {
-			c.Args = append(c.Args, tlsArgs...)
-		}
 	})
 
+	if c := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers); c != nil {
+		return config.AppendSupportedTLSArgs(c, []string{"--help"}, tlsArgs)
+	}
 	return nil
 }

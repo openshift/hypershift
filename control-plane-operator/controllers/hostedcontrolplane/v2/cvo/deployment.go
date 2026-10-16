@@ -123,10 +123,6 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 			Value: dataPlaneReleaseImage,
 		})
 
-		if len(tlsArgs) > 0 {
-			c.Args = append(c.Args, tlsArgs...)
-		}
-
 		if updateService := cpContext.HCP.Spec.UpdateService; updateService != "" {
 			c.Args = append(c.Args, "--update-service", string(updateService))
 		}
@@ -151,6 +147,9 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		}
 	})
 
+	if c := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers); c != nil {
+		return config.AppendSupportedTLSArgs(c, []string{"start", "--help"}, tlsArgs)
+	}
 	return nil
 }
 
