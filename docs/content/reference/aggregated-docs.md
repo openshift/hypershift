@@ -48542,6 +48542,38 @@ and reports missing images if any.</p>
 </td>
 </tr></tbody>
 </table>
+###ConfigMapReference { #hypershift.openshift.io/v1beta1.ConfigMapReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadSpec">IgnitionPayloadSpec</a>)
+</p>
+<p>
+<p>ConfigMapReference references a ConfigMap by name in the IgnitionPayload&rsquo;s namespace.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of a ConfigMap in the same namespace as this resource. It must
+be a valid DNS-1123 subdomain: at most 253 characters, consisting of lowercase
+alphanumeric characters, hyphens, and periods. Each period-separated segment must
+start and end with an alphanumeric character.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ConfigurationStatus { #hypershift.openshift.io/v1beta1.ConfigurationStatus }
 <p>
 (<em>Appears on:</em>
@@ -53547,6 +53579,310 @@ github.com/openshift/api/config/v1.IBMCloudProviderType
 </tr>
 </tbody>
 </table>
+###IgnitionPayload { #hypershift.openshift.io/v1beta1.IgnitionPayload }
+<p>
+<p>IgnitionPayload is one consumer&rsquo;s ignition payload request: the consumer&rsquo;s
+inputs in spec, the generator&rsquo;s results in status. One resource exists per
+consumer request (one per NodePool for the NodePool controller; Karpenter
+creates its own on demand). The type is consumer-agnostic — it carries no
+back-reference to a NodePool so non-NodePool consumers can use it.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metadata is the standard object metadata.</p>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadSpec">
+IgnitionPayloadSpec
+</a>
+</em>
+</td>
+<td>
+<p>spec is written by the consumer and describes the desired payload inputs.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>status,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadStatus">
+IgnitionPayloadStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>status is written by the PayloadController and reports generation and
+rollout progress.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###IgnitionPayloadSpec { #hypershift.openshift.io/v1beta1.IgnitionPayloadSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayload">IgnitionPayload</a>)
+</p>
+<p>
+<p>IgnitionPayloadSpec is written entirely by the consumer; the PayloadController
+treats it as read-only input.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>releaseImage</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>releaseImage is the pullspec of the OCP release whose machine-config-server
+binaries render the payload. It is resolved to an immutable digest before the
+payload is generated. This field is required.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>pullSecret,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretReference">
+SecretReference
+</a>
+</em>
+</td>
+<td>
+<p>pullSecret references a Secret in the IgnitionPayload&rsquo;s namespace holding the registry pull
+secret used to fetch the release image and embedded in the generated payload.
+This field is required and immutable: change the pull secret in place (via the
+global pull secret mechanism) rather than updating this reference, so it never
+triggers a node rollout.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalTrustBundle,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigMapReference">
+ConfigMapReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>additionalTrustBundle optionally references a ConfigMap in the IgnitionPayload&rsquo;s namespace
+holding additional CA certificates for booting nodes to trust. The CA bundle is
+read from the &ldquo;ca-bundle.crt&rdquo; key, PEM-encoded. When omitted, no additional
+trust bundle is embedded in the payload.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>osStream,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OSImageStreamReference">
+OSImageStreamReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>osStream selects the RHEL OS stream the payload targets. Valid values are
+&ldquo;rhel-9&rdquo; (RHEL 9 boot images) and &ldquo;rhel-10&rdquo; (RHEL 10 boot images). When omitted,
+the stream defaults to the one implied by the release version (RHEL 10 for newer
+releases, RHEL 9 for older ones). rhel-9 is the legacy stream and is expected to
+be retired as supported releases move to RHEL 10; consumers that do not recognize
+the selected stream should treat the payload as unservable rather than guessing.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>rolloutGlobalConfig,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigMapReference">
+ConfigMapReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>rolloutGlobalConfig references an IgnitionPayload-owned ConfigMap in the
+IgnitionPayload&rsquo;s namespace holding the rollout-relevant subset of the hosted
+cluster&rsquo;s global configuration, canonicalized and authored by the consumer. The
+content is an opaque, canonicalized representation that feeds the rollout hash.
+When omitted, no global configuration contributes to the payload.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>rolloutConfigMaps</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigMapReference">
+[]ConfigMapReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>rolloutConfigMaps lists ConfigMaps in the IgnitionPayload&rsquo;s namespace whose
+contents are rollout-relevant (user, core, and NTO machine configs). Names must be
+unique (enforced as a map keyed by name) and must not also appear in
+managementConfigMaps. A change to any listed ConfigMap feeds the rollout hash and
+can therefore trigger a node rollout. When omitted, no rollout-relevant ConfigMaps
+contribute to the payload. At least 1 and at most 100 entries.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>managementConfigMaps</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigMapReference">
+[]ConfigMapReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>managementConfigMaps lists ConfigMaps in the IgnitionPayload&rsquo;s namespace whose
+contents are management-side only (e.g. the apiserver-HAProxy config). Names must
+be unique (enforced as a map keyed by name) and must not also appear in
+rolloutConfigMaps. A change to any listed ConfigMap refreshes the generated payload
+bytes WITHOUT advancing rolloutGeneration, so it does not trigger a node rollout.
+When omitted, no management-only ConfigMaps contribute to the payload. At least 1
+and at most 100 entries.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>retiredRolloutGeneration</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>retiredRolloutGeneration lets the consumer release storage for payloads it no
+longer needs: set it to the highest rolloutGeneration whose nodes have all been
+replaced, and the payloads for that generation and below are freed (the current
+payload is always kept). It only ever increases; when omitted, no payloads are
+freed. Minimum 1.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###IgnitionPayloadStatus { #hypershift.openshift.io/v1beta1.IgnitionPayloadStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayload">IgnitionPayload</a>)
+</p>
+<p>
+<p>IgnitionPayloadStatus has two writers with disjoint field ownership. The
+PayloadController owns current, previous, and PayloadGenerated; the serving
+tier owns only IgnitionReached (field-scoped patch).</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions reports generation and rollout progress. Known condition types are
+&ldquo;PayloadGenerated&rdquo; (owned by the PayloadController; its observedGeneration tracks
+the spec generation last processed, so consumers can tell whether current reflects
+the latest spec) and &ldquo;IgnitionReached&rdquo; (owned by the serving tier; True once a node
+has successfully fetched the current payload, i.e. begun booting from it). At least
+1 and at most 100 entries.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>current,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PayloadReference">
+PayloadReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>current describes the payload for the latest validated, generated config. It is
+absent until the first payload has been generated.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>previous,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PayloadReference">
+PayloadReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>previous describes the immediately prior payload, retained during a rollout so
+in-flight boots on the old token are served until they drain. It is absent when
+there is no prior payload (e.g. the first generation) or once the prior payload
+has fully drained.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>rolloutHashVersion</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>rolloutHashVersion identifies the formula version used to compute
+current.rolloutHash. Minimum 1.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ImageContentSource { #hypershift.openshift.io/v1beta1.ImageContentSource }
 <p>
 (<em>Appears on:</em>
@@ -57277,6 +57613,7 @@ the management cluster.</p>
 ###OSImageStreamReference { #hypershift.openshift.io/v1beta1.OSImageStreamReference }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadSpec">IgnitionPayloadSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.NodePoolStatus">NodePoolStatus</a>)
 </p>
@@ -58229,6 +58566,76 @@ The current default log level is Normal.</p>
 </tr><tr><td><p>&#34;S390X&#34;</p></td>
 <td></td>
 </tr></tbody>
+</table>
+###PayloadReference { #hypershift.openshift.io/v1beta1.PayloadReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadStatus">IgnitionPayloadStatus</a>)
+</p>
+<p>
+<p>PayloadReference identifies one generated payload version and its store key.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>configHash</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>configHash is the payload-identity hash over the whole validated config. It is an
+opaque, fixed-form hash string: consumers compare it for equality and must not
+parse it. Required, at most 64 characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>rolloutHash</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>rolloutHash is the hash over the rollout-relevant inputs. It is an opaque,
+fixed-form hash string: consumers compare it for equality and must not parse it.
+Required, at most 64 characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>token</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>token is the credential a booting node presents to fetch its generated payload.
+Because the payload embeds registry and bootstrap credentials, treat token as a
+bearer secret. It is an opaque, non-derivable, canonical lowercase UUID.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>rolloutGeneration</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<p>rolloutGeneration is a monotonically increasing counter the consumer watches to
+execute a rollout. It advances only when rolloutHash changes (so a management-only
+payload refresh does not advance it). Minimum 1.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###PersistentVolumeAccessMode { #hypershift.openshift.io/v1beta1.PersistentVolumeAccessMode }
 <p>
@@ -60121,7 +60528,8 @@ history[0] is not Completed or Interrupted.</p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1beta1.AESCBCKeyStatus">AESCBCKeyStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob">HCPEtcdBackupAzureBlob</a>,
-<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupS3">HCPEtcdBackupS3</a>)
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupS3">HCPEtcdBackupS3</a>,
+<a href="#hypershift.openshift.io/v1beta1.IgnitionPayloadSpec">IgnitionPayloadSpec</a>)
 </p>
 <p>
 <p>SecretReference contains a reference to a Secret by name.
