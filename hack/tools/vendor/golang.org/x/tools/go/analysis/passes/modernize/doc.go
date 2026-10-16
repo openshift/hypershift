@@ -65,11 +65,11 @@ This analyzer is currently disabled by default as the
 transformation does not preserve the nilness of the base slice in
 all cases; see https://go.dev/issue/73557.
 
-# Analyzer atomic
+# Analyzer atomictypes
 
-atomic: replace basic types in sync/atomic calls with atomic types
+atomictypes: replace basic types in sync/atomic calls with atomic types
 
-The atomic analyzer suggests replacing the primitive sync/atomic functions with
+The atomictypes analyzer suggests replacing the primitive sync/atomic functions with
 the strongly typed atomic wrapper types introduced in Go1.19 (e.g.
 atomic.Int32). For example,
 
@@ -111,6 +111,31 @@ The any analyzer suggests replacing uses of the empty interface type,
 `interface{}`, with the `any` alias, which was introduced in Go 1.18.
 This is a purely stylistic change that makes code more readable.
 
+# Analyzer embedlit
+
+embedlit: simplify references to embedded fields in composite literals
+
+The embedlit analyzer suggests removing redundant embedded field type specifiers
+from composite literals. Go1.27 introduced the ability to directly initialize
+fields promoted from embedded struct types without a nested literal. For
+example, given the following structs:
+
+	type T struct {
+		U
+	}
+
+	type U struct {
+		x int
+	}
+
+A composite literal such as
+
+	t := T{U: U{x: 1}}
+
+would become
+
+	t := T{x: 1}
+
 # Analyzer errorsastype
 
 errorsastype: replace errors.As with errors.AsType[T]
@@ -142,6 +167,9 @@ The fmtappendf analyzer suggests replacing `[]byte(fmt.Sprintf(...))` with
 by Sprintf, making the code more efficient. The suggestion also applies to
 fmt.Sprint and fmt.Sprintln.
 
+Since its fix is not a Pareto improvement, fmtappendf is disabled by default in
+the `go fix` analyzer suite; see golang/go#77581.
+
 # Analyzer forvar
 
 forvar: remove redundant re-declaration of loop variables
@@ -153,6 +181,19 @@ of `for` loops, making this pattern redundant. This analyzer removes the
 unnecessary `x := x` statement.
 
 This fix only applies to `range` loops.
+
+# Analyzer importcomment
+
+importcomment: remove obsolete comments specifying canonical import path
+
+The importcomment analyzer removes comments specifying the canonical
+import path, such as
+
+	package foo // import "example.com/foo"
+
+The go command enforced these comments in GOPATH mode via "go get", but
+ignores them in module mode, so they are obsolete once the package
+belongs to a module. The fix removes the comment.
 
 # Analyzer mapsloop
 
@@ -303,6 +344,28 @@ No fix is offered in cases when the runtime type is dynamic, such as:
 
 or when the operand has potential side effects.
 
+# Analyzer slicesbackward
+
+slicesbackward: replace backward loops over slices with slices.Backward
+
+The slicesbackward analyzer suggests replacing manually-written backward
+loops of the form
+
+	for i := len(s) - 1; i >= 0; i-- {
+	    use(s[i])
+	}
+
+with the more readable Go 1.23 style using slices.Backward:
+
+	for _, v := range slices.Backward(s) {
+	    use(v)
+	}
+
+If the loop index is needed beyond just indexing into the slice, both
+the index and value variables are kept:
+
+	for i, v := range slices.Backward(s) { ... }
+
 # Analyzer slicescontains
 
 slicescontains: replace loops with slices.Contains or slices.ContainsFunc
@@ -402,6 +465,16 @@ It also handles variants using [strings.IndexByte] instead of Index, or the byte
 
 Fixes are offered only in cases in which there are no potential modifications of the idx, s, or substr expressions between their definition and use.
 
+It also replaces [strings.SplitN](s, sep, 2)[0] and [strings.Split](s, sep)[0] with the "before" result of strings.Cut, when sep is a non-empty string constant:
+
+	x := strings.SplitN(s, sep, 2)[0]
+
+is replaced by:
+
+	x, _, _ := strings.Cut(s, sep)
+
+The fix is only offered when sep is a non-empty string literal. When sep is a variable or the empty string, the semantics differ (strings.Split(s, "")[0] returns the first character of s, but strings.Cut(s, "").before is ""), so no fix is suggested.
+
 # Analyzer stringscutprefix
 
 stringscutprefix: replace HasPrefix/TrimPrefix with CutPrefix
@@ -484,6 +557,9 @@ is replaced by:
 
 This avoids quadratic memory allocation and improves performance.
 
+No diagnostics are issued in tests, where data sizes are often
+small and asymptotic performance is not a security concern.
+
 The analyzer requires that all references to s before the final uses
 are += operations. To avoid warning about trivial cases, at least one
 must appear within a loop. The variable s must be a local
@@ -544,11 +620,11 @@ where ptr is an unsafe.Pointer, is replaced by:
 
 	unsafe.Add(ptr, n)
 
-# Analyzer waitgroup
+# Analyzer waitgroupgo
 
-waitgroup: replace wg.Add(1)/go/wg.Done() with wg.Go
+waitgroupgo: replace wg.Add(1)/go/wg.Done() with wg.Go
 
-The waitgroup analyzer simplifies goroutine management with `sync.WaitGroup`.
+The waitgroupgo analyzer simplifies goroutine management with `sync.WaitGroup`.
 It replaces the common pattern
 
 	wg.Add(1)

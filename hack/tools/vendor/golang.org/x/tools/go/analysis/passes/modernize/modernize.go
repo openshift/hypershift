@@ -17,7 +17,6 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/edge"
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	"golang.org/x/tools/internal/refactor"
@@ -35,29 +34,36 @@ var doc string
 // Suite lists all modernize analyzers.
 var Suite = []*analysis.Analyzer{
 	AnyAnalyzer,
-	atomicAnalyzer,
-	// AppendClippedAnalyzer, // not nil-preserving!
-	// BLoopAnalyzer, // may skew benchmark results, see golang/go#74967
-	FmtAppendfAnalyzer,
+	AtomicTypesAnalyzer,
+	EmbedLitAnalyzer,
+	ErrorsAsTypeAnalyzer,
 	ForVarAnalyzer,
+	importCommentAnalyzer, // awaiting public symbol
 	MapsLoopAnalyzer,
 	MinMaxAnalyzer,
 	NewExprAnalyzer,
 	OmitZeroAnalyzer,
-	plusBuildAnalyzer,
+	PlusBuildAnalyzer,
 	RangeIntAnalyzer,
 	ReflectTypeForAnalyzer,
+	slicesBackwardAnalyzer, // awaiting public symbol
 	SlicesContainsAnalyzer,
-	// SlicesDeleteAnalyzer, // not nil-preserving!
 	SlicesSortAnalyzer,
-	stditeratorsAnalyzer,
-	stringscutAnalyzer,
+	StdIteratorsAnalyzer,
+	StringsCutAnalyzer,
 	StringsCutPrefixAnalyzer,
 	StringsSeqAnalyzer,
 	StringsBuilderAnalyzer,
 	TestingContextAnalyzer,
-	unsafeFuncsAnalyzer,
-	WaitGroupAnalyzer,
+	unsafeFuncsAnalyzer, // awaiting public symbol
+	WaitGroupGoAnalyzer,
+
+	// Not included:
+	//
+	// AppendClippedAnalyzer, 	// not nil-preserving
+	// BLoopAnalyzer, 		// may skew benchmark results, see golang/go#74967
+	// FmtAppendfAnalyzer, 		// makes code less clear, see golang/go#77581
+	// SlicesDeleteAnalyzer, 	// not nil-preserving
 }
 
 // -- helpers --
@@ -82,6 +88,12 @@ func isZeroIntConst(info *types.Info, e ast.Expr) bool {
 // isIntLiteral reports whether e is an integer with given value.
 func isIntLiteral(info *types.Info, e ast.Expr, n int64) bool {
 	return info.Types[e].Value == constant.MakeInt64(n)
+}
+
+// isInteger reports whether t is an integer type.
+func isInteger(t types.Type) bool {
+	basic, ok := t.Underlying().(*types.Basic)
+	return ok && basic.Info()&types.IsInteger != 0
 }
 
 // filesUsingGoVersion returns a cursor for each *ast.File in the inspector
@@ -114,15 +126,6 @@ func within(pass *analysis.Pass, pkgs ...string) bool {
 		moreiters.Contains(stdlib.Dependencies(pkgs...), path)
 }
 
-// unparenEnclosing removes enclosing parens from cur in
-// preparation for a call to [Cursor.ParentEdge].
-func unparenEnclosing(cur inspector.Cursor) inspector.Cursor {
-	for cur.ParentEdgeKind() == edge.ParenExpr_X {
-		cur = cur.Parent()
-	}
-	return cur
-}
-
 var (
 	builtinAny     = types.Universe.Lookup("any")
 	builtinAppend  = types.Universe.Lookup("append")
@@ -137,6 +140,7 @@ var (
 	builtinTrue    = types.Universe.Lookup("true")
 	byteSliceType  = types.NewSlice(types.Typ[types.Byte])
 	omitemptyRegex = regexp.MustCompile(`(?:^json| json):"[^"]*(,omitempty)(?:"|,[^"]*")\s?`)
+	errorType      = types.Universe.Lookup("error").Type()
 )
 
 // lookup returns the symbol denoted by name at the position of the cursor.

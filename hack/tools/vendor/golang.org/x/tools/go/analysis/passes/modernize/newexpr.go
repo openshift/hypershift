@@ -6,12 +6,11 @@ package modernize
 
 import (
 	_ "embed"
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
-	"strings"
-
-	"fmt"
+	"slices"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -54,7 +53,8 @@ func run(pass *analysis.Pass) (any, error) {
 							if sig.Results().Len() == 1 &&
 								is[*types.Pointer](sig.Results().At(0).Type()) && // => no iface conversion
 								sig.Params().Len() == 1 &&
-								sig.Params().At(0) == v {
+								sig.Params().At(0) == v &&
+								!sig.Variadic() { // we can't safely transform a variadic function call, so skip them
 
 								// Export a fact for each one.
 								pass.ExportObjectFact(fn, &newLike{})
@@ -94,7 +94,9 @@ func run(pass *analysis.Pass) (any, error) {
 								// older Go file; see https://go.dev/issue/75726.
 								//
 								// TODO(adonovan): use ast.ParseDirective when go1.26 is assured.
-								if !strings.Contains(decl.Doc.Text(), "go:fix inline") {
+								if !slices.ContainsFunc(astutil.Directives(decl.Doc), func(d *astutil.Directive) bool {
+									return d.Tool == "go" && d.Name == "fix" && d.Args == "inline"
+								}) {
 									edits = append(edits, analysis.TextEdit{
 										Pos:     decl.Pos(),
 										End:     decl.Pos(),
