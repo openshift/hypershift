@@ -118,13 +118,14 @@ require (
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	kubevirt.io/api v1.8.4
 	kubevirt.io/containerized-data-importer-api v1.65.0
-	sigs.k8s.io/cluster-api v1.13.4
+	sigs.k8s.io/cluster-api v1.14.1
+	sigs.k8s.io/cluster-api/api v1.14.1
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0
 	sigs.k8s.io/cluster-api-provider-azure v1.26.0
 	sigs.k8s.io/cluster-api-provider-gcp v1.13.1
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
-	sigs.k8s.io/cluster-api-provider-openstack v0.14.8
+	sigs.k8s.io/cluster-api-provider-openstack v0.15.0
 	sigs.k8s.io/controller-runtime v0.25.0
 	sigs.k8s.io/karpenter v1.13.0
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96
@@ -223,7 +224,6 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.18 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
-	github.com/gophercloud/gophercloud/v2 v2.12.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0 // indirect
@@ -319,3 +319,14 @@ replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter 
 
 // Temporary: NTO main requires kube-openapi v0.35.1 (fake tag that only resolves via NTO's own replace)
 replace k8s.io/kube-openapi v0.35.1 => k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288
+
+// CAPI provider types
+replace (
+	github.com/openshift/cluster-api-provider-agent/api => ./pkg/capi/agent
+	sigs.k8s.io/cluster-api-provider-aws/v2 => ./pkg/capi/aws
+	sigs.k8s.io/cluster-api-provider-azure => ./pkg/capi/azure
+	sigs.k8s.io/cluster-api-provider-gcp => ./pkg/capi/gcp
+	sigs.k8s.io/cluster-api-provider-ibmcloud => ./pkg/capi/ibmcloud
+	sigs.k8s.io/cluster-api-provider-kubevirt => ./pkg/capi/kubevirt
+	sigs.k8s.io/cluster-api-provider-openstack => ./pkg/capi/openstack
+)

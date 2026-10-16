@@ -17,7 +17,7 @@ limitations under the License.
 package v1beta2
 
 import (
-	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1" //nolint:staticcheck
+	clusterv1beta1 "sigs.k8s.io/cluster-api-provider-ibmcloud/capicore/api/core/v1beta1" //nolint:staticcheck
 )
 
 // IBMPowerVSMachine's InstanceReady condition and corresponding reasons that will be used in v1Beta2 API version.

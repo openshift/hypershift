@@ -16,7 +16,7 @@ limitations under the License.
 
 package v1beta1
 
-import clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+import clusterv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta1"
 
 const (
 	// InstanceReadyCondition reports on current status of the OpenStack instance. Ready indicates the instance is in a Running state.
@@ -68,6 +68,16 @@ const (
 	FloatingAddressFromPoolErrorReason = "FloatingIPError"
 	// UnableToFindFloatingIPNetworkReason is used when the floating ip network is not found.
 	UnableToFindFloatingIPNetworkReason = "UnableToFindFloatingIPNetwork"
+	// PortCreateFailedReason used when creating a port failed.
+	PortCreateFailedReason = "PortCreateFailed"
+)
+
+const (
+	// OpenStackAuthenticationSucceeded reports on the current status of the OpenStack credentials.
+	OpenStackAuthenticationSucceeded clusterv1beta1.ConditionType = "OpenStackAuthenticationSucceeded"
+
+	// OpenStackAuthenticationFailedReason is used when the controller fails to authenticate with OpenStack.
+	OpenStackAuthenticationFailedReason = "OpenStackAuthenticationFailed"
 )
 
 const (
