@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: a3af38ba6e62d8ab0f6fc66d4ecc0f0bf3e32357021676ad42b77fe04ba29ec0
+    hypershift.openshift.io/desired-state-hash: e715d3f3aae0d3cc8a3d3734e6ebd0b6f2ae81d6c124d222dcfbadaec0e591c7
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: machine-approver
@@ -67,6 +67,14 @@ spec:
       automountServiceAccountToken: true
       containers:
       - args:
+        - "2"
+        - /usr/bin/machine-approver
+        - --help
+        - "3"
+        - --tls-min-version=VersionTLS12
+        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --tls-curve-preferences=4588,29,23,24
+        - /usr/bin/machine-approver
         - --config=/var/run/configmaps/config/config.yaml
         - -v=3
         - --logtostderr
@@ -74,11 +82,48 @@ spec:
         - --workload-cluster-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --disable-status-controller
         - --machine-namespace=hcp-namespace
-        - --tls-min-version=VersionTLS12
-        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-        - --tls-curve-preferences=4588,29,23,24
         command:
-        - /usr/bin/machine-approver
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          help_count="$1"
+          shift
+          help_command=("${@:1:help_count}")
+          shift "$help_count"
+          tls_count="$1"
+          shift
+          tls_args=("${@:1:tls_count}")
+          shift "$tls_count"
+
+          help_exit=0
+          help_output=$(timeout --signal=KILL 30s "${help_command[@]}" 2>&1) || help_exit=$?
+          if [[ $help_exit -eq 137 ]]; then
+            echo "TLS capability detection failed: help probe timed out or was killed for ${help_command[0]}" >&2
+            exit 1
+          fi
+          declare -A supported_flags=()
+          while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*(-[[:alnum:]],?[[:space:]]+)?--?([[:alnum:]][[:alnum:]-]*)([[:space:]=]|$) ]]; then
+              supported_flags["${BASH_REMATCH[2]}"]=1
+            fi
+          done <<< "$help_output"
+          if [[ ${#supported_flags[@]} -eq 0 ]]; then
+            echo "TLS capability detection failed: no flag declarations in help for ${help_command[0]}" >&2
+            exit 1
+          fi
+          selected=()
+          for arg in "${tls_args[@]}"; do
+            flag="${arg%%=*}"
+            flag="${flag#--}"
+            if [[ -n "${supported_flags[$flag]:-}" ]]; then
+              selected+=("$arg")
+            else
+              echo "Omitting unsupported TLS flag --$flag for ${help_command[0]}" >&2
+            fi
+          done
+          exec "$@" "${selected[@]}"
+        - tls-capability-check
         image: cluster-machine-approver
         imagePullPolicy: IfNotPresent
         name: machine-approver
