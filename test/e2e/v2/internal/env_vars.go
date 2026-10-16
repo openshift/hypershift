@@ -144,6 +144,16 @@ func init() {
 		false,
 	)
 	RegisterEnvVar(
+		"KUBECONFIG_SOURCE",
+		"Management-cluster kubeconfig for the source role in a cross-cluster restore test.",
+		false,
+	)
+	RegisterEnvVar(
+		"KUBECONFIG_TARGET",
+		"Management-cluster kubeconfig for the target role in a cross-cluster restore test.",
+		false,
+	)
+	RegisterEnvVar(
 		"E2E_SHOW_ENV_HELP",
 		"When set to any non-empty value, displays environment variable help and exits without running tests.",
 		false,

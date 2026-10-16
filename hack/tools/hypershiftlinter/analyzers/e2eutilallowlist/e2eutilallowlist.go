@@ -43,9 +43,10 @@ var allowlist = map[string]map[string]bool{
 		"WithTransportFactory":         true,
 
 		// Client helpers
-		"GetClient":    true,
-		"GetConfig":    true,
-		"UpdateObject": true,
+		"GetClient":          true,
+		"GetClientForConfig": true,
+		"GetConfig":          true,
+		"UpdateObject":       true,
 
 		// Wait/rollout helpers
 		"WaitForControlPlaneComponentRollout":             true,
