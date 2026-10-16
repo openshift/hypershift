@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -109,65 +110,7 @@ func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 }
 
 func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
-	// Parse EXTRA_ARGS from environment if provided
-	var extraArgs []string
-	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
-		extraArgs = strings.Fields(envArgs)
-	}
-
-	var publicExtraArgs []string
-	if a.encryptionKeyID != "" {
-		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
-	}
-	publicExtraArgs = append(publicExtraArgs, extraArgs...)
-
-	oneInitialReplica := 1
-	twoInitialReplicas := 2
-
-	return []ClusterSpec{
-		{
-			Variant:                 "public",
-			ExtraArgs:               publicExtraArgs,
-			InitialNodePoolReplicas: &twoInitialReplicas,
-		},
-		{
-			Variant:                 "private",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs: append([]string{
-				"--endpoint-access=Private",
-				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
-			}, extraArgs...),
-		},
-		{
-			Variant:                 "oauth-lb",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               append([]string{"--oauth-publishing-strategy=LoadBalancer"}, extraArgs...),
-		},
-		{
-			Variant:                 "oauth-lb-private",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs: append([]string{
-				"--endpoint-access=Private",
-				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
-				"--oauth-publishing-strategy=LoadBalancer",
-			}, extraArgs...),
-		},
-		{
-			Variant:                 "upgrade",
-			ReleaseImage:            n1Image,
-			InitialNodePoolReplicas: &twoInitialReplicas,
-			ExtraArgs:               append([]string{"--control-plane-availability-policy=HighlyAvailable"}, extraArgs...),
-		},
-		{
-			Variant:                 "external-oidc",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               extraArgs,
-		},
-	}
-}
-
-func (a *AzurePlatformConfig) CreateArgs() []string {
-	args := []string{
+	commonArgs := []string{
 		"--azure-creds=" + a.creds,
 		"--location=" + a.location,
 		"--oidc-issuer-url=" + a.oidcIssuerURL,
@@ -178,17 +121,74 @@ func (a *AzurePlatformConfig) CreateArgs() []string {
 	}
 
 	if a.marketplacePublisher != "" {
-		args = append(args, "--marketplace-publisher="+a.marketplacePublisher)
-		args = append(args, "--marketplace-offer="+a.marketplaceOffer)
+		commonArgs = append(commonArgs, "--marketplace-publisher="+a.marketplacePublisher)
+		commonArgs = append(commonArgs, "--marketplace-offer="+a.marketplaceOffer)
 		if a.marketplaceSKU != "" {
-			args = append(args, "--marketplace-sku="+a.marketplaceSKU)
+			commonArgs = append(commonArgs, "--marketplace-sku="+a.marketplaceSKU)
 		}
 		if a.marketplaceVersion != "" {
-			args = append(args, "--marketplace-version="+a.marketplaceVersion)
+			commonArgs = append(commonArgs, "--marketplace-version="+a.marketplaceVersion)
 		}
 	}
 
-	return args
+	// Parse EXTRA_ARGS from environment if provided
+	var extraArgs []string
+	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
+		extraArgs = strings.Fields(envArgs)
+	}
+
+	clusterArgs := func(args ...string) []string {
+		return slices.Concat(commonArgs, args, extraArgs)
+	}
+
+	var publicExtraArgs []string
+	if a.encryptionKeyID != "" {
+		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
+	}
+
+	oneInitialReplica := 1
+	twoInitialReplicas := 2
+
+	return []ClusterSpec{
+		{
+			Variant:                 "public",
+			ExtraArgs:               clusterArgs(publicExtraArgs...),
+			InitialNodePoolReplicas: &twoInitialReplicas,
+		},
+		{
+			Variant:                 "private",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs: clusterArgs(
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id="+a.privateNATSubnetID,
+			),
+		},
+		{
+			Variant:                 "oauth-lb",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs:               clusterArgs("--oauth-publishing-strategy=LoadBalancer"),
+		},
+		{
+			Variant:                 "oauth-lb-private",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs: clusterArgs(
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id="+a.privateNATSubnetID,
+				"--oauth-publishing-strategy=LoadBalancer",
+			),
+		},
+		{
+			Variant:                 "upgrade",
+			ReleaseImage:            n1Image,
+			InitialNodePoolReplicas: &twoInitialReplicas,
+			ExtraArgs:               clusterArgs("--control-plane-availability-policy=HighlyAvailable"),
+		},
+		{
+			Variant:                 "external-oidc",
+			InitialNodePoolReplicas: &oneInitialReplica,
+			ExtraArgs:               clusterArgs(),
+		},
+	}
 }
 
 // PreCreate deploys infrastructure that must be ready before clusters

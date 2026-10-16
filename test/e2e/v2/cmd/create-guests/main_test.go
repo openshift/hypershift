@@ -3,6 +3,7 @@
 package main
 
 import (
+	"slices"
 	"strconv"
 	"testing"
 
@@ -46,11 +47,15 @@ func TestBuildCreateArgs(t *testing.T) {
 			ns := namedSpec{
 				ClusterSpec: lifecycle.ClusterSpec{
 					Variant:                 "public",
+					ExtraArgs:               []string{"--location=centralus", "--encryption-key-id=test-key"},
 					InitialNodePoolReplicas: tt.override,
 				},
 				name: "public-test",
 			}
 			args := buildCreateArgs(cfg, ns)
+			if !slices.Equal(args[len(args)-len(ns.ExtraArgs):], ns.ExtraArgs) {
+				t.Errorf("create args %v do not end with spec arguments %v", args, ns.ExtraArgs)
+			}
 			want := "--node-pool-replicas=" + strconv.Itoa(tt.want)
 			for _, arg := range args {
 				if arg == want {
