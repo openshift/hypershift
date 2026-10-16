@@ -28,6 +28,7 @@ Project documentation is published via MkDocs. The site structure and navigation
 | **Versioning and support** | [docs/content/reference/versioning-support.md](docs/content/reference/versioning-support.md) |
 | **Upgrades lifecycle** | [docs/content/how-to/upgrades.md](docs/content/how-to/upgrades.md) |
 | **Contributing and PR workflow** | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| **`/retest` and `/override` comment format** | [CONTRIBUTING.md](CONTRIBUTING.md#retest-and-override-comment-format) — first line is the command (`/override "ci/prow/<test>"`, never the `pull-ci-...` name), blank line, then an ALL-CAPS reason keyword; `UNRELATED` / `FLAKE` (needs tracking bug) / `INFRA` (needs tracking bug, use rarely) |
 | **Agentic SDLC framework** | [docs/content/how-to/agentic-sdlc.md](docs/content/how-to/agentic-sdlc.md) |
 | **Feature gates** | [docs/content/how-to/feature-gates.md](docs/content/how-to/feature-gates.md) — two separate systems: management cluster gates vs hosted cluster gates |
 | **Pre-commit hooks** | [docs/content/contribute/precommit-hook-help.md](docs/content/contribute/precommit-hook-help.md) |
