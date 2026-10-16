@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"time"
@@ -11,11 +12,13 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/upsert"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/workqueue"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -50,12 +54,25 @@ const (
 	// This matches the timeout used in the management-side PSC controller.
 	gcpAPITimeout = 30 * time.Second
 
+	// regionalOperationPollingInterval and regionalOperationTimeout bound polling of
+	// regional Compute operations. RegionOperations.Wait is best-effort and can return
+	// before an operation has completed, so retry the same operation rather than
+	// initiating another mutation with a stale label fingerprint.
+	regionalOperationPollingInterval = 2 * time.Second
+	regionalOperationTimeout         = 5 * time.Minute
+
 	// wifTokenPath is the path where the token minter writes the projected service account token for GCP WIF.
 	wifTokenPath = "/var/run/secrets/openshift/serviceaccount/token"
 
 	// driftDetectionRequeueInterval is the interval for periodic reconciliation to detect
 	// out-of-band changes to GCP resources. Matches the AWS private link controller pattern.
 	driftDetectionRequeueInterval = 5 * time.Minute
+
+	// labelReconciliationRequeueInterval retries label updates without delaying PSC
+	// endpoint availability, DNS, or external service reconciliation.
+	labelReconciliationRequeueInterval = 30 * time.Second
+
+	managedPSCResourceLabelKeysAnnotation = "hypershift.openshift.io/gcp-psc-managed-resource-label-keys"
 )
 
 var dnsEndpointGVK = schema.GroupVersionKind{
@@ -126,7 +143,7 @@ func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager) 
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),
 			MaxConcurrentReconciles: 10,
 		}).
-		Watches(&hyperv1.HostedControlPlane{}, handler.Funcs{UpdateFunc: r.enqueueOnAccessChange(mgr)}).
+		Watches(&hyperv1.HostedControlPlane{}, handler.Funcs{UpdateFunc: r.enqueueOnAccessOrResourceLabelsChange(mgr.GetLogger())}).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)
@@ -136,24 +153,24 @@ func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager) 
 	return nil
 }
 
-func (r *GCPPrivateServiceConnectReconciler) enqueueOnAccessChange(mgr ctrl.Manager) func(context.Context, event.UpdateEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+func (r *GCPPrivateServiceConnectReconciler) enqueueOnAccessOrResourceLabelsChange(logger logr.Logger) func(context.Context, event.UpdateEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	return func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-		logger := mgr.GetLogger()
 		newHCP, isOk := e.ObjectNew.(*hyperv1.HostedControlPlane)
 		if !isOk {
-			logger.Info("WARNING: enqueueOnAccessChange: new resource is not of type HostedControlPlane")
+			logger.Info("WARNING: enqueueOnAccessOrResourceLabelsChange: new resource is not of type HostedControlPlane")
 			return
 		}
 		oldHCP, isOk := e.ObjectOld.(*hyperv1.HostedControlPlane)
 		if !isOk {
-			logger.Info("WARNING: enqueueOnAccessChange: old resource is not of type HostedControlPlane")
+			logger.Info("WARNING: enqueueOnAccessOrResourceLabelsChange: old resource is not of type HostedControlPlane")
 			return
 		}
-		// Only enqueue gcpprivateserviceconnects when there is a change in the endpointaccess value, otherwise ignore changes
-		if newHCP.Spec.Platform.GCP != nil && oldHCP.Spec.Platform.GCP != nil && newHCP.Spec.Platform.GCP.EndpointAccess != oldHCP.Spec.Platform.GCP.EndpointAccess {
+		if newHCP.Spec.Platform.GCP != nil && oldHCP.Spec.Platform.GCP != nil &&
+			(newHCP.Spec.Platform.GCP.EndpointAccess != oldHCP.Spec.Platform.GCP.EndpointAccess ||
+				!equality.Semantic.DeepEqual(newHCP.Spec.Platform.GCP.ResourceLabels, oldHCP.Spec.Platform.GCP.ResourceLabels)) {
 			gcpPrivateServiceConnectList := &hyperv1.GCPPrivateServiceConnectList{}
 			if err := r.List(context.Background(), gcpPrivateServiceConnectList, client.InNamespace(newHCP.Namespace)); err != nil {
-				logger.Error(err, "enqueueOnAccessChange: cannot list gcpprivateserviceconnects")
+				logger.Error(err, "enqueueOnAccessOrResourceLabelsChange: cannot list gcpprivateserviceconnects")
 				return
 			}
 			for i := range gcpPrivateServiceConnectList.Items {
@@ -265,14 +282,25 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	customerProject := r.gcpClientBuilder.customerProject
 	region := r.gcpClientBuilder.region
 
+	desiredLabels := gcputil.ResourceLabels(hcp)
+	previouslyManagedLabelKeys := gcputil.ManagedResourceLabelKeys(gcpPSC.Annotations, managedPSCResourceLabelKeysAnnotation)
+
 	// 9. Ensure IP address is reserved
-	if result, err := r.ensureIPAddress(ctx, gcpPSC, hcp, customerGCPClient, customerProject, region, log); err != nil || !result.IsZero() {
+	result, addressLabelsReconciled, err := r.ensureIPAddress(ctx, gcpPSC, hcp, customerGCPClient, customerProject, region, desiredLabels, previouslyManagedLabelKeys, log)
+	if err != nil || !result.IsZero() {
 		return result, err
 	}
 
 	// 10. Reconcile PSC Endpoint
-	if result, err := r.reconcilePSCEndpoint(ctx, gcpPSC, hcp, customerGCPClient, customerProject, region, log); err != nil || !result.IsZero() {
+	result, endpointLabelsReconciled, err := r.reconcilePSCEndpoint(ctx, gcpPSC, hcp, customerGCPClient, customerProject, region, desiredLabels, previouslyManagedLabelKeys, log)
+	if err != nil || !result.IsZero() {
 		return result, err
+	}
+	labelsReconciled := addressLabelsReconciled && endpointLabelsReconciled
+	if labelsReconciled {
+		if err := gcputil.UpdateManagedResourceLabelKeys(ctx, r.Client, gcpPSC, managedPSCResourceLabelKeysAnnotation, desiredLabels); err != nil {
+			return ctrl.Result{}, fmt.Errorf("update managed PSC resource label keys: %w", err)
+		}
 	}
 
 	// 11. Reconcile DNS zones and records (after PSC endpoint is available)
@@ -283,6 +311,9 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	// 12. Reconcile external-dns services for private clusters with external names
 	if result, err := r.reconcileExternalServices(ctx, gcpPSC, hcp, log); err != nil || !result.IsZero() {
 		return result, err
+	}
+	if !labelsReconciled {
+		return ctrl.Result{RequeueAfter: labelReconciliationRequeueInterval}, nil
 	}
 
 	// 13. Requeue for drift detection - periodically check GCP resources for out-of-band changes
@@ -564,14 +595,19 @@ func (r *GCPPrivateServiceConnectReconciler) isServiceAttachmentReady(gcpPSC *hy
 }
 
 // ensureIPAddress reserves a static IP address for the PSC endpoint
-func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, customerGCPClient *compute.Service, customerProject, region string, log logr.Logger) (ctrl.Result, error) {
+func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, customerGCPClient *compute.Service, customerProject, region string, desiredLabels map[string]string, previouslyManagedLabelKeys map[string]struct{}, log logr.Logger) (ctrl.Result, bool, error) {
 	// Check if IP already allocated and recorded in status
 	if gcpPSC.Status.EndpointIP != "" {
 		// Verify IP still exists in GCP
 		if exists, err := r.verifyIPExists(ctx, gcpPSC, customerGCPClient, customerProject, region); err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{}, true, err
 		} else if exists {
-			return ctrl.Result{}, nil // IP ready
+			ipName := r.constructIPAddressName(gcpPSC)
+			if err := reconcileAddressLabels(ctx, customerGCPClient, customerProject, region, ipName, desiredLabels, previouslyManagedLabelKeys); err != nil {
+				log.Error(err, "failed to reconcile labels on existing IP address; continuing PSC reconciliation")
+				return ctrl.Result{}, false, nil
+			}
+			return ctrl.Result{}, true, nil // IP ready
 		}
 		// IP was deleted, need to allocate new one
 		log.Info("Previously allocated IP no longer exists, allocating new one")
@@ -579,7 +615,7 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 
 	pscSubnet := string(hcp.Spec.Platform.GCP.NetworkConfig.PrivateServiceConnectSubnet.Name)
 	if pscSubnet == "" {
-		return ctrl.Result{}, fmt.Errorf("PrivateServiceConnectSubnet not specified in HostedControlPlane")
+		return ctrl.Result{}, true, fmt.Errorf("PrivateServiceConnectSubnet not specified in HostedControlPlane")
 	}
 
 	// Reserve static internal IP
@@ -590,18 +626,22 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 	defer getCancel()
 	existingAddress, err := customerGCPClient.Addresses.Get(customerProject, region, ipName).Context(getCtx).Do()
 	if err != nil && !isNotFoundError(err) {
-		return ctrl.Result{}, fmt.Errorf("failed to check existing IP address: %w", err)
+		return ctrl.Result{}, true, fmt.Errorf("failed to check existing IP address: %w", err)
 	}
 
 	if existingAddress != nil {
-		// IP already exists, update status and continue
+		// IP already exists, update status and reconcile labels
 		log.Info("IP address already exists, updating status", "name", ipName, "ip", existingAddress.Address)
 		patch := client.MergeFrom(gcpPSC.DeepCopy())
 		gcpPSC.Status.EndpointIP = existingAddress.Address
 		if err := r.Status().Patch(ctx, gcpPSC, patch); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update EndpointIP with existing address: %w", err)
+			return ctrl.Result{}, true, fmt.Errorf("failed to update EndpointIP with existing address: %w", err)
 		}
-		return ctrl.Result{}, nil
+		if err := reconcileAddressLabels(ctx, customerGCPClient, customerProject, region, ipName, desiredLabels, previouslyManagedLabelKeys); err != nil {
+			log.Error(err, "failed to reconcile labels on existing IP address; continuing PSC reconciliation")
+			return ctrl.Result{}, false, nil
+		}
+		return ctrl.Result{}, true, nil
 	}
 
 	// IP doesn't exist, create it
@@ -610,6 +650,7 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 		Description: fmt.Sprintf("PSC endpoint IP for HyperShift cluster %s", gcpPSC.Name),
 		AddressType: "INTERNAL",
 		Subnetwork:  r.constructSubnetURL(pscSubnet, customerProject, region),
+		Labels:      desiredLabels,
 		// Purpose not set for subnetwork addresses - PSC purpose is implicit when used with ForwardingRule
 	}
 
@@ -618,17 +659,18 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 	defer insertCancel()
 	op, err := customerGCPClient.Addresses.Insert(customerProject, region, ipAddress).Context(insertCtx).Do()
 	if err != nil {
-		return r.handleGCPError(ctx, gcpPSC, "IPReservationFailed", err)
+		result, err := r.handleGCPError(ctx, gcpPSC, "IPReservationFailed", err)
+		return result, true, err
 	}
 
 	// GCP operations can be PENDING, RUNNING, or DONE
 	if op.Status != "DONE" {
 		log.Info("IP reservation in progress", "operation", op.Name, "status", op.Status)
-		return ctrl.Result{RequeueAfter: time.Second * 15}, nil
+		return ctrl.Result{RequeueAfter: time.Second * 15}, true, nil
 	}
 	// DONE doesn't guarantee success - check for operation errors
 	if op.Error != nil {
-		return ctrl.Result{}, fmt.Errorf("IP reservation failed: %v", op.Error.Errors)
+		return ctrl.Result{}, true, fmt.Errorf("IP reservation failed: %v", op.Error.Errors)
 	}
 
 	// Get the allocated IP address
@@ -636,18 +678,18 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 	defer fetchCancel()
 	allocatedAddress, err := customerGCPClient.Addresses.Get(customerProject, region, ipName).Context(fetchCtx).Do()
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get allocated IP: %w", err)
+		return ctrl.Result{}, true, fmt.Errorf("failed to get allocated IP: %w", err)
 	}
 
 	// Update status with allocated IP
 	patch := client.MergeFrom(gcpPSC.DeepCopy())
 	gcpPSC.Status.EndpointIP = allocatedAddress.Address
 	if err := r.Status().Patch(ctx, gcpPSC, patch); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update EndpointIP: %w", err)
+		return ctrl.Result{}, true, fmt.Errorf("failed to update EndpointIP: %w", err)
 	}
 
 	log.Info("Successfully reserved IP address", "ip", allocatedAddress.Address)
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, true, nil
 }
 
 // verifyIPExists checks if the IP address still exists in GCP
@@ -666,7 +708,7 @@ func (r *GCPPrivateServiceConnectReconciler) verifyIPExists(ctx context.Context,
 }
 
 // reconcilePSCEndpoint creates or updates the PSC endpoint
-func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, customerGCPClient *compute.Service, customerProject, region string, log logr.Logger) (ctrl.Result, error) {
+func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, customerGCPClient *compute.Service, customerProject, region string, desiredLabels map[string]string, previouslyManagedLabelKeys map[string]struct{}, log logr.Logger) (ctrl.Result, bool, error) {
 	endpointName := r.constructEndpointName(gcpPSC)
 
 	// Check if endpoint already exists
@@ -674,12 +716,18 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 	defer getCancel()
 	existingEndpoint, err := customerGCPClient.ForwardingRules.Get(customerProject, region, endpointName).Context(getCtx).Do()
 	if err != nil && !isNotFoundError(err) {
-		return ctrl.Result{}, fmt.Errorf("failed to check existing PSC endpoint: %w", err)
+		return ctrl.Result{}, true, fmt.Errorf("failed to check existing PSC endpoint: %w", err)
 	}
 
 	if existingEndpoint != nil {
-		// Update status from existing endpoint
-		return r.updateStatusFromEndpoint(ctx, gcpPSC, existingEndpoint)
+		if result, err := r.updateStatusFromEndpoint(ctx, gcpPSC, existingEndpoint); err != nil || !result.IsZero() {
+			return result, true, err
+		}
+		if err := reconcileForwardingRuleLabels(ctx, customerGCPClient, customerProject, region, endpointName, existingEndpoint.LabelFingerprint, existingEndpoint.Labels, desiredLabels, previouslyManagedLabelKeys); err != nil {
+			log.Error(err, "failed to reconcile labels on existing PSC endpoint; continuing PSC reconciliation")
+			return ctrl.Result{}, false, nil
+		}
+		return ctrl.Result{}, true, nil
 	}
 
 	// Create new PSC endpoint
@@ -691,6 +739,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 		Subnetwork:  r.constructSubnetURL(string(hcp.Spec.Platform.GCP.NetworkConfig.PrivateServiceConnectSubnet.Name), customerProject, region),
 		Target:      gcpPSC.Status.ServiceAttachmentURI,                     // From management-side
 		IPAddress:   r.constructAddressURL(ipName, customerProject, region), // Reserved IP resource URL
+		// Labels are not allowed on PSC ForwardingRule insert; applied via setLabels after creation.
 		// LoadBalancingScheme not set for PSC endpoints - it's implicit and setting it causes API errors
 	}
 
@@ -699,20 +748,22 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 	defer insertCancel()
 	op, err := customerGCPClient.ForwardingRules.Insert(customerProject, region, endpoint).Context(insertCtx).Do()
 	if err != nil {
-		return r.handleGCPError(ctx, gcpPSC, "PSCEndpointCreationFailed", err)
+		result, err := r.handleGCPError(ctx, gcpPSC, "PSCEndpointCreationFailed", err)
+		return result, true, err
 	}
 
 	// GCP operations can be PENDING, RUNNING, or DONE
 	if op.Status != "DONE" {
 		log.Info("PSC endpoint creation in progress", "operation", op.Name, "status", op.Status)
-		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+		return ctrl.Result{RequeueAfter: time.Second * 30}, true, nil
 	}
 	// DONE doesn't guarantee success - check for operation errors
 	if op.Error != nil {
-		return r.handleGCPError(ctx, gcpPSC, "PSCEndpointCreationFailed", fmt.Errorf("operation failed: %v", op.Error.Errors))
+		result, err := r.handleGCPError(ctx, gcpPSC, "PSCEndpointCreationFailed", fmt.Errorf("operation failed: %v", op.Error.Errors))
+		return result, true, err
 	}
 
-	// Fetch the newly created endpoint to update status
+	// Fetch the newly created endpoint to update status and apply labels
 	log.Info("PSC endpoint created, fetching to update status", "name", endpointName)
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer fetchCancel()
@@ -720,10 +771,18 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 	if err != nil {
 		// Endpoint was created but we couldn't fetch it - requeue to retry
 		log.Error(err, "failed to fetch newly created endpoint, will retry")
-		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+		return ctrl.Result{RequeueAfter: time.Second * 30}, true, nil
 	}
 
-	return r.updateStatusFromEndpoint(ctx, gcpPSC, createdEndpoint)
+	if result, err := r.updateStatusFromEndpoint(ctx, gcpPSC, createdEndpoint); err != nil || !result.IsZero() {
+		return result, true, err
+	}
+	if err := reconcileForwardingRuleLabels(ctx, customerGCPClient, customerProject, region, endpointName, createdEndpoint.LabelFingerprint, createdEndpoint.Labels, desiredLabels, previouslyManagedLabelKeys); err != nil {
+		log.Error(err, "failed to set labels on newly created PSC endpoint; continuing PSC reconciliation")
+		return ctrl.Result{}, false, nil
+	}
+
+	return ctrl.Result{}, true, nil
 }
 
 // updateStatusFromEndpoint updates the CR status based on the PSC endpoint state
@@ -871,6 +930,95 @@ func (r *GCPPrivateServiceConnectReconciler) constructSubnetURL(subnetName, cust
 
 func (r *GCPPrivateServiceConnectReconciler) constructAddressURL(addressName, customerProject, region string) string {
 	return fmt.Sprintf("projects/%s/regions/%s/addresses/%s", customerProject, region, addressName)
+}
+
+// reconcileForwardingRuleLabels applies the desired labels to a ForwardingRule via the setLabels API.
+// GCP PSC ForwardingRules reject labels on insert, so they must be applied separately.
+func reconcileForwardingRuleLabels(ctx context.Context, svc *compute.Service, project, region, name, fingerprint string, existingLabels, desiredLabels map[string]string, previouslyManagedLabelKeys map[string]struct{}) error {
+	labels, err := gcputil.MergeResourceLabels(existingLabels, desiredLabels, previouslyManagedLabelKeys)
+	if err != nil {
+		return err
+	}
+	if maps.Equal(existingLabels, labels) {
+		return nil
+	}
+	setLabelsCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer cancel()
+	req := &compute.RegionSetLabelsRequest{
+		Labels:           labels,
+		LabelFingerprint: fingerprint,
+	}
+	op, err := svc.ForwardingRules.SetLabels(project, region, name, req).Context(setLabelsCtx).Do()
+	if err != nil {
+		return fmt.Errorf("ForwardingRules.SetLabels: %w", err)
+	}
+	if err := waitForRegionalOperation(ctx, svc, project, region, op); err != nil {
+		return fmt.Errorf("wait for ForwardingRules.SetLabels operation: %w", err)
+	}
+	return nil
+}
+
+// reconcileAddressLabels applies the desired labels to a GCP Address resource.
+func reconcileAddressLabels(ctx context.Context, svc *compute.Service, project, region, name string, desiredLabels map[string]string, previouslyManagedLabelKeys map[string]struct{}) error {
+	getCtx, getCancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer getCancel()
+	addr, err := svc.Addresses.Get(project, region, name).Context(getCtx).Do()
+	if err != nil {
+		return fmt.Errorf("Addresses.Get for label reconciliation: %w", err)
+	}
+	setCtx, setCancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer setCancel()
+	labels, err := gcputil.MergeResourceLabels(addr.Labels, desiredLabels, previouslyManagedLabelKeys)
+	if err != nil {
+		return err
+	}
+	if maps.Equal(addr.Labels, labels) {
+		return nil
+	}
+	req := &compute.RegionSetLabelsRequest{
+		Labels:           labels,
+		LabelFingerprint: addr.LabelFingerprint,
+	}
+	op, err := svc.Addresses.SetLabels(project, region, name, req).Context(setCtx).Do()
+	if err != nil {
+		return fmt.Errorf("Addresses.SetLabels: %w", err)
+	}
+	if err := waitForRegionalOperation(ctx, svc, project, region, op); err != nil {
+		return fmt.Errorf("wait for Addresses.SetLabels operation: %w", err)
+	}
+	return nil
+}
+
+// waitForRegionalOperation waits for an asynchronous regional Compute operation
+// and returns its terminal error, if any. RegionOperations.Wait is best-effort,
+// so a non-terminal response is retried until the operation completes or times out.
+func waitForRegionalOperation(ctx context.Context, svc *compute.Service, project, region string, operation *compute.Operation) error {
+	if operation == nil {
+		return fmt.Errorf("operation is nil")
+	}
+	if operation.Error != nil {
+		return fmt.Errorf("operation failed: %v", operation.Error.Errors)
+	}
+	if operation.Status == "DONE" {
+		return nil
+	}
+	if operation.Name == "" {
+		return fmt.Errorf("operation is not complete and has no name")
+	}
+
+	return wait.PollUntilContextTimeout(ctx, regionalOperationPollingInterval, regionalOperationTimeout, true, func(ctx context.Context) (bool, error) {
+		completed, err := svc.RegionOperations.Wait(project, region, operation.Name).Context(ctx).Do()
+		if err != nil {
+			return false, fmt.Errorf("RegionOperations.Wait: %w", err)
+		}
+		if completed == nil {
+			return false, fmt.Errorf("wait returned no operation")
+		}
+		if completed.Error != nil {
+			return false, fmt.Errorf("operation failed: %v", completed.Error.Errors)
+		}
+		return completed.Status == "DONE", nil
+	})
 }
 
 // getHostedControlPlane retrieves the HostedControlPlane from the CR's owner reference
