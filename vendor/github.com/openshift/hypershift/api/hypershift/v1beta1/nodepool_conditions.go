@@ -141,7 +141,6 @@ const (
 	NodePoolUnsupportedSkewReason         = "UnsupportedSkew"
 	AWSResourceTagConflictDetectedReason  = "TagConflictDetected"
 	AWSResourceTagNoConflictReason        = "NoTagConflict"
-	ManagementConfigDriftReason           = "ManagementConfigDrift"
 
 	// NodePoolInfrastructureFailureReason is used on the AllMachinesReady
 	// condition when one or more Machines have persistent infrastructure
