@@ -5971,6 +5971,49 @@ spec:
                                             - TCP
                                             - PROXY
                                             type: string
+                                          securityGroups:
+                                            description: |-
+                                              securityGroups is a list of security group IDs to attach to the
+                                              Network Load Balancer. When specified, these security groups replace
+                                              the managed security group that the Cloud Controller Manager would
+                                              otherwise create automatically. The user is responsible for
+                                              configuring the ingress and egress rules on the specified security
+                                              groups.
+
+                                              The specified security groups must exist in the same VPC as the
+                                              cluster and must allow the necessary traffic for the
+                                              IngressController to function.
+
+                                              When this field is omitted, the Cloud Controller Manager
+                                              automatically creates and manages a security group for the NLB.
+
+                                              Each security group ID must be unique and must begin with "sg-"
+                                              followed by 8 or 17 lowercase hexadecimal characters
+                                              (e.g. "sg-abcd1234" or "sg-abcd1234abcd12345"). At least 1 and
+                                              at most 5 security groups can be specified.
+                                            items:
+                                              description: |-
+                                                SecurityGroupID is an AWS EC2 security group ID.
+                                                Values must begin with "sg-" followed by 8 or 17 lowercase
+                                                hexadecimal characters (e.g. "sg-abcd1234" or
+                                                "sg-abcd1234abcd12345").
+                                              maxLength: 20
+                                              minLength: 11
+                                              type: string
+                                              x-kubernetes-validations:
+                                              - message: securityGroups must be 'sg-'
+                                                  followed by 8 or 17 lowercase hexadecimal
+                                                  characters
+                                                rule: self.startsWith('sg-') && self.substring(3).matches('^[0-9a-f]{8}$|^[0-9a-f]{17}$')
+                                            maxItems: 5
+                                            minItems: 1
+                                            type: array
+                                            x-kubernetes-list-type: atomic
+                                            x-kubernetes-validations:
+                                            - message: securityGroups cannot contain
+                                                duplicates
+                                              rule: self.all(x, self.exists_one(y,
+                                                x == y))
                                           subnets:
                                             description: |-
                                               subnets specifies the subnets to which the load balancer will

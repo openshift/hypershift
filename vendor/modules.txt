@@ -1049,7 +1049,7 @@ github.com/opencontainers/image-spec/specs-go/v1
 ## explicit; go 1.19
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/pkg/pwalkdir
-# github.com/openshift/api v0.0.0-20260930220732-5588d747a72b
+# github.com/openshift/api v0.0.0-20260922100147-3a6e03c5a473
 ## explicit; go 1.26.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -1164,8 +1164,8 @@ github.com/openshift/cluster-api-provider-agent/api/v1beta1
 ## explicit; go 1.22.0
 github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1
 github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1beta1
-# github.com/openshift/cluster-node-tuning-operator v0.0.0-20260701110644-508d51a6f2bd
-## explicit; go 1.25.3
+# github.com/openshift/cluster-node-tuning-operator v0.0.0-20260825115124-078cde8b7f7f
+## explicit; go 1.26.0
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v1
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned
@@ -1174,7 +1174,7 @@ github.com/openshift/cluster-node-tuning-operator/pkg/performanceprofile/control
 # github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 ## explicit; go 1.12
 github.com/openshift/custom-resource-status/conditions/v1
-# github.com/openshift/hypershift/api v0.0.0-20260224085943-34e30acde920 => ./api
+# github.com/openshift/hypershift/api v0.0.0-20260824191009-a7f22d5ea3e5 => ./api
 ## explicit; go 1.26.0
 github.com/openshift/hypershift/api/auditlogpersistence
 github.com/openshift/hypershift/api/auditlogpersistence/v1alpha1
@@ -2562,8 +2562,8 @@ k8s.io/kube-aggregator/pkg/client/applyconfiguration/apiregistration/v1
 k8s.io/kube-aggregator/pkg/client/applyconfiguration/internal
 k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/scheme
 k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/typed/apiregistration/v1
-# k8s.io/kube-openapi v0.35.1 => k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288
-## explicit; go 1.24.0
+# k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad
+## explicit; go 1.25.0
 k8s.io/kube-openapi/pkg/builder
 k8s.io/kube-openapi/pkg/builder3
 k8s.io/kube-openapi/pkg/builder3/util
@@ -2604,7 +2604,7 @@ k8s.io/kubectl/pkg/util/openapi
 k8s.io/kubectl/pkg/util/templates
 k8s.io/kubectl/pkg/util/term
 k8s.io/kubectl/pkg/validation
-# k8s.io/kubelet v0.36.2
+# k8s.io/kubelet v0.36.4
 ## explicit; go 1.26.0
 k8s.io/kubelet/config/v1beta1
 # k8s.io/pod-security-admission v0.37.0
