@@ -41,15 +41,19 @@ tests:
         - service: APIServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: OAuthServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Konnectivity
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Ignition
           servicePublishingStrategy:
             type: Route
+            route: {}
 
   - name: when terminationHandlerQueueURL is a valid FIPS commercial SQS URL it should pass
     initial: |
@@ -84,15 +88,19 @@ tests:
         - service: APIServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: OAuthServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Konnectivity
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Ignition
           servicePublishingStrategy:
             type: Route
+            route: {}
 
   - name: when terminationHandlerQueueURL is a valid GovCloud SQS FIFO URL it should pass
     initial: |
@@ -127,15 +135,19 @@ tests:
         - service: APIServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: OAuthServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Konnectivity
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Ignition
           servicePublishingStrategy:
             type: Route
+            route: {}
 
   - name: when terminationHandlerQueueURL is a valid FIPS GovCloud SQS FIFO URL it should pass
     initial: |
@@ -170,15 +182,19 @@ tests:
         - service: APIServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: OAuthServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Konnectivity
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Ignition
           servicePublishingStrategy:
             type: Route
+            route: {}
 
   - name: when terminationHandlerQueueURL has invalid format it should fail
     initial: |
@@ -213,15 +229,19 @@ tests:
         - service: APIServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: OAuthServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Konnectivity
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Ignition
           servicePublishingStrategy:
             type: Route
+            route: {}
     expectedError: "spec.platform.aws.terminationHandlerQueueURL in body should match"
 
   - name: when terminationHandlerQueueURL has wrong account ID format it should fail
@@ -257,13 +277,17 @@ tests:
         - service: APIServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: OAuthServer
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Konnectivity
           servicePublishingStrategy:
             type: Route
+            route: {}
         - service: Ignition
           servicePublishingStrategy:
             type: Route
+            route: {}
     expectedError: "spec.platform.aws.terminationHandlerQueueURL in body should match"

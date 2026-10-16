@@ -1155,6 +1155,12 @@ func TestGetServicePublishingStrategyMapping(t *testing.T) {
 				}
 				g.Expect(foundAPIServer).To(BeTrue(), "service list should include APIServer")
 			}
+
+			for _, svc := range tc.services {
+				if svc.ServicePublishingStrategy.Type == hyperv1.Route {
+					g.Expect(svc.Route).NotTo(BeNil(), "Route configuration should be present for inferred hostnames")
+				}
+			}
 		})
 	}
 }
