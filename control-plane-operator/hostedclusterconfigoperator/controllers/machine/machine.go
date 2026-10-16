@@ -267,6 +267,8 @@ func (r *reconciler) removeOrphanKubevirtPassthroughEndpointSlices(ctx context.C
 }
 
 func machineToEndpointConditions(machine *capiv1.Machine) discoveryv1.EndpointConditions {
+	// Either signal marks the machine as going away: the DeletionTimestamp may be
+	// set before the phase transitions to Deleting.
 	deleting := machine.DeletionTimestamp != nil || machine.Status.GetTypedPhase() == capiv1.MachinePhaseDeleting
 	ready := isMachineReady(machine)
 	return discoveryv1.EndpointConditions{
@@ -286,6 +288,14 @@ func isMachineReady(machine *capiv1.Machine) bool {
 	}
 	infraReady, infraFound := getMachineConditionStatus(machine, capiv1.MachineInfrastructureReadyCondition)
 	nodeHealthy, nodeFound := getMachineConditionStatus(machine, capiv1.MachineNodeHealthyCondition)
+	// A secondary condition that is present but not true means the machine is not
+	// ready, even if its companion condition has not been written yet (which can
+	// happen during provisioning). Only fall through to the phase check when no
+	// present secondary condition contradicts readiness; otherwise the phase
+	// fallback could advertise a not-yet-ready machine as ready.
+	if (infraFound && !infraReady) || (nodeFound && !nodeHealthy) {
+		return false
+	}
 	if infraFound && nodeFound {
 		return infraReady && nodeHealthy
 	}
