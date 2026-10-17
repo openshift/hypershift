@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ibmcapicore "sigs.k8s.io/cluster-api-provider-ibmcloud/capicore/api/core/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -122,7 +122,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 					Ready: true,
 				},
 				Spec: capiibmv1.IBMVPCClusterSpec{
-					ControlPlaneEndpoint: capiv1beta1.APIEndpoint{
+					ControlPlaneEndpoint: ibmcapicore.APIEndpoint{
 						Port: fakeAPIEndpoint.Port,
 						Host: fakeAPIEndpoint.Host,
 					},

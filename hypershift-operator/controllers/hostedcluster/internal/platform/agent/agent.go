@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
 
+	agentcapicore "github.com/openshift/cluster-api-provider-agent/api/capicore/api/core/v1beta1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -23,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
@@ -270,7 +270,7 @@ func reconcileAgentCluster(agentCluster *agentv1.AgentCluster, ignEndpoint, cont
 		CaCertificateReference: &agentv1.CaCertificateReference{Name: caSecret.Name, Namespace: caSecret.Namespace},
 	}
 
-	agentCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
+	agentCluster.Spec.ControlPlaneEndpoint = agentcapicore.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}

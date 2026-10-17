@@ -21,7 +21,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ospcapicore "sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
@@ -89,7 +89,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 
 	openStackPlatform := hcluster.Spec.Platform.OpenStack
 
-	openStackClusterSpec.ControlPlaneEndpoint = &capiv1beta1.APIEndpoint{
+	openStackClusterSpec.ControlPlaneEndpoint = &ospcapicore.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
