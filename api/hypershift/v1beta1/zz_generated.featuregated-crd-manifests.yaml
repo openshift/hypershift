@@ -218,6 +218,7 @@ hostedclusters.hypershift.openshift.io:
   - ImageStreamImportMode
   - IngressComponentRouteLabels
   - KMSEncryption
+  - KubeAPIServerEventTTL
   - NetworkObservabilityInstall
   - OpenStack
   - TLSAdherence
@@ -297,6 +298,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - ImageStreamImportMode
   - IngressComponentRouteLabels
   - KMSEncryption
+  - KubeAPIServerEventTTL
   - NetworkObservabilityInstall
   - OpenStack
   - TLSAdherence
