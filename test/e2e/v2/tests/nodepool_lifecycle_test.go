@@ -20,15 +20,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
+	armcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	npconst "github.com/openshift/hypershift/pkg/nodepool"
 	"github.com/openshift/hypershift/pkg/manifests"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -49,6 +54,7 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/yaml"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -1176,12 +1182,11 @@ func NodePoolNTOPerformanceProfileTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-// NodePoolAutoRepairTest is a skeleton for platform-specific auto-repair tests.
-// The full implementation requires cloud SDK dependencies for instance termination.
+// NodePoolAutoRepairTest verifies that terminating the backing cloud instance for
+// a NodePool node surfaces an InfrastructureFailure condition on AllMachinesReady,
+// and that auto-repair eventually replaces the node.
 func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 	It("should auto-repair a NodePool when a node is terminated", Label("nodepool-auto-repair"), func() {
-		Skip("auto-repair instance termination not yet implemented for v2 framework")
-
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -1211,15 +1216,125 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 			cleanupNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, platform)
+		nodes := e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, platform)
+		Expect(nodes).To(HaveLen(1), "expected exactly 1 ready node")
 
-		// TODO: Implement cloud-specific instance termination logic.
-		// For AWS: use EC2 TerminateInstances API to terminate the node's backing instance.
-		// For Azure: delete the VMSS instance backing the node.
-		// After termination, wait for the node to be replaced using:
-		//   e2eutil.WaitForReadyNodesByNodePool with WithCollectionPredicates and WithPredicates
-		//   to verify the old node is replaced and the new node is healthy.
+		providerID := nodes[0].Spec.ProviderID
+		Expect(providerID).NotTo(BeEmpty(), "node %s should have a ProviderID", nodes[0].Name)
+
+		// Terminate the backing cloud instance.
+		switch platform {
+		case hyperv1.AWSPlatform:
+			terminateAWSInstance(ctx, hc, providerID, nodes[0].Name)
+		case hyperv1.AzurePlatform:
+			deleteAzureVM(ctx, hc, providerID, nodes[0].Name)
+		}
+
+		// Wait for the InfrastructureFailure condition to appear on AllMachinesReady.
+		e2eutil.EventuallyObject(GinkgoTB(), ctx,
+			fmt.Sprintf("NodePool %s/%s to report InfrastructureFailure", np.Namespace, np.Name),
+			func(ctx context.Context) (*hyperv1.NodePool, error) {
+				nodePool := &hyperv1.NodePool{}
+				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), nodePool)
+				return nodePool, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+					Type:   hyperv1.NodePoolAllMachinesReadyConditionType,
+					Status: metav1.ConditionFalse,
+					Reason: hyperv1.NodePoolInfrastructureFailureReason,
+				}),
+			},
+			e2eutil.WithTimeout(10*time.Minute),
+			e2eutil.WithInterval(15*time.Second),
+		)
+
+		// Wait for auto-repair to replace the terminated node with a new healthy one.
+		oldNodeName := nodes[0].Name
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, platform,
+			e2eutil.WithCollectionPredicates(func(nodes []*corev1.Node) (bool, string, error) {
+				for _, n := range nodes {
+					if n.Name == oldNodeName {
+						return false, fmt.Sprintf("old node %s still present", oldNodeName), nil
+					}
+				}
+				return true, "old node replaced", nil
+			}),
+			e2eutil.WithPredicates(
+				e2eutil.ConditionPredicate[*corev1.Node](e2eutil.Condition{
+					Type:   string(corev1.NodeMemoryPressure),
+					Status: metav1.ConditionFalse,
+				}),
+				e2eutil.ConditionPredicate[*corev1.Node](e2eutil.Condition{
+					Type:   string(corev1.NodeDiskPressure),
+					Status: metav1.ConditionFalse,
+				}),
+				e2eutil.ConditionPredicate[*corev1.Node](e2eutil.Condition{
+					Type:   string(corev1.NodePIDPressure),
+					Status: metav1.ConditionFalse,
+				}),
+			),
+		)
 	})
+}
+
+// terminateAWSInstance terminates the EC2 instance backing a node.
+// ProviderID format: aws:///<region>/<instance-id>
+func terminateAWSInstance(ctx context.Context, hc *hyperv1.HostedCluster, providerID, nodeName string) {
+	GinkgoHelper()
+	parts := strings.Split(providerID, "/")
+	Expect(len(parts)).To(BeNumerically(">=", 5), "ProviderID %q should have at least 5 slash-separated parts", providerID)
+	instanceID := parts[len(parts)-1]
+	GinkgoWriter.Printf("Terminating EC2 instance %s (node %s)\n", instanceID, nodeName)
+
+	awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
+	Expect(awsCredsFile).NotTo(BeEmpty(), "AWS_GUEST_INFRA_CREDENTIALS_FILE must be set")
+	ec2Client := newEC2Client(awsCredsFile, hc.Spec.Platform.AWS.Region)
+	_, err := ec2Client.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+		InstanceIds: []string{instanceID},
+	})
+	Expect(err).NotTo(HaveOccurred(), "failed to terminate EC2 instance %s", instanceID)
+}
+
+// deleteAzureVM deletes the Azure VM backing a node.
+// ProviderID format: azure:///subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Compute/virtualMachines/{vmName}
+func deleteAzureVM(ctx context.Context, hc *hyperv1.HostedCluster, providerID, nodeName string) {
+	GinkgoHelper()
+	// Strip the "azure://" prefix to get the raw resource ID.
+	resourceID := strings.TrimPrefix(providerID, "azure://")
+	// Parse resource group and VM name from the Azure resource ID.
+	parts := strings.Split(resourceID, "/")
+	var resourceGroup, vmName string
+	for i, p := range parts {
+		switch strings.ToLower(p) {
+		case "resourcegroups":
+			if i+1 < len(parts) {
+				resourceGroup = parts[i+1]
+			}
+		case "virtualmachines":
+			if i+1 < len(parts) {
+				vmName = parts[i+1]
+			}
+		}
+	}
+	Expect(resourceGroup).NotTo(BeEmpty(), "could not parse resourceGroup from ProviderID %q", providerID)
+	Expect(vmName).NotTo(BeEmpty(), "could not parse VM name from ProviderID %q", providerID)
+	GinkgoWriter.Printf("Deleting Azure VM %s in resource group %s (node %s)\n", vmName, resourceGroup, nodeName)
+
+	azureCredsFile := internal.GetEnvVarValue("E2E_AZURE_CREDENTIALS_FILE")
+	Expect(azureCredsFile).NotTo(BeEmpty(), "E2E_AZURE_CREDENTIALS_FILE must be set")
+	_, azureCreds, err := cmdutil.SetupAzureCredentials(ctrl.Log.WithName("e2e"), nil, azureCredsFile)
+	Expect(err).NotTo(HaveOccurred(), "failed to setup Azure credentials")
+
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(hc.Spec.Platform.Azure.Cloud)
+	Expect(err).NotTo(HaveOccurred(), "failed to get Azure cloud configuration")
+	vmClient, err := armcompute.NewVirtualMachinesClient(hc.Spec.Platform.Azure.SubscriptionID, azureCreds, azureutil.NewARMClientOptions(cloudConfig))
+	Expect(err).NotTo(HaveOccurred(), "failed to create Azure VM client")
+
+	poller, err := vmClient.BeginDelete(ctx, resourceGroup, vmName, nil)
+	Expect(err).NotTo(HaveOccurred(), "failed to start Azure VM deletion for %s", vmName)
+	_, err = poller.PollUntilDone(ctx, nil)
+	Expect(err).NotTo(HaveOccurred(), "failed to delete Azure VM %s", vmName)
 }
 
 // NodePoolDiskEncryptionTest is a skeleton for Azure disk encryption tests.
