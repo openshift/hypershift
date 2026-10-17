@@ -3,6 +3,8 @@ package kas
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"slices"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -660,6 +662,70 @@ func TestGenerateConfig(t *testing.T) {
 		},
 	}
 
+	for _, version := range []string{"1.36.3", "1.37.0"} {
+		featureGates := []string{"DRADeviceTaintRules=true", "GenericWorkload=true"}
+		runtimeConfig := kcpv1.Arguments{"scheduling.k8s.io/v1beta1=true"}
+		if version == "1.36.3" {
+			runtimeConfig = kcpv1.Arguments{"resource.k8s.io/v1beta2=true"}
+		}
+		testcases = append(testcases, testcase{
+			name: fmt.Sprintf("When DRADeviceTaintRules and GenericWorkload are enabled on Kubernetes %s, it should configure only supported APIs", version),
+			params: KubeAPIServerConfigParams{
+				FeatureGates:      featureGates,
+				KubernetesVersion: version,
+			},
+			expected: modifyKasConfig(defaultKASConfig(), func(config *kcpv1.KubeAPIServerConfig) {
+				config.APIServerArguments["feature-gates"] = append(featureGates, config.APIServerArguments["feature-gates"]...)
+				config.APIServerArguments["runtime-config"] = append(runtimeConfig, config.APIServerArguments["runtime-config"]...)
+			}),
+		})
+	}
+
+	for _, gates := range []struct {
+		name         string
+		featureGates []string
+		runtime      kcpv1.Arguments
+	}{
+		{name: "GenericWorkload is absent"},
+		{name: "GenericWorkload alone is enabled", featureGates: []string{"GenericWorkload=true"}, runtime: kcpv1.Arguments{"scheduling.k8s.io/v1beta1=true"}},
+		{name: "GenericWorkload is disabled", featureGates: []string{"GenericWorkload=false"}},
+	} {
+		for _, version := range []struct {
+			value   string
+			enabled bool
+			invalid bool
+		}{
+			{value: "1.36.9"},
+			{value: "1.37.0-alpha.1"},
+			{value: "1.37.0-rc.1"},
+			{value: "1.37.0", enabled: true},
+			{value: "v1.37.0+build.1", enabled: true},
+			{value: "1.37.1", enabled: true},
+			{value: "1.38.0-alpha.1", enabled: true},
+			{value: "2.0.0", enabled: true},
+			{value: "", invalid: true},
+			{value: "invalid", invalid: true},
+		} {
+			test := testcase{
+				name: fmt.Sprintf("When %s on Kubernetes %q, it should configure only supported workload APIs", gates.name, version.value),
+				params: KubeAPIServerConfigParams{
+					FeatureGates:      gates.featureGates,
+					KubernetesVersion: version.value,
+				},
+				expected: modifyKasConfig(defaultKASConfig(), func(config *kcpv1.KubeAPIServerConfig) {
+					config.APIServerArguments["feature-gates"] = append(gates.featureGates, config.APIServerArguments["feature-gates"]...)
+					if version.enabled {
+						config.APIServerArguments["runtime-config"] = append(gates.runtime, config.APIServerArguments["runtime-config"]...)
+					}
+				}),
+			}
+			if version.invalid && len(gates.runtime) > 0 {
+				test.expectedError = "failed to parse Kubernetes version"
+			}
+			testcases = append(testcases, test)
+		}
+	}
+
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			kasConfig, err := generateConfig(tc.params)
@@ -675,15 +741,53 @@ func TestGenerateConfig(t *testing.T) {
 	}
 }
 
+func TestGenericWorkloadRuntimeConfig(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		version       string
+		enabled       bool
+		expectedError bool
+	}{
+		{version: "1.36.9"},
+		{version: "1.37.0-alpha.1"},
+		{version: "1.37.0-rc.1"},
+		{version: "1.37.0", enabled: true},
+		{version: "v1.37.0+build.1", enabled: true},
+		{version: "1.37.1", enabled: true},
+		{version: "1.38.0-alpha.1", enabled: true},
+		{version: "2.0.0", enabled: true},
+		{version: "", expectedError: true},
+		{version: "invalid", expectedError: true},
+	} {
+		t.Run(fmt.Sprintf("When Kubernetes version is %q, it should return only supported GenericWorkload runtime config or a parse error", testCase.version), func(t *testing.T) {
+			t.Parallel()
+
+			runtimeConfig, err := genericWorkloadRuntimeConfig(testCase.version)
+			if testCase.expectedError {
+				require.ErrorContains(t, err, "failed to parse Kubernetes version")
+				return
+			}
+			require.NoError(t, err)
+			if testCase.enabled {
+				require.Equal(t, []string{"scheduling.k8s.io/v1beta1=true"}, runtimeConfig)
+			} else {
+				require.Empty(t, runtimeConfig)
+			}
+		})
+	}
+}
+
 func TestKubernetesVersionForFeatureGates(t *testing.T) {
-	testCases := []struct {
+	type testcase struct {
 		name             string
 		featureGates     []string
 		componentVersion map[string]string
 		componentError   error
 		expectedVersion  string
 		expectedError    string
-	}{
+	}
+	testCases := []testcase{
 		{
 			name:           "When DRADeviceTaintRules is not enabled, it should not request component versions",
 			componentError: errors.New("component versions should not be requested"),
@@ -710,6 +814,31 @@ func TestKubernetesVersionForFeatureGates(t *testing.T) {
 		},
 	}
 
+	testCases = append(testCases,
+		testcase{
+			name:             "When GenericWorkload alone is enabled, it should return the Kubernetes component version",
+			featureGates:     []string{"GenericWorkload=true"},
+			componentVersion: map[string]string{"kubernetes": "1.37.0"},
+			expectedVersion:  "1.37.0",
+		},
+		testcase{
+			name:           "When GenericWorkload is disabled, it should not request component versions",
+			featureGates:   []string{"GenericWorkload=false"},
+			componentError: errors.New("component versions should not be requested"),
+		},
+		testcase{
+			name:           "When GenericWorkload is enabled and version lookup fails, it should return an error",
+			featureGates:   []string{"GenericWorkload=true"},
+			componentError: errors.New("lookup failed"),
+			expectedError:  "failed to get control plane component versions: lookup failed",
+		},
+		testcase{
+			name:          "When GenericWorkload is enabled and the Kubernetes version is missing, it should return an error",
+			featureGates:  []string{"GenericWorkload=true"},
+			expectedError: "control plane Kubernetes component version is missing",
+		},
+	)
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			releaseImageProvider := &componentVersionReleaseImageProvider{
@@ -731,15 +860,17 @@ func TestKubernetesVersionForFeatureGates(t *testing.T) {
 func TestAdaptKubeAPIServerConfig(t *testing.T) {
 	const namespace = "hcp-namespace"
 
-	testCases := []struct {
-		name              string
-		enabledGates      []configv1.FeatureGateAttributes
-		disabledGates     []configv1.FeatureGateAttributes
-		componentVersions map[string]string
-		componentError    error
-		expectV1beta2     bool
-		expectedError     string
-	}{
+	type testcase struct {
+		name               string
+		enabledGates       []configv1.FeatureGateAttributes
+		disabledGates      []configv1.FeatureGateAttributes
+		componentVersions  map[string]string
+		componentError     error
+		expectV1beta2      bool
+		expectedScheduling kcpv1.Arguments
+		expectedError      string
+	}
+	testCases := []testcase{
 		{
 			name:              "When DRADeviceTaintRules is enabled on Kubernetes 1.36, it should enable the v1beta2 API in config.json",
 			enabledGates:      []configv1.FeatureGateAttributes{{Name: "DRADeviceTaintRules"}},
@@ -762,6 +893,61 @@ func TestAdaptKubeAPIServerConfig(t *testing.T) {
 			componentError: errors.New("lookup failed"),
 			expectedError:  "failed to get control plane component versions: lookup failed",
 		},
+	}
+
+	testCases = append(testCases,
+		testcase{
+			name:               "When GenericWorkload is enabled without DRADeviceTaintRules, it should enable the beta scheduling API in config.json",
+			enabledGates:       []configv1.FeatureGateAttributes{{Name: "GenericWorkload"}},
+			disabledGates:      []configv1.FeatureGateAttributes{{Name: "DRADeviceTaintRules"}},
+			componentVersions:  map[string]string{"kubernetes": "1.37.0"},
+			expectedScheduling: kcpv1.Arguments{"scheduling.k8s.io/v1beta1=true"},
+		},
+		testcase{
+			name:           "When GenericWorkload is enabled and version lookup fails, it should propagate the error",
+			enabledGates:   []configv1.FeatureGateAttributes{{Name: "GenericWorkload"}},
+			componentError: errors.New("lookup failed"),
+			expectedError:  "failed to get control plane component versions: lookup failed",
+		},
+		testcase{
+			name:          "When GenericWorkload is enabled and the Kubernetes version is missing, it should return an error",
+			enabledGates:  []configv1.FeatureGateAttributes{{Name: "GenericWorkload"}},
+			expectedError: "control plane Kubernetes component version is missing",
+		},
+		testcase{
+			name:              "When GenericWorkload is enabled and the Kubernetes version is invalid, it should return a parse error",
+			enabledGates:      []configv1.FeatureGateAttributes{{Name: "GenericWorkload"}},
+			componentVersions: map[string]string{"kubernetes": "invalid"},
+			expectedError:     "failed to parse Kubernetes version",
+		},
+		testcase{
+			name:           "When GenericWorkload is absent, it should not request component versions",
+			componentError: errors.New("component versions should not be requested"),
+		},
+		testcase{
+			name:           "When GenericWorkload is disabled, it should not request component versions",
+			disabledGates:  []configv1.FeatureGateAttributes{{Name: "GenericWorkload"}},
+			componentError: errors.New("component versions should not be requested"),
+		},
+	)
+	for _, version := range []string{"1.36.3", "1.37.0-alpha.1", "1.37.0-rc.1"} {
+		testCases = append(testCases, testcase{
+			name:              fmt.Sprintf("When GenericWorkload is enabled on Kubernetes %s, it should omit the beta scheduling API from config.json", version),
+			enabledGates:      []configv1.FeatureGateAttributes{{Name: "GenericWorkload"}},
+			componentVersions: map[string]string{"kubernetes": version},
+		})
+	}
+	for _, version := range []string{"1.36.3", "1.37.0"} {
+		test := testcase{
+			name:              fmt.Sprintf("When DRADeviceTaintRules and GenericWorkload are enabled on Kubernetes %s, it should serialize only supported APIs", version),
+			enabledGates:      []configv1.FeatureGateAttributes{{Name: "DRADeviceTaintRules"}, {Name: "GenericWorkload"}},
+			componentVersions: map[string]string{"kubernetes": version},
+			expectV1beta2:     version == "1.36.3",
+		}
+		if version == "1.37.0" {
+			test.expectedScheduling = kcpv1.Arguments{"scheduling.k8s.io/v1beta1=true"}
+		}
+		testCases = append(testCases, test)
 	}
 
 	for _, tc := range testCases {
@@ -808,6 +994,13 @@ func TestAdaptKubeAPIServerConfig(t *testing.T) {
 			kasConfig := &kcpv1.KubeAPIServerConfig{}
 			require.NoError(t, json.Unmarshal([]byte(config.Data[KubeAPIServerConfigKey]), kasConfig))
 			runtimeConfig := kasConfig.APIServerArguments["runtime-config"]
+			for _, schedulingAPI := range []string{"scheduling.k8s.io/v1beta1=true", "scheduling.k8s.io/v1alpha3=true"} {
+				if slices.Contains(tc.expectedScheduling, schedulingAPI) {
+					require.Contains(t, runtimeConfig, schedulingAPI)
+				} else {
+					require.NotContains(t, runtimeConfig, schedulingAPI)
+				}
+			}
 			if tc.expectV1beta2 {
 				require.Contains(t, runtimeConfig, "resource.k8s.io/v1beta2=true")
 			} else {

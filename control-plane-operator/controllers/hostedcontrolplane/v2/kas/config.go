@@ -69,7 +69,8 @@ func adaptKubeAPIServerConfig(cpContext component.WorkloadContext, config *corev
 }
 
 func kubernetesVersionForFeatureGates(featureGates []string, releaseImageProvider imageprovider.ReleaseImageProvider) (string, error) {
-	if !slices.Contains(featureGates, "DRADeviceTaintRules=true") {
+	if !slices.Contains(featureGates, "DRADeviceTaintRules=true") &&
+		!slices.Contains(featureGates, "GenericWorkload=true") {
 		return "", nil
 	}
 	componentVersions, err := releaseImageProvider.ComponentVersions()
@@ -81,6 +82,17 @@ func kubernetesVersionForFeatureGates(featureGates []string, releaseImageProvide
 		return "", fmt.Errorf("control plane Kubernetes component version is missing")
 	}
 	return kubernetesVersion, nil
+}
+
+func genericWorkloadRuntimeConfig(kubernetesVersion string) ([]string, error) {
+	kubeVersion, err := semver.ParseTolerant(kubernetesVersion)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Kubernetes version %q for GenericWorkload: %w", kubernetesVersion, err)
+	}
+	if kubeVersion.GTE(semver.Version{Major: 1, Minor: 37}) {
+		return []string{"scheduling.k8s.io/v1beta1=true"}, nil
+	}
+	return nil, nil
 }
 
 type kubeAPIServerArgs map[string]kcpv1.Arguments
@@ -281,6 +293,13 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 		}
 		if gate == "VolumeAttributesClass=true" {
 			runtimeConfig = append(runtimeConfig, "storage.k8s.io/v1beta1=true")
+		}
+		if gate == "GenericWorkload=true" {
+			genericWorkloadConfig, err := genericWorkloadRuntimeConfig(p.KubernetesVersion)
+			if err != nil {
+				return nil, err
+			}
+			runtimeConfig = append(runtimeConfig, genericWorkloadConfig...)
 		}
 	}
 	args.Set("runtime-config", runtimeConfig...)
