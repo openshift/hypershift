@@ -117,8 +117,14 @@ Key commands:
 ```bash
 make capi-sync                # Sync all CAPI provider types (incremental, stamp-based)
 make capi-sync-force          # Force re-sync all providers from scratch
+make capi-sync-aws            # Re-sync one provider
 make cluster-api-provider-aws # Generate CRDs for a specific CAPI provider
+make verify-capi-decoupling   # Check the invariants below without a full CI run
 ```
+
+Because each provider is a separate module reached through `replace`, `go build ./...` in the root module compiles only the provider subpackages something imports — a broken `exp/api` package stays invisible until CRD generation. It also means the localized `capicore` types and the upstream CAPI types they were copied from are **distinct Go types**: code merged from upstream that names `clusterv1beta1` or `capiv1` where a file already uses `capicore` will not compile, and the error does not say why.
+
+`make verify-capi-decoupling` (`hack/verify-capi-decoupling.sh`) checks this in seconds: no provider module may require or import `sigs.k8s.io/cluster-api`, every subpackage of every provider module must build, and the packages that consume `capicore` types must vet. It runs in `verify-parallel` and `verify-ci`; run it locally after **any merge or rebase onto main that touched provider types**, which is where the alias mismatch usually arrives from.
 
 The sync process (`hack/capi-sync-provider.sh`) for each provider:
 1. Downloads the upstream module into the Go module cache via `go mod download`
@@ -145,6 +151,7 @@ The minimum Go version is declared in [`go.mod`](go.mod). The `api/` module uses
 ## Common Gotchas
 
 - **`api/` is a separate Go module**: Always run `make update` after modifying types in the `api/` package. See [Multi-Module Structure](#multi-module-structure) above for details.
+- **A clean merge can still break the build**: upstream code that names upstream CAPI types merges without conflict against this branch's localized `capicore` types and fails to compile. Run `make verify-capi-decoupling` after such a merge. See [CAPI Provider Types](#capi-provider-types).
 - **Do not modify `vendor/` directories directly**: They are managed by `go mod vendor` via `make update`.
 - Use `make verify` before submitting PRs to catch formatting/generation issues.
 - Platform-specific controllers require their respective cloud credentials for testing.

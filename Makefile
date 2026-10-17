@@ -178,10 +178,10 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
 
 .PHONY: verify-parallel
-verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema verify-capi-sync lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
+verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema verify-capi-sync verify-capi-decoupling lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
+verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-capi-decoupling verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
 	$(MAKE) verify-git-clean
 
 .PHONY: verify
@@ -668,6 +668,14 @@ verify-capi-sync:
 	  git ls-files --others --exclude-standard -- pkg/capi/; \
 	  exit 1; \
 	fi
+
+# Guards the invariants of the localized provider modules: that they stay free
+# of upstream CAPI, that all of their subpackages build (the root module only
+# compiles the ones it imports), and that packages consuming the localized
+# types still compile. Faster than staticcheck and points at the cause.
+.PHONY: verify-capi-decoupling
+verify-capi-decoupling:
+	@CAPI_PROVIDERS="$(CAPI_PROVIDERS)" $(DIR)/hack/verify-capi-decoupling.sh
 
 .PHONY: workspace-sync
 workspace-sync:
