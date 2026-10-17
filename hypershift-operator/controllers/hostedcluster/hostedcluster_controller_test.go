@@ -6273,7 +6273,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 			},
 		},
 		{
-			name: "When port is 0 for dynamic assignment it should always be valid",
+			name: "When port is omitted (zero value) for dynamic assignment it should always be valid",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -6310,7 +6310,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(10000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(10000), "port must be within the configured range 30000-32767, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -6332,7 +6332,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(65000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(65000), "port must be within the configured range 30000-32767, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -6383,7 +6383,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(40000), "port must be within the configured range 25000-35000 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(40000), "port must be within the configured range 25000-35000, or omitted for dynamic assignment"),
 			},
 		},
 		{

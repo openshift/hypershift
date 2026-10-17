@@ -3699,6 +3699,34 @@ applications and dev/test.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureIPForwarding { #hypershift.openshift.io/v1beta1.AzureIPForwarding }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolPlatform">AzureNodePoolPlatform</a>)
+</p>
+<p>
+<p>AzureIPForwarding controls which source and destination IP addresses the network interfaces
+of the VMs in an Azure nodepool may send and receive traffic for.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AllowAllAddresses&#34;</p></td>
+<td><p>AzureIPForwardingAllowAllAddresses allows the VM network interfaces to send and receive
+traffic with any source or destination IP address, including addresses that are not
+assigned to the interface.</p>
+</td>
+</tr><tr><td><p>&#34;InterfaceAddressesOnly&#34;</p></td>
+<td><p>AzureIPForwardingInterfaceAddressesOnly restricts the VM network interfaces to traffic
+whose source or destination IP address is assigned to the interface. This is the Azure
+default.</p>
+</td>
+</tr></tbody>
+</table>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
@@ -4246,6 +4274,33 @@ Diagnostics
 <em>(Optional)</em>
 <p>diagnostics specifies the diagnostics settings for a virtual machine.
 If not specified, then Boot diagnostics will be disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ipForwarding</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureIPForwarding">
+AzureIPForwarding
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ipForwarding controls which source and destination IP addresses the VMs in the nodepool
+may send and receive network traffic for.
+Set this to AllowAllAddresses when nodes must forward traffic on behalf of other
+networks, for example networks advertised to the node over BGP, or VM addresses that are
+directly routable within the virtual network.
+AllowAllAddresses relaxes the Azure platform&rsquo;s source and destination address check on
+the VM network interfaces; InterfaceAddressesOnly leaves that check in place.
+This is unrelated to the cluster network operator&rsquo;s ipForwarding setting, which controls
+OVN-Kubernetes gateway behavior inside the cluster.
+When omitted, the Azure default applies and the VMs send and receive traffic only for
+addresses assigned to their own network interfaces.
+Changing this value replaces the VMs in the nodepool. For nodepools using the InPlace
+upgrade type, changing this value affects only nodes created after the change; existing
+nodes keep their original setting.</p>
 </td>
 </tr>
 </tbody>
@@ -7881,11 +7936,11 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
-may have the following key/value pairs:</p>
-<pre><code>etcd-client-ca.crt: Certificate Authority value
-etcd-client.crt: Client certificate value
-etcd-client.key: Client certificate key value
+<p>clientSecret refers to a secret for client mTLS authentication with the etcd cluster.
+The secret must contain all three of the following key/value pairs:</p>
+<pre><code>etcd-client-ca.crt: CA bundle used to verify the etcd server certificate
+etcd-client.crt: Client certificate used to authenticate to etcd
+etcd-client.key: Private key for the client certificate
 </code></pre>
 </td>
 </tr>
@@ -15341,8 +15396,8 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>port is the port of the NodePort service. If &lt;=0, the port is dynamically
-assigned when the service is created.</p>
+<p>port is the port of the NodePort service.
+If omitted, the port is dynamically assigned when the service is created.</p>
 </td>
 </tr>
 </tbody>
@@ -18905,7 +18960,7 @@ connections; &ndash;etcd-servers-overrides only overrides server URLs.</p>
 </p>
 <p>
 <p>UnmanagedEtcdSpec specifies configuration which enables the control plane to
-integrate with an eternally managed etcd cluster.</p>
+integrate with an externally managed etcd cluster.</p>
 </p>
 <table>
 <thead>
@@ -18923,10 +18978,10 @@ string
 </em>
 </td>
 <td>
-<p>endpoint is the full etcd cluster client endpoint URL. For example:</p>
+<p>endpoint is the full etcd cluster client endpoint HTTPS URL. For example:</p>
 <pre><code>https://etcd-client:2379
 </code></pre>
-<p>If the URL uses an HTTPS scheme, the TLS field is required.</p>
+<p>The tls field is required to authenticate to and verify the etcd endpoint.</p>
 </td>
 </tr>
 <tr>
@@ -18939,7 +18994,7 @@ EtcdTLSConfig
 </em>
 </td>
 <td>
-<p>tls specifies TLS configuration for HTTPS etcd client endpoints.</p>
+<p>tls specifies the required TLS configuration for the HTTPS etcd client endpoint.</p>
 </td>
 </tr>
 <tr>

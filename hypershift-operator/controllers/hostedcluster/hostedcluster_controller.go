@@ -5065,7 +5065,7 @@ func validateNodePortPortRange(hc *hyperv1.HostedCluster) field.ErrorList {
 				errs = append(errs, field.Invalid(
 					field.NewPath(fmt.Sprintf("spec.services[%d].nodePort.port", idx)),
 					port,
-					fmt.Sprintf("port must be within the configured range %d-%d or 0 for dynamic assignment", minPort, maxPort)))
+					fmt.Sprintf("port must be within the configured range %d-%d, or omitted for dynamic assignment", minPort, maxPort)))
 			}
 		}
 	}

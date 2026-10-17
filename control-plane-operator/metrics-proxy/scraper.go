@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,7 +73,7 @@ func buildScrapeClient(tlsServerName string, tlsConfig *tls.Config) *http.Client
 	}
 }
 
-func (s *Scraper) scrape(ctx context.Context, client *http.Client, target ScrapeTarget, metricsPath, scheme string) ScrapeResult {
+func scrapeURL(target ScrapeTarget, metricsPath, scheme string) string {
 	if scheme == "" {
 		scheme = "https"
 	}
@@ -81,7 +83,11 @@ func (s *Scraper) scrape(ctx context.Context, client *http.Client, target Scrape
 		metricsPath = "/" + metricsPath
 	}
 
-	url := fmt.Sprintf("%s://%s:%d%s", scheme, target.PodIP, target.Port, metricsPath)
+	return fmt.Sprintf("%s://%s%s", scheme, net.JoinHostPort(target.PodIP, strconv.Itoa(int(target.Port))), metricsPath)
+}
+
+func (s *Scraper) scrape(ctx context.Context, client *http.Client, target ScrapeTarget, metricsPath, scheme string) ScrapeResult {
+	url := scrapeURL(target, metricsPath, scheme)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
