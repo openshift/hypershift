@@ -229,7 +229,7 @@ func TestReconcileAWSEndpointServiceStatusPreservesAWSAPIError(t *testing.T) {
 			wantAPIErrorCode:    "ValidationError",
 		},
 		{
-			name: "When CreateVpcEndpointServiceConfiguration InvalidParameter adoption fails, it should preserve the create error",
+			name: "When CreateVpcEndpointServiceConfiguration InvalidParameter adoption fails, it should preserve the create error and include the adoption cause",
 			setupELB: func(elb *awsapi.MockELBV2API) {
 				elb.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{LoadBalancers: []elbv2types.LoadBalancer{{
 					LoadBalancerArn: aws.String("lb-arn"),
@@ -241,8 +241,36 @@ func TestReconcileAWSEndpointServiceStatusPreservesAWSAPIError(t *testing.T) {
 				ec2c.EXPECT().CreateVpcEndpointServiceConfiguration(gomock.Any(), gomock.Any()).Return(nil, createErr).AnyTimes()
 				ec2c.EXPECT().DescribeVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("adoption list failed")).AnyTimes()
 			},
-			wantMessageContains: []string{requestID, "StatusCode: 400", "LBs are already associated"},
-			wantAPIErrorCode:    "InvalidParameter",
+			wantMessageContains: []string{
+				"endpoint service adoption failed",
+				"adoption list failed",
+				requestID,
+				"StatusCode: 400",
+				"LBs are already associated",
+			},
+			wantAPIErrorCode: "InvalidParameter",
+		},
+		{
+			name: "When Create InvalidParameter adoption finds no matching service, it should include that cause and preserve the create error",
+			setupELB: func(elb *awsapi.MockELBV2API) {
+				elb.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{LoadBalancers: []elbv2types.LoadBalancer{{
+					LoadBalancerArn: aws.String("lb-arn"),
+					State:           &elbv2types.LoadBalancerState{Code: elbv2types.LoadBalancerStateEnumActive},
+				}}}, nil).AnyTimes()
+			},
+			setupEC2: func(ec2c *awsapi.MockEC2API) {
+				createErr := awsAPIError("InvalidParameter", "LBs are already associated", requestID)
+				ec2c.EXPECT().CreateVpcEndpointServiceConfiguration(gomock.Any(), gomock.Any()).Return(nil, createErr).AnyTimes()
+				ec2c.EXPECT().DescribeVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).
+					Return(&ec2.DescribeVpcEndpointServiceConfigurationsOutput{}, nil).AnyTimes()
+			},
+			wantMessageContains: []string{
+				"endpoint service adoption failed",
+				"no endpoint services found",
+				requestID,
+				"LBs are already associated",
+			},
+			wantAPIErrorCode: "InvalidParameter",
 		},
 	}
 
