@@ -83,8 +83,8 @@ spec:
             properties:
               arch:
                 default: amd64
-                description: "arch is the preferred processor architecture for the
-                  NodePool. Different platforms might have different supported architectures.\n\thttps://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215"
+                description: arch is the preferred processor architecture for the
+                  NodePool. Different platforms might have different supported architectures.
                 enum:
                 - arm64
                 - amd64
