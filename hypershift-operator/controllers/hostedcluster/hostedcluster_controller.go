@@ -78,6 +78,7 @@ import (
 	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/util/registryoverride"
 	supportvalidations "github.com/openshift/hypershift/support/validations"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -1458,7 +1459,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return fmt.Errorf("failed to get pull secret: %w", err)
 		}
-		controlPlaneOperatorImage, err = imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+		controlPlaneOperatorImage, err = resolveControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 		}
@@ -3163,6 +3164,25 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 	}
 
 	return nil
+}
+
+// resolveControlPlaneOperatorImage resolves the control plane operator image and applies
+// the release provider's registry overrides to it.
+//
+// GetControlPlaneOperatorImage returns images verbatim for the annotation and CPO override
+// table paths. Only the release payload path is already mirrored, as a side effect of the
+// release provider rewriting the image stream tags it resolves. Without this the CPO
+// deployment runs an image from the original registry even when the operator is configured
+// to mirror everything, and the image metadata lookup that follows reaches out to that
+// registry directly.
+//
+// Replace is a no-op when no override matches, so an already mirrored image is left alone.
+func resolveControlPlaneOperatorImage(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithRegistryOverrides, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
+	image, err := imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, hypershiftOperatorImage, pullSecret)
+	if err != nil {
+		return "", err
+	}
+	return registryoverride.Replace(image, releaseProvider.GetRegistryOverrides()), nil
 }
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
