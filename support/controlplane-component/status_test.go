@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -32,6 +33,8 @@ func TestReconcileComponentStatus(t *testing.T) {
 	testCases := []struct {
 		name                    string
 		deployment              *appsv1.Deployment
+		additionalObjects       []client.Object
+		deletePodsBeforeTest    []string
 		unavailableDependencies []string
 		reconciliationError     error
 		expectedConditions      []metav1.Condition
@@ -184,19 +187,185 @@ func TestReconcileComponentStatus(t *testing.T) {
 			},
 			expectedVersion: "",
 		},
+		{
+			name: "When no terminating pods exist, it should complete rollout",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      componentName,
+					Namespace: namespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: ptr.To[int32](1),
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": componentName},
+					},
+				},
+				Status: appsv1.DeploymentStatus{
+					AvailableReplicas: 1,
+					ReadyReplicas:     1,
+					Replicas:          1,
+					UpdatedReplicas:   1,
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentAvailable,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			additionalObjects: []client.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "running-pod",
+						Namespace: namespace,
+						Labels:    map[string]string{"app": componentName},
+					},
+				},
+			},
+			unavailableDependencies: nil,
+			reconciliationError:     nil,
+			expectedConditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.ControlPlaneComponentRolloutComplete),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			expectedVersion: testVersion,
+		},
+		{
+			name: "When terminating pods exist, it should block rollout",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      componentName,
+					Namespace: namespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: ptr.To[int32](1),
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": componentName},
+					},
+				},
+				Status: appsv1.DeploymentStatus{
+					AvailableReplicas: 1,
+					ReadyReplicas:     1,
+					Replicas:          1,
+					UpdatedReplicas:   1,
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentAvailable,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			additionalObjects: []client.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "ready-pod",
+						Namespace: namespace,
+						Labels:    map[string]string{"app": componentName},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "terminating-pod",
+						Namespace:  namespace,
+						Labels:     map[string]string{"app": componentName},
+						Finalizers: []string{"keep-alive"},
+					},
+				},
+			},
+			deletePodsBeforeTest:    []string{"terminating-pod"},
+			unavailableDependencies: nil,
+			reconciliationError:     nil,
+			expectedConditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:    string(hyperv1.ControlPlaneComponentRolloutComplete),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.WaitingForTerminatingPodsReason,
+					Message: fmt.Sprintf("Waiting for terminating pods of %s to complete", componentName),
+				},
+			},
+			expectedVersion: "",
+		},
+		{
+			name: "When terminating pod check fails, it should fail closed and block rollout",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      componentName,
+					Namespace: namespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: ptr.To[int32](1),
+					Selector: &metav1.LabelSelector{
+						MatchExpressions: []metav1.LabelSelectorRequirement{
+							{Key: "app", Operator: "InvalidOp", Values: []string{"v"}},
+						},
+					},
+				},
+				Status: appsv1.DeploymentStatus{
+					AvailableReplicas: 1,
+					ReadyReplicas:     1,
+					Replicas:          1,
+					UpdatedReplicas:   1,
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentAvailable,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
+			unavailableDependencies: nil,
+			reconciliationError:     nil,
+			expectedConditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.ControlPlaneComponentRolloutComplete),
+					Status: metav1.ConditionFalse,
+					Reason: hyperv1.WaitingForTerminatingPodsReason,
+				},
+			},
+			expectedVersion: "",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Set up the test context
+			objects := []client.Object{tc.deployment}
+			objects = append(objects, tc.additionalObjects...)
 			client := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
-				WithObjects(tc.deployment).
+				WithObjects(objects...).
 				Build()
+
+			for _, podName := range tc.deletePodsBeforeTest {
+				pod := &corev1.Pod{}
+				pod.Name = podName
+				pod.Namespace = namespace
+				g.Expect(client.Delete(t.Context(), pod)).To(Succeed())
+			}
 
 			var hcpGeneration int64 = 5
 			cpContext := ControlPlaneContext{
-				Client: client,
+				Context: t.Context(),
+				Client:  client,
 				HCP: &hyperv1.HostedControlPlane{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:  namespace,
