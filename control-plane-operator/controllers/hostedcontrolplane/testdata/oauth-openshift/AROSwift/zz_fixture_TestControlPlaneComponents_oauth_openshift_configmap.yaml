@@ -68,7 +68,7 @@ data:
 kind: ConfigMap
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 1d8b24c3b996a01aff2951ca3641e317b76950ea605673e992b2497710cd5efb
+    hypershift.openshift.io/desired-state-hash: 661dbb750b28f974969282430797f54bb61991146e0fdb5b183ccd2223f65ace
   name: oauth-openshift
   namespace: hcp-namespace
   ownerReferences:
