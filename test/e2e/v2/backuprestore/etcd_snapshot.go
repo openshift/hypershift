@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -51,6 +52,50 @@ const (
 // HCPEtcdBackup resources with the naming pattern: oadp-<BackupName>-<random>.
 func MatchesHCPEtcdBackupName(hcpEtcdBackupName, oadpBackupName string) bool {
 	return strings.HasPrefix(hcpEtcdBackupName, HCPEtcdBackupNamePrefix+oadpBackupName+"-")
+}
+
+// ValidateSnapshotRestoreURL checks that the plugin produced a signed HTTPS URL
+// for the same S3 object or Azure blob named by the completed HCPEtcdBackup.
+// Errors omit URL values because the restore URL contains temporary credentials.
+func ValidateSnapshotRestoreURL(rawURL, restoreURL string) error {
+	raw, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid backup snapshot URL")
+	}
+	if raw.Host == "" || raw.Path == "" || raw.Path == "/" {
+		return fmt.Errorf("backup snapshot URL has no storage location or object path")
+	}
+
+	restored, err := url.Parse(restoreURL)
+	if err != nil {
+		return fmt.Errorf("invalid restore snapshot URL")
+	}
+	if restored.Scheme != "https" || restored.Host == "" {
+		return fmt.Errorf("restore snapshot URL must use HTTPS and have a host")
+	}
+
+	query := restored.Query()
+	switch raw.Scheme {
+	case "s3":
+		virtualHosted := restored.Path == raw.Path && strings.HasPrefix(restored.Hostname(), raw.Host+".")
+		pathStyle := restored.Path == "/"+raw.Host+raw.Path
+		if !virtualHosted && !pathStyle {
+			return fmt.Errorf("restore snapshot URL does not identify the backed-up S3 object")
+		}
+		if query.Get("X-Amz-Signature") == "" || query.Get("X-Amz-Algorithm") == "" {
+			return fmt.Errorf("restore snapshot URL has no S3 signature")
+		}
+	case "https":
+		if restored.Path != raw.Path || restored.Host != raw.Host {
+			return fmt.Errorf("restore snapshot URL does not identify the backed-up Azure blob")
+		}
+		if query.Get("sig") == "" || query.Get("sv") == "" || query.Get("se") == "" {
+			return fmt.Errorf("restore snapshot URL has no Azure SAS signature")
+		}
+	default:
+		return fmt.Errorf("unsupported backup snapshot URL scheme")
+	}
+	return nil
 }
 
 // WaitForHCPEtcdBackupCondition waits for an HCPEtcdBackup resource matching the given
