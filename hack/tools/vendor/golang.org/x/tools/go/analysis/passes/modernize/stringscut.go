@@ -12,6 +12,7 @@ import (
 	"go/types"
 	"iter"
 	"strconv"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -21,14 +22,13 @@ import (
 	"golang.org/x/tools/internal/analysis/analyzerutil"
 	typeindexanalyzer "golang.org/x/tools/internal/analysis/typeindex"
 	"golang.org/x/tools/internal/astutil"
-	"golang.org/x/tools/internal/goplsexport"
 	"golang.org/x/tools/internal/moreiters"
 	"golang.org/x/tools/internal/typesinternal"
 	"golang.org/x/tools/internal/typesinternal/typeindex"
 	"golang.org/x/tools/internal/versions"
 )
 
-var stringscutAnalyzer = &analysis.Analyzer{
+var StringsCutAnalyzer = &analysis.Analyzer{
 	Name: "stringscut",
 	Doc:  analyzerutil.MustExtractDoc(doc, "stringscut"),
 	Requires: []*analysis.Analyzer{
@@ -36,17 +36,15 @@ var stringscutAnalyzer = &analysis.Analyzer{
 		typeindexanalyzer.Analyzer,
 	},
 	Run: stringscut,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#stringscut",
-}
-
-func init() {
-	// Export to gopls until this is a published modernizer.
-	goplsexport.StringsCutModernizer = stringscutAnalyzer
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_stringscut",
 }
 
 // stringscut offers a fix to replace an occurrence of strings.Index{,Byte} with
-// strings.{Cut,Contains}, and similar fixes for functions in the bytes package.
-// Consider some candidate for replacement i := strings.Index(s, substr).
+// strings.{Cut,Contains}, strings.LastIndex{,Byte} with strings.CutLast (or
+// Contains when only used as a presence check), and similar fixes for
+// functions in the bytes package.
+// Consider some candidate for replacement i := strings.Index(s, substr)
+// or i := strings.LastIndex(s, substr).
 // The following must hold for a replacement to occur:
 //
 //  1. All instances of i and s must be in one of these forms.
@@ -70,6 +68,7 @@ func init() {
 // Then, the replacement involves the following substitutions:
 //
 //  1. Replace "i := strings.Index(s, substr)" with "before, after, ok := strings.Cut(s, substr)"
+//     (or CutLast when the call is LastIndex/LastIndexByte; requires Go 1.27).
 //
 //  2. Replace instances of binary expressions (a) with !ok and binary expressions (b) with ok.
 //
@@ -91,14 +90,28 @@ func init() {
 //     use(before, after)
 //     }
 //
+//     And similarly for LastIndex → CutLast:
+//
+//     i := strings.LastIndex(s, substr)
+//     if i >= 0 {
+//     use(s[:i], s[i+len(substr):])
+//     }
+//
+//     Would become:
+//
+//     before, after, ok := strings.CutLast(s, substr)
+//     if ok {
+//     use(before, after)
+//     }
+//
 // If the condition involving `i` is equivalent to i >= 0, then we replace it with
-// `if ok“.
+// `if ok`.
 // If the condition is negated (e.g. equivalent to `i < 0`), we use `if !ok` instead.
 // If the slices of `s` match `s[:i]` or `s[i+len(substr):]` or their variants listed above,
 // then we replace them with before and after.
 //
 // When the index `i` is used only to check for the presence of the substring or byte slice,
-// the suggested fix uses Contains() instead of Cut.
+// the suggested fix uses Contains() instead of Cut/CutLast (available since Go 1.18).
 //
 // For example:
 //
@@ -117,43 +130,63 @@ func stringscut(pass *analysis.Pass) (any, error) {
 	var (
 		index = pass.ResultOf[typeindexanalyzer.Analyzer].(*typeindex.Index)
 		info  = pass.TypesInfo
-
-		stringsIndex     = index.Object("strings", "Index")
-		stringsIndexByte = index.Object("strings", "IndexByte")
-		bytesIndex       = index.Object("bytes", "Index")
-		bytesIndexByte   = index.Object("bytes", "IndexByte")
 	)
+
+	candidates := []types.Object{
+		index.Object("strings", "Index"),
+		index.Object("strings", "IndexByte"),
+		index.Object("bytes", "Index"),
+		index.Object("bytes", "IndexByte"),
+		index.Object("strings", "LastIndex"),
+		index.Object("strings", "LastIndexByte"),
+		index.Object("bytes", "LastIndex"),
+		index.Object("bytes", "LastIndexByte"),
+	}
+
+	stringsplitCut(pass, index)
 
 	scopeFixCount := make(map[*types.Scope]int) // the number of times we have offered a fix within a given scope in the current pass
 
-	for _, obj := range []types.Object{
-		stringsIndex,
-		stringsIndexByte,
-		bytesIndex,
-		bytesIndexByte,
-	} {
+	for _, obj := range candidates {
 		// (obj may be nil)
 	nextcall:
 		for curCall := range index.Calls(obj) {
-			// Check file version.
-			if !analyzerutil.FileUsesGoVersion(pass, astutil.EnclosingFile(curCall), versions.Go1_18) {
-				continue // strings.Index not available in this file
+			file := astutil.EnclosingFile(curCall)
+			// Check file version. Contains and Cut require Go 1.18.
+			// CutLast requires Go 1.27; that gate is applied after we know
+			// the rewrite is not a presence-only Contains fix.
+			if !analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_18) {
+				continue
 			}
 			indexCall := curCall.Node().(*ast.CallExpr) // the call to strings.Index, etc.
+			if len(indexCall.Args) != 2 {
+				// A multi-valued call may supply the complete argument list.
+				continue
+			}
 			obj := typeutil.Callee(info, indexCall)
 			if obj == nil {
 				continue
 			}
+			cutName := cond(obj.Name()[0] == 'L', "CutLast", "Cut")
 
 			var iIdent *ast.Ident // defining identifier of i var
 			switch ek, idx := curCall.ParentEdge(); ek {
 			case edge.ValueSpec_Values:
 				// Have: var i = strings.Index(...)
+				// If the call occurs in a multi-value declaration or assignment, don't suggest a fix because it would produce invalid code (See golang/go#78643).
+				spec := curCall.Parent().Node().(*ast.ValueSpec)
+				if len(spec.Names) != 1 {
+					continue
+				}
 				curName := curCall.Parent().ChildAt(edge.ValueSpec_Names, idx)
 				iIdent = curName.Node().(*ast.Ident)
 			case edge.AssignStmt_Rhs:
 				// Have: i := strings.Index(...)
 				// (Must be i's definition.)
+				assign := curCall.Parent().Node().(*ast.AssignStmt)
+				if len(assign.Lhs) != 1 {
+					continue
+				}
 				curLhs := curCall.Parent().ChildAt(edge.AssignStmt_Lhs, idx)
 				iIdent, _ = curLhs.Node().(*ast.Ident) // may be nil
 			}
@@ -195,6 +228,13 @@ func stringscut(pass *analysis.Pass) (any, error) {
 
 			// If the only uses are ok and !ok, don't suggest a Cut() fix - these should be using Contains()
 			isContains := (len(negative) > 0 || len(nonnegative) > 0) && len(beforeSlice) == 0 && len(afterSlice) == 0
+
+			// CutLast requires Go 1.27. Keep this after isContains so
+			// presence-only LastIndex → Contains still works before 1.27.
+			if !isContains && cutName == "CutLast" &&
+				!analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_27) {
+				continue
+			}
 
 			enclosingBlock, ok := moreiters.First(curCall.Enclosing((*ast.BlockStmt)(nil)))
 			if !ok {
@@ -264,7 +304,7 @@ func stringscut(pass *analysis.Pass) (any, error) {
 			// Get the ident for the call to strings.Index, which could just be
 			// "Index" if the strings package is dot imported.
 			indexCallId := typesinternal.UsedIdent(info, indexCall.Fun)
-			replacedFunc := "Cut"
+			replacedFunc := cutName
 			if isContains {
 				replacedFunc = "Contains"
 				replace(negative, "!"+foundVarName) // idx < 0   ->  !found
@@ -291,7 +331,7 @@ func stringscut(pass *analysis.Pass) (any, error) {
 				replace(afterSlice, afterVarName)   // s[idx+k:] ->   after
 
 				// Replace the assignment with before, after, ok, and replace
-				// the call to Index or IndexByte with a call to Cut.
+				// the call to Index/LastIndex with a call to Cut/CutLast.
 				// i     			 := strings.Index(...)
 				// -----------------            -----
 				// before, after, ok := strings.Cut  (...)
@@ -302,13 +342,14 @@ func stringscut(pass *analysis.Pass) (any, error) {
 				}, analysis.TextEdit{
 					Pos:     indexCallId.Pos(),
 					End:     indexCallId.End(),
-					NewText: []byte("Cut"),
+					NewText: []byte(cutName),
 				})
 			}
 
-			// Calls to IndexByte have a byte as their second arg, which
-			// must be converted to a string or []byte to be a valid arg for Cut/Contains.
-			if obj.Name() == "IndexByte" {
+			// Calls to IndexByte/LastIndexByte have a byte as their second arg,
+			// which must be converted to a string or []byte to be a valid arg
+			// for Cut/CutLast/Contains.
+			if strings.HasSuffix(obj.Name(), "Byte") {
 				switch obj.Pkg().Name() {
 				case "strings":
 					searchByteVal := info.Types[substr].Value
@@ -328,7 +369,7 @@ func stringscut(pass *analysis.Pass) (any, error) {
 					} else {
 						// substr is a byte constant
 						val, _ := constant.Int64Val(searchByteVal) // inv: must be a valid byte
-						// strings.Cut/Contains requires a string, so convert byte literal to string literal; e.g. 'a' -> "a", 55 -> "7"
+						// strings.Cut/CutLast/Contains requires a string, so convert byte literal to string literal; e.g. 'a' -> "a", 55 -> "7"
 						edits = append(edits, analysis.TextEdit{
 							Pos:     substr.Pos(),
 							End:     substr.End(),
@@ -336,7 +377,7 @@ func stringscut(pass *analysis.Pass) (any, error) {
 						})
 					}
 				case "bytes":
-					// bytes.Cut/Contains requires a []byte, so wrap substr in a []byte{}
+					// bytes.Cut/CutLast/Contains requires a []byte, so wrap substr in a []byte{}
 					edits = append(edits, []analysis.TextEdit{
 						{
 							Pos:     substr.Pos(),
@@ -367,6 +408,133 @@ func stringscut(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
+// stringsplitCut reports patterns where strings.Split or strings.SplitN with
+// n=2 is immediately indexed at [0], which can be simplified to strings.Cut,
+// when sep is a non-empty string constant. The transformation is
+// semantics-preserving only for non-empty sep: strings.Split(s, "")[0]
+// returns the first character of s, but strings.Cut(s, "").before is "".
+// For variable sep the value is unknown at analysis time, so we conservatively
+// skip those cases too.
+//
+// For example:
+//
+//	x := strings.SplitN(s, ",", 2)[0]
+//	              ------              --
+//	x, _, _ := strings.Cut(s, ",")
+//
+// Requires Go 1.18 (when strings.Cut was added).
+func stringsplitCut(pass *analysis.Pass, index *typeindex.Index) {
+	info := pass.TypesInfo
+
+	for obj, expectedArgs := range map[types.Object]int{
+		index.Object("strings", "Split"):  2,
+		index.Object("strings", "SplitN"): 3,
+	} {
+		for curCall := range index.Calls(obj) {
+			callExpr := curCall.Node().(*ast.CallExpr)
+			if len(callExpr.Args) != expectedArgs {
+				// A multi-valued call may supply the complete argument list.
+				continue
+			}
+
+			// For SplitN, the third argument must be the integer constant 2.
+			if expectedArgs == 3 && !isIntLiteral(info, callExpr.Args[2], 2) {
+				continue
+			}
+
+			// Sep must be a non-empty constant string.
+			// strings.Split(s, "")[0] returns the first character of s, but
+			// strings.Cut(s, "").before is "", so the semantics differ for
+			// an empty sep. For a variable sep we cannot rule out "" at
+			// analysis time, so we conservatively skip those cases too.
+			sepTV := info.Types[callExpr.Args[1]]
+			if sepTV.Value == nil || constant.StringVal(sepTV.Value) == "" {
+				continue
+			}
+
+			// The call must be the X of an IndexExpr.
+			if curCall.ParentEdgeKind() != edge.IndexExpr_X {
+				continue
+			}
+			parent := curCall.Parent()
+			indexExpr := parent.Node().(*ast.IndexExpr)
+
+			// The index must be the integer constant 0.
+			if !isZeroIntConst(info, indexExpr.Index) {
+				continue
+			}
+
+			// The IndexExpr must be the sole RHS of an assignment statement.
+			if parent.ParentEdgeKind() != edge.AssignStmt_Rhs {
+				continue
+			}
+			assign := parent.Parent().Node().(*ast.AssignStmt)
+			if assign.Tok != token.DEFINE || len(assign.Lhs) != 1 {
+				continue
+			}
+
+			// The LHS must be a single non-blank identifier.
+			lhsIdent, ok := assign.Lhs[0].(*ast.Ident)
+			if !ok || lhsIdent.Name == "_" {
+				continue
+			}
+
+			// strings.Cut requires Go 1.18.
+			if !analyzerutil.FileUsesGoVersion(pass, astutil.EnclosingFile(curCall), versions.Go1_18) {
+				continue
+			}
+
+			// Build the fix.
+			//
+			//  x  := strings.SplitN(s, sep, 2)[0]
+			//  ---           ------             ---
+			//  x, _, _ := strings.Cut(s, sep)
+			callFunIdent := typesinternal.UsedIdent(info, callExpr.Fun)
+
+			var edits []analysis.TextEdit
+
+			// LHS: insert ", _, _" after x
+			edits = append(edits, analysis.TextEdit{
+				Pos:     lhsIdent.End(),
+				End:     lhsIdent.End(),
+				NewText: []byte(", _, _"),
+			})
+
+			// Function name: Split/SplitN → Cut
+			edits = append(edits, analysis.TextEdit{
+				Pos:     callFunIdent.Pos(),
+				End:     callFunIdent.End(),
+				NewText: []byte("Cut"),
+			})
+
+			// For SplitN: remove the ", 2" third argument.
+			if expectedArgs == 3 {
+				edits = append(edits, analysis.TextEdit{
+					Pos: callExpr.Args[1].End(), // after sep
+					End: callExpr.Rparen,        // before )
+				})
+			}
+
+			// Remove the "[0]" index expression.
+			edits = append(edits, analysis.TextEdit{
+				Pos: indexExpr.Lbrack,
+				End: indexExpr.End(),
+			})
+
+			pass.Report(analysis.Diagnostic{
+				Pos:      callExpr.Fun.Pos(),
+				End:      callExpr.Fun.End(),
+				Message:  fmt.Sprintf("strings.%s call can be simplified using strings.Cut", obj.Name()),
+				Category: "stringscut",
+				SuggestedFixes: []analysis.SuggestedFix{{
+					Message:   fmt.Sprintf("Simplify strings.%s call using strings.Cut", obj.Name()),
+					TextEdits: edits,
+				}},
+			})
+		}
+	}
+}
+
 // indexArgValid reports whether expr is a valid strings.Index(_, _) arg
 // for the transformation. An arg is valid iff it is:
 // - constant;
@@ -385,12 +553,15 @@ func indexArgValid(info *types.Info, index *typeindex.Index, expr ast.Expr, afte
 			info.Types[expr.Fun].IsType() && // make sure this isn't a function that returns a byte slice
 			indexArgValid(info, index, expr.Args[0], afterPos) // check s in []byte(s)
 	case *ast.Ident:
-		sObj := info.Uses[expr]
-		sUses := index.Uses(sObj)
-		return !hasModifyingUses(info, sUses, afterPos)
+		for use := range index.Uses(info.Uses[expr]) {
+			if typesinternal.IsAssignedOrAddressTaken(info, use) {
+				return false
+			}
+		}
+		return true
 	default:
 		// For now, skip instances where s or substr are not
-		// identifers, basic lits, or call expressions of the form
+		// identifiers, basic lits, or call expressions of the form
 		// []byte(s).
 		// TODO(mkalil): Handle s and substr being expressions like ptr.field[i].
 		// From adonovan: We'd need to analyze s and substr to see
@@ -482,33 +653,6 @@ func checkIdxUses(info *types.Info, uses iter.Seq[inspector.Cursor], s, substr a
 		}
 	}
 	return negative, nonnegative, beforeSlice, afterSlice
-}
-
-// hasModifyingUses reports whether any of the uses involve potential
-// modifications. Uses involving assignments before the "afterPos" won't be
-// considered.
-func hasModifyingUses(info *types.Info, uses iter.Seq[inspector.Cursor], afterPos token.Pos) bool {
-	for curUse := range uses {
-		ek := curUse.ParentEdgeKind()
-		if ek == edge.AssignStmt_Lhs {
-			if curUse.Node().Pos() <= afterPos {
-				continue
-			}
-			assign := curUse.Parent().Node().(*ast.AssignStmt)
-			if sameObject(info, assign.Lhs[0], curUse.Node().(*ast.Ident)) {
-				// Modifying use because we are reassigning the value of the object.
-				return true
-			}
-		} else if ek == edge.UnaryExpr_X &&
-			curUse.Parent().Node().(*ast.UnaryExpr).Op == token.AND {
-			// Modifying use because we might be passing the object by reference (an explicit &).
-			// We can ignore the case where we have a method call on the expression (which
-			// has an implicit &) because we know the type of s and substr are strings
-			// which cannot have methods on them.
-			return true
-		}
-	}
-	return false
 }
 
 // checkIdxComparison reports whether the check is equivalent to i < 0 or its negation, or neither.
