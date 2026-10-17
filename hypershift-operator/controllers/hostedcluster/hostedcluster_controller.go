@@ -4818,7 +4818,7 @@ func (r *HostedClusterReconciler) validateOCPConfigurations(ctx context.Context,
 	errs = append(errs, validations.ValidateOCPAPIServerSANs(ctx, hc, client)...)
 
 	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Authentication != nil {
-		err := supportvalidations.ValidateAuthenticationSpec(ctx, client, hc.Spec.Configuration.Authentication, hc.Namespace, []string{hc.Spec.IssuerURL})
+		err := supportvalidations.ValidateAuthenticationSpec(ctx, client, hc.Spec.Configuration.Authentication, hc.Namespace, hc.Spec.IssuerURL)
 		if err != nil {
 			fieldErr := &field.Error{
 				Type:     field.ErrorTypeInvalid,
