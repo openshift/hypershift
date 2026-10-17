@@ -2,6 +2,7 @@ package awsutil
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -242,6 +243,13 @@ func UpdateResourceTags(ec2Client ec2iface.EC2API, resourceID string, create, re
 		// Create/Update tags in AWS.
 		if _, err := ec2Client.CreateTags(input); err != nil {
 			return errors.Wrapf(err, "failed to create tags for resource %q: %+v", resourceID, create)
+		}
+	}
+
+	// Filter out AWS-reserved tag keys (aws:* prefix) that cannot be deleted.
+	for key := range remove {
+		if strings.HasPrefix(key, "aws:") {
+			delete(remove, key)
 		}
 	}
 
