@@ -690,7 +690,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -765,7 +765,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -842,7 +842,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
