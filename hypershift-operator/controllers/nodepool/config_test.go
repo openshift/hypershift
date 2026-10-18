@@ -3036,7 +3036,7 @@ users:
 			expectedErr: "failed to get kubeconfig",
 		},
 		{
-			name:        "public cluster with unparseable kubeconfig fails",
+			name:        "public cluster with unparsable kubeconfig fails",
 			hcluster:    withKubeconfigStatus(newPublicAWSHC()),
 			objects:     []crclient.Object{kubeconfigSecret([]byte("not-a-kubeconfig"))},
 			expectedErr: "failed to parse kubeconfig",
