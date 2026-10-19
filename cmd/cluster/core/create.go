@@ -127,7 +127,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster. If omitted for an HCP KubeVirt cluster, this defaults to the management cluster's apps domain.")
 	flags.StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. Use 'none' for an empty prefix")
 	flags.StringVar(&opts.ExternalDNSDomain, "external-dns-domain", opts.ExternalDNSDomain, "Sets hostname to opinionated values in the specified domain for services with publishing type LoadBalancer or Route.")
-	flags.StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Specifies the cluster network provider. OVNKubernetes (default) and OpenShiftSDN (legacy) are built-in; set a third-party CNI name such as Calico or Cilium (or Other) and install it yourself.")
+	flags.StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Specifies the cluster network provider. OVNKubernetes (default) and OpenShiftSDN (legacy) are built-in; set a third-party CNI name such as Calico or Cilium (or Other) and install it yourself. Use Other with --allocate-node-cidrs or --disable-multi-network.")
 	flags.StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
 	flags.StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
 	flags.StringVar(&opts.ControlPlaneAvailabilityPolicy, "control-plane-availability-policy", opts.ControlPlaneAvailabilityPolicy, "Availability policy for hosted cluster components. Supported options: SingleReplica, HighlyAvailable")

@@ -1313,15 +1313,19 @@ type ClusterNetworking struct {
 
 	// networkType specifies the network provider used for cluster networking.
 	// HyperShift recognizes exactly "OVNKubernetes" and "OpenShiftSDN" as built-in providers.
+	// OpenShiftSDN is deprecated; new clusters can use it only on the PowerVS platform, and
+	// clusters using it cannot be upgraded to a new minor version.
 	// Any other value names a third-party CNI that HyperShift does not deploy; the cluster
 	// administrator is responsible for installing it. Set this field to the actual CNI provider
 	// name, such as "Calico" or "Cilium". The value "Other" remains supported for compatibility.
 	// The value must be 1-63 characters, start and end with a letter or digit, and contain only
-	// letters, digits, '.', '_' or '-'. Provider names are case-sensitive.
+	// letters, digits, '.', '_' or '-'. Provider names are case-sensitive. Case variants of the
+	// built-in names, such as "ovnkubernetes", are rejected. The value "Other" is currently
+	// required when allocateNodeCIDRs is "Enabled" or when
+	// spec.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork is true.
 	// This field is authoritative for the cluster network type. Setting networkType within
 	// spec.configuration.network has no effect; this field alone determines the network type
 	// propagated to the cluster-network-operator.
-	// Conflict validation between these fields is tracked by the TODO on ClusterConfiguration.Network below.
 	// Defaults to OVNKubernetes.
 	// This field is immutable.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="networkType is immutable"
@@ -1419,7 +1423,7 @@ type APIServerNetworking struct {
 // OVNKubernetes and OpenShiftSDN are the built-in providers recognized by HyperShift and must use
 // that exact spelling. Any other value is treated as the name of a third-party CNI; set it to the
 // actual provider name you will install, such as Calico or Cilium. The value Other is also supported
-// for compatibility.
+// for compatibility. Case variants of the built-in names are rejected.
 //
 // +kubebuilder:validation:MinLength=1
 // +kubebuilder:validation:MaxLength=63
