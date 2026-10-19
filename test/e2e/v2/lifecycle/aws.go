@@ -195,6 +195,11 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 				Variant:     "karpenter-upgrade",
 				LabelFilter: "karpenter-upgrade",
 			},
+			{
+				Name:        "kms-reencryption",
+				Variant:     "kms-reencryption",
+				LabelFilter: "etcd-encryption-reencryption",
+			},
 		},
 		Sequential: []SequentialGroup{
 			{
