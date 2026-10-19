@@ -2262,7 +2262,7 @@ make test                     # Unit tests with race detection
 make e2e                      # Build E2E test binaries
 
 # Code quality
-make verify                   # Full verification (BEFORE PR) - includes generate, fmt, vet, lint, codespell, gitlint
+make verify                   # Full verification - includes generate, fmt, vet, lint, codespell, gitlint
 make lint                     # golangci-lint
 make lint-fix                 # Auto-fix linting
 make fmt                      # Format
@@ -2274,6 +2274,12 @@ make api                      # Only regenerate CRDs
 make generate                 # go generate
 make clients                  # Update generated clients
 ```
+
+### Pre-PR Validation
+
+Run proportionate repository-required checks targeting the changes and fix failures. Required change-specific safety, formatting, linting, generation, and test checks still apply; required CI checks remain unchanged. Select broader checks when the scope or risk demands them, and retain the API-specific workflow below.
+
+Review the complete diff, confirm a clean working tree after committing, and report actual commands/results or review evidence, explicitly identifying skipped or unavailable checks.
 
 ### Workflow for API Changes
 
@@ -2396,7 +2402,7 @@ Rules from `api/CLAUDE.md`:
 1. **Start with the CRDs**: Understanding `HostedCluster`, `HostedControlPlane`, and `NodePool` is 80% of the work
 2. **Follow the data flow**: HC -> HCP -> Components. NP -> CAPI -> Cloud -> Node
 3. **Conditions are your friend**: Always check `.status.conditions` to understand what's happening
-4. **`make verify` before pushing**: Always
+4. **Validate proportionately before pushing**: Follow Pre-PR Validation for required change-specific checks, fixes, full diff/status review, and validation evidence
 5. **The CP namespace is where the magic happens**: `kubectl get pods -n clusters-<name>` shows you everything
 6. **Read the tests**: Unit tests and E2E tests are the best living documentation
 7. **Use `hypershift dump`**: The diagnostic tool at `cmd/dump/` captures full cluster state for debugging
@@ -2431,7 +2437,7 @@ graph TD
         S3B[Understand the ignition flow<br/>Token -> Ignition Server -> Node]
         S3C[Study PKI and certificates]
         S3D[Make a real change:<br/>bug fix or small feature]
-        S3E[Run make verify<br/>and create your first PR]
+        S3E[Run proportionate required checks<br/>fix failures and review full diff<br/>confirm clean status and record evidence<br/>then create your first PR]
     end
 
     subgraph "Week 7+: Specialization"

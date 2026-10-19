@@ -5,7 +5,8 @@ In general, please:
 - open the PR in draft mode
 - keep commits as small and focused on specific changes as much as possible
 - use conventional commits
-- test your changes locally with `make pre-commit` before moving any PR out of draft mode
+- run proportionate repository-required checks targeting the changes and fix failures before moving any PR out of draft mode; mandatory change-specific safety, formatting, linting, generation, and test checks and required CI still apply
+- review the full diff, confirm a clean working tree after committing, and report actual commands/results or review evidence, explicitly identifying skipped or unavailable checks (see [Pre-PR Gate](https://github.com/openshift/hypershift/blob/main/DEVELOPMENT.md#pre-pr-gate))
 - prefix your PR with a Jira ticket number
 - fill out the PR description template below
 
