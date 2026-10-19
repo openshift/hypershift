@@ -24,8 +24,11 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
+	routev1 "github.com/openshift/api/route/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -65,8 +68,9 @@ func scaleExternalDNS(testCtx *internal.TestContext, replicas int32) error {
 	}
 
 	if deployment.Spec.Replicas == nil || *deployment.Spec.Replicas != replicas {
+		patch := crclient.MergeFrom(deployment.DeepCopy())
 		deployment.Spec.Replicas = &replicas
-		if err := testCtx.MgmtClient.Update(testCtx.Context, deployment); err != nil {
+		if err := testCtx.MgmtClient.Patch(testCtx.Context, deployment, patch); err != nil {
 			return fmt.Errorf("failed to scale ExternalDNS Deployment %s/%s to %d replicas: %w", key.Namespace, key.Name, replicas, err)
 		}
 	}
@@ -106,6 +110,37 @@ func scaleExternalDNS(testCtx *internal.TestContext, replicas int32) error {
 	}
 
 	return nil
+}
+
+// VerifyPublicServiceRouteAdmission checks that a restored Route retains its configured hostname
+// and that its first router ingress is admitted. Errors omit Route and API hostnames from test logs.
+func VerifyPublicServiceRouteAdmission(testCtx *internal.TestContext, endpoint PublicServiceRouteEndpoint) error {
+	route := &routev1.Route{}
+	if err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
+		Namespace: testCtx.ControlPlaneNamespace,
+		Name:      endpoint.RouteName,
+	}, route); err != nil {
+		return fmt.Errorf("restored %s service Route lookup failed (%s)", endpoint.Service, apierrors.ReasonForError(err))
+	}
+	if route.Spec.Host == "" {
+		return fmt.Errorf("restored %s service Route has no hostname", endpoint.Service)
+	}
+	if route.Spec.Host != endpoint.DNSName {
+		return fmt.Errorf("restored %s service Route hostname differs from its configured hostname", endpoint.Service)
+	}
+	if len(route.Status.Ingress) == 0 {
+		return fmt.Errorf("restored %s service Route has no router ingress", endpoint.Service)
+	}
+	ingress := route.Status.Ingress[0]
+	if ingress.RouterCanonicalHostname == "" {
+		return fmt.Errorf("restored %s service Route has no router canonical hostname", endpoint.Service)
+	}
+	for _, condition := range ingress.Conditions {
+		if condition.Type == routev1.RouteAdmitted && condition.Status == corev1.ConditionTrue {
+			return nil
+		}
+	}
+	return fmt.Errorf("restored %s service Route is not admitted by its first router ingress", endpoint.Service)
 }
 
 // PublicServiceRouteEndpoints returns the configured Route names and hostnames for public services.

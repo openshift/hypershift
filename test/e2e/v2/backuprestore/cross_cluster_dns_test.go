@@ -4,6 +4,7 @@ package backuprestore
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -13,14 +14,57 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
+	routev1 "github.com/openshift/api/route/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+type recordDeploymentPatchClient struct {
+	crclient.Client
+	patchData []byte
+}
+
+func (c *recordDeploymentPatchClient) Update(context.Context, crclient.Object, ...crclient.UpdateOption) error {
+	return errors.New("unexpected full-object update")
+}
+
+func (c *recordDeploymentPatchClient) Patch(ctx context.Context, obj crclient.Object, patch crclient.Patch, opts ...crclient.PatchOption) error {
+	data, err := patch.Data(obj)
+	if err != nil {
+		return err
+	}
+	c.patchData = data
+	return c.Client.Patch(ctx, obj, patch, opts...)
+}
+
+func TestScaleExternalDNS(t *testing.T) {
+	t.Run("When ExternalDNS replicas change, it should patch only the Deployment replicas", func(t *testing.T) {
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Namespace: externalDNSNamespace, Name: externalDNSDeploymentName},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: ptr.To[int32](1),
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "external-dns"}},
+			},
+		}
+		client := &recordDeploymentPatchClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(deployment).Build()}
+		testCtx := &internal.TestContext{Context: t.Context(), MgmtClient: client}
+
+		g := NewWithT(t)
+		g.Expect(scaleExternalDNS(testCtx, 0)).To(Succeed())
+		g.Expect(client.patchData).To(MatchJSON(`{"spec":{"replicas":0}}`))
+		updated := &appsv1.Deployment{}
+		g.Expect(client.Get(t.Context(), types.NamespacedName{Namespace: externalDNSNamespace, Name: externalDNSDeploymentName}, updated)).To(Succeed())
+		g.Expect(updated.Spec.Replicas).NotTo(BeNil())
+		g.Expect(*updated.Spec.Replicas).To(BeZero())
+	})
+}
 
 func TestScaleDownExternalDNS(t *testing.T) {
 	t.Run("When ExternalDNS Deployment has replicas, it should scale the Deployment to zero", func(t *testing.T) {
@@ -106,6 +150,60 @@ func TestScaleUpExternalDNS(t *testing.T) {
 		testCtx := &internal.TestContext{Context: t.Context(), MgmtClient: client}
 		NewWithT(t).Expect(ScaleUpExternalDNS(testCtx)).To(MatchError(ContainSubstring("failed to get ExternalDNS Deployment")))
 	})
+}
+
+func TestVerifyPublicServiceRouteAdmission(t *testing.T) {
+	endpoint := PublicServiceRouteEndpoint{Service: hyperv1.APIServer, DNSName: "api-restore.example.com", RouteName: "kube-apiserver"}
+	testCases := []struct {
+		name          string
+		missingRoute  bool
+		mutateRoute   func(*routev1.Route)
+		expectedError string
+	}{
+		{name: "When the Route is missing, it should report the API reason without exposing the hostname", missingRoute: true, expectedError: "lookup failed (NotFound)"},
+		{name: "When the Route hostname is empty, it should report the missing hostname", mutateRoute: func(route *routev1.Route) { route.Spec.Host = "" }, expectedError: "has no hostname"},
+		{name: "When the Route hostname differs, it should report a mismatch without exposing either hostname", mutateRoute: func(route *routev1.Route) { route.Spec.Host = "different.example.com" }, expectedError: "hostname differs"},
+		{name: "When the Route has no ingress, it should report the missing ingress", mutateRoute: func(route *routev1.Route) { route.Status.Ingress = nil }, expectedError: "has no router ingress"},
+		{name: "When the router hostname is empty, it should report the missing canonical hostname", mutateRoute: func(route *routev1.Route) { route.Status.Ingress[0].RouterCanonicalHostname = "" }, expectedError: "has no router canonical hostname"},
+		{name: "When the first router ingress is not admitted, it should report the admission failure", mutateRoute: func(route *routev1.Route) { route.Status.Ingress[0].Conditions[0].Status = corev1.ConditionFalse }, expectedError: "is not admitted"},
+		{name: "When the Route hostname and admission match, it should succeed"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if !tc.missingRoute {
+				route := &routev1.Route{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "clusters-restore", Name: endpoint.RouteName},
+					Spec:       routev1.RouteSpec{Host: endpoint.DNSName},
+					Status: routev1.RouteStatus{Ingress: []routev1.RouteIngress{{
+						RouterCanonicalHostname: "router-target.example.com",
+						Conditions:              []routev1.RouteIngressCondition{{Type: routev1.RouteAdmitted, Status: corev1.ConditionTrue}},
+					}}},
+				}
+				if tc.mutateRoute != nil {
+					tc.mutateRoute(route)
+				}
+				clientBuilder = clientBuilder.WithObjects(route)
+			}
+			testCtx := &internal.TestContext{
+				Context:               t.Context(),
+				MgmtClient:            clientBuilder.Build(),
+				ControlPlaneNamespace: "clusters-restore",
+			}
+
+			err := VerifyPublicServiceRouteAdmission(testCtx, endpoint)
+			g := NewWithT(t)
+			if tc.expectedError == "" {
+				g.Expect(err).NotTo(HaveOccurred())
+				return
+			}
+			g.Expect(err).To(MatchError(ContainSubstring(tc.expectedError)))
+			g.Expect(err.Error()).NotTo(ContainSubstring(endpoint.DNSName))
+			g.Expect(err.Error()).NotTo(ContainSubstring("different.example.com"))
+			g.Expect(err.Error()).NotTo(ContainSubstring("router-target.example.com"))
+		})
+	}
 }
 
 func TestPublicServiceRouteEndpoints(t *testing.T) {

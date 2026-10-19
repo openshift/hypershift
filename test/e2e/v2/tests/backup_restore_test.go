@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/oadp"
 	"github.com/openshift/hypershift/support/conditions"
@@ -748,8 +747,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 		})
 
 		It("should stop source ExternalDNS", func() {
-			// Leave source ExternalDNS at zero until CI tears down the source manager.
-			// Otherwise, it could reconcile the retained DNS names away from the target.
+			// CI uses a dedicated source manager and tears it down after this test. Keep its
+			// ExternalDNS stopped even on failure, so it cannot reclaim the target's DNS names.
 			By("Scaling the source ExternalDNS Deployment to zero")
 			err := backuprestore.ScaleDownExternalDNS(sourceCtx)
 			Expect(err).NotTo(HaveOccurred(), "source ExternalDNS should stop before the HostedCluster is broken")
@@ -786,32 +785,18 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 	Context(ContextPostRestoreControlPlane, func() {
 		It("should admit target Routes before starting target ExternalDNS", func() {
 			hostedCluster, err := targetCtx.GetHostedCluster()
-			Expect(err == nil).To(BeTrue(), "restored HostedCluster should be available for Route admission checks")
+			if err != nil {
+				Fail(fmt.Sprintf("restored HostedCluster should be available for Route admission checks (API reason: %s; error type: %T)",
+					apierrors.ReasonForError(err), err))
+			}
 			endpoints, err := backuprestore.PublicServiceRouteEndpoints(hostedCluster)
-			Expect(err == nil).To(BeTrue(), "public service Route endpoints should be configured")
+			Expect(err).NotTo(HaveOccurred(), "public service Route endpoints should be configured")
 
 			By("Waiting for public service Routes to be admitted by the target router")
 			Eventually(func(g Gomega) {
 				for _, endpoint := range endpoints {
-					route := &routev1.Route{}
-					err := targetCtx.MgmtClient.Get(targetCtx.Context, crclient.ObjectKey{
-						Namespace: targetCtx.ControlPlaneNamespace,
-						Name:      endpoint.RouteName,
-					}, route)
-					// Only report fixed service and status details; the Route and API error can contain hostnames.
-					g.Expect(err == nil).To(BeTrue(), "restored %s service Route should exist", endpoint.Service)
-					g.Expect(route.Spec.Host == endpoint.DNSName).To(BeTrue(), "restored %s service Route should retain its configured hostname", endpoint.Service)
-					g.Expect(len(route.Status.Ingress) > 0).To(BeTrue(), "restored %s service Route should have an ingress", endpoint.Service)
-					ingress := route.Status.Ingress[0]
-					g.Expect(ingress.RouterCanonicalHostname != "").To(BeTrue(), "restored %s service Route should have a router canonical hostname", endpoint.Service)
-					admitted := false
-					for _, condition := range ingress.Conditions {
-						if condition.Type == routev1.RouteAdmitted && condition.Status == corev1.ConditionTrue {
-							admitted = true
-							break
-						}
-					}
-					g.Expect(admitted).To(BeTrue(), "restored %s service Route should be admitted", endpoint.Service)
+					g.Expect(backuprestore.VerifyPublicServiceRouteAdmission(targetCtx, endpoint)).To(Succeed(),
+						"restored %s service Route should retain its configured hostname and be admitted", endpoint.Service)
 				}
 			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed(), "target public service Routes should be admitted with their configured hostnames before ExternalDNS restarts")
 
