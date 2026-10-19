@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 7727151f0ab1d8030888ff0527d54f84283655f8ef189d1cf2b6023ec8061a7d
+    hypershift.openshift.io/desired-state-hash: 1d444971073d705182e58945883149bc4474720c37bf320aa186c85423688c46
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ingress-operator
@@ -63,36 +63,73 @@ spec:
             weight: 100
       automountServiceAccountToken: false
       containers:
-      - command:
+      - args:
+        - "2"
+        - --haproxy-image=2.8=haproxy-router-haproxy28
+        - --haproxy-image=3.2=haproxy-router-haproxy32
+        - "3.2"
+        - "2.8"
         - ingress-operator
         - start
         - --namespace
         - openshift-ingress-operator
         - --image
         - $(IMAGE)
-        - --haproxy-image
-        - 2.8=$(HAPROXY_28_IMAGE)
-        - --haproxy-image
-        - 3.2=$(HAPROXY_32_IMAGE)
-        - --default-haproxy-version
-        - $(DEFAULT_HAPROXY_VERSION)
         - --canary-image
         - $(CANARY_IMAGE)
         - --release-version
         - $(RELEASE_VERSION)
         - --metrics-listen-addr
         - 0.0.0.0:60000
+        command:
+        - /bin/bash
+        - -c
+        - |
+          #!/bin/bash
+          set -euo pipefail
+          # Protocol: count, haproxy_args[0..count-1], defaultVersion, deprecatedVersion, originalCmd...
+          count="$1"
+          shift
+          haproxy_args=("${@:1:count}")
+          shift "$count"
+          default_version="$1"
+          deprecated_version="$2"
+          shift 2
+          if ! help_output=$(timeout --signal=KILL 30s "$1" start --help 2>&1); then
+            echo "HAProxy capability detection failed: $help_output" >&2
+            exit 1
+          fi
+          declare -A flags=()
+          while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*(-[[:alnum:]],?[[:space:]]+)?--([[:alnum:]][[:alnum:]-]*)([[:space:]=]|$) ]]; then
+              flags["${BASH_REMATCH[2]}"]=1
+            fi
+          done <<< "$help_output"
+          if [[ -z "${flags[image]:-}" ]]; then
+            echo "HAProxy capability detection failed: unrecognized ingress-operator help" >&2
+            exit 1
+          fi
+          if [[ -z "${flags[haproxy-image]:-}" ]]; then
+            echo "Ingress operator does not support HAProxy version selection; using --image" >&2
+            exec "$@"
+          fi
+          if [[ -z "${flags[default-haproxy-version]:-}" ]]; then
+            echo "HAProxy capability detection failed: --haproxy-image requires --default-haproxy-version" >&2
+            exit 1
+          fi
+          haproxy_args+=("--default-haproxy-version=$default_version")
+          if [[ -n "${flags[deprecated-haproxy-version]:-}" ]]; then
+            # An empty StringSlice flag clears the binary's default (2.8). Omitting it
+            # would fail validation when 2.8 is not among the supplied HAProxy images.
+            haproxy_args+=("--deprecated-haproxy-version=$deprecated_version")
+          fi
+          exec "$@" "${haproxy_args[@]}"
+        - haproxy-capability-check
         env:
         - name: RELEASE_VERSION
           value: 4.18.0
         - name: IMAGE
           value: haproxy-router
-        - name: HAPROXY_28_IMAGE
-          value: haproxy-router-haproxy28
-        - name: HAPROXY_32_IMAGE
-          value: haproxy-router-haproxy32
-        - name: DEFAULT_HAPROXY_VERSION
-          value: "3.2"
         - name: CANARY_IMAGE
           value: cluster-ingress-operator
         - name: KUBECONFIG

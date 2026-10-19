@@ -18,15 +18,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router"),
 		})
-		podspec.UpsertEnvVar(c, corev1.EnvVar{
-			Name: "HAPROXY_28_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router-haproxy28"),
-		})
-		podspec.UpsertEnvVar(c, corev1.EnvVar{
-			Name: "HAPROXY_32_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router-haproxy32"),
-		})
-		podspec.UpsertEnvVar(c, corev1.EnvVar{
-			Name: "DEFAULT_HAPROXY_VERSION", Value: "3.2",
-		})
+		configureHAProxy(c, cpContext.UserReleaseImageProvider)
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "CANARY_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("cluster-ingress-operator"),
 		})

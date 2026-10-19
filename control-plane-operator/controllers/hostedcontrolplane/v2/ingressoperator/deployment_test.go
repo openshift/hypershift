@@ -21,11 +21,35 @@ func TestAdaptDeployment(t *testing.T) {
 	testCases := []struct {
 		name     string
 		fips     bool
+		version  string
+		images   map[string]string
 		validate func(*WithT, *corev1.Container)
 	}{
 		{
-			name: "When FIPS is enabled, it should set FIPS_ENABLED env var to true",
-			fips: true,
+			name:    "When an older payload has no versioned images, it should use the legacy command",
+			version: "4.22.17",
+			images:  map[string]string{"haproxy-router": "router-image", "cluster-ingress-operator": "operator-image"},
+			validate: func(g *WithT, container *corev1.Container) {
+				g.Expect(container.Command[0]).To(Equal("ingress-operator"))
+				g.Expect(container.Command).NotTo(ContainElement("--haproxy-image"))
+				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: "IMAGE", Value: "router-image"}))
+			},
+		},
+		{
+			name:    "When a future OCP release retains versioned images, it should detect capabilities without a version cutoff",
+			version: "6.0.0",
+			images:  map[string]string{"haproxy-router": "router-image", "haproxy-router-haproxy32": "haproxy32-image", "cluster-ingress-operator": "operator-image"},
+			validate: func(g *WithT, container *corev1.Container) {
+				g.Expect(container.Command[0]).To(Equal("/bin/bash"))
+				g.Expect(container.Args).To(ContainElement("--haproxy-image=3.2=haproxy32-image"))
+				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: "RELEASE_VERSION", Value: "6.0.0"}))
+			},
+		},
+		{
+			name:    "When FIPS is enabled, it should set FIPS_ENABLED env var to true",
+			fips:    true,
+			version: "4.18.0",
+			images:  map[string]string{"haproxy-router": "router-image", "cluster-ingress-operator": "operator-image"},
 			validate: func(g *WithT, container *corev1.Container) {
 				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{
 					Name:  "FIPS_ENABLED",
@@ -34,8 +58,10 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 		},
 		{
-			name: "When FIPS is not enabled, it should not set FIPS_ENABLED env var",
-			fips: false,
+			name:    "When FIPS is not enabled, it should not set FIPS_ENABLED env var",
+			fips:    false,
+			version: "4.18.0",
+			images:  map[string]string{"haproxy-router": "router-image", "cluster-ingress-operator": "operator-image"},
 			validate: func(g *WithT, container *corev1.Container) {
 				for _, env := range container.Env {
 					g.Expect(env.Name).ToNot(Equal("FIPS_ENABLED"))
@@ -61,7 +87,7 @@ func TestAdaptDeployment(t *testing.T) {
 
 			cpContext := component.WorkloadContext{
 				HCP:                      hcp,
-				UserReleaseImageProvider: testutil.FakeImageProvider(),
+				UserReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion(tc.version), testutil.WithImages(tc.images)),
 			}
 
 			deployment, err := assets.LoadDeploymentManifest(ComponentName)
