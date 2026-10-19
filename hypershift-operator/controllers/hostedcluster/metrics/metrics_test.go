@@ -1911,6 +1911,210 @@ func TestClusterDeletionCleansUpFailureReasonTrackingState(t *testing.T) {
 	}
 }
 
+// getFailureReasonCount extracts the counter value for a specific reason from gathered metrics.
+func getFailureReasonCount(result []*dto.MetricFamily, reason string) float64 {
+	mf := findMetricValue(&result, hcmetrics.InstallationFailureReasonTotalMetricName)
+	if mf == nil {
+		return 0
+	}
+	for _, m := range mf.Metric {
+		for _, lp := range m.Label {
+			if lp.GetName() == "reason" && lp.GetValue() == reason {
+				if m.Counter != nil {
+					return m.Counter.GetValue()
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func TestHCConditionEpisodeRouteNotAdmitted(t *testing.T) {
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:             "hc",
+			Namespace:        "any",
+			CreationTimestamp: metav1.Time{Time: now},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+		},
+	}
+
+	clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).
+		WithStatusSubresource(hcluster).
+		WithObjects(hcluster).Build()
+	collector := createHostedClustersMetricsCollector(c, clk).(*hostedClustersMetricsCollector)
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(collector)
+
+	// Collect 1: baseline with no conditions → all counters 0.
+	result, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 1 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonRouteNotAdmitted); got != 0 {
+		t.Errorf("after baseline: RouteNotAdmitted = %v, want 0", got)
+	}
+
+	// Set InfrastructureReady=False with Reason=RouteNotAdmitted.
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.InfrastructureReady),
+		Status: metav1.ConditionFalse,
+		Reason: hyperv1.ReasonRouteNotAdmitted,
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+
+	// Collect 2: transition from healthy → failure → increment.
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 2 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonRouteNotAdmitted); got != 1 {
+		t.Errorf("after transition to failure: RouteNotAdmitted = %v, want 1", got)
+	}
+
+	// Collect 3: same ongoing failure → no re-increment.
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 3 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonRouteNotAdmitted); got != 1 {
+		t.Errorf("during ongoing failure: RouteNotAdmitted = %v, want 1", got)
+	}
+
+	// Recover: set InfrastructureReady=True.
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.InfrastructureReady),
+		Status: metav1.ConditionTrue,
+		Reason: "AsExpected",
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 4 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonRouteNotAdmitted); got != 1 {
+		t.Errorf("after recovery: RouteNotAdmitted = %v, want 1", got)
+	}
+
+	// Recurrence: fail again → new episode, counter = 2.
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.InfrastructureReady),
+		Status: metav1.ConditionFalse,
+		Reason: hyperv1.ReasonRouteNotAdmitted,
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 5 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonRouteNotAdmitted); got != 2 {
+		t.Errorf("after recurrence: RouteNotAdmitted = %v, want 2", got)
+	}
+}
+
+func TestHCConditionEpisodeClusterVersionFailing(t *testing.T) {
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:             "hc",
+			Namespace:        "any",
+			CreationTimestamp: metav1.Time{Time: now},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+		},
+	}
+
+	clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).
+		WithStatusSubresource(hcluster).
+		WithObjects(hcluster).Build()
+	collector := createHostedClustersMetricsCollector(c, clk).(*hostedClustersMetricsCollector)
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(collector)
+
+	// Collect 1: baseline → 0.
+	result, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 1 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonClusterVersionFailing); got != 0 {
+		t.Errorf("after baseline: ClusterVersionFailing = %v, want 0", got)
+	}
+
+	// Set ClusterVersionFailing=True (failure for this condition type).
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.ClusterVersionFailing),
+		Status: metav1.ConditionTrue,
+		Reason: "FromClusterVersion",
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+
+	// Collect 2: transition → increment.
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 2 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonClusterVersionFailing); got != 1 {
+		t.Errorf("after transition to failure: ClusterVersionFailing = %v, want 1", got)
+	}
+
+	// Collect 3: ongoing → no re-increment.
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 3 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonClusterVersionFailing); got != 1 {
+		t.Errorf("during ongoing failure: ClusterVersionFailing = %v, want 1", got)
+	}
+
+	// Recover: ClusterVersionFailing=False.
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.ClusterVersionFailing),
+		Status: metav1.ConditionFalse,
+		Reason: "AsExpected",
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 4 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonClusterVersionFailing); got != 1 {
+		t.Errorf("after recovery: ClusterVersionFailing = %v, want 1", got)
+	}
+
+	// Recurrence: fail again → counter = 2.
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.ClusterVersionFailing),
+		Status: metav1.ConditionTrue,
+		Reason: "FromClusterVersion",
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 5 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonClusterVersionFailing); got != 2 {
+		t.Errorf("after recurrence: ClusterVersionFailing = %v, want 2", got)
+	}
+}
+
 func TestClusterDeletionCleansUpInstallationStageMetric(t *testing.T) {
 	hcluster := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{

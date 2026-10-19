@@ -747,12 +747,13 @@ func collectInstallationStageMetric(ch chan<- prometheus.Metric, hcluster *hyper
 }
 
 // collectInstallationFailureReasonMetric tracks episode-based failure reason counters
-// using per-CPC Available condition transitions. A failure episode is defined by a
-// CPC Available condition Status transition from True (or absent) to False.
-// Subsequent scrapes observing the same ongoing Status=False do not re-increment.
-// Reason changes within an ongoing Status=False episode are ignored. If the failure
-// resolves (Status returns to True) and recurs, that is a new episode.
-// Simultaneous CPC failures are tracked independently — if 3 CPCs transition to
+// using per-CPC Available condition transitions and HC-level condition transitions.
+// A failure episode is defined by a condition Status transition into the failure state
+// (False for CPC Available / InfrastructureReady, True for ClusterVersionFailing).
+// Subsequent scrapes observing the same ongoing failure status do not re-increment.
+// Reason changes within an ongoing failure episode are ignored. If the failure
+// resolves and recurs, that is a new episode.
+// Simultaneous failures are tracked independently — if 3 CPCs transition to
 // Available=False, that is 3 episodes.
 func (c *hostedClustersMetricsCollector) collectInstallationFailureReasonMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string, cpcs []hyperv1.ControlPlaneComponent) {
 	ck := clusterKey{namespace: hcluster.Namespace, name: hcluster.Name}
@@ -770,6 +771,14 @@ func (c *hostedClustersMetricsCollector) collectInstallationFailureReasonMetric(
 		cpc := &cpcs[i]
 		c.trackCPCAvailableEpisode(ck, cpc)
 	}
+
+	// Track HC-level conditions for failure reasons not surfaced at CPC level.
+	// InfrastructureReady=False with reason RouteNotAdmitted → route admission failure.
+	c.trackHCConditionEpisode(ck, hcluster.Status.Conditions,
+		hyperv1.InfrastructureReady, metav1.ConditionFalse, "")
+	// ClusterVersionFailing=True → CVO failure episode.
+	c.trackHCConditionEpisode(ck, hcluster.Status.Conditions,
+		hyperv1.ClusterVersionFailing, metav1.ConditionTrue, hyperv1.ReasonClusterVersionFailing)
 
 	// Emit counters for all known reasons.
 	for _, reason := range knownFailureReasons {
@@ -802,6 +811,47 @@ func (c *hostedClustersMetricsCollector) trackCPCAvailableEpisode(ck clusterKey,
 		c.lastSourceAvailableStatus[sk] = currentStatus
 	} else if currentStatus == metav1.ConditionFalse && prevStatus != metav1.ConditionFalse {
 		// Status transitioned from True/absent to False: new failure episode.
+		c.lastSourceAvailableStatus[sk] = currentStatus
+		if _, known := c.failureReasonCounts[ck][currentReason]; known {
+			c.failureReasonCounts[ck][currentReason]++
+		}
+	} else {
+		c.lastSourceAvailableStatus[sk] = currentStatus
+	}
+}
+
+// trackHCConditionEpisode tracks an HC-level condition for failure episode counting.
+// failureStatus is the condition Status value that represents a failure (e.g.,
+// ConditionFalse for InfrastructureReady, ConditionTrue for ClusterVersionFailing).
+// failureReason overrides the condition's Reason if non-empty (used when the
+// condition type name itself is the desired failure reason label).
+func (c *hostedClustersMetricsCollector) trackHCConditionEpisode(
+	ck clusterKey, conditions []metav1.Condition,
+	condType hyperv1.ConditionType, failureStatus metav1.ConditionStatus, failureReason string,
+) {
+	sk := conditionSourceKey{cluster: ck, source: string(condType)}
+	cond := meta.FindStatusCondition(conditions, string(condType))
+
+	// Determine if currently in failure state and the reason to record.
+	isFailing := cond != nil && cond.Status == failureStatus
+	// Normalize to ConditionFalse = failing, ConditionTrue = healthy for episode tracking.
+	currentStatus := metav1.ConditionTrue
+	currentReason := ""
+	if isFailing {
+		currentStatus = metav1.ConditionFalse
+		if failureReason != "" {
+			currentReason = failureReason
+		} else {
+			currentReason = cond.Reason
+		}
+	}
+
+	prevStatus, seen := c.lastSourceAvailableStatus[sk]
+	if !seen {
+		// First observation: record baseline without incrementing.
+		c.lastSourceAvailableStatus[sk] = currentStatus
+	} else if currentStatus == metav1.ConditionFalse && prevStatus != metav1.ConditionFalse {
+		// Transitioned into failure: new episode.
 		c.lastSourceAvailableStatus[sk] = currentStatus
 		if _, known := c.failureReasonCounts[ck][currentReason]; known {
 			c.failureReasonCounts[ck][currentReason]++
