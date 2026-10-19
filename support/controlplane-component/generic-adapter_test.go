@@ -2,13 +2,19 @@ package controlplanecomponent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/upsert"
+
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -303,8 +309,23 @@ func TestNewGenericControllerConfigAdapter(t *testing.T) {
 	adapter := NewGenericControllerConfigAdapter("0.0.0.0:8443", "tcp4")
 	g.Expect(adapter).ToNot(BeNil())
 
+	// NewGenericControllerConfigAdapter depends on the existence of
+	// a config map holding the active feature gates for the hosted
+	// cluster, create a client with one.
+	client := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: config.FeatureGateConfigMapName},
+				Data:       map[string]string{config.FeatureGateConfigKey: "{}"},
+			},
+		).
+		Build()
+
 	cm := &corev1.ConfigMap{}
 	ctx := WorkloadContext{
+		Client:                   client,
+		UserReleaseImageProvider: testutil.FakeImageProvider(),
 		HCP: &hyperv1.HostedControlPlane{
 			Spec: hyperv1.HostedControlPlaneSpec{
 				Configuration: &hyperv1.ClusterConfiguration{},
@@ -317,4 +338,60 @@ func TestNewGenericControllerConfigAdapter(t *testing.T) {
 	g.Expect(cm.Data).To(HaveKey("config.yaml"))
 	g.Expect(cm.Data["config.yaml"]).To(ContainSubstring("bindAddress: 0.0.0.0:8443"))
 	g.Expect(cm.Data["config.yaml"]).To(ContainSubstring("bindNetwork: tcp4"))
+	g.Expect(cm.Data["config.yaml"]).To(Not(ContainSubstring("curvePreferences:")))
+}
+
+func TestNewGenericControllerConfigAdapterWithTLSGroups(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	adapter := NewGenericControllerConfigAdapter("0.0.0.0:8443", "tcp4")
+	g.Expect(adapter).ToNot(BeNil())
+
+	featureGates := configv1.FeatureGate{
+		Status: configv1.FeatureGateStatus{
+			FeatureGates: []configv1.FeatureGateDetails{
+				{
+					Enabled: []configv1.FeatureGateAttributes{
+						{
+							Name: features.FeatureGateTLSGroupPreferences,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	serialized, err := json.Marshal(featureGates)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	client := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: config.FeatureGateConfigMapName},
+				Data:       map[string]string{config.FeatureGateConfigKey: string(serialized)},
+			},
+		).
+		Build()
+
+	cm := &corev1.ConfigMap{}
+	ctx := WorkloadContext{
+		Client: client,
+		UserReleaseImageProvider: testutil.FakeImageProvider(
+			testutil.WithVersion("5.1.0"),
+		),
+		HCP: &hyperv1.HostedControlPlane{
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Configuration: &hyperv1.ClusterConfiguration{},
+			},
+		},
+	}
+
+	err = adapter(ctx, cm)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(cm.Data).To(HaveKey("config.yaml"))
+	g.Expect(cm.Data["config.yaml"]).To(ContainSubstring("bindAddress: 0.0.0.0:8443"))
+	g.Expect(cm.Data["config.yaml"]).To(ContainSubstring("bindNetwork: tcp4"))
+	g.Expect(cm.Data["config.yaml"]).To(ContainSubstring("curvePreferences:"))
 }
