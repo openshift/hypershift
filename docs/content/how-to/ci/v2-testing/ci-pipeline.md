@@ -184,10 +184,11 @@ flowchart TD
 If you need a new cluster variant, add it to `ClusterSpecs()` and include it in the default plan's `TestMatrix()` in your platform's lifecycle file (e.g., `test/e2e/v2/lifecycle/azure.go`):
 
 ```diff
-// ClusterSpecs() — cluster creation parameters
+// ClusterSpecs() — cluster lifecycle parameters
 +{
-+    Variant:   "my-new-variant",
-+    ExtraArgs: []string{"--my-flag=value"},
++    Variant:     "my-new-variant",
++    CreateArgs:  []string{"--my-flag=value"},
++    DestroyArgs: []string{"--my-destroy-flag=value"},
 +},
 
 // TestMatrix() — test execution parameters
@@ -242,12 +243,11 @@ type PlatformConfig interface {
     DefaultTestPlan() TestPlan
     TestMatrix() TestMatrix
     PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
-    // Also: Name(), DefaultBaseDomain(), CreateArgs(),
-    // SetupTestEnv(sharedDir), DestroyArgs()
+    // Also: Name(), DefaultBaseDomain(), SetupTestEnv(sharedDir)
 }
 ```
 
-See [`test/e2e/v2/lifecycle/platform.go`](https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/platform.go) for the full `PlatformConfig` interface, including `Name()`, `DefaultBaseDomain()`, `CreateArgs()`, `SetupTestEnv()`, and `DestroyArgs()`.
+See [`test/e2e/v2/lifecycle/platform.go`](https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/platform.go) for the full `PlatformConfig` interface, including `Name()`, `DefaultBaseDomain()`, and `SetupTestEnv()`. Cluster creation and destruction flags are declared in `ClusterSpec.CreateArgs` and `ClusterSpec.DestroyArgs`.
 
 Register your platform in the `NewPlatformConfig()` switch in `test/e2e/v2/lifecycle/platform.go`:
 

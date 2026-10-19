@@ -17,7 +17,7 @@ limitations under the License.
 // destroy-guests destroys all HostedClusters created by the v2 e2e
 // lifecycle tests. Cluster identities are read from the cluster
 // manifest written by create-guests to SHARED_DIR. Platform-specific
-// destroy flags come from PlatformConfig.DestroyArgs().
+// destroy flags are captured in the manifest from each ClusterSpec.
 // All clusters are destroyed in parallel with best-effort semantics.
 package main
 
@@ -94,7 +94,7 @@ func destroyCluster(hypershiftBin string, entry lifecycle.ClusterEntry, platform
 		"--infra-id=" + entry.InfraID,
 		"--cluster-grace-period=" + clusterGracePeriod,
 	}
-	args = append(args, platform.DestroyArgs()...)
+	args = append(args, entry.DestroyArgs...)
 
 	log.Printf("Running: %s %v", hypershiftBin, args)
 

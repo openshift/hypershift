@@ -116,6 +116,12 @@ func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 }
 
 func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
+	destroyArgs := []string{
+		"--azure-creds=" + a.creds,
+		"--location=" + a.location,
+		"--dns-zone-rg-name=" + a.dnsZoneRG,
+	}
+
 	commonArgs := []string{
 		"--azure-creds=" + a.creds,
 		"--diagnostics-storage-account-type=Managed",
@@ -159,30 +165,34 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 	return []ClusterSpec{
 		{
 			Variant:                 "public",
-			ExtraArgs:               clusterArgs(publicExtraArgs...),
+			DestroyArgs:             destroyArgs,
+			CreateArgs:              clusterArgs(publicExtraArgs...),
 			DumpArgs:                []string{"--azure-creds=" + a.creds},
 			InitialNodePoolReplicas: &twoInitialReplicas,
 		},
 		{
 			Variant:                 "private",
+			DestroyArgs:             destroyArgs,
 			DumpArgs:                []string{"--azure-creds=" + a.creds},
 			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs: clusterArgs(
+			CreateArgs: clusterArgs(
 				"--endpoint-access=Private",
 				"--endpoint-access-private-nat-subnet-id="+a.privateNATSubnetID,
 			),
 		},
 		{
 			Variant:                 "oauth-lb",
+			DestroyArgs:             destroyArgs,
 			DumpArgs:                []string{"--azure-creds=" + a.creds},
 			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               clusterArgs("--oauth-publishing-strategy=LoadBalancer"),
+			CreateArgs:              clusterArgs("--oauth-publishing-strategy=LoadBalancer"),
 		},
 		{
 			Variant:                 "oauth-lb-private",
+			DestroyArgs:             destroyArgs,
 			DumpArgs:                []string{"--azure-creds=" + a.creds},
 			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs: clusterArgs(
+			CreateArgs: clusterArgs(
 				"--endpoint-access=Private",
 				"--endpoint-access-private-nat-subnet-id="+a.privateNATSubnetID,
 				"--oauth-publishing-strategy=LoadBalancer",
@@ -190,16 +200,18 @@ func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Clust
 		},
 		{
 			Variant:                 "upgrade",
+			DestroyArgs:             destroyArgs,
 			DumpArgs:                []string{"--azure-creds=" + a.creds},
 			ReleaseImage:            n1Image,
 			InitialNodePoolReplicas: &twoInitialReplicas,
-			ExtraArgs:               clusterArgs("--control-plane-availability-policy=HighlyAvailable"),
+			CreateArgs:              clusterArgs("--control-plane-availability-policy=HighlyAvailable"),
 		},
 		{
 			Variant:                 "external-oidc",
+			DestroyArgs:             destroyArgs,
 			DumpArgs:                []string{"--azure-creds=" + a.creds},
 			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               clusterArgs(),
+			CreateArgs:              clusterArgs(),
 		},
 	}
 }
@@ -382,14 +394,6 @@ func (a *AzurePlatformConfig) SetupTestEnv(sharedDir string) {
 	os.Setenv("AZURE_PRIVATE_NAT_SUBNET_ID", azurePrivateNATSubnetID)
 
 	setupExternalOIDCTestEnv(sharedDir)
-}
-
-func (a *AzurePlatformConfig) DestroyArgs() []string {
-	return []string{
-		"--azure-creds=" + a.creds,
-		"--location=" + a.location,
-		"--dns-zone-rg-name=" + a.dnsZoneRG,
-	}
 }
 
 func envOrDefault(key, defaultVal string) string {

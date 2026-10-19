@@ -160,10 +160,11 @@ func run(ctx context.Context, cfg envConfig) error {
 		named[i] = namedSpec{ClusterSpec: spec, name: name}
 		clusterNames[spec.Variant] = name
 		entries[i] = lifecycle.ClusterEntry{
-			Variant:   spec.Variant,
-			Name:      name,
-			InfraID:   name,
-			Namespace: cfg.namespace,
+			Variant:     spec.Variant,
+			Name:        name,
+			InfraID:     name,
+			Namespace:   cfg.namespace,
+			DestroyArgs: spec.DestroyArgs,
 		}
 		log.Printf("Cluster %s: name=%s", spec.Variant, name)
 	}
@@ -300,7 +301,7 @@ func buildCreateArgs(cfg envConfig, ns namedSpec) []string {
 		args = append(args, "--etcd-storage-class="+cfg.etcdSC)
 	}
 
-	args = append(args, ns.ExtraArgs...)
+	args = append(args, ns.CreateArgs...)
 
 	return args
 }

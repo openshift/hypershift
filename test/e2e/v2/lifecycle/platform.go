@@ -15,7 +15,8 @@ import (
 // ClusterSpec describes a single cluster and its CLI arguments for lifecycle tests.
 type ClusterSpec struct {
 	Variant      string   `json:"variant"`
-	ExtraArgs    []string `json:"extraArgs,omitempty"`
+	CreateArgs   []string `json:"createArgs,omitempty"`
+	DestroyArgs  []string `json:"destroyArgs,omitempty"`
 	DumpArgs     []string `json:"dumpArgs,omitempty"`
 	ReleaseImage string   `json:"releaseImage,omitempty"` // override (empty = use default)
 
@@ -206,10 +207,6 @@ type PlatformConfig interface {
 	// before test execution (e.g., reading subnet IDs from
 	// SHARED_DIR files).
 	SetupTestEnv(sharedDir string)
-
-	// DestroyArgs returns platform-specific args for
-	// "hypershift destroy cluster <platform>".
-	DestroyArgs() []string
 }
 
 // NewPlatformConfig creates a PlatformConfig for the given platform
