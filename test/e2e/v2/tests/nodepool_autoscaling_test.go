@@ -573,9 +573,11 @@ func AutoscalingScaleFromZeroTest(getTestCtx internal.TestContextGetter) {
 
 		// Verify NodePool starts with 0 replicas
 		GinkgoWriter.Println("Verifying NodePool starts with 0 replicas")
-		err = testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), scaleFromZeroNP)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(scaleFromZeroNP.Status.Replicas).To(Equal(int32(0)), "NodePool should start with 0 replicas")
+		Consistently(func(g Gomega) {
+			g.Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), scaleFromZeroNP)).To(Succeed())
+			g.Expect(scaleFromZeroNP.Status.Replicas).To(Equal(int32(0)),
+				"NodePool should remain at 0 replicas before workload is created")
+		}).WithTimeout(30 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 
 		// Create workload targeting the scale-from-zero NodePool to trigger scale-up.
 		// Use 2 pods with modest resource requests — enough to require at least 1 node.
@@ -628,6 +630,10 @@ func AutoscalingScaleFromZeroTest(getTestCtx internal.TestContextGetter) {
 			for _, pod := range pods.Items {
 				g.Expect(pod.Spec.NodeName).NotTo(BeEmpty(),
 					"pod %s should be scheduled to a node", pod.Name)
+				node := &corev1.Node{}
+				g.Expect(hcClient.Get(ctx, crclient.ObjectKey{Name: pod.Spec.NodeName}, node)).To(Succeed())
+				g.Expect(node.Labels).To(HaveKeyWithValue(hyperv1.NodePoolLabel, scaleFromZeroNP.Name),
+					"pod %s should be on a node from the scale-from-zero NodePool", pod.Name)
 				g.Expect(pod.Status.Phase).To(BeElementOf(corev1.PodRunning, corev1.PodSucceeded),
 					"pod %s should be running or succeeded, got %s", pod.Name, pod.Status.Phase)
 			}
