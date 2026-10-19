@@ -47,6 +47,27 @@ func TestHCPEtcdBackupFeatureGate(t *testing.T) {
 	}
 }
 
+func TestIgnitionPayloadSystemFeatureGate(t *testing.T) {
+	testcases := []struct {
+		name       string
+		featureSet configv1.FeatureSet
+		expected   bool
+	}{
+		{name: "When the feature set is Default, it should disable IgnitionPayloadSystem", featureSet: configv1.Default, expected: false},
+		{name: "When the feature set is TechPreviewNoUpgrade, it should enable IgnitionPayloadSystem", featureSet: configv1.TechPreviewNoUpgrade, expected: true},
+		{name: "When the feature set is DevPreviewNoUpgrade, it should disable IgnitionPayloadSystem", featureSet: configv1.DevPreviewNoUpgrade, expected: false},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			featuregate.ConfigureFeatureSet(string(tc.featureSet))
+			actual := featuregate.Gate().Enabled(featuregate.IgnitionPayloadSystem)
+			assert.Equal(t, tc.expected, actual,
+				"IgnitionPayloadSystem feature gate enabled state should match expected value for feature set %s", tc.featureSet)
+		})
+	}
+}
+
 func TestGCPPlatformFeatureGate(t *testing.T) {
 	testcases := []struct {
 		name                string
