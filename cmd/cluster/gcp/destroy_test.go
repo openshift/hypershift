@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -11,10 +12,14 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	gcpinfra "github.com/openshift/hypershift/cmd/infra/gcp"
 	"github.com/openshift/hypershift/cmd/log"
+	hyperapi "github.com/openshift/hypershift/support/api"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/go-logr/logr"
 )
@@ -81,22 +86,22 @@ func expectedCleanupOptions() (gcpinfra.DestroyIAMOptions, gcpinfra.DestroyInfra
 		}
 }
 
-// recordCleanup checks the complete options passed to each cloud cleanup stage.
-func recordCleanup(t *testing.T, calls *[]string, iamErr, infraErr error) {
+// recordingDestroyer checks the complete options passed to each cloud cleanup stage.
+func recordingDestroyer(t *testing.T, calls *[]string, iamErr, infraErr error) clusterDestroyer {
 	t.Helper()
 	g := NewGomegaWithT(t)
-	originalIAM, originalInfra := runDestroyIAM, runDestroyInfra
-	t.Cleanup(func() { runDestroyIAM, runDestroyInfra = originalIAM, originalInfra })
 	expectedIAM, expectedInfra := expectedCleanupOptions()
-	runDestroyIAM = func(_ context.Context, opts gcpinfra.DestroyIAMOptions, _ logr.Logger) error {
-		*calls = append(*calls, "IAM")
-		g.Expect(opts).To(Equal(expectedIAM))
-		return iamErr
-	}
-	runDestroyInfra = func(_ context.Context, opts gcpinfra.DestroyInfraOptions, _ logr.Logger) error {
-		*calls = append(*calls, "Infra")
-		g.Expect(opts).To(Equal(expectedInfra))
-		return infraErr
+	return clusterDestroyer{
+		destroyIAM: func(_ context.Context, opts gcpinfra.DestroyIAMOptions, _ logr.Logger) error {
+			*calls = append(*calls, "IAM")
+			g.Expect(opts).To(Equal(expectedIAM))
+			return iamErr
+		},
+		destroyInfra: func(_ context.Context, opts gcpinfra.DestroyInfraOptions, _ logr.Logger) error {
+			*calls = append(*calls, "Infra")
+			g.Expect(opts).To(Equal(expectedInfra))
+			return infraErr
+		},
 	}
 }
 
@@ -152,6 +157,8 @@ func TestCleanupOptions(t *testing.T) {
 }
 
 func TestDestroyPlatformSpecifics(t *testing.T) {
+	t.Parallel()
+
 	iamErr, infraErr := errors.New("IAM cleanup failed"), errors.New("infrastructure cleanup failed")
 	for _, test := range []struct {
 		name                       string
@@ -168,12 +175,14 @@ func TestDestroyPlatformSpecifics(t *testing.T) {
 		{name: "When both deletions fail, it should retain both errors", iamErr: iamErr, infraErr: infraErr, calls: []string{"IAM", "Infra"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			g := NewGomegaWithT(t)
 			var calls []string
-			recordCleanup(t, &calls, test.iamErr, test.infraErr)
+			d := recordingDestroyer(t, &calls, test.iamErr, test.infraErr)
 			opts := validDestroyOptions()
 			opts.GCPPlatform.PreserveIAM, opts.GCPPlatform.PreserveInfra = test.preserveIAM, test.preserveInfra
-			err := destroyPlatformSpecifics(context.Background(), opts, nil)
+			err := d.destroyPlatformSpecifics(context.Background(), opts, nil)
 			g.Expect(calls).To(Equal(test.calls))
 			g.Expect(errors.Is(err, iamErr)).To(Equal(test.iamErr != nil))
 			g.Expect(errors.Is(err, infraErr)).To(Equal(test.infraErr != nil))
@@ -184,12 +193,16 @@ func TestDestroyPlatformSpecifics(t *testing.T) {
 	}
 }
 
-func TestDestroyCluster(t *testing.T) {
+func TestDestroy(t *testing.T) {
+	t.Parallel()
+
+	destroyErr := errors.New("cluster deletion failed")
 	for _, test := range []struct {
 		name                                       string
 		mutate                                     func(*hyperv1.HostedCluster)
 		missingCluster, preserveIAM, preserveInfra bool
 		getError                                   error
+		destroyError                               error
 		errorText                                  string
 		calls                                      []string
 	}{
@@ -206,6 +219,7 @@ func TestDestroyCluster(t *testing.T) {
 			hc.Spec.Platform.GCP.WorkloadIdentity.ProjectNumber = "other-project"
 		}, errorText: "workload identity project number must contain only digits; use --preserve-iam"},
 		{name: "When references are valid, it should delete the cluster and invoke cleanup", calls: []string{"delete", "IAM", "Infra"}},
+		{name: "When cluster deletion fails, it should return the error without cloud cleanup", destroyError: destroyErr, errorText: destroyErr.Error(), calls: []string{"delete"}},
 		{name: "When annotation JSON is malformed, it should stop before deletion", mutate: func(hc *hyperv1.HostedCluster) { hc.Annotations[infraResourcesAnnotation] = "{" }, errorText: "invalid HostedCluster annotation"},
 		{name: "When the annotation version is unsupported, it should stop before deletion", mutate: func(hc *hyperv1.HostedCluster) {
 			hc.Annotations[infraResourcesAnnotation] = `{"version":2,"router":"router","nat":"nat","firewallRule":"firewall"}`
@@ -226,37 +240,86 @@ func TestDestroyCluster(t *testing.T) {
 		}, preserveIAM: true, preserveInfra: true, calls: []string{"delete"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			g := NewGomegaWithT(t)
 			hc := validDestroyCluster()
+			hc.Name, hc.Namespace = "test-cluster", "clusters"
 			if test.mutate != nil {
 				test.mutate(hc)
 			}
-			if test.missingCluster {
-				hc = nil
+			builder := fake.NewClientBuilder().WithScheme(hyperapi.Scheme)
+			if !test.missingCluster {
+				builder.WithObjects(hc)
 			}
-			originalGet, originalDestroy := getCluster, destroyCluster
-			t.Cleanup(func() {
-				getCluster, destroyCluster = originalGet, originalDestroy
-			})
+			if test.getError != nil {
+				builder.WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(context.Context, crclient.WithWatch, crclient.ObjectKey, crclient.Object, ...crclient.GetOption) error {
+						return test.getError
+					},
+				})
+			}
+			client := builder.Build()
 			var calls []string
-			recordCleanup(t, &calls, nil, nil)
-			getCluster = func(context.Context, crclient.Client, *core.DestroyOptions) (*hyperv1.HostedCluster, error) {
-				return hc, test.getError
-			}
-			destroyCluster = func(ctx context.Context, client crclient.Client, cluster *hyperv1.HostedCluster, opts *core.DestroyOptions, cleanup core.DestroyPlatformSpecifics) error {
+			d := recordingDestroyer(t, &calls, nil, nil)
+			d.destroyCluster = func(ctx context.Context, cleanupClient crclient.Client, cluster *hyperv1.HostedCluster, opts *core.DestroyOptions, cleanup core.DestroyPlatformSpecifics) error {
 				calls = append(calls, "delete")
-				g.Expect(cluster).To(BeIdenticalTo(hc))
+				g.Expect(cleanupClient).To(BeIdenticalTo(client))
+				g.Expect(cluster.Name).To(Equal(hc.Name))
+				g.Expect(cluster.Namespace).To(Equal(hc.Namespace))
+				g.Expect(cluster.Spec).To(Equal(hc.Spec))
 				g.Expect(opts.InfraID).To(Equal(hc.Spec.InfraID))
 				g.Expect(opts.GCPPlatform.PreserveIAM).To(Equal(test.preserveIAM))
 				g.Expect(opts.GCPPlatform.PreserveInfra).To(Equal(test.preserveInfra))
 				g.Expect(cleanup).ToNot(BeNil())
-				return cleanup(ctx, opts, client)
+				if test.destroyError != nil {
+					return test.destroyError
+				}
+				return cleanup(ctx, opts, cleanupClient)
 			}
-			err := DestroyCluster(context.Background(), &core.DestroyOptions{Name: "test-cluster", Namespace: "clusters", Log: log.Log, GCPPlatform: core.GCPPlatformDestroyOptions{PreserveIAM: test.preserveIAM, PreserveInfra: test.preserveInfra}}, nil)
+			err := d.destroy(context.Background(), &core.DestroyOptions{Name: hc.Name, Namespace: hc.Namespace, Log: log.Log, GCPPlatform: core.GCPPlatformDestroyOptions{PreserveIAM: test.preserveIAM, PreserveInfra: test.preserveInfra}}, client)
 			expectError(t, err, test.errorText)
+			if test.getError != nil {
+				g.Expect(errors.Is(err, test.getError)).To(BeTrue())
+			}
+			if test.destroyError != nil {
+				g.Expect(errors.Is(err, test.destroyError)).To(BeTrue())
+			}
 			g.Expect(calls).To(Equal(test.calls))
 		})
 	}
+}
+
+func TestDestroyCluster(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When the management client is missing, it should return an error", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		g.Expect(DestroyCluster(context.Background(), &core.DestroyOptions{Log: log.Log}, nil)).To(MatchError("management-cluster client is required"))
+	})
+
+	t.Run("When the HostedCluster is missing, it should return manual cleanup guidance", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		err := DestroyCluster(context.Background(), &core.DestroyOptions{Name: "test-cluster", Namespace: "clusters", Log: log.Log}, client)
+		g.Expect(err).To(MatchError(ContainSubstring("Cannot destroy infrastructure without cluster as source of truth")))
+	})
+
+	t.Run("When both resource types are preserved, it should complete cluster deletion with the real lifecycle", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+		hc := validDestroyCluster()
+		hc.Name, hc.Namespace = "test-cluster", "clusters"
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hc).Build()
+		opts := &core.DestroyOptions{
+			Name: hc.Name, Namespace: hc.Namespace, Log: log.Log, ClusterGracePeriod: time.Second,
+			GCPPlatform: core.GCPPlatformDestroyOptions{PreserveIAM: true, PreserveInfra: true},
+		}
+		g.Expect(DestroyCluster(context.Background(), opts, client)).To(Succeed())
+		g.Expect(apierrors.IsNotFound(client.Get(context.Background(), crclient.ObjectKeyFromObject(hc), &hyperv1.HostedCluster{}))).To(BeTrue())
+	})
 }
 
 func TestValidateInputs(t *testing.T) {

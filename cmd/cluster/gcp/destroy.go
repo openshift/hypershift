@@ -16,17 +16,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Test stubs - production uses real implementation, tests can override
-var (
-	getCluster     = core.GetCluster
-	destroyCluster = core.DestroyCluster
-	runDestroyIAM  = func(ctx context.Context, opts gcpinfra.DestroyIAMOptions, log logr.Logger) error {
-		return opts.Run(ctx, log)
-	}
-	runDestroyInfra = func(ctx context.Context, opts gcpinfra.DestroyInfraOptions, log logr.Logger) error {
-		return opts.Run(ctx, log)
-	}
-)
+// clusterDestroyer keeps lifecycle and cloud cleanup dependencies local to each
+// destruction request.
+type clusterDestroyer struct {
+	destroyCluster func(context.Context, crclient.Client, *hyperv1.HostedCluster, *core.DestroyOptions, core.DestroyPlatformSpecifics) error
+	destroyIAM     func(context.Context, gcpinfra.DestroyIAMOptions, logr.Logger) error
+	destroyInfra   func(context.Context, gcpinfra.DestroyInfraOptions, logr.Logger) error
+}
 
 // NewDestroyCommand creates a new cobra command for destroying GCP clusters
 func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
@@ -64,14 +60,14 @@ func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.Clien
 // destroyPlatformSpecifics destroys GCP infrastructure and IAM resources.
 // Destroy order mirrors reverse of creation: IAM first (identities/permissions), then infrastructure (networking).
 // Creation order: infra → IAM → cluster, so destruction is: cluster → IAM → infra.
-func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions, _ crclient.Client) error {
+func (d clusterDestroyer) destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions, _ crclient.Client) error {
 	var errs []error
 	iamOptions, infraOptions := cleanupOptions(o)
 
 	// Destroy IAM first (unless --preserve-iam is set)
 	if !o.GCPPlatform.PreserveIAM {
 		o.Log.Info("Destroying IAM")
-		if err := runDestroyIAM(ctx, iamOptions, o.Log); err != nil {
+		if err := d.destroyIAM(ctx, iamOptions, o.Log); err != nil {
 			errs = append(errs, fmt.Errorf("failed to destroy IAM: %w", err))
 		}
 	} else {
@@ -81,7 +77,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions, _ crc
 	// Destroy infrastructure last (unless --preserve-infra is set)
 	if !o.GCPPlatform.PreserveInfra {
 		o.Log.Info("Destroying GCP infrastructure")
-		if err := runDestroyInfra(ctx, infraOptions, o.Log); err != nil {
+		if err := d.destroyInfra(ctx, infraOptions, o.Log); err != nil {
 			errs = append(errs, fmt.Errorf("failed to destroy infrastructure: %w", err))
 		}
 	} else {
@@ -187,7 +183,20 @@ func validateInputs(o *core.DestroyOptions) error {
 // HostedCluster must exist - it is the source of truth for all destroy parameters.
 // For orphaned resource cleanup, use 'hypershift destroy infra gcp' and 'hypershift destroy iam gcp'.
 func DestroyCluster(ctx context.Context, o *core.DestroyOptions, client crclient.Client) error {
-	hostedCluster, err := getCluster(ctx, client, o)
+	d := clusterDestroyer{
+		destroyCluster: core.DestroyCluster,
+		destroyIAM: func(ctx context.Context, opts gcpinfra.DestroyIAMOptions, log logr.Logger) error {
+			return opts.Run(ctx, log)
+		},
+		destroyInfra: func(ctx context.Context, opts gcpinfra.DestroyInfraOptions, log logr.Logger) error {
+			return opts.Run(ctx, log)
+		},
+	}
+	return d.destroy(ctx, o, client)
+}
+
+func (d clusterDestroyer) destroy(ctx context.Context, o *core.DestroyOptions, client crclient.Client) error {
+	hostedCluster, err := core.GetCluster(ctx, client, o)
 	if err != nil {
 		return err
 	}
@@ -204,5 +213,5 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions, client crclient
 		return err
 	}
 
-	return destroyCluster(ctx, client, hostedCluster, o, destroyPlatformSpecifics)
+	return d.destroyCluster(ctx, client, hostedCluster, o, d.destroyPlatformSpecifics)
 }
