@@ -22,6 +22,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -92,14 +93,7 @@ func scaleExternalDNS(testCtx *internal.TestContext, replicas int32) error {
 			if pod.DeletionTimestamp != nil || pod.Status.Phase != corev1.PodRunning {
 				return false, nil
 			}
-			ready := false
-			for _, condition := range pod.Status.Conditions {
-				if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-					ready = true
-					break
-				}
-			}
-			if !ready {
+			if !podspec.IsPodReady(&pod) {
 				return false, nil
 			}
 		}

@@ -655,11 +655,12 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore] CrossClusterRestore", Label("cross-cluster-restore"), Ordered, Serial, func() {
 
 	var (
-		platformCfg        backupRestorePlatformConfig
-		sourceCtx          *internal.TestContext
-		targetCtx          *internal.TestContext
-		backupName         string
-		expectedConditions []util.Condition
+		platformCfg                   backupRestorePlatformConfig
+		sourceCtx                     *internal.TestContext
+		targetCtx                     *internal.TestContext
+		targetExternalDNSNeedsRestore bool
+		backupName                    string
+		expectedConditions            []util.Condition
 	)
 
 	BeforeAll(func() {
@@ -691,6 +692,15 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 			Skip(fmt.Sprintf("Backup/restore test not supported on platform %s", hostedCluster.Spec.Platform.Type))
 		}
 		platformCfg = cfg
+		// Cleanup registered in BeforeAll runs after the entire ordered restore flow.
+		DeferCleanup(func() {
+			if !targetExternalDNSNeedsRestore {
+				return
+			}
+			if err := backuprestore.ScaleUpExternalDNS(targetCtx); err != nil {
+				GinkgoLogr.WithName("cleanup").Error(err, "failed to restore target ExternalDNS")
+			}
+		})
 	})
 
 	Context(ContextPreBackupControlPlane, func() {
@@ -742,6 +752,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 	Context(ContextBreakControlPlane, func() {
 		It("should stop target ExternalDNS", func() {
 			By("Scaling the target ExternalDNS Deployment to zero")
+			// Scaling can patch replicas and then fail while waiting for pods to stop.
+			targetExternalDNSNeedsRestore = true
 			err := backuprestore.ScaleDownExternalDNS(targetCtx)
 			Expect(err).NotTo(HaveOccurred(), "target ExternalDNS should stop before source teardown")
 		})
@@ -805,6 +817,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore]
 			By("Scaling the target ExternalDNS Deployment to one ready pod")
 			err = backuprestore.ScaleUpExternalDNS(targetCtx)
 			Expect(err).NotTo(HaveOccurred(), "target ExternalDNS should become ready after public service Routes are admitted")
+			targetExternalDNSNeedsRestore = false
 		})
 
 		It("should have control plane healthy after restore", func() {
