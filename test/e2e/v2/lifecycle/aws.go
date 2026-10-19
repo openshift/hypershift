@@ -111,6 +111,16 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 		// the assertion itself needs to change to decouple it from lifecycle somehow,
 		// or there's a gap in the v2 framework for this sort of use case...
 		{
+			// Dedicated cluster for the managed ingress DNS test. managedDNS is gated
+			// by the AWSManagedDNS feature gate, which only exists in TechPreviewNoUpgrade.
+			Variant: "managed-dns",
+			ExtraArgs: append(extraArgs, []string{
+				"--public-only",
+				"--feature-set=TechPreviewNoUpgrade",
+				"--managed-dns",
+			}...),
+		},
+		{
 			Variant: "karpenter",
 			ExtraArgs: clusterArgs(
 				// Enables Karpenter-based node provisioning (AutoNode)
@@ -171,6 +181,11 @@ func (a *AWSPlatformConfig) DefaultTestPlan() TestPlan {
 func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 	return TestMatrix{
 		Parallel: []TestGroup{
+			{
+				Name:        "managed-dns",
+				Variant:     "managed-dns",
+				LabelFilter: "hosted-cluster-managed-dns",
+			},
 			{
 				Name:        "karpenter",
 				Variant:     "karpenter",

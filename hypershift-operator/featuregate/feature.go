@@ -62,6 +62,13 @@ const (
 	// alpha: v0.1.49
 	// beta: x.y.z
 	DeterministicLBIP featuregate.Feature = "DeterministicLBIP"
+
+	// AWSManagedDNS enables CPO-managed Route53 DNS zones for AWS hosted control planes.
+	// When enabled, the managedDNS field is available on AWSPlatformSpec, allowing the
+	// CPO to create and reconcile ingress DNS zones in the customer's AWS account.
+	// owner: @typeid
+	// alpha: v0.1.84
+	AWSManagedDNS featuregate.Feature = "AWSManagedDNS"
 )
 
 // Initialize new features here
@@ -76,6 +83,7 @@ var (
 	etcdShardingFeature            = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	osStreamsFeature               = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 	deterministicLBIPFeature       = featuregates.NewFeature(DeterministicLBIP, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	awsManagedDNSFeature           = featuregates.NewFeature(AWSManagedDNS, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -88,6 +96,7 @@ func init() {
 	allFeatures.AddFeature(etcdShardingFeature)
 	allFeatures.AddFeature(osStreamsFeature)
 	allFeatures.AddFeature(deterministicLBIPFeature)
+	allFeatures.AddFeature(awsManagedDNSFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
