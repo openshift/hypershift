@@ -132,6 +132,38 @@ func skipIfTLSFlagPropagationNotSupported(ctx context.Context, mgmtClient crclie
 	}
 }
 
+// skipIfPKIOperatorTLSConfigNotSupported skips the current test when the deployed
+// control-plane-pki-operator does not consume a TLS config file (no --config flag on
+// its deployment). Older operator releases (e.g. 4.22) run the operator without
+// --config, so the control-plane-pki-operator-config ConfigMap is never rendered and
+// the TLS-profile-driven config assertions do not apply; the binary still defaults to
+// TLS 1.2. The deployment exists in every operator version, so its --config flag is a
+// reliable feature probe — unlike the ConfigMap itself, whose presence is what these
+// tests verify (gating on it would mask a regression where it fails to be created).
+func skipIfPKIOperatorTLSConfigNotSupported(ctx context.Context, mgmtClient crclient.Client, namespace string) {
+	GinkgoHelper()
+
+	deployment := &appsv1.Deployment{}
+	Expect(mgmtClient.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: pkiOperatorTLSComponent.name}, deployment)).
+		To(Succeed(), "failed to get %s deployment", pkiOperatorTLSComponent.name)
+	for _, container := range deployment.Spec.Template.Spec.Containers {
+		if container.Name == pkiOperatorTLSComponent.name {
+			for _, arg := range container.Command {
+				if strings.HasPrefix(arg, "--config=") {
+					return
+				}
+			}
+			for _, arg := range container.Args {
+				if strings.HasPrefix(arg, "--config=") {
+					return
+				}
+			}
+			Skip(fmt.Sprintf("%s deployment does not pass --config in this operator version; the %s TLS config is not rendered",
+				pkiOperatorTLSComponent.name, pkiOperatorTLSComponent.configMapName))
+		}
+	}
+}
+
 func requireDefaultOrIntermediateTLSProfile(hostedCluster *hyperv1.HostedCluster) {
 	hasProfile := hostedCluster.Spec.Configuration != nil &&
 		hostedCluster.Spec.Configuration.APIServer != nil &&
@@ -529,6 +561,8 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("control-plane-pki-operator should have control-plane-pki-operator-config ConfigMap with TLS configuration", func() {
+			skipIfPKIOperatorTLSConfigNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace)
+
 			// Check in management cluster's control plane namespace, not hosted cluster
 			mgmtClient := tc.MgmtClient
 			cm := &corev1.ConfigMap{}
@@ -549,6 +583,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			requireDefaultOrIntermediateTLSProfile(hostedCluster)
+			skipIfPKIOperatorTLSConfigNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace)
 
 			mgmtClient := tc.MgmtClient
 			cm := &corev1.ConfigMap{}
@@ -676,6 +711,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("control-plane-pki-operator should propagate minTLSVersion VersionTLS13 with Modern profile", func() {
 			requireModernProfileSet(tc)
+			skipIfPKIOperatorTLSConfigNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace)
 
 			Eventually(func(g Gomega) {
 				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
@@ -706,6 +742,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("control-plane-pki-operator should accept TLS 1.3 but reject TLS 1.2 with Modern profile", func() {
 			requireModernProfileSet(tc)
+			skipIfPKIOperatorTLSConfigNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace)
 
 			// Wait for PKI operator pod to restart and pick up the new TLS config
 			pkiPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
@@ -780,6 +817,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("control-plane-pki-operator should propagate minTLSVersion VersionTLS12 after downgrade", func() {
 			requireModernProfileCleared(tc)
+			skipIfPKIOperatorTLSConfigNotSupported(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace)
 
 			Eventually(func(g Gomega) {
 				expectComponentMinTLSVersion(g, tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
