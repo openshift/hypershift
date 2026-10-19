@@ -67,7 +67,9 @@ for provider in $CAPI_PROVIDERS; do
   fi
 
   # Build every package in the module, not just the ones the root imports.
-  if ! (cd "$mod" && "$GO" build ./... 2>&1 | sed "s|^|  $provider: |" >&2); then
+  # Provider modules are not vendored, so override the -mod=vendor that CI
+  # sets in GOFLAGS; it would otherwise fail with "inconsistent vendoring".
+  if ! (cd "$mod" && GOWORK=off GOFLAGS=-mod=readonly "$GO" build ./... 2>&1 | sed "s|^|  $provider: |" >&2); then
     fail "$provider module does not build"
   fi
 done
