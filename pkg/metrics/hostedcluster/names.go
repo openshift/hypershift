@@ -23,4 +23,6 @@ const (
 	HostedClusterManagedAzureInfoMetricName       = "hosted_cluster_managed_azure_info"
 	HostedClusterAzureInfoMetricName              = "hosted_cluster_azure_info"
 	AcrPullIdentityConfiguredMetricName           = "hypershift_cluster_acr_pull_identity_configured"
+	InstallationStageMetricName                   = "hypershift_hostedclusters_installation_stage"
+	InstallationFailureReasonTotalMetricName      = "hypershift_hostedclusters_installation_failure_reason_total"
 )

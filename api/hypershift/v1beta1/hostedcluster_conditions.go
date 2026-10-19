@@ -293,6 +293,14 @@ const (
 	// keeps serving and the HostedCluster does not become degraded.
 	// The condition is absent when no defaultCertificate is configured.
 	IngressDefaultCertificateSynced ConditionType = "IngressDefaultCertificateSynced"
+
+	// ManagementClusterResourcePressure indicates whether any control plane pods
+	// are experiencing scheduling failures due to resource pressure on the
+	// management cluster (e.g., insufficient CPU, memory, or node capacity).
+	// **True** means one or more control plane pods cannot be scheduled.
+	// **False** means all control plane pods are scheduled or running.
+	// **Unknown** means the pod status could not be determined.
+	ManagementClusterResourcePressure ConditionType = "ManagementClusterResourcePressure"
 )
 
 // Reasons for PublicEndpointExposed condition.
@@ -413,6 +421,15 @@ const (
 	ReEncryptionCompletedReason     = "ReEncryptionCompleted"
 	ReEncryptionFailedReason        = "ReEncryptionFailed"
 	ReEncryptionWaitingForKASReason = "ReEncryptionWaitingForKASConvergence"
+
+	ReasonPodSchedulingFailed              = "PodSchedulingFailed"
+	ReasonCrashLoopBackOff                 = "CrashLoopBackOff"
+	ReasonImagePullBackOff                 = "ImagePullBackOff"
+	ReasonRouteNotAdmitted                 = "RouteNotAdmitted"
+	ReasonClusterVersionFailing            = "ClusterVersionFailing"
+	ReasonControlPlanePodStatusUnavailable = "ControlPlanePodStatusUnavailable"
+	ReasonNoPressure                       = "NoPressure"
+	ReasonFailedScheduling                 = "FailedScheduling"
 )
 
 // Messages.

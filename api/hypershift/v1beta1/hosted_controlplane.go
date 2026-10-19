@@ -434,6 +434,11 @@ type HostedControlPlaneStatus struct {
 	// initialization contains fields that track the status of the initialization of the HostedControlPlane.
 	// +optional
 	Initialization HostedControlPlaneInitializationStatus `json:"initialization,omitzero"`
+
+	// installation tracks the progress of initial control plane provisioning.
+	// Nil means installation stage tracking is not yet available.
+	// +optional
+	Installation *InstallationStatus `json:"installation,omitempty"`
 }
 
 // HostedControlPlaneInitializationStatus provides observations of the HostedControlPlane initialization process.

@@ -1,6 +1,7 @@
 package controlplanecomponent
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -196,7 +197,8 @@ func TestReconcileComponentStatus(t *testing.T) {
 
 			var hcpGeneration int64 = 5
 			cpContext := ControlPlaneContext{
-				Client: client,
+				Context: context.Background(),
+				Client:  client,
 				HCP: &hyperv1.HostedControlPlane{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:  namespace,

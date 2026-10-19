@@ -540,6 +540,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 
 	// Copy the control plane version status from the hostedcontrolplane
 	propagateControlPlaneVersion(hcluster, hcp)
+	propagateInstallationStage(hcluster, hcp)
 
 	// Set the AutoNodeEnabled condition reflecting both spec intent and actual component rollout progress.
 	autoNodeCondition, autoNodeProgressing := r.reconcileAutoNodeEnabledCondition(ctx, hcluster, controlPlaneNamespace.Name)

@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -1820,5 +1821,143 @@ func TestCollectFailureConditionCounts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestClusterDeletionCleansUpFailureReasonTrackingState(t *testing.T) {
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:             "hc",
+			Namespace:        "any",
+			CreationTimestamp: metav1.Time{Time: now},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+		},
+	}
+
+	// Create a CPC in the HC's control plane namespace so per-CPC episode
+	// tracking populates lastSourceAvailableStatus.
+	cpc := &hyperv1.ControlPlaneComponent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd",
+			Namespace: "any-hc",
+		},
+		Status: hyperv1.ControlPlaneComponentStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: "AsExpected",
+				},
+			},
+		},
+	}
+
+	clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, cpc).Build()
+
+	collector := createHostedClustersMetricsCollector(c, clk).(*hostedClustersMetricsCollector)
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(collector)
+
+	// First gather: establish tracking state for the cluster.
+	result1, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("first gather failed: %v", err)
+	}
+
+	// Verify failure reason metrics are emitted for the cluster.
+	failureMetric := findMetricValue(&result1, hcmetrics.InstallationFailureReasonTotalMetricName)
+	if failureMetric == nil {
+		t.Fatal("expected installation_failure_reason_total metric to be emitted, but it was not found")
+	}
+
+	// Verify tracking state exists.
+	ck := clusterKey{namespace: "any", name: "hc"}
+	if _, exists := collector.failureReasonCounts[ck]; !exists {
+		t.Fatal("expected failureReasonCounts to contain the cluster key after first collect")
+	}
+	if len(collector.lastSourceAvailableStatus) == 0 {
+		t.Fatal("expected lastSourceAvailableStatus to be populated after first collect")
+	}
+
+	// Delete the cluster.
+	if err := c.Delete(context.Background(), hcluster); err != nil {
+		t.Fatalf("failed to delete hcluster: %v", err)
+	}
+
+	// Second gather: verify cleanup.
+	result2, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("second gather failed: %v", err)
+	}
+
+	// Verify no failure reason metrics are emitted for the deleted cluster.
+	failureMetric2 := findMetricValue(&result2, hcmetrics.InstallationFailureReasonTotalMetricName)
+	if failureMetric2 != nil {
+		t.Errorf("expected no installation_failure_reason_total metrics after cluster deletion, but found %d series", len(failureMetric2.Metric))
+	}
+
+	// Verify tracking state is cleaned up.
+	if _, exists := collector.failureReasonCounts[ck]; exists {
+		t.Error("expected failureReasonCounts to be cleaned up after cluster deletion")
+	}
+	for sk := range collector.lastSourceAvailableStatus {
+		if sk.cluster == ck {
+			t.Errorf("expected lastSourceAvailableStatus for cluster %v to be cleaned up, but found source %q", ck, sk.source)
+		}
+	}
+}
+
+func TestClusterDeletionCleansUpInstallationStageMetric(t *testing.T) {
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:             "hc",
+			Namespace:        "any",
+			CreationTimestamp: metav1.Time{Time: now},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+		},
+		Status: hyperv1.HostedClusterStatus{
+			Installation: &hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageControlPlaneProvisioning,
+			},
+		},
+	}
+
+	clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build()
+
+	collector := createHostedClustersMetricsCollector(c, clk).(*hostedClustersMetricsCollector)
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(collector)
+
+	// First gather: verify installation stage metric is emitted.
+	result1, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("first gather failed: %v", err)
+	}
+	stageMetric := findMetricValue(&result1, hcmetrics.InstallationStageMetricName)
+	if stageMetric == nil {
+		t.Fatal("expected installation_stage metric to be emitted, but it was not found")
+	}
+
+	// Delete the cluster.
+	if err := c.Delete(context.Background(), hcluster); err != nil {
+		t.Fatalf("failed to delete hcluster: %v", err)
+	}
+
+	// Second gather: verify no installation stage metrics for the deleted cluster.
+	result2, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("second gather failed: %v", err)
+	}
+	stageMetric2 := findMetricValue(&result2, hcmetrics.InstallationStageMetricName)
+	if stageMetric2 != nil {
+		t.Errorf("expected no installation_stage metrics after cluster deletion, but found %d series", len(stageMetric2.Metric))
 	}
 }

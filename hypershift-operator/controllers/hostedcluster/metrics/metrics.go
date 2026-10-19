@@ -6,6 +6,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	platformgcp "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/gcp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
@@ -65,6 +66,9 @@ const (
 
 	HostedClusterAzureInfoMetricHelp    = "Reports Azure information about the given HostedCluster"
 	acrPullIdentityConfiguredMetricHelp = "Indicates whether a HostedCluster has an ACR pull managed identity configured (1=configured, 0=not configured). Only emitted for Azure platform clusters."
+
+	installationStageMetricHelp              = "Reports the current installation stage of a HostedCluster as a state-set gauge (1 for current stage, 0 for others)."
+	installationFailureReasonTotalMetricHelp = "Counts installation failure reason episodes per HostedCluster. Incremented when the failure reason changes."
 )
 
 // semantically constant - not supposed to be changed at runtime
@@ -182,7 +186,44 @@ var (
 	acrPullIdentityConfiguredMetricDesc = prometheus.NewDesc(
 		hcmetrics.AcrPullIdentityConfiguredMetricName, acrPullIdentityConfiguredMetricHelp,
 		hclusterLabels, nil)
+
+	installationStageMetricDesc = prometheus.NewDesc(
+		hcmetrics.InstallationStageMetricName, installationStageMetricHelp,
+		append(hclusterLabels, "stage"), nil)
+
+	installationFailureReasonTotalMetricDesc = prometheus.NewDesc(
+		hcmetrics.InstallationFailureReasonTotalMetricName, installationFailureReasonTotalMetricHelp,
+		append(hclusterLabels, "reason"), nil)
+
+	knownInstallationStages = []hyperv1.InstallationStage{
+		hyperv1.InstallationStageInitializing,
+		hyperv1.InstallationStageControlPlaneProvisioning,
+		hyperv1.InstallationStageWaitingForKubeconfig,
+		hyperv1.InstallationStageWaitingForOperators,
+		hyperv1.InstallationStageInstallationComplete,
+	}
+
+	knownFailureReasons = []string{
+		hyperv1.ReasonPodSchedulingFailed,
+		hyperv1.ReasonCrashLoopBackOff,
+		hyperv1.ReasonImagePullBackOff,
+		hyperv1.ReasonRouteNotAdmitted,
+		hyperv1.ReasonClusterVersionFailing,
+	}
 )
+
+// clusterKey uniquely identifies a HostedCluster for metric tracking.
+type clusterKey struct {
+	namespace string
+	name      string
+}
+
+// conditionSourceKey identifies a specific condition source (CPC name or HC condition type)
+// within a cluster for per-source episode tracking.
+type conditionSourceKey struct {
+	cluster clusterKey
+	source  string // CPC name or HC condition type (e.g., "InfrastructureReady")
+}
 
 type hostedClustersMetricsCollector struct {
 	client.Client
@@ -191,6 +232,13 @@ type hostedClustersMetricsCollector struct {
 	transitionDurationMetric *prometheus.HistogramVec
 
 	lastCollectTime time.Time
+
+	// failureReasonCounts tracks episode-based failure reason counters per cluster.
+	failureReasonCounts map[clusterKey]map[string]float64
+	// lastSourceAvailableStatus tracks the last observed Available status per condition source
+	// (CPC or HC condition). A status transition from True/absent to False triggers a new
+	// failure episode. Reason changes within an ongoing False do not re-increment.
+	lastSourceAvailableStatus map[conditionSourceKey]metav1.ConditionStatus
 }
 
 func createHostedClustersMetricsCollector(client client.Client, clock clock.Clock) prometheus.Collector {
@@ -202,7 +250,9 @@ func createHostedClustersMetricsCollector(client client.Client, clock clock.Cloc
 			Help:    transitionDurationMetricHelp,
 			Buckets: []float64{5, 10, 20, 30, 60, 90, 120, 180, 240, 300, 360, 480, 600},
 		}, []string{"condition"}),
-		lastCollectTime: time.UnixMilli(0),
+		lastCollectTime:           time.UnixMilli(0),
+		failureReasonCounts:       make(map[clusterKey]map[string]float64),
+		lastSourceAvailableStatus: make(map[conditionSourceKey]metav1.ConditionStatus),
 	}
 }
 
@@ -248,6 +298,20 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
+	// List all CPCs across all namespaces for per-CPC failure episode tracking.
+	// A single list call avoids O(N) API calls where N = number of HCs.
+	allCPCs := &hyperv1.ControlPlaneComponentList{}
+	if err := c.List(context.Background(), allCPCs); err != nil {
+		log.Error(err, "failed to list control plane components while collecting metrics")
+		// Non-fatal: per-cluster metrics still work, failure reason tracking degrades gracefully.
+		allCPCs = &hyperv1.ControlPlaneComponentList{}
+	}
+	cpcsByNamespace := make(map[string][]hyperv1.ControlPlaneComponent, len(allCPCs.Items))
+	for i := range allCPCs.Items {
+		ns := allCPCs.Items[i].Namespace
+		cpcsByNamespace[ns] = append(cpcsByNamespace[ns], allCPCs.Items[i])
+	}
+
 	for k := range hclusters.Items {
 		hcluster := &hclusters.Items[k]
 
@@ -258,12 +322,29 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		c.collectTransitionDurationMetrics(hcluster, currentCollectTime)
 
 		hclusterLabelValues := []string{hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID}
-		c.collectPerClusterMetrics(ch, hcluster, hclusterLabelValues)
+		cpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		c.collectPerClusterMetrics(ch, hcluster, hclusterLabelValues, cpcsByNamespace[cpNamespace])
 	}
 
 	emitAggregatedMetrics(ch, identityProviderToHClustersCount, platformToHClustersCount, platformToFailureConditionToHClustersCount)
 	c.transitionDurationMetric.Collect(ch)
 	c.lastCollectTime = currentCollectTime
+
+	// Clean up stale failure reason tracking for deleted clusters.
+	activeClusters := make(map[clusterKey]struct{}, len(hclusters.Items))
+	for k := range hclusters.Items {
+		activeClusters[clusterKey{namespace: hclusters.Items[k].Namespace, name: hclusters.Items[k].Name}] = struct{}{}
+	}
+	for ck := range c.failureReasonCounts {
+		if _, exists := activeClusters[ck]; !exists {
+			delete(c.failureReasonCounts, ck)
+		}
+	}
+	for sk := range c.lastSourceAvailableStatus {
+		if _, exists := activeClusters[sk.cluster]; !exists {
+			delete(c.lastSourceAvailableStatus, sk)
+		}
+	}
 }
 
 func initIdentityProviderCounts() map[configv1.IdentityProviderType]int {
@@ -337,7 +418,7 @@ func (c *hostedClustersMetricsCollector) collectTransitionDurationMetrics(hclust
 	}
 }
 
-func (c *hostedClustersMetricsCollector) collectPerClusterMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+func (c *hostedClustersMetricsCollector) collectPerClusterMetrics(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string, cpcs []hyperv1.ControlPlaneComponent) {
 	collectInitialAvailabilityMetric(ch, c.clock, hcluster, hclusterLabelValues)
 	collectInitialRollingOutMetric(ch, c.clock, hcluster, hclusterLabelValues)
 	collectUpgradingDurationMetric(ch, c.clock, hcluster, hclusterLabelValues)
@@ -350,6 +431,8 @@ func (c *hostedClustersMetricsCollector) collectPerClusterMetrics(ch chan<- prom
 	collectAwsCredsMetric(ch, hcluster, hclusterLabelValues)
 	collectGcpCredsMetric(ch, hcluster, hclusterLabelValues)
 	collectDeletingMetrics(ch, c.clock, hcluster, hclusterLabelValues)
+	collectInstallationStageMetric(ch, hcluster, hclusterLabelValues)
+	c.collectInstallationFailureReasonMetric(ch, hcluster, hclusterLabelValues, cpcs)
 }
 
 func collectInitialAvailabilityMetric(ch chan<- prometheus.Metric, clk clock.Clock, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
@@ -640,4 +723,90 @@ func emitAggregatedMetrics(ch chan<- prometheus.Metric, identityProviderToHClust
 // Returns the time.Time in UTC format.
 func (c *hostedClustersMetricsCollector) expiryTimeProxyCA(hcluster *hyperv1.HostedCluster) (*time.Time, error) {
 	return proxy.ExpiryTimeProxyCA(context.TODO(), c.Client, hcluster)
+}
+
+// collectInstallationStageMetric emits the state-set gauge for the HostedCluster's
+// current installation stage: 1 for the active stage, 0 for all others.
+func collectInstallationStageMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string) {
+	var currentStage hyperv1.InstallationStage
+	if hcluster.Status.Installation != nil {
+		currentStage = hcluster.Status.Installation.Stage
+	}
+	for _, stage := range knownInstallationStages {
+		val := 0.0
+		if stage == currentStage {
+			val = 1.0
+		}
+		ch <- prometheus.MustNewConstMetric(
+			installationStageMetricDesc,
+			prometheus.GaugeValue,
+			val,
+			append(hclusterLabelValues, string(stage))...,
+		)
+	}
+}
+
+// collectInstallationFailureReasonMetric tracks episode-based failure reason counters
+// using per-CPC Available condition transitions. A failure episode is defined by a
+// CPC Available condition Status transition from True (or absent) to False.
+// Subsequent scrapes observing the same ongoing Status=False do not re-increment.
+// Reason changes within an ongoing Status=False episode are ignored. If the failure
+// resolves (Status returns to True) and recurs, that is a new episode.
+// Simultaneous CPC failures are tracked independently — if 3 CPCs transition to
+// Available=False, that is 3 episodes.
+func (c *hostedClustersMetricsCollector) collectInstallationFailureReasonMetric(ch chan<- prometheus.Metric, hcluster *hyperv1.HostedCluster, hclusterLabelValues []string, cpcs []hyperv1.ControlPlaneComponent) {
+	ck := clusterKey{namespace: hcluster.Namespace, name: hcluster.Name}
+
+	// Initialize counter map if needed.
+	if _, exists := c.failureReasonCounts[ck]; !exists {
+		c.failureReasonCounts[ck] = make(map[string]float64, len(knownFailureReasons))
+		for _, r := range knownFailureReasons {
+			c.failureReasonCounts[ck][r] = 0
+		}
+	}
+
+	// Track per-CPC Available condition transitions for failure episodes.
+	for i := range cpcs {
+		cpc := &cpcs[i]
+		c.trackCPCAvailableEpisode(ck, cpc)
+	}
+
+	// Emit counters for all known reasons.
+	for _, reason := range knownFailureReasons {
+		ch <- prometheus.MustNewConstMetric(
+			installationFailureReasonTotalMetricDesc,
+			prometheus.CounterValue,
+			c.failureReasonCounts[ck][reason],
+			append(hclusterLabelValues, reason)...,
+		)
+	}
+}
+
+// trackCPCAvailableEpisode tracks a CPC's Available condition for failure episode
+// counting. It increments the counter when the condition transitions from non-False
+// to False, using the condition's Reason as the failure reason label.
+func (c *hostedClustersMetricsCollector) trackCPCAvailableEpisode(ck clusterKey, cpc *hyperv1.ControlPlaneComponent) {
+	sk := conditionSourceKey{cluster: ck, source: cpc.Name}
+	cond := meta.FindStatusCondition(cpc.Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
+
+	currentStatus := metav1.ConditionTrue
+	currentReason := ""
+	if cond != nil {
+		currentStatus = cond.Status
+		currentReason = cond.Reason
+	}
+
+	prevStatus, seen := c.lastSourceAvailableStatus[sk]
+	if !seen {
+		// First observation: record baseline without incrementing (per EP restart semantics).
+		c.lastSourceAvailableStatus[sk] = currentStatus
+	} else if currentStatus == metav1.ConditionFalse && prevStatus != metav1.ConditionFalse {
+		// Status transitioned from True/absent to False: new failure episode.
+		c.lastSourceAvailableStatus[sk] = currentStatus
+		if _, known := c.failureReasonCounts[ck][currentReason]; known {
+			c.failureReasonCounts[ck][currentReason]++
+		}
+	} else {
+		c.lastSourceAvailableStatus[sk] = currentStatus
+	}
 }
