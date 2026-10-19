@@ -15,7 +15,7 @@ Versions used while writing this doc:
 
 !!! important
 
-    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer.
+    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer. `Other` is currently required when using `allocateNodeCIDRs: Enabled` or `disableMultiNetwork: true`.
 
 ## Calico
 ### Deployment

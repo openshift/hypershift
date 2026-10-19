@@ -4947,7 +4947,7 @@ Versions used while writing this doc:
 
 !!! important
 
-    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer.
+    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer. `Other` is currently required when using `allocateNodeCIDRs: Enabled` or `disableMultiNetwork: true`.
 
 ## Calico
 ### Deployment
@@ -8644,7 +8644,7 @@ Versions used while writing this doc:
 
 !!! important
 
-    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer.
+    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer. `Other` is currently required when using `allocateNodeCIDRs: Enabled` or `disableMultiNetwork: true`.
 
 ## Calico
 ### Deployment
@@ -33454,7 +33454,7 @@ Versions used while writing this doc:
 
 !!! important
 
-    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer.
+    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer. `Other` is currently required when using `allocateNodeCIDRs: Enabled` or `disableMultiNetwork: true`.
 
 ## Calico
 ### Deployment
@@ -47587,8 +47587,9 @@ in the hosted cluster. This prevents the installation of multus daemon sets in t
 guest cluster and the multus-admission-controller in the management cluster.
 Default is false (Multus is enabled).
 This field is immutable.
-This field can only be set to true when networkType is &ldquo;Other&rdquo;. Setting it to true
-with any other networkType will result in a validation error during cluster creation.</p>
+This field can only be set to true when networkType is &ldquo;Other&rdquo;. Other third-party provider
+names are not accepted here for rollback compatibility. Setting it to true with any other
+networkType will result in a validation error during cluster creation.</p>
 </td>
 </tr>
 <tr>
@@ -47693,15 +47694,19 @@ NetworkType
 <em>(Optional)</em>
 <p>networkType specifies the network provider used for cluster networking.
 HyperShift recognizes exactly &ldquo;OVNKubernetes&rdquo; and &ldquo;OpenShiftSDN&rdquo; as built-in providers.
+OpenShiftSDN is deprecated; new clusters can use it only on the PowerVS platform, and
+clusters using it cannot be upgraded to a new minor version.
 Any other value names a third-party CNI that HyperShift does not deploy; the cluster
 administrator is responsible for installing it. Set this field to the actual CNI provider
 name, such as &ldquo;Calico&rdquo; or &ldquo;Cilium&rdquo;. The value &ldquo;Other&rdquo; remains supported for compatibility.
 The value must be 1-63 characters, start and end with a letter or digit, and contain only
-letters, digits, &lsquo;.&rsquo;, &lsquo;_&rsquo; or &lsquo;-&rsquo;. Provider names are case-sensitive.
+letters, digits, &lsquo;.&rsquo;, &lsquo;_&rsquo; or &lsquo;-&rsquo;. Provider names are case-sensitive. Case variants of the
+built-in names, such as &ldquo;ovnkubernetes&rdquo;, are rejected. The value &ldquo;Other&rdquo; is currently
+required when allocateNodeCIDRs is &ldquo;Enabled&rdquo; or when
+spec.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork is true.
 This field is authoritative for the cluster network type. Setting networkType within
 spec.configuration.network has no effect; this field alone determines the network type
 propagated to the cluster-network-operator.
-Conflict validation between these fields is tracked by the TODO on ClusterConfiguration.Network below.
 Defaults to OVNKubernetes.
 This field is immutable.</p>
 </td>
@@ -56060,7 +56065,7 @@ NetworkFilter
 OVNKubernetes and OpenShiftSDN are the built-in providers recognized by HyperShift and must use
 that exact spelling. Any other value is treated as the name of a third-party CNI; set it to the
 actual provider name you will install, such as Calico or Cilium. The value Other is also supported
-for compatibility.</p>
+for compatibility. Case variants of the built-in names are rejected.</p>
 </p>
 <table>
 <thead>

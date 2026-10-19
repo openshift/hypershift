@@ -342,6 +342,49 @@ tests:
             route: {}
     expectedError: "allocateNodeCIDRs can only be set to Enabled when networkType is 'Other'"
 
+  - name: When allocateNodeCIDRs is Enabled and networkType is Cilium it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          allocateNodeCIDRs: Enabled
+          networkType: Cilium
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "allocateNodeCIDRs can only be set to Enabled when networkType is 'Other'"
+
   # --- disableMultiNetwork validation (HostedControlPlane spec-level rule) ---
   - name: When disableMultiNetwork is true and networkType is Other it should pass
     initial: |
@@ -394,6 +437,51 @@ tests:
       spec:
         networking:
           networkType: OpenShiftSDN
+        operatorConfiguration:
+          clusterNetworkOperator:
+            disableMultiNetwork: true
+        releaseImage: quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64
+        pullSecret:
+          name: pull-secret
+        issuerURL: https://issuer.example.com
+        sshKey:
+          name: ssh-key
+        infraID: example-abcde
+        platform:
+          type: None
+        dns:
+          baseDomain: example.com
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "disableMultiNetwork can only be set to true when networkType is 'Other'"
+
+  - name: When disableMultiNetwork is true and networkType is Cilium it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        networking:
+          networkType: Cilium
         operatorConfiguration:
           clusterNetworkOperator:
             disableMultiNetwork: true
