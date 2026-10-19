@@ -172,10 +172,6 @@ type PlatformConfig interface {
 	// images from the CI environment.
 	ClusterSpecs(releaseImage, n1Image string) []ClusterSpec
 
-	// CreateArgs returns platform-specific args for
-	// "hypershift create cluster <platform>".
-	CreateArgs() []string
-
 	// PreCreate runs platform-specific setup before clusters are
 	// created (e.g., deploying OIDC providers that must be ready
 	// before the cluster exists).

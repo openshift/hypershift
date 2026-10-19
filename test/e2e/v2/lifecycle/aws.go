@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -60,26 +61,44 @@ func (a *AWSPlatformConfig) DefaultBaseDomain() string {
 }
 
 func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
+	commonArgs := []string{
+		"--region=" + a.region,
+		"--zones=" + strings.Join(a.zones, ","),
+		"--root-volume-size=64",
+		"--root-volume-type=gp3",
+		"--pods-labels=hypershift-e2e-test-label=test",
+		"--toleration=key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule",
+		"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
+		"--annotations=hypershift.openshift.io/skip-release-image-validation=true",
+	}
+	for _, tag := range a.additionalTags {
+		commonArgs = append(commonArgs, "--additional-tags="+tag)
+	}
+
 	// Parse EXTRA_ARGS from environment if provided
 	var extraArgs []string
 	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
 		extraArgs = strings.Fields(envArgs)
 	}
+
+	clusterArgs := func(args ...string) []string {
+		return slices.Concat(commonArgs, extraArgs, args)
+	}
 	oneInitialReplica := 1
 	return []ClusterSpec{
 		{
 			Variant: "public",
-			ExtraArgs: append(extraArgs, []string{
+			ExtraArgs: clusterArgs(
 				"--public-only",
 				"--feature-set=TechPreviewNoUpgrade",
-			}...),
+			),
 		},
 		{
 			Variant:      "upgrade",
 			ReleaseImage: n1Image,
-			ExtraArgs: append(extraArgs, []string{
+			ExtraArgs: clusterArgs(
 				"--control-plane-availability-policy=HighlyAvailable",
-			}...),
+			),
 		},
 		// The KarpenterBillingConsolidationTest actually tests hostedcluster teardown
 		// behavior and so needs its own dedicated cluster. This seems somewhat leaky
@@ -93,53 +112,36 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 		// or there's a gap in the v2 framework for this sort of use case...
 		{
 			Variant: "karpenter",
-			ExtraArgs: append(extraArgs, []string{
+			ExtraArgs: clusterArgs(
 				// Enables Karpenter-based node provisioning (AutoNode)
 				"--auto-node",
 				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
 				"--endpoint-access=PublicAndPrivate",
 				"--feature-set=TechPreviewNoUpgrade",
-			}...),
+			),
 		},
 		{
 			Variant:      "karpenter-upgrade",
 			ReleaseImage: n1Image,
-			ExtraArgs: append(extraArgs, []string{
+			ExtraArgs: clusterArgs(
 				// Enables Karpenter-based node provisioning (AutoNode)
 				"--auto-node",
 				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
 				"--endpoint-access=PublicAndPrivate",
 				"--control-plane-availability-policy=HighlyAvailable",
-			}...),
+			),
 		},
 		{
 			Variant:                 "autoscaling",
 			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               extraArgs,
+			ExtraArgs:               clusterArgs(),
 		},
 		{
 			Variant:                 "external-oidc",
 			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               extraArgs,
+			ExtraArgs:               clusterArgs(),
 		},
 	}
-}
-
-func (a *AWSPlatformConfig) CreateArgs() []string {
-	args := []string{
-		"--region=" + a.region,
-		"--zones=" + strings.Join(a.zones, ","),
-		"--root-volume-size=64",
-		"--root-volume-type=gp3",
-		"--pods-labels=hypershift-e2e-test-label=test",
-		"--toleration=key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule",
-		"--annotations=hypershift.openshift.io/cleanup-cloud-resources=true",
-		"--annotations=hypershift.openshift.io/skip-release-image-validation=true",
-	}
-	for _, tag := range a.additionalTags {
-		args = append(args, "--additional-tags="+tag)
-	}
-	return args
 }
 
 func (a *AWSPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error {
