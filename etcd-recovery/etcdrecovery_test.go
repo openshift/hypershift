@@ -107,7 +107,7 @@ func TestMemberName(t *testing.T) {
 			expected: "",
 		},
 		{
-			name:     "When the member has no name and an unparseable peer URL, it should return an empty name",
+			name:     "When the member has no name and an unparsable peer URL, it should return an empty name",
 			member:   &etcdserverpb.Member{PeerURLs: []string{"://not-a-url"}},
 			expected: "",
 		},
