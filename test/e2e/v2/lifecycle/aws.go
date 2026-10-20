@@ -85,7 +85,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 		return slices.Concat(commonArgs, extraArgs, args)
 	}
 	oneInitialReplica := 1
-	return []ClusterSpec{
+	specs := []ClusterSpec{
 		{
 			Variant: "public",
 			ExtraArgs: clusterArgs(
@@ -152,6 +152,17 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 			ExtraArgs:               clusterArgs(),
 		},
 	}
+
+	// Only include the KMS re-encryption variant when the primary etcd KMS key ARN is configured.
+	// This prevents the variant from appearing in regular e2e-v2-aws jobs that don't set this env var.
+	if kmsKeyARN := os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN"); kmsKeyARN != "" {
+		specs = append(specs, ClusterSpec{
+			Variant:   "kms-reencryption",
+			ExtraArgs: append(extraArgs, "--kms-key-arn="+kmsKeyARN),
+		})
+	}
+
+	return specs
 }
 
 func (a *AWSPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error {
@@ -201,6 +212,11 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 				Variant:     "karpenter-upgrade",
 				LabelFilter: "karpenter-upgrade",
 			},
+			{
+				Name:        "kms-reencryption",
+				Variant:     "kms-reencryption",
+				LabelFilter: "etcd-encryption-reencryption",
+			},
 		},
 		Sequential: []SequentialGroup{
 			{
@@ -212,7 +228,8 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 						LabelFilter: "hosted-cluster-aws || hosted-cluster-compliance || hosted-cluster-node-communication || " +
 							"hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || " +
 							"hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress || hosted-cluster-dns || " +
-							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
+							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry || " +
+							"etcd-encryption-reencryption",
 					},
 					{
 						Name:    "public-nodepool-rollouts",
