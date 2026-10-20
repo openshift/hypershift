@@ -1,10 +1,12 @@
 # Sync Community Fork
 
-A GitHub Actions workflow automatically pushes every commit on `main` to the [hypershift-community/hypershift](https://github.com/hypershift-community/hypershift) fork.
+A GitHub Actions workflow automatically pushes every commit on `main` and `release-*` branches to the [hypershift-community/hypershift](https://github.com/hypershift-community/hypershift) fork.
 
 ## How It Works
 
-The workflow is defined in `.github/workflows/sync-community-fork.yaml`. On every push to `main` it checks out the repository using a fine-grained Personal Access Token (PAT) and runs `git push` to the community fork. The PAT is used instead of the default `GITHUB_TOKEN` because the latter only has access to the source repository.
+The workflow is defined in `.github/workflows/sync-community-fork.yaml`. On every push to `main` or any `release-*` branch it checks out the repository using a fine-grained Personal Access Token (PAT) and pushes the triggering branch to the community fork. The PAT is used instead of the default `GITHUB_TOKEN` because the latter only has access to the source repository.
+
+Because the push target is derived from `github.ref_name`, no hardcoded branch list or API queries are needed — end-of-life release branches simply stop receiving pushes and are no longer synced.
 
 ## Configuration
 
@@ -45,5 +47,5 @@ The workflow requires one secret configured at the repository level:
 
    In the `openshift/hypershift` repository, go to **Settings > Secrets and variables > Actions** and update the `COMMUNITY_FORK_TOKEN` secret with the new token value.
 
-3. Verify the workflow runs successfully on the next push to `main`.
+3. Verify the workflow runs successfully on the next push to `main` or a `release-*` branch.
 4. Delete the old token from your GitHub account.
