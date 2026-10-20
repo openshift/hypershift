@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -122,10 +123,16 @@ func TestSupportedArchitectures(t *testing.T) {
 			expectedError: nil,
 		},
 		{
-			name:          "When platform is Azure, it should return unsupported platform error",
+			name:          "When platform is Azure, it should return AMD64 and ARM64 architectures",
 			platform:      hyperv1.AzurePlatform,
+			expected:      []string{hyperv1.ArchitectureAMD64, hyperv1.ArchitectureARM64},
+			expectedError: nil,
+		},
+		{
+			name:          "When platform is OpenStack, it should return unsupported platform error",
+			platform:      hyperv1.OpenStackPlatform,
 			expected:      nil,
-			expectedError: fmt.Errorf("unsupported platform: Azure"),
+			expectedError: fmt.Errorf("unsupported platform: OpenStack"),
 		},
 	}
 
@@ -145,7 +152,7 @@ func TestSupportedArchitectures(t *testing.T) {
 	}
 }
 
-func TestArchToAMILabelKey(t *testing.T) {
+func TestArchToImageMetadataKey(t *testing.T) {
 	testCases := []struct {
 		name     string
 		arch     string
@@ -166,7 +173,7 @@ func TestArchToAMILabelKey(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			g.Expect(ArchToAMILabelKey(tc.arch)).To(Equal(tc.expected))
+			g.Expect(ArchToImageMetadataKey(tc.arch, hyperkarpenterv1.UserDataAMILabel)).To(Equal(tc.expected))
 		})
 	}
 
