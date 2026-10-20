@@ -12,10 +12,11 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ClusterSpec describes a single cluster to create for lifecycle tests.
+// ClusterSpec describes a single cluster and its CLI arguments for lifecycle tests.
 type ClusterSpec struct {
 	Variant      string   `json:"variant"`
 	ExtraArgs    []string `json:"extraArgs,omitempty"`
+	DumpArgs     []string `json:"dumpArgs,omitempty"`
 	ReleaseImage string   `json:"releaseImage,omitempty"` // override (empty = use default)
 
 	// InitialNodePoolReplicas overrides the default initial NodePool replica count.
