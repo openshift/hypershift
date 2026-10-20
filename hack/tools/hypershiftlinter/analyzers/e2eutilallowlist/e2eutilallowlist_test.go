@@ -40,6 +40,23 @@ func TestIsAllowed(t *testing.T) {
 		want       bool
 	}{
 		{
+			name:       "When Azure diagnostics validation is shared with legacy E2E, it should be allowed",
+			pkgPath:    utilPkg + "/dump",
+			symbolName: "VerifyAzureMachineDiagnostics",
+			want:       true,
+		},
+		{
+			name:       "When Azure teardown diagnostics are reused by v2, it should be allowed",
+			pkgPath:    utilPkg + "/dump",
+			symbolName: "DumpAzureMachineDiagnostics",
+			want:       true,
+		},
+		{
+			name:       "When other legacy dump helpers are referenced, it should reject them",
+			pkgPath:    utilPkg + "/dump",
+			symbolName: "DumpHostedCluster",
+		},
+		{
 			name:       "When symbol is explicitly allowlisted, it should be allowed",
 			pkgPath:    utilPkg,
 			symbolName: "GetConfig",

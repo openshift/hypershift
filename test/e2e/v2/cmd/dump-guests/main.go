@@ -48,36 +48,45 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read cluster manifest: %v", err)
 	}
+	platform, err := lifecycle.NewPlatformConfig(os.Getenv("HYPERSHIFT_PLATFORM"), sharedDir)
+	if err != nil {
+		log.Fatalf("Failed to initialize platform config: %v", err)
+	}
 
 	log.Printf("Dumping %d clusters from manifest", len(manifest.Clusters))
-
-	var wg sync.WaitGroup
-	for _, entry := range manifest.Clusters {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			dumpCluster(*hypershiftBinary, artifactDir, entry.Name, entry.Namespace)
-		}()
-	}
-	wg.Wait()
-
+	dumpClusters(*hypershiftBinary, artifactDir, manifest.Clusters, platform.ClusterSpecs(os.Getenv("RELEASE_IMAGE_LATEST"), os.Getenv("OCP_IMAGE_N1")))
 	log.Println("All cluster dumps complete")
 }
 
-func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string) {
+func dumpClusters(hypershiftBinary, artifactDir string, entries []lifecycle.ClusterEntry, specs []lifecycle.ClusterSpec) {
+	specsByVariant := make(map[string]lifecycle.ClusterSpec, len(specs))
+	for _, spec := range specs {
+		specsByVariant[spec.Variant] = spec
+	}
+
+	var wg sync.WaitGroup
+	for _, entry := range entries {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			spec, ok := specsByVariant[entry.Variant]
+			if !ok {
+				log.Printf("WARNING: No cluster spec for variant %s; collecting generic diagnostics for %s", entry.Variant, entry.Name)
+			}
+			dumpCluster(hypershiftBinary, artifactDir, entry.Name, entry.Namespace, spec.DumpArgs)
+		}()
+	}
+	wg.Wait()
+}
+
+func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string, platformArgs []string) {
 	dumpDir := filepath.Join(artifactDir, clusterName)
 	if err := os.MkdirAll(dumpDir, 0755); err != nil {
 		log.Printf("WARNING: Failed to create artifact directory %s: %v", dumpDir, err)
 		return
 	}
 
-	args := []string{
-		"dump", "cluster",
-		"--artifact-dir=" + dumpDir,
-		"--dump-guest-cluster=true",
-		"--name=" + clusterName,
-		"--namespace=" + namespace,
-	}
+	args := dumpClusterArgs(dumpDir, clusterName, namespace, platformArgs)
 
 	log.Printf("Dumping cluster %s -> %s", clusterName, dumpDir)
 	log.Printf("Running: %s %v", hypershiftBinary, args)
@@ -87,8 +96,18 @@ func dumpCluster(hypershiftBinary, artifactDir, clusterName, namespace string) {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		log.Printf("WARNING: Failed to dump cluster %s: %v", clusterName, err)
-		return
+	} else {
+		log.Printf("Successfully dumped cluster %s", clusterName)
 	}
+}
 
-	log.Printf("Successfully dumped cluster %s", clusterName)
+func dumpClusterArgs(dumpDir, clusterName, namespace string, platformArgs []string) []string {
+	args := []string{
+		"dump", "cluster",
+		"--artifact-dir=" + dumpDir,
+		"--dump-guest-cluster=true",
+		"--name=" + clusterName,
+		"--namespace=" + namespace,
+	}
+	return append(args, platformArgs...)
 }

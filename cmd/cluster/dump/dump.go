@@ -146,6 +146,7 @@ type DumpOptions struct {
 	Kubeconfig  string
 	ArtifactDir string
 	ArchiveDump bool
+	Azure       *AzureDumpOptions
 	// LogCheckers is a list of functions that will
 	// get run over all raw logs if set.
 	LogCheckers []LogChecker
@@ -162,6 +163,10 @@ type DumpOptions struct {
 
 	Client         client.Client
 	ClientProvider *util.ClientProvider
+
+	// DumpClusterWithRetry reuses these options. Retry diagnostics setup failures,
+	// but do not repeat collection after it has been attempted.
+	azureDiagnosticsAttempted bool
 }
 
 func (opts *DumpOptions) managementClient() (client.Client, error) {
@@ -203,6 +208,7 @@ func NewDumpCommand(dumpCallback DumpCallback, clientProviders ...*util.ClientPr
 	const defaultDumpGuestClusterPolicy = "default-policy" // Not a real policy, placeholder to allow --dump-guest-cluster to be specified without a value
 	var dumpGuestClusterFlag string
 	var dumpGuestClusterThroughKubeService bool
+	var azureCredentialsFile string
 
 	cmd := &cobra.Command{
 		Use:          "cluster",
@@ -226,6 +232,7 @@ func NewDumpCommand(dumpCallback DumpCallback, clientProviders ...*util.ClientPr
 	cmd.Flags().StringVar(&opts.ImpersonateAs, "as", opts.ImpersonateAs, "The user or service account to impersonate to and used to execute the cluster dump command")
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
 	cmd.Flags().BoolVar(&opts.ArchiveDump, "archive-dump", opts.ArchiveDump, "Create a tar archive of the artifact directory")
+	cmd.Flags().StringVar(&azureCredentialsFile, "azure-creds", "", "Azure credentials file for worker machine diagnostics")
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
 	cmd.Flags().StringVar(&dumpGuestClusterFlag, "dump-guest-cluster", "", "Dump data plane content as well. "+
 		"Optionally takes an argument, a comma separated list of policies, here are the possible values: "+
@@ -241,6 +248,9 @@ func NewDumpCommand(dumpCallback DumpCallback, clientProviders ...*util.ClientPr
 	_ = cmd.Flags().MarkDeprecated("dump-guest-cluster-through-kube-service", "use --dump-guest-cluster=direct-kube-api-service-access instead")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if cmd.Flags().Changed("azure-creds") {
+			opts.Azure = &AzureDumpOptions{CredentialsFile: azureCredentialsFile}
+		}
 		isDumpingGuestCluster, err := strconv.ParseBool(dumpGuestClusterFlag)
 		if err == nil {
 			// Backward compatibility: when --dump-guest-cluster used to be a boolean flag
@@ -432,6 +442,12 @@ func createGuestKubeconfig(ctx context.Context, c client.Client, cpNamespace str
 }
 
 func DumpCluster(ctx context.Context, opts *DumpOptions) error {
+	if opts.Azure != nil {
+		if err := opts.dumpAzureMachineDiagnostics(ctx, collectAzureMachineDiagnostics); err != nil {
+			opts.Log.Error(err, "Failed to dump Azure machine diagnostics")
+		}
+	}
+
 	ocCommand, err := exec.LookPath("oc")
 	if err != nil || len(ocCommand) == 0 {
 		return fmt.Errorf("cannot find oc command")
