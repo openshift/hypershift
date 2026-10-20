@@ -2115,6 +2115,111 @@ func TestHCConditionEpisodeClusterVersionFailing(t *testing.T) {
 	}
 }
 
+func TestCollectInstallationStageMetricValues(t *testing.T) {
+	testCases := []struct {
+		name          string
+		installation  *hyperv1.InstallationStatus
+		activeStage   string
+		expectPresent bool
+	}{
+		{
+			name: "When stage is Initializing it should report 1 for Initializing and 0 for others",
+			installation: &hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageInitializing,
+			},
+			activeStage:   string(hyperv1.InstallationStageInitializing),
+			expectPresent: true,
+		},
+		{
+			name: "When stage is ControlPlaneProvisioning it should report 1 for that stage",
+			installation: &hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageControlPlaneProvisioning,
+			},
+			activeStage:   string(hyperv1.InstallationStageControlPlaneProvisioning),
+			expectPresent: true,
+		},
+		{
+			name: "When stage is InstallationComplete it should report 1 for that stage",
+			installation: &hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageInstallationComplete,
+			},
+			activeStage:   string(hyperv1.InstallationStageInstallationComplete),
+			expectPresent: true,
+		},
+		{
+			name:          "When installation is nil it should report 0 for all stages",
+			installation:  nil,
+			activeStage:   "",
+			expectPresent: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:             "hc",
+					Namespace:        "any",
+					CreationTimestamp: metav1.Time{Time: now},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+					Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Installation: tc.installation,
+				},
+			}
+
+			clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build()
+
+			reg := prometheus.NewPedanticRegistry()
+			reg.MustRegister(createHostedClustersMetricsCollector(c, clk))
+
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			stageMetric := findMetricValue(&result, hcmetrics.InstallationStageMetricName)
+			if !tc.expectPresent {
+				if stageMetric != nil {
+					t.Errorf("expected no installation_stage metric, but found one")
+				}
+				return
+			}
+			if stageMetric == nil {
+				t.Fatal("expected installation_stage metric to be emitted, but it was not found")
+			}
+
+			// Verify we get exactly len(knownInstallationStages) series.
+			if len(stageMetric.Metric) != len(knownInstallationStages) {
+				t.Errorf("expected %d stage series, got %d", len(knownInstallationStages), len(stageMetric.Metric))
+			}
+
+			// Check that exactly one series has value 1.0 (the active stage) and all others are 0.0.
+			for _, m := range stageMetric.Metric {
+				var stageLabel string
+				for _, lp := range m.Label {
+					if lp.GetName() == "stage" {
+						stageLabel = lp.GetValue()
+					}
+				}
+				if stageLabel == tc.activeStage && tc.activeStage != "" {
+					if m.Gauge.GetValue() != 1.0 {
+						t.Errorf("expected stage %q to have value 1.0, got %v", stageLabel, m.Gauge.GetValue())
+					}
+				} else {
+					if m.Gauge.GetValue() != 0.0 {
+						t.Errorf("expected stage %q to have value 0.0, got %v", stageLabel, m.Gauge.GetValue())
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestClusterDeletionCleansUpInstallationStageMetric(t *testing.T) {
 	hcluster := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
