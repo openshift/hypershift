@@ -3,6 +3,7 @@ package hostedcluster
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -10,10 +11,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -22,17 +21,16 @@ import (
 func TestReconcileManagementClusterResourcePressure(t *testing.T) {
 	const cpNamespace = "cp-ns"
 
-	// Helper: create a pending unschedulable pod.
-	unschedulablePod := func(name string, uid types.UID, message string) *corev1.Pod {
-		return &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: cpNamespace, UID: uid},
-			Status: corev1.PodStatus{
-				Phase: corev1.PodPending,
-				Conditions: []corev1.PodCondition{
+	// Helper: create a CPC with PodSchedulingFailed condition.
+	schedulingFailedCPC := func(name, message string) *hyperv1.ControlPlaneComponent {
+		return &hyperv1.ControlPlaneComponent{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: cpNamespace},
+			Status: hyperv1.ControlPlaneComponentStatus{
+				Conditions: []metav1.Condition{
 					{
-						Type:    corev1.PodScheduled,
-						Status:  corev1.ConditionFalse,
-						Reason:  "Unschedulable",
+						Type:    string(hyperv1.ControlPlaneComponentAvailable),
+						Status:  metav1.ConditionFalse,
+						Reason:  hyperv1.ReasonPodSchedulingFailed,
 						Message: message,
 					},
 				},
@@ -40,31 +38,36 @@ func TestReconcileManagementClusterResourcePressure(t *testing.T) {
 		}
 	}
 
-	// Helper: create a running/scheduled pod.
-	runningPod := func(name string, uid types.UID) *corev1.Pod {
-		return &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: cpNamespace, UID: uid},
-			Status: corev1.PodStatus{
-				Phase: corev1.PodRunning,
-				Conditions: []corev1.PodCondition{
-					{Type: corev1.PodScheduled, Status: corev1.ConditionTrue},
+	// Helper: create a CPC that is available.
+	availableCPC := func(name string) *hyperv1.ControlPlaneComponent {
+		return &hyperv1.ControlPlaneComponent{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: cpNamespace},
+			Status: hyperv1.ControlPlaneComponentStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:   string(hyperv1.ControlPlaneComponentAvailable),
+						Status: metav1.ConditionTrue,
+						Reason: "AsExpected",
+					},
 				},
 			},
 		}
 	}
 
-	// Helper: create a FailedScheduling event.
-	failedSchedulingEvent := func(name string, podName string, podUID types.UID, message string) *corev1.Event {
-		return &corev1.Event{
+	// Helper: create a CPC unavailable for a non-scheduling reason.
+	unavailableNonSchedulingCPC := func(name string) *hyperv1.ControlPlaneComponent {
+		return &hyperv1.ControlPlaneComponent{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: cpNamespace},
-			InvolvedObject: corev1.ObjectReference{
-				Kind:      "Pod",
-				Name:      podName,
-				Namespace: cpNamespace,
-				UID:       podUID,
+			Status: hyperv1.ControlPlaneComponentStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(hyperv1.ControlPlaneComponentAvailable),
+						Status:  metav1.ConditionFalse,
+						Reason:  hyperv1.ReasonCrashLoopBackOff,
+						Message: "Pod etcd-0 container etcd: CrashLoopBackOff",
+					},
+				},
 			},
-			Reason:  "FailedScheduling",
-			Message: message,
 		}
 	}
 
@@ -74,98 +77,91 @@ func TestReconcileManagementClusterResourcePressure(t *testing.T) {
 		expectedStatus metav1.ConditionStatus
 		expectedReason string
 		expectedMsg    string
-		notExpectedMsg string // substrings that must NOT appear in the message
+		notExpectedMsg string
 	}{
 		{
-			name:           "When no pods exist it should report no pressure",
+			name:           "When no CPCs exist it should report no pressure",
 			objects:        nil,
 			expectedStatus: metav1.ConditionFalse,
 			expectedReason: hyperv1.ReasonNoPressure,
 		},
 		{
-			name:           "When all pods are running it should report no pressure",
-			objects:        []client.Object{runningPod("pod-1", "uid-1")},
+			name:           "When all CPCs are available it should report no pressure",
+			objects:        []client.Object{availableCPC("kube-apiserver")},
 			expectedStatus: metav1.ConditionFalse,
 			expectedReason: hyperv1.ReasonNoPressure,
 		},
 		{
-			name: "When a pod is unschedulable (pod status only, no events) it should report pressure with resource type",
+			name: "When a CPC has PodSchedulingFailed it should report pressure with resource type",
 			objects: []client.Object{
-				unschedulablePod("etcd-0", "uid-etcd", "0/6 nodes are available: 3 Insufficient cpu, 2 Insufficient memory, 1 node(s) had untolerated taint {node-role.kubernetes.io/master: }. preemption: 0/6 nodes are available: 3 No preemption victims found on node."),
+				schedulingFailedCPC("etcd", "Pod etcd-0 is unschedulable: Insufficient cpu, Insufficient memory"),
 			},
 			expectedStatus: metav1.ConditionTrue,
 			expectedReason: hyperv1.ReasonFailedScheduling,
-			expectedMsg:    "1 pods with FailedScheduling: 1 Insufficient cpu, 1 Insufficient memory",
+			expectedMsg:    "1 component with scheduling failures (etcd): Insufficient cpu, Insufficient memory",
 		},
 		{
-			name: "When FailedScheduling event exists with still-unschedulable pod it should report pressure",
+			name: "When multiple CPCs have PodSchedulingFailed it should list all affected components",
 			objects: []client.Object{
-				unschedulablePod("kube-apiserver-xyz", "uid-kas", "0/3 nodes are available: 3 Insufficient cpu."),
-				failedSchedulingEvent("event-1", "kube-apiserver-xyz", "uid-kas", "0/3 nodes are available: 3 Insufficient cpu. preemption: 0/3 nodes are available: 3 No preemption victims found on node."),
+				schedulingFailedCPC("etcd", "Pod etcd-0 is unschedulable: Insufficient cpu"),
+				schedulingFailedCPC("kube-apiserver", "Pod kube-apiserver-abc is unschedulable: Insufficient cpu, Insufficient memory"),
+				availableCPC("kube-scheduler"),
 			},
 			expectedStatus: metav1.ConditionTrue,
 			expectedReason: hyperv1.ReasonFailedScheduling,
-			expectedMsg:    "Insufficient cpu",
+			expectedMsg:    "2 components with scheduling failures (etcd, kube-apiserver)",
 		},
 		{
-			name: "When FailedScheduling event exists but pod has recovered it should report no pressure",
+			name: "When a CPC is unavailable for a non-scheduling reason it should not report pressure",
 			objects: []client.Object{
-				// Pod was rescheduled and is now running.
-				runningPod("kube-apiserver-xyz", "uid-kas"),
-				// Stale event still exists (hasn't reached TTL).
-				failedSchedulingEvent("event-1", "kube-apiserver-xyz", "uid-kas", "0/3 nodes are available: 3 Insufficient cpu."),
-			},
-			expectedStatus: metav1.ConditionFalse,
-			expectedReason: hyperv1.ReasonNoPressure,
-		},
-		{
-			name: "When FailedScheduling event has stale UID (pod deleted and recreated) it should not trigger",
-			objects: []client.Object{
-				// New pod with new UID, running fine.
-				runningPod("kube-apiserver-xyz", "uid-kas-new"),
-				// Stale event from old pod (old UID).
-				failedSchedulingEvent("event-1", "kube-apiserver-xyz", "uid-kas-old", "0/3 nodes are available: 3 Insufficient cpu."),
+				unavailableNonSchedulingCPC("etcd"),
+				availableCPC("kube-apiserver"),
 			},
 			expectedStatus: metav1.ConditionFalse,
 			expectedReason: hyperv1.ReasonNoPressure,
 		},
 		{
-			name: "When multiple pods are unschedulable it should group by resource type",
+			name: "When a CPC has no Available condition it should not report pressure",
 			objects: []client.Object{
-				unschedulablePod("etcd-0", "uid-1", "0/6 nodes are available: 3 Insufficient cpu."),
-				unschedulablePod("kube-apiserver-abc", "uid-2", "0/6 nodes are available: 3 Insufficient cpu, 2 Insufficient memory."),
-				unschedulablePod("kube-scheduler-def", "uid-3", "0/6 nodes are available: 2 Insufficient memory."),
-			},
-			expectedStatus: metav1.ConditionTrue,
-			expectedReason: hyperv1.ReasonFailedScheduling,
-			expectedMsg:    "3 pods with FailedScheduling:",
-		},
-		{
-			name: "When a pending pod is not unschedulable it should not report pressure",
-			objects: []client.Object{
-				// Pending but scheduled (e.g., waiting for volumes).
-				&corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{Name: "pod-1", Namespace: cpNamespace, UID: "uid-1"},
-					Status: corev1.PodStatus{
-						Phase: corev1.PodPending,
-						Conditions: []corev1.PodCondition{
-							{Type: corev1.PodScheduled, Status: corev1.ConditionTrue},
-						},
-					},
+				&hyperv1.ControlPlaneComponent{
+					ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver", Namespace: cpNamespace},
+					Status:     hyperv1.ControlPlaneComponentStatus{},
 				},
 			},
 			expectedStatus: metav1.ConditionFalse,
 			expectedReason: hyperv1.ReasonNoPressure,
 		},
 		{
-			name: "Message should not contain management cluster node names",
+			name: "When scheduling failure message has no Insufficient match it should still report pressure",
 			objects: []client.Object{
-				unschedulablePod("etcd-0", "uid-1", "0/6 nodes are available: 3 Insufficient cpu, 2 Insufficient memory, 1 node(s) had untolerated taint {node-role.kubernetes.io/master: }. preemption: 0/6 nodes are available: ip-10-0-1-42.ec2.internal No preemption victims found on node, ip-10-0-2-99.ec2.internal No preemption victims found on node."),
+				schedulingFailedCPC("etcd", "Pod etcd-0 is unschedulable"),
 			},
 			expectedStatus: metav1.ConditionTrue,
 			expectedReason: hyperv1.ReasonFailedScheduling,
-			// Node names must NOT appear.
+			expectedMsg:    "1 component with scheduling failures (etcd)",
+		},
+		{
+			name: "Message should not contain management cluster node names",
+			objects: []client.Object{
+				// The CPO sanitizes messages before setting CPC conditions, so
+				// node names should already be stripped. This test verifies that
+				// our message building doesn't reintroduce them.
+				schedulingFailedCPC("etcd", "Pod etcd-0 is unschedulable: Insufficient cpu"),
+			},
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.ReasonFailedScheduling,
 			notExpectedMsg: "ip-10-0-1-42",
+		},
+		{
+			name: "Components should be sorted alphabetically in message",
+			objects: []client.Object{
+				schedulingFailedCPC("kube-scheduler", "Pod kube-scheduler-0 is unschedulable: Insufficient memory"),
+				schedulingFailedCPC("etcd", "Pod etcd-0 is unschedulable: Insufficient cpu"),
+				schedulingFailedCPC("kube-apiserver", "Pod kube-apiserver-0 is unschedulable: Insufficient cpu"),
+			},
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.ReasonFailedScheduling,
+			expectedMsg:    "3 components with scheduling failures (etcd, kube-apiserver, kube-scheduler)",
 		},
 	}
 
@@ -210,20 +206,18 @@ func TestReconcileManagementClusterResourcePressureMessageTruncation(t *testing.
 
 	var objects []client.Object
 	for i := 0; i < 50; i++ {
-		objects = append(objects, &corev1.Pod{
+		objects = append(objects, &hyperv1.ControlPlaneComponent{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("pod-%03d", i),
+				Name:      fmt.Sprintf("component-%03d", i),
 				Namespace: "cp-ns",
-				UID:       types.UID(fmt.Sprintf("uid-%03d", i)),
 			},
-			Status: corev1.PodStatus{
-				Phase: corev1.PodPending,
-				Conditions: []corev1.PodCondition{
+			Status: hyperv1.ControlPlaneComponentStatus{
+				Conditions: []metav1.Condition{
 					{
-						Type:    corev1.PodScheduled,
-						Status:  corev1.ConditionFalse,
-						Reason:  "Unschedulable",
-						Message: "0/6 nodes are available: 3 Insufficient cpu, 2 Insufficient memory.",
+						Type:    string(hyperv1.ControlPlaneComponentAvailable),
+						Status:  metav1.ConditionFalse,
+						Reason:  hyperv1.ReasonPodSchedulingFailed,
+						Message: "Pod pod-0 is unschedulable: Insufficient cpu, Insufficient memory",
 					},
 				},
 			},
@@ -249,154 +243,42 @@ func TestReconcileManagementClusterResourcePressureMessageTruncation(t *testing.
 	g.Expect(len(cond.Message)).To(BeNumerically("<=", maxResourcePressureMessageLen))
 }
 
-func TestReconcileManagementClusterResourcePressureSecuritySanitization(t *testing.T) {
-	const cpNamespace = "cp-ns"
-
-	testCases := []struct {
-		name             string
-		schedulerMessage string
-		mustNotContain   []string
-		mustContain      string // resource type that should survive sanitization
-	}{
-		{
-			name:             "AWS node names must not appear in message",
-			schedulerMessage: "0/6 nodes are available: 3 Insufficient cpu, 2 Insufficient memory, 1 node(s) had untolerated taint {node-role.kubernetes.io/master: }. preemption: 0/6 nodes are available: ip-10-0-1-42.ec2.internal No preemption victims, ip-10-0-2-99.ec2.internal No preemption victims.",
-			mustNotContain:   []string{"ip-10-0-1-42", "ip-10-0-2-99", "ec2.internal"},
-			mustContain:      "Insufficient cpu",
-		},
-		{
-			name:             "Azure VMSS node names must not appear in message",
-			schedulerMessage: "0/3 nodes are available: 2 Insufficient memory. aks-nodepool1-12345678-vmss000000 had untolerated taint, aks-nodepool1-12345678-vmss000001 had untolerated taint.",
-			mustNotContain:   []string{"aks-nodepool1-12345678-vmss000000", "aks-nodepool1-12345678-vmss000001", "vmss"},
-			mustContain:      "Insufficient memory",
-		},
-		{
-			name:             "GCP node names must not appear in message",
-			schedulerMessage: "0/4 nodes are available: 2 Insufficient cpu. gke-mgmt-cluster-pool-0-a1b2c3d4-wxyz had untolerated taint, gke-mgmt-cluster-pool-0-e5f6g7h8-abcd had untolerated taint.",
-			mustNotContain:   []string{"gke-mgmt-cluster", "a1b2c3d4", "e5f6g7h8"},
-			mustContain:      "Insufficient cpu",
-		},
-		{
-			name:             "OpenShift worker node FQDNs must not appear in message",
-			schedulerMessage: "0/5 nodes are available: 1 Insufficient cpu, 2 Insufficient memory. worker-0.mgmt.ocp.example.com had untolerated taint, master-2.mgmt.ocp.example.com had untolerated taint.",
-			mustNotContain:   []string{"worker-0.mgmt", "master-2.mgmt", "ocp.example.com"},
-			mustContain:      "Insufficient cpu",
-		},
-		{
-			name:             "IPv4 addresses must not appear in message",
-			schedulerMessage: "0/3 nodes are available: 2 Insufficient cpu. 10.0.1.42 had taint, 172.16.0.5 had taint, 192.168.1.100 had taint.",
-			mustNotContain:   []string{"10.0.1.42", "172.16.0.5", "192.168.1.100"},
-			mustContain:      "Insufficient cpu",
-		},
-		{
-			name:             "IPv6 addresses must not appear in message",
-			schedulerMessage: "0/3 nodes are available: 1 Insufficient memory. fd00::1 had taint, 2001:db8::abcd:1234 had taint.",
-			mustNotContain:   []string{"fd00::1", "2001:db8::abcd:1234"},
-			mustContain:      "Insufficient memory",
-		},
-		{
-			name:             "Management cluster node count must not appear in message",
-			schedulerMessage: "0/42 nodes are available: 10 Insufficient cpu, 32 Insufficient memory.",
-			mustNotContain:   []string{"0/42 nodes"},
-			mustContain:      "Insufficient cpu",
-		},
-		{
-			name:             "Registry hostnames must not appear in message",
-			schedulerMessage: "0/6 nodes are available: 3 Insufficient memory. quay.io/openshift-release-dev image pull failed on registry.ci.openshift.org.",
-			mustNotContain:   []string{"quay.io", "registry.ci.openshift.org"},
-			mustContain:      "Insufficient memory",
-		},
-		{
-			name:             "Preemption details must not appear in message",
-			schedulerMessage: "0/3 nodes are available: 3 Insufficient cpu. preemption: 0/3 nodes are available: 3 No preemption victims found for incoming pod.",
-			mustNotContain:   []string{"preemption", "No preemption victims"},
-			mustContain:      "Insufficient cpu",
-		},
-		{
-			name:             "Taint details must not appear in message",
-			schedulerMessage: "0/3 nodes are available: 1 Insufficient cpu, 2 node(s) had untolerated taint {node-role.kubernetes.io/master: }.",
-			mustNotContain:   []string{"untolerated taint", "node-role.kubernetes.io"},
-			mustContain:      "Insufficient cpu",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "etcd-0", Namespace: cpNamespace, UID: "uid-1"},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodPending,
-					Conditions: []corev1.PodCondition{
-						{
-							Type:    corev1.PodScheduled,
-							Status:  corev1.ConditionFalse,
-							Reason:  "Unschedulable",
-							Message: tc.schedulerMessage,
-						},
-					},
-				},
-			}
-
-			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(pod).Build()
-
-			hcluster := &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-hc", Namespace: "test-ns"},
-			}
-
-			reconcileManagementClusterResourcePressure(context.Background(), c, hcluster, cpNamespace)
-
-			cond := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ManagementClusterResourcePressure))
-			g.Expect(cond).NotTo(BeNil())
-			for _, forbidden := range tc.mustNotContain {
-				g.Expect(cond.Message).NotTo(ContainSubstring(forbidden),
-					"message %q should not contain %q", cond.Message, forbidden)
-			}
-			if tc.mustContain != "" {
-				g.Expect(cond.Message).To(ContainSubstring(tc.mustContain),
-					"message %q should contain %q", cond.Message, tc.mustContain)
-			}
-		})
-	}
-}
-
 func TestBuildResourcePressureMessage(t *testing.T) {
 	testCases := []struct {
-		name               string
-		podCount           int
-		resourceTypeCounts map[string]int
-		expected           string
+		name          string
+		components    []string
+		resourceTypes map[string]struct{}
+		expected      string
 	}{
 		{
-			name:               "When no resource types are extracted, it should return count-only message",
-			podCount:           2,
-			resourceTypeCounts: map[string]int{},
-			expected:           "2 pods with FailedScheduling",
+			name:          "When no resource types are extracted, it should return component-list-only message",
+			components:    []string{"etcd", "kube-apiserver"},
+			resourceTypes: map[string]struct{}{},
+			expected:      "2 components with scheduling failures (etcd, kube-apiserver)",
 		},
 		{
-			name:     "When a single resource type is present, it should include it in message",
-			podCount: 3,
-			resourceTypeCounts: map[string]int{
-				"Insufficient cpu": 3,
+			name:       "When a single resource type is present, it should include it in message",
+			components: []string{"etcd"},
+			resourceTypes: map[string]struct{}{
+				"Insufficient cpu": {},
 			},
-			expected: "3 pods with FailedScheduling: 3 Insufficient cpu",
+			expected: "1 component with scheduling failures (etcd): Insufficient cpu",
 		},
 		{
-			name:     "When multiple resource types are present, it should sort them alphabetically with counts",
-			podCount: 5,
-			resourceTypeCounts: map[string]int{
-				"Insufficient memory": 2,
-				"Insufficient cpu":    3,
+			name:       "When multiple resource types are present, it should sort them alphabetically",
+			components: []string{"etcd", "kube-apiserver", "kube-scheduler"},
+			resourceTypes: map[string]struct{}{
+				"Insufficient memory": {},
+				"Insufficient cpu":    {},
 			},
-			expected: "5 pods with FailedScheduling: 3 Insufficient cpu, 2 Insufficient memory",
+			expected: "3 components with scheduling failures (etcd, kube-apiserver, kube-scheduler): Insufficient cpu, Insufficient memory",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			msg := buildResourcePressureMessage(tc.podCount, tc.resourceTypeCounts)
+			msg := buildResourcePressureMessage(tc.components, tc.resourceTypes)
 			g.Expect(msg).To(Equal(tc.expected))
 		})
 	}
@@ -406,38 +288,138 @@ func TestExtractResourceTypes(t *testing.T) {
 	testCases := []struct {
 		name     string
 		message  string
-		expected map[string]int
+		expected map[string]struct{}
 	}{
 		{
 			name:     "When message has cpu and memory, it should extract both resource types",
-			message:  "0/6 nodes are available: 3 Insufficient cpu, 2 Insufficient memory.",
-			expected: map[string]int{"Insufficient cpu": 1, "Insufficient memory": 1},
+			message:  "Pod etcd-0 is unschedulable: Insufficient cpu, Insufficient memory",
+			expected: map[string]struct{}{"Insufficient cpu": {}, "Insufficient memory": {}},
 		},
 		{
 			name:     "When message has ephemeral-storage, it should extract the resource type",
-			message:  "0/3 nodes are available: 2 Insufficient ephemeral-storage.",
-			expected: map[string]int{"Insufficient ephemeral-storage": 1},
+			message:  "Pod etcd-0 is unschedulable: Insufficient ephemeral-storage",
+			expected: map[string]struct{}{"Insufficient ephemeral-storage": {}},
 		},
 		{
 			name:     "When message has no Insufficient matches, it should return empty map",
-			message:  "0/3 nodes are available: 1 node(s) had untolerated taint.",
-			expected: map[string]int{},
+			message:  "Pod etcd-0 is unschedulable",
+			expected: map[string]struct{}{},
 		},
 		{
 			name:     "When message is empty, it should return empty map",
 			message:  "",
-			expected: map[string]int{},
+			expected: map[string]struct{}{},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			counts := make(map[string]int)
-			extractResourceTypes(tc.message, counts)
-			g.Expect(counts).To(Equal(tc.expected))
+			types := make(map[string]struct{})
+			extractResourceTypes(tc.message, types)
+			g.Expect(types).To(Equal(tc.expected))
 		})
 	}
+}
+
+func TestBuildResourcePressureMessageTruncation(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	// Create enough components to exceed the max message length.
+	var components []string
+	for i := 0; i < 50; i++ {
+		components = append(components, fmt.Sprintf("very-long-component-name-%03d", i))
+	}
+
+	msg := buildResourcePressureMessage(components, map[string]struct{}{
+		"Insufficient cpu":    {},
+		"Insufficient memory": {},
+	})
+	g.Expect(len(msg)).To(BeNumerically("<=", maxResourcePressureMessageLen))
+	g.Expect(msg).To(HaveSuffix("..."))
+}
+
+func TestResourcePressureMessageDoesNotContainSensitiveInfo(t *testing.T) {
+	// The CPO sanitizes scheduler messages before setting CPC conditions.
+	// This test verifies that the resource_pressure message builder does
+	// not reintroduce any sensitive patterns.
+	sensitivePatterns := []string{
+		"ip-10-0-1-42",
+		"ec2.internal",
+		"aks-nodepool1",
+		"vmss",
+		"gke-mgmt-cluster",
+		"ocp.example.com",
+		"10.0.1.42",
+		"quay.io",
+	}
+
+	// The CPC message is already sanitized by the CPO, so it should only
+	// contain patterns like "Pod X is unschedulable: Insufficient cpu".
+	cpcMessage := "Pod etcd-0 is unschedulable: Insufficient cpu, Insufficient memory"
+	components := []string{"etcd"}
+	resourceTypes := make(map[string]struct{})
+	extractResourceTypes(cpcMessage, resourceTypes)
+	msg := buildResourcePressureMessage(components, resourceTypes)
+
+	g := NewGomegaWithT(t)
+	for _, pattern := range sensitivePatterns {
+		g.Expect(msg).NotTo(ContainSubstring(pattern))
+	}
+	// The message should still mention the resource type.
+	g.Expect(msg).To(ContainSubstring("Insufficient cpu"))
+}
+
+func TestReconcileManagementClusterResourcePressureResourceTypesDeduplication(t *testing.T) {
+	g := NewGomegaWithT(t)
+	const cpNamespace = "cp-ns"
+
+	// Multiple CPCs report the same resource type — it should appear once.
+	objects := []client.Object{
+		&hyperv1.ControlPlaneComponent{
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: cpNamespace},
+			Status: hyperv1.ControlPlaneComponentStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(hyperv1.ControlPlaneComponentAvailable),
+						Status:  metav1.ConditionFalse,
+						Reason:  hyperv1.ReasonPodSchedulingFailed,
+						Message: "Pod etcd-0 is unschedulable: Insufficient cpu",
+					},
+				},
+			},
+		},
+		&hyperv1.ControlPlaneComponent{
+			ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver", Namespace: cpNamespace},
+			Status: hyperv1.ControlPlaneComponentStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(hyperv1.ControlPlaneComponentAvailable),
+						Status:  metav1.ConditionFalse,
+						Reason:  hyperv1.ReasonPodSchedulingFailed,
+						Message: "Pod kube-apiserver-0 is unschedulable: Insufficient cpu",
+					},
+				},
+			},
+		},
+	}
+
+	builder := fake.NewClientBuilder().WithScheme(api.Scheme)
+	for _, obj := range objects {
+		builder = builder.WithObjects(obj)
+	}
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-hc", Namespace: "test-ns"},
+	}
+
+	reconcileManagementClusterResourcePressure(context.Background(), builder.Build(), hcluster, cpNamespace)
+
+	cond := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ManagementClusterResourcePressure))
+	g.Expect(cond).NotTo(BeNil())
+	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+	// "Insufficient cpu" should appear exactly once in the message.
+	g.Expect(strings.Count(cond.Message, "Insufficient cpu")).To(Equal(1))
 }
 
 func TestPropagateInstallationStage(t *testing.T) {
