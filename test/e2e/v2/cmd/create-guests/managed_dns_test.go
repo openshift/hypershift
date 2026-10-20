@@ -3,8 +3,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -48,7 +50,6 @@ func (provider *dnsImageProvider) ImageMetadata(_ context.Context, image string,
 }
 
 func TestManagedDNSArgs(t *testing.T) {
-	t.Parallel()
 	const payloadCPO = "quay.io/openshift-release-dev/ocp-v4.0-art-dev:hypershift"
 	const overrideCPO = "registry.ci.openshift.org/ci/hypershift:pr"
 	for _, testCase := range []struct {
@@ -59,6 +60,7 @@ func TestManagedDNSArgs(t *testing.T) {
 		metadataError error
 		wantEnabled   bool
 		wantError     bool
+		wantErrorText string
 		wantImage     string
 	}{
 		{name: "When the 4.22 CPO has no capability label, it should leave managed DNS disabled", version: "4.22.0", wantImage: payloadCPO},
@@ -72,7 +74,7 @@ func TestManagedDNSArgs(t *testing.T) {
 		{name: "When image labels are annotated, it should use the same override as the operator", version: "4.22.0", extraArgs: []string{"--annotations=" + hyperv1.ControlPlaneOperatorImageLabelsAnnotation + "=" + managesAWSDNSLabel + "=true"}, wantEnabled: true},
 		{name: "When metadata lookup fails, it should fail rather than silently skip coverage", version: "5.1.0", metadataError: fmt.Errorf("registry unavailable"), wantError: true, wantImage: payloadCPO},
 		{name: "When release metadata is invalid, it should fail rather than silently skip coverage", version: "unknown", wantError: true},
-		{name: "When an annotation is invalid, it should fail rather than ignore the override", version: "5.1.0", extraArgs: []string{"--annotations=invalid"}, wantError: true},
+		{name: "When an annotation is invalid, it should fail without exposing its contents", version: "5.1.0", extraArgs: []string{"--annotations=private-registry.example.test/image:tag"}, wantError: true, wantErrorText: "invalid fixture annotation: expected key=value"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -93,6 +95,9 @@ func TestManagedDNSArgs(t *testing.T) {
 				t.Errorf("inspected image = %q, want %q", images.image, testCase.wantImage)
 			}
 			if testCase.wantError {
+				if testCase.wantErrorText != "" && err.Error() != testCase.wantErrorText {
+					t.Errorf("error = %q, want %q", err.Error(), testCase.wantErrorText)
+				}
 				return
 			}
 			if slices.Contains(actual, "--managed-dns") != testCase.wantEnabled {
@@ -112,6 +117,35 @@ func TestManagedDNSArgs(t *testing.T) {
 		actual, err := managedDNSArgs(t.Context(), args, nil, nil)
 		if err != nil || !reflect.DeepEqual(actual, args) {
 			t.Fatalf("args = %v, error = %v", actual, err)
+		}
+	})
+	t.Run("When the selected CPO lacks support, it should explain the fallback without logging its image", func(t *testing.T) {
+		var output bytes.Buffer
+		previousOutput := log.Writer()
+		log.SetOutput(&output)
+		t.Cleanup(func() { log.SetOutput(previousOutput) })
+		pullSecretPath := filepath.Join(t.TempDir(), "pull-secret.json")
+		if err := os.WriteFile(pullSecretPath, []byte(`{}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		const privateImage = "private-registry.example.test/hypershift:older"
+		args := []string{"--managed-dns", "--control-plane-operator-image=" + privateImage, "--pull-secret=" + pullSecretPath}
+		images := &dnsImageProvider{}
+		actual, err := managedDNSArgs(t.Context(), args, nil, images)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if images.image != privateImage || slices.Contains(actual, "--managed-dns") {
+			t.Fatal("selected image lookup or baseline fixture behavior changed")
+		}
+		message := output.String()
+		if strings.Contains(message, privateImage) || strings.Contains(message, "private-registry.example.test") {
+			t.Fatalf("fallback log exposed the selected image: %s", message)
+		}
+		for _, explanation := range []string{managesAWSDNSLabel + "=true", "baseline DNS fixture without managed DNS", "managed DNS tests will skip"} {
+			if !strings.Contains(message, explanation) {
+				t.Errorf("fallback log %q is missing %q", message, explanation)
+			}
 		}
 	})
 }

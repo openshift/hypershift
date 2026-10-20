@@ -46,7 +46,7 @@ func managedDNSArgs(ctx context.Context, args []string, releases releaseinfo.Pro
 	for _, annotation := range annotations {
 		key, value, found := strings.Cut(annotation, "=")
 		if !found {
-			return nil, fmt.Errorf("invalid fixture annotation %q", annotation)
+			return nil, fmt.Errorf("invalid fixture annotation: expected key=value")
 		}
 		cluster.Annotations[key] = value
 	}
@@ -64,7 +64,7 @@ func managedDNSArgs(ctx context.Context, args []string, releases releaseinfo.Pro
 	if labels[managesAWSDNSLabel] == "true" {
 		return args, nil
 	}
-	log.Printf("CPO %s does not advertise %s=true; creating baseline DNS fixture without managed DNS (managed DNS tests will skip)", image, managesAWSDNSLabel)
+	log.Printf("Selected CPO does not advertise %s=true; creating baseline DNS fixture without managed DNS (managed DNS tests will skip)", managesAWSDNSLabel)
 	filtered := make([]string, 0, len(args))
 	for _, arg := range args {
 		if arg != "--managed-dns" && !strings.HasPrefix(arg, "--managed-dns=") {
