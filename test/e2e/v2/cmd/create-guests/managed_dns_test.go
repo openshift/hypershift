@@ -85,7 +85,7 @@ func TestManagedDNSArgs(t *testing.T) {
 			original := slices.Clone(args)
 			images := &dnsImageProvider{labels: testCase.labels, err: testCase.metadataError}
 			releases := &fake.FakeReleaseProvider{Version: testCase.version, Components: map[string]string{"hypershift": payloadCPO}}
-			actual, err := managedDNSArgs(context.Background(), args, releases, images)
+			actual, err := managedDNSArgs(t.Context(), args, releases, images)
 			if (err != nil) != testCase.wantError {
 				t.Fatalf("error = %v, wantError = %v", err, testCase.wantError)
 			}
@@ -109,7 +109,7 @@ func TestManagedDNSArgs(t *testing.T) {
 	t.Run("When managed DNS is not requested, it should preserve arguments without looking up images", func(t *testing.T) {
 		t.Parallel()
 		args := []string{"create", "cluster", "aws", "--managed-dns=false"}
-		actual, err := managedDNSArgs(context.Background(), args, nil, nil)
+		actual, err := managedDNSArgs(t.Context(), args, nil, nil)
 		if err != nil || !reflect.DeepEqual(actual, args) {
 			t.Fatalf("args = %v, error = %v", actual, err)
 		}
@@ -151,7 +151,7 @@ func TestCreateClustersParallel(t *testing.T) {
 			if testCase.variant == "managed-dns" {
 				args = append(args, "--managed-dns", "--control-plane-operator-image=registry.ci.openshift.org/ci/hypershift:pr", "--annotations="+hyperv1.ControlPlaneOperatorImageLabelsAnnotation+"="+testCase.label)
 			}
-			results := createClustersParallel(context.Background(), cfg, []namedSpec{{ClusterSpec: lifecycle.ClusterSpec{Variant: testCase.variant, ExtraArgs: args}, name: "dns-fixture"}})
+			results := createClustersParallel(t.Context(), cfg, []namedSpec{{ClusterSpec: lifecycle.ClusterSpec{Variant: testCase.variant, ExtraArgs: args}, name: "dns-fixture"}})
 			if (results[testCase.variant] != nil) != testCase.wantError {
 				t.Fatalf("results = %v, wantError = %v", results, testCase.wantError)
 			}
@@ -211,7 +211,7 @@ func TestManagedDNSRegistryProvider(t *testing.T) {
 					return fmt.Errorf("mirror list unavailable")
 				}})
 			}
-			provider, err := managedDNSRegistryProvider(context.Background(), cl.Build(), dnsDiscoveryClient{ManagementClusterDiscoveryClient: discoveryClient, err: testCase.err})
+			provider, err := managedDNSRegistryProvider(t.Context(), cl.Build(), dnsDiscoveryClient{ManagementClusterDiscoveryClient: discoveryClient, err: testCase.err})
 			if (err != nil) != testCase.wantError {
 				t.Fatalf("error = %v, wantError = %v", err, testCase.wantError)
 			}

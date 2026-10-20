@@ -20,7 +20,7 @@ const managesAWSDNSLabel = "io.openshift.hypershift.control-plane-operator-manag
 
 func managedDNSArgs(ctx context.Context, args []string, releases releaseinfo.Provider, images imageregistry.ImageMetadataProvider) ([]string, error) {
 	flags := pflag.NewFlagSet("managed-dns", pflag.ContinueOnError)
-	flags.ParseErrorsWhitelist.UnknownFlags = true
+	flags.ParseErrorsAllowlist.UnknownFlags = true
 	var enabled bool
 	var releaseImage, cpoImage, pullSecretPath string
 	var annotations []string
