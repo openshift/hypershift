@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -68,7 +69,7 @@ const (
 	acrPullIdentityConfiguredMetricHelp = "Indicates whether a HostedCluster has an ACR pull managed identity configured (1=configured, 0=not configured). Only emitted for Azure platform clusters."
 
 	installationStageMetricHelp              = "Reports the current installation stage of a HostedCluster as a state-set gauge (1 for current stage, 0 for others)."
-	installationFailureReasonTotalMetricHelp = "Counts installation failure reason episodes per HostedCluster. Incremented when the failure reason changes."
+	installationFailureReasonTotalMetricHelp = "Counts installation failure reason episodes per HostedCluster. Incremented on status transition into failure."
 )
 
 // semantically constant - not supposed to be changed at runtime
@@ -229,6 +230,9 @@ type hostedClustersMetricsCollector struct {
 	client.Client
 	clock clock.Clock
 
+	// mu serializes Collect; Prometheus may call Collect concurrently.
+	mu sync.Mutex
+
 	transitionDurationMetric *prometheus.HistogramVec
 
 	lastCollectTime time.Time
@@ -285,6 +289,9 @@ func createFailureConditionToHClustersCountMap(knownConditionToExpectedStatus ma
 }
 
 func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	currentCollectTime := c.clock.Now()
 	log := ctrllog.Log
 
@@ -776,9 +783,9 @@ func (c *hostedClustersMetricsCollector) collectInstallationFailureReasonMetric(
 	// InfrastructureReady=False with reason RouteNotAdmitted → route admission failure.
 	c.trackHCConditionEpisode(ck, hcluster.Status.Conditions,
 		hyperv1.InfrastructureReady, metav1.ConditionFalse, "")
-	// ClusterVersionFailing=True → CVO failure episode.
+	// ClusterVersionSucceeding=False (inverted from HCP ClusterVersionFailing) → CVO failure episode.
 	c.trackHCConditionEpisode(ck, hcluster.Status.Conditions,
-		hyperv1.ClusterVersionFailing, metav1.ConditionTrue, hyperv1.ReasonClusterVersionFailing)
+		hyperv1.ClusterVersionSucceeding, metav1.ConditionFalse, hyperv1.ReasonClusterVersionFailing)
 
 	// Emit counters for all known reasons.
 	for _, reason := range knownFailureReasons {

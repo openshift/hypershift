@@ -850,7 +850,11 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 		if infraStatus.RouteNotAdmitted {
 			reason = hyperv1.ReasonRouteNotAdmitted
 			if infraStatus.RouteNotAdmittedMsg != "" {
-				message = infraStatus.RouteNotAdmittedMsg
+				if len(message) > 0 {
+					message = message + "; " + infraStatus.RouteNotAdmittedMsg
+				} else {
+					message = infraStatus.RouteNotAdmittedMsg
+				}
 			}
 		}
 		newCondition = metav1.Condition{
@@ -1237,6 +1241,9 @@ func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx conte
 
 	var notAvailable []string
 	var firstFailureName, firstFailureReason, firstFailureMessage string
+	sort.Slice(componentsList.Items, func(i, j int) bool {
+		return componentsList.Items[i].Name < componentsList.Items[j].Name
+	})
 	for _, component := range componentsList.Items {
 		availableCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
 		if availableCondition == nil || availableCondition.Status != metav1.ConditionTrue {

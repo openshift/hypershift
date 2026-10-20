@@ -817,9 +817,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if conditionType == hyperv1.ClusterVersionSucceeding {
 				hcCVOCondition.Type = string(hyperv1.ClusterVersionSucceeding)
 				hcCVOCondition.Status = invertConditionStatus(hcpCVOConditions[conditionType].Status)
-				if hcCVOCondition.Status == metav1.ConditionFalse {
-					hcCVOCondition.Reason = hyperv1.ReasonClusterVersionFailing
-				}
 			}
 		}
 

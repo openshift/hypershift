@@ -4741,7 +4741,7 @@ func TestReconcileInfrastructureStatusCondition(t *testing.T) {
 			if tc.expectedCondStatus == metav1.ConditionFalse {
 				switch {
 				case tc.infraStatus.RouteNotAdmitted && tc.infraStatus.RouteNotAdmittedMsg != "":
-					g.Expect(cond.Message).To(Equal(tc.infraStatus.RouteNotAdmittedMsg))
+					g.Expect(cond.Message).To(ContainSubstring(tc.infraStatus.RouteNotAdmittedMsg))
 				case tc.infraStatus.Message != "":
 					g.Expect(cond.Message).To(Equal(tc.infraStatus.Message))
 				default:

@@ -2052,10 +2052,10 @@ func TestHCConditionEpisodeClusterVersionFailing(t *testing.T) {
 		t.Errorf("after baseline: ClusterVersionFailing = %v, want 0", got)
 	}
 
-	// Set ClusterVersionFailing=True (failure for this condition type).
+	// Set ClusterVersionSucceeding=False (inverted from HCP ClusterVersionFailing).
 	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-		Type:   string(hyperv1.ClusterVersionFailing),
-		Status: metav1.ConditionTrue,
+		Type:   string(hyperv1.ClusterVersionSucceeding),
+		Status: metav1.ConditionFalse,
 		Reason: "FromClusterVersion",
 	})
 	if err := c.Status().Update(context.Background(), hcluster); err != nil {
@@ -2080,10 +2080,10 @@ func TestHCConditionEpisodeClusterVersionFailing(t *testing.T) {
 		t.Errorf("during ongoing failure: ClusterVersionFailing = %v, want 1", got)
 	}
 
-	// Recover: ClusterVersionFailing=False.
+	// Recover: ClusterVersionSucceeding=True.
 	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-		Type:   string(hyperv1.ClusterVersionFailing),
-		Status: metav1.ConditionFalse,
+		Type:   string(hyperv1.ClusterVersionSucceeding),
+		Status: metav1.ConditionTrue,
 		Reason: "AsExpected",
 	})
 	if err := c.Status().Update(context.Background(), hcluster); err != nil {
@@ -2099,8 +2099,8 @@ func TestHCConditionEpisodeClusterVersionFailing(t *testing.T) {
 
 	// Recurrence: fail again → counter = 2.
 	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-		Type:   string(hyperv1.ClusterVersionFailing),
-		Status: metav1.ConditionTrue,
+		Type:   string(hyperv1.ClusterVersionSucceeding),
+		Status: metav1.ConditionFalse,
 		Reason: "FromClusterVersion",
 	})
 	if err := c.Status().Update(context.Background(), hcluster); err != nil {
