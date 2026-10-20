@@ -12,6 +12,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -228,7 +229,7 @@ func TestReconcileInstallationStage(t *testing.T) {
 
 			// Compute CPC availability once and pass to the plain function,
 			// matching the production call site.
-			componentsMsg, componentsErr, componentCount := r.controlPlaneComponentsAvailable(context.Background(), tc.hcp)
+			componentsMsg, componentCount, componentsErr := r.controlPlaneComponentsAvailable(context.Background(), tc.hcp)
 			reconcileInstallationStage(tc.hcp, componentsMsg, componentsErr, componentCount)
 			g.Expect(tc.hcp.Status.Installation).NotTo(BeNil())
 			g.Expect(tc.hcp.Status.Installation.Stage).To(Equal(tc.expectedStage))

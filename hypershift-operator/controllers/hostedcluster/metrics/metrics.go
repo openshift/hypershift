@@ -6,16 +6,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	platformgcp "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/gcp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
+	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
 	hcmetrics "github.com/openshift/hypershift/pkg/metrics/hostedcluster"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/conditions"
-
-	configv1 "github.com/openshift/api/config/v1"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,8 +25,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
-
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (

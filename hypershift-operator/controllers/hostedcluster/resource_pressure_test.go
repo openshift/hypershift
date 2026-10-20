@@ -369,13 +369,13 @@ func TestBuildResourcePressureMessage(t *testing.T) {
 		expected           string
 	}{
 		{
-			name:               "No resource types extracted",
+			name:               "When no resource types are extracted, it should return count-only message",
 			podCount:           2,
 			resourceTypeCounts: map[string]int{},
 			expected:           "2 pods with FailedScheduling",
 		},
 		{
-			name:     "Single resource type",
+			name:     "When a single resource type is present, it should include it in message",
 			podCount: 3,
 			resourceTypeCounts: map[string]int{
 				"Insufficient cpu": 3,
@@ -383,7 +383,7 @@ func TestBuildResourcePressureMessage(t *testing.T) {
 			expected: "3 pods with FailedScheduling: 3 Insufficient cpu",
 		},
 		{
-			name:     "Multiple resource types sorted alphabetically with counts",
+			name:     "When multiple resource types are present, it should sort them alphabetically with counts",
 			podCount: 5,
 			resourceTypeCounts: map[string]int{
 				"Insufficient memory": 2,
@@ -409,22 +409,22 @@ func TestExtractResourceTypes(t *testing.T) {
 		expected map[string]int
 	}{
 		{
-			name:     "CPU and memory",
+			name:     "When message has cpu and memory, it should extract both resource types",
 			message:  "0/6 nodes are available: 3 Insufficient cpu, 2 Insufficient memory.",
 			expected: map[string]int{"Insufficient cpu": 1, "Insufficient memory": 1},
 		},
 		{
-			name:     "Ephemeral storage",
+			name:     "When message has ephemeral-storage, it should extract the resource type",
 			message:  "0/3 nodes are available: 2 Insufficient ephemeral-storage.",
 			expected: map[string]int{"Insufficient ephemeral-storage": 1},
 		},
 		{
-			name:     "No Insufficient matches",
+			name:     "When message has no Insufficient matches, it should return empty map",
 			message:  "0/3 nodes are available: 1 node(s) had untolerated taint.",
 			expected: map[string]int{},
 		},
 		{
-			name:     "Empty message",
+			name:     "When message is empty, it should return empty map",
 			message:  "",
 			expected: map[string]int{},
 		},

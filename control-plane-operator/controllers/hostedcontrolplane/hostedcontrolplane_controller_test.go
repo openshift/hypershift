@@ -2585,7 +2585,7 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 			}
 
 			// Execute the function under test
-			msg, err, _ := r.controlPlaneComponentsAvailable(context.Background(), hcp)
+			msg, _, err := r.controlPlaneComponentsAvailable(context.Background(), hcp)
 
 			// Verify results
 			if tc.expectError {
@@ -5028,7 +5028,7 @@ func TestReconcileAvailabilityAndReadyStatus(t *testing.T) {
 				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
 			}
 
-			componentsMsg, componentsErr, _ := r.controlPlaneComponentsAvailable(t.Context(), tc.hcp)
+			componentsMsg, _, componentsErr := r.controlPlaneComponentsAvailable(t.Context(), tc.hcp)
 			r.reconcileAvailabilityAndReadyStatus(t.Context(), tc.hcp, componentsMsg, componentsErr)
 
 			g.Expect(tc.hcp.Status.Ready).To(Equal(tc.expectedReady))

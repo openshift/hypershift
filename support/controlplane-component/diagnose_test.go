@@ -31,7 +31,7 @@ func TestDiagnosePodFailure(t *testing.T) {
 		expectedMsg    string
 	}{
 		{
-			name: "When a pod has CrashLoopBackOff it should return CrashLoopBackOff reason",
+			name: "When a pod has CrashLoopBackOff, it should return CrashLoopBackOff reason",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: componentName, Namespace: namespace,
@@ -72,7 +72,7 @@ func TestDiagnosePodFailure(t *testing.T) {
 			expectedMsg:    "CrashLoopBackOff",
 		},
 		{
-			name: "When a pod has ImagePullBackOff it should return ImagePullBackOff reason",
+			name: "When a pod has ImagePullBackOff, it should return ImagePullBackOff reason",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: componentName, Namespace: namespace,
@@ -108,7 +108,7 @@ func TestDiagnosePodFailure(t *testing.T) {
 			expectedMsg:    "ImagePullBackOff",
 		},
 		{
-			name: "When a pod is unschedulable it should return sanitized message with resource types only",
+			name: "When a pod is unschedulable, it should return sanitized message with resource types only",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: componentName, Namespace: namespace,
@@ -142,7 +142,7 @@ func TestDiagnosePodFailure(t *testing.T) {
 			expectedMsg:    "Pod test-component-ghi is unschedulable: Insufficient cpu, Insufficient memory",
 		},
 		{
-			name: "When all pods are healthy it should return empty reason",
+			name: "When all pods are healthy, it should return empty reason",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: componentName, Namespace: namespace,
@@ -178,13 +178,13 @@ func TestDiagnosePodFailure(t *testing.T) {
 			expectedMsg:    "",
 		},
 		{
-			name:           "When the deployment does not exist it should return empty reason",
+			name:           "When the deployment does not exist, it should return empty reason",
 			pods:           []*corev1.Pod{},
 			expectedReason: "",
 			expectedMsg:    "",
 		},
 		{
-			name: "When a StatefulSet pod has CrashLoopBackOff it should return CrashLoopBackOff reason",
+			name: "When a StatefulSet pod has CrashLoopBackOff, it should return CrashLoopBackOff reason",
 			statefulset: &appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: componentName, Namespace: namespace,
@@ -220,7 +220,7 @@ func TestDiagnosePodFailure(t *testing.T) {
 			expectedMsg:    "CrashLoopBackOff",
 		},
 		{
-			name: "When an init container has CrashLoopBackOff it should return CrashLoopBackOff reason",
+			name: "When an init container has CrashLoopBackOff, it should return CrashLoopBackOff reason",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: componentName, Namespace: namespace,
@@ -256,7 +256,7 @@ func TestDiagnosePodFailure(t *testing.T) {
 			expectedMsg:    "init container",
 		},
 		{
-			name: "When scheduling message has no resource types it should omit details",
+			name: "When scheduling message has no resource types, it should omit details",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: componentName, Namespace: namespace,
@@ -290,7 +290,7 @@ func TestDiagnosePodFailure(t *testing.T) {
 			expectedMsg:    "Pod test-component-nores is unschedulable",
 		},
 		{
-			name: "When CrashLoopBackOff message exceeds max length it should be truncated",
+			name: "When CrashLoopBackOff message exceeds max length, it should be truncated",
 			deployment: &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: componentName, Namespace: namespace,
@@ -378,31 +378,31 @@ func TestSanitizeSchedulerMessage(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "When message has Insufficient cpu and memory it should extract both",
+			name:     "When message has Insufficient cpu and memory, it should extract both",
 			podName:  "kube-apiserver-abc",
 			raw:      "0/3 nodes are available: 1 Insufficient cpu, 2 Insufficient memory. preemption: 0/3 nodes are available: 3 No preemption victims found for incoming pod.",
 			expected: "Pod kube-apiserver-abc is unschedulable: Insufficient cpu, Insufficient memory",
 		},
 		{
-			name:     "When message has no Insufficient patterns it should return generic message",
+			name:     "When message has no Insufficient patterns, it should return generic message",
 			podName:  "etcd-0",
 			raw:      "0/3 nodes are available: node(s) had taint {key: value}, that the pod didn't tolerate.",
 			expected: "Pod etcd-0 is unschedulable",
 		},
 		{
-			name:     "When message has duplicate resource types it should deduplicate",
+			name:     "When message has duplicate resource types, it should deduplicate",
 			podName:  "kas-pod",
 			raw:      "0/6 nodes are available: 3 Insufficient cpu, 3 Insufficient cpu.",
 			expected: "Pod kas-pod is unschedulable: Insufficient cpu",
 		},
 		{
-			name:     "When message has single resource type it should return it",
+			name:     "When message has single resource type, it should return it",
 			podName:  "oauth-server-xyz",
 			raw:      "0/1 nodes are available: 1 Insufficient memory.",
 			expected: "Pod oauth-server-xyz is unschedulable: Insufficient memory",
 		},
 		{
-			name:     "When message is empty it should return generic message",
+			name:     "When message is empty, it should return generic message",
 			podName:  "pod-abc",
 			raw:      "",
 			expected: "Pod pod-abc is unschedulable",

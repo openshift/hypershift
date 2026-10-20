@@ -721,7 +721,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Compute CPC availability once and share the result between availability
 	// status and installation stage tracking to avoid redundant API calls.
-	componentsMsg, componentsErr, componentCount := r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
+	componentsMsg, componentCount, componentsErr := r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
 	r.reconcileAvailabilityAndReadyStatus(ctx, hostedControlPlane, componentsMsg, componentsErr)
 	reconcileInstallationStage(hostedControlPlane, componentsMsg, componentsErr, componentCount)
 
@@ -905,7 +905,7 @@ func (r *HostedControlPlaneReconciler) reconcileAvailabilityAndReadyStatus(ctx c
 	healthCheckErr := r.healthCheckKASLoadBalancers(ctx, hostedControlPlane)
 
 	componentsNotAvailableMsg := componentsMsg
-	var effectiveComponentsErr error = componentsErr
+	effectiveComponentsErr := componentsErr
 	availableCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
 	alreadyAvailable := availableCondition != nil && availableCondition.Status == metav1.ConditionTrue
 	if alreadyAvailable && healthCheckErr == nil {
@@ -1228,15 +1228,15 @@ func parseFailingHealthChecks(body io.Reader) []string {
 // have their Available condition set to True.
 // Returns an empty string if all components are available, otherwise returns a message describing
 // which components are not yet available. The third return value is the total number of CPCs found.
-func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error, int) {
+func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, int, error) {
 	componentsList := &hyperv1.ControlPlaneComponentList{}
 	if err := r.Client.List(ctx, componentsList, client.InNamespace(hcp.Namespace)); err != nil {
-		return "", fmt.Errorf("failed to list control plane components: %w", err), 0
+		return "", 0, fmt.Errorf("failed to list control plane components: %w", err)
 	}
 
 	// If there are no components yet, return a message indicating they haven't been created
 	if len(componentsList.Items) == 0 {
-		return "Control plane components have not been created yet", nil, 0
+		return "Control plane components have not been created yet", 0, nil
 	}
 
 	var notAvailable []string
@@ -1271,10 +1271,10 @@ func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx conte
 		} else {
 			msg += fmt.Sprintf(": %s", strings.Join(notAvailable, ", "))
 		}
-		return msg, nil, len(componentsList.Items)
+		return msg, len(componentsList.Items), nil
 	}
 
-	return "", nil, len(componentsList.Items)
+	return "", len(componentsList.Items), nil
 }
 
 func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
