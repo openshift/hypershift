@@ -9,7 +9,6 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/api/util/configrefs"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
@@ -1430,58 +1429,8 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 
 	// Reconcile global config related configmaps and secrets
-	{
-		if hcluster.Spec.Configuration != nil {
-			configMapRefs := configrefs.ConfigMapRefs(hcluster.Spec.Configuration)
-			for _, configMapRef := range configMapRefs {
-				sourceCM := &corev1.ConfigMap{}
-				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef}, sourceCM); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef, err)
-				}
-				if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
-				}
-				destCM := &corev1.ConfigMap{}
-				destCM.Name = sourceCM.Name
-				destCM.Namespace = controlPlaneNamespace.Name
-				if _, err := createOrUpdate(ctx, r.Client, destCM, func() error {
-					destCM.Annotations = sourceCM.Annotations
-					destCM.Labels = sourceCM.Labels
-					destCM.Data = sourceCM.Data
-					destCM.BinaryData = sourceCM.BinaryData
-					destCM.Immutable = sourceCM.Immutable
-					return nil
-				}); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
-				}
-			}
-			secretRefs := configrefs.SecretRefs(hcluster.Spec.Configuration)
-			for _, secretRef := range secretRefs {
-				sourceSecret := &corev1.Secret{}
-				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef}, sourceSecret); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
-				}
-				if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceSecret); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
-				}
-				if err := ensureHostedResourcesAreEmpty(ctx, r.Client, hcluster, sourceSecret); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to validate referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
-				}
-				destSecret := &corev1.Secret{}
-				destSecret.Name = sourceSecret.Name
-				destSecret.Namespace = controlPlaneNamespace.Name
-				if _, err := createOrUpdate(ctx, r.Client, destSecret, func() error {
-					destSecret.Annotations = sourceSecret.Annotations
-					destSecret.Labels = sourceSecret.Labels
-					destSecret.Data = sourceSecret.Data
-					destSecret.Immutable = sourceSecret.Immutable
-					destSecret.Type = sourceSecret.Type
-					return nil
-				}); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to reconcile secret %s/%s: %w", destSecret.Namespace, destSecret.Name, err)
-				}
-			}
-		}
+	if err := r.reconcileGlobalConfigSync(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Get release image version
