@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -239,7 +240,7 @@ func runStatus(ctx context.Context, opts options) (*etcdStatus, error) {
 		return nil, err
 	}
 
-	return checkEtcdStatus(ctx, opts, eclient, kclient)
+	return checkEtcdStatus(ctx, opts, eclient, kclient, isEndpointHealthy)
 }
 
 // missingMember determines which of the 3 etcd members is missing
@@ -257,7 +258,34 @@ func missingMember(member1, member2 *etcdserverpb.Member) *string {
 	return nil
 }
 
-func checkEtcdStatus(ctx context.Context, opts options, etcdClient *etcdclient.Client, k crclient.Client) (*etcdStatus, error) {
+// memberLister is the subset of the etcd client needed to fetch the cluster member list.
+type memberLister interface {
+	MemberList(ctx context.Context, opts ...etcdclient.OpOption) (*etcdclient.MemberListResponse, error)
+}
+
+// endpointHealthChecker reports whether the etcd endpoint of a member is healthy.
+type endpointHealthChecker func(ctx context.Context, opts options, name, endpointURL string) bool
+
+// memberName returns the name of an etcd member. A member that has been added to the
+// cluster but whose etcd process has not started and advertised itself yet is reported
+// by etcd without a name, so fall back to the host of its peer URL, which has the form
+// https://etcd-0.etcd-discovery.<namespace>.svc:2380
+func memberName(member *etcdserverpb.Member) string {
+	if member.Name != "" {
+		return member.Name
+	}
+	if len(member.PeerURLs) == 0 {
+		return ""
+	}
+	peerURL, err := url.Parse(member.PeerURLs[0])
+	if err != nil {
+		return ""
+	}
+	name, _, _ := strings.Cut(peerURL.Hostname(), ".")
+	return name
+}
+
+func checkEtcdStatus(ctx context.Context, opts options, etcdClient memberLister, k crclient.Client, isHealthy endpointHealthChecker) (*etcdStatus, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	result := &etcdStatus{recoverable: true}
@@ -287,11 +315,18 @@ func checkEtcdStatus(ctx context.Context, opts options, etcdClient *etcdclient.C
 	memberHealth := map[string]bool{}
 	// Determine member health by looking at their endpoint health
 	for _, member := range etcdMemberList.Members {
-		if len(member.ClientURLs) != 1 {
-			return nil, fmt.Errorf("member %s does not have an expected client URL: %v", member.Name, member.ClientURLs)
+		name := memberName(member)
+		// A member that has been added to the cluster but has not started yet advertises
+		// no client URLs. There is no endpoint to health check, so it counts as unhealthy.
+		if len(member.ClientURLs) == 0 {
+			log.Info("member has not advertised any client URL, treating it as unhealthy", "member", name)
+			memberHealth[name] = false
+			continue
 		}
-		clientURL := member.ClientURLs[0]
-		memberHealth[member.Name] = isEndpointHealthy(ctx, opts, member.Name, clientURL)
+		if len(member.ClientURLs) > 1 {
+			return nil, fmt.Errorf("member %s does not have an expected client URL: %v", name, member.ClientURLs)
+		}
+		memberHealth[name] = isHealthy(ctx, opts, name, member.ClientURLs[0])
 	}
 	result.recoverable = isRecoverableMemberHealth(ctx, memberHealth)
 	if !result.recoverable {
