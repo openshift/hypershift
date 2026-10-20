@@ -39,7 +39,7 @@ func managedDNSHostedCluster(tc *internal.TestContext) (*hyperv1.HostedCluster, 
 	GinkgoHelper()
 	hc, err := tc.GetHostedCluster()
 	Expect(err).NotTo(HaveOccurred())
-	if hc.Spec.Platform.AWS == nil || hc.Spec.Platform.AWS.ManagedDNS.IngressDomainPrefix == "" {
+	if !managedDNSRequested(hc) {
 		Skip("managed ingress DNS is not enabled on this hosted cluster")
 	}
 
@@ -55,6 +55,10 @@ func managedDNSHostedCluster(tc *internal.TestContext) (*hyperv1.HostedCluster, 
 		byType[z.ZoneType] = z
 	}
 	return hc, byType
+}
+
+func managedDNSRequested(hc *hyperv1.HostedCluster) bool {
+	return hc != nil && hc.Spec.Platform.AWS != nil && hc.Spec.Platform.AWS.ManagedDNS.IngressDomainPrefix != ""
 }
 
 // AWSManagedDNSTest validates CPO-managed Route53 ingress DNS on AWS.
