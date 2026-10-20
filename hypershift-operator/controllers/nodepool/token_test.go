@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"testing"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/testutil"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -1163,283 +1163,216 @@ func TestGetIgnitionCACert(t *testing.T) {
 	}
 }
 
-func TestSetKarpenterAMILabels(t *testing.T) {
-	testCases := []struct {
-		name           string
-		platform       hyperv1.PlatformType
-		userDataSecret *corev1.Secret
-		releaseImage   *releaseinfo.ReleaseImage
-		region         string
-		rhelStream     string
-		expectedError  string
-		expectedLabels map[string]string
-	}{
-		{
-			name:     "when the user data secret is created for supported platform and architecture it should set the expected labels",
-			platform: hyperv1.AWSPlatform,
-			region:   "us-east-1",
-			userDataSecret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "user-data-secret",
-					Namespace: "test-namespace",
-					Labels: map[string]string{
-						karpenterutil.ManagedByKarpenterLabel: "true",
-					},
-				},
-			},
-			expectedLabels: map[string]string{
-				karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "us-east-1-x86_64-image",
-				karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureARM64): "us-east-1-aarch64-image",
-			},
-		},
-		{
-			name:     "when the AMI is unavailable for all architectures it should return an error",
-			platform: hyperv1.AWSPlatform,
-			region:   "us-west-2",
-			userDataSecret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "user-data-secret",
-					Namespace: "test-namespace",
-					Labels: map[string]string{
-						karpenterutil.ManagedByKarpenterLabel: "true",
-					},
-				},
-			},
-			expectedError: "no supported architectures found",
-		},
-		{
-			name:     "when one architecture AMI is unavailable it should set the label only for the available one",
-			platform: hyperv1.AWSPlatform,
-			region:   "us-east-1",
-			userDataSecret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "user-data-secret",
-					Namespace: "test-namespace",
-					Labels: map[string]string{
-						karpenterutil.ManagedByKarpenterLabel: "true",
-					},
-				},
-			},
-			releaseImage: &releaseinfo.ReleaseImage{
-				ImageStream: &imageapi.ImageStream{
-					ObjectMeta: metav1.ObjectMeta{Name: "test-release"},
-				},
-				StreamMetadata: testAWSStream("x86_64", "us-east-1", "ami-amd64-only"),
-			},
-			expectedLabels: map[string]string{
-				karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "ami-amd64-only",
-			},
-		},
-		{
-			name:     "when the user data secret is created for unsupported platform it should return an error",
-			platform: hyperv1.AzurePlatform,
-			region:   "us-east-1",
-			userDataSecret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "user-data-secret",
-					Namespace: "test-namespace",
-					Labels: map[string]string{
-						karpenterutil.ManagedByKarpenterLabel: "true",
-					},
-				},
-			},
-			expectedError: "failed to get supported architectures: unsupported platform: Azure",
-		},
-		{
-			name:       "When rhelStream is rhel-9 with single-stream payload, it should set AMI labels from StreamMetadata fallback",
-			platform:   hyperv1.AWSPlatform,
-			region:     "us-east-1",
-			rhelStream: "rhel-9",
-			userDataSecret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "user-data-secret",
-					Namespace: "test-namespace",
-					Labels: map[string]string{
-						karpenterutil.ManagedByKarpenterLabel: "true",
-					},
-				},
-			},
-			releaseImage: &releaseinfo.ReleaseImage{
-				ImageStream: &imageapi.ImageStream{
-					ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"},
-				},
-				StreamMetadata: &stream.Stream{
-					Architectures: map[string]stream.Arch{
-						"x86_64": {
-							Images: stream.Images{
-								Aws: &stream.AwsImage{
-									Regions: map[string]stream.SingleImage{
-										"us-east-1": {Image: "ami-rhel9-fallback-amd64"},
-									},
-								},
-							},
-						},
-						"aarch64": {
-							Images: stream.Images{
-								Aws: &stream.AwsImage{
-									Regions: map[string]stream.SingleImage{
-										"us-east-1": {Image: "ami-rhel9-fallback-arm64"},
-									},
-								},
-							},
-						},
-					},
-				},
-				OSStreams: nil,
-			},
-			expectedLabels: map[string]string{
-				karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "ami-rhel9-fallback-amd64",
-				karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureARM64): "ami-rhel9-fallback-arm64",
-			},
-		},
-		{
-			name:       "When rhelStream is rhel-9 with multi-stream payload, it should use OSStreams rhel-9 AMI",
-			platform:   hyperv1.AWSPlatform,
-			region:     "us-east-1",
-			rhelStream: "rhel-9",
-			userDataSecret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "user-data-secret",
-					Namespace: "test-namespace",
-					Labels: map[string]string{
-						karpenterutil.ManagedByKarpenterLabel: "true",
-					},
-				},
-			},
-			releaseImage: &releaseinfo.ReleaseImage{
-				ImageStream: &imageapi.ImageStream{
-					ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"},
-				},
-				StreamMetadata: testAWSStream("x86_64", "us-east-1", "ami-default-amd64"),
-				OSStreams: map[string]*stream.Stream{
-					"rhel-9": testAWSStream("x86_64", "us-east-1", "ami-rhel9-osstream-amd64"),
-				},
-			},
-			expectedLabels: map[string]string{
-				karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "ami-rhel9-osstream-amd64",
-			},
-		},
-		{
-			name:       "When rhelStream is rhel-10 with multi-stream payload, it should use OSStreams rhel-10 AMI",
-			platform:   hyperv1.AWSPlatform,
-			region:     "us-east-1",
-			rhelStream: "rhel-10",
-			userDataSecret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "user-data-secret",
-					Namespace: "test-namespace",
-					Labels: map[string]string{
-						karpenterutil.ManagedByKarpenterLabel: "true",
-					},
-				},
-			},
-			releaseImage: &releaseinfo.ReleaseImage{
-				ImageStream: &imageapi.ImageStream{
-					ObjectMeta: metav1.ObjectMeta{Name: "5.0.0"},
-				},
-				StreamMetadata: testAWSStream("x86_64", "us-east-1", "ami-default-amd64"),
-				OSStreams: map[string]*stream.Stream{
-					"rhel-10": testAWSStream("x86_64", "us-east-1", "ami-rhel10-osstream-amd64"),
-				},
-			},
-			expectedLabels: map[string]string{
-				karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "ami-rhel10-osstream-amd64",
-			},
-		},
-	}
-	log := testr.New(t)
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			ri := tc.releaseImage
-			if ri == nil {
-				ri = testutils.InitReleaseImageOrDie("test-release")
-			}
-			err := setKarpenterAMILabels(log, tc.userDataSecret, tc.region, ri, tc.platform, tc.rhelStream)
-			if tc.expectedError != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(Equal(tc.expectedError))
-				return
-			}
-			g.Expect(err).NotTo(HaveOccurred())
-			for labelKey, expectedAMI := range tc.expectedLabels {
-				g.Expect(tc.userDataSecret.Labels).To(HaveKeyWithValue(labelKey, expectedAMI))
-			}
-			amdKey := karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64)
-			armKey := karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureARM64)
-			if _, ok := tc.expectedLabels[amdKey]; !ok {
-				g.Expect(tc.userDataSecret.Labels).NotTo(HaveKey(amdKey))
-			}
-			if _, ok := tc.expectedLabels[armKey]; !ok {
-				g.Expect(tc.userDataSecret.Labels).NotTo(HaveKey(armKey))
-			}
-		})
-	}
-}
-
 func TestReconcileUserDataSecret(t *testing.T) {
-	testCases := []struct {
-		name           string
-		token          *Token
-		userDataSecret *corev1.Secret
-		expectedError  string
-	}{
-		{
-			name: "when platform is Azure and NodePool is managed by Karpenter, it should return an error",
-			token: &Token{
-				ConfigGenerator: &ConfigGenerator{
-					hostedCluster: &hyperv1.HostedCluster{
-						Spec: hyperv1.HostedClusterSpec{
-							Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform},
-							AutoNode: hyperv1.AutoNode{
-								Provisioner: hyperv1.ProvisionerConfig{
-									Name: hyperv1.ProvisionerKarpenter,
-									Karpenter: hyperv1.KarpenterConfig{
-										Platform: hyperv1.AzurePlatform,
-										Azure: hyperv1.KarpenterAzureConfig{
-											ClientID: "12345678-1234-1234-1234-123456789012",
-										},
-									},
+	const nodePoolRef = "clusters-azure/azure-workers-karpenter"
+	const bootstrapToken = "bootstrap-token"
+	caCert := []byte("test-ignition-ca")
+	newToken := func() *Token {
+		releaseImage := createMockReleaseImage("4.20.0", true)
+		// Use separate fixtures because the helper shares Marketplace metadata between architectures.
+		arm64Release := createMockReleaseImage("4.20.0", true)
+		releaseImage.StreamMetadata.Architectures["aarch64"] = arm64Release.StreamMetadata.Architectures["aarch64"]
+		image := releaseImage.StreamMetadata.Architectures["x86_64"].RHELCoreOSExtensions.Marketplace.Azure.NoPurchasePlan.Gen2
+		image.SKU = "420-v2"
+		image.Version = "420.9.20250701"
+		image = releaseImage.StreamMetadata.Architectures["aarch64"].RHELCoreOSExtensions.Marketplace.Azure.NoPurchasePlan.Gen2
+		image.SKU = "420-arm"
+		image.Version = "420.9.20250701"
+		return &Token{
+			ConfigGenerator: &ConfigGenerator{
+				hostedCluster: &hyperv1.HostedCluster{
+					Spec: hyperv1.HostedClusterSpec{
+						Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform},
+						AutoNode: hyperv1.AutoNode{
+							Provisioner: hyperv1.ProvisionerConfig{
+								Name: hyperv1.ProvisionerKarpenter,
+								Karpenter: hyperv1.KarpenterConfig{
+									Platform: hyperv1.AzurePlatform,
 								},
 							},
 						},
 					},
-					nodePool: &hyperv1.NodePool{
-						ObjectMeta: metav1.ObjectMeta{
-							Name: "test-nodepool",
-							Labels: map[string]string{
-								karpenterutil.ManagedByKarpenterLabel: "true",
-							},
-						},
-					},
-					rolloutConfig: &rolloutConfig{},
 				},
-				userData: &userData{},
-			},
-			userDataSecret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "user-data-secret",
-					Namespace: "test-namespace",
-					Labels: map[string]string{
-						karpenterutil.ManagedByKarpenterLabel: "true",
+				nodePool: &hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "azure-workers-karpenter",
+						Namespace: "clusters-azure",
+						Labels:    map[string]string{karpenterutil.ManagedByKarpenterLabel: "true"},
 					},
 				},
+				resolvedRHELStreamForBootImage: "rhel-9",
+				rolloutConfig: &rolloutConfig{
+					releaseImage:   releaseImage,
+					pullSecretName: "pull-secret",
+				},
 			},
-			expectedError: "karpenter userData reconciliation is currently not supported for platform: Azure",
+			userData: &userData{
+				caCert:                 caCert,
+				ignitionServerEndpoint: "ignition.azure.example.com",
+				proxy:                  &configv1.Proxy{},
+			},
+		}
+	}
+	azureAnnotations := map[string]string{
+		"hypershift.openshift.io/azure-marketplace-publisher":       "azureopenshift",
+		"hypershift.openshift.io/azure-marketplace-offer":           "aro4",
+		"hypershift.openshift.io/azure-marketplace-sku":             "420-v2",
+		"hypershift.openshift.io/azure-marketplace-version":         "420.9.20250701",
+		"hypershift.openshift.io/azure-marketplace-publisher-arm64": "azureopenshift",
+		"hypershift.openshift.io/azure-marketplace-offer-arm64":     "aro4",
+		"hypershift.openshift.io/azure-marketplace-sku-arm64":       "420-arm",
+		"hypershift.openshift.io/azure-marketplace-version-arm64":   "420.9.20250701",
+	}
+	namedStreamAnnotations := maps.Clone(azureAnnotations)
+	namedStreamAnnotations["hypershift.openshift.io/azure-marketplace-sku"] = "aro_rhel9_420-v2"
+	namedStreamAnnotations["hypershift.openshift.io/azure-marketplace-version"] = "420.9.20250801"
+	namedStreamAnnotations["hypershift.openshift.io/azure-marketplace-sku-arm64"] = "aro_rhel9_420-arm"
+	namedStreamAnnotations["hypershift.openshift.io/azure-marketplace-version-arm64"] = "420.9.20250801"
+	karpenterLabels := map[string]string{karpenterutil.ManagedByKarpenterLabel: "true"}
+
+	testCases := map[string]struct {
+		prepareToken        func(*Token)
+		expectedAnnotations map[string]string
+		expectedLabels      map[string]string
+		expectedError       string
+	}{
+		"When an Azure NodePool is managed by Karpenter, it should generate ignition and Marketplace annotations": {
+			expectedAnnotations: azureAnnotations,
+			expectedLabels:      karpenterLabels,
+		},
+		"When an OS stream is selected, it should resolve Marketplace annotations from that stream": {
+			prepareToken: func(token *Token) {
+				selectedRelease := createMockReleaseImage("4.20.0", true)
+				arm64Release := createMockReleaseImage("4.20.0", true)
+				selectedRelease.StreamMetadata.Architectures["aarch64"] = arm64Release.StreamMetadata.Architectures["aarch64"]
+				image := selectedRelease.StreamMetadata.Architectures["x86_64"].RHELCoreOSExtensions.Marketplace.Azure.NoPurchasePlan.Gen2
+				image.SKU = "aro_rhel9_420-v2"
+				image.Version = "420.9.20250801"
+				image = selectedRelease.StreamMetadata.Architectures["aarch64"].RHELCoreOSExtensions.Marketplace.Azure.NoPurchasePlan.Gen2
+				image.SKU = "aro_rhel9_420-arm"
+				image.Version = "420.9.20250801"
+				token.releaseImage.OSStreams = map[string]*stream.Stream{"rhel-9": selectedRelease.StreamMetadata}
+			},
+			expectedAnnotations: namedStreamAnnotations,
+			expectedLabels:      karpenterLabels,
+		},
+		"When Azure image metadata is unavailable, it should propagate the error before generating ignition or setting the managed-by label": {
+			prepareToken: func(token *Token) {
+				token.releaseImage.StreamMetadata.Architectures = nil
+			},
+			expectedAnnotations: map[string]string{},
+			expectedLabels:      map[string]string{},
+			expectedError:       "no Azure Marketplace Gen2 images found",
+		},
+		"When the selected OS stream is unavailable, it should propagate the stream-resolution error": {
+			prepareToken: func(token *Token) {
+				token.releaseImage.OSStreams = map[string]*stream.Stream{}
+			},
+			expectedAnnotations: map[string]string{},
+			expectedLabels:      map[string]string{},
+			expectedError:       `stream "rhel-9" not found`,
+		},
+		"When Karpenter is disabled, it should generate ignition without resolving image metadata": {
+			prepareToken: func(token *Token) {
+				token.hostedCluster.Spec.AutoNode = hyperv1.AutoNode{}
+				token.releaseImage.StreamMetadata = nil
+			},
+			expectedAnnotations: map[string]string{},
+			expectedLabels:      map[string]string{},
+		},
+		"When the NodePool has no managed-by label, it should generate ignition without resolving image metadata": {
+			prepareToken: func(token *Token) {
+				token.nodePool.Labels = nil
+				token.releaseImage.StreamMetadata = nil
+			},
+			expectedAnnotations: map[string]string{},
+			expectedLabels:      map[string]string{},
+		},
+		"When the NodePool managed-by label is false, it should generate ignition without resolving image metadata": {
+			prepareToken: func(token *Token) {
+				token.nodePool.Labels[karpenterutil.ManagedByKarpenterLabel] = "false"
+				token.releaseImage.StreamMetadata = nil
+			},
+			expectedAnnotations: map[string]string{},
+			expectedLabels:      map[string]string{},
+		},
+		"When an AWS NodePool is managed by Karpenter, it should generate ignition and AMI labels": {
+			prepareToken: func(token *Token) {
+				token.hostedCluster.Spec.Platform = hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS:  &hyperv1.AWSPlatformSpec{Region: "us-east-1"},
+				}
+				token.hostedCluster.Spec.AutoNode.Provisioner.Karpenter.Platform = hyperv1.AWSPlatform
+				token.releaseImage.StreamMetadata = testAWSStream("x86_64", "us-east-1", "ami-0123456789abcdef0")
+			},
+			expectedAnnotations: map[string]string{},
+			expectedLabels: map[string]string{
+				karpenterutil.ManagedByKarpenterLabel: "true",
+				"hypershift.openshift.io/ami":         "ami-0123456789abcdef0",
+			},
+		},
+		"When the HostedCluster platform is unsupported, it should return an unsupported-platform error": {
+			prepareToken: func(token *Token) {
+				token.hostedCluster.Spec.Platform.Type = hyperv1.OpenStackPlatform
+			},
+			expectedAnnotations: map[string]string{},
+			expectedLabels:      map[string]string{},
+			expectedError:       "karpenter userData reconciliation is currently not supported for platform: OpenStack",
 		},
 	}
 
-	log := testr.New(t)
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
 			g := NewWithT(t)
-			err := tc.token.reconcileUserDataSecret(log, tc.userDataSecret, "test-token")
+			token := newToken()
+			if tc.prepareToken != nil {
+				tc.prepareToken(token)
+			}
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "user-data-secret",
+					Namespace:   "clusters-azure",
+					Annotations: map[string]string{"example.com/owner": "preserved"},
+				},
+			}
+
+			err := token.reconcileUserDataSecret(testr.New(t), secret, bootstrapToken)
+			expectedAnnotations := map[string]string{
+				"hypershift.openshift.io/nodePool": nodePoolRef,
+				"example.com/owner":                "preserved",
+			}
+			maps.Copy(expectedAnnotations, tc.expectedAnnotations)
+			g.Expect(secret.Annotations).To(Equal(expectedAnnotations))
+			g.Expect(secret.Labels).To(HaveLen(len(tc.expectedLabels)))
+			for key, value := range tc.expectedLabels {
+				g.Expect(secret.Labels).To(HaveKeyWithValue(key, value))
+			}
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(Equal(tc.expectedError))
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
+				g.Expect(secret.Data).To(BeEmpty())
 				return
 			}
 			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(secret.Immutable).To(Equal(new(false)))
+			g.Expect(secret.Data).To(HaveLen(2))
+			g.Expect(secret.Data["disableTemplating"]).To(Equal([]byte("dHJ1ZQ==")))
+
+			var ignition ignitionapi.Config
+			g.Expect(json.Unmarshal(secret.Data["value"], &ignition)).To(Succeed())
+			g.Expect(ignition.Ignition.Version).To(Equal("3.2.0"))
+			g.Expect(ignition.Ignition.Security.TLS.CertificateAuthorities).To(HaveLen(1))
+			g.Expect(ignition.Ignition.Security.TLS.CertificateAuthorities[0].Source).To(Equal(
+				new("data:text/plain;base64," + base64.StdEncoding.EncodeToString(caCert)),
+			))
+			g.Expect(ignition.Ignition.Config.Merge).To(HaveLen(1))
+			merge := ignition.Ignition.Config.Merge[0]
+			g.Expect(merge.Source).To(Equal(new("https://ignition.azure.example.com/ignition")))
+			g.Expect(merge.HTTPHeaders).To(ConsistOf(
+				ignitionapi.HTTPHeader{Name: "Authorization", Value: new("Bearer " + base64.StdEncoding.EncodeToString([]byte(bootstrapToken)))},
+				ignitionapi.HTTPHeader{Name: "NodePool", Value: new(nodePoolRef)},
+				ignitionapi.HTTPHeader{Name: "TargetConfigVersionHash", Value: new(token.Hash())},
+			))
 		})
 	}
 }
