@@ -10084,6 +10084,302 @@ algorithm.azure.akv.io
 
 ---
 
+## Source: docs/content/how-to/azure/create-azure-hosted-cluster-autonode.md
+
+---
+title: Create AutoNode hosted clusters
+---
+
+HyperShift AutoNode uses Karpenter to provision worker VMs for unschedulable workloads on self-managed Azure HostedClusters. Karpenter runs in the hosted control plane namespace on the management cluster and watches NodePools in the hosted cluster.
+
+## Prerequisites
+
+- An OpenShift management cluster prepared following Setup Azure Management Cluster for HyperShift.
+- An Azure OIDC issuer and matching service account signing key configured following Configure OIDC Issuer.
+- The HyperShift CLI and OpenShift CLI (`oc`).
+- An Azure credentials file with permission to create managed identities, provision infrastructure, and assign Azure roles. See Create Azure IAM Resources.
+- A valid OpenShift pull secret and a release image containing the `karpenter-operator` and `azure-karpenter-provider-azure` components.
+- Azure quota for the worker VMs. The example uses on-demand `Standard_D4s_v5` VMs.
+
+!!! warning "Customize the example values"
+
+    Customize the example values below for your environment before running the commands. Use the OIDC issuer URL and matching service account signing key configured in the prerequisites.
+
+```bash
+export CLUSTER_NAME="my-autonode-cluster"
+export INFRA_ID="${CLUSTER_NAME}-$(openssl rand -hex 4)"
+export LOCATION="eastus"
+export BASE_DOMAIN="example.com"
+export AZURE_CREDS="/path/to/azure-creds.json"
+export PULL_SECRET="/path/to/pull-secret.json"
+export RELEASE_IMAGE="<release-image>"
+export PERSISTENT_RG_NAME="os4-common"
+export OIDC_ISSUER_URL="https://yourstorageaccount.blob.core.windows.net/yourstorageaccount"
+export SA_TOKEN_ISSUER_PRIVATE_KEY_PATH="/path/to/serviceaccount-signer.private"
+```
+
+Commands use the management cluster kubeconfig unless `--kubeconfig` is specified.
+
+## Create Workload Identities for AutoNode
+
+Create workload identities with `--enable-karpenter` to include Karpenter's identity:
+
+```bash
+hypershift create iam azure \
+    --name "${CLUSTER_NAME}" \
+    --infra-id "${INFRA_ID}" \
+    --azure-creds "${AZURE_CREDS}" \
+    --location "${LOCATION}" \
+    --resource-group-name "${PERSISTENT_RG_NAME}" \
+    --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+    --output-file workload-identities.json \
+    --enable-karpenter
+```
+
+If you are reusing IAM resources, rerun IAM creation with `--enable-karpenter` and your original options. Regenerate any existing infrastructure output from the updated IAM file before using `--infra-json`.
+
+## Install the HyperShift Operator with AutoNode Support
+
+Azure AutoNode requires the standalone Karpenter operator and the management cluster `TechPreviewNoUpgrade` feature set:
+
+```bash
+hypershift install \
+    --pull-secret "${PULL_SECRET}" \
+    --limit-crd-install Azure \
+    --tech-preview-no-upgrade \
+    --enable-standalone-karpenter-operator
+```
+
+If your management cluster uses External DNS or Azure Private Link, keep the corresponding installation options from Setup Azure Management Cluster for HyperShift and Deploy Azure Private Clusters.
+
+## Create the HostedCluster with AutoNode
+
+### Create Infrastructure and Assign Roles
+
+Pass the IAM output to infrastructure creation and enable role assignment:
+
+```bash
+hypershift create infra azure \
+    --name "${CLUSTER_NAME}" \
+    --infra-id "${INFRA_ID}" \
+    --azure-creds "${AZURE_CREDS}" \
+    --base-domain "${BASE_DOMAIN}" \
+    --location "${LOCATION}" \
+    --workload-identities-file workload-identities.json \
+    --assign-identity-roles \
+    --dns-zone-rg-name "${PERSISTENT_RG_NAME}" \
+    --output-file infra-output.yaml
+```
+
+For role scopes, see Self-Managed Azure Infrastructure. For existing network resources, see Create Azure Infrastructure Separately.
+
+### Create the HostedCluster
+
+Enable AutoNode with `--auto-node`:
+
+```bash
+hypershift create cluster azure \
+    --name "${CLUSTER_NAME}" \
+    --infra-id "${INFRA_ID}" \
+    --azure-creds "${AZURE_CREDS}" \
+    --location "${LOCATION}" \
+    --node-pool-replicas 2 \
+    --base-domain "${BASE_DOMAIN}" \
+    --pull-secret "${PULL_SECRET}" \
+    --generate-ssh \
+    --release-image "${RELEASE_IMAGE}" \
+    --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
+    --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+    --infra-json infra-output.yaml \
+    --diagnostics-storage-account-type Managed \
+    --auto-node
+```
+
+Do not combine `--assign-service-principal-roles` with `--infra-json`. Roles were assigned during infrastructure creation.
+
+For External DNS, also pass `--external-dns-domain <your-dns-zone-name>`. For private endpoint access, follow Deploy Azure Private Clusters.
+
+The two initial workers belong to a HyperShift NodePool managed by Cluster API Provider Azure. AutoNode provisions additional workers according to the Karpenter NodePools you create in the hosted cluster.
+
+Wait for the hosted cluster API and AutoNode components before configuring Karpenter:
+
+```bash
+oc wait --for=condition=Available hostedcluster/"${CLUSTER_NAME}" -n clusters --timeout=30m
+oc wait --for=condition=AutoNodeEnabled hostedcluster/"${CLUSTER_NAME}" -n clusters --timeout=30m
+```
+
+Extract the hosted cluster kubeconfig:
+
+```bash
+export HOSTED_CLUSTER_KUBECONFIG="${PWD}/${CLUSTER_NAME}-kubeconfig"
+hypershift create kubeconfig \
+    --name "${CLUSTER_NAME}" \
+    --namespace clusters > "${HOSTED_CLUSTER_KUBECONFIG}"
+```
+
+## Configure Karpenter in the Hosted Cluster
+
+The platform creates an `OpenShiftAzureNodeClass` named `default` in the hosted cluster for use by Karpenter NodePools. Do not modify or delete this platform-managed default NodeClass. The platform reverts changes to its specification and recreates it if deleted.
+
+Inspect the default NodeClass and its platform-populated settings:
+
+```bash
+oc --kubeconfig "${HOSTED_CLUSTER_KUBECONFIG}" get openshiftazurenodeclasses.karpenter.hypershift.openshift.io default -o yaml
+```
+
+### NodeClass Fields
+
+For custom node settings, create an additional `OpenShiftAzureNodeClass`. All fields below are optional and belong to `spec`. Some effective defaults are applied during reconciliation rather than stored in the NodeClass specification.
+
+| Field | Description | Default when omitted |
+|-------|-------------|----------------------|
+| `vnetSubnetID` | Azure resource ID of the subnet to which the nodes' network interfaces attach. The subnet must be in the cluster's virtual network. | The hosted cluster's subnet. This value is fixed on the platform-managed default NodeClass. |
+| `osDiskSizeGiB` | Size of the nodes' operating system disk in GiB, from 30 to 2048. | 120 GiB. |
+| `tags` | Azure tags applied to VMs and network interfaces. Up to 47 user-defined tags can be specified. Platform-reserved tag names cannot be used. | No user-defined tags. Platform tags still apply. |
+| `kubelet` | Kubelet settings delivered through ignition, including pod limits, resource reservations, and eviction thresholds. On Azure, `maxPods` must be between 10 and 250. | OpenShift kubelet defaults. |
+| `security.encryption.hostEncryption` | Host-based encryption for temporary disks and disk caches. Accepts `Enabled` or `Disabled`. `Enabled` requires the Azure subscription's `EncryptionAtHost` feature and compatible VM sizes. | `Disabled`. |
+| `version` | Pins nodes to an OpenShift version. Changing this value replaces the nodes. | When `version` is omitted, nodes created from this NodeClass follow the last completed control plane version. They are replaced after each control plane upgrade completes. |
+
+The OS disk size and host encryption defaults are platform-selected and may change between releases. For the full kubelet field set, see `KubeletConfiguration`.
+
+`version: ""` is invalid. To follow the control plane, omit `spec.version`. An explicit `version` must be a semantic version in the cluster's update channel. It cannot be a newer minor version than the control plane or an older minor version than the NodeClass's `status.version`. Supported skew is up to three minor versions behind the control plane. The `SupportedVersionSkew` condition reports whether the version is within that range without changing readiness.
+
+### Create a Karpenter NodePool
+
+!!! note "NodeClass References"
+
+    `AKSNodeClass` is an operator-managed implementation detail, not a user-facing configuration API. Do not edit or create `AKSNodeClass` resources directly. In a Karpenter NodePool, set `nodeClassRef` to the generated `AKSNodeClass` with the same name as your `OpenShiftAzureNodeClass`.
+
+Create a Karpenter NodePool for on-demand Azure VMs:
+
+```bash
+cat <<'EOF' | oc --kubeconfig "${HOSTED_CLUSTER_KUBECONFIG}" apply -f -
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: azure-autonode
+spec:
+  limits:
+    cpu: "16"
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 60s
+  template:
+    spec:
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: default
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["Standard_D4s_v5"]
+EOF
+```
+
+## Deploy a Sample Workload
+
+The sample workload selects the `azure-autonode` Karpenter NodePool so its pods cannot run on the initial HyperShift NodePool workers:
+
+```bash
+cat <<'EOF' | oc --kubeconfig "${HOSTED_CLUSTER_KUBECONFIG}" apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auto-node-example
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: auto-node-example
+  template:
+    metadata:
+      labels:
+        app: auto-node-example
+    spec:
+      nodeSelector:
+        karpenter.sh/nodepool: azure-autonode
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workload
+          image: registry.access.redhat.com/ubi10/ubi-minimal:10.1
+          command: ["sleep", "infinity"]
+          resources:
+            requests:
+              cpu: "1"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+EOF
+```
+
+Scale the workload to create demand for Karpenter workers:
+
+```bash
+oc --kubeconfig "${HOSTED_CLUSTER_KUBECONFIG}" scale deployment/auto-node-example --replicas=3
+```
+
+## Verify Node Provisioning
+
+Inspect the Karpenter NodePool and watch NodeClaims in the hosted cluster:
+
+```bash
+oc --kubeconfig "${HOSTED_CLUSTER_KUBECONFIG}" get nodepools.karpenter.sh azure-autonode
+oc --kubeconfig "${HOSTED_CLUSTER_KUBECONFIG}" get nodeclaims.karpenter.sh --watch
+```
+
+Stop the watch with `Ctrl+C`. To inspect a NodeClaim's conditions and events:
+
+```bash
+oc --kubeconfig "${HOSTED_CLUSTER_KUBECONFIG}" describe nodeclaims.karpenter.sh <nodeclaim-name>
+```
+
+Check that workers have joined and the sample pods are scheduled on them:
+
+```bash
+oc --kubeconfig "${HOSTED_CLUSTER_KUBECONFIG}" get nodes -l karpenter.sh/nodepool=azure-autonode
+oc --kubeconfig "${HOSTED_CLUSTER_KUBECONFIG}" get pods -l app=auto-node-example -o wide
+```
+
+## Cleanup
+
+Remove the sample workload and its Karpenter NodePool:
+
+```bash
+oc --kubeconfig "${HOSTED_CLUSTER_KUBECONFIG}" delete deployment auto-node-example
+oc --kubeconfig "${HOSTED_CLUSTER_KUBECONFIG}" delete nodepools.karpenter.sh azure-autonode
+```
+
+Wait for Karpenter to delete its Azure resources before destroying the HostedCluster and infrastructure.
+
+!!! note "Resource Cleanup"
+
+    The HyperShift destroy commands clean up the cluster and infrastructure resources. Workload identities, including the Karpenter identity, and the OIDC issuer created during setup can be reused for other clusters. Clean them up separately after cluster cleanup if no longer needed. See Destroying Workload Identities.
+
+## Related Documentation
+
+- Self-Managed Azure Infrastructure
+- Create Azure IAM Resources
+- Autoscaling for Self-Managed Azure HostedClusters
+- Karpenter NodePools
+
+
+---
+
 ## Source: docs/content/how-to/azure/create-iam-separately.md
 
 ---
@@ -10235,6 +10531,24 @@ hypershift create iam azure \
 
     If you use `--enable-kms`, you must **manually** assign the `Key Vault Crypto User` role to the KMS identity on your Key Vault. The `--auto-assign-roles` flag does not cover this because the Key Vault scope is user-provided. See Enabling KMS Encryption for the role assignment commands.
 
+### Enabling Karpenter Identity
+
+To also create a Karpenter workload identity for AutoNode, add the `--enable-karpenter` flag:
+
+```bash
+hypershift create iam azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
+    --output-file workload-identities.json \
+    --enable-karpenter
+```
+
+The IAM output includes `karpenterClientID`. Pass the output to `create infra azure` with `--assign-identity-roles` to assign Karpenter's required Azure roles. See Create AutoNode hosted clusters for the complete workflow.
+
 ## Private Endpoint Access
 
 The **Control Plane Operator** identity is always created by `create iam azure`. For private
@@ -10372,6 +10686,7 @@ Both the managed identities and their federated credentials are removed.
 |------|-------------|---------|
 | `--location` | Azure region for identities | `eastus` |
 | `--cloud` | Azure cloud environment | `AzurePublicCloud` |
+| `--enable-karpenter` | Create Karpenter workload identity for AutoNode | `false` |
 | `--enable-kms` | Create KMS identity for etcd encryption | `false` |
 
 ### Required Flags for `destroy iam azure`
@@ -10487,6 +10802,7 @@ hypershift destroy iam azure \
 
 ## See Also
 
+- Create AutoNode hosted clusters
 - Create Azure Infrastructure Separately
 - Self-Managed Azure Overview
 - Deploy Azure Private Clusters — End-to-end guide for private endpoint access
@@ -12051,6 +12367,7 @@ Self-managed Azure uses an OpenShift cluster (running on any platform - AWS, Azu
 - Create Azure IAM Resources - Set up OIDC issuer, managed identities, and workload identity federation
 - Setup Azure Management Cluster - Install HyperShift operator
 - Create a Self-Managed Azure HostedCluster - Deploy your first hosted cluster
+- Create AutoNode hosted clusters - Provision Azure worker nodes with Karpenter
 - Create Azure Infrastructure Separately - Create infrastructure before cluster
 
 ## Comparison
@@ -12333,6 +12650,8 @@ You can create workload identities using either:
 
 👉 **Guide**: Create Azure IAM Resources - OIDC issuer configuration and workload identity creation
 
+For AutoNode, add `--enable-karpenter` to `hypershift create iam azure`.
+
 ### Phase 2: Management Cluster Setup
 
 **Purpose**: Prepare your Azure OpenShift management cluster to host and manage HyperShift control planes.
@@ -12364,7 +12683,7 @@ This phase creates your actual hosted OpenShift clusters:
 
 **When to Complete**: After Phases 1 and 2 are fully configured and verified.
 
-👉 **Guide**: Create a Self-Managed Azure HostedCluster - Includes both DNS approaches
+👉 **Guides**: Create a Self-Managed Azure HostedCluster or Create AutoNode hosted clusters with Karpenter
 
 ## Prerequisites Summary
 
@@ -12432,7 +12751,7 @@ Begin your self-managed Azure HyperShift deployment by following the guides in o
 
 1. **Create Azure IAM Resources** - Set up OIDC issuer, managed identities, and workload identity federation
 2. **Setup Azure Management Cluster for HyperShift** - Install HyperShift operator (with or without External DNS)
-3. **Create a Self-Managed Azure HostedCluster** - Deploy your first hosted cluster
+3. **Create a Self-Managed Azure HostedCluster** - Deploy your first hosted cluster, or use AutoNode for Karpenter-managed workers
 4. **Deploy Azure Private Clusters** (Optional) - Configure private endpoint access with Azure Private Link
 5. **Autoscaling** - Configure node pool and cluster autoscaling
 6. **Etcd Snapshot Backup** (Optional) - Configure etcd backup with Azure Blob Storage
@@ -65498,7 +65817,7 @@ ccoctl azure create-oidc-issuer \
 
 ### Workload Identities
 
-Self-managed Azure requires 7 managed identities with federated credentials for OpenShift components:
+Self-managed Azure requires 7 managed identities with federated credentials for OpenShift components. AutoNode requires an additional Karpenter identity:
 
 | Identity | Operator | Service Accounts | Azure Role |
 |----------|----------|------------------|------------|
@@ -65509,6 +65828,7 @@ Self-managed Azure requires 7 managed identities with federated credentials for 
 | **Cloud Provider** | Azure Cloud Provider | `azure-cloud-provider` | Cloud Provider Role (`a1f96423-95ce-4224-ab27-4e3dc72facd4`) |
 | **Node Pool Management** | Cluster API Provider Azure | `capi-provider` | Contributor (`b24988ac-6180-42a0-ab88-20f7382dd24c`) |
 | **Network** | Cloud Network Config Controller | `cloud-network-config-controller` | Network Role (`be7a6435-15ae-4171-8f30-4a343eff9e8f`) |
+| **Karpenter (AutoNode only)** | Karpenter | `karpenter` in `kube-system` | Virtual Machine Contributor (`9980e02c-c2be-4d73-94e8-173b1dc7cf3c`), Network Contributor (`4d97b98b-1d4f-4787-a291-c67834d212e7`), Managed Identity Operator (`f1a07417-d97a-45cb-824c-7a7467783830`) |
 
 Each identity is configured with:
 
@@ -65529,6 +65849,7 @@ Identities receive role assignments across multiple resource groups depending on
 | Network (CNCC) | Yes | Yes | No | No |
 | Image Registry | Yes | No | No | No |
 | Node Pool Management | Yes | Yes | No | No |
+| Karpenter (AutoNode only) | Yes | Yes (Network Contributor only) | No | No |
 
 ### Infrastructure Created by HyperShift
 
@@ -65698,6 +66019,7 @@ You can use an existing VNet and NSG from the same resource group, which places 
 - Setup Azure Management Cluster for HyperShift - Install HyperShift operator
 - Create a Self-Managed Azure HostedCluster - Deploy your first hosted cluster
 - Self-Managed Azure Overview - Comprehensive overview
+- Create AutoNode hosted clusters - Provision Azure worker nodes with Karpenter
 
 
 ---
