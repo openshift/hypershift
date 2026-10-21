@@ -34,11 +34,15 @@ import (
 
 const (
 	// Annotation keys for scale-from-zero workaround
-	cpuKey    = "machine.openshift.io/vCPU"
-	memoryKey = "machine.openshift.io/memoryMb"
-	gpuKey    = "machine.openshift.io/GPU"
-	labelsKey = "capacity.cluster-autoscaler.kubernetes.io/labels"
-	taintsKey = "capacity.cluster-autoscaler.kubernetes.io/taints"
+	cpuKey          = "machine.openshift.io/vCPU"
+	memoryKey       = "machine.openshift.io/memoryMb"
+	gpuKey          = "machine.openshift.io/GPU"
+	capiCPUKey      = "capacity.cluster-autoscaler.kubernetes.io/cpu"
+	capiMemoryKey   = "capacity.cluster-autoscaler.kubernetes.io/memory"
+	capiGPUCountKey = "capacity.cluster-autoscaler.kubernetes.io/gpu-count"
+	capiGPUTypeKey  = "capacity.cluster-autoscaler.kubernetes.io/gpu-type"
+	labelsKey       = "capacity.cluster-autoscaler.kubernetes.io/labels"
+	taintsKey       = "capacity.cluster-autoscaler.kubernetes.io/taints"
 
 	archLabelKey = "kubernetes.io/arch"
 )
@@ -98,11 +102,11 @@ func setScaleFromZeroAnnotationsOnObject(ctx context.Context, provider instancet
 	}
 
 	// Native capacity replaces only the resource workarounds, not scheduling metadata.
-	if len(statusCapacity) > 0 {
-		for _, key := range []string{cpuKey, memoryKey, gpuKey} {
+	if len(statusCapacity) > 0 || provider == nil {
+		for _, key := range []string{cpuKey, memoryKey, gpuKey, capiCPUKey, capiMemoryKey, capiGPUCountKey, capiGPUTypeKey} {
 			delete(annotations, key)
 		}
-	} else if provider != nil {
+	} else {
 		if instanceType == "" {
 			return fmt.Errorf("instanceType is empty in machine template")
 		}
@@ -114,16 +118,17 @@ func setScaleFromZeroAnnotationsOnObject(ctx context.Context, provider instancet
 			architecture = instanceInfo.CPUArchitecture
 		}
 		annotations[cpuKey] = strconv.FormatInt(int64(instanceInfo.VCPU), 10)
+		annotations[capiCPUKey] = annotations[cpuKey]
 		annotations[memoryKey] = strconv.FormatInt(instanceInfo.MemoryMb, 10)
+		annotations[capiMemoryKey] = fmt.Sprintf("%dMi", instanceInfo.MemoryMb)
 		if instanceInfo.GPU > 0 {
 			annotations[gpuKey] = strconv.FormatInt(int64(instanceInfo.GPU), 10)
+			annotations[capiGPUCountKey] = annotations[gpuKey]
+			annotations[capiGPUTypeKey] = "nvidia.com/gpu"
 		} else {
 			delete(annotations, gpuKey)
-		}
-	} else {
-		// No source remains to refresh capacity from a previously configured provider.
-		for _, key := range []string{cpuKey, memoryKey, gpuKey} {
-			delete(annotations, key)
+			delete(annotations, capiGPUCountKey)
+			delete(annotations, capiGPUTypeKey)
 		}
 	}
 
