@@ -4,7 +4,10 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
+	"flag"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,11 +19,14 @@ import (
 	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/supportedversion"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+var scaleFromZeroUpgradeChecks = flag.Bool("e2e.scale-from-zero-upgrade-checks", false, "Verify existing autoscaling pool capacity migration and worker identities during an operator upgrade; requires an approved capacity-source fixture")
 
 const (
 	nodePoolAnnotationCurrentConfig        = "hypershift.openshift.io/nodePoolCurrentConfig"
@@ -31,6 +37,17 @@ const (
 // TestUpgradeHyperShiftOperator validates that a HyperShift Operator upgrade won't unnecessarily cause a node rollout.
 // The test must be triggered via the flag upgrade.run-tests
 func TestUpgradeHyperShiftOperator(t *testing.T) {
+	if *scaleFromZeroUpgradeChecks {
+		if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
+			t.Fatal("scale-from-zero upgrade checks require an AWS or Azure fixture")
+		}
+		if *scaleFromZeroCapacitySource != "native" && *scaleFromZeroCapacitySource != "annotations" {
+			t.Fatal("scale-from-zero upgrade checks require an explicit native or annotations source")
+		}
+		if *scaleFromZeroUpgradeType != string(hyperv1.UpgradeTypeReplace) && *scaleFromZeroUpgradeType != string(hyperv1.UpgradeTypeInPlace) {
+			t.Fatal("scale-from-zero upgrade checks require Replace or InPlace")
+		}
+	}
 	if !globalOpts.RunUpgradeTest {
 		// This test should be triggered intentionally by setting the option above,
 		// otherwise skip it.
@@ -44,6 +61,8 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 	var nodePoolsMap map[string]*hyperv1.NodePool
 	var machineDeploymentMap map[string]int64
 	var preUpgradeBootstrapState map[string]*bootstrapChainState
+	var rolloutSnapshot map[string]interface{}
+	var guestClient crclient.Client
 
 	hyperShiftOperatorLatestImage := globalOpts.HyperShiftOperatorLatestImage
 
@@ -69,6 +88,13 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 
 	clusterOpts.BeforeApply = func(o crclient.Object) {
 		switch obj := o.(type) {
+		case *hyperv1.NodePool:
+			if *scaleFromZeroUpgradeChecks {
+				obj.Spec.Management.UpgradeType = hyperv1.UpgradeType(*scaleFromZeroUpgradeType)
+				if obj.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+					obj.Spec.Management.Replace = nil
+				}
+			}
 		case *hyperv1.HostedCluster:
 
 			// Add a label to identify the HostedCluster for upgrade tests in case they're leaked
@@ -85,6 +111,10 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 	t.Logf("Observed pre-upgrade HyperShift Operator image %q", operatorImage)
 	useCAPIv1Beta1, err := managementClusterUsesCAPIv1Beta1(ctx, client)
 	g.Expect(err).ToNot(gomega.HaveOccurred(), "determining management cluster CAPI API version")
+	capiVersion := "v1beta2"
+	if useCAPIv1Beta1 {
+		capiVersion = "v1beta1"
+	}
 
 	// Shared role credential reconciliation only landed on 4.21+.
 	// Check the pre-upgrade HO's advertised version, not the release image version.
@@ -111,7 +141,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g gomega.Gomega, mc crclient.Client, hc *hyperv1.HostedCluster) {
 		t.Logf("HostedCluster %s created", crclient.ObjectKeyFromObject(hc))
 		t.Log("Waiting for HostedCluster client to be ready")
-		_ = e2eutil.WaitForGuestClient(t, ctx, mc, hc)
+		guestClient = e2eutil.WaitForGuestClient(t, ctx, mc, hc)
 
 		t.Log("Nodes are ready")
 		mgmtClient = mc
@@ -134,15 +164,60 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			t.Logf("Found %d NodePools", len(nodepools.Items))
 			for i := range nodepools.Items {
 				t.Logf("Found NodePool %s", nodepools.Items[i].Name)
+				if *scaleFromZeroUpgradeChecks {
+					prepared, err := e2eutil.PrepareScaleFromZeroUpgrade(&nodepools.Items[i])
+					g.Expect(err).NotTo(gomega.HaveOccurred())
+					g.Expect(mgmtClient.Update(ctx, prepared)).To(gomega.Succeed())
+					nodepools.Items[i] = *prepared
+				}
 				nodePoolsMap[nodepools.Items[i].Name] = &nodepools.Items[i]
 			}
 
 			hcpNameSpace = manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-			machineDeploymentMap, err = listMachineDeploymentGenerations(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			g.Expect(len(machineDeploymentMap)).To(gomega.BeEquivalentTo(len(nodepools.Items)),
-				"Number of MachineDeployments and NodePools should match")
-			t.Logf("Found %d MachineDeployments", len(machineDeploymentMap))
+			if !*scaleFromZeroUpgradeChecks || *scaleFromZeroUpgradeType != string(hyperv1.UpgradeTypeInPlace) {
+				machineDeploymentMap, err = listMachineDeploymentGenerations(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
+				g.Expect(err).ToNot(gomega.HaveOccurred())
+				g.Expect(len(machineDeploymentMap)).To(gomega.BeEquivalentTo(len(nodepools.Items)), "Number of MachineDeployments and NodePools should match")
+			}
+			if *scaleFromZeroUpgradeChecks {
+				for _, nodePool := range nodePoolsMap {
+					g.Eventually(func() error {
+						object, native, err := e2eutil.GetScaleFromZeroCapacity(ctx, mgmtClient, hcpNameSpace, nodePool, capiVersion)
+						if err != nil {
+							return err
+						}
+						if *scaleFromZeroCapacitySource == "native" {
+							return e2eutil.ValidateScaleFromZeroCapacity(object.GetAnnotations(), native, "native")
+						}
+						if len(native) != 0 {
+							return fmt.Errorf("upgrade fixture unexpectedly has native capacity")
+						}
+						cpu, err := resource.ParseQuantity(object.GetAnnotations()["machine.openshift.io/vCPU"])
+						if err != nil || cpu.Sign() <= 0 {
+							return fmt.Errorf("waiting for positive legacy CPU capacity")
+						}
+						memoryMiB, err := strconv.ParseInt(object.GetAnnotations()["machine.openshift.io/memoryMb"], 10, 64)
+						if err != nil || memoryMiB <= 0 {
+							return fmt.Errorf("waiting for positive legacy memory capacity")
+						}
+						return nil
+					}, "5m", "1s").Should(gomega.Succeed(), "the baseline pool must converge after fixed-replica framework validation")
+					object, native, err := e2eutil.GetScaleFromZeroCapacity(ctx, mgmtClient, hcpNameSpace, nodePool, capiVersion)
+					g.Expect(err).NotTo(gomega.HaveOccurred())
+					if *scaleFromZeroCapacitySource == "annotations" {
+						g.Expect(native).To(gomega.BeEmpty(), "the upgrade fixture must force fallback before the operator upgrade")
+						g.Expect(object.GetAnnotations()).NotTo(gomega.HaveKey("capacity.cluster-autoscaler.kubernetes.io/cpu"), "baseline must exercise legacy-only to dual-key migration")
+						g.Expect(object.GetAnnotations()).NotTo(gomega.HaveKey("capacity.cluster-autoscaler.kubernetes.io/memory"))
+					} else {
+						g.Expect(e2eutil.ValidateScaleFromZeroCapacity(object.GetAnnotations(), native, *scaleFromZeroCapacitySource)).To(gomega.Succeed())
+					}
+				}
+				rolloutSnapshot, err = e2eutil.SnapshotScaleFromZeroRollout(ctx, mgmtClient, guestClient, hcpNameSpace, capiVersion, globalOpts.Platform)
+				g.Expect(err).NotTo(gomega.HaveOccurred())
+				data, err := json.Marshal(rolloutSnapshot)
+				g.Expect(err).NotTo(gomega.HaveOccurred())
+				t.Logf("Pre-upgrade scale-from-zero rollout snapshot: %s", data)
+			}
 
 			// Capture bootstrap chain state before upgrade to detect replacement during upgrade
 			t.Log("Capturing bootstrap chain state before operator upgrade")
@@ -165,6 +240,20 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 		operatorImage, err := e2eutil.GetHyperShiftOperatorImage(ctx, mc, globalOpts.HOInstallationOptions)
 		g.Expect(err).ToNot(gomega.HaveOccurred(), "Getting HyperShiftOperator image shouldn't return errors")
 		g.Expect(operatorImage).To(gomega.Equal(hyperShiftOperatorLatestImage))
+		if *scaleFromZeroUpgradeChecks {
+			g.Eventually(func() error {
+				for _, nodePool := range nodePoolsMap {
+					object, native, err := e2eutil.GetScaleFromZeroCapacity(ctx, mgmtClient, hcpNameSpace, nodePool, capiVersion)
+					if err != nil {
+						return err
+					}
+					if err := e2eutil.ValidateScaleFromZeroCapacity(object.GetAnnotations(), native, *scaleFromZeroCapacitySource); err != nil {
+						return err
+					}
+				}
+				return nil
+			}, "5m", "1s").Should(gomega.Succeed(), "the candidate must migrate capacity metadata before checking stable worker identities")
+		}
 
 		t.Logf("Observed post-upgrade HyperShift Operator image %q", operatorImage)
 
@@ -224,6 +313,19 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 					}
 				}
 
+				if *scaleFromZeroUpgradeChecks {
+					current, err := e2eutil.SnapshotScaleFromZeroRollout(ctx, mgmtClient, guestClient, hcpNameSpace, capiVersion, globalOpts.Platform)
+					g.Expect(err).NotTo(gomega.HaveOccurred())
+					g.Expect(current).To(gomega.Equal(rolloutSnapshot), "operator metadata migration must not change worker identities, templates, or scalable specs")
+					for _, nodePool := range nodePoolsMap {
+						object, native, err := e2eutil.GetScaleFromZeroCapacity(ctx, mgmtClient, hcpNameSpace, nodePool, capiVersion)
+						g.Expect(err).NotTo(gomega.HaveOccurred())
+						g.Expect(e2eutil.ValidateScaleFromZeroCapacity(object.GetAnnotations(), native, *scaleFromZeroCapacitySource)).To(gomega.Succeed())
+					}
+					if *scaleFromZeroUpgradeType == string(hyperv1.UpgradeTypeInPlace) {
+						return true
+					}
+				}
 				postUpgradeMachineDeployments, err := listMachineDeploymentGenerations(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
 				if err != nil {
 					gomega.StopTrying(fmt.Sprintf("Error listing MachineDeployments: %v", err)).Now()
