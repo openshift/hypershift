@@ -96,6 +96,8 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/validations"
 
+	"github.com/blang/semver"
+
 	routev1 "github.com/openshift/api/route/v1"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -757,6 +759,13 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	releaseImage, err := r.LookupReleaseImage(ctx, hostedControlPlane)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+
+	// HACK (main-CPO-on-4.20 experiment): record the resolved operand payload version so
+	// config.TLSArgs can gate the --tls-min-version/--tls-cipher-suites operand flags off for
+	// payloads (<5.0) whose binaries reject them. One CPO process per HCP, so this is safe.
+	if v, perr := semver.Parse(releaseImage.Version()); perr == nil {
+		config.SetOperandVersion(v)
 	}
 
 	// This runs after LookupReleaseImage so we can use the version and resolved
