@@ -241,7 +241,7 @@ func (p *LocalIgnitionProvider) fetchBootstrapKubeConfig(ctx context.Context) ([
 	return data, nil
 }
 
-func (p *LocalIgnitionProvider) fetchAndValidateMCSConfig(ctx context.Context, hcConfigurationHash string) (*corev1.ConfigMap, error) {
+func (p *LocalIgnitionProvider) fetchAndValidateMCSConfig(ctx context.Context, hcConfigurationHash, expectedBundleHash string) (*corev1.ConfigMap, error) {
 	mcsConfig := &corev1.ConfigMap{}
 	if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: "machine-config-server"}, mcsConfig); err != nil {
 		return nil, fmt.Errorf("failed to get machine-config-server configmap: %w", err)
@@ -254,6 +254,9 @@ func (p *LocalIgnitionProvider) fetchAndValidateMCSConfig(ctx context.Context, h
 	userCaBundleConfigCM := &corev1.ConfigMap{}
 	if err := yaml.Unmarshal([]byte(mcsConfig.Data["user-ca-bundle-config.yaml"]), &userCaBundleConfigCM); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal user-ca-bundle-config.yaml: %w", err)
+	}
+	if expectedBundleHash != "" && util.HashSimple(userCaBundleConfigCM.Data["ca-bundle.crt"]) != expectedBundleHash {
+		return nil, fmt.Errorf("rendered trust bundle does not match expected hash; waiting for CA propagation")
 	}
 
 	managedTrustedBundle := &corev1.ConfigMap{}
@@ -685,7 +688,7 @@ func (p *LocalIgnitionProvider) runMCSAndFetchPayload(ctx context.Context, dirs 
 	return payload, nil
 }
 
-func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream, cloudConfigHash string) ([]byte, error) {
+func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream, cloudConfigHash, renderedTrustBundleHash string) ([]byte, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -717,7 +720,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, fmt.Errorf("failed to get bootstrap kubeconfig: %w", err)
 	}
 
-	mcsConfig, err := p.fetchAndValidateMCSConfig(ctx, hcConfigurationHash)
+	mcsConfig, err := p.fetchAndValidateMCSConfig(ctx, hcConfigurationHash, renderedTrustBundleHash)
 	if err != nil {
 		return nil, err
 	}

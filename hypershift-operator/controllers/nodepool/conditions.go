@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"context"
+	coreerrors "errors"
 	"fmt"
 	"net/netip"
 	"strconv"
@@ -428,14 +429,13 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	}
 	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
 	if err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
-			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedReason,
-			Message:            err.Error(),
-			ObservedGeneration: nodePool.Generation,
-		})
-		return &ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
+		result, condErr := setValidMachineConfigConditionForError(nodePool, err)
+		if condErr == nil {
+			// Trust-bundle ConfigMap problems soft-fail; ValidMachineConfig=False already
+			// surfaces the problem and ConfigMap watches requeue when restored.
+			log.Info("HostedCluster trust bundle ConfigMap is missing or invalid", "error", err.Error())
+		}
+		return result, condErr
 	}
 
 	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -448,11 +448,40 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	return nil, nil
 }
 
-func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+// setValidMachineConfigConditionForError sets ValidMachineConfig=False for a config generation error.
+// Missing or malformed HostedCluster trust-bundle ConfigMaps soft-fail (nil error) so transient
+// delete/recreate windows do not hard-fail NodePool reconciliation. Other config errors still
+// return an error for exponential backoff.
+func setValidMachineConfigConditionForError(nodePool *hyperv1.NodePool, err error) (*ctrl.Result, error) {
+	reason := hyperv1.NodePoolValidationFailedReason
+	var trustBundleErr *TrustBundleConfigError
+	softFail := coreerrors.As(err, &trustBundleErr)
+	if softFail && apierrors.IsNotFound(err) {
+		reason = hyperv1.NodePoolNotFoundReason
+	}
+
+	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+		Status:             corev1.ConditionFalse,
+		Reason:             reason,
+		Message:            err.Error(),
+		ObservedGeneration: nodePool.Generation,
+	})
+	if softFail {
+		// Reconciling won't solve the input problem; a ConfigMap create/update will requeue.
+		return &ctrl.Result{}, nil
+	}
+	return &ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
+}
+
+// updatingConfigCondition evaluates NodePoolUpdatingConfig using a Token already built by
+// reconcile(). Callers must pass that Token so this path does not rebuild ConfigGenerator /
+// release metadata via r.token(). Config hash version migration runs in reconcile() before
+// this condition is evaluated; annotations are already at CurrentConfigHashVersion here.
+func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, token *Token) (*ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	token, err := r.token(ctx, hcluster, nodePool)
-	if err != nil {
-		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
+	if token == nil {
+		return &ctrl.Result{}, fmt.Errorf("token is required")
 	}
 
 	targetConfigHash := token.HashWithoutVersion()
@@ -598,7 +627,6 @@ func (r NodePoolReconciler) reachedIgnitionEndpointCondition(ctx context.Context
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
 	}
-	tokenSecret := token.TokenSecret()
 	oldReachedIgnitionEndpointCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReachedIgnitionEndpoint)
 	// when an InPlace upgrade occurs, a new token-secret is generated, but since nodes don't reboot and reignite,
 	// the new token-secret wouldn't have the `hypershift.openshift.io/ignition-reached` annotation set.
@@ -607,7 +635,7 @@ func (r NodePoolReconciler) reachedIgnitionEndpointCondition(ctx context.Context
 	// if ignition is already reached and InPlace upgrade is used, skip recomputing the NodePoolReachedIgnitionEndpoint condition
 	// to avoid resetting the condition to False because of the missing the annotation on the new generated token-secret.
 	if oldReachedIgnitionEndpointCondition == nil || oldReachedIgnitionEndpointCondition.Status != corev1.ConditionTrue || nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeInPlace {
-		reachedIgnitionEndpointCondition, err := r.createReachedIgnitionEndpointCondition(ctx, tokenSecret, nodePool.Generation)
+		reachedIgnitionEndpointCondition, err := r.reachedIgnitionConditionForToken(ctx, nodePool, hcluster, token)
 		if err != nil {
 			return &ctrl.Result{}, fmt.Errorf("error setting IgnitionReached condition: %w", err)
 		}
@@ -615,6 +643,36 @@ func (r NodePoolReconciler) reachedIgnitionEndpointCondition(ctx context.Context
 		SetStatusCondition(&nodePool.Status.Conditions, *reachedIgnitionEndpointCondition)
 	}
 	return nil, nil
+}
+
+// reachedIgnitionConditionForToken follows the retained bootstrap pair only while
+// the config still matches its migration baseline. A real change must establish
+// reachability for its new token, rather than inherit a historical success.
+func (r NodePoolReconciler) reachedIgnitionConditionForToken(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster, token *Token) (*hyperv1.NodePoolCondition, error) {
+	condition, err := r.createReachedIgnitionEndpointCondition(ctx, token.TokenSecret(), nodePool.Generation)
+	if err != nil || condition.Status == corev1.ConditionTrue || nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeReplace {
+		return condition, err
+	}
+	storedVersion := storedConfigHashVersion(nodePool)
+	storedHash := nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+	baseline := storedVersion + ":" + storedHash
+	if storedVersion == ConfigHashVersionV1 {
+		baseline = ""
+	}
+	if nodePool.Annotations[nodePoolAnnotationCurrentConfig] != token.hashWithoutVersionAtVersion(storedVersion) ||
+		!PreserveConfigHash(token.ConfigGenerator, storedHash, baseline) {
+		return condition, nil
+	}
+	janitor := &secretJanitor{NodePoolReconciler: &r}
+	_, liveTokenName, err := janitor.liveBootstrapSecretNames(ctx, nodePool, hc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find retained bootstrap token: %w", err)
+	}
+	if liveTokenName == "" || liveTokenName == token.TokenSecret().Name {
+		return condition, nil
+	}
+	liveToken := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: liveTokenName, Namespace: token.controlplaneNamespace}}
+	return r.createReachedIgnitionEndpointCondition(ctx, liveToken, nodePool.Generation)
 }
 
 func (r NodePoolReconciler) machineAndNodeConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {

@@ -46,6 +46,7 @@ import (
 
 const (
 	openshiftEC2NodeClassAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodeClassCurrentConfigVersion"
+	configHashBaselineAnnotation                        = "hypershift.openshift.io/config-hash-baseline"
 
 	// nodePoolAnnotationCurrentConfigVersion mirrors the annotation from nodepool_controller.go
 	// It's used to track the current config version for outdated token cleanup
@@ -55,14 +56,15 @@ const (
 )
 
 type KarpenterIgnitionReconciler struct {
-	ManagementClient        client.Client
-	GuestClient             client.Client
-	ReleaseProvider         releaseinfo.Provider
-	VersionResolver         releaseinfo.VersionResolver
-	ImageMetadataProvider   imageregistry.ImageMetadataProvider
-	HypershiftOperatorImage string
-	IgnitionEndpoint        string
-	Namespace               string
+	ControlPlaneOperatorImage string
+	ManagementClient          client.Client
+	GuestClient               client.Client
+	ReleaseProvider           releaseinfo.Provider
+	VersionResolver           releaseinfo.VersionResolver
+	ImageMetadataProvider     imageregistry.ImageMetadataProvider
+	HypershiftOperatorImage   string
+	IgnitionEndpoint          string
+	Namespace                 string
 	upsert.CreateOrUpdateProvider
 }
 
@@ -273,9 +275,11 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 		return fmt.Errorf("failed to build config generator: %w", err)
 	}
 
-	token, err := nodepool.NewToken(ctx, cg, &nodepool.CPOCapabilities{
-		DecompressAndDecodeConfig: true,
-	})
+	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hostedCluster)
+	if err != nil {
+		return fmt.Errorf("failed to detect CPO capabilities: %w", err)
+	}
+	token, err := nodepool.NewToken(ctx, cg, cpoCapabilities)
 	if err != nil {
 		return fmt.Errorf("failed to create token: %w", err)
 	}
@@ -285,6 +289,23 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 	if currentConfigVersion == "" {
 		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = cg.Hash()
 	} else {
+		// Compare the legacy formula on first migration, then the persisted content baseline
+		// on subsequent reconciles. When configuration matches, pin Hash() to the
+		// stored value so it doesn't look like a real change below (which would churn bootstrap
+		// Secrets) or to Karpenter's own drift detection (which reads Hash() back out of the
+		// ignition payload), which would otherwise trigger an unwanted Node replacement. See
+		// PreserveConfigHash and ConfigGenerator.SetPinnedHash for more detail.
+		baseline := openshiftEC2NodeClass.Annotations[configHashBaselineAnnotation]
+		if nodepool.PreserveConfigHash(cg, currentConfigVersion, baseline) {
+			if baseline == "" {
+				// Persist before touching bootstrap Secrets. A retry must compare content
+				// against this snapshot rather than the content-blind legacy formula.
+				if err := r.updateConfigHashBaseline(ctx, openshiftEC2NodeClass, nodepool.ConfigHashBaseline(cg)); err != nil {
+					return err
+				}
+			}
+			cg.SetPinnedHash(currentConfigVersion)
+		}
 		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
 	}
 
@@ -301,6 +322,21 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 	}
 
 	return nil
+}
+
+// detectCPOCapabilities uses the CPO image supplied by the running control plane.
+// The synthesized HostedCluster does not carry the original HC's image override,
+// so resolving from its release can select a different image from the one serving ignition.
+func (r *KarpenterIgnitionReconciler) detectCPOCapabilities(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*nodepool.CPOCapabilities, error) {
+	if r.ControlPlaneOperatorImage == "" {
+		return nil, fmt.Errorf("control plane operator image is required for capability detection")
+	}
+	cluster := hostedCluster.DeepCopy()
+	if cluster.Annotations == nil {
+		cluster.Annotations = make(map[string]string)
+	}
+	cluster.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = r.ControlPlaneOperatorImage
+	return nodepool.DetectCPOCapabilities(ctx, r.ManagementClient, cluster, r.ReleaseProvider, r.ImageMetadataProvider, r.HypershiftOperatorImage)
 }
 
 func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
@@ -685,10 +721,20 @@ func (r *KarpenterIgnitionReconciler) updateConfigVersionAnnotation(ctx context.
 		openshiftEC2NodeClass.Annotations = make(map[string]string)
 	}
 	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = newVersion
+	openshiftEC2NodeClass.Annotations[configHashBaselineAnnotation] = nodepool.CurrentConfigHashVersion + ":" + newVersion
 	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("failed to update config version annotation on OpenshiftEC2NodeClass: %w", err)
 	}
 	return nil
+}
+
+func (r *KarpenterIgnitionReconciler) updateConfigHashBaseline(ctx context.Context, nodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, baseline string) error {
+	original := nodeClass.DeepCopy()
+	if nodeClass.Annotations == nil {
+		nodeClass.Annotations = map[string]string{}
+	}
+	nodeClass.Annotations[configHashBaselineAnnotation] = baseline
+	return r.GuestClient.Patch(ctx, nodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
 }
 
 // updateVersionStatus updates the OpenshiftEC2NodeClass status with the resolved release image,
