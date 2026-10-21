@@ -116,7 +116,7 @@ func TestReconcileKubevirtCredentialSafety(t *testing.T) {
 				}}).Build()
 			r := &HostedClusterReconciler{Client: c}
 
-			err := r.reconcileKubevirtCredentialSafety(t.Context(), hc)
+			err := r.reconcileKubevirtCredentialSafety(t.Context(), hc, nil)
 
 			if tc.wantErr == "" {
 				g.Expect(err).NotTo(HaveOccurred())

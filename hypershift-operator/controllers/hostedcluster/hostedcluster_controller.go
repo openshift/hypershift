@@ -545,7 +545,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reject unsafe external KubeVirt credentials before anything below can
 	// discover the infrastructure cluster, including during deletion.
-	if err := r.reconcileKubevirtCredentialSafety(ctx, hcluster); err != nil {
+	if err := r.reconcileKubevirtCredentialSafety(ctx, hcluster, hcp); err != nil {
 		return ctrl.Result{}, err
 	}
 
