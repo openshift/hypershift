@@ -39,7 +39,11 @@ func TestAzureCredentialsFileFromEnv(t *testing.T) {
 func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 	t.Parallel()
 
-	specs := (&AzurePlatformConfig{creds: "/etc/azure/credentials.json"}).ClusterSpecs("release-image", "n1-image")
+	specs := (&AzurePlatformConfig{
+		creds:     "/etc/hypershift-ci-jobs-self-managed-azure/credentials.json",
+		location:  "centralus",
+		dnsZoneRG: "os4-common",
+	}).ClusterSpecs("release-image", "n1-image")
 	specsByVariant := make(map[string]ClusterSpec, len(specs))
 	for _, spec := range specs {
 		specsByVariant[spec.Variant] = spec
@@ -95,6 +99,19 @@ func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 			if !ok {
 				t.Fatalf("Azure variant %q was not configured", tt.variant)
 			}
+			wantDestroyArgs := []string{
+				"--azure-creds=/etc/hypershift-ci-jobs-self-managed-azure/credentials.json",
+				"--location=centralus",
+				"--dns-zone-rg-name=os4-common",
+			}
+			if !slices.Equal(spec.DestroyArgs, wantDestroyArgs) {
+				t.Errorf("Azure variant %q destroy args = %v, want %v", tt.variant, spec.DestroyArgs, wantDestroyArgs)
+			}
+			for _, arg := range spec.DestroyArgs {
+				if strings.HasPrefix(arg, "--diagnostics-") {
+					t.Fatalf("teardown cannot accept %s", arg)
+				}
+			}
 			if spec.InitialNodePoolReplicas == nil {
 				t.Fatalf("Azure variant %q has no initial replica override", tt.variant)
 			}
@@ -102,13 +119,13 @@ func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 				t.Errorf("Azure variant %q requests %d initial replicas, want %d", tt.variant, got, tt.want)
 			}
 			g := NewWithT(t)
-			g.Expect(spec.ExtraArgs).To(ContainElement("--diagnostics-storage-account-type=Managed"))
-			g.Expect(spec.DumpArgs).To(Equal([]string{"--azure-creds=/etc/azure/credentials.json"}))
+			g.Expect(spec.CreateArgs).To(ContainElement("--diagnostics-storage-account-type=Managed"))
+			g.Expect(spec.DumpArgs).To(Equal([]string{"--azure-creds=/etc/hypershift-ci-jobs-self-managed-azure/credentials.json"}))
 		})
 	}
 }
 
-func TestAzureOAuthLBPrivateExtraArgs(t *testing.T) {
+func TestAzureOAuthLBPrivateCreateArgs(t *testing.T) {
 	t.Parallel()
 
 	specs := (&AzurePlatformConfig{}).ClusterSpecs("release-image", "n1-image")
@@ -132,8 +149,8 @@ func TestAzureOAuthLBPrivateExtraArgs(t *testing.T) {
 		"--oauth-publishing-strategy=LoadBalancer",
 	}
 	for _, arg := range wantArgs {
-		if !slices.Contains(spec.ExtraArgs, arg) {
-			t.Errorf("oauth-lb-private ExtraArgs %v missing %q", spec.ExtraArgs, arg)
+		if !slices.Contains(spec.CreateArgs, arg) {
+			t.Errorf("oauth-lb-private CreateArgs %v missing %q", spec.CreateArgs, arg)
 		}
 	}
 }
@@ -160,16 +177,6 @@ func TestAzurePlatformConfigTestMatrix(t *testing.T) {
 		}
 		if !foundPublic || !foundPrivate || !foundBootstrap {
 			t.Fatal("Azure diagnostics checks are missing from the default test matrix")
-		}
-	})
-}
-
-func TestAzurePlatformConfigDestroyArgs(t *testing.T) {
-	t.Run("When Azure teardown arguments are built, it should omit creation-only diagnostics flags", func(t *testing.T) {
-		for _, arg := range (&AzurePlatformConfig{}).DestroyArgs() {
-			if strings.HasPrefix(arg, "--diagnostics-") {
-				t.Fatalf("teardown cannot accept %s", arg)
-			}
 		}
 	})
 }

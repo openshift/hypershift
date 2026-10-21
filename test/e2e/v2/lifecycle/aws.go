@@ -61,6 +61,12 @@ func (a *AWSPlatformConfig) DefaultBaseDomain() string {
 }
 
 func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
+	baseDomain := envOrDefault("HYPERSHIFT_BASE_DOMAIN", a.DefaultBaseDomain())
+	destroyArgs := []string{
+		"--region=" + a.region,
+		"--base-domain=" + baseDomain,
+	}
+
 	commonArgs := []string{
 		"--region=" + a.region,
 		"--zones=" + strings.Join(a.zones, ","),
@@ -87,16 +93,18 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 	oneInitialReplica := 1
 	return []ClusterSpec{
 		{
-			Variant: "public",
-			ExtraArgs: clusterArgs(
+			Variant:     "public",
+			DestroyArgs: destroyArgs,
+			CreateArgs: clusterArgs(
 				"--public-only",
 				"--feature-set=TechPreviewNoUpgrade",
 			),
 		},
 		{
 			Variant:      "upgrade",
+			DestroyArgs:  destroyArgs,
 			ReleaseImage: n1Image,
-			ExtraArgs: clusterArgs(
+			CreateArgs: clusterArgs(
 				"--control-plane-availability-policy=HighlyAvailable",
 			),
 		},
@@ -113,16 +121,18 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 		{
 			// Dedicated cluster for the managed ingress DNS test. managedDNS is gated
 			// by the AWSManagedDNS feature gate, which only exists in TechPreviewNoUpgrade.
-			Variant: "managed-dns",
-			ExtraArgs: append(extraArgs, []string{
+			Variant:     "managed-dns",
+			DestroyArgs: destroyArgs,
+			CreateArgs: clusterArgs(
 				"--public-only",
 				"--feature-set=TechPreviewNoUpgrade",
 				"--managed-dns",
-			}...),
+			),
 		},
 		{
-			Variant: "karpenter",
-			ExtraArgs: clusterArgs(
+			Variant:     "karpenter",
+			DestroyArgs: destroyArgs,
+			CreateArgs: clusterArgs(
 				// Enables Karpenter-based node provisioning (AutoNode)
 				"--auto-node",
 				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
@@ -132,8 +142,9 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 		},
 		{
 			Variant:      "karpenter-upgrade",
+			DestroyArgs:  destroyArgs,
 			ReleaseImage: n1Image,
-			ExtraArgs: clusterArgs(
+			CreateArgs: clusterArgs(
 				// Enables Karpenter-based node provisioning (AutoNode)
 				"--auto-node",
 				// Required for karpenter to reach the hosted cluster API server from the mgmt cluster
@@ -143,13 +154,15 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 		},
 		{
 			Variant:                 "autoscaling",
+			DestroyArgs:             destroyArgs,
 			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               clusterArgs(),
+			CreateArgs:              clusterArgs(),
 		},
 		{
 			Variant:                 "external-oidc",
+			DestroyArgs:             destroyArgs,
 			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               clusterArgs(),
+			CreateArgs:              clusterArgs(),
 		},
 	}
 }
@@ -289,12 +302,4 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 
 func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {
 	setupExternalOIDCTestEnv(sharedDir)
-}
-
-func (a *AWSPlatformConfig) DestroyArgs() []string {
-	baseDomain := envOrDefault("HYPERSHIFT_BASE_DOMAIN", a.DefaultBaseDomain())
-	return []string{
-		"--region=" + a.region,
-		"--base-domain=" + baseDomain,
-	}
 }

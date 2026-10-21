@@ -47,14 +47,18 @@ func TestBuildCreateArgs(t *testing.T) {
 			ns := namedSpec{
 				ClusterSpec: lifecycle.ClusterSpec{
 					Variant:                 "public",
-					ExtraArgs:               []string{"--location=centralus", "--encryption-key-id=test-key"},
+					CreateArgs:              []string{"--location=centralus", "--encryption-key-id=test-key"},
+					DestroyArgs:             []string{"--cluster-grace-period=40m"},
 					InitialNodePoolReplicas: tt.override,
 				},
 				name: "public-test",
 			}
 			args := buildCreateArgs(cfg, ns)
-			if !slices.Equal(args[len(args)-len(ns.ExtraArgs):], ns.ExtraArgs) {
-				t.Errorf("create args %v do not end with spec arguments %v", args, ns.ExtraArgs)
+			if slices.Contains(args, ns.DestroyArgs[0]) {
+				t.Errorf("create args %v contain destroy-only argument %q", args, ns.DestroyArgs[0])
+			}
+			if !slices.Equal(args[len(args)-len(ns.CreateArgs):], ns.CreateArgs) {
+				t.Errorf("create args %v do not end with spec arguments %v", args, ns.CreateArgs)
 			}
 			want := "--node-pool-replicas=" + strconv.Itoa(tt.want)
 			for _, arg := range args {
