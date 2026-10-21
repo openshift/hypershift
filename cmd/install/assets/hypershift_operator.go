@@ -560,6 +560,7 @@ type HyperShiftOperatorDeployment struct {
 	IncludeVersion                          bool
 	UWMTelemetry                            bool
 	RHOBSMonitoring                         bool
+	MonitoringAPIGroup                      metrics.MonitoringAPIGroup
 	CVOPrometheusURL                        string
 	MonitoringDashboards                    bool
 	CertRotationScale                       time.Duration
@@ -904,6 +905,9 @@ func (o HyperShiftOperatorDeployment) buildEnvVars() []corev1.EnvVar {
 	}
 	if o.RHOBSMonitoring {
 		envVars = append(envVars, corev1.EnvVar{Name: rhobsmonitoring.EnvironmentVariable, Value: "1"})
+	}
+	if o.MonitoringAPIGroup != "" && o.MonitoringAPIGroup != metrics.MonitoringAPIGroupCoreOS {
+		envVars = append(envVars, corev1.EnvVar{Name: metrics.MonitoringAPIGroupEnvVar, Value: string(o.MonitoringAPIGroup)})
 	}
 	if o.CVOPrometheusURL != "" {
 		envVars = append(envVars, corev1.EnvVar{Name: config.CVOPrometheusURLEnvVar, Value: o.CVOPrometheusURL})

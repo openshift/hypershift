@@ -142,6 +142,7 @@ type Options struct {
 	WaitUntilAvailable                        bool
 	WaitUntilEstablished                      bool
 	RHOBSMonitoring                           bool
+	MonitoringAPIGroup                        metrics.MonitoringAPIGroup
 	CVOPrometheusURL                          string
 	SLOsAlerts                                bool
 	MonitoringDashboards                      bool
@@ -183,11 +184,36 @@ func (o *Options) Complete() error {
 		o.ScaleFromZeroProvider = strings.ToLower(o.ScaleFromZeroProvider)
 	}
 
+	// Resolve the monitoring API group from the environment when it is not set
+	// explicitly, defaulting to CoreOS. Validation happens in Validate.
+	if o.MonitoringAPIGroup == "" {
+		o.MonitoringAPIGroup = metrics.MonitoringAPIGroup(os.Getenv(metrics.MonitoringAPIGroupEnvVar))
+	}
+	if o.MonitoringAPIGroup == "" {
+		o.MonitoringAPIGroup = metrics.MonitoringAPIGroupCoreOS
+	}
+
 	return nil
 }
 
 func (o *Options) Validate() error {
 	var errs []error
+
+	// Match the operator Deployment builder's normalization when validating
+	// managed overrides and the GMP/RHOBS conflict.
+	rhobsMonitoring := o.RHOBSMonitoring
+	for key, value := range o.AdditionalOperatorEnvVars {
+		switch strings.TrimSpace(key) {
+		case metrics.MonitoringAPIGroupEnvVar:
+			errs = append(errs, fmt.Errorf("%s must not be set via --additional-operator-env-vars; it is managed from the monitoring API group selection", metrics.MonitoringAPIGroupEnvVar))
+		case rhobsmonitoring.EnvironmentVariable:
+			rhobsMonitoring = rhobsMonitoring || strings.TrimSpace(value) == "1"
+		}
+	}
+	// The monitoring API group is resolved in Complete; validate it without mutating Options.
+	if _, err := metrics.ParseMonitoringAPIGroup(string(o.MonitoringAPIGroup), rhobsMonitoring); err != nil {
+		errs = append(errs, err)
+	}
 
 	if o.InstallScope != "" && !Outputs(o.InstallScope).IsValid() {
 		errs = append(errs, fmt.Errorf("invalid --install-scope value %q: must be '%s', '%s', or '%s'", o.InstallScope, OutputAll, OutputCRDs, OutputResources))
@@ -1405,6 +1431,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		IncludeVersion:                          !opts.Template,
 		UWMTelemetry:                            opts.EnableUWMTelemetryRemoteWrite,
 		RHOBSMonitoring:                         opts.RHOBSMonitoring,
+		MonitoringAPIGroup:                      opts.MonitoringAPIGroup,
 		CVOPrometheusURL:                        opts.CVOPrometheusURL,
 		MonitoringDashboards:                    opts.MonitoringDashboards,
 		CertRotationScale:                       opts.CertRotationScale,
