@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -167,9 +168,15 @@ func adaptCustomAdminKubeconfigSecret(cpContext component.WorkloadContext, secre
 }
 
 func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-	url := externalURL(cpContext.InfraStatus)
+	var url string
 	if netutil.IsPrivateHCP(cpContext.HCP) {
 		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
+	} else if featuregates.Gate().Enabled(featuregates.KubeletHAProxyRouting) &&
+		netutil.UsesNodeLocalKASProxy(cpContext.HCP) {
+		addr := netutil.GetAdvertiseAddress(cpContext.HCP, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
+		url = fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(addr), netutil.HAProxyFrontendPort(cpContext.HCP))
+	} else {
+		url = externalURL(cpContext.InfraStatus)
 	}
 
 	kubeconfig, err := generateKubeConfigWithServingCerts(cpContext, manifests.KASMachineBootstrapClientCertSecret(cpContext.HCP.Namespace), url)
