@@ -11,6 +11,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/globalconfig"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -27,6 +28,7 @@ import (
 	testingclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -289,7 +291,7 @@ func TestNewToken(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			fakeClient := fake.NewClientBuilder().WithObjects(tc.fakeObjects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.fakeObjects...).Build()
 			if tc.configGenerator != nil {
 				tc.configGenerator.Client = fakeClient
 			}
@@ -499,7 +501,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			fakeClient := fake.NewClientBuilder().WithObjects(tc.fakeObjects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.fakeObjects...).Build()
 			tc.token.Client = fakeClient
 
 			logCore, logs := observer.New(zap.InfoLevel)
@@ -780,7 +782,7 @@ func TestTokenReconcile(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			fakeClient := fake.NewClientBuilder().WithObjects(tc.fakeObjects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.fakeObjects...).Build()
 			tc.configGenerator.Client = fakeClient
 
 			token, err := NewToken(t.Context(), tc.configGenerator, tc.cpoCapabilities)
@@ -1095,6 +1097,58 @@ func TestOutdatedTokenSecret(t *testing.T) {
 	}
 }
 
+func TestPairedUserDataSecretName(t *testing.T) {
+	testCases := []struct {
+		name               string
+		tokenSecretName    string
+		expectedPairedName string
+	}{
+		{
+			name:               "When given a token Secret name, it should return the user data Secret name of the same generation",
+			tokenSecretName:    "token-test-nodepool-confighash",
+			expectedPairedName: "user-data-test-nodepool-confighash",
+		},
+		{
+			name:               "When given a name without the token prefix, it should only replace the prefix",
+			tokenSecretName:    "token-something-else",
+			expectedPairedName: "user-data-something-else",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(pairedUserDataSecretName(tc.tokenSecretName)).To(Equal(tc.expectedPairedName))
+		})
+	}
+}
+
+func TestPairedTokenSecretName(t *testing.T) {
+	testCases := []struct {
+		name               string
+		userDataSecretName string
+		expectedPairedName string
+	}{
+		{
+			name:               "When given a user data Secret name, it should return the token Secret name of the same generation",
+			userDataSecretName: "user-data-test-nodepool-confighash",
+			expectedPairedName: "token-test-nodepool-confighash",
+		},
+		{
+			name:               "When given a name without the user data prefix, it should only replace the prefix",
+			userDataSecretName: "user-data-something-else",
+			expectedPairedName: "token-something-else",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(pairedTokenSecretName(tc.userDataSecretName)).To(Equal(tc.expectedPairedName))
+		})
+	}
+}
+
 func TestGetIgnitionCACert(t *testing.T) {
 	controlplaneNamespace := "controlplane-namespace"
 	testCases := []struct {
@@ -1143,7 +1197,7 @@ func TestGetIgnitionCACert(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			fakeClient := fake.NewClientBuilder().WithObjects(tc.secret).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.secret).Build()
 			token := &Token{
 				ConfigGenerator: &ConfigGenerator{
 					Client:                fakeClient,
@@ -1442,4 +1496,316 @@ func TestReconcileUserDataSecret(t *testing.T) {
 			g.Expect(err).NotTo(HaveOccurred())
 		})
 	}
+}
+
+func TestTokenCleanupOutdatedDeletionReferenceGuard(t *testing.T) {
+	controlplaneNamespace := "test-namespace"
+	nodePoolName := "test-nodepool"
+	outdatedHash := "outdated-hash"
+	outdatedUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, outdatedHash)
+	outdatedTokenName := fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, nodePoolName, outdatedHash)
+
+	userDataSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlplaneNamespace,
+			Name:      outdatedUserDataName,
+		},
+	}
+	tokenSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlplaneNamespace,
+			Name:      outdatedTokenName,
+		},
+	}
+
+	nodePool := func(platformType hyperv1.PlatformType) *hyperv1.NodePool {
+		return &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nodePoolName,
+				Namespace: controlplaneNamespace,
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentConfigVersion: outdatedHash,
+				},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{
+					Type: platformType,
+				},
+			},
+		}
+	}
+
+	t.Run("When nothing references the outdated user data Secret and platform is Azure, it should be deleted", func(t *testing.T) {
+		g := NewWithT(t)
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(userDataSecret.DeepCopy(), tokenSecret.DeepCopy()).Build()
+		token := &Token{
+			ConfigGenerator: &ConfigGenerator{
+				Client:                fakeClient,
+				nodePool:              nodePool(hyperv1.AzurePlatform),
+				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{},
+			},
+		}
+		g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup of unreferenced outdated Secrets should succeed")
+		got := &corev1.Secret{}
+		err := fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, got)
+		g.Expect(err).To(HaveOccurred(), "unreferenced outdated user data Secret should be gone")
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected NotFound for deleted unreferenced user data Secret, got: %v", err)
+		// The unreferenced token Secret does get its expiration timestamp.
+		gotToken := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedTokenName}, gotToken)).To(Succeed(), "unreferenced token Secret should still exist, only annotated")
+		g.Expect(gotToken.Annotations).To(HaveKey(hyperv1.IgnitionServerTokenExpirationTimestampAnnotation), "unreferenced token Secret should be annotated to expire")
+	})
+
+	t.Run("When a Machine references the outdated user data Secret, it should be kept even on Azure", func(t *testing.T) {
+		g := NewWithT(t)
+		machine := &capiv1.Machine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-machine",
+				Namespace: controlplaneNamespace,
+				Annotations: map[string]string{
+					nodePoolAnnotation: fmt.Sprintf("%s/%s", controlplaneNamespace, nodePoolName),
+				},
+			},
+			Spec: capiv1.MachineSpec{
+				Bootstrap: capiv1.Bootstrap{
+					DataSecretName: &outdatedUserDataName,
+				},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(userDataSecret.DeepCopy(), tokenSecret.DeepCopy(), machine).Build()
+		token := &Token{
+			ConfigGenerator: &ConfigGenerator{
+				Client:                fakeClient,
+				nodePool:              nodePool(hyperv1.AzurePlatform),
+				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{},
+			},
+		}
+		g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup should succeed when the outdated Secret is referenced")
+		got := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, got)).To(Succeed(), "Machine-referenced outdated user data Secret should be kept")
+		g.Expect(got.Name).To(Equal(outdatedUserDataName), "kept Secret should be the referenced one")
+		// The paired token Secret must not be expired either: Machines that
+		// have not booted yet still present its token to fetch ignition.
+		gotToken := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedTokenName}, gotToken)).To(Succeed(), "paired token Secret should be kept")
+		g.Expect(gotToken.Annotations).ToNot(HaveKey(hyperv1.IgnitionServerTokenExpirationTimestampAnnotation), "token Secret paired with a referenced user data Secret must not be expired")
+	})
+
+	t.Run("When the MachineDeployment references the outdated user data Secret, it should be kept", func(t *testing.T) {
+		g := NewWithT(t)
+		machineDeployment := &capiv1.MachineDeployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nodePoolName,
+				Namespace: controlplaneNamespace,
+			},
+			Spec: capiv1.MachineDeploymentSpec{
+				Template: capiv1.MachineTemplateSpec{
+					Spec: capiv1.MachineSpec{
+						Bootstrap: capiv1.Bootstrap{
+							DataSecretName: &outdatedUserDataName,
+						},
+					},
+				},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(userDataSecret.DeepCopy(), tokenSecret.DeepCopy(), machineDeployment).Build()
+		token := &Token{
+			ConfigGenerator: &ConfigGenerator{
+				Client:                fakeClient,
+				nodePool:              nodePool(hyperv1.AzurePlatform),
+				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig:         &rolloutConfig{},
+			},
+		}
+		g.Expect(token.cleanupOutdated(t.Context())).To(Succeed(), "cleanup should succeed when the outdated Secret is referenced")
+		got := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: outdatedUserDataName}, got)).To(Succeed(), "MachineDeployment-referenced outdated user data Secret should be kept")
+	})
+}
+
+func TestTokenRepairMissingReferencedSecrets(t *testing.T) {
+	controlplaneNamespace := "test-namespace"
+	nodePoolName := "test-nodepool"
+	hcName := "test-hostedcluster"
+	hcNamespace := "test-hc-namespace"
+
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pull-secret", Namespace: hcNamespace},
+		Data:       map[string][]byte{".dockerconfigjson": []byte("test-pull-secret")},
+	}
+	additionalTrustBundle := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-trust-bundle", Namespace: hcNamespace},
+		Data:       map[string]string{"ca-bundle.crt": "test-ca-bundle"},
+	}
+	ignitionServerCACert := ignitionserver.IgnitionCACertSecret(controlplaneNamespace)
+	ignitionServerCACert.Data = map[string][]byte{
+		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
+	}
+
+	// staleToken stands in for a token of an older config generation that the
+	// ignition server may no longer serve.
+	staleToken := "stale-ignition-token"
+	staleBearer := "Bearer " + base64.StdEncoding.EncodeToString([]byte(staleToken))
+
+	// A user data Secret of an older config generation, as written by a
+	// previous reconciliation of this NodePool.
+	staleUserDataSecret := func(hash string) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: controlplaneNamespace,
+				Name:      fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, hash),
+			},
+			Data: map[string][]byte{
+				"value": []byte(fmt.Sprintf(`{"ignition":{"version":"3.2.0","config":{"merge":[{"httpHeaders":[{"name":"Authorization","value":"%s"}]}]}}}`, staleBearer)),
+			},
+		}
+	}
+
+	// The token Secret paired with a user data Secret of the same generation.
+	pairedTokenSecret := func(hash string) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: controlplaneNamespace,
+				Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, nodePoolName, hash),
+			},
+			Data: map[string][]byte{TokenSecretTokenKey: []byte(staleToken)},
+		}
+	}
+
+	// A MachineDeployment written by a previous generation pointing at a user
+	// data Secret of that generation, as happens on management-side-only
+	// config changes where no rollout moves the reference.
+	machineDeploymentFor := func(userDataName string) *capiv1.MachineDeployment {
+		return &capiv1.MachineDeployment{
+			ObjectMeta: metav1.ObjectMeta{Name: nodePoolName, Namespace: controlplaneNamespace},
+			Spec: capiv1.MachineDeploymentSpec{
+				Template: capiv1.MachineTemplateSpec{
+					Spec: capiv1.MachineSpec{
+						Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To(userDataName)},
+					},
+				},
+			},
+		}
+	}
+
+	setup := func(t *testing.T, referencedName string, extraObjects ...crclient.Object) (*Token, crclient.Client) {
+		objects := append([]crclient.Object{
+			pullSecret,
+			additionalTrustBundle,
+			ignitionServerCACert,
+			machineDeploymentFor(referencedName),
+		}, extraObjects...)
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+
+		configGenerator := &ConfigGenerator{
+			Client: fakeClient,
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret:            corev1.LocalObjectReference{Name: pullSecret.GetName()},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: additionalTrustBundle.GetName()},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					IgnitionEndpoint: "https://example.com",
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: nodePoolName, Namespace: controlplaneNamespace},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+					Release:    hyperv1.Release{Image: "image:4.17"},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			controlplaneNamespace: controlplaneNamespace,
+			rolloutConfig: &rolloutConfig{
+				releaseImage: &releaseinfo.ReleaseImage{
+					ImageStream: &imageapi.ImageStream{
+						ObjectMeta: metav1.ObjectMeta{Name: "4.17"},
+						Status: imageapi.ImageStreamStatus{
+							Tags: []imageapi.NamedTagEventList{{
+								Tag: "4.17",
+								Items: []imageapi.TagEvent{{
+									DockerImageReference: "image:4.17",
+								}},
+							}},
+						},
+					},
+				},
+				globalConfig: "test-global-config",
+				mcoRawConfig: "raw-config",
+			},
+		}
+		token, err := NewToken(t.Context(), configGenerator, &CPOCapabilities{DecompressAndDecodeConfig: true})
+		if err != nil {
+			t.Fatalf("failed to create token: %v", err)
+		}
+		return token, fakeClient
+	}
+
+	currentEncodedToken := func(t *testing.T, c crclient.Client, token *Token) string {
+		gotTokenSecret := &corev1.Secret{}
+		if err := c.Get(t.Context(), crclient.ObjectKeyFromObject(token.TokenSecret()), gotTokenSecret); err != nil {
+			t.Fatalf("failed to get current token Secret: %v", err)
+		}
+		return base64.StdEncoding.EncodeToString(gotTokenSecret.Data[TokenSecretTokenKey])
+	}
+
+	t.Run("When a referenced user data Secret is missing, it should be re-created with the current token", func(t *testing.T) {
+		g := NewWithT(t)
+		staleUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "stale-hash")
+		token, fakeClient := setup(t, staleUserDataName)
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should repair the missing referenced Secret")
+
+		// The referenced user data Secret must have been re-created, carrying the
+		// current token so a Machine that has not booted yet can still fetch its
+		// ignition payload.
+		repaired := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: staleUserDataName}, repaired)).
+			To(Succeed(), "missing referenced user data Secret should be re-created")
+		g.Expect(repaired.Annotations[nodePoolAnnotation]).To(Equal(fmt.Sprintf("%s/%s", controlplaneNamespace, nodePoolName)),
+			"repaired Secret should be annotated with its NodePool")
+		g.Expect(string(repaired.Data["value"])).To(ContainSubstring("Bearer "+currentEncodedToken(t, fakeClient, token)),
+			"repaired Secret should embed the current token")
+
+		// Repair must not invent user data Secrets that are not referenced.
+		unreferencedName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "unreferenced-hash")
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: unreferencedName}, &corev1.Secret{})).
+			To(HaveOccurred(), "repair must not invent unreferenced user data Secrets")
+	})
+
+	t.Run("When a referenced user data Secret exists but its paired token Secret is missing, it should be refreshed with the current token", func(t *testing.T) {
+		g := NewWithT(t)
+		staleUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "stale-hash")
+		token, fakeClient := setup(t, staleUserDataName, staleUserDataSecret("stale-hash"))
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should refresh the referenced Secret whose paired token Secret is missing")
+
+		refreshed := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: staleUserDataName}, refreshed)).
+			To(Succeed(), "referenced user data Secret should still exist")
+		g.Expect(string(refreshed.Data["value"])).To(ContainSubstring("Bearer "+currentEncodedToken(t, fakeClient, token)),
+			"referenced Secret should be refreshed with the current token when its paired token Secret is missing")
+		g.Expect(string(refreshed.Data["value"])).ToNot(ContainSubstring(staleBearer),
+			"stale token should be replaced by the refresh")
+	})
+
+	t.Run("When a referenced user data Secret and its paired token Secret both exist, it should be left unchanged", func(t *testing.T) {
+		g := NewWithT(t)
+		staleUserDataName := fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePoolName, "stale-hash")
+		token, fakeClient := setup(t, staleUserDataName, staleUserDataSecret("stale-hash"), pairedTokenSecret("stale-hash"))
+
+		g.Expect(token.Reconcile(t.Context())).To(Succeed(), "reconcile should succeed when the referenced pair is healthy")
+
+		kept := &corev1.Secret{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: controlplaneNamespace, Name: staleUserDataName}, kept)).
+			To(Succeed(), "healthy referenced user data Secret should be kept")
+		g.Expect(string(kept.Data["value"])).To(ContainSubstring(staleBearer),
+			"user data Secret with a live paired token Secret must not be rewritten")
+	})
 }

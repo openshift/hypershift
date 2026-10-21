@@ -23,7 +23,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	testingclock "k8s.io/utils/clock/testing"
+	"k8s.io/utils/ptr"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -521,6 +523,256 @@ spec:
 			t.Errorf("expected userdata secret to be deleted, got error: %v", err)
 		}
 	})
+}
+
+func TestSecretJanitorReconcileKeepsReferencedUserDataSecrets(t *testing.T) {
+	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+	mockCtrl := gomock.NewController(t)
+
+	fakeClock := testingclock.NewFakeClock(time.Now())
+
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "myns"},
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte("whatever"),
+		},
+	}
+
+	hostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
+		Spec: hyperv1.HostedClusterSpec{
+			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
+		},
+		Status: hyperv1.HostedClusterStatus{
+			IgnitionEndpoint: "https://ignition.cluster-cluster-name.myns.devcluster.openshift.com",
+		},
+	}
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: "nodepool-name", Namespace: "myns"},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hostedCluster.Name,
+			Release:     hyperv1.Release{Image: "fake-release-image"},
+			Config: []corev1.LocalObjectReference{
+				{Name: "machineconfig-1"},
+			},
+		},
+		Status: hyperv1.NodePoolStatus{Version: semver.MustParse("4.18.0").String()},
+	}
+
+	coreMachineConfig := `
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  labels:
+    machineconfiguration.openshift.io/role: master
+  name: config-1
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents:
+        source: "[Service]\nType=oneshot\nExecStart=/usr/bin/echo Hello World\n\n[Install]\nWantedBy=multi-user.target"
+        filesystem: root
+        mode: 493
+        path: /usr/local/bin/file1.sh
+`
+
+	machineConfig := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "machineconfig-1",
+			Namespace: "myns",
+		},
+		Data: map[string]string{
+			TokenSecretConfigKey: coreMachineConfig,
+		},
+	}
+
+	ignitionConfigs := []client.Object{}
+	for _, name := range []string{"core-machineconfig", "core-machineconfig-2", "core-machineconfig-3"} {
+		ignitionConfigs = append(ignitionConfigs, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "myns-cluster-name",
+				Labels: map[string]string{
+					nodePoolCoreIgnitionConfigLabel: "true",
+				},
+			},
+			Data: map[string]string{
+				TokenSecretConfigKey: coreMachineConfig,
+			},
+		})
+	}
+
+	ignitionServerCACert := ignitionserver.IgnitionCACertSecret("myns-cluster-name")
+	ignitionServerCACert.Data = map[string][]byte{
+		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
+	}
+
+	mockedReleaseProvider := releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl)
+	mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.18.0"), nil).AnyTimes()
+
+	// A user data Secret whose name does not match the expected set: without
+	// the reference guard the janitor deletes it synchronously.
+	userDataSecret := func() *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "user-data-nodepool-name-oldhash",
+				Namespace: "myns-cluster-name",
+				Annotations: map[string]string{
+					nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				},
+			},
+		}
+	}
+
+	// A Machine created outside of a rollout (e.g. by the cluster autoscaler)
+	// referencing the old-hash Secret as bootstrap data.
+	machine := func() *capiv1.Machine {
+		return &capiv1.Machine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "nodepool-name-2hphc-abcde",
+				Namespace: "myns-cluster-name",
+				Annotations: map[string]string{
+					nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				},
+			},
+			Spec: capiv1.MachineSpec{
+				Bootstrap: capiv1.Bootstrap{
+					DataSecretName: ptr.To("user-data-nodepool-name-oldhash"),
+				},
+			},
+		}
+	}
+
+	// The MachineDeployment template still pointing at the old-hash Secret,
+	// as it does on management-side-only config changes.
+	machineDeployment := func() *capiv1.MachineDeployment {
+		return &capiv1.MachineDeployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nodePool.GetName(),
+				Namespace: "myns-cluster-name",
+				Annotations: map[string]string{
+					nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				},
+			},
+			Spec: capiv1.MachineDeploymentSpec{
+				Template: capiv1.MachineTemplateSpec{
+					Spec: capiv1.MachineSpec{
+						Bootstrap: capiv1.Bootstrap{
+							DataSecretName: ptr.To("user-data-nodepool-name-oldhash"),
+						},
+					},
+				},
+			},
+		}
+	}
+
+	// A token Secret whose name does not match the expected set: it is paired
+	// with the user data Secret of the same config generation.
+	tokenSecret := func() *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "token-nodepool-name-oldhash",
+				Namespace: "myns-cluster-name",
+				Annotations: map[string]string{
+					nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				},
+			},
+		}
+	}
+
+	testCases := []struct {
+		name          string
+		objects       []client.Object
+		reconcileName string
+		kept          bool
+		expectExpiry  bool
+	}{
+		{
+			name:          "When the user data Secret is referenced by a Machine, it should be kept",
+			objects:       []client.Object{userDataSecret(), machine()},
+			reconcileName: "user-data-nodepool-name-oldhash",
+			kept:          true,
+		},
+		{
+			name:          "When the user data Secret is referenced by the MachineDeployment, it should be kept",
+			objects:       []client.Object{userDataSecret(), machineDeployment()},
+			reconcileName: "user-data-nodepool-name-oldhash",
+			kept:          true,
+		},
+		{
+			name:          "When the user data Secret is unreferenced, it should be deleted",
+			objects:       []client.Object{userDataSecret()},
+			reconcileName: "user-data-nodepool-name-oldhash",
+		},
+		{
+			name:          "When the paired user data Secret of a token Secret is referenced by a Machine, the token Secret should be kept",
+			objects:       []client.Object{tokenSecret(), machine()},
+			reconcileName: "token-nodepool-name-oldhash",
+			kept:          true,
+		},
+		{
+			name:          "When the paired user data Secret of a token Secret is unreferenced, the token Secret should be annotated to expire",
+			objects:       []client.Object{tokenSecret()},
+			reconcileName: "token-nodepool-name-oldhash",
+			kept:          true,
+			expectExpiry:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			objects := append([]client.Object{
+				nodePool,
+				hostedCluster,
+				pullSecret,
+				machineConfig,
+				ignitionServerCACert,
+			}, ignitionConfigs...)
+			objects = append(objects, tc.objects...)
+
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+			r := secretJanitor{
+				NodePoolReconciler: &NodePoolReconciler{
+					Client:          c,
+					ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
+					ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
+						Labels: map[string]string{},
+					}}},
+				},
+				now: fakeClock.Now,
+			}
+
+			key := client.ObjectKey{Namespace: "myns-cluster-name", Name: tc.reconcileName}
+			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: key})
+			if err != nil {
+				t.Fatalf("failed to reconcile: %v", err)
+			}
+
+			got := &corev1.Secret{}
+			err = c.Get(ctx, key, got)
+			if !tc.kept {
+				if !apierrors.IsNotFound(err) {
+					t.Errorf("expected unreferenced secret to be deleted, got error: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected secret to be kept, got error: %v", err)
+			}
+			_, hasExpiry := got.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation]
+			if hasExpiry != tc.expectExpiry {
+				t.Errorf("expected expiration annotation presence: %t, got: %t", tc.expectExpiry, hasExpiry)
+			}
+			if !tc.expectExpiry && result.RequeueAfter != 10*time.Minute {
+				t.Errorf("expected a 10 minute requeue while the Secret is still referenced, got: %v", result.RequeueAfter)
+			}
+		})
+	}
 }
 
 func TestShouldKeepOldUserData(t *testing.T) {
