@@ -39,18 +39,18 @@ func TestGetKubeConfig(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name      string
-		keys      []string
+		key       string
 		custom    bool
 		canonical bool
 		invalid   bool
 		want      string
 	}{
-		{name: "When no key is specified, it should preserve canonical-key retrieval", canonical: true},
-		{name: "When only a custom key is provided, it should return the configured credentials", keys: []string{"custom"}, custom: true},
-		{name: "When a canonical key accompanies a custom key, it should return the configured credentials", keys: []string{"custom"}, custom: true, canonical: true},
-		{name: "When a configured key is absent, it should reject credentials", keys: []string{"missing"}, canonical: true, want: "missing"},
-		{name: "When a configured key is empty, it should reject credentials", keys: []string{""}, canonical: true, want: "key"},
-		{name: "When tenant credentials contain an auth provider, it should reject them before constructing clients", canonical: true, invalid: true, want: "auth-provider"},
+		{name: "When the canonical key is requested, it should return the canonical credentials", key: "kubeconfig", canonical: true},
+		{name: "When only a custom key is provided, it should return the configured credentials", key: "custom", custom: true},
+		{name: "When a canonical key accompanies a custom key, it should return the configured credentials", key: "custom", custom: true, canonical: true},
+		{name: "When a configured key is absent, it should reject credentials", key: "missing", canonical: true, want: "missing"},
+		{name: "When a configured key is empty, it should reject credentials", key: "", canonical: true, want: "key"},
+		{name: "When tenant credentials contain an auth provider, it should reject them before constructing clients", key: "kubeconfig", canonical: true, invalid: true, want: "auth-provider"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -71,7 +71,7 @@ func TestGetKubeConfig(t *testing.T) {
 				}
 			}
 			c := fake.NewClientBuilder().WithObjects(secret).Build()
-			got, err := GetKubeConfig(t.Context(), c, secret.Namespace, secret.Name, tc.keys...)
+			got, err := GetKubeConfig(t.Context(), c, secret.Namespace, secret.Name, tc.key)
 			if tc.want == "" {
 				g.Expect(err).NotTo(HaveOccurred())
 				if tc.custom {

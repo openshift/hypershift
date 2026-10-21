@@ -9492,14 +9492,13 @@ func TestDestroyGracePeriod(t *testing.T) {
 
 			if !tc.expectFinalizer {
 				// When the finalizer is removed, the fake client deletes the object
-				// (DeletionTimestamp is set and no finalizers remain). Reconciliation
-				// should complete without a status-patch error for the deleted object.
+				// (DeletionTimestamp is set and no finalizers remain). The Reconcile
+				// method then fails to update the ReconciliationSucceeded condition
+				// with a NotFound error, which is the expected outcome.
 				g.Expect(errors2.IsNotFound(getErr)).To(BeTrue(),
 					"HC should be deleted after finalizer removal")
-				g.Expect(err).NotTo(HaveOccurred(),
-					"Reconcile should succeed after finalizer removal")
-				g.Expect(result).To(Equal(ctrl.Result{}),
-					"Reconcile should not requeue a deleted object")
+				g.Expect(err).To(HaveOccurred(),
+					"Reconcile should error from status update on deleted object")
 				return
 			}
 
@@ -9725,6 +9724,41 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			pullSecret := controlplaneoperator.PullSecret("cp-ns")
 			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
 			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
+		})
+	}
+}
+
+func TestReconcile(t *testing.T) {
+	t.Parallel()
+	for _, legacy := range []bool{false, true} {
+		name := "When external KubeVirt credentials are unsafe, it should remove the unsafe target and persist the rejection"
+		if legacy {
+			name += " through the legacy reconciler"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			unsafe := strings.ReplaceAll(externalInfraKubeconfig, "user: {token: private-test-token}", "user: {exec: {apiVersion: client.authentication.k8s.io/v1, command: /bin/sh}}")
+			hc := credentialHostedCluster()
+			source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "infra"}, Data: map[string][]byte{"kubeconfig": []byte(unsafe)}}
+			target := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcpmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name), Name: hyperv1.KubeVirtInfraCredentialsSecretName}, Data: map[string][]byte{"kubeconfig": []byte(unsafe)}}
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).WithObjects(hc, source, target).Build()
+			r := &HostedClusterReconciler{Client: c, ReconcileLegacy: legacy, now: metav1.Now}
+
+			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hc)})
+
+			g.Expect(err).To(MatchError(ContainSubstring("prohibited exec credentials")))
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(target), &corev1.Secret{})).To(Satisfy(errors2.IsNotFound))
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())
+			condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.PlatformCredentialsFound))
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(hyperv1.PlatformCredentialsNotFoundReason))
+			g.Expect(condition.Message).To(ContainSubstring("prohibited exec credentials"))
+			g.Expect(condition.Message).NotTo(ContainSubstring("/bin/sh"))
+			g.Expect(meta.IsStatusConditionFalse(hc.Status.Conditions, string(hyperv1.ReconciliationSucceeded))).To(BeTrue())
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(source), source)).To(Succeed())
+			g.Expect(source.Data).To(Equal(map[string][]byte{"kubeconfig": []byte(unsafe)}))
 		})
 	}
 }

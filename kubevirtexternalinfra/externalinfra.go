@@ -119,11 +119,11 @@ func (k *kubevirtInfraClientMapImp) DiscoverKubevirtClusterClient(ctx context.Co
 			Namespace:       localInfraNamespace,
 		}, nil
 	}
-	if credentials.InfraKubeConfigSecret == nil {
-		k.Delete(key)
-		return nil, errors.New("infrastructure credential reference is missing")
-	}
 	ref := credentials.InfraKubeConfigSecret
+	if err := ValidateCredentialRef(ref); err != nil {
+		k.Delete(key)
+		return nil, err
+	}
 	kubeConfig, err := GetKubeConfig(ctx, cl, secretNS, ref.Name, ref.Key)
 	if err != nil {
 		k.Delete(key)
@@ -255,19 +255,22 @@ func (k *kubevirtInfraClientImp) GetInfraKubevirtVersion(ctx context.Context) (*
 
 }
 
-// GetKubeConfig retrieves validated infrastructure credentials. The optional key
-// selects a configured credential entry; existing callers default to kubeconfig.
-func GetKubeConfig(ctx context.Context, cl client.Client, secretNamespace, secretName string, keys ...string) ([]byte, error) {
-	if secretName == "" {
-		return nil, errors.New("infrastructure credential name is empty")
+// ValidateCredentialRef checks that an external infrastructure credential
+// reference names both a Secret and a key.
+func ValidateCredentialRef(ref *hyperv1.KubeconfigSecretRef) error {
+	switch {
+	case ref == nil:
+		return errors.New("infrastructure credential reference is missing")
+	case ref.Name == "":
+		return errors.New("infrastructure credential name is empty")
+	case ref.Key == "":
+		return errors.New("infrastructure credential key is empty")
 	}
-	key := "kubeconfig"
-	if len(keys) > 1 {
-		return nil, errors.New("only one infrastructure credential key may be specified")
-	}
-	if len(keys) == 1 {
-		key = keys[0]
-	}
+	return nil
+}
+
+// GetKubeConfig retrieves the validated infrastructure kubeconfig stored under key.
+func GetKubeConfig(ctx context.Context, cl client.Client, secretNamespace, secretName, key string) ([]byte, error) {
 	infraKubeconfigSecret := &corev1.Secret{}
 
 	infraKubeconfigSecretKey := client.ObjectKey{Namespace: secretNamespace, Name: secretName}
