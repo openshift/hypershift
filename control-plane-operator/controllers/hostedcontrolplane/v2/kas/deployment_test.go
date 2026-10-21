@@ -580,7 +580,9 @@ func TestApplyAWSPodIdentityWebhookContainer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			podSpec := &corev1.PodSpec{}
-			err := applyAWSPodIdentityWebhookContainer(podSpec, tc.hcp)
+			// payloadAtLeast500=true: these cases assert the operand TLS flags ARE present,
+			// which only happens on a >=5.0 payload (see operand-version gate in support/config).
+			err := applyAWSPodIdentityWebhookContainer(podSpec, tc.hcp, true)
 			g.Expect(err).ToNot(HaveOccurred())
 			tc.validatePod(g, podSpec)
 		})
@@ -690,8 +692,11 @@ func TestKonnectivityServerTLSMinVersion(t *testing.T) {
 			g := NewWithT(t)
 
 			cpContext := component.WorkloadContext{
-				HCP:                      tc.hcp,
-				UserReleaseImageProvider: testutil.FakeImageProvider(),
+				HCP: tc.hcp,
+				// payloadAtLeast500 is derived from the release version; these cases assert the
+				// operand --tls-min-version flag IS present, which the main-CPO-on-4.20 gate only
+				// emits on a >=5.0 payload. Use a 5.x fake provider so the gate passes.
+				UserReleaseImageProvider: testutil.FakeImageProvider(testutil.WithVersion("5.0.0")),
 			}
 
 			deployment := &appsv1.Deployment{

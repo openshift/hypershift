@@ -24,6 +24,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	"github.com/blang/semver"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -69,9 +71,24 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	hcp := cpContext.HCP
 	updateMainContainer(&deployment.Spec.Template.Spec, hcp)
 
+	// HACK (main-CPO-on-4.20 experiment): the --tls-min-version/--tls-cipher-suites flags on
+	// the konnectivity-server and aws-pod-identity-webhook sidecars only exist in >= 5.0 binaries.
+	// On older payloads those binaries reject the flag ("unknown flag: --tls-min-version") and
+	// CrashLoop. Gate the TLS args on the operand payload version.
+	payloadAtLeast500 := false
+	if v, err := semver.Parse(cpContext.UserReleaseImageProvider.Version()); err == nil {
+		// Strip pre-release so genuine pre-GA 5.0 payloads (5.0.0-0.nightly, -ec, -rc)
+		// are treated as >= 5.0; semver ranks any pre-release below the release version.
+		v.Pre = nil
+		payloadAtLeast500 = v.GTE(config.Version500)
+	}
+
 	tlsArgs, err := getTLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
 	if err != nil {
 		return err
+	}
+	if !payloadAtLeast500 {
+		tlsArgs = nil
 	}
 
 	podspec.UpdateContainer("konnectivity-server", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
@@ -139,7 +156,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		applyPortieriesConfig(&deployment.Spec.Template.Spec, portieris)
 	}
 
-	if err := applyPlatformSpecificIdentityWebhookContainers(&deployment.Spec.Template.Spec, hcp); err != nil {
+	if err := applyPlatformSpecificIdentityWebhookContainers(&deployment.Spec.Template.Spec, hcp, payloadAtLeast500); err != nil {
 		return err
 	}
 
@@ -203,10 +220,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	return nil
 }
 
-func applyPlatformSpecificIdentityWebhookContainers(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) error {
+func applyPlatformSpecificIdentityWebhookContainers(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane, payloadAtLeast500 bool) error {
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		if err := applyAWSPodIdentityWebhookContainer(podSpec, hcp); err != nil {
+		if err := applyAWSPodIdentityWebhookContainer(podSpec, hcp, payloadAtLeast500); err != nil {
 			return fmt.Errorf("failed to apply AWS pod identity webhook container: %w", err)
 		}
 	case hyperv1.AzurePlatform:
@@ -372,7 +389,7 @@ func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.Ho
 	return nil
 }
 
-func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) error {
+func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane, payloadAtLeast500 bool) error {
 	command := []string{
 		"/usr/bin/aws-pod-identity-webhook",
 		"--annotation-prefix=eks.amazonaws.com",
@@ -386,13 +403,17 @@ func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.H
 		"--token-audience=openshift",
 	}
 
-	tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
-	if err != nil {
-		return err
-	}
+	// HACK (main-CPO-on-4.20 experiment): aws-pod-identity-webhook only learned --tls-min-version
+	// in >= 5.0; older payload binaries reject it. Only append TLS args on >= 5.0 payloads.
+	if payloadAtLeast500 {
+		tlsArgs, err := config.TLSArgs(hcp.Spec.Configuration.GetTLSSecurityProfile())
+		if err != nil {
+			return err
+		}
 
-	if len(tlsArgs) > 0 {
-		command = append(command, tlsArgs...)
+		if len(tlsArgs) > 0 {
+			command = append(command, tlsArgs...)
+		}
 	}
 
 	podSpec.Containers = append(podSpec.Containers, corev1.Container{
