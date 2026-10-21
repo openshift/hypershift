@@ -2,7 +2,7 @@ module github.com/openshift/hypershift/hack/capi-vendor/aws
 
 go 1.25.7
 
-require sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0
+require sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.1
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5 // indirect
