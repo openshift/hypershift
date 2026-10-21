@@ -89,8 +89,8 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/statuspatching"
+	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/validations"
 
@@ -430,6 +430,7 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 		if !done {
 			return ctrl.Result{RequeueAfter: time.Minute}, nil
 		}
+
 		// Guest cloud-resource cleanup has reached its terminal outcome. Tear down
 		// the managed GCP worker firewall rule before removing the finalizer, so it
 		// is gone before the CLI deletes the VPC network. Recoverable failures
