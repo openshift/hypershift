@@ -218,8 +218,16 @@ $(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
 	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/crd-schema-check ./crd-schema-check
 
 .PHONY: generate
-generate: $(MOCKGEN)
+generate: $(MOCKGEN) $(CONTROLLER_GEN)
 	$(GO) generate ./...
+
+.PHONY: gmp-sync
+gmp-sync: $(CONTROLLER_GEN)
+	./hack/update-gmp-api.sh --sync
+
+.PHONY: verify-gmp-sync
+verify-gmp-sync: $(CONTROLLER_GEN)
+	./hack/update-gmp-api.sh --verify
 
 # Compile all tests
 .PHONY: tests
@@ -744,7 +752,7 @@ verify-tekton-pipeline-pairs: $(PYTHON_VENV_STAMP) ## Verify paired Tekton Pipel
 
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*,./pkg/capi/*,./hack/capi-vendor/*"
+	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./support/gmpmonitoring/testdata/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*,./pkg/capi/*,./hack/capi-vendor/*"
 
 .PHONY: verify-api-deps
 verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependencies against allowlist.
