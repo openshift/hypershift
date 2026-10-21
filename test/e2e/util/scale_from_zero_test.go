@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
@@ -57,6 +58,72 @@ func TestPrepareScaleFromZeroUpgrade(t *testing.T) {
 				t.Fatal("preparation changed unrelated NodePool fields")
 			}
 		})
+	}
+}
+
+func TestValidateScaleFromZeroUpgradeReplicas(t *testing.T) {
+	for _, version := range []string{"v1beta1", "v1beta2"} {
+		for _, kind := range []string{"MachineDeployment", "MachineSet"} {
+			for _, test := range []struct {
+				name       string
+				mutate     func(*unstructured.Unstructured, *hyperv1.NodePool)
+				noObject   bool
+				noNodePool bool
+				wantError  bool
+			}{
+				{name: "When prepared bounds and minimum replicas are persisted, it should accept the baseline"},
+				{name: "When replicas equal the prepared maximum, it should accept the baseline", mutate: func(object *unstructured.Unstructured, _ *hyperv1.NodePool) {
+					object.Object["spec"] = map[string]interface{}{"replicas": int64(3)}
+				}},
+				{name: "When fixed replica bounds have not transitioned, it should keep waiting", wantError: true, mutate: func(object *unstructured.Unstructured, _ *hyperv1.NodePool) {
+					object.SetAnnotations(map[string]string{"cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size": "0", "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size": "0"})
+				}},
+				{name: "When autoscaling bounds are absent, it should keep waiting", wantError: true, mutate: func(object *unstructured.Unstructured, _ *hyperv1.NodePool) { object.SetAnnotations(nil) }},
+				{name: "When only the minimum matches, it should keep waiting", wantError: true, mutate: func(object *unstructured.Unstructured, _ *hyperv1.NodePool) {
+					object.SetAnnotations(map[string]string{"cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size": "2", "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size": "4"})
+				}},
+				{name: "When replicas are below the prepared minimum, it should keep waiting", wantError: true, mutate: func(object *unstructured.Unstructured, _ *hyperv1.NodePool) {
+					object.Object["spec"] = map[string]interface{}{"replicas": int64(1)}
+				}},
+				{name: "When replicas exceed the prepared maximum, it should keep waiting", wantError: true, mutate: func(object *unstructured.Unstructured, _ *hyperv1.NodePool) {
+					object.Object["spec"] = map[string]interface{}{"replicas": int64(4)}
+				}},
+				{name: "When replicas are missing, it should keep waiting", wantError: true, mutate: func(object *unstructured.Unstructured, _ *hyperv1.NodePool) { delete(object.Object, "spec") }},
+				{name: "When replicas are malformed, it should reject the baseline", wantError: true, mutate: func(object *unstructured.Unstructured, _ *hyperv1.NodePool) {
+					object.Object["spec"] = map[string]interface{}{"replicas": "2"}
+				}},
+				{name: "When the scalable object is missing, it should reject the baseline", noObject: true, wantError: true},
+				{name: "When the NodePool is missing, it should reject the baseline", noNodePool: true, wantError: true},
+				{name: "When autoscaling is disabled, it should reject the baseline", wantError: true, mutate: func(_ *unstructured.Unstructured, nodePool *hyperv1.NodePool) { nodePool.Spec.AutoScaling = nil }},
+				{name: "When the prepared minimum is missing, it should reject the baseline", wantError: true, mutate: func(_ *unstructured.Unstructured, nodePool *hyperv1.NodePool) { nodePool.Spec.AutoScaling.Min = nil }},
+				{name: "When the prepared minimum has no existing workers, it should reject the baseline", wantError: true, mutate: func(_ *unstructured.Unstructured, nodePool *hyperv1.NodePool) {
+					nodePool.Spec.AutoScaling.Min = ptr.To[int32](0)
+				}},
+				{name: "When the prepared maximum is below the minimum, it should reject the baseline", wantError: true, mutate: func(_ *unstructured.Unstructured, nodePool *hyperv1.NodePool) { nodePool.Spec.AutoScaling.Max = 1 }},
+			} {
+				t.Run(fmt.Sprintf("%s/%s/%s", test.name, version, kind), func(t *testing.T) {
+					object := &unstructured.Unstructured{Object: map[string]interface{}{
+						"apiVersion": "cluster.x-k8s.io/" + version, "kind": kind,
+						"spec": map[string]interface{}{"replicas": int64(2)},
+					}}
+					object.SetAnnotations(map[string]string{"cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size": "2", "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size": "3"})
+					nodePool := &hyperv1.NodePool{Spec: hyperv1.NodePoolSpec{AutoScaling: &hyperv1.NodePoolAutoScaling{Min: ptr.To[int32](2), Max: 3}}}
+					if test.mutate != nil {
+						test.mutate(object, nodePool)
+					}
+					var scalable client.Object = object
+					if test.noObject {
+						scalable = nil
+					}
+					if test.noNodePool {
+						nodePool = nil
+					}
+					if err := ValidateScaleFromZeroUpgradeReplicas(scalable, nodePool); (err != nil) != test.wantError {
+						t.Fatalf("ValidateScaleFromZeroUpgradeReplicas() error = %v, wantError %v", err, test.wantError)
+					}
+				})
+			}
+		}
 	}
 }
 

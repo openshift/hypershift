@@ -4,9 +4,9 @@ package e2e
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -164,20 +164,17 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			}
 
 			hcpNameSpace = manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-			if !*scaleFromZeroUpgradeChecks || *scaleFromZeroUpgradeType != string(hyperv1.UpgradeTypeInPlace) {
-				machineDeploymentMap, err = listMachineDeploymentGenerations(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
-				g.Expect(err).ToNot(gomega.HaveOccurred())
-				g.Expect(len(machineDeploymentMap)).To(gomega.BeEquivalentTo(len(nodepools.Items)), "Number of MachineDeployments and NodePools should match")
-			}
 			if *scaleFromZeroUpgradeChecks {
 				for _, nodePool := range nodePoolsMap {
 					waitForScaleFromZeroUpgradeBaseline(t, ctx, mgmtClient, hcpNameSpace, nodePool, capiVersion)
 				}
 				rolloutSnapshot, err = e2eutil.SnapshotScaleFromZeroRollout(ctx, mgmtClient, guestClient, hcpNameSpace, capiVersion, globalOpts.Platform)
 				g.Expect(err).NotTo(gomega.HaveOccurred())
-				data, err := json.Marshal(rolloutSnapshot)
-				g.Expect(err).NotTo(gomega.HaveOccurred())
-				t.Logf("Pre-upgrade scale-from-zero rollout snapshot: %s", data)
+			}
+			if !*scaleFromZeroUpgradeChecks || *scaleFromZeroUpgradeType != string(hyperv1.UpgradeTypeInPlace) {
+				machineDeploymentMap, err = listMachineDeploymentGenerations(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
+				g.Expect(err).ToNot(gomega.HaveOccurred())
+				g.Expect(len(machineDeploymentMap)).To(gomega.BeEquivalentTo(len(nodepools.Items)), "Number of MachineDeployments and NodePools should match")
 			}
 
 			// Capture bootstrap chain state before upgrade to detect replacement during upgrade
@@ -242,7 +239,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 				if *scaleFromZeroUpgradeChecks {
 					current, err := e2eutil.SnapshotScaleFromZeroRollout(ctx, mgmtClient, guestClient, hcpNameSpace, capiVersion, globalOpts.Platform)
 					g.Expect(err).NotTo(gomega.HaveOccurred())
-					g.Expect(current).To(gomega.Equal(rolloutSnapshot), "operator metadata migration must not change worker identities, templates, or scalable specs")
+					g.Expect(reflect.DeepEqual(current, rolloutSnapshot)).To(gomega.BeTrue(), "operator metadata migration must not change worker identities, templates, or scalable specs")
 					for _, nodePool := range nodePoolsMap {
 						object, native, err := e2eutil.GetScaleFromZeroCapacity(ctx, mgmtClient, hcpNameSpace, nodePool, capiVersion)
 						g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -337,6 +334,9 @@ func waitForScaleFromZeroUpgradeBaseline(t *testing.T, ctx context.Context, clie
 	g.Eventually(func() error {
 		object, native, err := e2eutil.GetScaleFromZeroCapacity(ctx, client, namespace, nodePool, capiVersion)
 		if err != nil {
+			return err
+		}
+		if err := e2eutil.ValidateScaleFromZeroUpgradeReplicas(object, nodePool); err != nil {
 			return err
 		}
 		if *scaleFromZeroCapacitySource == "native" {

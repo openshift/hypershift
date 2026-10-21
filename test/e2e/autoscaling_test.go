@@ -709,12 +709,13 @@ func TestNodePoolAutoscalingScaleFromZero(t *testing.T) {
 	clusterOpts.NodePoolReplicas = 1
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		t.Run(fmt.Sprintf("TestScaleFromZero/%s/%s", *scaleFromZeroCapacitySource, *scaleFromZeroUpgradeType), testScaleFromZero(ctx, mgtClient, hostedCluster))
+		t.Run("TestScaleFromZero", testScaleFromZero(ctx, mgtClient, hostedCluster))
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "scale-from-zero", globalOpts.ServiceAccountSigningKey)
 }
 
 func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) func(t *testing.T) {
 	return func(t *testing.T) {
+		t.Logf("Scale-from-zero capacity source: %s; upgrade type: %s", *scaleFromZeroCapacitySource, *scaleFromZeroUpgradeType)
 		g := NewWithT(t)
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()

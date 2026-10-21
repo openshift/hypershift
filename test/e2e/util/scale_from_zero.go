@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
@@ -28,6 +29,27 @@ func PrepareScaleFromZeroUpgrade(nodePool *hyperv1.NodePool) (*hyperv1.NodePool,
 	prepared.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{Min: ptr.To(*nodePool.Spec.Replicas), Max: *nodePool.Spec.Replicas + 1}
 	prepared.Spec.Replicas = nil
 	return prepared, nil
+}
+
+func ValidateScaleFromZeroUpgradeReplicas(object client.Object, nodePool *hyperv1.NodePool) error {
+	if object == nil || nodePool == nil || nodePool.Spec.AutoScaling == nil || nodePool.Spec.AutoScaling.Min == nil || *nodePool.Spec.AutoScaling.Min <= 0 || nodePool.Spec.AutoScaling.Max < *nodePool.Spec.AutoScaling.Min {
+		return fmt.Errorf("upgrade baseline requires a scalable object and positive autoscaling bounds")
+	}
+	minimum := *nodePool.Spec.AutoScaling.Min
+	maximum := nodePool.Spec.AutoScaling.Max
+	annotations := object.GetAnnotations()
+	if annotations["cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"] != strconv.FormatInt(int64(minimum), 10) || annotations["cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"] != strconv.FormatInt(int64(maximum), 10) {
+		return fmt.Errorf("waiting for prepared autoscaling bounds on the scalable object")
+	}
+	content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(object)
+	if err != nil {
+		return fmt.Errorf("cannot inspect upgrade baseline replicas")
+	}
+	replicas, found, err := unstructured.NestedInt64(content, "spec", "replicas")
+	if err != nil || !found || replicas < int64(minimum) || replicas > int64(maximum) {
+		return fmt.Errorf("waiting for replicas within prepared autoscaling bounds")
+	}
+	return nil
 }
 
 func SnapshotScaleFromZeroRollout(ctx context.Context, managementClient, guestClient client.Client, namespace, version string, platform hyperv1.PlatformType) (map[string]interface{}, error) {
