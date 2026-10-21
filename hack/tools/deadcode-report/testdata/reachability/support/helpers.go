@@ -1,0 +1,3 @@
+package support
+
+func OnlyOtherMain() {}
