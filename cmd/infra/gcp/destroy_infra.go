@@ -16,6 +16,7 @@ type DestroyInfraOptions struct {
 	ProjectID string
 	Region    string
 	InfraID   string
+	Resources NetworkResourceNames
 }
 
 // NewDestroyCommand creates a new cobra command for destroying GCP infrastructure
@@ -68,10 +69,16 @@ func (o *DestroyInfraOptions) Validate() error {
 
 // Run executes the infrastructure destruction
 func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error {
-	logger.Info("Destroying GCP infrastructure", "projectID", o.ProjectID, "region", o.Region, "infraID", o.InfraID)
 
-	// Initialize network manager
-	networkManager, err := NewNetworkManager(ctx, o.ProjectID, o.InfraID, o.Region, logger)
+	// Cluster cleanup supplies explicit HostedCluster resource references. The
+	// standalone command continues to derive names from its required InfraID.
+	var networkManager *NetworkManager
+	var err error
+	if o.Resources.Any() {
+		networkManager, err = NewNetworkManagerWithResources(ctx, o.ProjectID, o.Region, o.Resources, logger)
+	} else {
+		networkManager, err = NewNetworkManager(ctx, o.ProjectID, o.InfraID, o.Region, logger)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to initialize network manager: %w", err)
 	}
@@ -104,5 +111,6 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		return fmt.Errorf("failed to delete VPC network: %w", err)
 	}
 
+	logger.Info("Successfully destroyed GCP infrastructure")
 	return nil
 }

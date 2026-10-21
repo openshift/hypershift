@@ -8,6 +8,8 @@ status: {}
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster
 metadata:
+  annotations:
+    hypershift.openshift.io/gcp-infra-resources: '{"version":1,"router":"test-router","nat":"test-nat","firewallRule":"test-firewall"}'
   name: example
   namespace: clusters
 spec:

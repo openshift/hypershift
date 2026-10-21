@@ -11,8 +11,12 @@ import (
 )
 
 type DestroyIAMOptions struct {
-	ProjectID string
-	InfraID   string
+	ProjectID                     string
+	WorkloadIdentityProjectNumber string
+	InfraID                       string
+	PoolID                        string
+	ProviderID                    string
+	ServiceAccountEmails          map[string]string
 }
 
 func NewDestroyIAMCommand() *cobra.Command {
@@ -56,13 +60,29 @@ func (o *DestroyIAMOptions) ValidateInputs() error {
 	return nil
 }
 
+// ValidateResourceReferences validates the explicit references supplied by
+// HostedCluster cleanup before initializing GCP API clients.
+func (o *DestroyIAMOptions) ValidateResourceReferences() error {
+	return validateIAMResourceReferences(o.ProjectID, o.WorkloadIdentityProjectNumber, o.PoolID, o.ProviderID, o.ServiceAccountEmails)
+}
+
 func (o *DestroyIAMOptions) Run(ctx context.Context, logger logr.Logger) error {
 	return o.DestroyIAM(ctx, logger)
 }
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context, logger logr.Logger) error {
-	// Use IAMManager for all GCP API interactions
-	iamManager, err := NewIAMManager(ctx, o.ProjectID, o.InfraID, "", logger)
+	// Cluster cleanup supplies exact HostedCluster references. The standalone
+	// command leaves them empty and continues to derive names from InfraID.
+	var iamManager *IAMManager
+	var err error
+	if o.WorkloadIdentityProjectNumber != "" || o.PoolID != "" || o.ProviderID != "" || len(o.ServiceAccountEmails) > 0 {
+		iamManager, err = NewIAMManagerWithResources(ctx, o.ProjectID, o.WorkloadIdentityProjectNumber, o.PoolID, o.ProviderID, o.ServiceAccountEmails, logger)
+	} else {
+		if err := o.ValidateInputs(); err != nil {
+			return err
+		}
+		iamManager, err = NewIAMManager(ctx, o.ProjectID, o.InfraID, "", logger)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to initialize GCP clients: %w", err)
 	}
@@ -85,6 +105,6 @@ func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context, logger logr.Logger) 
 		return fmt.Errorf("failed to delete workload identity pool: %w", err)
 	}
 
-	logger.Info("Destroyed GCP IAM infrastructure", "infraID", o.InfraID, "projectID", o.ProjectID)
+	logger.Info("Successfully destroyed GCP IAM resources")
 	return nil
 }

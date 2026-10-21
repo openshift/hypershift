@@ -2,6 +2,7 @@ package gcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -27,6 +28,9 @@ const (
 	flagRegion                        = "region"
 	flagNetwork                       = "network"
 	flagPrivateServiceConnectSubnet   = "private-service-connect-subnet"
+	flagRouterName                    = "router-name"
+	flagNATName                       = "nat-name"
+	flagFirewallRuleName              = "firewall-rule-name"
 	flagWorkloadIdentityProjectNumber = "workload-identity-project-number"
 	flagWorkloadIdentityPoolID        = "workload-identity-pool-id"
 	flagWorkloadIdentityProviderID    = "workload-identity-provider-id"
@@ -58,6 +62,15 @@ type RawCreateOptions struct {
 
 	// PrivateServiceConnectSubnet is the subnet for Private Service Connect endpoints
 	PrivateServiceConnectSubnet string
+
+	// RouterName is the Cloud Router name for the cluster's network infrastructure
+	RouterName string
+
+	// NATName is the Cloud NAT name for the cluster's network infrastructure
+	NATName string
+
+	// FirewallRuleName is the firewall rule name for the cluster's network infrastructure
+	FirewallRuleName string
 
 	// WorkloadIdentityProjectNumber is the numeric GCP project identifier for WIF configuration
 	WorkloadIdentityProjectNumber string
@@ -114,6 +127,9 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Region, flagRegion, opts.Region, "GCP region where the HostedCluster will be created")
 	flags.StringVar(&opts.Network, flagNetwork, opts.Network, "VPC network name for the cluster")
 	flags.StringVar(&opts.PrivateServiceConnectSubnet, flagPrivateServiceConnectSubnet, opts.PrivateServiceConnectSubnet, "Subnet for Private Service Connect endpoints")
+	flags.StringVar(&opts.RouterName, flagRouterName, opts.RouterName, "Cloud Router name (required; from `hypershift create infra gcp` output)")
+	flags.StringVar(&opts.NATName, flagNATName, opts.NATName, "Cloud NAT name (required; from `hypershift create infra gcp` output)")
+	flags.StringVar(&opts.FirewallRuleName, flagFirewallRuleName, opts.FirewallRuleName, "Firewall name (required; from `hypershift create infra gcp` output)")
 	flags.StringVar(&opts.WorkloadIdentityProjectNumber, flagWorkloadIdentityProjectNumber, opts.WorkloadIdentityProjectNumber, "Numeric GCP project identifier for Workload Identity Federation (from `hypershift infra create gcp` output)")
 	flags.StringVar(&opts.WorkloadIdentityPoolID, flagWorkloadIdentityPoolID, opts.WorkloadIdentityPoolID, "Workload Identity Pool ID (from `hypershift infra create gcp` output)")
 	flags.StringVar(&opts.WorkloadIdentityProviderID, flagWorkloadIdentityProviderID, opts.WorkloadIdentityProviderID, "Workload Identity Provider ID (from `hypershift infra create gcp` output)")
@@ -191,6 +207,19 @@ func (o *RawCreateOptions) Validate(_ context.Context, opts *core.CreateOptions)
 		if err := util.ValidateRequiredOption(flagZone, o.Zone); err != nil {
 			return nil, err
 		}
+	}
+	if err := util.ValidateRequiredOption(flagRouterName, o.RouterName); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagNATName, o.NATName); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagFirewallRuleName, o.FirewallRuleName); err != nil {
+		return nil, err
+	}
+	resources := infraResources{Version: 1, Router: o.RouterName, NAT: o.NATName, FirewallRule: o.FirewallRuleName}
+	if err := resources.validate(); err != nil {
+		return nil, err
 	}
 	return &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
@@ -277,6 +306,24 @@ func serviceAccountTokenIssuerSecret(namespace, name string) *corev1.Secret {
 
 // ApplyPlatformSpecifics applies GCP-specific configurations to the HostedCluster
 func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedCluster) error {
+	resources := infraResources{Version: 1, Router: o.RouterName, NAT: o.NATName, FirewallRule: o.FirewallRuleName}
+	if err := resources.validate(); err != nil {
+		return err
+	}
+	value, err := json.Marshal(resources)
+	if err != nil {
+		return fmt.Errorf("failed to encode GCP infrastructure resources: %w", err)
+	}
+	if hostedCluster.Annotations == nil {
+		hostedCluster.Annotations = map[string]string{}
+	}
+	if existing, ok := hostedCluster.Annotations[infraResourcesAnnotation]; ok {
+		previous, err := parseInfraResources(existing)
+		if err != nil || previous != resources {
+			return fmt.Errorf("annotation %s conflicts with the networking resource flags", infraResourcesAnnotation)
+		}
+	}
+	hostedCluster.Annotations[infraResourcesAnnotation] = string(value)
 	hostedCluster.Spec.Platform.Type = hyperv1.GCPPlatform
 	hostedCluster.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
 		Project: o.Project,
