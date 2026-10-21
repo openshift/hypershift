@@ -2133,9 +2133,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			observedDefaultIngressCert = nil
 		}
 	}
+	namedCertCAs, err := r.getNamedCertificateCAs(ctx, hcp)
+	if err != nil {
+		return fmt.Errorf("failed to get named certificate CAs: %w", err)
+	}
+
 	rootCAConfigMap := manifests.RootCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, rootCAConfigMap, func() error {
-		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret, observedDefaultIngressCert)
+		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret, observedDefaultIngressCert, namedCertCAs...)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile root CA configmap: %w", err)
 	}
@@ -2229,6 +2234,57 @@ func (r *HostedControlPlaneReconciler) reconcilePlatformSpecificCerts(ctx contex
 		return r.reconcileGCPPlatformCerts(ctx, hcp, p, createOrUpdate, rootCASecret)
 	}
 	return nil
+}
+
+// getNamedCertificateCAs extracts CA certificates from named certificate Secrets
+// so they can be included in the root-ca ConfigMap and ultimately propagated to
+// the guest cluster's kube-root-ca.crt trust bundle.
+//
+// CA certificates are collected from both the tls.crt chain (non-leaf CA
+// certs) and the ca.crt key (if present), merging both sources. This covers
+// Secrets where the chain and the root CA are split across the two keys.
+// If neither source provides a valid CA, a warning is logged.
+func (r *HostedControlPlaneReconciler) getNamedCertificateCAs(ctx context.Context, hcp *hyperv1.HostedControlPlane) ([]*corev1.Secret, error) {
+	if hcp.Spec.Configuration == nil {
+		return nil, nil
+	}
+	var namedCertCAs []*corev1.Secret
+	for _, namedCert := range hcp.Spec.Configuration.GetNamedCertificates() {
+		if namedCert.ServingCertificate.Name == "" {
+			continue
+		}
+		certSecret := &corev1.Secret{}
+		if err := r.Get(ctx, client.ObjectKey{
+			Namespace: hcp.Namespace,
+			Name:      namedCert.ServingCertificate.Name,
+		}, certSecret); err != nil {
+			// Return an error for all failures including NotFound so we
+			// never publish a root-ca ConfigMap with an incomplete CA
+			// bundle. The controller will requeue and the existing
+			// ConfigMap stays intact until all configured Secrets are
+			// available.
+			return nil, fmt.Errorf("failed to get named certificate secret %s: %w", namedCert.ServingCertificate.Name, err)
+		}
+		// Extract CAs from the tls.crt chain (non-leaf certificates)
+		// and also from ca.crt if present, merging both sources so that
+		// a Secret with leaf+intermediate in tls.crt and the root in
+		// ca.crt contributes the full trust chain.
+		caCerts := pki.ExtractCACertificatesFromChain(certSecret.Data[corev1.TLSCertKey])
+		if caData, ok := certSecret.Data[certs.CASignerCertMapKey]; ok && len(caData) > 0 {
+			caCerts = append(caCerts, pki.FilterCACertificates(caData)...)
+		}
+		if len(caCerts) > 0 {
+			namedCertCAs = append(namedCertCAs, &corev1.Secret{
+				Data: map[string][]byte{
+					certs.CASignerCertMapKey: caCerts,
+				},
+			})
+		} else {
+			r.Log.Info("Named certificate secret has no valid CA certificate in tls.crt chain or ca.crt; its signer will not be included in the root-ca trust bundle",
+				"secret", namedCert.ServingCertificate.Name)
+		}
+	}
+	return namedCertCAs, nil
 }
 
 func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
