@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 290122b4433b00bee8820f5ddafc9510019b8a0ac7229b2b97a9ce0cc36a6c95
+    hypershift.openshift.io/desired-state-hash: 214fab88371f4225298177a909c08b87b5f92122e248c953cfc714c36ebde666
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ignition-server-proxy
@@ -90,7 +90,7 @@ spec:
           haproxy -f /etc/haproxy/haproxy.conf
         command:
         - /bin/bash
-        image: haproxy-router
+        image: haproxy-router-haproxy32
         imagePullPolicy: IfNotPresent
         name: haproxy
         ports:

@@ -1357,12 +1357,7 @@ func resolveHAProxyImage(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 		componentImages = releaseImage.CanonicalComponentImages()
 	}
 
-	haProxyImage, ok := componentImages[haproxy.HAProxyRouterImageName]
-	if !ok {
-		return "", fmt.Errorf("release image doesn't have a %s image", haproxy.HAProxyRouterImageName)
-	}
-
-	return haProxyImage, nil
+	return haproxy.ResolveHAProxyImage(componentImages)
 }
 
 func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {

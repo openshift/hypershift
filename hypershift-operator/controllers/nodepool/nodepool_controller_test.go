@@ -3046,7 +3046,7 @@ func TestResolveHAProxyImage(t *testing.T) {
 			name:                "When registry overrides exist and NodePool is new it should use canonical image",
 			useSharedIngress:    false,
 			componentImage:      "mirror.example.com/openshift/haproxy-router:v4.16",
-			canonicalComponents: map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			canonicalComponents: map[string]string{haproxy.HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router:v4.16"},
 			expectedImage:       "registry.test.io/openshift/haproxy-router:v4.16",
 		},
 		{
@@ -3054,7 +3054,7 @@ func TestResolveHAProxyImage(t *testing.T) {
 			nodePoolStatusVersion: "4.17.0",
 			useSharedIngress:      false,
 			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
-			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			canonicalComponents:   map[string]string{haproxy.HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router:v4.16"},
 			expectedImage:         "registry.test.io/openshift/haproxy-router:v4.16",
 		},
 		{
@@ -3065,7 +3065,7 @@ func TestResolveHAProxyImage(t *testing.T) {
 			nodePoolStatusVersion: "4.18.0",
 			useSharedIngress:      false,
 			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
-			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			canonicalComponents:   map[string]string{haproxy.HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router:v4.16"},
 			expectedImage:         "registry.test.io/openshift/haproxy-router:v4.16",
 		},
 		{
@@ -3073,7 +3073,7 @@ func TestResolveHAProxyImage(t *testing.T) {
 			nodePoolStatusVersion: "4.18.0",
 			useSharedIngress:      false,
 			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
-			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			canonicalComponents:   map[string]string{haproxy.HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router:v4.16"},
 			expectedImage:         "mirror.example.com/openshift/haproxy-router:v4.16",
 		},
 		{
@@ -3082,7 +3082,7 @@ func TestResolveHAProxyImage(t *testing.T) {
 				hyperv1.NodePoolHAProxyImageAnnotation: "mirror.example.com/custom/haproxy:latest",
 			},
 			componentImage:      "mirror.example.com/openshift/haproxy-router:v4.16",
-			canonicalComponents: map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			canonicalComponents: map[string]string{haproxy.HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router:v4.16"},
 			expectedImage:       "mirror.example.com/custom/haproxy:latest",
 		},
 	}
@@ -3188,7 +3188,7 @@ kind: Config`),
 			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
 				Version: "4.18.0",
 				Components: map[string]string{
-					haproxy.HAProxyRouterImageName: componentImage,
+					haproxy.HAProxyImageNames[0]: componentImage,
 				},
 				CanonicalComponents: tc.canonicalComponents,
 			}
