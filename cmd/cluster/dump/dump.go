@@ -884,7 +884,7 @@ var (
 )
 
 func dumpKubevirtExternalCluster(ctx context.Context, mngmtCl client.Client, creds *hyperv1.KubevirtPlatformCredentials, npNS string, destDir string, opts *DumpOptions) error {
-	kubeconfig, err := kvinfra.GetKubeConfig(ctx, mngmtCl, npNS, creds.InfraKubeConfigSecret.Name)
+	kubeconfig, err := kvinfra.GetKubeConfig(ctx, mngmtCl, npNS, creds.InfraKubeConfigSecret.Name, "kubeconfig")
 	if err != nil {
 		return fmt.Errorf("failed to get KubeVirt external infra-cluster:  %w", err)
 	}
