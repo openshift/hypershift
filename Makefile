@@ -127,7 +127,7 @@ precommit-api-lint-fix: $(GOLANGCI_LINT)
 	cd api && $(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(patsubst api/%,%,$(FILES))
 
 .PHONY: lint
-lint: generate $(HYPERSHIFTLINTER_PLUGIN)
+lint: generate verify-capi-sync $(HYPERSHIFTLINTER_PLUGIN)
 	$(MAKE) api-lint; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v; main_rc=$$?; \
 	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
@@ -661,7 +661,7 @@ capi-sync-force:
 	@$(MAKE) capi-sync
 
 .PHONY: verify-capi-sync
-verify-capi-sync:
+verify-capi-sync: generate
 	@rm -f $(CAPI_SYNC_STAMPS)
 	@$(MAKE) capi-sync
 	@if [ -n "$$(git diff --name-only -- pkg/capi/)" ] || [ -n "$$(git ls-files --others --exclude-standard -- pkg/capi/)" ]; then \
@@ -676,7 +676,7 @@ verify-capi-sync:
 # compiles the ones it imports), and that packages consuming the localized
 # types still compile. Faster than staticcheck and points at the cause.
 .PHONY: verify-capi-decoupling
-verify-capi-decoupling:
+verify-capi-decoupling: verify-capi-sync
 	@CAPI_PROVIDERS="$(CAPI_PROVIDERS)" $(DIR)/hack/verify-capi-decoupling.sh
 
 .PHONY: workspace-sync
