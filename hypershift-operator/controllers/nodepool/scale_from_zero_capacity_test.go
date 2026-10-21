@@ -156,38 +156,7 @@ func testScaleFromZeroCapacityTransitions(t *testing.T) {
 							return
 						}
 						annotations := actual.GetAnnotations()
-						if step == "native capacity" || step == "provider removed" || step == "provider mismatched" {
-							for _, key := range resourceKeys {
-								g.Expect(annotations).NotTo(HaveKey(key))
-							}
-							g.Expect(provider.instanceTypes).To(HaveLen(providerCalls))
-						} else {
-							g.Expect(provider.instanceTypes[providerCalls:]).To(Equal([]string{instanceType}))
-							cpu, parseErr := resource.ParseQuantity(annotations["capacity.cluster-autoscaler.kubernetes.io/cpu"])
-							g.Expect(parseErr).NotTo(HaveOccurred())
-							g.Expect(cpu.Cmp(resource.MustParse("4"))).To(BeZero())
-							legacyCPU, parseErr := resource.ParseQuantity(annotations["machine.openshift.io/vCPU"])
-							g.Expect(parseErr).NotTo(HaveOccurred())
-							g.Expect(cpu.Cmp(legacyCPU)).To(BeZero())
-							memory, parseErr := resource.ParseQuantity(annotations["capacity.cluster-autoscaler.kubernetes.io/memory"])
-							g.Expect(parseErr).NotTo(HaveOccurred())
-							g.Expect(annotations["capacity.cluster-autoscaler.kubernetes.io/memory"]).To(Equal("16384Mi"))
-							legacyMiB, parseErr := strconv.ParseInt(annotations["machine.openshift.io/memoryMb"], 10, 64)
-							g.Expect(parseErr).NotTo(HaveOccurred())
-							g.Expect(memory.Value()).To(Equal(legacyMiB * 1024 * 1024))
-							g.Expect(memory.Cmp(resource.MustParse("16Gi"))).To(BeZero())
-							if provider.info.GPU == 0 {
-								for _, key := range []string{resourceKeys[2], resourceKeys[5], resourceKeys[6]} {
-									g.Expect(annotations).NotTo(HaveKey(key))
-								}
-							} else {
-								gpu, parseErr := strconv.ParseInt(annotations["capacity.cluster-autoscaler.kubernetes.io/gpu-count"], 10, 64)
-								g.Expect(parseErr).NotTo(HaveOccurred())
-								g.Expect(gpu).To(Equal(int64(1)))
-								g.Expect(annotations["machine.openshift.io/GPU"]).To(Equal("1"))
-								g.Expect(annotations["capacity.cluster-autoscaler.kubernetes.io/gpu-type"]).To(Equal("nvidia.com/gpu"))
-							}
-						}
+						expectScaleFromZeroResourceAnnotations(t, annotations, step, resourceKeys, provider, providerCalls, instanceType)
 						g.Expect(annotations).To(HaveKeyWithValue(labelsKey, "kubernetes.io/arch=arm64,workload=gpu"))
 						g.Expect(annotations).To(HaveKeyWithValue(taintsKey, "dedicated=gpu:NoSchedule"))
 						g.Expect(annotations).To(HaveKeyWithValue("custom.io/keep", "preserved"))
@@ -220,5 +189,42 @@ func testScaleFromZeroCapacityTransitions(t *testing.T) {
 				g.Expect(persistedNodePool.Annotations).To(Equal(originalNodePool.Annotations))
 			})
 		}
+	}
+}
+
+func expectScaleFromZeroResourceAnnotations(t *testing.T, annotations map[string]string, step string, resourceKeys []string, provider *mockProvider, providerCalls int, instanceType string) {
+	t.Helper()
+	g := NewWithT(t)
+	if step == "native capacity" || step == "provider removed" || step == "provider mismatched" {
+		for _, key := range resourceKeys {
+			g.Expect(annotations).NotTo(HaveKey(key))
+		}
+		g.Expect(provider.instanceTypes).To(HaveLen(providerCalls))
+		return
+	}
+	g.Expect(provider.instanceTypes[providerCalls:]).To(Equal([]string{instanceType}))
+	cpu, parseErr := resource.ParseQuantity(annotations["capacity.cluster-autoscaler.kubernetes.io/cpu"])
+	g.Expect(parseErr).NotTo(HaveOccurred())
+	g.Expect(cpu.Cmp(resource.MustParse("4"))).To(BeZero())
+	legacyCPU, parseErr := resource.ParseQuantity(annotations["machine.openshift.io/vCPU"])
+	g.Expect(parseErr).NotTo(HaveOccurred())
+	g.Expect(cpu.Cmp(legacyCPU)).To(BeZero())
+	memory, parseErr := resource.ParseQuantity(annotations["capacity.cluster-autoscaler.kubernetes.io/memory"])
+	g.Expect(parseErr).NotTo(HaveOccurred())
+	g.Expect(annotations["capacity.cluster-autoscaler.kubernetes.io/memory"]).To(Equal("16384Mi"))
+	legacyMiB, parseErr := strconv.ParseInt(annotations["machine.openshift.io/memoryMb"], 10, 64)
+	g.Expect(parseErr).NotTo(HaveOccurred())
+	g.Expect(memory.Value()).To(Equal(legacyMiB * 1024 * 1024))
+	g.Expect(memory.Cmp(resource.MustParse("16Gi"))).To(BeZero())
+	if provider.info.GPU == 0 {
+		for _, key := range []string{resourceKeys[2], resourceKeys[5], resourceKeys[6]} {
+			g.Expect(annotations).NotTo(HaveKey(key))
+		}
+	} else {
+		gpu, parseErr := strconv.ParseInt(annotations["capacity.cluster-autoscaler.kubernetes.io/gpu-count"], 10, 64)
+		g.Expect(parseErr).NotTo(HaveOccurred())
+		g.Expect(gpu).To(Equal(int64(1)))
+		g.Expect(annotations["machine.openshift.io/GPU"]).To(Equal("1"))
+		g.Expect(annotations["capacity.cluster-autoscaler.kubernetes.io/gpu-type"]).To(Equal("nvidia.com/gpu"))
 	}
 }

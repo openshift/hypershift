@@ -37,17 +37,7 @@ const (
 // TestUpgradeHyperShiftOperator validates that a HyperShift Operator upgrade won't unnecessarily cause a node rollout.
 // The test must be triggered via the flag upgrade.run-tests
 func TestUpgradeHyperShiftOperator(t *testing.T) {
-	if *scaleFromZeroUpgradeChecks {
-		if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
-			t.Fatal("scale-from-zero upgrade checks require an AWS or Azure fixture")
-		}
-		if *scaleFromZeroCapacitySource != "native" && *scaleFromZeroCapacitySource != "annotations" {
-			t.Fatal("scale-from-zero upgrade checks require an explicit native or annotations source")
-		}
-		if *scaleFromZeroUpgradeType != string(hyperv1.UpgradeTypeReplace) && *scaleFromZeroUpgradeType != string(hyperv1.UpgradeTypeInPlace) {
-			t.Fatal("scale-from-zero upgrade checks require Replace or InPlace")
-		}
-	}
+	validateScaleFromZeroUpgradeOptions(t)
 	if !globalOpts.RunUpgradeTest {
 		// This test should be triggered intentionally by setting the option above,
 		// otherwise skip it.
@@ -181,36 +171,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			}
 			if *scaleFromZeroUpgradeChecks {
 				for _, nodePool := range nodePoolsMap {
-					g.Eventually(func() error {
-						object, native, err := e2eutil.GetScaleFromZeroCapacity(ctx, mgmtClient, hcpNameSpace, nodePool, capiVersion)
-						if err != nil {
-							return err
-						}
-						if *scaleFromZeroCapacitySource == "native" {
-							return e2eutil.ValidateScaleFromZeroCapacity(object.GetAnnotations(), native, "native")
-						}
-						if len(native) != 0 {
-							return fmt.Errorf("upgrade fixture unexpectedly has native capacity")
-						}
-						cpu, err := resource.ParseQuantity(object.GetAnnotations()["machine.openshift.io/vCPU"])
-						if err != nil || cpu.Sign() <= 0 {
-							return fmt.Errorf("waiting for positive legacy CPU capacity")
-						}
-						memoryMiB, err := strconv.ParseInt(object.GetAnnotations()["machine.openshift.io/memoryMb"], 10, 64)
-						if err != nil || memoryMiB <= 0 {
-							return fmt.Errorf("waiting for positive legacy memory capacity")
-						}
-						return nil
-					}, "5m", "1s").Should(gomega.Succeed(), "the baseline pool must converge after fixed-replica framework validation")
-					object, native, err := e2eutil.GetScaleFromZeroCapacity(ctx, mgmtClient, hcpNameSpace, nodePool, capiVersion)
-					g.Expect(err).NotTo(gomega.HaveOccurred())
-					if *scaleFromZeroCapacitySource == "annotations" {
-						g.Expect(native).To(gomega.BeEmpty(), "the upgrade fixture must force fallback before the operator upgrade")
-						g.Expect(object.GetAnnotations()).NotTo(gomega.HaveKey("capacity.cluster-autoscaler.kubernetes.io/cpu"), "baseline must exercise legacy-only to dual-key migration")
-						g.Expect(object.GetAnnotations()).NotTo(gomega.HaveKey("capacity.cluster-autoscaler.kubernetes.io/memory"))
-					} else {
-						g.Expect(e2eutil.ValidateScaleFromZeroCapacity(object.GetAnnotations(), native, *scaleFromZeroCapacitySource)).To(gomega.Succeed())
-					}
+					waitForScaleFromZeroUpgradeBaseline(t, ctx, mgmtClient, hcpNameSpace, nodePool, capiVersion)
 				}
 				rolloutSnapshot, err = e2eutil.SnapshotScaleFromZeroRollout(ctx, mgmtClient, guestClient, hcpNameSpace, capiVersion, globalOpts.Platform)
 				g.Expect(err).NotTo(gomega.HaveOccurred())
@@ -275,42 +236,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 				}
 
 				for _, nodePool := range postUpgradeNodePools.Items {
-					t.Logf("Verifying NodePool %s", nodePool.Name)
-					var preUpgradeNodePool *hyperv1.NodePool
-					var ok bool
-
-					if preUpgradeNodePool, ok = nodePoolsMap[nodePool.Name]; !ok {
-						gomega.StopTrying(fmt.Sprintf("NodePool %s not found", nodePool.Name)).Now()
-					}
-
-					t.Logf("Generation: %d", nodePool.Generation)
-					t.Logf("CurrentConfig: %s", nodePool.Annotations[nodePoolAnnotationCurrentConfig])
-					t.Logf("CurrentConfigVersion:%s", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion])
-
-					// Check if the node pool has been updated
-					g.Expect(nodePool.Generation).To(gomega.Equal(preUpgradeNodePool.Generation),
-						"Pre-upgrade and post-upgrade NodePool generations should match")
-					g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfig]).To(
-						gomega.Equal(preUpgradeNodePool.Annotations[nodePoolAnnotationCurrentConfig]),
-						"Pre-upgrade and post-upgrade NodePool current config should match",
-					)
-					g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(
-						gomega.Equal(preUpgradeNodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]),
-						"Pre-upgrade and post-upgrade NodePool current config version should match",
-					)
-
-					conditions, err := e2eutil.Conditions(&nodePool)
-					if err != nil {
-						gomega.StopTrying(fmt.Sprintf("Error getting NodePool conditions: %v", err)).Now()
-					}
-					targetConditions := sets.NewString(hyperv1.NodePoolUpdatingVersionConditionType,
-						hyperv1.NodePoolUpdatingConfigConditionType, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
-					for _, c := range conditions {
-						if targetConditions.Has(c.Type) {
-							t.Logf("Found condition %s of NodePool %s", c.String(), nodePool.Name)
-							g.Expect(c.Status).To(gomega.Equal(metav1.ConditionFalse), "Condition %s of nodepool %s shouldn't be True", nodePool.Name, c.Type)
-						}
-					}
+					expectNodePoolUpgradeInvariants(t, g, &nodePool, nodePoolsMap)
 				}
 
 				if *scaleFromZeroUpgradeChecks {
@@ -326,28 +252,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 						return true
 					}
 				}
-				postUpgradeMachineDeployments, err := listMachineDeploymentGenerations(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
-				if err != nil {
-					gomega.StopTrying(fmt.Sprintf("Error listing MachineDeployments: %v", err)).Now()
-				}
-
-				if len(postUpgradeMachineDeployments) != len(machineDeploymentMap) {
-					gomega.StopTrying(fmt.Sprintf("Number of MachineDeployments changed from %d to %d", len(machineDeploymentMap), len(postUpgradeMachineDeployments))).Now()
-				}
-				for name, generation := range postUpgradeMachineDeployments {
-					t.Logf("Verifying MachineDeployment %s", name)
-					var ok bool
-					var preUpgradeGeneration int64
-					if preUpgradeGeneration, ok = machineDeploymentMap[name]; !ok {
-						gomega.StopTrying(fmt.Sprintf("MachineDeployment %s not found", name)).Now()
-					}
-
-					t.Logf("Generation: Got %d", generation)
-
-					// Check if the machine deployment has been updated
-					g.Expect(generation).To(gomega.Equal(preUpgradeGeneration),
-						"Pre-upgrade and post-upgrade MachineDeployment generations should match")
-				}
+				expectMachineDeploymentUpgradeInvariants(t, g, ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1, machineDeploymentMap)
 				return true
 			}, "5m", "1s").Should(gomega.BeTrue(), "Verification should consistently succeed for 5 minutes")
 		})).To(gomega.BeTrue(), "Verify upgrade invariants should succeed")
@@ -408,6 +313,112 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			t.Log("✓ Token rotation verification passed - operator upgrade did not break rotation or credential updates")
 		})).To(gomega.BeTrue(), "Token rotation verification should succeed")
 	}).WithHOUpgrade().Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ho-upgrade", globalOpts.ServiceAccountSigningKey)
+}
+
+func validateScaleFromZeroUpgradeOptions(t *testing.T) {
+	t.Helper()
+	if !*scaleFromZeroUpgradeChecks {
+		return
+	}
+	if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
+		t.Fatal("scale-from-zero upgrade checks require an AWS or Azure fixture")
+	}
+	if *scaleFromZeroCapacitySource != "native" && *scaleFromZeroCapacitySource != "annotations" {
+		t.Fatal("scale-from-zero upgrade checks require an explicit native or annotations source")
+	}
+	if *scaleFromZeroUpgradeType != string(hyperv1.UpgradeTypeReplace) && *scaleFromZeroUpgradeType != string(hyperv1.UpgradeTypeInPlace) {
+		t.Fatal("scale-from-zero upgrade checks require Replace or InPlace")
+	}
+}
+
+func waitForScaleFromZeroUpgradeBaseline(t *testing.T, ctx context.Context, client crclient.Client, namespace string, nodePool *hyperv1.NodePool, capiVersion string) {
+	t.Helper()
+	g := gomega.NewWithT(t)
+	g.Eventually(func() error {
+		object, native, err := e2eutil.GetScaleFromZeroCapacity(ctx, client, namespace, nodePool, capiVersion)
+		if err != nil {
+			return err
+		}
+		if *scaleFromZeroCapacitySource == "native" {
+			return e2eutil.ValidateScaleFromZeroCapacity(object.GetAnnotations(), native, "native")
+		}
+		if len(native) != 0 {
+			return fmt.Errorf("upgrade fixture unexpectedly has native capacity")
+		}
+		cpu, err := resource.ParseQuantity(object.GetAnnotations()["machine.openshift.io/vCPU"])
+		if err != nil || cpu.Sign() <= 0 {
+			return fmt.Errorf("waiting for positive legacy CPU capacity")
+		}
+		memoryMiB, err := strconv.ParseInt(object.GetAnnotations()["machine.openshift.io/memoryMb"], 10, 64)
+		if err != nil || memoryMiB <= 0 {
+			return fmt.Errorf("waiting for positive legacy memory capacity")
+		}
+		return nil
+	}, "5m", "1s").Should(gomega.Succeed(), "the baseline pool must converge after fixed-replica framework validation")
+	object, native, err := e2eutil.GetScaleFromZeroCapacity(ctx, client, namespace, nodePool, capiVersion)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	if *scaleFromZeroCapacitySource == "annotations" {
+		g.Expect(native).To(gomega.BeEmpty(), "the upgrade fixture must force fallback before the operator upgrade")
+		g.Expect(object.GetAnnotations()).NotTo(gomega.HaveKey("capacity.cluster-autoscaler.kubernetes.io/cpu"), "baseline must exercise legacy-only to dual-key migration")
+		g.Expect(object.GetAnnotations()).NotTo(gomega.HaveKey("capacity.cluster-autoscaler.kubernetes.io/memory"))
+	} else {
+		g.Expect(e2eutil.ValidateScaleFromZeroCapacity(object.GetAnnotations(), native, *scaleFromZeroCapacitySource)).To(gomega.Succeed())
+	}
+}
+
+func expectNodePoolUpgradeInvariants(t *testing.T, g gomega.Gomega, nodePool *hyperv1.NodePool, nodePoolsMap map[string]*hyperv1.NodePool) {
+	t.Helper()
+	t.Logf("Verifying NodePool %s", nodePool.Name)
+	preUpgradeNodePool, ok := nodePoolsMap[nodePool.Name]
+	if !ok {
+		gomega.StopTrying(fmt.Sprintf("NodePool %s not found", nodePool.Name)).Now()
+	}
+	t.Logf("Generation: %d", nodePool.Generation)
+	t.Logf("CurrentConfig: %s", nodePool.Annotations[nodePoolAnnotationCurrentConfig])
+	t.Logf("CurrentConfigVersion:%s", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion])
+	g.Expect(nodePool.Generation).To(gomega.Equal(preUpgradeNodePool.Generation),
+		"Pre-upgrade and post-upgrade NodePool generations should match")
+	g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfig]).To(
+		gomega.Equal(preUpgradeNodePool.Annotations[nodePoolAnnotationCurrentConfig]),
+		"Pre-upgrade and post-upgrade NodePool current config should match",
+	)
+	g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(
+		gomega.Equal(preUpgradeNodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]),
+		"Pre-upgrade and post-upgrade NodePool current config version should match",
+	)
+	conditions, err := e2eutil.Conditions(nodePool)
+	if err != nil {
+		gomega.StopTrying(fmt.Sprintf("Error getting NodePool conditions: %v", err)).Now()
+	}
+	targetConditions := sets.NewString(hyperv1.NodePoolUpdatingVersionConditionType,
+		hyperv1.NodePoolUpdatingConfigConditionType, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
+	for _, condition := range conditions {
+		if targetConditions.Has(condition.Type) {
+			t.Logf("Found condition %s of NodePool %s", condition.String(), nodePool.Name)
+			g.Expect(condition.Status).To(gomega.Equal(metav1.ConditionFalse), "Condition %s of nodepool %s shouldn't be True", nodePool.Name, condition.Type)
+		}
+	}
+}
+
+func expectMachineDeploymentUpgradeInvariants(t *testing.T, g gomega.Gomega, ctx context.Context, client crclient.Client, namespace string, useV1Beta1 bool, machineDeploymentMap map[string]int64) {
+	t.Helper()
+	postUpgradeMachineDeployments, err := listMachineDeploymentGenerations(ctx, client, namespace, useV1Beta1)
+	if err != nil {
+		gomega.StopTrying(fmt.Sprintf("Error listing MachineDeployments: %v", err)).Now()
+	}
+	if len(postUpgradeMachineDeployments) != len(machineDeploymentMap) {
+		gomega.StopTrying(fmt.Sprintf("Number of MachineDeployments changed from %d to %d", len(machineDeploymentMap), len(postUpgradeMachineDeployments))).Now()
+	}
+	for name, generation := range postUpgradeMachineDeployments {
+		t.Logf("Verifying MachineDeployment %s", name)
+		preUpgradeGeneration, ok := machineDeploymentMap[name]
+		if !ok {
+			gomega.StopTrying(fmt.Sprintf("MachineDeployment %s not found", name)).Now()
+		}
+		t.Logf("Generation: Got %d", generation)
+		g.Expect(generation).To(gomega.Equal(preUpgradeGeneration),
+			"Pre-upgrade and post-upgrade MachineDeployment generations should match")
+	}
 }
 
 func managementClusterUsesCAPIv1Beta1(ctx context.Context, client crclient.Client) (bool, error) {
