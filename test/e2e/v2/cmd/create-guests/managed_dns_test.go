@@ -3,10 +3,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,157 +12,117 @@ import (
 	"strings"
 	"testing"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/fake"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
-
-	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/api/image/docker10"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/version"
-	fakediscovery "k8s.io/client-go/discovery/fake"
-	kubetesting "k8s.io/client-go/testing"
-
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
-type dnsImageProvider struct {
-	imageregistry.ImageMetadataProvider
-	labels map[string]string
-	image  string
-	err    error
+type dnsReleaseProvider struct {
+	releaseinfo.Provider
+	lookup func(context.Context, string, []byte) (*releaseinfo.ReleaseImage, error)
 }
 
-func (provider *dnsImageProvider) ImageMetadata(_ context.Context, image string, _ []byte) (*dockerv1client.DockerImageConfig, error) {
-	provider.image = image
-	if provider.err != nil {
-		return nil, provider.err
-	}
-	return &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{Labels: provider.labels}}, nil
+func (provider dnsReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
+	return provider.lookup(ctx, image, pullSecret)
 }
 
 func TestManagedDNSArgs(t *testing.T) {
-	const payloadCPO = "quay.io/openshift-release-dev/ocp-v4.0-art-dev:hypershift"
-	const overrideCPO = "registry.ci.openshift.org/ci/hypershift:pr"
+	t.Parallel()
 	for _, testCase := range []struct {
-		name          string
-		version       string
-		labels        map[string]string
-		extraArgs     []string
-		metadataError error
-		wantEnabled   bool
-		wantError     bool
-		wantErrorText string
-		wantImage     string
+		name        string
+		version     string
+		extraArgs   []string
+		wantEnabled bool
+		wantError   bool
 	}{
-		{name: "When the 4.22 CPO has no capability label, it should leave managed DNS disabled", version: "4.22.0", wantImage: payloadCPO},
-		{name: "When the 5.0 CPO has no capability label, it should leave managed DNS disabled", version: "5.0.0", wantImage: payloadCPO},
-		{name: "When a new CPO has unknown capabilities, it should not infer support from its version", version: "5.1.0", wantImage: payloadCPO},
-		{name: "When a CPO explicitly disables the capability, it should leave managed DNS disabled", version: "5.1.0", labels: map[string]string{managesAWSDNSLabel: "false"}, wantImage: payloadCPO},
-		{name: "When a CPO advertises managed DNS, it should preserve the opt-in without requiring cluster status", version: "5.1.0", labels: map[string]string{managesAWSDNSLabel: "true"}, wantEnabled: true, wantImage: payloadCPO},
-		{name: "When an older version advertises a backported capability, it should preserve the opt-in", version: "4.22.0", labels: map[string]string{managesAWSDNSLabel: "true"}, wantEnabled: true, wantImage: payloadCPO},
-		{name: "When a CPO image override is set, it should inspect that image instead of the payload", version: "4.22.0", extraArgs: []string{"--control-plane-operator-image=" + overrideCPO}, labels: map[string]string{managesAWSDNSLabel: "true"}, wantEnabled: true, wantImage: overrideCPO},
-		{name: "When a CPO annotation override is set, it should inspect that image instead of the payload", version: "4.22.0", extraArgs: []string{"--annotations=" + hyperv1.ControlPlaneOperatorImageAnnotation + "=" + overrideCPO}, wantImage: overrideCPO},
-		{name: "When image labels are annotated, it should use the same override as the operator", version: "4.22.0", extraArgs: []string{"--annotations=" + hyperv1.ControlPlaneOperatorImageLabelsAnnotation + "=" + managesAWSDNSLabel + "=true"}, wantEnabled: true},
-		{name: "When metadata lookup fails, it should fail rather than silently skip coverage", version: "5.1.0", metadataError: fmt.Errorf("registry unavailable"), wantError: true, wantImage: payloadCPO},
-		{name: "When release metadata is invalid, it should fail rather than silently skip coverage", version: "unknown", wantError: true},
-		{name: "When an annotation is invalid, it should fail without exposing its contents", version: "5.1.0", extraArgs: []string{"--annotations=private-registry.example.test/image:tag"}, wantError: true, wantErrorText: "invalid fixture annotation: expected key=value"},
+		{name: "When the release is 4.22, it should create a baseline fixture", version: "4.22.0"},
+		{name: "When the release is a 4.22 nightly, it should create a baseline fixture", version: "4.22.0-0.nightly-2026-10-20-170000"},
+		{name: "When the release is 5.0, it should create a baseline fixture", version: "5.0.7"},
+		{name: "When the release is a 5.0 nightly, it should create a baseline fixture", version: "5.0.0-0.nightly-2026-10-20-170000"},
+		{name: "When managed DNS uses an explicit true flag on 5.0, it should remove both opt-ins", version: "5.0.0", extraArgs: []string{"--managed-dns=true"}},
+		{name: "When the release is 5.1, it should preserve managed DNS", version: "5.1.0", wantEnabled: true},
+		{name: "When the release is a 5.1 nightly, it should preserve managed DNS", version: "5.1.0-0.nightly-2026-10-20-170000", wantEnabled: true},
+		{name: "When the release is a 5.1 prerelease, it should preserve managed DNS", version: "5.1.0-rc.1", wantEnabled: true},
+		{name: "When the release has build metadata, it should preserve managed DNS", version: "5.1.2+build.1", wantEnabled: true},
+		{name: "When the release is later than 5.1, it should preserve managed DNS", version: "5.2.0-0.nightly-2026-10-20-170000", wantEnabled: true},
+		{name: "When a newer CPO overrides an old payload, it should still use the payload boundary", version: "4.22.0", extraArgs: []string{"--control-plane-operator-image=registry.ci.openshift.org/ci/hypershift:new"}},
+		{name: "When a CPO annotation overrides a supported payload, it should preserve the override and assertions", version: "5.1.0", extraArgs: []string{"--annotations=hypershift.openshift.io/control-plane-operator-image=registry.ci.openshift.org/ci/hypershift:old"}, wantEnabled: true},
+		{name: "When a repeated release flag selects 5.0, it should gate the effective release", version: "5.0.0", extraArgs: []string{"--release-image=effective-release"}},
+		{name: "When managed DNS is explicitly disabled, it should preserve arguments without metadata", extraArgs: []string{"--managed-dns=false"}},
+		{name: "When the release version is invalid, it should fail preparation", version: "invalid", wantError: true},
+		{name: "When the release version is empty, it should fail preparation", wantError: true},
+		{name: "When the managed DNS flag is invalid, it should fail preparation", extraArgs: []string{"--managed-dns=invalid"}, wantError: true},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			args := append([]string{"create", "cluster", "aws", "--release-image=quay.io/openshift-release-dev/ocp-release:" + testCase.version + "-x86_64", "--managed-dns", "--public-only", "--feature-set=TechPreviewNoUpgrade"}, testCase.extraArgs...)
-			pullSecretPath := filepath.Join(t.TempDir(), "pull-secret.json")
+			pullSecretPath := filepath.Join(t.TempDir(), "auth.json")
 			if err := os.WriteFile(pullSecretPath, []byte(`{}`), 0600); err != nil {
 				t.Fatal(err)
 			}
+			args := append([]string{"create", "cluster", "aws", "--release-image=default-release", "--managed-dns", "--public-only", "--pull-secret=unused"}, testCase.extraArgs...)
 			args = append(args, "--pull-secret="+pullSecretPath)
 			original := slices.Clone(args)
-			images := &dnsImageProvider{labels: testCase.labels, err: testCase.metadataError}
-			releases := &fake.FakeReleaseProvider{Version: testCase.version, Components: map[string]string{"hypershift": payloadCPO}}
-			actual, err := managedDNSArgs(t.Context(), args, releases, images)
+			provider := dnsReleaseProvider{lookup: func(ctx context.Context, image string, auth []byte) (*releaseinfo.ReleaseImage, error) {
+				if slices.Contains(testCase.extraArgs, "--managed-dns=false") {
+					t.Fatal("disabled fixture looked up release metadata")
+				}
+				wantImage := "default-release"
+				if slices.Contains(testCase.extraArgs, "--release-image=effective-release") {
+					wantImage = "effective-release"
+				}
+				if image != wantImage || string(auth) != `{}` {
+					t.Fatal("release lookup did not use effective image and pull secret")
+				}
+				release, err := (&fake.FakeReleaseProvider{Version: "5.1.0"}).Lookup(ctx, image, auth)
+				if err == nil {
+					release.ImageStream.Name = testCase.version
+				}
+				return release, err
+			}}
+			actual, err := managedDNSArgs(t.Context(), args, provider)
 			if (err != nil) != testCase.wantError {
 				t.Fatalf("error = %v, wantError = %v", err, testCase.wantError)
 			}
-			if images.image != testCase.wantImage {
-				t.Errorf("inspected image = %q, want %q", images.image, testCase.wantImage)
-			}
 			if testCase.wantError {
-				if testCase.wantErrorText != "" && err.Error() != testCase.wantErrorText {
-					t.Errorf("error = %q, want %q", err.Error(), testCase.wantErrorText)
+				return
+			}
+			if slices.Contains(testCase.extraArgs, "--managed-dns=false") {
+				if !reflect.DeepEqual(actual, args) {
+					t.Fatal("disabled arguments changed")
 				}
 				return
 			}
-			if slices.Contains(actual, "--managed-dns") != testCase.wantEnabled {
-				t.Errorf("args = %v, want managed DNS = %v", actual, testCase.wantEnabled)
+			want := slices.Clone(args)
+			if !testCase.wantEnabled {
+				want = slices.DeleteFunc(want, func(arg string) bool { return arg == "--managed-dns" || strings.HasPrefix(arg, "--managed-dns=") })
 			}
-			if !reflect.DeepEqual(args, original) {
-				t.Fatal("input arguments were mutated")
-			}
-			if !slices.Contains(actual, "--public-only") || !slices.Contains(actual, "--feature-set=TechPreviewNoUpgrade") {
-				t.Errorf("unrelated fixture arguments were removed: %v", actual)
+			if !reflect.DeepEqual(actual, want) || !reflect.DeepEqual(args, original) {
+				t.Fatalf("args = %v, want %v; original mutated = %v", actual, want, !reflect.DeepEqual(args, original))
 			}
 		})
 	}
-	t.Run("When managed DNS is not requested, it should preserve arguments without looking up images", func(t *testing.T) {
-		t.Parallel()
-		args := []string{"create", "cluster", "aws", "--managed-dns=false"}
-		actual, err := managedDNSArgs(t.Context(), args, nil, nil)
-		if err != nil || !reflect.DeepEqual(actual, args) {
-			t.Fatalf("args = %v, error = %v", actual, err)
-		}
-	})
-	t.Run("When the selected CPO lacks support, it should explain the fallback without logging its image", func(t *testing.T) {
-		var output bytes.Buffer
-		previousOutput := log.Writer()
-		log.SetOutput(&output)
-		t.Cleanup(func() { log.SetOutput(previousOutput) })
-		pullSecretPath := filepath.Join(t.TempDir(), "pull-secret.json")
-		if err := os.WriteFile(pullSecretPath, []byte(`{}`), 0600); err != nil {
-			t.Fatal(err)
-		}
-		const privateImage = "private-registry.example.test/hypershift:older"
-		args := []string{"--managed-dns", "--control-plane-operator-image=" + privateImage, "--pull-secret=" + pullSecretPath}
-		images := &dnsImageProvider{}
-		actual, err := managedDNSArgs(t.Context(), args, nil, images)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if images.image != privateImage || slices.Contains(actual, "--managed-dns") {
-			t.Fatal("selected image lookup or baseline fixture behavior changed")
-		}
-		message := output.String()
-		if strings.Contains(message, privateImage) || strings.Contains(message, "private-registry.example.test") {
-			t.Fatalf("fallback log exposed the selected image: %s", message)
-		}
-		for _, explanation := range []string{managesAWSDNSLabel + "=true", "baseline DNS fixture without managed DNS", "managed DNS tests will skip"} {
-			if !strings.Contains(message, explanation) {
-				t.Errorf("fallback log %q is missing %q", message, explanation)
-			}
-		}
-	})
 }
 
 func TestCreateClustersParallel(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {
 		name        string
+		version     string
 		variant     string
-		label       string
 		missingAuth bool
+		lookupError bool
+		missingData bool
 		wantEnabled bool
 		wantError   bool
 	}{
-		{name: "When the AWS CPO lacks managed DNS, it should launch the baseline fixture", variant: "managed-dns", label: managesAWSDNSLabel + "=false"},
-		{name: "When the AWS CPO supports managed DNS, it should launch with the opt-in and effective pull secret", variant: "managed-dns", label: managesAWSDNSLabel + "=true", wantEnabled: true},
-		{name: "When capability preparation fails, it should not launch the CLI", variant: "managed-dns", label: "invalid", wantError: true},
-		{name: "When the effective pull secret is missing, it should not launch the CLI", variant: "managed-dns", label: managesAWSDNSLabel + "=true", missingAuth: true, wantError: true},
-		{name: "When another AWS fixture is selected, it should not require capability lookup", variant: "public", missingAuth: true},
+		{name: "When the payload is 4.22, it should launch baseline DNS", variant: "managed-dns", version: "4.22.0"},
+		{name: "When the payload is 5.0, it should launch baseline DNS", variant: "managed-dns", version: "5.0.0"},
+		{name: "When the payload is a 5.1 nightly, it should launch managed DNS", variant: "managed-dns", version: "5.1.0-0.nightly-2026-10-20-170000", wantEnabled: true},
+		{name: "When release discovery fails, it should not launch the CLI", variant: "managed-dns", lookupError: true, wantError: true},
+		{name: "When release metadata is missing, it should not launch the CLI", variant: "managed-dns", missingData: true, wantError: true},
+		{name: "When the version is invalid, it should not launch the CLI", variant: "managed-dns", version: "invalid", wantError: true},
+		{name: "When effective authentication is missing, it should not launch the CLI", variant: "managed-dns", missingAuth: true, wantError: true},
+		{name: "When another fixture is selected, it should not look up release metadata", variant: "public", missingAuth: true},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -180,10 +138,22 @@ func TestCreateClustersParallel(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			cfg := envConfig{platform: &lifecycle.AWSPlatformConfig{}, hypershiftBinary: binaryPath, pullSecret: filepath.Join(directory, "unused-default.json")}
+			provider := dnsReleaseProvider{lookup: func(ctx context.Context, image string, auth []byte) (*releaseinfo.ReleaseImage, error) {
+				if testCase.variant != "managed-dns" {
+					t.Error("unrelated fixture looked up release metadata")
+				}
+				if testCase.lookupError {
+					return nil, fmt.Errorf("release unavailable")
+				}
+				if testCase.missingData {
+					return nil, nil
+				}
+				return (&fake.FakeReleaseProvider{Version: testCase.version}).Lookup(ctx, image, auth)
+			}}
+			cfg := envConfig{platform: &lifecycle.AWSPlatformConfig{}, hypershiftBinary: binaryPath, releaseProvider: provider, pullSecret: filepath.Join(directory, "unused-default.json")}
 			args := []string{"--pull-secret=" + pullSecretPath}
 			if testCase.variant == "managed-dns" {
-				args = append(args, "--managed-dns", "--control-plane-operator-image=registry.ci.openshift.org/ci/hypershift:pr", "--annotations="+hyperv1.ControlPlaneOperatorImageLabelsAnnotation+"="+testCase.label)
+				args = append(args, "--managed-dns")
 			}
 			results := createClustersParallel(t.Context(), cfg, []namedSpec{{ClusterSpec: lifecycle.ClusterSpec{Variant: testCase.variant, ExtraArgs: args}, name: "dns-fixture"}})
 			if (results[testCase.variant] != nil) != testCase.wantError {
@@ -201,63 +171,6 @@ func TestCreateClustersParallel(t *testing.T) {
 			}
 			if slices.Contains(strings.Split(string(contents), "\n"), "--managed-dns") != testCase.wantEnabled {
 				t.Fatalf("unexpected CLI arguments: %s", contents)
-			}
-		})
-	}
-}
-
-type dnsDiscoveryClient struct {
-	capabilities.ManagementClusterDiscoveryClient
-	err error
-}
-
-func (client dnsDiscoveryClient) ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error) {
-	if client.err != nil {
-		return nil, client.err
-	}
-	return client.ManagementClusterDiscoveryClient.ServerResourcesForGroupVersion(groupVersion)
-}
-
-func TestManagedDNSRegistryProvider(t *testing.T) {
-	t.Parallel()
-	for _, testCase := range []struct {
-		name      string
-		mirrored  bool
-		err       error
-		listError bool
-		wantError bool
-	}{
-		{name: "When management mirrors are absent, it should configure direct registry providers"},
-		{name: "When management mirrors are configured, it should configure both providers to resolve mirror-only images", mirrored: true},
-		{name: "When management discovery fails, it should return an error instead of bypassing mirrors", err: fmt.Errorf("discovery unavailable"), wantError: true},
-		{name: "When mirror configuration cannot be read, it should return an error instead of bypassing mirrors", mirrored: true, listError: true, wantError: true},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			discoveryClient := &fakediscovery.FakeDiscovery{Fake: &kubetesting.Fake{}, FakedServerVersion: &version.Info{Major: "1", Minor: "35", GitVersion: "v1.35.0"}}
-			cl := clientfake.NewClientBuilder().WithScheme(scheme)
-			if testCase.mirrored {
-				discoveryClient.Resources = []*metav1.APIResourceList{{GroupVersion: configv1.GroupVersion.String(), APIResources: []metav1.APIResource{{Name: "imagedigestmirrorsets"}}}}
-				cl = cl.WithObjects(&configv1.ImageDigestMirrorSet{ObjectMeta: metav1.ObjectMeta{Name: "ci-mirror"}, Spec: configv1.ImageDigestMirrorSetSpec{ImageDigestMirrors: []configv1.ImageDigestMirrors{{Source: "quay.io/openshift-release-dev", Mirrors: []configv1.ImageMirror{"registry.ci.openshift.org/mirror"}}}}})
-			}
-			if testCase.listError {
-				cl = cl.WithInterceptorFuncs(interceptor.Funcs{List: func(context.Context, crclient.WithWatch, crclient.ObjectList, ...crclient.ListOption) error {
-					return fmt.Errorf("mirror list unavailable")
-				}})
-			}
-			provider, err := managedDNSRegistryProvider(t.Context(), cl.Build(), dnsDiscoveryClient{ManagementClusterDiscoveryClient: discoveryClient, err: testCase.err})
-			if (err != nil) != testCase.wantError {
-				t.Fatalf("error = %v, wantError = %v", err, testCase.wantError)
-			}
-			if testCase.wantError {
-				return
-			}
-			var want map[string][]string
-			if testCase.mirrored {
-				want = map[string][]string{"quay.io/openshift-release-dev": {"registry.ci.openshift.org/mirror"}}
-			}
-			if !reflect.DeepEqual(provider.ReleaseProvider.GetOpenShiftImageRegistryOverrides(), want) || !reflect.DeepEqual(provider.MetadataProvider.OpenShiftImageRegistryOverrides, want) {
-				t.Fatalf("release and metadata providers did not retain mirrors: %+v", provider)
 			}
 		})
 	}

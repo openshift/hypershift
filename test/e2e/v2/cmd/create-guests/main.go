@@ -33,21 +33,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 
 	configv1 "github.com/openshift/api/config/v1"
-	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -57,7 +52,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/cache"
 	toolswatch "k8s.io/client-go/tools/watch"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -71,22 +65,20 @@ func init() {
 	utilruntime.Must(corev1.AddToScheme(scheme))
 	utilruntime.Must(appsv1.AddToScheme(scheme))
 	utilruntime.Must(routev1.AddToScheme(scheme))
-	utilruntime.Must(configv1.AddToScheme(scheme))
-	utilruntime.Must(operatorv1alpha1.AddToScheme(scheme))
 }
 
 const defaultNamespace = "clusters"
 
 // envConfig captures the common environment configuration.
 type envConfig struct {
-	releaseProvider       releaseinfo.Provider
-	imageMetadataProvider imageregistry.ImageMetadataProvider
-	testPlanPath          string
-	prowJobID             string
-	sharedDir             string
-	artifactDir           string
-	releaseImage          string
-	n1Image               string
+	releaseProvider releaseinfo.Provider
+
+	testPlanPath string
+	prowJobID    string
+	sharedDir    string
+	artifactDir  string
+	releaseImage string
+	n1Image      string
 
 	baseDomain  string
 	nodeCount   int
@@ -120,6 +112,8 @@ func loadEnvConfig() envConfig {
 	}
 
 	cfg := envConfig{
+		releaseProvider: &releaseinfo.RegistryClientProvider{},
+
 		testPlanPath: os.Getenv("TEST_PLAN"),
 		prowJobID:    mustGetenv("PROW_JOB_ID"),
 		sharedDir:    sharedDir,
@@ -196,22 +190,6 @@ func run(ctx context.Context, cfg envConfig) error {
 	}
 	if err := cfg.platform.PreCreate(ctx, mgmtClientPre, cfg.namespace); err != nil {
 		return fmt.Errorf("platform pre-create hook: %w", err)
-	}
-	if cfg.platform.Name() == "aws" && slices.ContainsFunc(named, func(spec namedSpec) bool { return spec.Variant == "managed-dns" }) {
-		restConfig, err := ctrl.GetConfig()
-		if err != nil {
-			return fmt.Errorf("getting management cluster config for registry discovery: %w", err)
-		}
-		discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
-		if err != nil {
-			return fmt.Errorf("creating registry discovery client: %w", err)
-		}
-		registryProvider, err := managedDNSRegistryProvider(ctx, mgmtClientPre, discoveryClient)
-		if err != nil {
-			return err
-		}
-		cfg.releaseProvider = registryProvider.GetReleaseProvider()
-		cfg.imageMetadataProvider = registryProvider.GetMetadataProvider()
 	}
 
 	// Phase 2: Clusters are independent; creating them in parallel cuts
@@ -349,7 +327,7 @@ func createClustersParallel(ctx context.Context, cfg envConfig, specs []namedSpe
 			args := buildCreateArgs(cfg, ns)
 			if cfg.platform.Name() == "aws" && ns.Variant == "managed-dns" {
 				var err error
-				args, err = managedDNSArgs(ctx, args, cfg.releaseProvider, cfg.imageMetadataProvider)
+				args, err = managedDNSArgs(ctx, args, cfg.releaseProvider)
 				if err != nil {
 					mu.Lock()
 					results[ns.Variant] = fmt.Errorf("preparing managed DNS fixture: %w", err)
@@ -372,18 +350,6 @@ func createClustersParallel(ctx context.Context, cfg envConfig, specs []namedSpe
 	}
 	wg.Wait()
 	return results
-}
-
-func managedDNSRegistryProvider(ctx context.Context, cl crclient.Client, discoveryClient capabilities.ManagementClusterDiscoveryClient) (globalconfig.CommonRegistryProvider, error) {
-	clusterCapabilities, err := capabilities.DetectManagementClusterCapabilities(discoveryClient)
-	if err != nil {
-		return globalconfig.CommonRegistryProvider{}, fmt.Errorf("discovering management registry capabilities: %w", err)
-	}
-	provider, err := globalconfig.NewCommonRegistryProvider(ctx, clusterCapabilities, cl, nil)
-	if err != nil {
-		return globalconfig.CommonRegistryProvider{}, fmt.Errorf("configuring managed DNS registry providers: %w", err)
-	}
-	return provider, nil
 }
 
 func newMgmtClient() (crclient.WithWatch, error) {
