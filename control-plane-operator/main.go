@@ -521,6 +521,13 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("Using metrics set", "set", metricsSet.String())
 
+		monitoringAPIGroup, err := metrics.MonitoringAPIGroupFromEnv()
+		if err != nil {
+			setupLog.Error(err, "invalid monitoring API group")
+			os.Exit(1)
+		}
+		setupLog.Info("Using monitoring API group", "group", monitoringAPIGroup)
+
 		enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
 
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
@@ -533,6 +540,7 @@ func NewStartCommand() *cobra.Command {
 			OperateOnReleaseImage:                   os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:                    defaultIngressDomain,
 			MetricsSet:                              metricsSet,
+			MonitoringAPIGroup:                      monitoringAPIGroup,
 			KASHealthMetrics:                        kas.NewKASHealthMetrics(crmetrics.Registry),
 			CertRotationScale:                       certRotationScale,
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,

@@ -8,6 +8,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -156,6 +158,47 @@ func TestAdaptDeploymentWatchListClientEnv(t *testing.T) {
 				g.Expect(envVars).To(ContainElement(expectedEnvVar))
 			} else {
 				g.Expect(envVars).ToNot(ContainElement(HaveField("Name", "KUBE_FEATURE_WatchListClient")))
+			}
+		})
+	}
+}
+
+func TestAdaptDeployment(t *testing.T) {
+	for _, tc := range []struct {
+		name, group, rhobs string
+		wantGroup          bool
+		wantErr            bool
+	}{
+		{name: "When GMP is selected, it should propagate the monitoring API group", group: string(metrics.MonitoringAPIGroupGMP), wantGroup: true},
+		{name: "When monitoring selection is unset, it should preserve the default environment"},
+		{name: "When CoreOS is explicit, it should preserve the default environment", group: string(metrics.MonitoringAPIGroupCoreOS)},
+		{name: "When RHOBS uses CoreOS selection, it should preserve the RHOBS environment", group: string(metrics.MonitoringAPIGroupCoreOS), rhobs: "1"},
+		{name: "When GMP conflicts with RHOBS, it should fail before mutating the deployment", group: string(metrics.MonitoringAPIGroupGMP), rhobs: "1", wantErr: true},
+		{name: "When the monitoring API group is unsupported, it should fail before mutating the deployment", group: "unsupported", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			t.Setenv(metrics.MonitoringAPIGroupEnvVar, tc.group)
+			t.Setenv(rhobsmonitoring.EnvironmentVariable, tc.rhobs)
+			cpo := &ControlPlaneOperatorOptions{HostedCluster: &hyperv1.HostedCluster{}, Image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:control-plane-operator"}
+			cpContext := controlplanecomponent.WorkloadContext{Context: t.Context(), HCP: &hyperv1.HostedControlPlane{}}
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).NotTo(HaveOccurred())
+			if tc.wantErr {
+				g.Expect(cpo.adaptDeployment(cpContext, deployment)).NotTo(Succeed())
+				// The invalid selection must fail fast without stamping the group onto the deployment.
+				g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).NotTo(ContainElement(HaveField("Name", metrics.MonitoringAPIGroupEnvVar)))
+				return
+			}
+			g.Expect(cpo.adaptDeployment(cpContext, deployment)).To(Succeed())
+			env := deployment.Spec.Template.Spec.Containers[0].Env
+			if tc.wantGroup {
+				g.Expect(env).To(ContainElement(corev1.EnvVar{Name: metrics.MonitoringAPIGroupEnvVar, Value: tc.group}))
+			} else {
+				g.Expect(env).NotTo(ContainElement(HaveField("Name", metrics.MonitoringAPIGroupEnvVar)))
+			}
+			if tc.rhobs == "1" {
+				g.Expect(env).To(ContainElement(corev1.EnvVar{Name: rhobsmonitoring.EnvironmentVariable, Value: "1"}))
 			}
 		})
 	}
