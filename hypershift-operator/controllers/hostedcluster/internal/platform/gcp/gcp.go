@@ -39,7 +39,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	gcpcapicore "sigs.k8s.io/cluster-api-provider-gcp/capicore/api/core/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -177,7 +177,7 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	}
 
 	// Set control plane endpoint (following AWS pattern)
-	gcpCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
+	gcpCluster.Spec.ControlPlaneEndpoint = gcpcapicore.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}

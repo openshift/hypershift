@@ -19,7 +19,6 @@ package v1beta1
 import (
 	"slices"
 
-	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/net"
 )
@@ -877,29 +876,7 @@ type NetworkInterface struct {
 	AcceleratedNetworking *bool `json:"acceleratedNetworking,omitempty"`
 }
 
-// GetControlPlaneSubnet returns a subnet that has a role assigned to controlplane or all. Subnets with role controlplane are given higher priority.
-func (n *NetworkSpec) GetControlPlaneSubnet() (SubnetSpec, error) {
-	// Priority is given for subnet that have role assigned as controlplane
-	if subnet, err := n.GetSubnet(SubnetControlPlane); err == nil {
-		return subnet, nil
-	}
-
-	if subnet, err := n.GetSubnet(SubnetCluster); err == nil {
-		return subnet, nil
-	}
-
-	return SubnetSpec{}, errors.Errorf("no subnet found with role %s", SubnetControlPlane)
-}
-
-// GetSubnet returns a subnet based on the subnet role.
-func (n *NetworkSpec) GetSubnet(role SubnetRole) (SubnetSpec, error) {
-	for _, sn := range n.Subnets {
-		if sn.Role == role {
-			return sn, nil
-		}
-	}
-	return SubnetSpec{}, errors.Errorf("no subnet found with role %s", role)
-}
+// Priority is given for subnet that have role assigned as controlplane
 
 // UpdateControlPlaneSubnet updates the cluster control plane subnets.
 func (n *NetworkSpec) UpdateControlPlaneSubnet(subnet SubnetSpec) {
