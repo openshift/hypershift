@@ -178,14 +178,15 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
 
 .PHONY: verify-parallel
-verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema verify-capi-sync verify-capi-decoupling lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
+verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema verify-capi-decoupling lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs verify-makefile
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-capi-decoupling verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
+verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-capi-decoupling verify-docs-nav verify-tekton-pipeline-pairs verify-makefile ## Run the same checks as the GHA verify workflow.
 	$(MAKE) verify-git-clean
 
 .PHONY: verify
 verify: generate update staticcheck fmt vet
+	$(MAKE) verify-capi-sync
 	$(MAKE) -j verify-parallel
 	$(MAKE) verify-git-clean
 
@@ -730,6 +731,14 @@ verify-docs-nav: $(PYTHON_VENV_STAMP) ## Verify docs nav entries are sorted alph
 		$(PYTHON_VENV)/bin/python3 hack/verify-docs-nav-order.py; \
 	else \
 		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-docs-nav-order.py; \
+	fi
+
+.PHONY: verify-makefile
+verify-makefile: $(PYTHON_VENV_STAMP)
+	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
+		$(PYTHON_VENV)/bin/python3 -m pytest -q hack/verify-makefile_test.py; \
+	else \
+		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/verify-makefile_test.py; \
 	fi
 
 .PHONY: verify-tekton-pipeline-pairs
