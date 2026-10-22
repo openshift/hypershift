@@ -177,16 +177,15 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 		--crd-dir=cmd/install/assets/crds/hypershift-operator \
 		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
 
-# Checks that conflict, such as deleting or mutating a directory another check
+# Targets that conflict, such as deleting or mutating a directory another target
 # reads, must move to verify-serial-targets instead of running in parallel here.
 .PHONY: verify-parallel-targets
 verify-parallel-targets: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
 
-# Run conflicting checks sequentially after preparation.
-# Sync regenerates provider sources that decoupling builds and lint reads. Use
-# separate recursive recipes, not prerequisites, to preserve order under make -j.
+# Run target checks sequentially after preparation.
 .PHONY: verify-serial-targets
 verify-serial-targets:
+	# Sync regenerates provider sources that decoupling builds and lint reads.
 	$(MAKE) verify-capi-sync
 	$(MAKE) verify-capi-decoupling
 
