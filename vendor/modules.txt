@@ -2689,7 +2689,7 @@ sigs.k8s.io/cluster-api-provider-ibmcloud/capicore/api/core/v1beta1
 # sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2 => ./pkg/capi/kubevirt
 ## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
-sigs.k8s.io/cluster-api-provider-kubevirt/capicore/api/core/v1beta1
+sigs.k8s.io/cluster-api-provider-kubevirt/capicore/api/core/v1beta2
 sigs.k8s.io/cluster-api-provider-kubevirt/capicore/errors
 # sigs.k8s.io/cluster-api-provider-openstack v0.14.8 => ./pkg/capi/openstack
 ## explicit; go 1.25.7
