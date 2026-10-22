@@ -1865,7 +1865,7 @@ func (r *HostedClusterReconciler) reconcileOperatorDeployments(ctx context.Conte
 		errs = append(errs, fmt.Errorf("failed to reconcile CAPI provider: %w", err))
 	}
 	if err := r.reconcileKarpenterOperator(cpContext, hcluster,
-		r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
+		r.HypershiftOperatorImage, controlPlaneOperatorImage, releaseProvider); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile karpenter operator: %w", err))
 	}
 	return utilerrors.NewAggregate(errs)
