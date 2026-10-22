@@ -865,39 +865,67 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 }
 
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
-// are updated and available, and no old machines are running.
-// It requires the list of MachineSets owned by the MachineDeployment to verify that only a single
-// active MachineSet remains. This guards against a race in CAPI where ObservedGeneration and status
-// counters (UpToDateReplicas, AvailableReplicas) are set before downstream controllers (Machine,
-// MachineSet) have reconciled the template change, causing the counters to be stale.
+// are available, the MachineSet holding the current template is fully rolled out, and no old machines are
+// running.
+//
+// Rollout completion is derived from the MachineSets owned by the MachineDeployment, which guards against
+// a race in CAPI where ObservedGeneration and status counters are set before downstream controllers
+// (Machine, MachineSet) have reconciled the template change, causing the counters to be stale.
 // See https://github.com/kubernetes-sigs/cluster-api/issues/13738.
+//
+// MachineDeployment.status.upToDateReplicas (and the Machine UpToDate condition behind it) is
+// deliberately not consulted. Since upstream CAPI v1.14.0
+// (https://github.com/kubernetes-sigs/cluster-api/pull/13876) that condition compares
+// Node.status.nodeInfo.kubeletVersion (e.g. "v1.33.5+<hash>") as a raw string against
+// Machine.spec.version, which HyperShift sets to the OCP release version (e.g. "4.20.3"). It can therefore
+// never become true for Replace-strategy NodePools, which would leave upToDateReplicas at 0 forever and
+// stall every NodePool version and config rollout. See
+// https://github.com/kubernetes-sigs/cluster-api/issues/14086.
 func MachineDeploymentComplete(deployment *capiv1.MachineDeployment, machineSets []capiv1.MachineSet) bool {
 	desired := ptr.Deref(deployment.Spec.Replicas, 0)
 	newStatus := &deployment.Status
 
 	// differentiate the nil and 0 cases
-	if newStatus.Replicas == nil || newStatus.AvailableReplicas == nil || newStatus.UpToDateReplicas == nil {
+	if newStatus.Replicas == nil || newStatus.AvailableReplicas == nil {
 		return false
 	}
 
 	if *newStatus.AvailableReplicas != desired ||
 		*newStatus.Replicas != desired ||
-		*newStatus.UpToDateReplicas != desired ||
 		newStatus.ObservedGeneration < deployment.Generation {
 		return false
 	}
 
-	// Guard against stale counters: verify that no old MachineSet still has replicas.
-	// If old MachineSets still have replicas, the rollout is not complete regardless
-	// of what the MachineDeployment counters report.
+	// Verify the rollout directly against the MachineSets. Old MachineSets must have no replicas left,
+	// and the MachineSet at the current revision must be fully rolled out and available.
+	// A revision match implies a template match: CAPI derives the revision from the MachineDeployment
+	// template, so the MachineSet carrying the current revision is the one built from the current template.
 	currentRevision := deployment.Annotations[capiv1.RevisionAnnotation]
+	var currentMachineSet *capiv1.MachineSet
 	for i := range machineSets {
-		if machineSets[i].Annotations[capiv1.RevisionAnnotation] != currentRevision && ptr.Deref(machineSets[i].Status.Replicas, 0) > 0 {
-			return false
+		if machineSets[i].Annotations[capiv1.RevisionAnnotation] != currentRevision {
+			if ptr.Deref(machineSets[i].Status.Replicas, 0) > 0 {
+				return false
+			}
+			continue
 		}
+		currentMachineSet = &machineSets[i]
 	}
 
-	return true
+	// Scaled to zero: there is no MachineSet to wait for, and the MachineDeployment counters above
+	// already prove that no machine is running.
+	if desired == 0 {
+		return true
+	}
+
+	// The MachineDeployment revision may already be bumped while CAPI has not created the corresponding
+	// MachineSet yet. The rollout is not complete until that MachineSet exists and is fully available.
+	if currentMachineSet == nil {
+		return false
+	}
+
+	return ptr.Deref(currentMachineSet.Status.Replicas, 0) == desired &&
+		ptr.Deref(currentMachineSet.Status.AvailableReplicas, 0) == desired
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
