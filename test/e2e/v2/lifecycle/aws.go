@@ -178,29 +178,34 @@ func (a *AWSPlatformConfig) DefaultTestPlan() TestPlan {
 }
 
 func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
-	return TestMatrix{
-		Parallel: []TestGroup{
-			{
-				Name:        "karpenter",
-				Variant:     "karpenter",
-				LabelFilter: "karpenter",
-			},
-			// TODO: It might be possible to decompose the karpenter upgrade test
-			// into pre and post upgrade specs which communicate with a well defined
-			// IPC protocol, like the pre step serializing observations which the
-			// post step can use. Then we can compose the regular upgrade test here
-			// instead of duplicating upgrade logic inside the karpenter test.
-			{
-				Name:        "karpenter-upgrade",
-				Variant:     "karpenter-upgrade",
-				LabelFilter: "karpenter-upgrade",
-			},
-			{
-				Name:        "kms-reencryption",
-				Variant:     "kms-reencryption",
-				LabelFilter: "etcd-encryption-reencryption",
-			},
+	parallelGroups := []TestGroup{
+		{
+			Name:        "karpenter",
+			Variant:     "karpenter",
+			LabelFilter: "karpenter",
 		},
+		// TODO: It might be possible to decompose the karpenter upgrade test
+		// into pre and post upgrade specs which communicate with a well defined
+		// IPC protocol, like the pre step serializing observations which the
+		// post step can use. Then we can compose the regular upgrade test here
+		// instead of duplicating upgrade logic inside the karpenter test.
+		{
+			Name:        "karpenter-upgrade",
+			Variant:     "karpenter-upgrade",
+			LabelFilter: "karpenter-upgrade",
+		},
+	}
+	// Only include kms-reencryption in the matrix when the KMS key is configured,
+	// mirroring the guard in ClusterSpecs to keep the plan and available specs in sync.
+	if os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN") != "" {
+		parallelGroups = append(parallelGroups, TestGroup{
+			Name:        "kms-reencryption",
+			Variant:     "kms-reencryption",
+			LabelFilter: "etcd-encryption-reencryption",
+		})
+	}
+	return TestMatrix{
+		Parallel: parallelGroups,
 		Sequential: []SequentialGroup{
 			{
 				Name: "public",
