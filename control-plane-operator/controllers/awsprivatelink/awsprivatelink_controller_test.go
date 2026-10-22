@@ -288,6 +288,16 @@ func TestSelectEndpointSubnets(t *testing.T) {
 	}{
 		{name: "When input is empty, it should return no subnets", region: "us-east-1", expected: []string{}},
 		{
+			name:     "When the region is empty with standard zones, it should preserve same-AZ deduplication",
+			zones:    map[string]string{"subnet-aaa": "us-east-1a", "subnet-bbb": "us-east-1a", "subnet-ccc": "us-east-1b"},
+			expected: []string{"subnet-aaa", "subnet-ccc"},
+		},
+		{
+			name:     "When the region is empty with edge and unknown zones, it should retain candidates before deduplication",
+			zones:    map[string]string{"subnet-edge": "us-east-1-atl-1a", "subnet-wave": "us-east-1-wl1-bos-wlz-1", "subnet-aaa": "", "subnet-bbb": ""},
+			expected: []string{"subnet-aaa", "subnet-edge", "subnet-wave"},
+		},
+		{
 			name:     "When standard and edge zones are mixed, it should keep one subnet per standard AZ",
 			region:   "us-east-1",
 			zones:    map[string]string{"subnet-aaa": "us-east-1a", "subnet-bbb": "us-east-1a", "subnet-ccc": "us-east-1b", "subnet-edge": "us-east-1-atl-1a", "subnet-wave": "us-east-1-wl1-bos-wlz-1"},
@@ -365,9 +375,29 @@ func TestEnsureVPCEndpoint(t *testing.T) {
 		zones       map[string]string
 		warm        bool
 		lookupError bool
+		missingAWS  bool
+		emptyRegion bool
 		expected    []string
 		expectError bool
 	}{
+		{
+			name:    "When AWS configuration is missing with a cold cache, it should preserve configuration validation and existing endpoint updates",
+			desired: []string{"subnet-bbb", "subnet-aaa", "subnet-edge"}, missingAWS: true,
+			zones:    map[string]string{"subnet-bbb": "us-east-1a", "subnet-aaa": "us-east-1a", "subnet-edge": "us-east-1-atl-1a"},
+			expected: []string{"subnet-aaa", "subnet-edge"},
+		},
+		{
+			name:    "When AWS configuration is missing with a warm cache, it should preserve configuration validation and existing endpoint updates",
+			desired: []string{"subnet-bbb", "subnet-aaa", "subnet-edge"}, missingAWS: true, warm: true,
+			zones:    map[string]string{"subnet-bbb": "us-east-1a", "subnet-aaa": "us-east-1a", "subnet-edge": "us-east-1-atl-1a"},
+			expected: []string{"subnet-aaa", "subnet-edge"},
+		},
+		{
+			name:    "When AWS configuration has an empty region, it should retain candidates before deduplication",
+			desired: []string{"subnet-bbb", "subnet-aaa", "subnet-edge"}, emptyRegion: true,
+			zones:    map[string]string{"subnet-bbb": "us-east-1a", "subnet-aaa": "us-east-1a", "subnet-edge": "us-east-1-atl-1a"},
+			expected: []string{"subnet-aaa", "subnet-edge"},
+		},
 		{
 			name:     "When a cold cache has standard and edge subnets, it should use only standard subnets",
 			desired:  []string{"subnet-edge", "subnet-aaa", "subnet-bbb"},
@@ -460,7 +490,13 @@ func TestEnsureVPCEndpoint(t *testing.T) {
 						VPC: "vpc-synthetic", Subnet: &hyperv1.AWSResourceReference{ID: aws.String("subnet-aaa")},
 					}},
 				}}}
-				if !test.expectError {
+				if test.missingAWS {
+					hcp.Spec.Platform.AWS = nil
+				} else if test.emptyRegion {
+					hcp.Spec.Platform.AWS.Region = ""
+				}
+				expectConfigError := test.missingAWS && !existing
+				if !test.expectError && !expectConfigError {
 					if existing {
 						mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), &ec2v2.DescribeVpcEndpointsInput{VpcEndpointIds: []string{"vpce-synthetic"}}).Return(&ec2v2.DescribeVpcEndpointsOutput{VpcEndpoints: []ec2types.VpcEndpoint{{
 							VpcEndpointId: aws.String("vpce-synthetic"), ServiceName: aws.String("synthetic-service"), SubnetIds: []string{"subnet-aaa"},
@@ -497,6 +533,10 @@ func TestEnsureVPCEndpoint(t *testing.T) {
 					assertions.Expect(err.Error()).To(Equal("no eligible subnets for VPC endpoint: excluded subnets: subnet-edge (us-east-1-atl-1a), subnet-wave (us-east-1-wl1-bos-wlz-1)"))
 					assertions.Expect(endpointID).To(BeEmpty())
 					assertions.Expect(service.Spec.SubnetIDs).To(Equal(test.desired))
+				} else if expectConfigError {
+					assertions.Expect(err).To(MatchError("AWS platform information not provided in HostedControlPlane"))
+					assertions.Expect(endpointID).To(BeEmpty())
+					assertions.Expect(service.Spec.SubnetIDs).To(Equal(test.expected))
 				} else {
 					assertions.Expect(err).NotTo(HaveOccurred())
 					assertions.Expect(endpointID).To(Equal("vpce-synthetic"))
