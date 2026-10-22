@@ -11,6 +11,7 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/images"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
@@ -46,6 +47,7 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 			"--ignition-endpoint="+karp.IgnitionEndpoint,
 		)
 		proxy.SetEnvVars(&c.Env)
+		setIgnitionEnvVars(&c.Env)
 	})
 
 	switch hcp.Spec.Platform.Type {
@@ -96,6 +98,13 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 	}
 
 	return nil
+}
+
+// setIgnitionEnvVars passes on the HyperShift operator environment variables read by the ignition code.
+func setIgnitionEnvVars(env *[]corev1.EnvVar) {
+	if image := os.Getenv(images.SharedIngressHAProxyEnvVar); image != "" {
+		*env = append(*env, corev1.EnvVar{Name: images.SharedIngressHAProxyEnvVar, Value: image})
+	}
 }
 
 // adaptStandaloneDeployment configures the deployment for the standalone karpenter-operator binary.
@@ -264,6 +273,7 @@ func (karp *KarpenterOperatorOptions) addStandaloneAdapterContainer(deployment *
 		},
 	}
 	proxy.SetEnvVars(&adapterEnv)
+	setIgnitionEnvVars(&adapterEnv)
 
 	deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
 		Name:    AdapterContainerName,
