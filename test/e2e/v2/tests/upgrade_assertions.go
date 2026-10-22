@@ -72,3 +72,38 @@ func ExpectHostedClusterUpgradeComplete(ctx context.Context, g Gomega, mgmtClien
 	}
 	g.Expect(currentHC.Status.Version.History[0].State).To(Equal(configv1.CompletedUpdate))
 }
+
+// ExpectNoResourceDeletesInProgress verifies that the hosted cluster
+// ClusterVersion does not have Upgradeable=False with reason
+// ResourceDeletesInProgress. This catches regressions where CVO resource
+// deletions get stuck and block subsequent upgrades (OCPBUGS-130965).
+// Other reasons for Upgradeable=False (e.g. cloud-credential annotation) are
+// not checked since they are expected behavior.
+func ExpectNoResourceDeletesInProgress(ctx context.Context, hostedClusterClient crclient.Client) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		cv := &configv1.ClusterVersion{}
+		g.Expect(hostedClusterClient.Get(ctx, crclient.ObjectKey{Name: "version"}, cv)).To(Succeed(),
+			"failed to get hosted cluster ClusterVersion")
+
+		for _, cond := range cv.Status.Conditions {
+			if cond.Type == "Upgradeable" {
+				g.Expect(cond.Reason).NotTo(Equal("ResourceDeletesInProgress"),
+					"hosted cluster ClusterVersion has ResourceDeletesInProgress: %s",
+					cond.Message)
+				// Also check MultipleReasons which may wrap ResourceDeletesInProgress
+				if cond.Reason == "MultipleReasons" {
+					g.Expect(cond.Message).NotTo(ContainSubstring("resource deletions are in progress"),
+						"hosted cluster ClusterVersion has ResourceDeletesInProgress in MultipleReasons: %s",
+						cond.Message)
+				}
+				break
+			}
+		}
+	}).
+		WithContext(ctx).
+		WithTimeout(30 * time.Minute).
+		WithPolling(10 * time.Second).
+		Should(Succeed())
+}

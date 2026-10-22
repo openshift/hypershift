@@ -60,6 +60,8 @@ func TestPreparePayloadScript(t *testing.T) {
 			assertions: func(g Gomega, script string) {
 				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml"))
 				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_09_clusteroperator.yaml"))
 			},
 		},
 		{
@@ -70,16 +72,20 @@ func TestPreparePayloadScript(t *testing.T) {
 			assertions: func(g Gomega, script string) {
 				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml"))
 				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_09_clusteroperator.yaml"))
 			},
 		},
 		{
-			name:         "When platform is AWS (default), it should remove the ibm-cloud-managed storage operator deployment manifest",
+			name:         "When platform is AWS (default), it should remove the kube-storage-version-migrator-operator manifests",
 			platformType: hyperv1.AWSPlatform,
 			oauthEnabled: true,
 			featureSet:   configv1.Default,
 			assertions: func(g Gomega, script string) {
 				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml"))
 				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_09_clusteroperator.yaml"))
 			},
 		},
 		{
@@ -162,6 +168,8 @@ func TestResourcesToRemove(t *testing.T) {
 				g.Expect(resources).To(ContainElement("cluster-image-registry-operator"))
 				g.Expect(resources).NotTo(ContainElement("machineconfigs.machineconfiguration.openshift.io"))
 				g.Expect(resources).NotTo(ContainElement("machineconfigpools.machineconfiguration.openshift.io"))
+				g.Expect(resources).NotTo(ContainElement("kube-storage-version-migrator-operator"))
+				g.Expect(resources).NotTo(ContainElement("kube-storage-version-migrator"))
 			},
 		},
 		{
@@ -188,6 +196,8 @@ func TestResourcesToRemove(t *testing.T) {
 				g.Expect(resources).To(ContainElement("aws-ebs-csi-driver-operator"))
 				g.Expect(resources).To(ContainElement("aws-ebs-csi-driver-controller"))
 				g.Expect(resources).To(ContainElement("csi-snapshot-controller"))
+				g.Expect(resources).To(ContainElement("kube-storage-version-migrator-operator"))
+				g.Expect(resources).To(ContainElement("migrator"))
 			},
 		},
 		{
