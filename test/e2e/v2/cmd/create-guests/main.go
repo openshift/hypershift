@@ -27,6 +27,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -46,6 +47,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -53,6 +55,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilnet "k8s.io/apimachinery/pkg/util/net"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
@@ -545,17 +548,49 @@ func waitForVersionRollout(ctx context.Context, cl crclient.WithWatch, cfg envCo
 }
 
 func waitForZeroWorkerControlPlane(ctx context.Context, cl crclient.Client, namespace, name string) error {
-	return wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
+	return pollZeroWorkerControlPlane(ctx, cl, namespace, name, 5*time.Second)
+}
+
+func pollZeroWorkerControlPlane(ctx context.Context, cl crclient.Client, namespace, name string, interval time.Duration) error {
+	var lastReadError error
+	err := wait.PollUntilContextCancel(ctx, interval, true, func(ctx context.Context) (bool, error) {
 		cluster := &hyperv1.HostedCluster{}
-		if err := cl.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: name}, cluster); err != nil {
-			return false, crclient.IgnoreNotFound(err)
-		}
 		deployment := &appsv1.Deployment{}
-		if err := cl.Get(ctx, crclient.ObjectKey{Namespace: namespace + "-" + name, Name: "kube-apiserver"}, deployment); err != nil {
-			return false, crclient.IgnoreNotFound(err)
+		lastReadError = nil
+		for _, resource := range []struct {
+			kind   string
+			key    crclient.ObjectKey
+			object crclient.Object
+		}{
+			{kind: "HostedCluster", key: crclient.ObjectKey{Namespace: namespace, Name: name}, object: cluster},
+			{kind: "Deployment", key: crclient.ObjectKey{Namespace: namespace + "-" + name, Name: "kube-apiserver"}, object: deployment},
+		} {
+			if err := cl.Get(ctx, resource.key, resource.object); err != nil {
+				lastReadError = fmt.Errorf("reading %s %s: %w", resource.kind, resource.key, err)
+				if apierrors.IsNotFound(err) {
+					return false, nil
+				}
+				if !retryableZeroWorkerReadError(err) {
+					return false, lastReadError
+				}
+				log.Printf("Retrying zero-worker readiness: %v", lastReadError)
+				return false, nil
+			}
 		}
 		return zeroWorkerControlPlaneReady(cluster, deployment), nil
 	})
+	if err != nil {
+		return errors.Join(err, lastReadError)
+	}
+	return nil
+}
+
+func retryableZeroWorkerReadError(err error) bool {
+	var networkError net.Error
+	return apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) || apierrors.IsInternalError(err) ||
+		apierrors.IsTooManyRequests(err) || apierrors.IsServiceUnavailable(err) ||
+		utilnet.IsConnectionReset(err) || utilnet.IsConnectionRefused(err) || utilnet.IsProbableEOF(err) ||
+		(errors.As(err, &networkError) && networkError.Timeout())
 }
 
 func zeroWorkerControlPlaneReady(cluster *hyperv1.HostedCluster, deployment *appsv1.Deployment) bool {

@@ -65,7 +65,7 @@ func defaultFixtureLabelFilter(labelFilter string) string {
 	if labelFilter != "" {
 		return labelFilter
 	}
-	return "!hosted-cluster-health-configured-workers && !hosted-cluster-cpo-required && !hosted-cluster-break-glass-ha && !hosted-cluster-custom-config && !hosted-cluster-native-recovery"
+	return "!hosted-cluster-health-configured-workers && !hosted-cluster-cpo-required && !hosted-cluster-break-glass-ha && !hosted-cluster-custom-config && !hosted-cluster-native-recovery && !aws-private-endpoint-transition"
 }
 
 // ReportAfterSuite writes the unified v2 E2E JUnit report. Informing tests have

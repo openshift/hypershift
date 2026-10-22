@@ -3,27 +3,35 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"io"
+	"net"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestLoadEnvConfigReleaseImages(t *testing.T) {
@@ -139,6 +147,80 @@ func TestZeroWorkerControlPlaneReady(t *testing.T) {
 				t.Fatal("unexpected zero-worker readiness")
 			}
 		})
+	}
+}
+
+func TestPollZeroWorkerControlPlane(t *testing.T) {
+	for _, resource := range []string{"HostedCluster", "Deployment"} {
+		for _, testCase := range []struct {
+			name      string
+			readError error
+			terminal  bool
+			stop      string
+		}{
+			{name: "When the resource is absent, it should wait for readiness", readError: apierrors.NewNotFound(schema.GroupResource{Resource: resource}, "ha")},
+			{name: "When the API times out, it should retry", readError: apierrors.NewTimeoutError("timeout", 1)},
+			{name: "When the server times out, it should retry", readError: apierrors.NewServerTimeout(schema.GroupResource{Resource: resource}, "get", 1)},
+			{name: "When throttled, it should retry", readError: apierrors.NewTooManyRequests("throttled", 1)},
+			{name: "When unavailable, it should retry", readError: apierrors.NewServiceUnavailable("unavailable")},
+			{name: "When the API reports an internal error, it should retry", readError: apierrors.NewInternalError(errors.New("internal failure"))},
+			{name: "When a network timeout occurs, it should retry", readError: &net.DNSError{Err: "timeout", IsTimeout: true}},
+			{name: "When the connection drops, it should retry", readError: io.ErrUnexpectedEOF},
+			{name: "When the connection resets, it should retry", readError: syscall.ECONNRESET},
+			{name: "When the connection is refused, it should retry", readError: syscall.ECONNREFUSED},
+			{name: "When the API forbids access, it should fail immediately", readError: apierrors.NewForbidden(schema.GroupResource{Resource: resource}, "ha", errors.New("denied")), terminal: true},
+			{name: "When authentication fails, it should fail immediately", readError: apierrors.NewUnauthorized("denied"), terminal: true},
+			{name: "When the request is invalid, it should fail immediately", readError: apierrors.NewBadRequest("invalid"), terminal: true},
+			{name: "When an unknown error occurs, it should fail immediately", readError: errors.New("unknown failure"), terminal: true},
+			{name: "When errors persist, it should honor the deadline", readError: apierrors.NewServiceUnavailable("persistent"), stop: "deadline"},
+			{name: "When canceled during retry, it should honor cancellation", readError: apierrors.NewServiceUnavailable("persistent"), stop: "cancel"},
+		} {
+			t.Run(resource+"/"+testCase.name, func(t *testing.T) {
+				cluster, deployment := readyZeroWorkerFixture()
+				timeout := 10 * time.Second
+				if testCase.stop == "deadline" {
+					timeout = 30 * time.Millisecond
+				}
+				var cancel context.CancelFunc
+				reads := 0
+				client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(cluster, deployment).WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, client crclient.WithWatch, key crclient.ObjectKey, object crclient.Object, options ...crclient.GetOption) error {
+						matches := resource == "HostedCluster"
+						if _, isDeployment := object.(*appsv1.Deployment); isDeployment {
+							matches = !matches
+						}
+						if matches {
+							reads++
+							if testCase.stop == "cancel" {
+								cancel()
+							}
+							if reads == 1 || testCase.stop != "" {
+								return testCase.readError
+							}
+						}
+						return client.Get(ctx, key, object, options...)
+					},
+				}).Build()
+				ctx, cancel := context.WithTimeout(t.Context(), timeout)
+				defer cancel()
+				err := pollZeroWorkerControlPlane(ctx, client, "clusters", "ha", time.Millisecond)
+				if testCase.terminal {
+					if !errors.Is(err, testCase.readError) || reads != 1 {
+						t.Fatalf("terminal error lost or retried: reads=%d err=%v", reads, err)
+					}
+				} else if testCase.stop != "" {
+					want := context.DeadlineExceeded
+					if testCase.stop == "cancel" {
+						want = context.Canceled
+					}
+					if !errors.Is(err, want) || !errors.Is(err, testCase.readError) || !strings.Contains(err.Error(), resource) {
+						t.Fatalf("deadline/cancellation or diagnostic lost: %v", err)
+					}
+				} else if err != nil || reads != 2 {
+					t.Fatalf("transient read prevented readiness: reads=%d err=%v", reads, err)
+				}
+			})
+		}
 	}
 }
 

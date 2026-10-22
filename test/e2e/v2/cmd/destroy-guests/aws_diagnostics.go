@@ -43,9 +43,25 @@ type journalEC2Client interface {
 }
 
 type journalOperations struct {
-	createBastion  func(context.Context, logr.Logger) (string, error)
-	destroyBastion func(context.Context, logr.Logger) error
-	copyJournal    func(context.Context, string, string, string, io.Writer, io.Writer) error
+	createBastion          func(context.Context, logr.Logger) (string, error)
+	destroyBastion         func(context.Context, logr.Logger) error
+	copyJournal            func(context.Context, string, string, string, io.Writer, io.Writer) error
+	removePrivateDirectory func(string) error
+}
+
+func (operations journalOperations) removeKeyDirectory(directory string) error {
+	remove := operations.removePrivateDirectory
+	if remove == nil {
+		remove = os.RemoveAll
+	}
+	if err := remove(directory); err != nil {
+		var pathError *os.PathError
+		if errors.As(err, &pathError) {
+			err = pathError.Err
+		}
+		return fmt.Errorf("remove temporary journal key directory: %w", err)
+	}
+	return nil
 }
 
 func dumpAWSConsole(parent context.Context, entry lifecycle.ClusterEntry, directory string) error {
@@ -117,7 +133,9 @@ func collectAWSJournals(ctx context.Context, cluster *hyperv1.HostedCluster, cli
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(privateDirectory)
+	defer func() {
+		result = errors.Join(result, operations.removeKeyDirectory(privateDirectory))
+	}()
 	privateKey := filepath.Join(privateDirectory, "id_rsa")
 	if err := os.WriteFile(privateKey, secret.Data["id_rsa"], 0600); err != nil {
 		return err

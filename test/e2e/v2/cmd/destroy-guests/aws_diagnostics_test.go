@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -207,6 +208,42 @@ func TestCollectAWSJournals(t *testing.T) {
 				t.Fatalf("copied=%d want=%d", copied, wantCopied)
 			}
 			checkJournalArtifacts(t, testCase.public, testCase.copyFailure, copied, keyPath, directory)
+		})
+	}
+}
+
+func TestCollectAWSJournalsPrivateDirectoryCleanup(t *testing.T) {
+	for _, failDiscovery := range []bool{false, true} {
+		t.Run(fmt.Sprintf("When temporary key removal fails after discovery failure=%v, it should retain both errors without exposing paths", failDiscovery), func(t *testing.T) {
+			cluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "hosted", Namespace: "clusters", Annotations: map[string]string{hyperv1.AWSMachinePublicIPs: "true"}}, Spec: hyperv1.HostedClusterSpec{InfraID: "infra", SSHKey: corev1.LocalObjectReference{Name: "ssh"}}}
+			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "ssh", Namespace: "clusters"}, Data: map[string][]byte{"id_rsa": []byte("placeholder-not-a-key")}}
+			client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(secret).Build()
+			cloud := &journalCloudFake{pages: []*ec2.DescribeInstancesOutput{{}}}
+			original := errors.New("discovery failure")
+			if failDiscovery {
+				cloud.describeError = original
+			}
+			removed := ""
+			err := collectAWSJournals(t.Context(), cluster, client, cloud, t.TempDir(), journalOperations{
+				removePrivateDirectory: func(directory string) error {
+					removed = directory
+					if contents, err := os.ReadFile(filepath.Join(directory, "id_rsa")); err != nil || string(contents) != "placeholder-not-a-key" {
+						t.Fatalf("cleanup did not receive owned key: %v", err)
+					}
+					t.Cleanup(func() {
+						if err := os.RemoveAll(directory); err != nil {
+							t.Error(err)
+						}
+					})
+					return &os.PathError{Op: "remove", Path: directory, Err: os.ErrPermission}
+				},
+			})
+			if removed == "" || !errors.Is(err, os.ErrPermission) || errors.Is(err, original) != failDiscovery {
+				t.Fatalf("cleanup/discovery errors lost: %v", err)
+			}
+			if strings.Contains(err.Error(), removed) || strings.Contains(err.Error(), "placeholder-not-a-key") {
+				t.Fatal("cleanup error exposed private path or contents")
+			}
 		})
 	}
 }

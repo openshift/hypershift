@@ -129,6 +129,6 @@ func RegisterHostedClusterNetworkConfigurationTests(getTestCtx internal.TestCont
 	})
 }
 
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NetworkConfiguration] Hosted Cluster Network Configuration Lifecycle", Label("hosted-cluster-network-configuration"), Serial, func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NetworkConfiguration] Hosted Cluster Network Configuration Lifecycle", Label("lifecycle", "hosted-cluster-network-configuration"), Serial, func() {
 	RegisterHostedClusterNetworkConfigurationTests(internal.GetTestContext)
 })

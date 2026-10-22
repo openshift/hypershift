@@ -3,6 +3,7 @@
 package tests
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/onsi/ginkgo/v2"
@@ -44,6 +45,26 @@ func TestDefaultFixtureLabelFilter(t *testing.T) {
 	}
 }
 
+func TestNetworkConfigurationLifecycleRegistration(t *testing.T) {
+	filter, err := types.ParseLabelFilter("hosted-cluster-network-configuration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := 0
+	for _, spec := range ginkgo.PreviewSpecs("network lifecycle selection regression").SpecReports {
+		if !filter(spec.Labels()) {
+			continue
+		}
+		selected++
+		if !slices.Contains(spec.Labels(), "lifecycle") || !spec.IsSerial {
+			t.Fatalf("mutating network spec lacks lifecycle/Serial metadata: %s %v", spec.FullText(), spec.Labels())
+		}
+	}
+	if selected != 1 {
+		t.Fatalf("selected %d network lifecycle bodies, want one", selected)
+	}
+}
+
 func TestDefaultFixtureLabelFilterRegistrations(t *testing.T) {
 	report := ginkgo.PreviewSpecs("fixture selection regression")
 	defaultFilter, err := types.ParseLabelFilter(defaultFixtureLabelFilter(""))
@@ -61,6 +82,7 @@ func TestDefaultFixtureLabelFilterRegistrations(t *testing.T) {
 		{label: "hosted-cluster-native-recovery"},
 		{label: "native-etcd-recovery"},
 		{label: "malformed-pull-secret-recovery"},
+		{label: "aws-private-endpoint-transition"},
 		{label: "hosted-cluster-api-validation", defaultSelected: true},
 		{label: "hosted-cluster-break-glass", defaultSelected: true},
 	} {
