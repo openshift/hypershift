@@ -61,6 +61,25 @@ type ComponentLogLevelSpec struct {
 // +kubebuilder:validation:MinProperties=1
 type KubeAPIServerOperatorSpec struct {
 	ComponentLogLevelSpec `json:",inline"`
+
+	// eventTTLMinutes specifies the amount of time, in minutes, that events are stored
+	// in etcd before being deleted.
+	// The TTL is allowed between 5 minutes minimum up to a maximum of 180 minutes (3 hours).
+	//
+	// Lowering this value will reduce the storage required in etcd. Note that this setting
+	// will only apply to new events being created and will not update existing events.
+	//
+	// Changing this value causes the kube-apiserver to be rolled out with the new setting.
+	//
+	// When omitted this means no opinion, and the platform is left to choose a reasonable
+	// default, which is subject to change over time.
+	// The current default value is 180 minutes (3 hours).
+	//
+	// +kubebuilder:validation:Minimum=5
+	// +kubebuilder:validation:Maximum=180
+	// +openshift:enable:FeatureGate=KubeAPIServerEventTTL
+	// +optional
+	EventTTLMinutes int32 `json:"eventTTLMinutes,omitempty"`
 }
 
 // EtcdOperatorSpec specifies the configuration for the etcd.

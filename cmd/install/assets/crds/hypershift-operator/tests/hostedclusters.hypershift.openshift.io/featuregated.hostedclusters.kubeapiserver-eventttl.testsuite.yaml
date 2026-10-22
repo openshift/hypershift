@@ -1,0 +1,570 @@
+apiVersion: apiextensions.k8s.io/v1
+name: "HostedCluster operatorConfiguration kubeAPIServer eventTTLMinutes"
+crdName: hostedclusters.hypershift.openshift.io
+featureGates:
+  - KubeAPIServerEventTTL
+version: v1beta1
+tests:
+  onCreate:
+  - name: When eventTTLMinutes is the minimum of 5 it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: 5
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+
+  - name: When eventTTLMinutes is the maximum of 180 it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: 180
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+
+  - name: When eventTTLMinutes is within the range it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: 60
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+
+  - name: When eventTTLMinutes is set alongside logLevel it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: 60
+                  logLevel: Debug
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+
+  - name: When eventTTLMinutes is below the minimum it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: 4
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+    expectedError: 'spec.operatorConfiguration.kubeAPIServer.eventTTLMinutes in body should be greater than or equal to 5'
+
+  - name: When eventTTLMinutes is above the maximum it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: 181
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+    expectedError: 'spec.operatorConfiguration.kubeAPIServer.eventTTLMinutes in body should be less than or equal to 180'
+
+  - name: When eventTTLMinutes is explicitly zero it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: 0
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+    expectedError: 'spec.operatorConfiguration.kubeAPIServer.eventTTLMinutes in body should be greater than or equal to 5'
+
+  - name: When eventTTLMinutes is negative it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: -1
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+    expectedError: 'spec.operatorConfiguration.kubeAPIServer.eventTTLMinutes in body should be greater than or equal to 5'
+
+  - name: When eventTTLMinutes is omitted it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+
+  onUpdate:
+  - name: When eventTTLMinutes is changed it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: 60
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: 90
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        networking:
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        operatorConfiguration:
+          kubeAPIServer:
+            eventTTLMinutes: 90
+        platform:
+          type: AWS
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+
+  - name: When eventTTLMinutes is changed to an out of range value it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: 60
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+              operatorConfiguration:
+                kubeAPIServer:
+                  eventTTLMinutes: 240
+              dns:
+                baseDomain: example.com
+              platform:
+                type: AWS
+              pullSecret:
+                name: secret
+              release:
+                image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+              secretEncryption:
+                aescbc:
+                  activeKey:
+                    name: key
+                type: aescbc
+              services:
+              - service: APIServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: OAuthServer
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Konnectivity
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+              - service: Ignition
+                servicePublishingStrategy:
+                  type: Route
+                  route: {}
+    expectedError: 'spec.operatorConfiguration.kubeAPIServer.eventTTLMinutes in body should be less than or equal to 180'

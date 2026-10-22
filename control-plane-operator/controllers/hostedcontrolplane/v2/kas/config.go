@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/certs"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -34,7 +35,9 @@ import (
 )
 
 const (
-	KubeAPIServerConfigKey  = "config.json"
+	// KubeAPIServerConfigKey is defined in pkg/manifests/cpo so that e2e tests can read the
+	// rendered kube-apiserver config without importing this package.
+	KubeAPIServerConfigKey  = cpomanifests.KubeAPIServerConfigKey
 	AuthenticationConfigKey = "auth.json"
 	OauthMetadataConfigKey  = "oauthMetadata.json"
 	AuditLogFile            = "audit.log"
@@ -239,7 +242,7 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	if len(p.EtcdServersOverrides) > 0 {
 		args.Set("etcd-servers-overrides", p.EtcdServersOverrides...)
 	}
-	args.Set("event-ttl", "3h")
+	args.Set("event-ttl", eventTTLOrDefault(p.EventTTL))
 	// TODO remove in 4.16 once we're able to have different featuregates for hypershift
 	featureGates := append([]string{}, p.FeatureGates...)
 	featureGates = enforceFeatureGates(featureGates, "ValidatingAdmissionPolicy=true", "StructuredAuthenticationConfiguration=true")
@@ -305,6 +308,16 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("tls-private-key-file", cpath(serverCertVolumeName, corev1.TLSPrivateKeyKey))
 	config.APIServerArguments = args
 	return config, nil
+}
+
+// eventTTLOrDefault guards against an empty EventTTL rendering --event-ttl="", which the
+// kube-apiserver rejects at startup. NewConfigParams always populates the field, so this only
+// matters for a zero-value KubeAPIServerConfigParams.
+func eventTTLOrDefault(eventTTL string) string {
+	if eventTTL == "" {
+		return defaultEventTTL
+	}
+	return eventTTL
 }
 
 func cloudProviderConfig(cloudProviderConfigName, cloudProvider string) string {

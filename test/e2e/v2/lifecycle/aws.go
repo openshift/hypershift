@@ -225,7 +225,8 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 						LabelFilter: "hosted-cluster-aws || hosted-cluster-compliance || hosted-cluster-node-communication || " +
 							"hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || " +
 							"hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress || hosted-cluster-dns || " +
-							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry",
+							"hosted-cluster-health || hosted-cluster-metrics || hosted-cluster-image-registry || " +
+							"hosted-cluster-event-ttl",
 					},
 					{
 						Name:    "public-nodepool-rollouts",
