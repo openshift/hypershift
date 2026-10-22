@@ -24,6 +24,11 @@ const (
 	imageMirroringIgnitionName = "ignition-config-40-image-content-source"
 	imageMirroringWorkerLabel  = "machineconfiguration.openshift.io/role"
 	imageMirroringCoreLabel    = "hypershift.openshift.io/core-ignition-config"
+
+	// imageMirroringVirtualSource is the fixture source repository that only
+	// exists on the mirror: its ".invalid" host never resolves (RFC 2606), so a
+	// successful pull from it can only have been served by an IDMS mirror.
+	imageMirroringVirtualSource = "mirror-source.hypershift-e2e.invalid/libpod/registry"
 )
 
 // imageMirroringConfigured reports whether the HC opted into image mirroring
@@ -58,7 +63,7 @@ func imageMirroringExpected(hc *hyperv1.HostedCluster, route *routev1.Route) ([]
 	if route == nil || strings.TrimSpace(route.Spec.Host) == "" {
 		return nil, fmt.Errorf("mirror fixture Route has an empty host")
 	}
-	for _, source := range []string{"quay.io/libpod/registry", "mirror-source.hypershift-e2e.invalid/libpod/registry"} {
+	for _, source := range []string{"quay.io/libpod/registry", imageMirroringVirtualSource} {
 		found := false
 		for _, entry := range expected {
 			if entry.Source != source {
