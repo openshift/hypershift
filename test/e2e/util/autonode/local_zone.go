@@ -146,7 +146,7 @@ func RunLocalZoneTest(ctx context.Context, t testing.TB, client crclient.Client,
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
 	options, err := localZoneOptionsFromEnv(getenv)
-	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(err).NotTo(HaveOccurred(), "parse Local Zone test inputs")
 	if options == (localZoneOptions{}) {
 		t.Skip("Local Zone coverage not requested; set E2E_AUTONODE_LOCAL_ZONE and its subnet, instance and volume inputs")
 	}
@@ -159,11 +159,11 @@ func RunLocalZoneTest(ctx context.Context, t testing.TB, client crclient.Client,
 	offerings, err := ec2client.DescribeInstanceTypeOfferings(ctx, &ec2.DescribeInstanceTypeOfferingsInput{LocationType: ec2types.LocationTypeAvailabilityZone, Filters: []ec2types.Filter{
 		{Name: ptr.To("location"), Values: []string{options.zone}}, {Name: ptr.To("instance-type"), Values: []string{options.instanceType}},
 	}})
-	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(err).NotTo(HaveOccurred(), "describe instance offerings in the requested Local Zone")
 	instanceTypes, err := ec2client.DescribeInstanceTypes(ctx, &ec2.DescribeInstanceTypesInput{InstanceTypes: []ec2types.InstanceType{ec2types.InstanceType(options.instanceType)}})
-	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(instanceTypes.InstanceTypes).To(HaveLen(1))
-	g.Expect(instanceTypes.InstanceTypes[0].ProcessorInfo).NotTo(BeNil())
+	g.Expect(err).NotTo(HaveOccurred(), "describe the requested instance type")
+	g.Expect(instanceTypes.InstanceTypes).To(HaveLen(1), "describe must resolve exactly one requested instance type")
+	g.Expect(instanceTypes.InstanceTypes[0].ProcessorInfo).NotTo(BeNil(), "requested instance type must report processor capabilities")
 	g.Expect(instanceTypes.InstanceTypes[0].ProcessorInfo.SupportedArchitectures).To(ContainElement(ec2types.ArchitectureTypeX8664))
 	if options.subnet == "" {
 		g.Expect(createSubnet).NotTo(BeNil(), "this entry point requires E2E_AUTONODE_LOCAL_ZONE_SUBNET_ID")
@@ -174,15 +174,15 @@ func RunLocalZoneTest(ctx context.Context, t testing.TB, client crclient.Client,
 		g.Expect(options.subnet).NotTo(BeEmpty())
 	}
 	subnets, err := ec2client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{SubnetIds: []string{options.subnet}})
-	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(err).NotTo(HaveOccurred(), "describe the selected Local Zone subnet")
 	g.Expect(validateLocalZone(options, hc.Spec.Platform.AWS.Region, hc.Spec.Platform.AWS.CloudProviderConfig.VPC, zones.AvailabilityZones, subnets.Subnets, offerings.InstanceTypeOfferings)).To(Succeed())
 
 	before := &corev1.NodeList{}
-	g.Expect(client.List(ctx, before)).To(Succeed())
+	g.Expect(client.List(ctx, before)).To(Succeed(), "snapshot existing nodes before Local Zone provisioning")
 	name := "local-zone-" + string(uuid.NewUUID())[:8]
 	nodeClass, nodePool, pod := localZoneResources(name, hc.Spec.InfraID, options)
 	for _, object := range []crclient.Object{nodeClass, nodePool, pod} {
-		g.Expect(client.Create(ctx, object)).To(Succeed())
+		g.Expect(client.Create(ctx, object)).To(Succeed(), "create Local Zone test resource %T", object)
 		t.Cleanup(func() {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 			defer cancel()
@@ -221,14 +221,14 @@ func RunLocalZoneTest(ctx context.Context, t testing.TB, client crclient.Client,
 	g.Expect(err).NotTo(HaveOccurred(), "Local Zone bootstrap/join/workload did not complete: %+v", pod.Status)
 	node := &corev1.Node{}
 	g.Eventually(func(g Gomega) {
-		g.Expect(client.Get(ctx, types.NamespacedName{Name: pod.Spec.NodeName}, node)).To(Succeed())
+		g.Expect(client.Get(ctx, types.NamespacedName{Name: pod.Spec.NodeName}, node)).To(Succeed(), "get the node assigned to the completed Local Zone workload")
 		g.Expect(validateLocalZoneNode(node, before.Items, name, options.zone)).To(Succeed())
 	}, 2*time.Minute, 5*time.Second).Should(Succeed())
 	instanceID := node.Spec.ProviderID[strings.LastIndex(node.Spec.ProviderID, "/")+1:]
 	instances, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{InstanceIds: []string{instanceID}})
-	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(instances.Reservations).To(HaveLen(1))
-	g.Expect(instances.Reservations[0].Instances).To(HaveLen(1))
+	g.Expect(err).NotTo(HaveOccurred(), "describe the instance backing the new workload node")
+	g.Expect(instances.Reservations).To(HaveLen(1), "node provider ID must resolve to exactly one reservation")
+	g.Expect(instances.Reservations[0].Instances).To(HaveLen(1), "node provider ID must resolve to exactly one instance")
 	instance := instances.Reservations[0].Instances[0]
 	g.Expect(aws.ToString(instance.SubnetId)).To(Equal(options.subnet))
 	g.Expect(instance.Placement).NotTo(BeNil())
@@ -237,5 +237,5 @@ func RunLocalZoneTest(ctx context.Context, t testing.TB, client crclient.Client,
 	g.Expect(slices.ContainsFunc(pod.Status.ContainerStatuses, func(status corev1.ContainerStatus) bool {
 		return status.Name == "workload" && status.State.Terminated != nil && status.State.Terminated.ExitCode == 0
 	})).To(BeTrue(), "workload must exit successfully on the new Ready Local Zone node")
-	t.Logf("New node %s (%s) joined Ready in %s, subnet %s; workload exited successfully", node.Name, instanceID, options.zone, options.subnet)
+	t.Log("New Local Zone node joined Ready; exact EC2 placement verified and workload exited successfully")
 }

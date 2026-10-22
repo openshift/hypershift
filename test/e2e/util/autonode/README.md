@@ -34,6 +34,8 @@ instance capability checks, the v1 fixture creates a Local Zone subnet in its
 new VPC using `CreateTestSubnet` and registers cleanup before provisioning nodes.
 The actual VPC primary CIDR must be `10.0.0.0/16`; auto-creation rejects other
 CIDRs before changing resources. For custom VPCs use v2 with a prepared subnet.
+This v1 subnet-creation path requires the standard IPv4 VPC and NAT routing;
+it does not create an IPv6-only or dual-stack Local Zone subnet.
 Do not filter out `TestKarpenter` in v1; in v2 select the
 `autonode-local-zone` label and include lifecycle tests. Existing CI jobs do not
 automatically gain Local Zone coverage without these inputs and account setup.
@@ -47,6 +49,12 @@ For an existing/custom VPC, v2 selects an explicitly prepared subnet, avoiding
 those CIDR assumptions. The test neither changes nor deletes a supplied
 subnet or its routes. Do not require the Local Zone to appear in a VPC
 endpoint service's supported AZ list: that would exclude the case under test.
+
+The finite workload uses the existing e2e image
+`quay.io/openshift/origin-pod:4.22.0` with `/bin/sh`, as do the other v1
+Karpenter workloads. It requires registry access to pull that public amd64
+image; disconnected execution needs an appropriately configured registry mirror.
+The test does not replace an image-pull failure with a bootstrap success.
 
 Test credentials need EC2 read access to availability zones (including opt-in
 status), subnets, instance-type offerings, instance types and instances, plus
