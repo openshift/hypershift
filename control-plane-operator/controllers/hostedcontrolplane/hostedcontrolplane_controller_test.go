@@ -5965,21 +5965,10 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 				r.validateAzureKMSConfig(ctx, hcp)
 				g.Expect(meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig)).Status).To(Equal(metav1.ConditionTrue))
 				g.Expect(loadCount).To(Equal(1), "subsequent probes must reuse the cached credential")
-				if tc.responseCode == http.StatusOK {
-					g.Expect(tokenCount).To(Equal(1), "a successful probe must not be repeated while the generation is unchanged")
-				} else {
-					g.Expect(tokenCount).To(Equal(2), "a failed probe must be retried on the next reconcile")
-				}
+				g.Expect(tokenCount).To(Equal(2), "every reconcile must probe the vault again")
 
-				// Anything that can change the outcome lives in the spec, so a
-				// generation bump must send the probe to the vault again.
-				probesSoFar := tokenCount
-				hcp.Generation++
-				r.validateAzureKMSConfig(ctx, hcp)
-				condition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
-				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+				condition = meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
 				g.Expect(condition.ObservedGeneration).To(Equal(hcp.Generation))
-				g.Expect(tokenCount).To(Equal(probesSoFar+1), "a generation bump must re-probe the vault")
 			}
 		})
 	}

@@ -3381,20 +3381,6 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
-	// A successful probe is cached against the observed generation. The vault,
-	// the active key and the credential reference all live in the spec, so
-	// nothing that determines the result can change without bumping the
-	// generation. Re-running the probe on every reconcile (~60s) would mean
-	// recurring crypto operations, audit log entries and throttling exposure on
-	// a customer-owned resource, and the azure-kms-provider sidecar already
-	// exercises the same access path continuously at runtime. Unknown and False
-	// are deliberately not cached: those are the states reconciliation needs to
-	// converge out of.
-	if existing := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig)); existing != nil &&
-		existing.Status == metav1.ConditionTrue && existing.ObservedGeneration == hcp.Generation {
-		return
-	}
-
 	// keysTransport stays nil on every path except a private Key Vault on ARO
 	// HCP, where the keys client has to reach the vault through the private
 	// router instead of its public FQDN.
