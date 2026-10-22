@@ -13,6 +13,10 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/upsert"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -25,6 +29,8 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"go.uber.org/mock/gomock"
 )
 
 var autoNode = hyperv1.AutoNode{
@@ -563,7 +569,7 @@ func TestReconcileKarpenterOperator(t *testing.T) {
 				HCP:     hcp,
 			}
 
-			err := r.reconcileKarpenterOperator(cpContext, hcluster, "image", "image")
+			err := r.reconcileKarpenterOperator(cpContext, hcluster, "image", "image", &fakereleaseprovider.FakeReleaseProvider{})
 			g.Expect(err).ToNot(HaveOccurred())
 
 			updated := &hyperv1.HostedControlPlane{}
@@ -572,4 +578,48 @@ func TestReconcileKarpenterOperator(t *testing.T) {
 				"stale AutoNode status should be cleared when karpenter is disabled")
 		})
 	}
+
+	t.Run("When karpenter is enabled, it should pass the registry overrides to the karpenter-operator deployment", func(t *testing.T) {
+		g := NewWithT(t)
+		t.Setenv(karpenterutil.EnableStandaloneKarpenterOperatorEnvVar, "")
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				AutoNode: autoNode,
+			},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp).Build()
+		cpContext := controlplanecomponent.ControlPlaneContext{
+			Context:                t.Context(),
+			Client:                 fakeClient,
+			HCP:                    hcp,
+			ReleaseImageProvider:   testutil.FakeImageProvider(),
+			ApplyProvider:          upsert.NewApplyProvider(true),
+			SkipPredicate:          true,
+			SkipCertificateSigning: true,
+		}
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
+			Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode},
+		}
+
+		releaseProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(gomock.NewController(t))
+		releaseProvider.EXPECT().GetRegistryOverrides().Return(map[string]string{
+			"quay.io/openshift-release-dev": "mirror.example.com/openshift-release-dev",
+		}).AnyTimes()
+		releaseProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(map[string][]string{
+			"quay.io/openshift-release-dev": {"mirror.example.com/openshift-release-dev"},
+		}).AnyTimes()
+
+		r := &HostedClusterReconciler{Client: fakeClient}
+		g.Expect(r.reconcileKarpenterOperator(cpContext, hcluster, "image", "image", releaseProvider)).To(Succeed())
+
+		deployment := &appsv1.Deployment{}
+		g.Expect(fakeClient.Get(t.Context(), crclient.ObjectKey{Namespace: hcp.Namespace, Name: karpenteroperatorv2.ComponentName}, deployment)).To(Succeed())
+		container := deployment.Spec.Template.Spec.Containers[0]
+		g.Expect(container.Args).To(ContainElement("--registry-overrides=quay.io/openshift-release-dev=mirror.example.com/openshift-release-dev"))
+		g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: "OPENSHIFT_IMG_OVERRIDES", Value: "quay.io/openshift-release-dev=mirror.example.com/openshift-release-dev"}))
+	})
 }
