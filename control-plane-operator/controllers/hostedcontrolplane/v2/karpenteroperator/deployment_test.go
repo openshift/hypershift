@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/images"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
@@ -407,12 +408,17 @@ func TestSetIgnitionEnvVars(t *testing.T) {
 				},
 			},
 		},
+		"When the HyperShift operator has ENABLE_CPO_OVERRIDES set, it should pass it on": {
+			envVars:     map[string]string{controlplaneoperatoroverrides.CPOOverridesEnvVar: "1"},
+			expectedEnv: []corev1.EnvVar{{Name: controlplaneoperatoroverrides.CPOOverridesEnvVar, Value: "1"}},
+		},
 	}
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			g := NewWithT(t)
 			t.Setenv(images.SharedIngressHAProxyEnvVar, "")
+			t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "")
 			for envVarName, value := range tc.envVars {
 				t.Setenv(envVarName, value)
 			}
