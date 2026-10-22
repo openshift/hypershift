@@ -267,7 +267,17 @@ func TestAdaptDeployment(t *testing.T) {
 		hcp                   *hyperv1.HostedControlPlane
 		expectedTLSMinVersion string
 		expectedCipherSuites  string
+		wantError             bool
 	}{
+		{
+			name: "When a custom TLS profile is missing its configuration, it should report an error",
+			hcp: &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{
+				Configuration: &hyperv1.ClusterConfiguration{APIServer: &configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{Type: configv1.TLSProfileCustomType},
+				}},
+			}},
+			wantError: true,
+		},
 		{
 			name: "When TLS profile has empty cipher suites list, it should not add tls-cipher-suites flag",
 			hcp: &hyperv1.HostedControlPlane{
@@ -424,10 +434,18 @@ func TestAdaptDeployment(t *testing.T) {
 
 			cvo := &clusterVersionOperator{}
 			err = cvo.adaptDeployment(cpContext, deployment)
+			if tc.wantError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
 			g.Expect(err).ToNot(HaveOccurred())
 
 			container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
 			g.Expect(container).ToNot(BeNil())
+			if tc.expectedTLSMinVersion != "" || tc.expectedCipherSuites != "" {
+				g.Expect(container.Command[:2]).To(Equal([]string{"/bin/bash", "-c"}))
+				g.Expect(container.Args[:4]).To(Equal([]string{"3", "cluster-version-operator", "start", "--help"}))
+			}
 
 			if tc.expectedTLSMinVersion != "" {
 				g.Expect(container.Args).To(ContainElement(tc.expectedTLSMinVersion))
