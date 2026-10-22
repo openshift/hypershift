@@ -177,17 +177,28 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 		--crd-dir=cmd/install/assets/crds/hypershift-operator \
 		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
 
-.PHONY: verify-parallel
-verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema verify-capi-decoupling lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
+# Checks that conflict, such as deleting or mutating a directory another check
+# reads, must move to verify-serial-targets instead of running in parallel here.
+.PHONY: verify-parallel-targets
+verify-parallel-targets: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
+
+# Run conflicting checks sequentially after preparation.
+# Sync regenerates provider sources that decoupling builds and lint reads. Use
+# separate recursive recipes, not prerequisites, to preserve order under make -j.
+.PHONY: verify-serial-targets
+verify-serial-targets:
+	$(MAKE) verify-capi-sync
+	$(MAKE) verify-capi-decoupling
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-capi-decoupling verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
+verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
+	$(MAKE) verify-serial-targets
 	$(MAKE) verify-git-clean
 
 .PHONY: verify
 verify: generate update staticcheck fmt vet
-	$(MAKE) verify-capi-sync
-	$(MAKE) -j verify-parallel
+	$(MAKE) verify-serial-targets
+	$(MAKE) -j verify-parallel-targets
 	$(MAKE) verify-git-clean
 
 .PHONY: verify-quick

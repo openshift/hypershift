@@ -67,7 +67,7 @@ When the tool detects unauthorized dependencies, it provides:
 This tool runs automatically as part of:
 
 - `make verify` (full verification suite)
-- `make verify-parallel` (parallel verification tasks)
+- `make verify-parallel-targets` (parallel verification tasks)
 - Pre-commit hooks
 - CI/CD pipelines
 
