@@ -769,6 +769,71 @@ spec:
                         type: integer
                       name:
                         type: string
+                      privateLinks:
+                        description: |-
+                          PrivateLinks to the load balancer (max 8 private links).
+                          Only supported on the API server load balancer.
+                        items:
+                          description: PrivateLink configures an Azure private link.
+                          properties:
+                            allowedSubscriptions:
+                              description: AllowedSubscriptions is a list of subscriptions
+                                from which the private link can be accessed.
+                              items:
+                                type: string
+                              type: array
+                            autoApprovedSubscriptions:
+                              description: |-
+                                AutoApprovedSubscriptions is a list of subscription for which the connections to private link are automatically
+                                approved.
+                              items:
+                                type: string
+                              type: array
+                            enableProxyProtocol:
+                              description: EnableProxyProtocol indicates whether the
+                                private link service is enabled for proxy protocol
+                                or not.
+                              type: boolean
+                            lbFrontendIPConfigNames:
+                              description: |-
+                                LBFrontendIPConfigNames are the names of the load balancer FrontendIP to which the private link will forward
+                                requests. The specified frontend IP configs must have the private IP set.
+                              items:
+                                type: string
+                              type: array
+                            name:
+                              description: Name of the private link.
+                              type: string
+                            natIPConfigurations:
+                              description: NATIPConfigurations specify up to 8 NAT
+                                IP configurations for the private link.
+                              items:
+                                description: PrivateLinkNATIPConfiguration specifies
+                                  NAT IP configuration for the private link.
+                                properties:
+                                  allocationMethod:
+                                    description: 'AllocationMethod specifies how the
+                                      private link NAT IPs are allocated: "Static"
+                                      or "Dynamic".'
+                                    enum:
+                                    - Static
+                                    - Dynamic
+                                    type: string
+                                  privateIPAddress:
+                                    type: string
+                                  subnet:
+                                    description: Subnet from which the IP is allocated.
+                                    type: string
+                                required:
+                                - allocationMethod
+                                - subnet
+                                type: object
+                              type: array
+                          required:
+                          - lbFrontendIPConfigNames
+                          - natIPConfigurations
+                          type: object
+                        type: array
                       sku:
                         description: SKU defines an Azure load balancer SKU.
                         type: string
@@ -864,6 +929,71 @@ spec:
                         type: integer
                       name:
                         type: string
+                      privateLinks:
+                        description: |-
+                          PrivateLinks to the load balancer (max 8 private links).
+                          Only supported on the API server load balancer.
+                        items:
+                          description: PrivateLink configures an Azure private link.
+                          properties:
+                            allowedSubscriptions:
+                              description: AllowedSubscriptions is a list of subscriptions
+                                from which the private link can be accessed.
+                              items:
+                                type: string
+                              type: array
+                            autoApprovedSubscriptions:
+                              description: |-
+                                AutoApprovedSubscriptions is a list of subscription for which the connections to private link are automatically
+                                approved.
+                              items:
+                                type: string
+                              type: array
+                            enableProxyProtocol:
+                              description: EnableProxyProtocol indicates whether the
+                                private link service is enabled for proxy protocol
+                                or not.
+                              type: boolean
+                            lbFrontendIPConfigNames:
+                              description: |-
+                                LBFrontendIPConfigNames are the names of the load balancer FrontendIP to which the private link will forward
+                                requests. The specified frontend IP configs must have the private IP set.
+                              items:
+                                type: string
+                              type: array
+                            name:
+                              description: Name of the private link.
+                              type: string
+                            natIPConfigurations:
+                              description: NATIPConfigurations specify up to 8 NAT
+                                IP configurations for the private link.
+                              items:
+                                description: PrivateLinkNATIPConfiguration specifies
+                                  NAT IP configuration for the private link.
+                                properties:
+                                  allocationMethod:
+                                    description: 'AllocationMethod specifies how the
+                                      private link NAT IPs are allocated: "Static"
+                                      or "Dynamic".'
+                                    enum:
+                                    - Static
+                                    - Dynamic
+                                    type: string
+                                  privateIPAddress:
+                                    type: string
+                                  subnet:
+                                    description: Subnet from which the IP is allocated.
+                                    type: string
+                                required:
+                                - allocationMethod
+                                - subnet
+                                type: object
+                              type: array
+                          required:
+                          - lbFrontendIPConfigNames
+                          - natIPConfigurations
+                          type: object
+                        type: array
                       sku:
                         description: SKU defines an Azure load balancer SKU.
                         type: string
@@ -958,6 +1088,71 @@ spec:
                         type: integer
                       name:
                         type: string
+                      privateLinks:
+                        description: |-
+                          PrivateLinks to the load balancer (max 8 private links).
+                          Only supported on the API server load balancer.
+                        items:
+                          description: PrivateLink configures an Azure private link.
+                          properties:
+                            allowedSubscriptions:
+                              description: AllowedSubscriptions is a list of subscriptions
+                                from which the private link can be accessed.
+                              items:
+                                type: string
+                              type: array
+                            autoApprovedSubscriptions:
+                              description: |-
+                                AutoApprovedSubscriptions is a list of subscription for which the connections to private link are automatically
+                                approved.
+                              items:
+                                type: string
+                              type: array
+                            enableProxyProtocol:
+                              description: EnableProxyProtocol indicates whether the
+                                private link service is enabled for proxy protocol
+                                or not.
+                              type: boolean
+                            lbFrontendIPConfigNames:
+                              description: |-
+                                LBFrontendIPConfigNames are the names of the load balancer FrontendIP to which the private link will forward
+                                requests. The specified frontend IP configs must have the private IP set.
+                              items:
+                                type: string
+                              type: array
+                            name:
+                              description: Name of the private link.
+                              type: string
+                            natIPConfigurations:
+                              description: NATIPConfigurations specify up to 8 NAT
+                                IP configurations for the private link.
+                              items:
+                                description: PrivateLinkNATIPConfiguration specifies
+                                  NAT IP configuration for the private link.
+                                properties:
+                                  allocationMethod:
+                                    description: 'AllocationMethod specifies how the
+                                      private link NAT IPs are allocated: "Static"
+                                      or "Dynamic".'
+                                    enum:
+                                    - Static
+                                    - Dynamic
+                                    type: string
+                                  privateIPAddress:
+                                    type: string
+                                  subnet:
+                                    description: Subnet from which the IP is allocated.
+                                    type: string
+                                required:
+                                - allocationMethod
+                                - subnet
+                                type: object
+                              type: array
+                          required:
+                          - lbFrontendIPConfigNames
+                          - natIPConfigurations
+                          type: object
+                        type: array
                       sku:
                         description: SKU defines an Azure load balancer SKU.
                         type: string
