@@ -135,24 +135,23 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to add managementCluster to controller runtime manager: %w", err)
 	}
 
-	hypershiftClient, err := hypershiftclient.NewForConfig(managementKubeconfig)
-	if err != nil {
-		return fmt.Errorf("failed to create hypershift client: %w", err)
-	}
-
-	r := karpenter.Reconciler{
-		StandaloneAdapter:         standaloneAdapter,
-		Namespace:                 namespace,
-		ControlPlaneOperatorImage: controlPlaneOperatorImage,
-		ReleaseProvider:           &releaseinfo.RegistryClientProvider{},
-		HypershiftClient:          hypershiftClient,
-	}
-	if err := r.SetupWithManager(ctx, mgr, managementCluster); err != nil {
-		return fmt.Errorf("failed to setup controller with manager: %w", err)
-	}
-
 	if !standaloneAdapter {
-		// The standalone karpenter-operator approves CSRs and reconciles OpenshiftEC2NodeClasses, don't enable these in the adapter
+		// The standalone karpenter-operator owns these responsibilities, the adapter only runs the ignition controller.
+		hypershiftClient, err := hypershiftclient.NewForConfig(managementKubeconfig)
+		if err != nil {
+			return fmt.Errorf("failed to create hypershift client: %w", err)
+		}
+
+		r := karpenter.Reconciler{
+			Namespace:                 namespace,
+			ControlPlaneOperatorImage: controlPlaneOperatorImage,
+			ReleaseProvider:           &releaseinfo.RegistryClientProvider{},
+			HypershiftClient:          hypershiftClient,
+		}
+		if err := r.SetupWithManager(ctx, mgr, managementCluster); err != nil {
+			return fmt.Errorf("failed to setup controller with manager: %w", err)
+		}
+
 		mac := karpenter.MachineApproverController{}
 		if err := mac.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("failed to setup controller with manager: %w", err)
