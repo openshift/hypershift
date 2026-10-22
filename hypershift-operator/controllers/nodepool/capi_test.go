@@ -1481,6 +1481,7 @@ func TestCAPIReconcile(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-machineset",
 					Namespace: "test-namespace-test-cluster",
+					Labels:    map[string]string{capiv1.MachineDeploymentNameLabel: "test-nodepool"},
 					Annotations: map[string]string{
 						nodePoolAnnotation: "test-namespace/test-nodepool",
 					},
@@ -1497,6 +1498,12 @@ func TestCAPIReconcile(t *testing.T) {
 							},
 						},
 					},
+				},
+				// The MachineSet is fully rolled out, so the rollout is reported complete
+				// once the MachineDeployment counters agree (see sameUserData below).
+				Status: capiv1.MachineSetStatus{
+					Replicas:          ptr.To[int32](3),
+					AvailableReplicas: ptr.To[int32](3),
 				},
 			},
 			templates: []client.Object{
@@ -3650,11 +3657,12 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 					Namespace: "cp-ns",
 					Labels:    map[string]string{capiv1.MachineDeploymentNameLabel: tc.machineDeployment.Name},
 					Annotations: map[string]string{
-						capiv1.RevisionAnnotation: fmt.Sprintf("%d", tc.machineDeployment.Generation),
+						capiv1.RevisionAnnotation: tc.machineDeployment.Annotations[capiv1.RevisionAnnotation],
 					},
 				},
 				Status: capiv1.MachineSetStatus{
-					Replicas: tc.machineDeployment.Status.Replicas,
+					Replicas:          tc.machineDeployment.Status.Replicas,
+					AvailableReplicas: tc.machineDeployment.Status.AvailableReplicas,
 				},
 			}
 
@@ -4435,16 +4443,18 @@ func TestNewCAPI(t *testing.T) {
 
 func TestMachineDeploymentComplete(t *testing.T) {
 	two := int32(2)
-	three := int32(3)
 
-	// A single MachineSet at the current revision with matching replicas.
+	// A single MachineSet at the current revision, fully rolled out and available.
 	// Used for test cases where the MachineSet state should not block completion.
 	singleCurrentMS := []capiv1.MachineSet{
 		{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
 			},
-			Status: capiv1.MachineSetStatus{Replicas: ptr.To(int32(2))},
+			Status: capiv1.MachineSetStatus{
+				Replicas:          ptr.To(int32(2)),
+				AvailableReplicas: ptr.To(int32(2)),
+			},
 		},
 	}
 
@@ -4455,7 +4465,7 @@ func TestMachineDeploymentComplete(t *testing.T) {
 		expected    bool
 	}{
 		{
-			name: "When all v1beta1 and v1beta2 fields agree, it should return true",
+			name: "When all status counters agree and the current MachineSet is fully rolled out, it should return true",
 			md: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Generation:  2,
@@ -4470,6 +4480,143 @@ func TestMachineDeploymentComplete(t *testing.T) {
 				},
 			},
 			machineSets: singleCurrentMS,
+			expected:    true,
+		},
+		{
+			// CAPI >= 1.14 reports UpToDate=False for every Machine because it compares the kubelet
+			// version against the OCP release version, leaving UpToDateReplicas at 0. The rollout is
+			// still complete as long as the MachineSet finished rolling out.
+			// See https://github.com/kubernetes-sigs/cluster-api/issues/14086.
+			name: "When upToDateReplicas is zero but the current MachineSet is fully rolled out, it should return true",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  2,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+				},
+				Spec: capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           ptr.To(int32(2)),
+					UpToDateReplicas:   ptr.To(int32(0)),
+					AvailableReplicas:  ptr.To(int32(2)),
+					ObservedGeneration: 2,
+				},
+			},
+			machineSets: singleCurrentMS,
+			expected:    true,
+		},
+		{
+			name: "When upToDateReplicas is nil but the current MachineSet is fully rolled out, it should return true",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  2,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+				},
+				Spec: capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           ptr.To(int32(2)),
+					AvailableReplicas:  ptr.To(int32(2)),
+					ObservedGeneration: 2,
+				},
+			},
+			machineSets: singleCurrentMS,
+			expected:    true,
+		},
+		{
+			name: "When the current MachineSet is not fully available, it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  2,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+				},
+				Spec: capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           ptr.To(int32(2)),
+					AvailableReplicas:  ptr.To(int32(2)),
+					ObservedGeneration: 2,
+				},
+			},
+			machineSets: []capiv1.MachineSet{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+					},
+					Status: capiv1.MachineSetStatus{
+						Replicas:          ptr.To(int32(2)),
+						AvailableReplicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When the current MachineSet has fewer replicas than desired, it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  2,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+				},
+				Spec: capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           ptr.To(int32(2)),
+					AvailableReplicas:  ptr.To(int32(2)),
+					ObservedGeneration: 2,
+				},
+			},
+			machineSets: []capiv1.MachineSet{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+					},
+					Status: capiv1.MachineSetStatus{
+						Replicas:          ptr.To(int32(1)),
+						AvailableReplicas: ptr.To(int32(2)),
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When there is no MachineSet at the current revision, it should return false",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  2,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+				},
+				Spec: capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           ptr.To(int32(2)),
+					AvailableReplicas:  ptr.To(int32(2)),
+					ObservedGeneration: 2,
+				},
+			},
+			machineSets: []capiv1.MachineSet{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{capiv1.RevisionAnnotation: "1"},
+					},
+					Status: capiv1.MachineSetStatus{
+						Replicas:          ptr.To(int32(0)),
+						AvailableReplicas: ptr.To(int32(0)),
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When the desired replicas are zero and nothing is running, it should return true",
+			md: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  2,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+				},
+				Spec: capiv1.MachineDeploymentSpec{Replicas: ptr.To(int32(0))},
+				Status: capiv1.MachineDeploymentStatus{
+					Replicas:           ptr.To(int32(0)),
+					AvailableReplicas:  ptr.To(int32(0)),
+					ObservedGeneration: 2,
+				},
+			},
+			machineSets: []capiv1.MachineSet{},
 			expected:    true,
 		},
 		{
@@ -4492,37 +4639,31 @@ func TestMachineDeploymentComplete(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations: map[string]string{capiv1.RevisionAnnotation: "1"},
 					},
-					Status: capiv1.MachineSetStatus{Replicas: ptr.To(int32(2))},
+					Status: capiv1.MachineSetStatus{
+						Replicas:          ptr.To(int32(2)),
+						AvailableReplicas: ptr.To(int32(2)),
+					},
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
 					},
-					Status: capiv1.MachineSetStatus{Replicas: ptr.To(int32(0))},
+					Status: capiv1.MachineSetStatus{
+						Replicas:          ptr.To(int32(2)),
+						AvailableReplicas: ptr.To(int32(2)),
+					},
 				},
 			},
 			expected: false,
 		},
 		{
-			name: "When v1beta1 looks complete but v1beta2 upToDateReplicas disagrees, it should return false",
+			name: "When the MachineDeployment availableReplicas does not match spec, it should return false",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 2},
-				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{
-					Replicas:           ptr.To(int32(2)),
-					UpToDateReplicas:   ptr.To(int32(0)),
-					AvailableReplicas:  ptr.To(int32(2)),
-					ObservedGeneration: 2,
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  2,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
 				},
-			},
-			machineSets: singleCurrentMS,
-			expected:    false,
-		},
-		{
-			name: "When v1beta1 looks complete but v1beta2 availableReplicas disagrees, it should return false",
-			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 2},
-				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
+				Spec: capiv1.MachineDeploymentSpec{Replicas: &two},
 				Status: capiv1.MachineDeploymentStatus{
 					Replicas:           ptr.To(int32(2)),
 					UpToDateReplicas:   ptr.To(int32(2)),
@@ -4534,59 +4675,39 @@ func TestMachineDeploymentComplete(t *testing.T) {
 			expected:    false,
 		},
 		{
-			name: "When v1beta1 is not complete, it should return false without checking v1beta2",
+			name: "When the MachineDeployment replicas does not match spec, it should return false",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 2},
-				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status:     capiv1.MachineDeploymentStatus{Replicas: ptr.To(int32(3)), AvailableReplicas: ptr.To(int32(2)), ObservedGeneration: 2},
-			},
-			machineSets: singleCurrentMS,
-			expected:    false,
-		},
-		{
-			name: "When v1beta2 status is nil, it should return false",
-			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 1},
-				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status:     capiv1.MachineDeploymentStatus{Replicas: ptr.To(int32(2)), AvailableReplicas: ptr.To(int32(2)), ObservedGeneration: 1},
-			},
-			machineSets: singleCurrentMS,
-			expected:    false,
-		},
-		{
-			name: "When v1beta1 replicas does not match spec, it should return false",
-			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 2},
-				Spec:       capiv1.MachineDeploymentSpec{Replicas: &three},
-				Status: capiv1.MachineDeploymentStatus{
-					Replicas:           ptr.To(int32(2)),
-					UpToDateReplicas:   ptr.To(int32(2)),
-					AvailableReplicas:  ptr.To(int32(2)),
-					ObservedGeneration: 2,
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  2,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
 				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: ptr.To(int32(3)), AvailableReplicas: ptr.To(int32(2)), ObservedGeneration: 2},
 			},
 			machineSets: singleCurrentMS,
 			expected:    false,
 		},
 		{
-			name: "When v1beta2 upToDateReplicas is nil, it should return false",
+			name: "When the MachineDeployment has not observed its current generation, it should return false",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 2},
-				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
-				Status: capiv1.MachineDeploymentStatus{
-					Replicas:           ptr.To(int32(2)),
-					AvailableReplicas:  ptr.To(int32(2)),
-					ObservedGeneration: 2,
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  3,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
 				},
+				Spec:   capiv1.MachineDeploymentSpec{Replicas: &two},
+				Status: capiv1.MachineDeploymentStatus{Replicas: ptr.To(int32(2)), AvailableReplicas: ptr.To(int32(2)), ObservedGeneration: 2},
 			},
 			machineSets: singleCurrentMS,
 			expected:    false,
 		},
 		{
-			name: "When v1beta2 availableReplicas is nil, it should return false",
+			name: "When the MachineDeployment availableReplicas is nil, it should return false",
 			md: &capiv1.MachineDeployment{
-				ObjectMeta: metav1.ObjectMeta{Generation: 2},
-				Spec:       capiv1.MachineDeploymentSpec{Replicas: &two},
+				ObjectMeta: metav1.ObjectMeta{
+					Generation:  2,
+					Annotations: map[string]string{capiv1.RevisionAnnotation: "2"},
+				},
+				Spec: capiv1.MachineDeploymentSpec{Replicas: &two},
 				Status: capiv1.MachineDeploymentStatus{
 					Replicas:           ptr.To(int32(2)),
 					AvailableReplicas:  nil,
@@ -4594,21 +4715,6 @@ func TestMachineDeploymentComplete(t *testing.T) {
 					ObservedGeneration: 2,
 				},
 			},
-			machineSets: singleCurrentMS,
-			expected:    false,
-		},
-		{
-			name: "When desired replicas is zero and v1beta2 fields are nil, it should return false",
-			md: func() *capiv1.MachineDeployment {
-				zero := int32(0)
-				return &capiv1.MachineDeployment{
-					ObjectMeta: metav1.ObjectMeta{Generation: 2},
-					Spec:       capiv1.MachineDeploymentSpec{Replicas: &zero},
-					Status: capiv1.MachineDeploymentStatus{
-						Replicas: ptr.To(int32(0)), AvailableReplicas: ptr.To(int32(0)), ObservedGeneration: 2,
-					},
-				}
-			}(),
 			machineSets: singleCurrentMS,
 			expected:    false,
 		},
