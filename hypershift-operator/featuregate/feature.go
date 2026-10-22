@@ -69,21 +69,30 @@ const (
 	// owner: @typeid
 	// alpha: v0.1.84
 	AWSManagedDNS featuregate.Feature = "AWSManagedDNS"
+
+	// HostedClusterAutoscalerConfiguration enables additional HostedCluster.spec.autoscaling
+	// fields for configuring the per-hosted-cluster cluster-autoscaler, including node/pod
+	// behavior, resource limits, cordoning, and new-pod scale-up delay.
+	// owner: @georgelipceanu
+	// alpha: v0.1.79
+	// beta: x.y.z
+	HostedClusterAutoscalerConfiguration featuregate.Feature = "HostedClusterAutoscalerConfiguration"
 )
 
 // Initialize new features here
 var (
 	allFeatures = featuregates.NewFeatureSetAwareFeatures()
 
-	aroHCPManagedIdentitiesFeature = featuregates.NewFeature(AROHCPManagedIdentities, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	openStackFeature               = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	gcpHCPFeature                  = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	hcpEtcdBackupFeature           = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	karpenterOperatorFeature       = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	etcdShardingFeature            = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	osStreamsFeature               = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
-	deterministicLBIPFeature       = featuregates.NewFeature(DeterministicLBIP, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	awsManagedDNSFeature           = featuregates.NewFeature(AWSManagedDNS, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	aroHCPManagedIdentitiesFeature              = featuregates.NewFeature(AROHCPManagedIdentities, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	openStackFeature                            = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	gcpHCPFeature                               = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	hcpEtcdBackupFeature                        = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	karpenterOperatorFeature                    = featuregates.NewFeature(KarpenterOperator, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	etcdShardingFeature                         = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	osStreamsFeature                            = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
+	deterministicLBIPFeature                    = featuregates.NewFeature(DeterministicLBIP, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	awsManagedDNSFeature                        = featuregates.NewFeature(AWSManagedDNS, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	hostedClusterAutoscalerConfigurationFeature = featuregates.NewFeature(HostedClusterAutoscalerConfiguration, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -97,6 +106,7 @@ func init() {
 	allFeatures.AddFeature(osStreamsFeature)
 	allFeatures.AddFeature(deterministicLBIPFeature)
 	allFeatures.AddFeature(awsManagedDNSFeature)
+	allFeatures.AddFeature(hostedClusterAutoscalerConfigurationFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))

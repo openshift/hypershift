@@ -439,6 +439,12 @@ spec:
                           It must be between 0 and 86400 (24 hours).
                           When set to 0, this means scale down evaluation will resume immediately after node deletion, without any delay.
                           When omitted, the autoscaler defaults to 0s.
+
+                          When resourceLimits configures a minimum greater than 0 for cores, memory, or any gpu
+                          type, this field must be explicitly set to a value greater than 0: with no delay, the
+                          autoscaler can resume scale-down evaluation and delete a second node before Cluster API
+                          has fully accounted for a prior deletion, transiently dropping aggregate capacity below
+                          the configured floor.
                         format: int32
                         maximum: 86400
                         minimum: 0
