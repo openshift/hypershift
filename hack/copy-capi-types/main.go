@@ -27,6 +27,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -36,7 +37,9 @@ import (
 	"go/token"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -77,15 +80,15 @@ func main() {
 	localize := flag.Bool("localize", false, "localize CAPI types into the provider module instead of copying a package")
 	dir := flag.String("dir", "", "localize: provider module root (the directory holding its go.mod)")
 	module := flag.String("module", "", "localize: module path declared by that go.mod")
-	capiRoot := flag.String("capi-root", "", "localize: source root of the CAPI module this provider resolves to")
+	capiModDir := flag.String("capi-mod-dir", "", "localize: module directory whose build list resolves the CAPI packages (hack/capi-vendor/<provider>)")
 	outName := flag.String("out", "capicore", "localize: subdirectory to hold the extracted CAPI types")
 	flag.Parse()
 
 	if *localize {
-		if *dir == "" || *module == "" || *capiRoot == "" {
-			log.Fatal("--localize requires --dir, --module and --capi-root")
+		if *dir == "" || *module == "" || *capiModDir == "" {
+			log.Fatal("--localize requires --dir, --module and --capi-mod-dir")
 		}
-		runLocalize(*dir, *module, *capiRoot, *outName)
+		runLocalize(context.Background(), *dir, *module, *capiModDir, *outName)
 		return
 	}
 
@@ -818,6 +821,46 @@ func collectUsedPackages(file *ast.File) map[string]bool {
 
 const capiImportPrefix = "sigs.k8s.io/cluster-api/"
 
+// filterEnv returns env without entries for the named variables. Appending to
+// the inherited environment does not override a variable that is already set:
+// the child's getenv returns the first match, so an inherited entry would
+// shadow the appended one.
+func filterEnv(env []string, names ...string) []string {
+	filtered := make([]string, 0, len(env))
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		if slices.Contains(names, name) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
+// packageDir returns the source directory of importPath as resolved by the
+// module in modDir. Asking go list, rather than joining the import path onto
+// one CAPI module root, keeps working as CAPI splits packages into modules of
+// their own: v1.14 moved api/ into sigs.k8s.io/cluster-api/api.
+func packageDir(ctx context.Context, modDir, importPath string) (string, error) {
+	cmd := exec.CommandContext(ctx, "go", "list", "-f", "{{.Dir}}", importPath)
+	cmd.Dir = modDir
+	// The copier itself runs outside module mode; resolution needs it. Strip any
+	// inherited values first, or they would shadow the ones set here.
+	cmd.Env = append(filterEnv(cmd.Environ(), "GO111MODULE", "GOWORK", "GOFLAGS"),
+		"GO111MODULE=on", "GOWORK=off", "GOFLAGS=")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("go list %s in %s: %w: %s", importPath, modDir, err, strings.TrimSpace(stderr.String()))
+	}
+	dir := strings.TrimSpace(string(out))
+	if dir == "" {
+		return "", fmt.Errorf("go list %s in %s: no source directory", importPath, modDir)
+	}
+	return dir, nil
+}
+
 // capiPackage is one parsed CAPI source package that a provider draws from.
 type capiPackage struct {
 	importPath string
@@ -839,7 +882,7 @@ type capiDecl struct {
 	spec ast.Spec
 }
 
-func runLocalize(dir, modulePath, capiRoot, outName string) {
+func runLocalize(ctx context.Context, dir, modulePath, capiModDir, outName string) {
 	providerFiles := collectProviderFiles(dir, outName)
 	if len(providerFiles) == 0 {
 		log.Fatalf("no Go files found under %s", dir)
@@ -851,7 +894,7 @@ func runLocalize(dir, modulePath, capiRoot, outName string) {
 		return
 	}
 
-	pkgs, closure, extraImports := computeClosure(capiRoot, seeds)
+	pkgs, closure, extraImports := computeClosure(ctx, capiModDir, seeds)
 
 	for pkgPath, syms := range closure {
 		if len(syms) == 0 {
@@ -911,7 +954,7 @@ func collectSeeds(providerFiles []string) map[string]map[string]bool {
 // loading CAPI packages on demand and following references across them. It
 // returns the loaded packages, the symbols to extract from each, and the
 // non-CAPI imports those declarations need.
-func computeClosure(capiRoot string, seeds map[string]map[string]bool) (
+func computeClosure(ctx context.Context, capiModDir string, seeds map[string]map[string]bool) (
 	map[string]*capiPackage, map[string]map[string]bool, map[string]map[string]string,
 ) {
 	pkgs := map[string]*capiPackage{}
@@ -935,7 +978,7 @@ func computeClosure(capiRoot string, seeds map[string]map[string]bool) (
 		}
 		pkg, ok := pkgs[item.pkgPath]
 		if !ok {
-			pkg = loadCAPIPackage(capiRoot, item.pkgPath)
+			pkg = loadCAPIPackage(ctx, capiModDir, item.pkgPath)
 			pkgs[item.pkgPath] = pkg
 		}
 		d, ok := pkg.decls[item.symbol]
@@ -1059,9 +1102,12 @@ func capiRefs(node ast.Node, aliases map[string]string) map[string]map[string]bo
 	return refs
 }
 
-func loadCAPIPackage(capiRoot, importPath string) *capiPackage {
+func loadCAPIPackage(ctx context.Context, capiModDir, importPath string) *capiPackage {
 	subPath := strings.TrimPrefix(importPath, capiImportPrefix)
-	srcDir := filepath.Join(capiRoot, subPath)
+	srcDir, err := packageDir(ctx, capiModDir, importPath)
+	if err != nil {
+		log.Fatalf("localize: %v", err)
+	}
 	entries, err := filepath.Glob(filepath.Join(srcDir, "*.go"))
 	if err != nil || len(entries) == 0 {
 		log.Fatalf("localize: no sources for %s under %s", importPath, srcDir)
