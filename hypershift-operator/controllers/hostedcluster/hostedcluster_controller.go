@@ -882,6 +882,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.EtcdBackupSucceeded,
 			hyperv1.ConfigOperatorReconciliationSucceeded,
 		}
+		// GCPFirewallRulesReady is GCP-specific; only propagate it for GCP
+		// HostedClusters so non-GCP clusters don't gain an Unknown condition.
+		if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
+			hcpConditions = append(hcpConditions, hyperv1.GCPFirewallRulesReady)
+		}
 
 		if hcluster.Spec.Platform.AWS != nil && hcluster.Spec.Platform.AWS.ManagedDNS.IngressDomainPrefix != "" {
 			hcpConditions = append(hcpConditions, hyperv1.AWSManagedDNSAvailable)
@@ -902,6 +907,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if hcp != nil {
 				hcpCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(conditionType))
 				if hcpCondition != nil {
+					if conditionType == hyperv1.GCPFirewallRulesReady {
+						hcpCondition = gcpFirewallRulesReadyCondition(hcp, hcpCondition)
+					}
 					condition = hcpCondition
 				} else {
 					condition.Message = "Condition not found in the HCP"
@@ -2855,6 +2863,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.PrivateIngressControllerAnnotation,
 		hyperv1.IngressControllerLoadBalancerScope,
 		hyperv1.CleanupCloudResourcesAnnotation,
+		hyperv1.GCPFirewallSkipDeletionAnnotation,
 		hyperv1.ControlPlanePriorityClass,
 		hyperv1.APICriticalPriorityClass,
 		hyperv1.EtcdPriorityClass,
