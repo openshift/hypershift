@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"testing"
@@ -219,7 +220,11 @@ type ConfigurableClusterOptions struct {
 func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
 	createOption := PlatformAgnosticOptions{
 		RawCreateOptions: core.RawCreateOptions{
-			ReleaseImage:                     o.LatestReleaseImage,
+			// EXPERIMENT (main-CPO-on-4.20): base-create version is hard-pinned to 4.20.42.
+			// Upgrade tests create at PreviousReleaseImage (4.20.42) and target
+			// LatestReleaseImage (4.20.43); base clusters must be 4.20.42 regardless of
+			// the Latest/Previous overloading, so read the pinned constant directly here.
+			ReleaseImage:                     PinnedGuestReleaseImage,
 			NodePoolReplicas:                 2,
 			ControlPlaneAvailabilityPolicy:   string(hyperv1.SingleReplica),
 			InfrastructureAvailabilityPolicy: string(hyperv1.SingleReplica),
@@ -264,6 +269,15 @@ func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
 		for k, v := range o.ConfigurableClusterOptions.Annotations {
 			createOption.Annotations = append(createOption.Annotations, fmt.Sprintf("%s=%s", k, v))
 		}
+	}
+
+	// EXPERIMENT (main-CPO-on-4.20): set the control-plane-operator-image annotation to the
+	// CPO resolved from the passed payload in Complete(). This annotation is precedence #1
+	// in GetControlPlaneOperatorImage and is the authoritative override mechanism, so every
+	// created HostedCluster runs the PR's CPO against the pinned 4.20.x guest.
+	if o.ConfigurableClusterOptions.ControlPlaneOperatorImage != "" {
+		createOption.Annotations = append(createOption.Annotations,
+			fmt.Sprintf("%s=%s", hyperv1.ControlPlaneOperatorImageAnnotation, o.ConfigurableClusterOptions.ControlPlaneOperatorImage))
 	}
 
 	if len(o.ConfigurableClusterOptions.ServiceCIDR) != 0 {
@@ -482,6 +496,11 @@ func (o *Options) DefaultGCPOptions() hypershiftgcp.RawCreateOptions {
 // up additional contextual defaulting.
 func (o *Options) Complete() error {
 
+	// EXPERIMENT (main-CPO-on-4.20): capture the CI-passed payload BEFORE any override-test
+	// release selection below can replace it. The CPO must be resolved from the payload CI
+	// actually passed in (RELEASE_IMAGE_LATEST), not from a TEST_CPO_OVERRIDE release.
+	ciPayload := o.LatestReleaseImage
+
 	if shouldTestCPOOverride() {
 		o.LatestReleaseImage, o.PreviousReleaseImage = controlplaneoperatoroverrides.LatestOverrideTestReleases(string(o.Platform))
 	}
@@ -505,6 +524,36 @@ func (o *Options) Complete() error {
 	if len(o.PreviousReleaseImage) == 0 {
 		o.PreviousReleaseImage = o.LatestReleaseImage
 	}
+
+	// EXPERIMENT (main-CPO-on-4.20): hard-pin the guest release to 4.20.42 (base) and
+	// 4.20.43 (upgrade target), and override the CPO to the one built from the PR under
+	// test. ciPayload (captured above) embeds that CPO as its "hypershift" component image;
+	// resolve it, then pin the guest versions. Fall back to the resolved LatestReleaseImage
+	// if ciPayload was empty (non-CI local runs with no --e2e.latest-release-image).
+	payloadForCPO := ciPayload
+	if payloadForCPO == "" {
+		payloadForCPO = o.LatestReleaseImage
+	}
+	cpoCtx, cpoCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	resolvedCPO, err := ResolveCPOImageFromPayload(cpoCtx, payloadForCPO, o.ConfigurableClusterOptions.PullSecretFile)
+	cpoCancel()
+	if err != nil {
+		return fmt.Errorf("failed to resolve CPO image from passed payload: %w", err)
+	}
+	o.ConfigurableClusterOptions.ControlPlaneOperatorImage = resolvedCPO.CPOImage
+	// Pin the whole version ladder, all DERIVED from the base HC (4.20.42). See
+	// pinned_guest_cpo.go for the skew math. Base-create version is 4.20.42
+	// (DefaultClusterOptions reads PinnedGuestReleaseImage directly). Upgrade tests create
+	// at PreviousReleaseImage (4.20.41) and bump to LatestReleaseImage (4.20.42 == HC, so
+	// the upgrade never exceeds the HC version). N-1..N-4 are the prev-minor nodepool
+	// releases (4.19/4.18/4.17 supported, 4.16 unsupported-by-design for the N4 test).
+	o.PreviousReleaseImage = PinnedGuestPreviousReleaseImage
+	o.LatestReleaseImage = PinnedGuestUpgradeReleaseImage
+	o.N1MinorReleaseImage = PinnedGuestN1ReleaseImage
+	o.N2MinorReleaseImage = PinnedGuestN2ReleaseImage
+	o.N3MinorReleaseImage = PinnedGuestN3ReleaseImage
+	o.N4MinorReleaseImage = PinnedGuestN4ReleaseImage
+	LogExperimentPinning(log.Printf, "v1 options.Complete", resolvedCPO, PinnedGuestReleaseImage, PinnedGuestUpgradeReleaseImage)
 
 	o.IsRunningInCI = os.Getenv("OPENSHIFT_CI") == "true"
 

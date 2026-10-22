@@ -22,6 +22,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 )
 
 // EnvVarSpec describes an environment variable used by the test suite
@@ -187,26 +189,33 @@ func init() {
 		"Comma-separated list of Azure subscription IDs permitted to create Private Endpoints.",
 		false,
 	)
-	// Release image env vars for lifecycle tests
-	RegisterEnvVar(
+	// Release image env vars for lifecycle tests.
+	// EXPERIMENT (main-CPO-on-4.20): pin the upgrade target to 4.20.43 and the
+	// previous/N-minor images to 4.20.42 so upgrade and prev-release tests use the pinned
+	// guest versions by default instead of whatever the job wired in.
+	RegisterEnvVarWithDefault(
 		"E2E_LATEST_RELEASE_IMAGE",
 		"Latest OCP release image for control plane upgrade tests.",
 		false,
+		e2eutil.PinnedGuestUpgradeReleaseImage,
 	)
-	RegisterEnvVar(
+	RegisterEnvVarWithDefault(
 		"E2E_PREVIOUS_RELEASE_IMAGE",
-		"N-1 OCP release image (previous minor) for control plane upgrade tests.",
+		"Create-from OCP release image (lower z-stream of the base minor) for upgrade tests.",
 		false,
+		e2eutil.PinnedGuestPreviousReleaseImage,
 	)
-	RegisterEnvVar(
+	RegisterEnvVarWithDefault(
 		"E2E_N1_RELEASE_IMAGE",
 		"N-1 minor release image for NodePool previous-release tests.",
 		false,
+		e2eutil.PinnedGuestN1ReleaseImage,
 	)
-	RegisterEnvVar(
+	RegisterEnvVarWithDefault(
 		"E2E_N2_RELEASE_IMAGE",
 		"N-2 minor release image for NodePool previous-release tests.",
 		false,
+		e2eutil.PinnedGuestN2ReleaseImage,
 	)
 	RegisterEnvVar(
 		"E2E_AZURE_CREDENTIALS_FILE",
