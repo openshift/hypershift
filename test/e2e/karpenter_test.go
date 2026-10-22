@@ -6,6 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -17,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/smithy-go"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
@@ -32,6 +34,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"github.com/openshift/hypershift/test/e2e/util/autonode"
 	dto "github.com/prometheus/client_model/go"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -93,6 +96,39 @@ func TestKarpenter(t *testing.T) {
 			t.Run("OpenshiftEC2NodeClass version field and MetadataOptions", testNodeClassVersionField(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion, pullSecretFile))
 			t.Run("Capacity reservation selector propagation", testCapacityReservation(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
 			t.Run("Arbitrary subnet propagation", testArbitrarySubnet(ctx, mgtClient, guestClient, hostedCluster, awsCredsFile, awsRegion))
+			t.Run("Local Zone bootstrap and workload", func(t *testing.T) {
+				autonode.RunLocalZoneTest(ctx, t, guestClient, hostedCluster, ec2Client(awsCredsFile, awsRegion), os.Getenv, func(ctx context.Context, zone string) (string, func()) {
+					g := NewWithT(t)
+					ec2client := ec2Client(awsCredsFile, awsRegion)
+					vpcID := hostedCluster.Spec.Platform.AWS.CloudProviderConfig.VPC
+					vpcs, err := ec2client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{VpcIds: []string{vpcID}})
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(vpcs.Vpcs).To(HaveLen(1))
+					g.Expect(aws.ToString(vpcs.Vpcs[0].CidrBlock)).To(Equal("10.0.0.0/16"), "CreateTestSubnet requires the standard test VPC CIDR; use v2 with an existing subnet for custom VPCs")
+					subnetCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Hour)
+					t.Cleanup(cancel)
+					subnetID, cleanup := e2eutil.CreateTestSubnet(subnetCtx, t, ec2client, vpcID, zone, hostedCluster.Spec.InfraID, hostedCluster.Name, e2eutil.E2ETagsFromEnvironment())
+					return subnetID, func() {
+						cleanup()
+						cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+						defer cancel()
+						err := wait.PollUntilContextTimeout(cleanupCtx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+							_, err := ec2client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{SubnetIds: []string{subnetID}})
+							if err == nil {
+								return false, nil
+							}
+							var apiErr smithy.APIError
+							if errors.As(err, &apiErr) && apiErr.ErrorCode() == "InvalidSubnetID.NotFound" {
+								return true, nil
+							}
+							return false, err
+						})
+						if err != nil {
+							t.Errorf("cleanup: test subnet %s was not confirmed deleted: %v", subnetID, err)
+						}
+					}
+				})
+			})
 			t.Run("OpenshiftEC2NodeClass Kubelet propagation", testKubeletPropagation(ctx, mgtClient, guestClient, hostedCluster))
 		})
 

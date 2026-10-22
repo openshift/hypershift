@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"github.com/openshift/hypershift/test/e2e/util/autonode"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 	dto "github.com/prometheus/client_model/go"
@@ -108,6 +109,27 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift] Karpenter",
 // ---------------------------------------------------------------------------
 // Plumbing tests — stateless validation of Karpenter infrastructure
 // ---------------------------------------------------------------------------
+
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:AutoNode] Local Zone bootstrap and workload", Label("lifecycle", "karpenter", "autonode-local-zone"), Serial, func() {
+	It("should register a new Ready node in the requested Local Zone subnet and complete its workload", func() {
+		configured := false
+		for _, name := range []string{"E2E_AUTONODE_LOCAL_ZONE", "E2E_AUTONODE_LOCAL_ZONE_SUBNET_ID", "E2E_AUTONODE_LOCAL_ZONE_INSTANCE_TYPE", "E2E_AUTONODE_LOCAL_ZONE_VOLUME_TYPE"} {
+			configured = configured || internal.GetEnvVarValue(name) != ""
+		}
+		if !configured {
+			Skip("Local Zone coverage not requested; set E2E_AUTONODE_LOCAL_ZONE and its subnet, instance and volume inputs")
+		}
+		tc := internal.GetTestContext()
+		hc, err := tc.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(hc.Spec.Platform.Type).To(Equal(hyperv1.AWSPlatform), "requested Local Zone coverage requires AWS")
+		Expect(hc.Spec.Platform.AWS).NotTo(BeNil())
+		hcClient, err := tc.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
+		ec2client := v2util.NewEC2Client(tc.Context, internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE"), hc.Spec.Platform.AWS.Region)
+		autonode.RunLocalZoneTest(tc.Context, GinkgoTB(), hcClient, hc, ec2client, internal.GetEnvVarValue, nil)
+	})
+})
 
 func KarpenterPlumbingTests(getTestCtx internal.TestContextGetter) {
 	Context("[Feature:AutoNode] Karpenter Plumbing", func() {
