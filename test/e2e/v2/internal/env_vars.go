@@ -132,6 +132,9 @@ func maskSensitiveValue(name, value string) string {
 }
 
 func init() {
+	RegisterEnvVar("SSH_SOURCE_CIDR", "Optional CIDR permitted for AWS worker journal SSH diagnostics during destroy; the diagnostic consumer uses 0.0.0.0/0 when empty.", false)
+	RegisterEnvVar("E2E_EXPECTED_NODE_POOLS", "JSON map of initial NodePool names to replicas from rendered creation intent; optional for standalone suites.", false)
+	RegisterEnvVar("E2E_HEALTH_WORKER_PHASE", "Worker applicability for health assertions: after discovers current workers with a ten-minute budget; empty preserves initial intent or standalone discovery.", false)
 	// Register environment variables used by the test suite
 	RegisterEnvVar(
 		"E2E_HOSTED_CLUSTER_NAME",
@@ -179,6 +182,16 @@ func init() {
 	)
 	// Release image env vars for lifecycle tests
 	RegisterEnvVar(
+		"E2E_CONDITION_DIAGNOSTIC_UPGRADE_TARGET",
+		"Optional CP upgrade target for asserting health and failure diagnostics; must equal E2E_LATEST_RELEASE_IMAGE. The AWS runner sets this from the first child of ordinary CP and AutoNode upgrade fixtures, independently of release-version gates.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_CONDITION_DIAGNOSTIC_RELEASE_IMAGE",
+		"Post-control-plane-upgrade release selector for asserting health and failure diagnostics; must equal E2E_LATEST_RELEASE_IMAGE. The runner sets this per child after a verified successful ordinary CP spec; absent preserves initial previous-with-latest-fallback gates.",
+		false,
+	)
+	RegisterEnvVar(
 		"E2E_LATEST_RELEASE_IMAGE",
 		"Latest OCP release image for control plane upgrade tests.",
 		false,
@@ -197,6 +210,83 @@ func init() {
 		"E2E_N2_RELEASE_IMAGE",
 		"N-2 minor release image for NodePool previous-release tests.",
 		false,
+	)
+	RegisterEnvVar(
+		"E2E_N3_RELEASE_IMAGE",
+		"N-3 minor release image for AWS NodePool supported-version skew tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_N4_RELEASE_IMAGE",
+		"N-4 minor release image for AWS NodePool unsupported-version skew tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_AWS_EBS_KMS_KEY_ARN",
+		"AWS KMS key ARN or alias for NodePool root EBS encryption; empty exercises the default EBS encryption key in a separate run.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_AWS_KMS_KEY_ARN",
+		"AWS KMS key ARN supplied to creation of the custom-config HostedCluster for etcd encryption.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_AWS_KMS_KEY_ALIAS",
+		"Optional AWS etcd KMS alias resolved through DescribeKey before custom-config creation; also supply it to run-tests for independent identity verification.",
+		false,
+	)
+	RegisterEnvVarWithDefault(
+		"E2E_DESTROY_TIMEOUT",
+		"Total destroy-guests retry budget, separate from the per-attempt cluster grace period; positive Go duration.",
+		false,
+		"2h",
+	)
+	RegisterEnvVar(
+		"AWS_OIDC_S3_BUCKET_NAME",
+		"Existing public S3 bucket for automatic suite-owned AWS service-account OIDC discovery and JWKS publication; required unless an external issuer and signing key are supplied.",
+		false,
+	)
+	RegisterEnvVar(
+		"AWS_OIDC_S3_CREDENTIALS_FILE",
+		"Optional separate AWS S3 credentials/config file for shared OIDC publication and cleanup; falls back to AWS_GUEST_INFRA_CREDENTIALS_FILE.",
+		false,
+	)
+	RegisterEnvVar(
+		"AWS_OIDC_S3_REGION",
+		"Optional shared OIDC bucket region; falls back to HYPERSHIFT_AWS_REGION.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_AWS_SHARED_OIDC_ISSUER_URL",
+		"Existing AWS IAM service-account OIDC issuer reused by all selected AWS fixtures; pair with E2E_AWS_SHARED_OIDC_SIGNING_KEY_FILE. Does not create or own the provider.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_AWS_SHARED_OIDC_SIGNING_KEY_FILE",
+		"PKCS1 RSA private-key PEM file matching the existing shared AWS OIDC issuer; consumed only by create-guests and never stored in the manifest.",
+		false,
+	)
+	RegisterEnvVar(
+		"PROW_JOB_ID",
+		"Optional Prow job identifier used to tag AWS resources created by lifecycle tests.",
+		false,
+	)
+	RegisterEnvVar(
+		"TEST_CPO_OVERRIDE",
+		"Legacy explicit CPO override request; create-guests also requires the dedicated aws-e2e-v2-cpo-overrides test plan.",
+		false,
+	)
+	RegisterEnvVar(
+		"E2E_HYPERSHIFT_OPERATOR_NAMESPACE",
+		"Optional namespace selecting one already-installed HyperShift operator for read-only CPO override prerequisite validation; empty discovers a unique operator.",
+		false,
+	)
+	RegisterEnvVarWithDefault(
+		"E2E_AWS_LICENSED_INSTANCE_TYPE",
+		"AWS instance type supporting the licensed Windows AMI test. Requires bare-metal capacity and quota.",
+		false,
+		"m5.metal",
 	)
 	RegisterEnvVar(
 		"E2E_AZURE_CREDENTIALS_FILE",

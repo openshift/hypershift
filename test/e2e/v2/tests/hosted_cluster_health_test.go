@@ -24,69 +24,138 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpconst "github.com/openshift/hypershift/pkg/controlplane"
-	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/netutil"
 	hyperutil "github.com/openshift/hypershift/support/util"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
+	corev1 "k8s.io/api/core/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/blang/semver"
 )
 
 // RegisterHostedClusterHealthTests registers all hosted cluster health test specs.
 func RegisterHostedClusterHealthTests(getTestCtx internal.TestContextGetter) {
 	ValidateHostedClusterConditionsTest(getTestCtx)
+	ValidateHostedClusterNodesTest(getTestCtx)
+	ValidateControlPlaneVersionSteadyStateTest(getTestCtx)
 	EnsureCAPIFinalizersTest(getTestCtx)
 	EnsureFeatureGateStatusTest(getTestCtx)
 	EnsurePayloadArchSetCorrectlyTest(getTestCtx)
 	ValidateConfigurationStatusTest(getTestCtx)
+	ValidateControlPlaneEndpointTest(getTestCtx)
+}
+
+func ValidateControlPlaneEndpointTest(getTestCtx internal.TestContextGetter) {
+	It("should publish the configured API hostname rather than an internal placeholder", Label("hosted-cluster-health-management"), func() {
+		tc := getTestCtx()
+		hc, err := tc.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		strategy := netutil.ServicePublishingStrategyByTypeByHC(hc, hyperv1.APIServer)
+		Expect(strategy).NotTo(BeNil())
+		Expect(hc.Status.ControlPlaneEndpoint.Host).NotTo(BeEmpty())
+		if strategy.Route != nil && strategy.Route.Hostname != "" {
+			Expect(hc.Status.ControlPlaneEndpoint.Host).To(Equal(strategy.Route.Hostname))
+		} else {
+			Expect(hc.Status.ControlPlaneEndpoint.Host).NotTo(ContainSubstring("hypershift.local"))
+		}
+	})
+	It("should configure AWS ingress with an NLB", Label("hosted-cluster-health-management"), func() {
+		tc := getTestCtx()
+		tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+		hc, err := tc.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(hc.Spec.Configuration).NotTo(BeNil())
+		Expect(hc.Spec.Configuration.Ingress).NotTo(BeNil())
+		Expect(hc.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS).NotTo(BeNil())
+		Expect(hc.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type).To(Equal(configv1.NLB))
+	})
+}
+
+func ValidateControlPlaneVersionSteadyStateTest(getTestCtx internal.TestContextGetter) {
+	It("should report a completed control plane version for the desired release image", Label("hosted-cluster-health-management"), func() {
+		tc := getTestCtx()
+		applicable, err := healthControlPlaneVersionApplicable(tc)
+		Expect(err).NotTo(HaveOccurred(), "determine independent control plane version applicability")
+		if !applicable {
+			Skip("control plane version status is only available from release 4.22")
+		}
+		timeout, err := healthControlPlaneVersionTimeout(tc.ExpectedNodePools)
+		Expect(err).NotTo(HaveOccurred(), "determine control plane version assertion budget from configured worker intent")
+		Expect(waitForHealthControlPlaneVersion(tc, timeout, 10*time.Second)).To(Succeed())
+	})
+}
+
+func ValidateHostedClusterNodesTest(getTestCtx internal.TestContextGetter) {
+	It("should match NodePool replica counts and have only ready public nodes", Label("hosted-cluster-health-management"), func() {
+		tc := getTestCtx()
+		hostedCluster, err := tc.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		pools := &hyperv1.NodePoolList{}
+		Expect(tc.MgmtClient.List(tc.Context, pools, crclient.InNamespace(hostedCluster.Namespace))).To(Succeed())
+		nodes := &corev1.NodeList{}
+		if netutil.IsPublicHC(hostedCluster) {
+			hostedClient, err := tc.GetHostedClusterClient(hostedCluster)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(hostedClient.List(tc.Context, nodes)).To(Succeed())
+		}
+		Expect(healthNodePoolCounts(hostedCluster, pools.Items, nodes.Items)).To(Succeed())
+	})
+}
+
+func ValidateHostedClusterConfiguredWorkersTest(getTestCtx internal.TestContextGetter) {
+	It("should create exactly the configured initial NodePools and their ready workers", func() {
+		tc := getTestCtx()
+		Expect(tc).NotTo(BeNil())
+		Expect(healthConfiguredNodePoolIntent(tc.ExpectedNodePools)).To(Succeed())
+		var hostedCluster *hyperv1.HostedCluster
+		Eventually(func() error {
+			if err := healthInitialAPIReady(tc); err != nil {
+				return err
+			}
+			current, err := tc.GetHostedCluster()
+			hostedCluster = current
+			return err
+		}).WithContext(tc.Context).WithTimeout(10 * time.Minute).WithPolling(3 * time.Second).Should(Succeed())
+		workerTimeout := 30 * time.Minute
+		if netutil.IsPublicHC(hostedCluster) {
+			workerTimeout = 45 * time.Minute
+		}
+		Eventually(func() error {
+			return healthInitialConfiguredWorkersReady(tc)
+		}).WithContext(tc.Context).WithTimeout(workerTimeout).WithPolling(3 * time.Second).Should(Succeed())
+		Eventually(func() error {
+			current, err := tc.GetHostedCluster()
+			if err != nil {
+				return err
+			}
+			return healthInitialDataPlaneCompleted(current, tc.ExpectedNodePools)
+		}).WithContext(tc.Context).WithTimeout(30 * time.Minute).WithPolling(3 * time.Second).Should(Succeed())
+	})
 }
 
 func ValidateHostedClusterConditionsTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster is operational", func() {
-		It("should have all expected conditions with correct status", func() {
+		It("should have all expected conditions with correct status", Label("hosted-cluster-health-management"), func() {
 			tc := getTestCtx()
-			hostedCluster, err := tc.GetHostedCluster()
-			Expect(err).NotTo(HaveOccurred())
-
-			expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
-			delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
-			if !tc.VersionAtLeast(e2eutil.Version421) {
-				delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
-			}
-			if !tc.VersionAtLeast(e2eutil.Version422) {
-				delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
-				delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC)
-			}
-			if !tc.VersionAtLeast(e2eutil.Version423) {
-				delete(expectedConditions, hyperv1.ConfigOperatorReconciliationSucceeded)
-			}
-
-			Expect(expectedConditions).NotTo(BeEmpty(), "expected conditions for hosted cluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
-			Eventually(func(g Gomega) {
-				hc := &hyperv1.HostedCluster{}
-				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKeyFromObject(hostedCluster), hc)).To(Succeed())
-				for condType, expectedStatus := range expectedConditions {
-					condition := meta.FindStatusCondition(hc.Status.Conditions, string(condType))
-					g.Expect(condition).NotTo(BeNil(), "condition %s should be present on hosted cluster %s/%s", condType, hostedCluster.Namespace, hostedCluster.Name)
-					g.Expect(condition.Status).To(Equal(expectedStatus), "condition %s should have status %s on hosted cluster %s/%s", condType, expectedStatus, hostedCluster.Namespace, hostedCluster.Name)
-				}
-			}, 10*time.Minute, 10*time.Second).Should(Succeed())
+			version, hasWorkers, timeout, err := healthConditionInputs(tc)
+			Expect(err).NotTo(HaveOccurred(), "determine originating release and worker intent for condition assertions")
+			Eventually(healthConditionsCheck(tc, version, hasWorkers)).WithContext(tc.Context).WithTimeout(timeout).WithPolling(10 * time.Second).Should(Succeed())
 		})
 	})
 }
 
 func EnsureCAPIFinalizersTest(getTestCtx internal.TestContextGetter) {
 	When("CAPI components are deployed", func() {
-		It("should have component finalizers on all CAPI deployments", func() {
+		It("should have component finalizers on all CAPI deployments", Label("hosted-cluster-health-management"), func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version422)
+			tc.SkipIfVersionBelow(semver.MustParse("4.22.0"))
 			Expect(cpconst.CAPIComponents).NotTo(BeEmpty(),
 				"expected CAPI components to be defined in HostedControlPlaneConfiguration")
 			for _, name := range cpconst.CAPIComponents {
@@ -106,7 +175,7 @@ func EnsureFeatureGateStatusTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster version is completed", func() {
 		It("should have feature gate status matching cluster version", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version419)
+			tc.SkipIfVersionBelow(semver.MustParse("4.19.0"))
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -139,7 +208,7 @@ func EnsureFeatureGateStatusTest(getTestCtx internal.TestContextGetter) {
 
 func EnsurePayloadArchSetCorrectlyTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster has a release image", func() {
-		It("should set payload arch status correctly", func() {
+		It("should set payload arch status correctly", Label("hosted-cluster-health-management"), func() {
 			tc := getTestCtx()
 			hostedCluster, err := getTestCtx().GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -159,11 +228,11 @@ func EnsurePayloadArchSetCorrectlyTest(getTestCtx internal.TestContextGetter) {
 
 func ValidateConfigurationStatusTest(getTestCtx internal.TestContextGetter) {
 	When("hosted cluster authentication is configured", func() {
-		It("should propagate configuration status consistently", func() {
+		It("should propagate configuration status consistently", Label("hosted-cluster-authentication-status"), func() {
 			tc := getTestCtx()
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			tc.SkipIfVersionBelow(e2eutil.Version421)
+			tc.SkipIfVersionBelow(semver.MustParse("4.21.0"))
 
 			hcClient, err := tc.GetHostedClusterClient(hostedCluster)
 			Expect(err).NotTo(HaveOccurred())
@@ -203,4 +272,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Health] Hosted Clust
 	})
 
 	RegisterHostedClusterHealthTests(func() *internal.TestContext { return testCtx })
+})
+
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Health] Hosted Cluster Configured Workers", Label("hosted-cluster-health-configured-workers"), func() {
+	ValidateHostedClusterConfiguredWorkersTest(internal.GetTestContext)
 })

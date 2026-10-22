@@ -18,13 +18,13 @@ package tests
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	corev1 "k8s.io/api/core/v1"
@@ -36,6 +36,10 @@ func RegisterHostedClusterCPOTests(getTestCtx internal.TestContextGetter) {
 }
 
 func VerifyCPOOverrideImageTest(getTestCtx internal.TestContextGetter) {
+	registerCPOOverrideImageTest(getTestCtx, os.Getenv("TEST_CPO_OVERRIDE") == "1")
+}
+
+func registerCPOOverrideImageTest(getTestCtx internal.TestContextGetter, required bool) {
 	When("a CPO override image is configured for the platform and version", func() {
 		It("should run the control-plane-operator pod with the expected override image", func() {
 			tc := getTestCtx()
@@ -45,12 +49,15 @@ func VerifyCPOOverrideImageTest(getTestCtx internal.TestContextGetter) {
 			releaseImage := hc.Spec.Release.Image
 			Expect(releaseImage).NotTo(BeEmpty(), "HostedCluster release image should be set")
 
-			version := e2eutil.ExtractVersionFromReleaseImage(releaseImage)
-			Expect(version).NotTo(BeEmpty(), "could not extract version from release image %s", releaseImage)
+			Expect(hc.Status.Version).NotTo(BeNil(), "HostedCluster must report its release version")
+			Expect(hc.Status.Version.History).NotTo(BeEmpty())
+			version := hc.Status.Version.History[0].Version
+			Expect(version).NotTo(BeEmpty())
 
 			platform := string(hc.Spec.Platform.Type)
-			expectedImage := controlplaneoperatoroverrides.CPOImage(platform, version)
-			if expectedImage == "" {
+			expectedImage, err := cpoOverrideImageForTest(platform, version, required)
+			Expect(err).NotTo(HaveOccurred(), "explicit CPO override selection must use a mapped release")
+			if !required && expectedImage == "" {
 				Skip(fmt.Sprintf("no CPO override configured for platform %s and version %s", platform, version))
 			}
 
@@ -87,9 +94,17 @@ func VerifyCPOOverrideImageTest(getTestCtx internal.TestContextGetter) {
 				g.Expect(foundExpectedImage).To(BeTrue(),
 					"expected a running control-plane-operator container with image %s in namespace %s",
 					expectedImage, tc.ControlPlaneNamespace)
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			}).WithContext(tc.Context).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 		})
 	})
+}
+
+func cpoOverrideImageForTest(platform, version string, required bool) (string, error) {
+	image := controlplaneoperatoroverrides.CPOImage(platform, version)
+	if required && image == "" {
+		return "", fmt.Errorf("required CPO override test needs a mapped CPO image for platform %s release %s", platform, version)
+	}
+	return image, nil
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneOperator] Hosted Cluster CPO", Label("hosted-cluster-cpo"), func() {
@@ -101,4 +116,15 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneOperator
 	})
 
 	RegisterHostedClusterCPOTests(func() *internal.TestContext { return testCtx })
+})
+
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneOperator] Required Hosted Cluster CPO", Label("hosted-cluster-cpo-required"), func() {
+	var testCtx *internal.TestContext
+
+	BeforeEach(func() {
+		testCtx = internal.GetTestContext()
+		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+	})
+
+	registerCPOOverrideImageTest(func() *internal.TestContext { return testCtx }, true)
 })

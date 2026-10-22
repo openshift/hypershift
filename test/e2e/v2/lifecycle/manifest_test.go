@@ -3,9 +3,72 @@
 package lifecycle
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
+
+func TestValidateReleaseImages(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		images    map[string]string
+		wantError bool
+	}{
+		{name: "When an older manifest has no image inputs, it should remain accepted"},
+		{name: "When registered image inputs are valid, it should accept tagged and digest references", images: map[string]string{"E2E_N1_RELEASE_IMAGE": "quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64", "E2E_LATEST_RELEASE_IMAGE": "quay.io/openshift-release-dev/ocp-release@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}},
+		{name: "When a manifest attempts arbitrary environment injection, it should reject it", images: map[string]string{"KUBECONFIG": "management"}, wantError: true},
+		{name: "When an image reference contains shell syntax, it should reject it without evaluation", images: map[string]string{"E2E_N1_RELEASE_IMAGE": "$(echo unwanted)"}, wantError: true},
+		{name: "When a recorded image is empty, it should reject it", images: map[string]string{"E2E_N2_RELEASE_IMAGE": ""}, wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateReleaseImages(test.images); (err != nil) != test.wantError {
+				t.Fatalf("unexpected validation result: %v", err)
+			}
+		})
+	}
+}
+
+func TestReleaseImagesFromEnvironment(t *testing.T) {
+	for _, name := range []string{"E2E_LATEST_RELEASE_IMAGE", "RELEASE_IMAGE_LATEST", "E2E_PREVIOUS_RELEASE_IMAGE", "OCP_IMAGE_N1", "E2E_N1_RELEASE_IMAGE", "E2E_N2_RELEASE_IMAGE", "OCP_IMAGE_N2", "E2E_N3_RELEASE_IMAGE", "OCP_IMAGE_N3", "E2E_N4_RELEASE_IMAGE", "OCP_IMAGE_N4"} {
+		t.Setenv(name, "")
+	}
+	t.Run("When older release inputs are missing, it should not invent previous or skew images", func(t *testing.T) {
+		images := ReleaseImagesFromEnvironment("quay.io/openshift-release-dev/ocp-release:4.22.0-x86_64")
+		if len(images) != 1 || images["E2E_LATEST_RELEASE_IMAGE"] == "" {
+			t.Fatalf("expected only the latest release input, got %d entries", len(images))
+		}
+	})
+	t.Run("When create has release inputs, it should preserve them through serialization", func(t *testing.T) {
+		t.Setenv("OCP_IMAGE_N1", "quay.io/openshift-release-dev/ocp-release:4.21.10-x86_64")
+		t.Setenv("OCP_IMAGE_N2", "quay.io/openshift-release-dev/ocp-release:4.20.10-x86_64")
+		t.Setenv("E2E_N2_RELEASE_IMAGE", "quay.io/openshift-release-dev/ocp-release:4.20.11-x86_64")
+		images := ReleaseImagesFromEnvironment("quay.io/openshift-release-dev/ocp-release:4.22.0-x86_64")
+		dir := t.TempDir()
+		if err := WriteManifest(dir, &ClusterManifest{ReleaseImages: images}); err != nil {
+			t.Fatal(err)
+		}
+		manifest, err := ReadManifest(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(manifest.ReleaseImages, images) || images["E2E_PREVIOUS_RELEASE_IMAGE"] != os.Getenv("OCP_IMAGE_N1") || images["E2E_N1_RELEASE_IMAGE"] != os.Getenv("OCP_IMAGE_N1") || images["E2E_N2_RELEASE_IMAGE"] != os.Getenv("E2E_N2_RELEASE_IMAGE") {
+			t.Fatal("resolved release-image inputs were not preserved")
+		}
+	})
+}
+
+func TestReadManifestReleaseImages(t *testing.T) {
+	t.Run("When the on-disk image inputs are untrusted, it should reject them before applying environment", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ManifestFileName), []byte(`{"clusters":[],"releaseImages":{"KUBECONFIG":"untrusted"}}`), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadManifest(dir); err == nil {
+			t.Fatal("expected manifest validation error")
+		}
+	})
+}
 
 func TestManifestRoundTrip(t *testing.T) {
 	tests := []struct {

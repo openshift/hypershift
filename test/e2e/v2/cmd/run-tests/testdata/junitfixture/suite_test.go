@@ -9,15 +9,17 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,6 +50,21 @@ var _ = ReportAfterSuite("Write synthetic JUnit", func(report Report) {
 })
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:JUnitContract] Synthetic JUnit contract", Label("inherited-label"), func() {
+	if readyPath := os.Getenv("JUNIT_FIXTURE_CANCELLATION_READY"); readyPath != "" {
+		It("running cancellation cleanup", Label("cancellation"), func(ctx SpecContext) {
+			DeferCleanup(func() {
+				if delay := os.Getenv("JUNIT_FIXTURE_CANCELLATION_DELAY"); delay != "" {
+					duration, err := time.ParseDuration(delay)
+					Expect(err).NotTo(HaveOccurred())
+					time.Sleep(duration)
+				}
+				Expect(os.WriteFile(os.Getenv("JUNIT_FIXTURE_CANCELLATION_CLEANUP"), []byte("cleaned"), 0600)).To(Succeed())
+			})
+			Expect(os.WriteFile(readyPath, []byte("ready"), 0600)).To(Succeed())
+			<-ctx.Done()
+		})
+		return
+	}
 	// Register separately so the existing reporting-contract scenarios stay unchanged.
 	if os.Getenv("JUNIT_FIXTURE_REQUIRED_WIF") == "true" {
 		It("required WIF mutation", Label("required-wif"), func() {

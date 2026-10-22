@@ -1,0 +1,32 @@
+name: aws-cpo-overrides
+platform: aws
+testMatrix:
+  sequential:
+    - name: cpo-override-latest
+      steps:
+        - name: cpo-override-latest-configured-workers
+          variant: cpo-override-latest
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: cpo-override-latest-common-before
+          variant: cpo-override-latest
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers && !hosted-cluster-ingress
+        - name: cpo-override-latest
+          variant: cpo-override-latest
+          labelFilter: hosted-cluster-cpo-required
+        - name: cpo-override-latest-common-after
+          variant: cpo-override-latest
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers
+    - name: cpo-override-previous
+      steps:
+        - name: cpo-override-previous-configured-workers
+          variant: cpo-override-previous
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: cpo-override-previous-common-before
+          variant: cpo-override-previous
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers && !hosted-cluster-ingress
+        - name: cpo-override-previous
+          variant: cpo-override-previous
+          labelFilter: hosted-cluster-cpo-required
+        - name: cpo-override-previous-common-after
+          variant: cpo-override-previous
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers

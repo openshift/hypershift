@@ -33,8 +33,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/upsert"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -44,6 +44,8 @@ import (
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 var (
@@ -202,7 +204,7 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
 			testCtx := getTestCtx()
 			hostedCluster, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			if hostedCluster.CreationTimestamp.IsZero() || time.Since(hostedCluster.CreationTimestamp.Time) > 4*time.Hour {
+			if !controlPlaneGenerationApplicable(hostedCluster, time.Now()) {
 				Skip("Deployment generation test is only for recently created hosted clusters")
 			}
 		})
@@ -249,7 +251,7 @@ func SafeToEvictAnnotationsTest(getTestCtx internal.TestContextGetter) {
 	Context("Safe-to-evict annotations", func() {
 
 		BeforeEach(func() {
-			getTestCtx().SkipIfVersionBelow(e2eutil.Version420)
+			getTestCtx().SkipIfVersionBelow(semver.MustParse("4.20.0"))
 		})
 
 		// TODO: Fix these in their corresponding repositories
@@ -333,7 +335,7 @@ func SafeToEvictAnnotationsTest(getTestCtx internal.TestContextGetter) {
 func ReadOnlyRootFilesystemTest(getTestCtx internal.TestContextGetter) {
 	Context("Read-only root filesystem", func() {
 		BeforeEach(func() {
-			getTestCtx().SkipIfVersionBelow(e2eutil.Version420)
+			getTestCtx().SkipIfVersionBelow(semver.MustParse("4.20.0"))
 		})
 
 		// EnsureReadOnlyRootFilesystem
@@ -411,7 +413,7 @@ func ReadOnlyRootFilesystemTest(getTestCtx internal.TestContextGetter) {
 func ReadOnlyRootFilesystemTmpDirMountTest(getTestCtx internal.TestContextGetter) {
 	Context("Read-only root filesystem tmp dir mount", func() {
 		BeforeEach(func() {
-			getTestCtx().SkipIfVersionBelow(e2eutil.Version420)
+			getTestCtx().SkipIfVersionBelow(semver.MustParse("4.20.0"))
 		})
 
 		// EnsureReadOnlyRootFilesystemTmpDirMount
@@ -527,7 +529,7 @@ func ContainerImagePullPolicyTest(getTestCtx internal.TestContextGetter) {
 func ContainerTerminationMessagePolicyTest(getTestCtx internal.TestContextGetter) {
 	Context("Container termination message policy", func() {
 		BeforeEach(func() {
-			getTestCtx().SkipIfVersionBelow(e2eutil.Version419)
+			getTestCtx().SkipIfVersionBelow(semver.MustParse("4.19.0"))
 		})
 
 		// EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError
@@ -713,7 +715,7 @@ func ServiceAccountTokenMountingTest(getTestCtx internal.TestContextGetter) {
 					testCtx := getTestCtx()
 					hostedCluster, err := testCtx.GetHostedCluster()
 					Expect(err).NotTo(HaveOccurred())
-					testCtx.SkipIfVersionBelow(e2eutil.Version416)
+					testCtx.SkipIfVersionBelow(semver.MustParse("4.16.0"))
 					if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 						Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 					}
@@ -722,8 +724,8 @@ func ServiceAccountTokenMountingTest(getTestCtx internal.TestContextGetter) {
 					if slices.Contains(exemptions, workload.Name) {
 						Skip(fmt.Sprintf("workload %s is exempt from service account token mounting check", workload.Name))
 					}
-					if workload.Name == "csi-snapshot-webhook" && !testCtx.VersionAtLeast(e2eutil.Version418) {
-						Skip(fmt.Sprintf("workload %s is exempt from service account token mounting check before %s", workload.Name, e2eutil.Version418))
+					if workload.Name == "csi-snapshot-webhook" && !testCtx.VersionAtLeast(semver.MustParse("4.18.0")) {
+						Skip(fmt.Sprintf("workload %s is exempt from service account token mounting check before %s", workload.Name, semver.MustParse("4.18.0")))
 					}
 
 					pods := getWorkloadPods(testCtx, workload)
@@ -1030,7 +1032,7 @@ func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 								}
 							}
 							if k8sClient == nil {
-								mgmtRestConfig, err := e2eutil.GetConfig()
+								mgmtRestConfig, err := v2util.GetConfig()
 								Expect(err).NotTo(HaveOccurred(), "failed to get management REST config for log inspection")
 								k8sClient, err = kubernetes.NewForConfig(mgmtRestConfig)
 								Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset for log inspection")
@@ -1053,7 +1055,7 @@ func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
 func CustomLabelsTest(getTestCtx internal.TestContextGetter) {
 	Context("Custom labels", Label("Informing"), func() {
 		BeforeEach(func() {
-			getTestCtx().SkipIfVersionBelow(e2eutil.Version419)
+			getTestCtx().SkipIfVersionBelow(semver.MustParse("4.19.0"))
 		})
 
 		exemptions := []string{
@@ -1094,7 +1096,7 @@ func CustomLabelsTest(getTestCtx internal.TestContextGetter) {
 func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
 	Context("Custom tolerations", Label("Informing"), func() {
 		BeforeEach(func() {
-			getTestCtx().SkipIfVersionBelow(e2eutil.Version419)
+			getTestCtx().SkipIfVersionBelow(semver.MustParse("4.19.0"))
 		})
 
 		exemptions := []string{
@@ -1185,6 +1187,7 @@ func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	CustomTolerationsTest(getTestCtx)
 	SecurityContextUIDTest(getTestCtx)
 	DesiredStateHashAnnotationTest(getTestCtx)
+	ControlPlaneCommonAssertionsTest(getTestCtx)
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneWorkloads] Control Plane Workloads", Label("control-plane-workloads"), func() {

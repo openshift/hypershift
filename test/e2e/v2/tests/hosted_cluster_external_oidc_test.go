@@ -17,32 +17,26 @@ limitations under the License.
 package tests
 
 import (
-	"crypto/tls"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"math/rand"
-	"net/http"
-	"net/url"
-	"regexp"
-	"strings"
 	"time"
 
+	"github.com/blang/semver"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	appsv1 "k8s.io/api/apps/v1"
 	kauthnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kauthnv1typedclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/retry"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -54,17 +48,28 @@ func RegisterExternalOIDCTests(getTestCtx internal.TestContextGetter) {
 	ExternalOIDCOAuthNotDeployedTest(getTestCtx)
 	ExternalOIDCKASConfigTest(getTestCtx)
 	ExternalOIDCKeycloakAuthTest(getTestCtx)
+	ExternalOIDCCELReloadTest(getTestCtx)
 }
 
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ExternalOIDC] External OIDC", Label("external-oidc"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ExternalOIDC] External OIDC", Label("external-oidc"), Serial, func() {
 	var testCtx *internal.TestContext
 
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
+		cluster, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		caFile := internal.GetEnvVarValue("E2E_EXTERNAL_OIDC_CA_BUNDLE_FILE")
+		testUsers := internal.GetEnvVarValue("E2E_EXTERNAL_OIDC_TEST_USERS")
+		if caFile == "" && testUsers == "" {
+			skipIfNotOIDC(cluster)
+		}
+		Expect(oidcFixtureAuthentication(testCtx.Context, testCtx.MgmtClient, cluster,
+			caFile, testUsers,
+			featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings))).To(Succeed())
 	})
 
-	RegisterExternalOIDCTests(func() *internal.TestContext { return testCtx })
+	RegisterExternalOIDCTests(internal.GetTestContext)
 })
 
 // skipIfNotOIDC skips the current test if the hosted cluster does not have External OIDC configured.
@@ -261,153 +266,156 @@ func ExternalOIDCKASConfigTest(getTestCtx internal.TestContextGetter) {
 			Expect(json.Unmarshal([]byte(cm.Data["config.json"]), &kasConfig)).To(Succeed())
 
 			apiServerArgs, ok := kasConfig["apiServerArguments"].(map[string]interface{})
-			if ok {
-				_, hasWebhook := apiServerArgs["authentication-token-webhook-config-file"]
-				Expect(hasWebhook).To(BeFalse(),
-					"KAS should not have authentication-token-webhook-config-file when OIDC is configured")
-			}
+			Expect(ok).To(BeTrue(), "KAS configuration must expose apiServerArguments")
+			_, hasWebhook := apiServerArgs["authentication-token-webhook-config-file"]
+			Expect(hasWebhook).To(BeFalse(),
+				"KAS should not have authentication-token-webhook-config-file when OIDC is configured")
 		})
 	})
 }
 
 // ExternalOIDCKeycloakAuthTest verifies Keycloak-based External OIDC authentication by obtaining
-// a token and performing a SelfSubjectReview against the hosted cluster KAS. Uses Ordered with
-// BeforeAll to obtain the token once and validate claim mappings in separate It blocks.
-// Skips when OIDC env vars are not configured or the cluster is not OIDC.
+// fresh tokens and performing a SelfSubjectReview against the hosted cluster KAS.
+// Its ephemeral Keycloak identity is shared by the ordered claim-mapping checks.
 func ExternalOIDCKeycloakAuthTest(getTestCtx internal.TestContextGetter) {
 	Context("Keycloak Authentication and Claims", Label("external-oidc"), Ordered, func() {
-		var selfSubjectReview *kauthnv1.SelfSubjectReview
-		var extOIDCConfig *e2eutil.ExtOIDCConfig
-
+		var review *kauthnv1.SelfSubjectReview
+		var userConfig *rest.Config
+		var provider configv1.OIDCProvider
+		var user oidcTestUser
+		var cluster *hyperv1.HostedCluster
 		BeforeAll(func() {
 			tc := getTestCtx()
-			hc, err := tc.GetHostedCluster()
+			var err error
+			cluster, err = tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			skipIfNotOIDC(hc)
-
-			provider := hc.Spec.Configuration.Authentication.OIDCProviders[0]
-			Expect(provider.Issuer.URL).NotTo(BeEmpty(),
-				"OIDC provider issuer URL should not be empty on hosted cluster %s/%s", hc.Namespace, hc.Name)
-
-			testUsersStr := internal.GetEnvVarValue("E2E_EXTERNAL_OIDC_TEST_USERS")
-			if testUsersStr == "" {
-				Skip("External OIDC test users not configured")
-			}
-
-			var cliClientID, consoleClientID string
-			for _, oidcClient := range provider.OIDCClients {
-				switch oidcClient.ComponentName {
-				case "cli":
-					cliClientID = oidcClient.ClientID
-				case "console":
-					consoleClientID = oidcClient.ClientID
-				}
-			}
-			Expect(cliClientID).NotTo(BeEmpty(),
-				"CLI client ID not found in OIDCProviders[0].OIDCClients for %s/%s", hc.Namespace, hc.Name)
-			Expect(consoleClientID).NotTo(BeEmpty(),
-				"console client ID not found in OIDCProviders[0].OIDCClients for %s/%s", hc.Namespace, hc.Name)
-
-			extOIDCConfig = &e2eutil.ExtOIDCConfig{
-				ExternalOIDCProvider: e2eutil.ProviderKeycloak,
-				CliClientID:          cliClientID,
-				ConsoleClientID:      consoleClientID,
-				IssuerURL:            provider.Issuer.URL,
-				GroupPrefix:          provider.ClaimMappings.Groups.Prefix,
-				TestUsers:            testUsersStr,
-			}
-			if provider.ClaimMappings.Username.Prefix != nil {
-				extOIDCConfig.UserPrefix = provider.ClaimMappings.Username.Prefix.PrefixString
-			}
-
-			restConfig, err := tc.GetHostedClusterRESTConfig(hc)
+			skipIfNotOIDC(cluster)
+			provider = cluster.Spec.Configuration.Authentication.OIDCProviders[0]
+			keycloak := keycloakForHostedCluster(tc, cluster)
+			user = createOIDCTestUser(tc, keycloak, "", true)
+			config, err := tc.GetHostedClusterRESTConfig(cluster)
 			Expect(err).NotTo(HaveOccurred())
-
-			// KAS may need time to load the OIDC authentication config after the HC
-			// was patched in PostVersionRollout. Retry with a fresh token each attempt
-			// since the Keycloak token lifetime is short (150s).
-			Eventually(func(g Gomega) {
-				idToken := obtainKeycloakIDToken(extOIDCConfig)
-				GinkgoT().Logf("Obtained Keycloak ID token, attempting SelfSubjectReview against %s", restConfig.Host)
-
-				authConfig := rest.AnonymousClientConfig(rest.CopyConfig(restConfig))
-				authConfig.BearerToken = idToken
-				authClient, err := kauthnv1typedclient.NewForConfig(authConfig)
-				g.Expect(err).NotTo(HaveOccurred(), "failed to create auth client for Keycloak OIDC user")
-
-				selfSubjectReview, err = authClient.SelfSubjectReviews().Create(
-					tc.Context, &kauthnv1.SelfSubjectReview{}, metav1.CreateOptions{})
-				if err != nil {
-					GinkgoT().Logf("SelfSubjectReview failed: %v", err)
-				}
-				g.Expect(err).NotTo(HaveOccurred(), "SelfSubjectReview should succeed with Keycloak OIDC token")
-			}).WithTimeout(5 * time.Minute).WithPolling(15 * time.Second).Should(Succeed())
+			Eventually(func(assertions Gomega) {
+				review, userConfig, err = oidcSubjectReview(tc, keycloak, config, user)
+				assertions.Expect(err).NotTo(HaveOccurred())
+			}, 5*time.Minute, 15*time.Second).Should(Succeed())
 		})
-
 		It("should authenticate to KAS with a Keycloak-issued token", func() {
-			Expect(selfSubjectReview).NotTo(BeNil(), "SelfSubjectReview should have been created in BeforeAll")
-			Expect(selfSubjectReview.Status.UserInfo.Username).NotTo(BeEmpty(),
-				"SelfSubjectReview should return a non-empty username")
+			Expect(review).NotTo(BeNil())
+			Expect(review.Status.UserInfo.Username).NotTo(BeEmpty())
 		})
-
-		It("should map username claim correctly", func() {
-			Expect(selfSubjectReview.Status.UserInfo.Username).To(ContainSubstring(extOIDCConfig.UserPrefix),
-				"username should contain the configured prefix %q", extOIDCConfig.UserPrefix)
+		It("should map the exact verified email username with its configured prefix", func() {
+			Expect(provider.ClaimMappings.Username.Prefix).NotTo(BeNil())
+			Expect(review.Status.UserInfo.Username).To(Equal(provider.ClaimMappings.Username.Prefix.PrefixString + user.email))
 		})
-
-		It("should map groups claim with prefix", func() {
-			groups := selfSubjectReview.Status.UserInfo.Groups
-			Expect(groups).NotTo(BeEmpty(), "SelfSubjectReview should return groups")
-			Expect(groups).To(ContainElement(ContainSubstring(extOIDCConfig.GroupPrefix)),
-				"at least one group should contain the configured prefix %q", extOIDCConfig.GroupPrefix)
+		It("should map exactly the authenticated and prefixed identity-provider groups", func() {
+			Expect(review.Status.UserInfo.Groups).To(ConsistOf("system:authenticated", provider.ClaimMappings.Groups.Prefix+user.group))
 		})
-
-		It("should map UID claim correctly", func() {
-			Expect(selfSubjectReview.Status.UserInfo.UID).NotTo(BeEmpty(),
-				"SelfSubjectReview should return a non-empty UID")
+		It("should map UID claim with the configured expression markers", func() {
+			requireOIDCFeature(getTestCtx(), cluster, "ExternalOIDCWithUIDAndExtraClaimMappings")
+			Expect(provider.ClaimMappings.UID).NotTo(BeNil())
+			Expect(user.subject).NotTo(BeEmpty())
+			Expect(review.Status.UserInfo.UID).To(Equal("testuid-" + user.subject + "-uidtest"))
+		})
+		It("should map both configured extra claims", func() {
+			requireOIDCFeature(getTestCtx(), cluster, "ExternalOIDCWithUIDAndExtraClaimMappings")
+			Expect(review.Status.UserInfo.Extra).To(HaveKey("extratest.openshift.com/foo"))
+			Expect(review.Status.UserInfo.Extra).To(HaveKey("extratest.openshift.com/bar"))
+			Expect(review.Status.UserInfo.Extra["extratest.openshift.com/foo"]).To(ConsistOf(user.email))
+			Expect(review.Status.UserInfo.Extra["extratest.openshift.com/bar"]).To(ConsistOf("extra-test-mark"))
+		})
+		It("should deny an authenticated unprivileged user access to cluster operators", func() {
+			tc := getTestCtx()
+			client, err := crclient.New(userConfig, crclient.Options{Scheme: tc.MgmtClient.Scheme()})
+			Expect(err).NotTo(HaveOccurred())
+			err = client.Get(tc.Context, crclient.ObjectKey{Name: "image-registry"}, &configv1.ClusterOperator{})
+			Expect(apierrors.IsForbidden(err)).To(BeTrue(), "authenticated OIDC users must not acquire cluster-operator read privileges")
 		})
 	})
 }
 
-// obtainKeycloakIDToken requests an ID token from Keycloak via the resource owner password grant.
-// It picks a random test user from the configured test users string and returns the raw ID token.
-func obtainKeycloakIDToken(config *e2eutil.ExtOIDCConfig) string {
-	re := regexp.MustCompile(`([^:,]+):([^,]+)`)
-	testUsers := re.FindAllStringSubmatch(config.TestUsers, -1)
-	Expect(testUsers).NotTo(BeEmpty(), "no test users found in config")
+func ExternalOIDCCELReloadTest(getTestCtx internal.TestContextGetter) {
+	Context("CEL claim mappings and validation reload", Label("external-oidc-lifecycle"), Ordered, func() {
+		var tc *internal.TestContext
+		var keycloak *oidcKeycloak
+		var config *rest.Config
+		var valid oidcTestUser
+		BeforeAll(func() {
+			tc = getTestCtx()
+			skipIfNativeOriginBelow(tc, semver.MustParse("4.23.0"))
+			cluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			skipIfNotOIDC(cluster)
+			requireOIDCFeature(tc, cluster, "ExternalOIDCWithUpstreamParity")
+			keycloak = keycloakForHostedCluster(tc, cluster)
+			config, err = tc.GetHostedClusterRESTConfig(cluster)
+			Expect(err).NotTo(HaveOccurred())
+			valid = createOIDCTestUser(tc, keycloak, "", true)
+			original := cluster.Spec.Configuration.Authentication.DeepCopy()
+			update := func(testContext *internal.TestContext, authentication *configv1.AuthenticationSpec) error {
+				return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+					current, err := testContext.GetHostedCluster()
+					if err != nil {
+						return err
+					}
+					current.Spec.Configuration.Authentication = authentication.DeepCopy()
+					return testContext.MgmtClient.Update(testContext.Context, current)
+				})
+			}
+			DeferCleanup(func() {
+				cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(tc.Context), 10*time.Minute)
+				defer cancel()
+				cleanupTC := *tc
+				cleanupTC.Context = cleanupContext
+				Expect(update(&cleanupTC, original)).To(Succeed())
+				Eventually(func(assertions Gomega) {
+					review, _, err := oidcSubjectReview(&cleanupTC, keycloak, config, valid)
+					assertions.Expect(err).NotTo(HaveOccurred())
+					assertions.Expect(original.OIDCProviders[0].ClaimMappings.Username.Prefix).NotTo(BeNil())
+					assertions.Expect(review.Status.UserInfo.Username).To(Equal(original.OIDCProviders[0].ClaimMappings.Username.Prefix.PrefixString + valid.email))
+				}).WithContext(cleanupContext).WithTimeout(5*time.Minute).WithPolling(15*time.Second).Should(Succeed(), "KAS must reload the restored authentication mappings")
+			})
+			updated, err := upstreamOIDCAuthentication(original)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(update(tc, updated)).To(Succeed())
+		})
+		It("should reload the patched upstream CEL authentication configuration using fresh tokens", func() {
+			Eventually(func(assertions Gomega) {
+				review, _, err := oidcSubjectReview(tc, keycloak, config, valid)
+				assertions.Expect(err).NotTo(HaveOccurred())
+				assertions.Expect(review.Status.UserInfo.Username).To(Equal(valid.username))
+				assertions.Expect(review.Status.UserInfo.Groups).To(ConsistOf("system:authenticated", valid.group))
+			}).WithContext(tc.Context).WithTimeout(5 * time.Minute).WithPolling(15 * time.Second).Should(Succeed())
+		})
+		It("should authenticate a fresh verified identity with exact CEL username and groups", func() {
+			user := createOIDCTestUser(tc, keycloak, "", true)
+			review, _, err := oidcSubjectReview(tc, keycloak, config, user)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(review.Status.UserInfo.Username).To(Equal(user.username))
+			Expect(review.Status.UserInfo.Groups).To(ConsistOf("system:authenticated", user.group))
+		})
+		It("should reject an issued token whose unverified email fails the claim validation rule", func() {
+			user := createOIDCTestUser(tc, keycloak, "", false)
+			_, _, err := oidcSubjectReview(tc, keycloak, config, user)
+			Expect(apierrors.IsUnauthorized(err)).To(BeTrue(), "claim validation must reject a validly issued but disallowed identity")
+		})
+		It("should reject an issued token whose forbidden username fails the user validation rule", func() {
+			user := createOIDCTestUser(tc, keycloak, "cel-test-user-forbidden-", true)
+			_, _, err := oidcSubjectReview(tc, keycloak, config, user)
+			Expect(apierrors.IsUnauthorized(err)).To(BeTrue(), "user validation must reject a validly issued but disallowed identity")
+		})
+	})
+}
 
-	idx := rand.Intn(len(testUsers))
-	username := testUsers[idx][1]
-	password := testUsers[idx][2]
-	GinkgoT().Logf("Random test user for use: %q.", username)
-
-	httpClient := &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
+func upstreamOIDCAuthentication(original *configv1.AuthenticationSpec) (*configv1.AuthenticationSpec, error) {
+	if original == nil || len(original.OIDCProviders) == 0 {
+		return nil, fmt.Errorf("OIDC authentication must contain a provider")
 	}
-	tokenURL := config.IssuerURL + "/protocol/openid-connect/token"
-	formData := url.Values{
-		"client_id":  {config.CliClientID},
-		"grant_type": {"password"},
-		"password":   {password},
-		"scope":      {"openid email profile"},
-		"username":   {username},
-	}
-
-	resp, err := httpClient.Post(tokenURL, "application/x-www-form-urlencoded", strings.NewReader(formData.Encode()))
-	Expect(err).NotTo(HaveOccurred(), "failed to request token from Keycloak")
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	Expect(err).NotTo(HaveOccurred(), "failed to read Keycloak token response")
-	Expect(resp.StatusCode).To(Equal(http.StatusOK),
-		fmt.Sprintf("Keycloak token request failed with status %d: %s", resp.StatusCode, string(body)))
-
-	var tokenResp map[string]interface{}
-	Expect(json.Unmarshal(body, &tokenResp)).To(Succeed(), "failed to parse Keycloak token response")
-
-	idToken, ok := tokenResp["id_token"].(string)
-	Expect(ok).To(BeTrue(), "id_token not found or not a string in Keycloak response")
-	return idToken
+	authentication := original.DeepCopy()
+	provider := &authentication.OIDCProviders[0]
+	provider.ClaimMappings.Username = configv1.UsernameClaimMapping{Expression: "claims.email.split('@')[0]"}
+	provider.ClaimMappings.Groups = configv1.PrefixedClaimMapping{TokenClaimMapping: configv1.TokenClaimMapping{Expression: "claims.?groups.orValue([])"}}
+	provider.ClaimValidationRules = []configv1.TokenClaimValidationRule{{Type: configv1.TokenValidationRuleTypeCEL, CEL: configv1.TokenClaimValidationCELRule{Expression: "claims.email_verified == true", Message: "email_verified claim must be true"}}}
+	provider.UserValidationRules = []configv1.TokenUserValidationRule{{Expression: "!user.username.contains('forbidden')", Message: "username cannot contain the word 'forbidden'"}}
+	return authentication, nil
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package tests
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -24,18 +25,45 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 // KMSSpecValidationTest validates that the HostedCluster's SecretEncryption KMS spec
 // fields are correctly populated. Stateless — reads HC spec only.
 func KMSSpecValidationTest(getTestCtx internal.TestContextGetter) {
 	Context("KMS Spec Validation", func() {
+		Context("AWS KMS", func() {
+			BeforeEach(func() {
+				getTestCtx().SkipIfNotPlatform(hyperv1.AWSPlatform)
+			})
+			It("should configure the active AWS KMS key and authentication role consistently in the control plane", func() {
+				tc := getTestCtx()
+				hc, err := tc.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred())
+				Expect(hc.Spec.SecretEncryption.KMS.AWS).NotTo(BeNil())
+				awsKMS := hc.Spec.SecretEncryption.KMS.AWS
+				Expect(awsKMS.ActiveKey.ARN).NotTo(BeEmpty())
+				expectedKey, err := configuredHostedEtcdKMSKeyARN(tc.Context, hc)
+				Expect(err).NotTo(HaveOccurred())
+				if expectedKey != "" {
+					Expect(awsKMS.ActiveKey.ARN).To(Equal(expectedKey), "HostedCluster must use the key supplied when creating the KMS fixture")
+				}
+				Expect(awsKMS.Auth.AWSKMSRoleARN).NotTo(BeEmpty())
+				hcp := &hyperv1.HostedControlPlane{}
+				Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{Namespace: tc.ControlPlaneNamespace, Name: hc.Name}, hcp)).To(Succeed())
+				Expect(hcp.Spec.SecretEncryption).To(Equal(hc.Spec.SecretEncryption))
+			})
+		})
 		Context("Azure KMS", func() {
 			BeforeEach(func() {
 				getTestCtx().SkipIfNotPlatform(hyperv1.AzurePlatform)
@@ -94,7 +122,7 @@ func KMSFunctionalValidationTest(getTestCtx internal.TestContextGetter) {
 			testCtx := getTestCtx()
 			ctx := testCtx.Context
 
-			testCtx.SkipIfVersionBelow(e2eutil.Version417)
+			testCtx.SkipIfVersionBelow(semver.MustParse("4.17.0"))
 
 			hc, err := testCtx.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
@@ -104,8 +132,8 @@ func KMSFunctionalValidationTest(getTestCtx internal.TestContextGetter) {
 
 			testSecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-kms-test-secret",
-					Namespace: "default",
+					GenerateName: "e2e-kms-test-secret-",
+					Namespace:    "default",
 				},
 				Type: corev1.SecretTypeOpaque,
 				Data: map[string][]byte{
@@ -116,8 +144,10 @@ func KMSFunctionalValidationTest(getTestCtx internal.TestContextGetter) {
 				"failed to create test secret in hosted cluster")
 
 			DeferCleanup(func() {
-				if err := hostedClusterClient.Delete(ctx, testSecret); err != nil && !apierrors.IsNotFound(err) {
-					GinkgoWriter.Printf("WARNING: failed to cleanup test secret: %v\n", err)
+				cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+				defer cancel()
+				if err := hostedClusterClient.Delete(cleanupContext, testSecret); err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "failed to cleanup test secret")
 				}
 			})
 
@@ -133,8 +163,19 @@ func KMSFunctionalValidationTest(getTestCtx internal.TestContextGetter) {
 				secretEtcdKey,
 			}
 
-			output, err := e2eutil.RunCommandInPod(ctx, testCtx.MgmtClient, "etcd",
-				testCtx.ControlPlaneNamespace, command, "etcd", 5*time.Minute)
+			managementConfig, err := v2util.GetConfig()
+			Expect(err).NotTo(HaveOccurred())
+			managementClient, err := kubernetes.NewForConfig(managementConfig)
+			Expect(err).NotTo(HaveOccurred())
+			pods := &corev1.PodList{}
+			Expect(testCtx.MgmtClient.List(ctx, pods, crclient.InNamespace(testCtx.ControlPlaneNamespace), crclient.MatchingLabels{"app": "etcd"})).To(Succeed())
+			Expect(pods.Items).NotTo(BeEmpty())
+			var output string
+			Eventually(func(g Gomega) {
+				output, err = v2util.RunCommandInPod(ctx, managementClient, managementConfig, testCtx.ControlPlaneNamespace, pods.Items[0].Name, "etcd", command...)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).NotTo(BeEmpty())
+			}, 5*time.Minute, 5*time.Second).Should(Succeed())
 			Expect(err).NotTo(HaveOccurred(), "failed to execute etcdctl command")
 			Expect(output).NotTo(BeEmpty(), "etcdctl returned empty output for key %s", secretEtcdKey)
 			Expect(output).To(ContainSubstring("k8s:enc:kms:v2"),

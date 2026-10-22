@@ -17,12 +17,12 @@ limitations under the License.
 package tests
 
 import (
+	"github.com/blang/semver"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	"github.com/openshift/hypershift/support/netutil"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -86,7 +86,7 @@ func EnsureKASConnectionCheckerSpecTest(getTestCtx internal.TestContextGetter) {
 		It("should have safe-to-evict annotation, no tolerations, and topology spread constraint", Label(internal.InformingLabel), func() {
 			tc := getTestCtx()
 
-			if !tc.VersionAtLeast(e2eutil.Version423) {
+			if !tc.VersionAtLeast(semver.MustParse("4.23.0")) {
 				Skip("kas-connection-checker spec changes require CPO >= 4.23")
 			}
 

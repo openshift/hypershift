@@ -3,12 +3,15 @@
 package main
 
 import (
+	"context"
 	"encoding/xml"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunTestBinary(t *testing.T) {
@@ -17,7 +20,7 @@ func TestRunTestBinary(t *testing.T) {
 	t.Run("When the synthetic suite has a blocking failure, it should fail and honor the JUnit contract", func(t *testing.T) {
 		t.Setenv("JUNIT_FIXTURE_BLOCKING_FAILURE", "true")
 		junitPath := filepath.Join(t.TempDir(), "junit.xml")
-		err := runTestBinary(binary, "synthetic-cluster", "clusters", "", "", junitPath)
+		err := runTestBinary(t.Context(), binary, "synthetic-cluster", "clusters", "", "", junitPath)
 		if err == nil {
 			t.Fatal("expected the synthetic suite to fail")
 		}
@@ -28,7 +31,7 @@ func TestRunTestBinary(t *testing.T) {
 	t.Run("When the synthetic suite has only informing failures, it should succeed", func(t *testing.T) {
 		t.Setenv("JUNIT_FIXTURE_BLOCKING_FAILURE", "false")
 		junitPath := filepath.Join(t.TempDir(), "junit.xml")
-		if err := runTestBinary(binary, "synthetic-cluster", "clusters", "", "", junitPath); err != nil {
+		if err := runTestBinary(t.Context(), binary, "synthetic-cluster", "clusters", "", "", junitPath); err != nil {
 			t.Fatalf("expected informing failures not to fail the suite: %v", err)
 		}
 
@@ -53,7 +56,7 @@ func TestRunTestBinary(t *testing.T) {
 	t.Run("When a label filter selects one test, it should omit the other discovered tests", func(t *testing.T) {
 		t.Setenv("JUNIT_FIXTURE_BLOCKING_FAILURE", "false")
 		junitPath := filepath.Join(t.TempDir(), "junit.xml")
-		if err := runTestBinary(binary, "synthetic-cluster", "clusters", "leaf-label", "", junitPath); err != nil {
+		if err := runTestBinary(t.Context(), binary, "synthetic-cluster", "clusters", "leaf-label", "", junitPath); err != nil {
 			t.Fatalf("expected the selected test to pass: %v", err)
 		}
 
@@ -95,6 +98,83 @@ func TestRunTestBinary(t *testing.T) {
 	testRequiredWIF(t, binary)
 }
 
+func TestRunTestBinaryCancellation(t *testing.T) {
+	t.Run("When the runner context is canceled, it should not start another test process", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		err := runTestBinary(ctx, os.Args[0], "synthetic-cluster", "clusters", "", "", filepath.Join(t.TempDir(), "junit.xml"))
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected cancellation instead of starting a process: %v", err)
+		}
+	})
+	binary := buildJUnitFixture(t)
+	for _, test := range []struct {
+		name        string
+		grace       time.Duration
+		wantCleanup bool
+	}{
+		{name: "When interruption grace is shorter than restoration, it should reproduce truncated cleanup", grace: 10 * time.Millisecond},
+		{name: "When interruption grace covers restoration, it should finish cleanup and write its report", grace: time.Second, wantCleanup: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			readyPath, cleanupPath, reportPath := filepath.Join(dir, "ready"), filepath.Join(dir, "cleanup"), filepath.Join(dir, "junit.xml")
+			t.Setenv("JUNIT_FIXTURE_CANCELLATION_READY", readyPath)
+			t.Setenv("JUNIT_FIXTURE_CANCELLATION_CLEANUP", cleanupPath)
+			t.Setenv("JUNIT_FIXTURE_CANCELLATION_DELAY", "250ms")
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			result := make(chan error, 1)
+			go func() {
+				result <- runTestBinaryWithGrace(ctx, binary, "synthetic-cluster", "clusters", "cancellation", "", reportPath, test.grace, 5*time.Second)
+			}()
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			deadline := time.NewTimer(30 * time.Second)
+			defer deadline.Stop()
+		ready:
+			for {
+				select {
+				case err := <-result:
+					t.Fatalf("child exited before becoming ready: %v", err)
+				case <-deadline.C:
+					cancel()
+					<-result
+					t.Fatal("child did not become ready")
+				case <-ticker.C:
+					if _, err := os.Stat(readyPath); err == nil {
+						break ready
+					}
+				}
+			}
+			cancel()
+			if err := <-result; err == nil {
+				t.Fatal("interrupted Ginkgo suite unexpectedly succeeded")
+			}
+			_, cleanupErr := os.Stat(cleanupPath)
+			if test.wantCleanup && cleanupErr != nil {
+				t.Fatalf("child cleanup did not finish: %v", cleanupErr)
+			}
+			if !test.wantCleanup && !os.IsNotExist(cleanupErr) {
+				t.Fatalf("expected short grace to interrupt delayed cleanup, got %v", cleanupErr)
+			}
+			report := parseJUnit(t, reportPath)
+			if len(report.Suites) != 1 || report.Suites[0].Tests != 1 {
+				t.Fatalf("interrupted child did not retain the custom JUnit contract: %#v", report)
+			}
+		})
+	}
+}
+
+func TestRunTestBinaryCancellationBudgets(t *testing.T) {
+	if defaultInterruptGrace < 35*time.Minute {
+		t.Fatal("interrupted Ginkgo nodes must retain the private endpoint and DNS restoration budget")
+	}
+	if defaultInterruptWait < defaultInterruptGrace+5*15*time.Minute+5*time.Minute {
+		t.Fatal("child escalation must allow an active node, five OAuth cleanup callbacks, and report generation")
+	}
+}
+
 func testRequiredWIF(t *testing.T, binary string) {
 	t.Helper()
 	for _, tt := range []struct {
@@ -123,7 +203,7 @@ func testRequiredWIF(t *testing.T, binary string) {
 			t.Setenv("JUNIT_FIXTURE_VERSION", tt.version)
 			t.Setenv("JUNIT_FIXTURE_MUTATION", tt.mutation)
 			junitPath := filepath.Join(t.TempDir(), "junit.xml")
-			err := runTestBinary(binary, "synthetic-cluster", "clusters", "required-wif", "", junitPath)
+			err := runTestBinary(t.Context(), binary, "synthetic-cluster", "clusters", "required-wif", "", junitPath)
 			if (err != nil) != (tt.wantFailure != "") {
 				t.Fatalf("unexpected process result: %v, expected failure: %q", err, tt.wantFailure)
 			}

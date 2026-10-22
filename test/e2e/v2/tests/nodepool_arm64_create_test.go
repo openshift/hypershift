@@ -21,7 +21,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,7 +56,7 @@ func NodePoolArm64CreateTest(getTestCtx internal.TestContextGetter) {
 		ctx := testCtx.Context
 		hcClient, err := testCtx.GetHostedClusterClient(hc)
 		Expect(err).NotTo(HaveOccurred())
-		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		defaultNP := nodePoolTemplate(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 		var oneReplica int32 = 1
 		np := buildTestNodePool(defaultNP, "arm64", func(pool *hyperv1.NodePool) {
@@ -79,7 +78,7 @@ func NodePoolArm64CreateTest(getTestCtx internal.TestContextGetter) {
 		Expect(err).NotTo(HaveOccurred(), "failed to create ARM64 NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created ARM64 NodePool %s\n", np.Name)
 		DeferCleanup(func() {
-			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+			cleanupNativeNodePool(ctx, testCtx.MgmtClient, np)
 		})
 		// Verify the NodePool was created with correct spec
 		createdNP := &hyperv1.NodePool{}
@@ -96,7 +95,7 @@ func NodePoolArm64CreateTest(getTestCtx internal.TestContextGetter) {
 		}
 		GinkgoWriter.Printf("Verified ARM64 NodePool %s created with correct architecture settings\n", np.Name)
 		// Wait for the ARM64 node to become ready
-		nodes := e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		nodes := nodePoolWaitForInitialState(testCtx, hc, hcClient, np)
 		Expect(nodes).To(HaveLen(1), "expected exactly 1 ARM64 node for NodePool %s", np.Name)
 		// Verify the node has the correct ARM64 architecture label
 		node := nodes[0]
@@ -105,5 +104,6 @@ func NodePoolArm64CreateTest(getTestCtx internal.TestContextGetter) {
 		Expect(ok).To(BeTrue(), "node %s should have kubernetes.io/arch label", node.Name)
 		Expect(arch).To(Equal("arm64"), "node %s should have ARM64 architecture", node.Name)
 		GinkgoWriter.Printf("Verified node %s has ARM64 architecture label\n", node.Name)
+		expectAWSNodePoolSteadyState(testCtx, np)
 	})
 }

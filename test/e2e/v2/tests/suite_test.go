@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	ctrl "sigs.k8s.io/controller-runtime"
 	zap "sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -50,6 +51,7 @@ func TestE2EV2(t *testing.T) {
 		return
 	}
 	suiteConfig, reporterConfig := GinkgoConfiguration()
+	suiteConfig.LabelFilter = defaultFixtureLabelFilter(suiteConfig.LabelFilter)
 	junitReportPath, reporterConfig = internal.ConfigureJUnitReport(junitReportPath, reporterConfig)
 
 	// Register fail handler with gomega
@@ -57,6 +59,13 @@ func TestE2EV2(t *testing.T) {
 
 	// Run the ginkgo test suite
 	RunSpecs(t, "hypershift-e2e", suiteConfig, reporterConfig)
+}
+
+func defaultFixtureLabelFilter(labelFilter string) string {
+	if labelFilter != "" {
+		return labelFilter
+	}
+	return "!hosted-cluster-health-configured-workers && !hosted-cluster-cpo-required && !hosted-cluster-break-glass-ha && !hosted-cluster-custom-config && !hosted-cluster-native-recovery && !aws-private-endpoint-transition"
 }
 
 // ReportAfterSuite writes the unified v2 E2E JUnit report. Informing tests have
@@ -89,4 +98,19 @@ var _ = BeforeSuite(func() {
 
 	// Set the global test context
 	internal.SetTestContext(testCtx)
+	if err := prepareFailureConditionVersions(testCtx, &releaseinfo.RegistryClientProvider{}); err != nil {
+		fmt.Fprintf(GinkgoWriter, "Failure condition release preparation (suite continues): %v\n", err)
+	}
+})
+
+var _ = BeforeEach(func() {
+	if tc := internal.GetTestContext(); tc != nil {
+		resetFailureConditionPhase(tc)
+	}
+})
+
+var _ = ReportAfterEach(func(report SpecReport) {
+	if err := reportFailureConditions(internal.GetTestContext(), report); err != nil {
+		fmt.Fprintf(GinkgoWriter, "Failure condition diagnostic (original spec result unchanged): %v\n", err)
+	}
 })

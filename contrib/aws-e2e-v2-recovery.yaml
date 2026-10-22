@@ -1,0 +1,26 @@
+name: aws-native-recovery
+platform: aws
+testMatrix:
+  sequential:
+    - name: aws-native-etcd-recovery
+      steps:
+        - name: aws-native-etcd-common-before
+          variant: native-etcd-recovery
+          labelFilter: control-plane-workloads || hosted-cluster-health-management || hosted-cluster-metrics || aws-control-plane-customization || routes || hosted-cluster-network-policies
+        - name: aws-native-etcd-recovery
+          variant: native-etcd-recovery
+          labelFilter: hosted-cluster-native-recovery && native-etcd-recovery
+        - name: aws-native-etcd-common-after
+          variant: native-etcd-recovery
+          labelFilter: control-plane-workloads || hosted-cluster-health-management || hosted-cluster-metrics || aws-control-plane-customization || routes || hosted-cluster-network-policies
+    - name: aws-malformed-pull-secret-recovery
+      steps:
+        - name: aws-malformed-pull-secret-common-before
+          variant: malformed-pull-secret-recovery
+          labelFilter: control-plane-workloads || hosted-cluster-health-management || hosted-cluster-metrics || aws-control-plane-customization || routes || hosted-cluster-network-policies
+        - name: aws-malformed-pull-secret-recovery
+          variant: malformed-pull-secret-recovery
+          labelFilter: hosted-cluster-native-recovery && malformed-pull-secret-recovery
+        - name: aws-malformed-pull-secret-common-after
+          variant: malformed-pull-secret-recovery
+          labelFilter: control-plane-workloads || hosted-cluster-health-management || hosted-cluster-metrics || aws-control-plane-customization || routes || hosted-cluster-network-policies

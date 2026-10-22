@@ -17,6 +17,9 @@ limitations under the License.
 package tests
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -26,6 +29,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -44,28 +48,62 @@ func EnsureNodeCommunicationTest(getTestCtx internal.TestContextGetter) {
 
 			clientset, err := kubernetes.NewForConfig(restConfig)
 			Expect(err).NotTo(HaveOccurred(), "failed to create hosted cluster kubernetes clientset")
+			required, err := nodeCommunicationRequired(tc.Context, clientset, tc.ExpectedNodePools)
+			Expect(err).NotTo(HaveOccurred(), "failed to determine whether the zero-worker fixture has acquired workers")
+			if !required {
+				Skip("node communication requires workers; this fixture explicitly configures zero workers and has no nodes")
+			}
 
-			Eventually(func(g Gomega) {
-				podList, err := clientset.CoreV1().Pods("kube-system").List(tc.Context, metav1.ListOptions{
-					LabelSelector: "app=konnectivity-agent",
-				})
-				g.Expect(err).NotTo(HaveOccurred(), "failed to list konnectivity-agent pods")
-				g.Expect(podList.Items).NotTo(BeEmpty(), "expected at least one konnectivity-agent pod in kube-system")
-
-				retrieved := false
-				for _, pod := range podList.Items {
-					_, err = clientset.CoreV1().Pods("kube-system").GetLogs(pod.Name, &corev1.PodLogOptions{
-						Container: "konnectivity-agent",
-					}).DoRaw(tc.Context)
-					if err == nil {
-						retrieved = true
-						break
-					}
-				}
-				g.Expect(retrieved).To(BeTrue(), "failed to retrieve logs from any konnectivity-agent pod")
-			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+			Expect(waitForNodeCommunication(tc.Context, clientset)).To(Succeed(), "konnectivity-agent logs must be retrievable")
 		})
 	})
+}
+
+func nodeCommunicationRequired(ctx context.Context, clientset kubernetes.Interface, expectedNodePools map[string]int32) (bool, error) {
+	if expectedNodePools == nil {
+		return true, nil
+	}
+	for _, replicas := range expectedNodePools {
+		if replicas > 0 {
+			return true, nil
+		}
+	}
+	nodes, err := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return false, fmt.Errorf("listing nodes for explicitly zero-worker fixture: %w", err)
+	}
+	return len(nodes.Items) > 0, nil
+}
+
+func waitForNodeCommunication(ctx context.Context, clientset kubernetes.Interface) error {
+	var lastError error
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(pollContext context.Context) (bool, error) {
+		lastError = nodeCommunicationProbe(pollContext, clientset)
+		return lastError == nil, nil
+	})
+	if err != nil {
+		return fmt.Errorf("waiting for konnectivity-agent logs: %w", errors.Join(err, lastError))
+	}
+	return nil
+}
+
+func nodeCommunicationProbe(ctx context.Context, clientset kubernetes.Interface) error {
+	pods, err := clientset.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{LabelSelector: "app=konnectivity-agent"})
+	if err != nil {
+		return fmt.Errorf("listing konnectivity-agent pods: %w", err)
+	}
+	if len(pods.Items) == 0 {
+		return fmt.Errorf("no konnectivity-agent pods in kube-system")
+	}
+	var logErrors []error
+	for _, pod := range pods.Items {
+		_, err := clientset.CoreV1().Pods("kube-system").GetLogs(pod.Name, &corev1.PodLogOptions{Container: "konnectivity-agent"}).DoRaw(ctx)
+		if err == nil {
+			return nil
+		}
+		logErrors = append(logErrors, fmt.Errorf("pod %s: %w", pod.Name, err))
+	}
+	return fmt.Errorf("no konnectivity-agent logs retrievable: %w", errors.Join(logErrors...))
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodeCommunication] Hosted Cluster Node Communication", Label("hosted-cluster-node-communication"), func() {

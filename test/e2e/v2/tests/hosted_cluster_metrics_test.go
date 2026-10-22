@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/blang/semver"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -35,7 +36,6 @@ import (
 	npmetrics "github.com/openshift/hypershift/pkg/metrics/nodepool"
 	azureutil "github.com/openshift/hypershift/support/azureutil"
 	supportforwarder "github.com/openshift/hypershift/support/forwarder"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -43,7 +43,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,13 +72,13 @@ func RegisterHostedClusterMetricsTests(getTestCtx internal.TestContextGetter) {
 
 func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 	When("HyperShift operator is running", func() {
-		It("should expose expected metrics at the metrics endpoint", func() {
+		It("should expose expected metrics at the metrics endpoint", Label("hosted-cluster-operator-metrics"), func() {
 			tc := getTestCtx()
 			tc.SkipIfPlatform(hyperv1.NonePlatform)
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
-			mgmtRestConfig, err := e2eutil.GetConfig()
+			mgmtRestConfig, err := v2util.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "should be able to load management cluster REST config")
 
 			clientset, err := kubernetes.NewForConfig(mgmtRestConfig)
@@ -147,7 +146,7 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 	When("metrics forwarding is enabled", Label("Informing"), func() {
 		It("should deploy the metrics pipeline and scrape kube-apiserver metrics end-to-end", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version422)
+			tc.SkipIfVersionBelow(semver.MustParse("4.22.0"))
 			hostedCluster, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
@@ -203,10 +202,9 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 					monitoringNamespace, promPodName, "prometheus",
 					"curl", "-s", "http://localhost:9090/api/v1/targets")
 				g.Expect(err).NotTo(HaveOccurred(), "should be able to query Prometheus targets API")
-				g.Expect(output).To(ContainSubstring("control-plane-metrics-forwarder"),
-					"Prometheus targets should include the metrics-forwarder scrape pool")
-				g.Expect(output).To(ContainSubstring(`"health":"up"`),
-					"metrics-forwarder target should be healthy")
+				up, err := metricsForwarderTargetUp(output)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(up).To(BeTrue(), "the kube-apiserver metrics-forwarder target must be healthy")
 			}, 10*time.Minute, 15*time.Second).Should(Succeed())
 
 			By("Querying for actual kube-apiserver metrics scraped via the forwarder")
@@ -215,10 +213,9 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 					monitoringNamespace, promPodName, "prometheus",
 					"curl", "-gs", `http://localhost:9090/api/v1/query?query=apiserver_request_total{job="apiserver"}`)
 				g.Expect(err).NotTo(HaveOccurred(), "should be able to query Prometheus for apiserver_request_total")
-				g.Expect(output).To(ContainSubstring(`"resultType":"vector"`),
-					"Prometheus query should return vector results")
-				g.Expect(output).NotTo(ContainSubstring(`"result":[]`),
-					"should have apiserver_request_total metrics from kube-apiserver")
+				count, err := metricsVectorSize(output)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(count).To(BeNumerically(">", 0), "should have apiserver_request_total metrics from kube-apiserver")
 			}, 5*time.Minute, 15*time.Second).Should(Succeed())
 		})
 	})
@@ -226,30 +223,33 @@ func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
 
 func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContextGetter) {
 	When("cluster has worker nodes", func() {
-		It("should have a functional node-tuning-operator metrics endpoint", func() {
+		It("should have a functional node-tuning-operator metrics endpoint", Label("hosted-cluster-node-tuning-metrics"), func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version422)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			applicable, err := metricsNodeTuningApplicable(tc, hc)
+			Expect(err).NotTo(HaveOccurred(), "determine originating release and desired workers for node-tuning metrics")
+			if !applicable {
+				Skip("node-tuning metrics require an eligible release, enabled capability and applicable workers")
+			}
 
 			svc := &corev1.Service{}
-			err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+			err = tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 				Name:      "node-tuning-operator",
 				Namespace: tc.ControlPlaneNamespace,
 			}, svc)
-			if apierrors.IsNotFound(err) {
-				Skip("node-tuning-operator service not found in control plane namespace, assuming no workers")
-			}
 			Expect(err).NotTo(HaveOccurred(), "failed to get node-tuning-operator service")
 
 			Expect(svc.Spec.Ports).NotTo(BeEmpty(), "node-tuning-operator service should have at least one port")
 
 			hasMetricsPort := false
 			for _, port := range svc.Spec.Ports {
-				if port.Name == "metrics" || port.Port == 60000 {
+				if port.Name == "metrics" {
 					hasMetricsPort = true
 					break
 				}
 			}
-			Expect(hasMetricsPort).To(BeTrue(), "node-tuning-operator service should expose a metrics port (named 'metrics' or on port 60000)")
+			Expect(hasMetricsPort).To(BeTrue(), "node-tuning-operator service should expose a port named 'metrics'")
 
 			By("Validating ServiceMonitor exists with metrics endpoint")
 			serviceMonitor := &monitoringv1.ServiceMonitor{}
@@ -273,9 +273,10 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 				}
 			}
 			Expect(targetPort).NotTo(BeEmpty(), "ServiceMonitor should have a /metrics endpoint with a target port")
+			Expect(scheme).To(Equal("https"), "node-tuning metrics must use HTTPS")
 
 			By("Verifying the HTTPS metrics endpoint returns Prometheus data")
-			mgmtRestConfig, err := e2eutil.GetConfig()
+			mgmtRestConfig, err := v2util.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "should be able to load management cluster REST config")
 			clientset, err := kubernetes.NewForConfig(mgmtRestConfig)
 			Expect(err).NotTo(HaveOccurred(), "should be able to create kubernetes clientset")
@@ -298,13 +299,15 @@ func EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx internal.TestContext
 				}
 				g.Expect(runningPodName).NotTo(BeEmpty(), "a running cluster-node-tuning-operator pod should exist")
 
-				output, err := v2util.RunCommandInPod(tc.Context, clientset, mgmtRestConfig,
-					tc.ControlPlaneNamespace, runningPodName, "cluster-node-tuning-operator",
-					"curl", "-s", "-f", "--max-time", "10",
-					"--cacert", "/etc/secrets/ca.crt",
-					"--cert", "/tmp/metrics-client-ca/tls.crt",
-					"--key", "/tmp/metrics-client-ca/tls.key",
-					httpsServiceURL)
+				output, err := metricsNodeTuningProbe(tc.Context, func(execContext context.Context) (string, error) {
+					return v2util.RunCommandInPod(execContext, clientset, mgmtRestConfig,
+						tc.ControlPlaneNamespace, runningPodName, "cluster-node-tuning-operator",
+						"curl", "-s", "-f", "--max-time", "10",
+						"--cacert", "/etc/secrets/ca.crt",
+						"--cert", "/tmp/metrics-client-ca/tls.crt",
+						"--key", "/tmp/metrics-client-ca/tls.key",
+						httpsServiceURL)
+				})
 				g.Expect(err).NotTo(HaveOccurred(), "should be able to curl NTO metrics endpoint at %s", httpsServiceURL)
 				g.Expect(output).NotTo(BeEmpty(), "metrics response should not be empty")
 				g.Expect(output).To(ContainSubstring("# HELP"),
@@ -318,7 +321,7 @@ func EnsureKubeSchedulerMetricsEndpointTest(getTestCtx internal.TestContextGette
 	When("kube-scheduler is running", func() {
 		It("should have functional kube-scheduler metrics endpoints", func() {
 			tc := getTestCtx()
-			tc.SkipIfVersionBelow(e2eutil.Version423)
+			tc.SkipIfVersionBelow(semver.MustParse("4.23.0"))
 
 			// 1. Validate Service exists and has the "client" port
 			svc := &corev1.Service{}
@@ -391,7 +394,7 @@ func ValidateCPOMetricsTest(getTestCtx internal.TestContextGetter) {
 		BeforeEach(func() {
 			tc = getTestCtx()
 			tc.SkipIfPlatform(hyperv1.NonePlatform)
-			tc.SkipIfVersionBelow(e2eutil.Version51)
+			tc.SkipIfVersionBelow(semver.MustParse("5.1.0"))
 		})
 
 		It("should contain availability and latency data from CPO", func() {
@@ -400,7 +403,7 @@ func ValidateCPOMetricsTest(getTestCtx internal.TestContextGetter) {
 				kasmetrics.KASRequestDurationMetricName,
 			}
 
-			mgmtRestConfig, err := e2eutil.GetConfig()
+			mgmtRestConfig, err := v2util.GetConfig()
 			Expect(err).NotTo(HaveOccurred(), "should be able to load management cluster REST config")
 			clientset, err := kubernetes.NewForConfig(mgmtRestConfig)
 			Expect(err).NotTo(HaveOccurred(), "should be able to create kubernetes clientset")
@@ -478,7 +481,7 @@ func fetchMetricsViaPortForward(ctx context.Context, mgmtClient crclient.Client,
 		return "", fmt.Errorf("failed to parse metrics-client certificate: %w", err)
 	}
 
-	restConfig, err := e2eutil.GetConfig()
+	restConfig, err := v2util.GetConfig()
 	if err != nil {
 		return "", fmt.Errorf("failed to get rest config: %w", err)
 	}

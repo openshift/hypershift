@@ -31,7 +31,8 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	supportforwarder "github.com/openshift/hypershift/support/forwarder"
 	"github.com/openshift/hypershift/support/netutil"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -44,11 +45,16 @@ type TestContextGetter func() *TestContext
 
 type TestContext struct {
 	context.Context
-	MgmtClient            crclient.Client
-	ClusterName           string
-	ClusterNamespace      string
-	ControlPlaneNamespace string
-	ArtifactDir           string
+	MgmtClient                         crclient.Client
+	ClusterName                        string
+	ClusterNamespace                   string
+	ControlPlaneNamespace              string
+	ArtifactDir                        string
+	ExpectedNodePools                  map[string]int32
+	ConditionDiagnosticUpgradeTarget   string
+	ConditionDiagnosticReleaseImage    string
+	ConditionDiagnosticReleaseVersions map[string]semver.Version
+	ConditionDiagnosticReleaseErrors   map[string]error
 }
 
 // GetHostedCluster fetches the HostedCluster from the management cluster.
@@ -199,7 +205,7 @@ func (tc *TestContext) GetHostedClusterClientViaPortForward(hc *hyperv1.HostedCl
 	listener.Close()
 
 	// 4. Set up the port-forward.
-	mgmtRESTConfig, err := e2eutil.GetConfig()
+	mgmtRESTConfig, err := v2util.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get management cluster REST config: %w", err)
 	}
@@ -330,14 +336,19 @@ func SetTestContext(ctx *TestContext) {
 // It reads E2E_HOSTED_CLUSTER_NAME and E2E_HOSTED_CLUSTER_NAMESPACE from the environment.
 // If these are not set, it creates a basic context with only the management client.
 func SetupTestContextFromEnv(ctx context.Context) (*TestContext, error) {
-	mgmtClient, err := e2eutil.GetClient()
+	expectedNodePools, err := lifecycle.ParseExpectedNodePools(GetEnvVarValue(lifecycle.ExpectedNodePoolsEnv))
+	if err != nil {
+		return nil, err
+	}
+	mgmtClient, err := v2util.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get management client: %w", err)
 	}
 
 	testCtx := &TestContext{
-		Context:    ctx,
-		MgmtClient: mgmtClient,
+		Context:           ctx,
+		MgmtClient:        mgmtClient,
+		ExpectedNodePools: expectedNodePools,
 	}
 
 	hostedClusterName := GetEnvVarValue("E2E_HOSTED_CLUSTER_NAME")
