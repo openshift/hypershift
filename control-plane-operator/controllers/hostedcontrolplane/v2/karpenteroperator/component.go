@@ -25,6 +25,8 @@ type KarpenterOperatorOptions struct {
 	ControlPlaneOperatorImage          string
 	IgnitionEndpoint                   string
 	StandaloneKarpenterOperatorEnabled bool
+	RegistryOverrides                  map[string]string
+	OpenShiftRegistryOverrides         map[string][]string
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
