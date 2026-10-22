@@ -695,9 +695,9 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 		return nil, fmt.Errorf("failed to lookup release image: %w", err)
 	}
 
-	haproxyImage, err := haproxy.ResolveHAProxyImage(releaseImage.ComponentImages())
+	haproxyImage, err := nodepool.ResolveHAProxyImage(np, hostedCluster, releaseImage, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to resolve HAProxy image: %w", err)
 	}
 
 	haproxyClient := haproxy.HAProxy{
