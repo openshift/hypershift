@@ -183,6 +183,7 @@ nav:
       - 'Global Pull Secret': how-to/aws/global-pull-secret.md
       - 'Other SDN providers': how-to/aws/other-sdn-providers.md
       - how-to/aws/shared-vpc.md
+      - how-to/aws/storageclass-kms-encryption.md
       - 'Troubleshooting':
         - how-to/aws/troubleshooting/index.md
         - how-to/aws/troubleshooting/troubleshooting-disaster-recovery.md

@@ -279,6 +279,56 @@ func NewComponent() component.ControlPlaneComponent {
 }
 ```
 
+### Preconditions
+
+If your component must not start reconciliation until a cluster-level condition on
+the `HostedControlPlane` is met, declare it as a precondition. Unlike dependencies,
+which wait for another component's readiness, a precondition waits for a named HCP
+status condition to become `True`. Until every enforced condition is `True`, the
+component does not create its workload and reports `RolloutComplete=False` with a
+message naming the conditions it is waiting on.
+
+A precondition group is attached with a **gate**: a callable that decides whether
+the group is enforced on a given reconcile. The gate returns `true` to enforce the
+conditions, `false` to skip them (treated as met), and an error to abort the
+reconcile (it is retried). This lets a component apply a precondition only under
+conditions it decides at runtime, for example only while its own workload does not
+exist yet (first rollout ordering), without gating later updates.
+
+The precondition's condition is read as-is: the framework does not check its
+`observedGeneration` or the release version, only its `status`.
+
+```go hl_lines="5"
+// control-plane-operator/controllers/hostedcontrolplane/v2/mycomponent/component.go
+
+func NewComponent() component.ControlPlaneComponent {
+	return component.NewDeploymentComponent(ComponentName, &MyComponent{}).
+		WithGatedPreconditions(enforceOrderingUntilWorkloadExists, hyperv1.ConfigOperatorReconciliationSucceeded).
+		Build()
+}
+
+// enforceOrderingUntilWorkloadExists enforces the precondition only while this
+// component's workload does not exist yet, so ordering applies on the first
+// rollout but later updates and upgrades are not gated.
+func enforceOrderingUntilWorkloadExists(cpContext component.WorkloadContext) (bool, error) {
+	deployment := &appsv1.Deployment{}
+	err := cpContext.Client.Get(cpContext, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: ComponentName}, deployment)
+	if apierrors.IsNotFound(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return false, nil
+}
+```
+
+Use a precondition (rather than a dependency) when the ordering signal is a
+cluster-level HCP condition rather than another component's readiness. For example,
+the cluster-storage-operator gates on `ConfigOperatorReconciliationSucceeded` so the
+HCCO creates the `ClusterCSIDriver` before the CSO creates the default StorageClass,
+with a gate that enforces this only on the initial rollout.
+
 ### Tokens
 
 If your component requires access to the cloud or kube-apiserver. It requires a serviceAccount token in the guest cluster. This can be provided by the token-minter sidecar container which you can automatically inject into your deployment as follows:

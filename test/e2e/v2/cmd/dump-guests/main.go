@@ -21,6 +21,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"os"
@@ -54,7 +55,7 @@ func main() {
 	}
 
 	log.Printf("Dumping %d clusters from manifest", len(manifest.Clusters))
-	dumpClusters(*hypershiftBinary, artifactDir, manifest.Clusters, platform.ClusterSpecs(os.Getenv("RELEASE_IMAGE_LATEST"), os.Getenv("OCP_IMAGE_N1")))
+	dumpClusters(*hypershiftBinary, artifactDir, manifest.Clusters, platform.ClusterSpecs(context.Background(), os.Getenv("RELEASE_IMAGE_LATEST"), os.Getenv("OCP_IMAGE_N1")))
 	log.Println("All cluster dumps complete")
 }
 
