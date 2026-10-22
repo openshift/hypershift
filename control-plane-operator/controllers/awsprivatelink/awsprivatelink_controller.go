@@ -672,7 +672,7 @@ func selectEndpointSubnets(subnetIDs []string, azForSubnet map[string]string, re
 	var excluded []string
 	for _, subnetID := range subnetIDs {
 		zone := azForSubnet[subnetID]
-		if zone != "" && !(len(zone) == len(region)+1 && strings.HasPrefix(zone, region) && zone[len(region)] >= 'a' && zone[len(region)] <= 'z') {
+		if region != "" && zone != "" && !(len(zone) == len(region)+1 && strings.HasPrefix(zone, region) && zone[len(region)] >= 'a' && zone[len(region)] <= 'z') {
 			log.Info("excluding subnet in nonstandard availability zone from VPC endpoint", "subnetID", subnetID, "zone", zone)
 			excluded = append(excluded, fmt.Sprintf("%s (%s)", subnetID, zone))
 			continue
