@@ -25,13 +25,15 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/pkg/manifests"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/util/retry"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 // ensureNodeCountMatchesNodePoolReplicas verifies that every NodePool belonging
@@ -129,8 +131,8 @@ func ensureMachineDeploymentGeneration(
 func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 	It("should upgrade the control plane from N-1 to latest", func() {
 		testCtx := getTestCtx()
-		testCtx.SkipIfVersionBelow(e2eutil.Version422)
-
+		testCtx.ConditionDiagnosticUpgradeTarget = internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
+		testCtx.ConditionDiagnosticReleaseImage = testCtx.ConditionDiagnosticUpgradeTarget
 		ctx := testCtx.Context
 		By("Fetching the HostedCluster before upgrade")
 		hc, err := testCtx.GetHostedCluster()
@@ -138,20 +140,41 @@ func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 
 		By("Preparing the latest release image for upgrade")
 		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
-		Expect(latestImage).NotTo(BeEmpty(), "E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
+		Expect(validateControlPlaneUpgradeInput(hc, latestImage)).To(Succeed())
+		if hc.Spec.Platform.Type == hyperv1.AWSPlatform {
+			Expect(hc.Spec.ControllerAvailabilityPolicy).To(Equal(hyperv1.HighlyAvailable), "AWS upgrade fixture must use an HA control plane")
+			Expect(hc.Spec.Platform.AWS).NotTo(BeNil())
+			roles := hc.Spec.Platform.AWS.RolesRef
+			roleARNs := []string{roles.IngressARN, roles.ImageRegistryARN, roles.StorageARN, roles.NetworkARN, roles.KubeCloudControllerARN, roles.NodePoolManagementARN, roles.ControlPlaneOperatorARN}
+			uniqueRoles := make(map[string]struct{}, len(roleARNs))
+			for _, roleARN := range roleARNs {
+				Expect(roleARN).NotTo(BeEmpty(), "AWS upgrade fixture requires individual component roles")
+				uniqueRoles[roleARN] = struct{}{}
+			}
+			Expect(uniqueRoles).To(HaveLen(len(roleARNs)), "AWS upgrade fixture must not use a shared IAM role")
+		}
 
 		var startingVersion string
 		if hc.Status.Version != nil && len(hc.Status.Version.History) > 0 {
 			startingVersion = hc.Status.Version.History[0].Version
 		}
+		startingRelease, err := semver.Parse(startingVersion)
+		Expect(err).NotTo(HaveOccurred())
+		targetRelease := nodePoolReleaseVersion(testCtx, hc, latestImage)
+		Expect(targetRelease.GT(startingRelease)).To(BeTrue(), "resolved target release content must be newer than the observed starting version, even when pullspecs differ")
 
 		By(fmt.Sprintf("Requesting control plane upgrade from version %s to image %s", startingVersion, latestImage))
-		err = e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
-			obj.Spec.Release.Image = latestImage
-			if obj.Annotations == nil {
-				obj.Annotations = make(map[string]string)
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			latest, err := testCtx.GetHostedCluster()
+			if err != nil {
+				return err
 			}
-			obj.Annotations[hyperv1.ForceUpgradeToAnnotation] = latestImage
+			latest.Spec.Release.Image = latestImage
+			if latest.Annotations == nil {
+				latest.Annotations = make(map[string]string)
+			}
+			latest.Annotations[hyperv1.ForceUpgradeToAnnotation] = latestImage
+			return testCtx.MgmtClient.Update(ctx, latest)
 		})
 		Expect(err).NotTo(HaveOccurred(), "failed to update hosted cluster release image")
 
@@ -166,9 +189,23 @@ func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 
 		By("Validating node count after upgrade")
 		ensureNodeCountMatchesNodePoolReplicas(ctx, testCtx.MgmtClient, hcClient, hc)
+		Expect(validateControlPlaneNamespaceHealth(testCtx)).To(Succeed(), "control plane health immediately after upgrade")
 		By("Validating MachineDeployment generation after upgrade")
 		ensureMachineDeploymentGeneration(ctx, testCtx.MgmtClient, hc, 1)
 	})
+}
+
+func validateControlPlaneUpgradeInput(cluster *hyperv1.HostedCluster, targetImage string) error {
+	if cluster == nil || targetImage == "" {
+		return fmt.Errorf("control plane upgrade requires a cluster and E2E_LATEST_RELEASE_IMAGE")
+	}
+	if cluster.Status.Version == nil || len(cluster.Status.Version.History) == 0 || cluster.Status.Version.History[0].Version == "" {
+		return fmt.Errorf("control plane upgrade requires an observed starting release")
+	}
+	if cluster.Spec.Release.Image == "" || cluster.Spec.Release.Image == targetImage || cluster.Status.Version.History[0].Image == targetImage {
+		return fmt.Errorf("control plane upgrade requires a previous-release fixture distinct from the target, not a no-op")
+	}
+	return nil
 }
 
 // RegisterControlPlaneUpgradeTests registers all control plane upgrade tests.

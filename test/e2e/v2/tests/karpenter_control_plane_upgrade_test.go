@@ -13,7 +13,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -25,6 +24,8 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+
+	"github.com/blang/semver"
 )
 
 func RegisterKarpenterControlPlaneUpgradeTests(getTestCtx internal.TestContextGetter) {
@@ -44,9 +45,9 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift] Karpenter",
 			// tested against a 4.22 hosted cluster, set RUN_KARPENTER_TESTS=true to
 			// lower the gate to 4.22.
 			if internal.GetEnvVarValue("RUN_KARPENTER_TESTS") == "true" {
-				testCtx.SkipIfVersionBelow(e2eutil.Version422)
+				testCtx.SkipIfVersionBelow(semver.MustParse("4.22.0"))
 			} else {
-				testCtx.SkipIfVersionBelow(e2eutil.Version423)
+				testCtx.SkipIfVersionBelow(semver.MustParse("4.23.0"))
 			}
 		})
 
@@ -67,13 +68,11 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 
 		// This test does not wait for CAPI worker NodePools. BaseNodePool and TestWorkload use a
 		// dedicated taint and matching tolerations so platform workloads stay off these nodes,
-		// which isolates Karpenter behavior on HyperShift. The test does not assert how many
-		// Karpenter nodes exist; it only checks that a workload running on a pre-upgrade node
-		// is rescheduled onto a replacement node after control plane upgrade and drift.
+		// which isolates Karpenter behavior on HyperShift.
 		It("should upgrade the control plane and drift Karpenter nodes to the new version", func() {
 			tc := getTestCtx()
+			tc.ConditionDiagnosticUpgradeTarget = internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -81,6 +80,10 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 
 			latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
 			Expect(latestImage).NotTo(BeEmpty(), "E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
+			targetIdentity, err := hostedReleaseImageIdentity(ctx, tc.MgmtClient, hc, latestImage)
+			Expect(err).NotTo(HaveOccurred(), "resolve the effective AutoNode upgrade target before provisioning")
+			targetVersion := nodePoolReleaseVersion(tc, hc, targetIdentity.Canonical)
+			Expect(autoNodeUpgradeTarget(hc, targetIdentity, targetVersion)).To(Succeed())
 			previousImage := hc.Spec.Release.Image
 			By("Starting Karpenter control plane upgrade")
 			GinkgoWriter.Printf("FromImage: %s, toImage: %s\n", previousImage, latestImage)
@@ -105,10 +108,15 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 
 			By("Waiting for ready NodeClaim associated with pre-upgrade node")
 			preUpgradeNodeClaim := waitForReadyNodeClaim(Default, ctx, hcClient, preUpgradeNode.Name, karpenterNodePool.Name)
+			waitForAutoscalingNodes(ctx, hcClient, replicas, crclient.MatchingLabels(nodeLabels))
+			claims := &karpenterv1.NodeClaimList{}
+			Expect(hcClient.List(ctx, claims)).To(Succeed())
+			Expect(claims.Items).To(HaveLen(replicas), "the isolated upgrade fixture must contain only the pre-upgrade NodeClaim")
+			Expect(claims.Items[0].UID).To(Equal(preUpgradeNodeClaim.UID))
 			GinkgoWriter.Printf("Pre-upgrade NodeClaim: %s\n", preUpgradeNodeClaim.Name)
 
 			By(fmt.Sprintf("Updating cluster release image to %s", latestImage))
-			err = e2eutil.UpdateObject(t, ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+			err = updateAutoNodeObject(ctx, tc.MgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 				obj.Spec.Release.Image = latestImage
 				if obj.Annotations == nil {
 					obj.Annotations = make(map[string]string)
@@ -121,7 +129,8 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 			// drift until the control plane upgrade completes, because the ignition config
 			// hash is derived from the completed release image, not the desired one.
 			By("Waiting for control plane rollout without premature NodeClaim drift")
-			expectControlPlaneRolloutWithoutDrift(Default, ctx, tc.MgmtClient, hcClient, hc, latestImage, preUpgradeNodeClaim)
+			expectControlPlaneRolloutWithoutDrift(Default, ctx, tc.MgmtClient, hcClient, hc, targetIdentity, preUpgradeNodeClaim)
+			ExpectHostedClusterUpgradeToComplete(ctx, tc.MgmtClient, hc, latestImage)
 			GinkgoWriter.Println("Control plane upgrade completed")
 
 			By("Waiting for pre-upgrade NodeClaim to be drifted after control plane upgrade")
@@ -148,7 +157,7 @@ func KarpenterUpgradeTest(getTestCtx internal.TestContextGetter) {
 				WithTimeout(5 * time.Minute).
 				WithPolling(3 * time.Second).
 				Should(Succeed())
-			GinkgoWriter.Println("Pre-upgrade NodeClaim reported drifted")
+			GinkgoWriter.Println("Pre-upgrade NodeClaim drifted or was deleted after control plane completion")
 
 			By("Waiting for workload to reschedule off the pre-upgrade node")
 			newReadyPods := v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nil, []corev1.Node{*preUpgradeNode}, replicas, podLabels)
@@ -203,8 +212,8 @@ func logKarpenterNodeVersionInfo(testPhase string, node *corev1.Node, releaseIma
 	GinkgoWriter.Printf("  osImage:           %s\n", info.OSImage)
 }
 
-// waitForReadyNodeClaim polls until a non-deleting, Initialized NodeClaim exists for the
-// given node and NodePool name.
+// waitForReadyNodeClaim polls until a live NodeClaim with a provider ID and
+// Launched, Registered, and Initialized conditions exists for the given node and NodePool.
 func waitForReadyNodeClaim(g Gomega, ctx context.Context, client crclient.Client, nodeName, nodePoolName string) *karpenterv1.NodeClaim {
 	GinkgoHelper()
 	var matched *karpenterv1.NodeClaim
@@ -222,14 +231,7 @@ func waitForReadyNodeClaim(g Gomega, ctx context.Context, client crclient.Client
 			if !claim.DeletionTimestamp.IsZero() {
 				continue
 			}
-			ready := false
-			for _, c := range claim.Status.Conditions {
-				if c.Type == karpenterv1.ConditionTypeInitialized && c.Status == metav1.ConditionTrue {
-					ready = true
-					break
-				}
-			}
-			pollG.Expect(ready).To(BeTrue(), "NodeClaim %s for node %s is not ready", claim.Name, nodeName)
+			pollG.Expect(autoNodeClaimReadiness(claim)).To(Succeed())
 			matched = claim
 			return
 		}
@@ -252,7 +254,7 @@ func expectControlPlaneRolloutWithoutDrift(
 	mgmtClient crclient.Client,
 	guestClient crclient.Client,
 	hc *hyperv1.HostedCluster,
-	targetImage string,
+	identity releaseImageIdentity,
 	nodeClaim *karpenterv1.NodeClaim,
 ) {
 	GinkgoHelper()
@@ -270,10 +272,7 @@ func expectControlPlaneRolloutWithoutDrift(
 		pollG.Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster %s/%s", hc.Namespace, hc.Name)
 
 		cpv := currentHC.Status.ControlPlaneVersion
-		if cpv.Desired.Image == targetImage &&
-			len(cpv.History) > 0 &&
-			cpv.History[0].Image == targetImage &&
-			cpv.History[0].State == configv1.CompletedUpdate {
+		if autoNodeControlPlaneRolloutComplete(cpv, identity) {
 			return
 		}
 
@@ -285,7 +284,7 @@ func expectControlPlaneRolloutWithoutDrift(
 		}
 		pollG.Expect(err).NotTo(HaveOccurred(), "failed to get NodeClaim %s", nodeClaim.Name)
 
-		conditions, err := e2eutil.Conditions(nc)
+		conditions, err := v2util.Conditions(nc)
 		pollG.Expect(err).NotTo(HaveOccurred(), "failed to read conditions for NodeClaim %s", nodeClaim.Name)
 		for _, c := range conditions {
 			if c.Type == karpenterv1.ConditionTypeDrifted && c.Status == metav1.ConditionTrue {
@@ -296,9 +295,9 @@ func expectControlPlaneRolloutWithoutDrift(
 		// Signal that CP is not yet complete so Eventually retries. History[0] may
 		// still be the previous Completed rollout right after Desired moves to
 		// targetImage, so require History[0].Image to match as well.
-		pollG.Expect(cpv.Desired.Image).To(Equal(targetImage))
+		pollG.Expect(identity.Matches(cpv.Desired.Image)).To(BeTrue(), "control plane desired image %s must identify target %s", cpv.Desired.Image, identity.Requested)
 		pollG.Expect(cpv.History).NotTo(BeEmpty(), "controlPlaneVersion has no history yet")
-		pollG.Expect(cpv.History[0].Image).To(Equal(targetImage), "waiting for target image in controlPlaneVersion history")
+		pollG.Expect(identity.Matches(cpv.History[0].Image)).To(BeTrue(), "waiting for target image %s in controlPlaneVersion history, got %s", identity.Requested, cpv.History[0].Image)
 		pollG.Expect(cpv.History[0].State).To(Equal(configv1.CompletedUpdate))
 	}).
 		WithContext(ctx).

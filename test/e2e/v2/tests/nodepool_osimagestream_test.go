@@ -27,8 +27,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -99,17 +99,17 @@ func NodePoolOSImageStreamRHEL10RuncRejectionTest(getTestCtx internal.TestContex
 
 		hc, err := testCtx.GetHostedCluster()
 		Expect(err).NotTo(HaveOccurred())
-		testCtx.SkipIfVersionBelow(e2eutil.Version50)
+		testCtx.SkipIfVersionBelow(semver.MustParse("5.0.0"))
 
 		ctx := testCtx.Context
 
-		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		defaultNP := nodePoolTemplate(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
 		// Create a ConfigMap with a ContainerRuntimeConfig that sets defaultRuntime to runc.
 		runcConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      e2eutil.SimpleNameGenerator.GenerateName(hc.Name + "-runc-ctrcfg-"),
+				Name:      nodePoolUniqueName(hc.Name + "-runc-ctrcfg-"),
 				Namespace: hc.Namespace,
 			},
 			Data: map[string]string{
@@ -147,27 +147,27 @@ spec:
 		Expect(testCtx.MgmtClient.Create(ctx, np)).To(Succeed(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s with osImageStream=rhel-10 and runc config\n", np.Name)
 		DeferCleanup(func() {
-			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+			cleanupNativeNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.EventuallyObject[*hyperv1.NodePool](
-			GinkgoTB(), ctx,
+		nodePoolEventuallyObject[*hyperv1.NodePool](
+			ctx,
 			"NodePool to have ValidMachineConfig=False with ValidationFailed and runc message",
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]nodePoolPredicate[*hyperv1.NodePool]{
+				nodePoolConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolValidMachineConfigConditionType,
 					Status: metav1.ConditionFalse,
 					Reason: hyperv1.NodePoolValidationFailedReason,
 				}),
 				conditionMessageContains(hyperv1.NodePoolValidMachineConfigConditionType, "incompatible with runc"),
 			},
-			e2eutil.WithTimeout(5*time.Minute),
-			e2eutil.WithInterval(10*time.Second),
+			nodePoolPollTimeout(5*time.Minute),
+			nodePoolPollInterval(10*time.Second),
 		)
 	})
 }
@@ -183,10 +183,10 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 		Expect(err).NotTo(HaveOccurred())
 		// CI always targets OCP 5.0+, but guard defensively in case
 		// the test is ever run against an older cluster.
-		testCtx.SkipIfVersionBelow(e2eutil.Version50)
+		testCtx.SkipIfVersionBelow(semver.MustParse("5.0.0"))
 		ctx := testCtx.Context
 
-		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		defaultNP := nodePoolTemplate(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
 		// This test verifies default resolution — skip if the default NodePool
@@ -201,38 +201,38 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 		// will never be set.
 		GinkgoWriter.Printf("Waiting for NodePool %s/%s to have nodesInfo with node versions populated\n",
 			defaultNP.Namespace, defaultNP.Name)
-		e2eutil.EventuallyObject[*hyperv1.NodePool](
-			GinkgoTB(), ctx,
+		nodePoolEventuallyObject[*hyperv1.NodePool](
+			ctx,
 			fmt.Sprintf("NodePool %s/%s to have nodesInfo.nodeVersions populated", defaultNP.Namespace, defaultNP.Name),
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
+			[]nodePoolPredicate[*hyperv1.NodePool]{
 				nodesInfoPopulatedPredicate(),
 			},
-			e2eutil.WithTimeout(10*time.Minute),
-			e2eutil.WithInterval(15*time.Second),
+			nodePoolPollTimeout(10*time.Minute),
+			nodePoolPollInterval(15*time.Second),
 		)
 
 		expectedStream := hyperv1.OSImageStreamRHEL10
 
 		GinkgoWriter.Printf("Waiting for NodePool %s/%s status.osImageStream.name to be %s\n",
 			defaultNP.Namespace, defaultNP.Name, expectedStream)
-		e2eutil.EventuallyObject[*hyperv1.NodePool](
-			GinkgoTB(), ctx,
+		nodePoolEventuallyObject[*hyperv1.NodePool](
+			ctx,
 			"default NodePool status to report a non-empty osImageStream",
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
+			[]nodePoolPredicate[*hyperv1.NodePool]{
 				osImageStreamSetPredicate(),
 			},
-			e2eutil.WithTimeout(10*time.Minute),
-			e2eutil.WithInterval(15*time.Second),
+			nodePoolPollTimeout(10*time.Minute),
+			nodePoolPollInterval(15*time.Second),
 		)
 
 		By("verifying node OS images match the resolved osImageStream")
@@ -291,17 +291,17 @@ func verifyNodeOSMatchesStream(testCtx *internal.TestContext, np *hyperv1.NodePo
 	hcClient, err := testCtx.GetHostedClusterClient(hc)
 	Expect(err).NotTo(HaveOccurred(), "hosted cluster client is nil; HostedCluster may not have KubeConfig status set")
 
-	e2eutil.EventuallyObject[*hyperv1.NodePool](
-		GinkgoTB(), testCtx.Context,
+	nodePoolEventuallyObject[*hyperv1.NodePool](
+		testCtx.Context,
 		fmt.Sprintf("NodePool %s/%s to have all nodes ready", np.Namespace, np.Name),
 		func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 			pool := &hyperv1.NodePool{}
 			err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 			return pool, err
 		},
-		[]e2eutil.Predicate[*hyperv1.NodePool]{allNodesReadyPredicate()},
-		e2eutil.WithTimeout(45*time.Minute),
-		e2eutil.WithInterval(30*time.Second),
+		[]nodePoolPredicate[*hyperv1.NodePool]{allNodesReadyPredicate()},
+		nodePoolPollTimeout(45*time.Minute),
+		nodePoolPollInterval(30*time.Second),
 	)
 
 	expectedMajor, err := expectedRHELMajorForStream(expectedStream)
@@ -341,28 +341,28 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 		Expect(err).NotTo(HaveOccurred())
 
 		// rhel-10 osImageStream is only supported on OCP 5+
-		testCtx.SkipIfVersionBelow(e2eutil.Version50)
+		testCtx.SkipIfVersionBelow(semver.MustParse("5.0.0"))
 
 		ctx := testCtx.Context
 
-		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		defaultNP := nodePoolTemplate(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(),
 			"a non-deleting NodePool with at least one replica should exist for HostedCluster %s/%s", hc.Namespace, hc.Name)
 
 		By("waiting for the NodePool to have status.osImageStream resolved")
-		e2eutil.EventuallyObject[*hyperv1.NodePool](
-			GinkgoTB(), ctx,
+		nodePoolEventuallyObject[*hyperv1.NodePool](
+			ctx,
 			fmt.Sprintf("NodePool %s/%s status.osImageStream to be set", defaultNP.Namespace, defaultNP.Name),
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
+			[]nodePoolPredicate[*hyperv1.NodePool]{
 				osImageStreamSetPredicate(),
 			},
-			e2eutil.WithTimeout(10*time.Minute),
-			e2eutil.WithInterval(15*time.Second),
+			nodePoolPollTimeout(10*time.Minute),
+			nodePoolPollInterval(15*time.Second),
 		)
 
 		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(defaultNP), defaultNP)).To(Succeed(),
@@ -395,7 +395,7 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 		Expect(testCtx.MgmtClient.Create(ctx, npAlternate)).To(Succeed(), "failed to create NodePool %s", npAlternate.Name)
 		GinkgoWriter.Printf("Created NodePool %s with osImageStream=%s\n", npAlternate.Name, alternateStream)
 		DeferCleanup(func() {
-			cleanupNodePool(ctx, testCtx.MgmtClient, npAlternate)
+			cleanupNativeNodePool(ctx, testCtx.MgmtClient, npAlternate)
 		})
 
 		By(fmt.Sprintf("verifying %s NodePool nodes run the correct OS", alternateStream))
@@ -407,7 +407,7 @@ func NodePoolOSImageStreamNodeOSVerificationTest(getTestCtx internal.TestContext
 // status.nodesInfo.nodeVersions has at least one entry with a non-zero ready count.
 // This confirms that CAPI Machines have NodeInfo populated (the controller uses
 // the same Machine list and NodeInfo check for both nodesInfo and osImageStream).
-func nodesInfoPopulatedPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
+func nodesInfoPopulatedPredicate() nodePoolPredicate[*hyperv1.NodePool] {
 	return func(pool *hyperv1.NodePool) (bool, string, error) {
 		versions := pool.Status.NodesInfo.NodeVersions
 		if len(versions) == 0 {
@@ -428,7 +428,7 @@ func nodesInfoPopulatedPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
 
 // allNodesReadyPredicate returns a predicate that validates that all of a NodePool's
 // expected replicas are ready, as reported by status.nodesInfo.nodeVersions.
-func allNodesReadyPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
+func allNodesReadyPredicate() nodePoolPredicate[*hyperv1.NodePool] {
 	return func(pool *hyperv1.NodePool) (bool, string, error) {
 		var expected int32
 		if pool.Spec.Replicas != nil {
@@ -456,7 +456,7 @@ func allNodesReadyPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
 
 // osImageStreamSetPredicate returns a predicate that validates that a NodePool's
 // status.osImageStream.name is set to a recognized RHEL stream value.
-func osImageStreamSetPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
+func osImageStreamSetPredicate() nodePoolPredicate[*hyperv1.NodePool] {
 	return func(pool *hyperv1.NodePool) (bool, string, error) {
 		name := pool.Status.OSImageStream.Name
 		if name == "" {
@@ -473,7 +473,7 @@ func osImageStreamSetPredicate() e2eutil.Predicate[*hyperv1.NodePool] {
 
 // conditionMessageContains returns a predicate that checks whether a NodePool
 // condition of the given type has a message containing the specified substring.
-func conditionMessageContains(condType string, substring string) e2eutil.Predicate[*hyperv1.NodePool] {
+func conditionMessageContains(condType string, substring string) nodePoolPredicate[*hyperv1.NodePool] {
 	return func(pool *hyperv1.NodePool) (bool, string, error) {
 		for _, cond := range pool.Status.Conditions {
 			if cond.Type == condType {
@@ -501,7 +501,7 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 		Expect(err).NotTo(HaveOccurred())
 		ctx := testCtx.Context
 
-		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		defaultNP := nodePoolTemplate(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
 		// This test verifies that setting the explicit stream to the default doesn't
@@ -520,19 +520,19 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 		// snapshot — the controller may not have set it yet if Machines are
 		// still registering NodeInfo.
 		GinkgoWriter.Printf("Waiting for NodePool %s to have status.osImageStream set\n", defaultNP.Name)
-		e2eutil.EventuallyObject[*hyperv1.NodePool](
-			GinkgoTB(), ctx,
+		nodePoolEventuallyObject[*hyperv1.NodePool](
+			ctx,
 			fmt.Sprintf("NodePool %s status.osImageStream to be set", defaultNP.Name),
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
+			[]nodePoolPredicate[*hyperv1.NodePool]{
 				osImageStreamSetPredicate(),
 			},
-			e2eutil.WithTimeout(10*time.Minute),
-			e2eutil.WithInterval(15*time.Second),
+			nodePoolPollTimeout(10*time.Minute),
+			nodePoolPollInterval(15*time.Second),
 		)
 
 		// Re-read the NodePool to get the populated status for the patch below.
@@ -554,15 +554,15 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 		// Verify the config hash does not change over time.
 		// The controller normalizes the explicit default to empty for hash computation,
 		// so both hashes should be identical — no rollout would be triggered.
-		e2eutil.EventuallyObject[*hyperv1.NodePool](
-			GinkgoTB(), ctx,
+		nodePoolEventuallyObject[*hyperv1.NodePool](
+			ctx,
 			fmt.Sprintf("NodePool %s config hash to match baseline (explicit default == implicit default)", defaultNP.Name),
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(defaultNP), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
+			[]nodePoolPredicate[*hyperv1.NodePool]{
 				func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
 					hash, ok := pool.Annotations[nodePoolAnnotationCurrentConfig]
 					if !ok || hash == "" {
@@ -574,8 +574,8 @@ func NodePoolOSImageStreamExplicitDefaultNoRolloutTest(getTestCtx internal.TestC
 					return true, "config hash matches baseline", nil
 				},
 			},
-			e2eutil.WithTimeout(5*time.Minute),
-			e2eutil.WithInterval(15*time.Second),
+			nodePoolPollTimeout(5*time.Minute),
+			nodePoolPollInterval(15*time.Second),
 		)
 	})
 }
@@ -599,14 +599,17 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 			Skip("E2E_PREVIOUS_RELEASE_IMAGE and E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
 		}
 
+		expectNodePoolUpgradeInputs(testCtx, hc, previousImage, latestImage)
+
 		ctx := testCtx.Context
 
-		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		defaultNP := nodePoolTemplate(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
 		var oneReplica int32 = 1
 		np := buildTestNodePool(defaultNP, "osstream-upgrade", func(pool *hyperv1.NodePool) {
 			pool.Spec.Replicas = &oneReplica
+			pool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 			pool.Spec.Release.Image = previousImage
 			pool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
 				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
@@ -620,35 +623,38 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 		Expect(testCtx.MgmtClient.Create(ctx, np)).To(Succeed(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s at previous release %s\n", np.Name, previousImage)
 		DeferCleanup(func() {
-			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+			cleanupNativeNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		nodePoolWaitForInitialState(testCtx, hc, hcClient, np)
+		expectNodePoolReleaseAndRuntime(testCtx, hc, hcClient, np, previousImage)
 
 		// Upgrade to latest release
 		GinkgoWriter.Printf("Upgrading NodePool %s to latest release %s\n", np.Name, latestImage)
-		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
+		Expect(nodePoolUpdateObject(ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
 			obj.Spec.Release.Image = latestImage
 		})).To(Succeed(), "failed to update NodePool release image")
 
 		// Wait for upgrade to complete
+		nodePoolWaitForUpdatingVersion(testCtx, hc, np, metav1.ConditionTrue)
 		upgradeTimeout := nodePoolUpgradeTimeout(hc.Spec.Platform.Type)
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
+		nodePoolEventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]nodePoolPredicate[*hyperv1.NodePool]{
+				nodePoolConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
 					Status: metav1.ConditionFalse,
 				}),
 			},
-			e2eutil.WithTimeout(upgradeTimeout),
+			nodePoolPollTimeout(upgradeTimeout),
 		)
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectNodePoolReleaseAndRuntime(testCtx, hc, hcClient, np, latestImage)
+		expectAWSNodePoolSteadyState(testCtx, np)
 
 		// Verify osImageStream status after upgrade.
 		// The RHEL version is dictated by the release version. After upgrading
@@ -663,19 +669,19 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 			expectedStream = hyperv1.OSImageStreamRHEL10
 		}
 
-		e2eutil.EventuallyObject[*hyperv1.NodePool](
-			GinkgoTB(), ctx,
+		nodePoolEventuallyObject[*hyperv1.NodePool](
+			ctx,
 			fmt.Sprintf("NodePool %s/%s status to report osImageStream=%s after upgrade", np.Namespace, np.Name, expectedStream),
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(expectedStream),
+			[]nodePoolPredicate[*hyperv1.NodePool]{
+				nodePoolOSImageStreamPredicate(expectedStream),
 			},
-			e2eutil.WithTimeout(10*time.Minute),
-			e2eutil.WithInterval(15*time.Second),
+			nodePoolPollTimeout(10*time.Minute),
+			nodePoolPollInterval(15*time.Second),
 		)
 
 		By("verifying post-upgrade node OS and runtime handlers match the resolved stream")
@@ -702,15 +708,18 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 			Skip("E2E_PREVIOUS_RELEASE_IMAGE and E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
 		}
 
+		expectNodePoolUpgradeInputs(testCtx, hc, previousImage, latestImage)
+
 		ctx := testCtx.Context
 
-		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		defaultNP := nodePoolTemplate(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
 		By("creating a NodePool at the previous release (4.23)")
 		var oneReplica int32 = 1
 		np := buildTestNodePool(defaultNP, "osstream-xmajor", func(pool *hyperv1.NodePool) {
 			pool.Spec.Replicas = &oneReplica
+			pool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 			pool.Spec.Release.Image = previousImage
 			pool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
 				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
@@ -724,10 +733,11 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 		Expect(testCtx.MgmtClient.Create(ctx, np)).To(Succeed(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s at previous release %s\n", np.Name, previousImage)
 		DeferCleanup(func() {
-			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+			cleanupNativeNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		nodePoolWaitForInitialState(testCtx, hc, hcClient, np)
+		expectNodePoolReleaseAndRuntime(testCtx, hc, hcClient, np, previousImage)
 
 		By("validating pre-upgrade NodePool version is OCP 4.x")
 		preUpgradeNP := &hyperv1.NodePool{}
@@ -741,43 +751,45 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 		verifyNodeOSMatchesStream(testCtx, np, hyperv1.OSImageStreamRHEL9)
 
 		By("verifying pre-upgrade status.osImageStream reports rhel-9")
-		e2eutil.EventuallyObject[*hyperv1.NodePool](
-			GinkgoTB(), ctx,
+		nodePoolEventuallyObject[*hyperv1.NodePool](
+			ctx,
 			fmt.Sprintf("NodePool %s/%s status to report osImageStream=%s before upgrade", np.Namespace, np.Name, hyperv1.OSImageStreamRHEL9),
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
+			[]nodePoolPredicate[*hyperv1.NodePool]{
+				nodePoolOSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
 			},
-			e2eutil.WithTimeout(10*time.Minute),
-			e2eutil.WithInterval(15*time.Second),
+			nodePoolPollTimeout(10*time.Minute),
+			nodePoolPollInterval(15*time.Second),
 		)
 
 		By(fmt.Sprintf("upgrading NodePool to latest release %s", latestImage))
-		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
+		Expect(nodePoolUpdateObject(ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
 			obj.Spec.Release.Image = latestImage
 		})).To(Succeed(), "failed to update NodePool release image")
 
+		nodePoolWaitForUpdatingVersion(testCtx, hc, np, metav1.ConditionTrue)
 		upgradeTimeout := nodePoolUpgradeTimeout(hc.Spec.Platform.Type)
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
+		nodePoolEventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]nodePoolPredicate[*hyperv1.NodePool]{
+				nodePoolConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
 					Status: metav1.ConditionFalse,
 				}),
 			},
-			e2eutil.WithTimeout(upgradeTimeout),
+			nodePoolPollTimeout(upgradeTimeout),
 		)
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectNodePoolReleaseAndRuntime(testCtx, hc, hcClient, np, latestImage)
+		expectAWSNodePoolSteadyState(testCtx, np)
 
 		By("validating post-upgrade NodePool version is OCP 5.x")
 		postUpgradeNP := &hyperv1.NodePool{}
@@ -791,19 +803,19 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 		verifyNodeOSMatchesStream(testCtx, np, hyperv1.OSImageStreamRHEL10)
 
 		By("verifying status.osImageStream reports rhel-10 after cross-major upgrade")
-		e2eutil.EventuallyObject[*hyperv1.NodePool](
-			GinkgoTB(), ctx,
+		nodePoolEventuallyObject[*hyperv1.NodePool](
+			ctx,
 			fmt.Sprintf("NodePool %s/%s status to report osImageStream=%s", np.Namespace, np.Name, hyperv1.OSImageStreamRHEL10),
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL10),
+			[]nodePoolPredicate[*hyperv1.NodePool]{
+				nodePoolOSImageStreamPredicate(hyperv1.OSImageStreamRHEL10),
 			},
-			e2eutil.WithTimeout(10*time.Minute),
-			e2eutil.WithInterval(15*time.Second),
+			nodePoolPollTimeout(10*time.Minute),
+			nodePoolPollInterval(15*time.Second),
 		)
 	})
 }
@@ -827,15 +839,18 @@ func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContext
 			Skip("E2E_PREVIOUS_RELEASE_IMAGE and E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
 		}
 
+		expectNodePoolUpgradeInputs(testCtx, hc, previousImage, latestImage)
+
 		ctx := testCtx.Context
 
-		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		defaultNP := nodePoolTemplate(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
 		By("creating a NodePool at 4.23 pinned to rhel-9")
 		var oneReplica int32 = 1
 		np := buildTestNodePool(defaultNP, "osstream-pin9", func(pool *hyperv1.NodePool) {
 			pool.Spec.Replicas = &oneReplica
+			pool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 			pool.Spec.Release.Image = previousImage
 			pool.Spec.OSImageStream = hyperv1.OSImageStreamReference{
 				Name: hyperv1.OSImageStreamRHEL9,
@@ -852,10 +867,11 @@ func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContext
 		Expect(testCtx.MgmtClient.Create(ctx, np)).To(Succeed(), "failed to create NodePool %s", np.Name)
 		GinkgoWriter.Printf("Created NodePool %s pinned to rhel-9 at previous release %s\n", np.Name, previousImage)
 		DeferCleanup(func() {
-			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+			cleanupNativeNodePool(ctx, testCtx.MgmtClient, np)
 		})
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		nodePoolWaitForInitialState(testCtx, hc, hcClient, np)
+		expectNodePoolReleaseAndRuntime(testCtx, hc, hcClient, np, previousImage)
 
 		By("validating pre-upgrade NodePool version is OCP 4.x")
 		preUpgradeNP := &hyperv1.NodePool{}
@@ -869,43 +885,45 @@ func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContext
 		verifyNodeOSMatchesStream(testCtx, np, hyperv1.OSImageStreamRHEL9)
 
 		By("verifying pre-upgrade status.osImageStream reports rhel-9")
-		e2eutil.EventuallyObject[*hyperv1.NodePool](
-			GinkgoTB(), ctx,
+		nodePoolEventuallyObject[*hyperv1.NodePool](
+			ctx,
 			fmt.Sprintf("NodePool %s/%s status to report osImageStream=%s before upgrade", np.Namespace, np.Name, hyperv1.OSImageStreamRHEL9),
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
+			[]nodePoolPredicate[*hyperv1.NodePool]{
+				nodePoolOSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
 			},
-			e2eutil.WithTimeout(10*time.Minute),
-			e2eutil.WithInterval(15*time.Second),
+			nodePoolPollTimeout(10*time.Minute),
+			nodePoolPollInterval(15*time.Second),
 		)
 
 		By(fmt.Sprintf("upgrading pinned NodePool to latest release %s", latestImage))
-		Expect(e2eutil.UpdateObject(GinkgoTB(), ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
+		Expect(nodePoolUpdateObject(ctx, testCtx.MgmtClient, np, func(obj *hyperv1.NodePool) {
 			obj.Spec.Release.Image = latestImage
 		})).To(Succeed(), "failed to update NodePool release image")
 
+		nodePoolWaitForUpdatingVersion(testCtx, hc, np, metav1.ConditionTrue)
 		upgradeTimeout := nodePoolUpgradeTimeout(hc.Spec.Platform.Type)
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
+		nodePoolEventuallyObject(ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+			[]nodePoolPredicate[*hyperv1.NodePool]{
+				nodePoolConditionPredicate[*hyperv1.NodePool](v2util.Condition{
 					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
 					Status: metav1.ConditionFalse,
 				}),
 			},
-			e2eutil.WithTimeout(upgradeTimeout),
+			nodePoolPollTimeout(upgradeTimeout),
 		)
 
-		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+		expectNodePoolReleaseAndRuntime(testCtx, hc, hcClient, np, latestImage)
+		expectAWSNodePoolSteadyState(testCtx, np)
 
 		By("validating post-upgrade NodePool version is OCP 5.x")
 		postUpgradeNP := &hyperv1.NodePool{}
@@ -919,19 +937,19 @@ func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContext
 		verifyNodeOSMatchesStream(testCtx, np, hyperv1.OSImageStreamRHEL9)
 
 		By("verifying status.osImageStream still reports rhel-9 after upgrade")
-		e2eutil.EventuallyObject[*hyperv1.NodePool](
-			GinkgoTB(), ctx,
+		nodePoolEventuallyObject[*hyperv1.NodePool](
+			ctx,
 			fmt.Sprintf("NodePool %s/%s status to report osImageStream=%s", np.Namespace, np.Name, hyperv1.OSImageStreamRHEL9),
 			func(pollCtx context.Context) (*hyperv1.NodePool, error) {
 				pool := &hyperv1.NodePool{}
 				err := testCtx.MgmtClient.Get(pollCtx, crclient.ObjectKeyFromObject(np), pool)
 				return pool, err
 			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.OSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
+			[]nodePoolPredicate[*hyperv1.NodePool]{
+				nodePoolOSImageStreamPredicate(hyperv1.OSImageStreamRHEL9),
 			},
-			e2eutil.WithTimeout(10*time.Minute),
-			e2eutil.WithInterval(15*time.Second),
+			nodePoolPollTimeout(10*time.Minute),
+			nodePoolPollInterval(15*time.Second),
 		)
 	})
 }
