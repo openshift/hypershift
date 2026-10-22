@@ -155,6 +155,7 @@ nav:
     - 'IDMS/ICSP Config for Management Cluster': how-to/disconnected/idms-icsp-for-management-clusters.md
     - how-to/disconnected/known-issues.md
   - how-to/distribute-hosted-cluster-workloads.md
+  - 'Etcd Sharding (Tech Preview)': how-to/etcd-sharding.md
   - how-to/feature-gates.md
   - 'HyperShift Operator Install':
     - how-to/install/index.md
