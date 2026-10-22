@@ -221,7 +221,7 @@ func runWithManagementClient(ctx context.Context, cfg envConfig, newClient func(
 	ownedSharedOIDC := cfg.platform.Name() == "aws" && cfg.sharedOIDCIssuer == "" && cfg.sharedOIDCKeyFile == ""
 	clustersStarted := false
 	if ownedSharedOIDC {
-		cfg, specs, err = prepareAutomaticSharedOIDC(ctx, cfg, specs, lifecycle.SetupSharedOIDC)
+		cfg, specs, err = prepareAutomaticSharedOIDC(ctx, cfg, specs, mgmtClientPre, lifecycle.SetupSharedOIDC)
 		if err != nil {
 			return err
 		}

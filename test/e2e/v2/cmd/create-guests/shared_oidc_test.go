@@ -300,7 +300,7 @@ func TestPrepareAutomaticSharedOIDC(t *testing.T) {
 			original := append([]lifecycle.ClusterSpec(nil), specs...)
 			called := false
 			failure := errors.New("automatic setup failed")
-			configured, got, err := prepareAutomaticSharedOIDC(t.Context(), cfg, specs, func(ctx context.Context, directory string, options lifecycle.SharedOIDCOptions) (lifecycle.SharedOIDCInputs, error) {
+			configured, got, err := prepareAutomaticSharedOIDC(t.Context(), cfg, specs, nil, func(ctx context.Context, directory string, options lifecycle.SharedOIDCOptions) (lifecycle.SharedOIDCInputs, error) {
 				called = true
 				want := cfg.sharedOIDCOptions
 				want.AdditionalTags = []string{"expirationDate=2026-10-22", "owner=ci"}

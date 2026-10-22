@@ -327,6 +327,30 @@ or empty results; explicit latest bypasses that lookup. Dedicated CPO plan
 preparation validates the mapped pair first and needs no generic discovery;
 its later operator/release preflight still requires management access. Defaults such as the CI
 pull-secret path are not credentials.
+
+Automatic shared AWS OIDC accepts an explicit `AWS_OIDC_S3_BUCKET_NAME`, with
+optional `AWS_OIDC_S3_REGION` (otherwise the IAM region is used). When the bucket
+is absent, [create preparation](../test/e2e/v2/cmd/create-guests/shared_oidc.go)
+reads both `name` and `region` from the existing management ConfigMap
+`kube-public/oidc-storage-provider-s3-config`, following the bucket/region-pair
+authority used by [CLI IAM creation](../cmd/infra/aws/create_iam.go).
+The [installer](../cmd/install/install.go) publishes that ConfigMap when configured
+with OIDC storage. Missing, unreadable or incomplete configuration fails before
+shared cloud setup; discovery does not create a bucket or change credentials.
+Explicit paired issuer/key inputs bypass automatic setup and discovery.
+[Input-consumer regressions](../test/e2e/v2/cmd/create-guests/shared_oidc_discovery_test.go)
+exercise the default environment path, overrides, regions and discovery errors.
+At release revision `e9861a98762a50e3e3b06fd9258fbf41c2b4db4d`, the
+[AWS v2 workflow](https://github.com/openshift/release/blob/e9861a98762a50e3e3b06fd9258fbf41c2b4db4d/ci-operator/step-registry/hypershift/aws/e2e-v2/hypershift-aws-e2e-v2-workflow.yaml)
+runs [installation](https://github.com/openshift/release/blob/e9861a98762a50e3e3b06fd9258fbf41c2b4db4d/ci-operator/step-registry/hypershift/install/hypershift-install-commands.sh)
+with OIDC bucket/region configuration before
+[create-guests](https://github.com/openshift/release/blob/e9861a98762a50e3e3b06fd9258fbf41c2b4db4d/ci-operator/step-registry/hypershift/aws/create-guests/hypershift-aws-create-guests-commands.sh),
+whose declared inputs do not export the OIDC bucket. Management discovery bridges
+that scalar configuration path. Installation uses pool credentials while guest
+creation exports jobs credentials; discovering the bucket does not prove those
+credentials have S3/IAM authorization or that the bucket is publicly readable.
+This is static input reachability evidence, not AWS runtime validation.
+
 AWS region and zones are read as `HYPERSHIFT_AWS_REGION` and
 `HYPERSHIFT_AWS_ZONES`; the initial default is one zone (`us-east-1a`), so it does
 not by itself exercise E01's three-zone branch. The AWS pre-create hook currently

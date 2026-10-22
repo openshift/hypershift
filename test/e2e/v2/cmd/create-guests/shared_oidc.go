@@ -20,13 +20,26 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func prepareAutomaticSharedOIDC(ctx context.Context, cfg envConfig, specs []lifecycle.ClusterSpec, setup func(context.Context, string, lifecycle.SharedOIDCOptions) (lifecycle.SharedOIDCInputs, error)) (envConfig, []lifecycle.ClusterSpec, error) {
+func prepareAutomaticSharedOIDC(ctx context.Context, cfg envConfig, specs []lifecycle.ClusterSpec, client crclient.Reader, setup func(context.Context, string, lifecycle.SharedOIDCOptions) (lifecycle.SharedOIDCInputs, error)) (envConfig, []lifecycle.ClusterSpec, error) {
 	if cfg.platform.Name() != "aws" || cfg.sharedOIDCIssuer != "" || cfg.sharedOIDCKeyFile != "" {
 		return cfg, specs, nil
 	}
 	options := cfg.sharedOIDCOptions
+	if options.Bucket == "" {
+		config := &corev1.ConfigMap{}
+		key := crclient.ObjectKey{Namespace: "kube-public", Name: "oidc-storage-provider-s3-config"}
+		if err := client.Get(ctx, key, config); err != nil {
+			return cfg, nil, fmt.Errorf("discovering shared AWS OIDC storage configuration from %s: %w", key, err)
+		}
+		options.Bucket, options.S3Region = config.Data["name"], config.Data["region"]
+		if options.Bucket == "" || options.S3Region == "" {
+			return cfg, nil, fmt.Errorf("shared AWS OIDC storage configuration %s requires nonempty name and region", key)
+		}
+	}
 	if len(specs) > 0 {
 		for index, argument := range specs[0].CreateArgs {
 			if strings.HasPrefix(argument, "--additional-tags=") {
