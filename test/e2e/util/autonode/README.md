@@ -17,7 +17,9 @@ them through the CI step invoking the test binary). No prepared subnet is requir
 | `E2E_AUTONODE_LOCAL_ZONE_INSTANCE_TYPE` | An on-demand amd64 instance type offered in that zone, with sufficient CPU/memory for OpenShift, plus account quota and capacity. |
 | `E2E_AUTONODE_LOCAL_ZONE_VOLUME_TYPE` | `gp2` or `gp3`, explicitly confirmed as supported by that Local Zone. There is no storage default. |
 
-With none set, this opt-in coverage skips. Partial configuration, a standard AZ,
+With none set, this opt-in coverage skips. The v2 platform and version guards
+also skip non-AWS hosted clusters and versions below the Karpenter v1 API gate.
+On supported AWS hosted clusters, partial configuration, a standard AZ,
 wrong region/VPC/subnet, a zone that is not opted in, or an instance type not
 offered in the zone fails rather than silently falling back or skipping. The
 test never calls the AWS opt-in API. Supported Local Zones and instance/storage

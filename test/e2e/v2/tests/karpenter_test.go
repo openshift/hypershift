@@ -111,7 +111,11 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift] Karpenter",
 // ---------------------------------------------------------------------------
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:AutoNode] Local Zone bootstrap and workload", Label("lifecycle", "karpenter", "autonode-local-zone"), Serial, func() {
-	It("should register a new Ready node in the requested Local Zone subnet and complete its workload", func() {
+	var tc *internal.TestContext
+
+	BeforeEach(func() {
+		tc = internal.GetTestContext()
+		Expect(tc).NotTo(BeNil(), "test context should be set up in BeforeSuite")
 		configured := false
 		for _, name := range []string{"E2E_AUTONODE_LOCAL_ZONE", "E2E_AUTONODE_LOCAL_ZONE_SUBNET_ID", "E2E_AUTONODE_LOCAL_ZONE_INSTANCE_TYPE", "E2E_AUTONODE_LOCAL_ZONE_VOLUME_TYPE"} {
 			configured = configured || internal.GetEnvVarValue(name) != ""
@@ -119,13 +123,21 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:AutoNode] Local Zone
 		if !configured {
 			Skip("Local Zone coverage not requested; set E2E_AUTONODE_LOCAL_ZONE and its instance and volume inputs")
 		}
-		tc := internal.GetTestContext()
+		tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+		if internal.GetEnvVarValue("RUN_KARPENTER_TESTS") == "true" {
+			tc.SkipIfVersionBelow(e2eutil.Version422)
+		} else {
+			tc.SkipIfVersionBelow(e2eutil.Version423)
+		}
+	})
+
+	It("should register a new Ready node in the requested Local Zone subnet and complete its workload", Label("lifecycle", "karpenter", "autonode-local-zone"), func() {
 		hc, err := tc.GetHostedCluster()
-		Expect(err).NotTo(HaveOccurred())
-		Expect(hc.Spec.Platform.Type).To(Equal(hyperv1.AWSPlatform), "requested Local Zone coverage requires AWS")
-		Expect(hc.Spec.Platform.AWS).NotTo(BeNil())
+		Expect(err).NotTo(HaveOccurred(), "get hosted cluster %s/%s for Local Zone provisioning", tc.ClusterNamespace, tc.ClusterName)
+		Expect(hc).NotTo(BeNil(), "hosted cluster %s/%s must exist for Local Zone provisioning", tc.ClusterNamespace, tc.ClusterName)
+		Expect(hc.Spec.Platform.AWS).NotTo(BeNil(), "AWS hosted cluster %s/%s must provide its platform configuration", hc.Namespace, hc.Name)
 		hcClient, err := tc.GetHostedClusterClient(hc)
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).NotTo(HaveOccurred(), "get hosted client for Local Zone provisioning on %s/%s", hc.Namespace, hc.Name)
 		ec2client := v2util.NewEC2Client(tc.Context, internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE"), hc.Spec.Platform.AWS.Region)
 		autonode.RunLocalZoneTest(tc.Context, GinkgoTB(), hcClient, hc, ec2client, internal.GetEnvVarValue)
 	})
