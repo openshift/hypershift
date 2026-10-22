@@ -1,0 +1,178 @@
+name: aws-parity-opt-ins
+platform: aws
+testMatrix:
+  sequential:
+    - name: aws-guest-olm
+      steps:
+        - name: aws-guest-olm-configured-workers
+          variant: guest-olm
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-guest-olm-common-before
+          variant: guest-olm
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers && !hosted-cluster-ingress
+        - name: aws-guest-olm-admission
+          variant: guest-olm
+          labelFilter: hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security
+        - name: aws-guest-olm-common-after
+          variant: guest-olm
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers
+    - name: aws-dedicated-trust-bundle
+      steps:
+        - name: aws-trust-bundle-configured-workers
+          variant: trust-bundle
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-trust-bundle-before
+          variant: trust-bundle
+          labelFilter: hosted-cluster-health-management || control-plane-workloads || hosted-cluster-webhook-validation || hosted-cluster-authentication-status
+        - name: aws-trust-bundle-mutation
+          variant: trust-bundle
+          labelFilter: nodepool-trust-bundle
+        - name: aws-trust-bundle-after
+          variant: trust-bundle
+          labelFilter: hosted-cluster-health-management || control-plane-workloads || hosted-cluster-webhook-validation || hosted-cluster-authentication-status || hosted-cluster-operator-metrics || hosted-cluster-network-policies || hosted-cluster-node-tuning-metrics || routes || hosted-cluster-admission-policies
+    - name: aws-nodepool-dispatch
+      steps:
+        - name: aws-nodepool-dispatch-configured-workers
+          variant: nodepool-dispatch
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-nodepool-dispatch-before
+          variant: nodepool-dispatch
+          labelFilter: hosted-cluster-health-management || control-plane-workloads || hosted-cluster-webhook-validation || hosted-cluster-authentication-status
+        - name: aws-nodepool-dispatch-rollouts
+          variant: nodepool-dispatch
+          labelFilter: nodepool-machineconfig-rollout || nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-mirror-config
+        - name: aws-nodepool-dispatch-after
+          variant: nodepool-dispatch
+          labelFilter: hosted-cluster-health-management || control-plane-workloads || hosted-cluster-webhook-validation || hosted-cluster-authentication-status || hosted-cluster-operator-metrics || hosted-cluster-network-policies || hosted-cluster-node-tuning-metrics || routes || hosted-cluster-admission-policies
+    - name: aws-cilium
+      steps:
+        - name: aws-cilium-configured-workers
+          variant: cilium
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-cilium-common-before
+          variant: cilium
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-node-communication || aws-control-plane-customization) && !hosted-cluster-health-configured-workers && !hosted-cluster-ingress
+        - name: aws-cilium-common
+          variant: cilium
+          labelFilter: hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-node-communication || aws-control-plane-customization
+        - name: aws-cilium-common-after
+          variant: cilium
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-node-communication || aws-control-plane-customization || hosted-cluster-operator-metrics || hosted-cluster-node-tuning-metrics) && !hosted-cluster-health-configured-workers
+    - name: aws-private-endpoint
+      steps:
+        - name: aws-private-configured-workers
+          variant: private
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-private-common-before
+          variant: private
+          labelFilter: hosted-cluster-health-management || control-plane-workloads || routes || hosted-cluster-network-policies || aws-control-plane-customization
+        - name: aws-private-transition
+          variant: private
+          labelFilter: aws-private-endpoint-transition
+        - name: aws-private-common-after
+          variant: private
+          labelFilter: hosted-cluster-health-management || control-plane-workloads || routes || hosted-cluster-network-policies || aws-control-plane-customization || hosted-cluster-operator-metrics || hosted-cluster-node-tuning-metrics
+    - name: aws-private-route-endpoint
+      steps:
+        - name: aws-private-route-configured-workers
+          variant: private-route
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-private-route-common-before
+          variant: private-route
+          labelFilter: hosted-cluster-health-management || control-plane-workloads || routes || hosted-cluster-network-policies || aws-control-plane-customization
+        - name: aws-private-route-transition
+          variant: private-route
+          labelFilter: aws-private-endpoint-transition
+        - name: aws-private-route-common-after
+          variant: private-route
+          labelFilter: hosted-cluster-health-management || control-plane-workloads || routes || hosted-cluster-network-policies || aws-control-plane-customization || hosted-cluster-operator-metrics || hosted-cluster-node-tuning-metrics
+    - name: aws-proxy
+      steps:
+        - name: aws-proxy-configured-workers
+          variant: proxy
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-proxy-common-before
+          variant: proxy
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers && !hosted-cluster-ingress
+        - name: aws-proxy-common
+          variant: proxy
+          labelFilter: hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization
+        - name: aws-proxy-common-after
+          variant: proxy
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers
+    - name: aws-break-glass-ha
+      steps:
+        - name: aws-break-glass-ha-configured-workers
+          variant: break-glass-ha
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-break-glass-ha-common-before
+          variant: break-glass-ha
+          labelFilter: hosted-cluster-health-management || control-plane-workloads || routes || hosted-cluster-network-policies || aws-control-plane-customization
+        - name: aws-break-glass-ha-authentication
+          variant: break-glass-ha
+          labelFilter: hosted-cluster-break-glass-ha
+        - name: aws-break-glass-ha-common-after
+          variant: break-glass-ha
+          labelFilter: hosted-cluster-health-management || control-plane-workloads || routes || hosted-cluster-network-policies || aws-control-plane-customization || hosted-cluster-operator-metrics || hosted-cluster-node-tuning-metrics || hosted-cluster-admission-policies
+    - name: aws-custom-config
+      steps:
+        - name: aws-custom-config-configured-workers
+          variant: custom-config
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-custom-config-common-before
+          variant: custom-config
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers && !hosted-cluster-ingress
+        - name: aws-custom-config-features
+          variant: custom-config
+          labelFilter: hosted-cluster-capabilities || secret-encryption || hosted-cluster-image-registry || hosted-cluster-custom-config || hosted-cluster-network-configuration || hosted-cluster-oauth || hosted-cluster-ingress
+        - name: aws-custom-config-common-after
+          variant: custom-config
+          labelFilter: hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization
+    - name: aws-upgrade-without-pki-reconciliation
+      steps:
+        - name: aws-upgrade-pki-disabled-configured-workers
+          variant: upgrade-pki-disabled
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-upgrade-pki-disabled-common-before
+          variant: upgrade-pki-disabled
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers && !hosted-cluster-ingress
+        - name: aws-upgrade-pki-disabled
+          variant: upgrade-pki-disabled
+          labelFilter: control-plane-upgrade
+        - name: aws-upgrade-pki-disabled-health
+          variant: upgrade-pki-disabled
+          labelFilter: hosted-cluster-health || control-plane-workloads
+        - name: aws-upgrade-pki-disabled-common-after
+          variant: upgrade-pki-disabled
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers
+    - name: aws-cloud-opt-ins
+      steps:
+        - name: aws-cloud-configured-workers
+          variant: public
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-cloud-common-before
+          variant: public
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers && !hosted-cluster-ingress
+        - name: aws-cloud-and-version
+          variant: public
+          labelFilter: nodepool-aws-cloud || nodepool-n3-release || nodepool-n4-release
+        - name: aws-cloud-common-after
+          variant: public
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers
+    - name: aws-autonode-upgrade-without-pki-reconciliation
+      steps:
+        - name: aws-autonode-upgrade-pki-disabled-configured-workers
+          variant: karpenter-upgrade-pki-disabled
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-autonode-upgrade-pki-disabled-common-before
+          variant: karpenter-upgrade-pki-disabled
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers && !hosted-cluster-ingress
+        - name: aws-autonode-upgrade-pki-disabled
+          variant: karpenter-upgrade-pki-disabled
+          labelFilter: karpenter-upgrade
+        - name: aws-autonode-upgrade-pki-disabled-health
+          variant: karpenter-upgrade-pki-disabled
+          labelFilter: hosted-cluster-health-management || control-plane-workloads || hosted-cluster-compliance
+        - name: aws-autonode-upgrade-pki-disabled-common-after
+          variant: karpenter-upgrade-pki-disabled
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers

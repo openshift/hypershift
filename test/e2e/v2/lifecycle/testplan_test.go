@@ -3,9 +3,44 @@
 package lifecycle
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
+
+func TestResolveTestPlan(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		platform  string
+		wantError bool
+	}{
+		{name: "When a plan omits platform, it should retain compatibility"},
+		{name: "When a plan matches the selected platform, it should accept it", platform: "aws"},
+		{name: "When a plan targets another platform, it should fail before infrastructure is created", platform: "azure", wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "plan.yaml")
+			if err := os.WriteFile(path, []byte("name: focused\nplatform: "+test.platform+"\ntestMatrix: {}\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ResolveTestPlan(path, &AWSPlatformConfig{}); (err != nil) != test.wantError {
+				t.Fatalf("unexpected plan resolution result: %v", err)
+			}
+		})
+	}
+	t.Run("When a plan file is missing, it should propagate the read error", func(t *testing.T) {
+		if _, err := ResolveTestPlan(filepath.Join(t.TempDir(), "missing.yaml"), &AWSPlatformConfig{}); err == nil {
+			t.Fatal("expected plan read error")
+		}
+	})
+	t.Run("When no plan is provided, it should preserve the platform default", func(t *testing.T) {
+		plan, err := ResolveTestPlan("", &AWSPlatformConfig{})
+		if err != nil || plan.Platform != "aws" {
+			t.Fatalf("expected the default AWS plan: %v", err)
+		}
+	})
+}
 
 var testRegistry = []ClusterSpec{
 	{Variant: "public", CreateArgs: []string{"--public-only"}},

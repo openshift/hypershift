@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"github.com/onsi/gomega"
-	"github.com/openshift/hypershift/test/e2e/util"
+	"github.com/openshift/hypershift/test/e2e/v2/util"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -31,6 +31,9 @@ import (
 func ValidateConditions(g gomega.Gomega, object client.Object, expectedConditions []util.Condition) {
 	actualConditions, err := util.Conditions(object)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
+	if err != nil {
+		return
+	}
 
 	for _, expectedCondition := range expectedConditions {
 		var found bool

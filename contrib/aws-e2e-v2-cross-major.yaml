@@ -1,0 +1,21 @@
+name: aws-nodepool-cross-major
+platform: aws
+testMatrix:
+  sequential:
+    - name: aws-nodepool-cross-major
+      steps:
+        - name: aws-nodepool-cross-major-configured-workers
+          variant: public
+          labelFilter: hosted-cluster-health-configured-workers
+        - name: aws-nodepool-cross-major-common-before
+          variant: public
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers && !hosted-cluster-ingress
+        - name: aws-nodepool-major-version-upgrade
+          variant: public
+          labelFilter: nodepool-major-version-upgrade
+        - name: aws-nodepool-major-version-upgrade-health
+          variant: public
+          labelFilter: hosted-cluster-health || control-plane-workloads || aws-control-plane-customization
+        - name: aws-nodepool-cross-major-common-after
+          variant: public
+          labelFilter: (hosted-cluster-health || control-plane-workloads || hosted-cluster-compliance || hosted-cluster-security || hosted-cluster-ingress || hosted-cluster-node-communication || hosted-cluster-metrics || aws-control-plane-customization) && !hosted-cluster-health-configured-workers

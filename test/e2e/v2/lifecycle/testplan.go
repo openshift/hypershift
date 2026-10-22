@@ -73,7 +73,14 @@ func (p *TestPlan) FilterClusterSpecs(allSpecs []ClusterSpec) []ClusterSpec {
 // responsible for validation appropriate to their context.
 func ResolveTestPlan(path string, platform PlatformConfig) (*TestPlan, error) {
 	if path != "" {
-		return ReadTestPlan(path)
+		plan, err := ReadTestPlan(path)
+		if err != nil {
+			return nil, err
+		}
+		if plan.Platform != "" && plan.Platform != platform.Name() {
+			return nil, fmt.Errorf("test plan platform %q does not match configured platform %q; set HYPERSHIFT_PLATFORM explicitly", plan.Platform, platform.Name())
+		}
+		return plan, nil
 	}
 	plan := platform.DefaultTestPlan()
 	return &plan, nil

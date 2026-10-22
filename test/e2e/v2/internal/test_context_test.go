@@ -3,6 +3,8 @@
 package internal
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -18,6 +20,58 @@ import (
 
 	"github.com/blang/semver"
 )
+
+func TestSetupTestContextFromEnv(t *testing.T) {
+	for _, test := range []struct {
+		name, cluster, namespace string
+		malformed                bool
+	}{
+		{name: "When hosted cluster inputs are absent, it should create only a management context"},
+		{name: "When hosted cluster inputs are configured, it should derive the control plane namespace", cluster: "example", namespace: "clusters"},
+		{name: "When management kubeconfig is malformed, it should return the loading error", malformed: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "kubeconfig")
+			content := "apiVersion: v1\nkind: Config\nclusters:\n- name: management\n  cluster:\n    server: https://127.0.0.1:6443\ncontexts:\n- name: management\n  context:\n    cluster: management\ncurrent-context: management\n"
+			if test.malformed {
+				content = "clusters: ["
+			}
+			if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("KUBECONFIG", path)
+			t.Setenv("E2E_HOSTED_CLUSTER_NAME", test.cluster)
+			t.Setenv("E2E_HOSTED_CLUSTER_NAMESPACE", test.namespace)
+			t.Setenv("ARTIFACT_DIR", "/tmp/hypershift-test-artifacts")
+			testContext, err := SetupTestContextFromEnv(t.Context())
+			if test.malformed {
+				if err == nil {
+					t.Fatal("expected configuration error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if testContext.MgmtClient == nil || testContext.ClusterName != test.cluster || testContext.ClusterNamespace != test.namespace || testContext.ArtifactDir != "/tmp/hypershift-test-artifacts" {
+				t.Fatal("context inputs were not preserved")
+			}
+			if test.cluster != "" && testContext.ControlPlaneNamespace != "clusters-example" {
+				t.Fatal("incorrect control plane namespace")
+			}
+		})
+	}
+}
+
+func TestGetHostedClusterClientViaPortForward(t *testing.T) {
+	t.Run("When kube-apiserver has no running pods, it should propagate the error without opening a tunnel", func(t *testing.T) {
+		testContext := &TestContext{Context: t.Context(), ControlPlaneNamespace: "clusters-example", MgmtClient: fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()}
+		client, err := testContext.GetHostedClusterClientViaPortForward(&hyperv1.HostedCluster{})
+		if err == nil || client != nil {
+			t.Fatal("expected missing kube-apiserver error")
+		}
+	})
+}
 
 func TestGetHostedClusterVersion(t *testing.T) {
 	tests := []struct {

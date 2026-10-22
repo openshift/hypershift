@@ -13,9 +13,11 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/pkg/manifests"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -83,25 +85,12 @@ func (s *externalOIDCSetup) postVersionRollout(ctx context.Context, cl crclient.
 		return fmt.Errorf("creating console client secret: %w", err)
 	}
 
-	extOIDCConfig := &e2eutil.ExtOIDCConfig{
-		ExternalOIDCProvider:     e2eutil.ProviderKeycloak,
-		OIDCProviderName:         "keycloak oidc server",
-		CliClientID:              s.keycloakConfig.CLIClientID,
-		ConsoleClientID:          s.keycloakConfig.ConsoleClientID,
-		IssuerURL:                s.keycloakConfig.IssuerURL,
-		GroupPrefix:              "oidc-groups-test:",
-		UserPrefix:               "oidc-user-test:",
-		ConsoleClientSecretName:  "console-secret",
-		ConsoleClientSecretValue: s.keycloakConfig.ConsoleClientSecret,
-		IssuerCAConfigmapName:    "oidc-ca",
-		TestUsers:                s.keycloakConfig.TestUsers,
-	}
-
 	patch := crclient.MergeFrom(hc.DeepCopy())
 	if hc.Spec.Configuration == nil {
 		hc.Spec.Configuration = &hyperv1.ClusterConfiguration{}
 	}
-	hc.Spec.Configuration.Authentication = extOIDCConfig.GetAuthenticationConfig()
+	hc.Spec.Configuration.Authentication = keycloakAuthentication(s.keycloakConfig,
+		featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings))
 	if err := cl.Patch(ctx, hc, patch); err != nil {
 		return fmt.Errorf("patching HostedCluster %s/%s with OIDC config: %w", namespace, name, err)
 	}
@@ -129,6 +118,44 @@ func (s *externalOIDCSetup) postVersionRollout(ctx context.Context, cl crclient.
 	}
 	log.Printf("Wrote External OIDC CA bundle and test users to SHARED_DIR")
 	return nil
+}
+
+func keycloakAuthentication(config *v2util.KeycloakConfig, additionalClaims bool) *configv1.AuthenticationSpec {
+	authentication := &configv1.AuthenticationSpec{
+		Type: configv1.AuthenticationTypeOIDC,
+		OIDCProviders: []configv1.OIDCProvider{{
+			Name: "keycloak oidc server",
+			Issuer: configv1.TokenIssuer{
+				Audiences:            []configv1.TokenAudience{configv1.TokenAudience(config.CLIClientID), configv1.TokenAudience(config.ConsoleClientID)},
+				URL:                  config.IssuerURL,
+				CertificateAuthority: configv1.ConfigMapNameReference{Name: "oidc-ca"},
+			},
+			OIDCClients: []configv1.OIDCClientConfig{
+				{ClientID: config.CLIClientID, ComponentName: "cli", ComponentNamespace: "openshift-console", ExtraScopes: []string{"email"}},
+				{ClientID: config.ConsoleClientID, ClientSecret: configv1.SecretNameReference{Name: "console-secret"},
+					ComponentName: "console", ComponentNamespace: "openshift-console", ExtraScopes: []string{"email"}},
+			},
+			ClaimMappings: configv1.TokenClaimMappings{
+				Groups: configv1.PrefixedClaimMapping{
+					TokenClaimMapping: configv1.TokenClaimMapping{Claim: "groups"}, Prefix: "oidc-groups-test:",
+				},
+				Username: configv1.UsernameClaimMapping{
+					Claim: "email", PrefixPolicy: configv1.Prefix,
+					Prefix: &configv1.UsernamePrefix{PrefixString: "oidc-user-test:"},
+				},
+			},
+		}},
+	}
+	if additionalClaims {
+		authentication.OIDCProviders[0].ClaimMappings.UID = &configv1.TokenClaimOrExpressionMapping{
+			Expression: `"testuid-" + claims.sub + "-uidtest"`,
+		}
+		authentication.OIDCProviders[0].ClaimMappings.Extra = []configv1.ExtraMapping{
+			{Key: "extratest.openshift.com/bar", ValueExpression: `"extra-test-mark"`},
+			{Key: "extratest.openshift.com/foo", ValueExpression: "claims.email"},
+		}
+	}
+	return authentication
 }
 
 func externalOIDCTransitionComplete(ctx context.Context, cl crclient.Client, controlPlaneNamespace, issuerURL string) (bool, error) {
