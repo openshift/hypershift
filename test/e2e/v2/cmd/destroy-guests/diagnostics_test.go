@@ -67,6 +67,75 @@ func TestCloseDiagnosticLog(t *testing.T) {
 	}
 }
 
+func TestDestroyClusterWithDiagnostics(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		platform lifecycle.PlatformConfig
+		aws      bool
+	}{
+		{name: "When AWS destroy needs a retry, it should collect AWS and hosted cluster diagnostics only initially", platform: &lifecycle.AWSPlatformConfig{}, aws: true},
+		{name: "When Azure destroy needs a retry, it should never invoke AWS collectors", platform: &lifecycle.AzurePlatformConfig{}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			directory := t.TempDir()
+			callsFile := filepath.Join(directory, "calls")
+			t.Setenv("TEARDOWN_CALLS", callsFile)
+			binary := filepath.Join(directory, "hypershift")
+			if err := os.WriteFile(binary, []byte(`#!/bin/sh
+if [ ! -f "$TEARDOWN_CALLS" ]; then
+  printf '%s\n' destroy > "$TEARDOWN_CALLS"
+  exit 1
+fi
+printf '%s\n' destroy >> "$TEARDOWN_CALLS"
+`), 0700); err != nil {
+				t.Fatal(err)
+			}
+			var calls []string
+			var artifactDirectory string
+			collectors := teardownDiagnosticCollectors{
+				console: func(_ context.Context, _ lifecycle.ClusterEntry, artifactDir string) error {
+					calls = append(calls, "console")
+					return os.WriteFile(filepath.Join(artifactDir, "console.log"), []byte("initial console"), 0600)
+				},
+				dump: func(_ context.Context, options *clusterdump.DumpOptions) error {
+					artifactDirectory = options.ArtifactDir
+					if options.IsDumpingGuestCluster {
+						calls = append(calls, "guest")
+					}
+					calls = append(calls, "management")
+					return nil
+				},
+				journals: func(_ context.Context, _ lifecycle.ClusterEntry, artifactDir string) error {
+					calls = append(calls, "bastion-create", "journals", "bastion-destroy")
+					return os.WriteFile(filepath.Join(artifactDir, "journals.log"), []byte("initial journals"), 0600)
+				},
+			}
+			entry := lifecycle.ClusterEntry{Name: "public", Namespace: "clusters", Variant: "public"}
+			result := destroyClusterWithDiagnostics(t.Context(), binary, directory, entry, testCase.platform, collectors)
+			if result.destroyError != nil || result.diagnosticError != nil {
+				t.Fatalf("destroy=%v diagnostics=%v", result.destroyError, result.diagnosticError)
+			}
+			wantCalls := []string{"guest", "management", "management"}
+			if testCase.aws {
+				wantCalls = []string{"console", "guest", "management", "bastion-create", "journals", "bastion-destroy", "management"}
+				for filename, expected := range map[string]string{"console.log": "initial console", "journals.log": "initial journals"} {
+					content, err := os.ReadFile(filepath.Join(artifactDirectory, filename))
+					if err != nil || string(content) != expected {
+						t.Fatalf("initial artifact %s changed: content=%q err=%v", filename, content, err)
+					}
+				}
+			}
+			if !reflect.DeepEqual(calls, wantCalls) {
+				t.Fatalf("collector calls=%v, want %v", calls, wantCalls)
+			}
+			attempts, err := os.ReadFile(callsFile)
+			if err != nil || string(attempts) != "destroy\ndestroy\n" {
+				t.Fatalf("destroy attempts=%q err=%v", attempts, err)
+			}
+		})
+	}
+}
+
 func TestDestroyClusterWithDiagnosticCollectors(t *testing.T) {
 	for _, testCase := range []struct {
 		name                                                                       string

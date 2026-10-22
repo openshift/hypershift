@@ -76,10 +76,12 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("EXTRA_ARGS", "")
+			publicSpecs := 0
 			for _, spec := range (&AWSPlatformConfig{zones: test.zones}).ClusterSpecs("latest", "previous") {
 				if spec.Variant != "public" {
 					continue
 				}
+				publicSpecs++
 				assertions := NewWithT(t)
 				if test.ha {
 					assertions.Expect(spec.InitialNodePoolReplicas).To(HaveValue(Equal(1)))
@@ -89,6 +91,7 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 					assertions.Expect(spec.CreateArgs).NotTo(ContainElement("--infra-availability-policy=HighlyAvailable"))
 				}
 			}
+			NewWithT(t).Expect(publicSpecs).To(Equal(1), "expected exactly one public spec for zones %v", test.zones)
 		})
 	}
 }

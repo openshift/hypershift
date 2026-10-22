@@ -176,7 +176,11 @@ spec:
 // (no osImageStream set) reports a recognized RHEL stream in status.osImageStream.
 // This is a non-lifecycle test: it reads existing state without mutation.
 func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGetter) {
-	It("When no osImageStream is set, it should report a recognized RHEL stream in status", func() {
+	It("When no osImageStream is set, it should report a recognized RHEL stream in status", nodePoolOSImageStreamDefaultStatusBody(getTestCtx))
+}
+
+func nodePoolOSImageStreamDefaultStatusBody(getTestCtx internal.TestContextGetter) func() {
+	return func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -184,6 +188,16 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 		// CI always targets OCP 5.0+, but guard defensively in case
 		// the test is ever run against an older cluster.
 		testCtx.SkipIfVersionBelow(semver.MustParse("5.0.0"))
+		if testCtx.ExpectedNodePools != nil {
+			Expect(healthConfiguredNodePoolIntent(testCtx.ExpectedNodePools)).To(Succeed())
+			hasWorkers := false
+			for _, replicas := range testCtx.ExpectedNodePools {
+				hasWorkers = hasWorkers || replicas > 0
+			}
+			if !hasWorkers {
+				Skip("OSImageStream status requires workers; fixture explicitly configures no initial workers")
+			}
+		}
 		ctx := testCtx.Context
 
 		defaultNP := nodePoolTemplate(ctx, testCtx.MgmtClient, hc)
@@ -237,7 +251,7 @@ func NodePoolOSImageStreamDefaultStatusTest(getTestCtx internal.TestContextGette
 
 		By("verifying node OS images match the resolved osImageStream")
 		verifyNodeOSMatchesStream(testCtx, defaultNP, expectedStream)
-	})
+	}
 }
 
 // rhcosMajorVersionRe extracts the RHCOS major version from the node's OSImage

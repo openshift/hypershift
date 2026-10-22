@@ -37,6 +37,7 @@ import (
 	"syscall"
 	"time"
 
+	clusterdump "github.com/openshift/hypershift/cmd/cluster/dump"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 )
@@ -85,7 +86,9 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			result := destroyClusterWithDiagnostics(ctx, hypershiftBin, os.Getenv("ARTIFACT_DIR"), entry, platform)
+			result := destroyClusterWithDiagnostics(ctx, hypershiftBin, os.Getenv("ARTIFACT_DIR"), entry, platform, teardownDiagnosticCollectors{
+				console: dumpAWSConsole, dump: clusterdump.DumpCluster, journals: dumpAWSJournals,
+			})
 			if result.destroyError != nil {
 				log.Printf("WARNING: Failed to destroy cluster %s (%s): %v", entry.Name, entry.Variant, result.destroyError)
 				log.Printf("ACTION REQUIRED: cloud resources for cluster %s (infraID=%s) may be orphaned and need manual cleanup", entry.Name, entry.InfraID)

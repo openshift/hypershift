@@ -37,6 +37,17 @@ func controlPlaneGenerationApplicable(hostedCluster *hyperv1.HostedCluster, now 
 	return !hostedCluster.CreationTimestamp.IsZero() && now.Sub(hostedCluster.CreationTimestamp.Time) <= 4*time.Hour
 }
 
+func controlPlaneDeploymentGenerationCheck(tc *internal.TestContext, now time.Time) (bool, error) {
+	hostedCluster, err := tc.GetHostedCluster()
+	if err != nil {
+		return false, err
+	}
+	if !controlPlaneGenerationApplicable(hostedCluster, now) {
+		return false, nil
+	}
+	return true, controlPlaneDeploymentGenerations(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace)
+}
+
 func controlPlaneDeploymentGenerations(ctx context.Context, client crclient.Client, namespace string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -312,7 +323,11 @@ func controlPlaneHealthAssertions(getTestCtx internal.TestContextGetter) {
 	It("should bound every AWS control plane deployment generation", func() {
 		tc := getTestCtx()
 		tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
-		Expect(controlPlaneDeploymentGenerations(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace)).To(Succeed())
+		applicable, err := controlPlaneDeploymentGenerationCheck(tc, time.Now())
+		Expect(err).NotTo(HaveOccurred())
+		if !applicable {
+			Skip("Deployment generation test is only for recently created hosted clusters")
+		}
 	})
 
 	It("should report preemption and failed scheduling events without treating them as fatal", func() {

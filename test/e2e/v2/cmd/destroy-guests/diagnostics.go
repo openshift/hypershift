@@ -32,14 +32,20 @@ type teardownResult struct {
 
 const teardownDiagnosticTimeout = 5 * time.Minute
 
-func destroyClusterWithDiagnostics(ctx context.Context, binary, artifactDir string, entry lifecycle.ClusterEntry, platform lifecycle.PlatformConfig) (result teardownResult) {
+type teardownDiagnosticCollectors struct {
+	console  func(context.Context, lifecycle.ClusterEntry, string) error
+	dump     func(context.Context, *clusterdump.DumpOptions) error
+	journals func(context.Context, lifecycle.ClusterEntry, string) error
+}
+
+func destroyClusterWithDiagnostics(ctx context.Context, binary, artifactDir string, entry lifecycle.ClusterEntry, platform lifecycle.PlatformConfig, collectors teardownDiagnosticCollectors) (result teardownResult) {
 	return destroyClusterWithDiagnosticCollectors(ctx, binary, artifactDir, entry, platform, func(ctx context.Context, directory string, guest bool) error {
-		return collectTeardownDiagnostics(ctx, platform.Name() == "aws",
-			func(ctx context.Context) error { return dumpAWSConsole(ctx, entry, directory) },
+		return collectTeardownDiagnostics(ctx, guest && platform.Name() == "aws",
+			func(ctx context.Context) error { return collectors.console(ctx, entry, directory) },
 			func(ctx context.Context) error {
-				return dumpHostedClusterDiagnostics(ctx, directory, entry, platform, guest, clusterdump.DumpCluster)
+				return dumpHostedClusterDiagnostics(ctx, directory, entry, platform, guest, collectors.dump)
 			},
-			func(ctx context.Context) error { return dumpAWSJournals(ctx, entry, directory) },
+			func(ctx context.Context) error { return collectors.journals(ctx, entry, directory) },
 		)
 	})
 }

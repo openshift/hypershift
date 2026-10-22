@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"os"
@@ -31,6 +32,8 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/onsi/gomega"
 )
 
 type sharedOIDCFake struct {
@@ -139,9 +142,10 @@ func TestSetupSharedOIDC(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.HasPrefix(keyData, []byte("-----BEGIN RSA PRIVATE KEY-----")) {
-			t.Fatal("signing key is not PKCS1")
-		}
+		block, _ := pem.Decode(keyData)
+		assertions := gomega.NewWithT(t)
+		assertions.Expect(block).NotTo(gomega.BeNil(), "signing key is not PEM")
+		assertions.Expect(block.Type).To(gomega.Equal("RSA PRIVATE KEY"), "signing key is not PKCS1")
 		key, err := certs.PemToPrivateKey(keyData)
 		if err != nil {
 			t.Fatal(err)

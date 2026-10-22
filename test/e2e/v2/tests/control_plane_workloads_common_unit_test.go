@@ -91,6 +91,82 @@ func TestControlPlaneDeploymentGenerations(t *testing.T) {
 	}
 }
 
+func TestControlPlaneDeploymentGenerationCheck(t *testing.T) {
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	listFailure := errors.New("deployment list unavailable")
+	getFailure := errors.New("hosted cluster unavailable")
+	for _, testCase := range []struct {
+		name       string
+		created    metav1.Time
+		generation int64
+		getError   error
+		listError  error
+		canceled   bool
+		applicable bool
+		wantLists  int
+		wantError  string
+	}{
+		{name: "When creation timestamp is zero and generation is high, it should skip without listing deployments", generation: 11},
+		{name: "When cluster is older than four hours and generation is high, it should skip without listing deployments", created: metav1.NewTime(now.Add(-4*time.Hour - time.Second)), generation: 11},
+		{name: "When cluster is recent and generation is high, it should fail the namespace assertion", created: metav1.NewTime(now.Add(-time.Hour)), generation: 11, applicable: true, wantLists: 1, wantError: "generation 11 exceeds maximum 10"},
+		{name: "When cluster is exactly four hours old and generation is high, it should retain the inclusive age boundary", created: metav1.NewTime(now.Add(-4 * time.Hour)), generation: 11, applicable: true, wantLists: 1, wantError: "generation 11 exceeds maximum 10"},
+		{name: "When cluster is recent and generation is ten, it should pass the namespace assertion", created: metav1.NewTime(now.Add(-time.Hour)), generation: 10, applicable: true, wantLists: 1},
+		{name: "When a recent cluster deployment list fails, it should preserve the API error", created: metav1.NewTime(now.Add(-time.Hour)), applicable: true, wantLists: 1, listError: listFailure, wantError: listFailure.Error()},
+		{name: "When a recent cluster context is canceled, it should preserve cancellation without listing", created: metav1.NewTime(now.Add(-time.Hour)), canceled: true, applicable: true, wantError: context.Canceled.Error()},
+		{name: "When fetching the hosted cluster fails, it should fail without listing deployments", getError: getFailure, wantError: getFailure.Error()},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			if err := appsv1.AddToScheme(scheme); err != nil {
+				t.Fatal(err)
+			}
+			if err := hyperv1.AddToScheme(scheme); err != nil {
+				t.Fatal(err)
+			}
+			hostedCluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster", Namespace: "clusters", CreationTimestamp: testCase.created}, Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}}}
+			deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "unregistered-workload", Namespace: "control-plane", Generation: testCase.generation}}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			lists := 0
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hostedCluster, deployment).WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, client crclient.WithWatch, key crclient.ObjectKey, object crclient.Object, options ...crclient.GetOption) error {
+					if testCase.getError != nil {
+						return testCase.getError
+					}
+					err := client.Get(ctx, key, object, options...)
+					if testCase.canceled {
+						cancel()
+					}
+					return err
+				},
+				List: func(ctx context.Context, client crclient.WithWatch, objects crclient.ObjectList, options ...crclient.ListOption) error {
+					lists++
+					if testCase.listError != nil {
+						return testCase.listError
+					}
+					return client.List(ctx, objects, options...)
+				},
+			}).Build()
+			tc := &internal.TestContext{Context: ctx, MgmtClient: client, ClusterName: hostedCluster.Name, ClusterNamespace: hostedCluster.Namespace, ControlPlaneNamespace: deployment.Namespace}
+			applicable, err := controlPlaneDeploymentGenerationCheck(tc, now)
+			if applicable != testCase.applicable || lists != testCase.wantLists {
+				t.Errorf("applicable = %v, deployment lists = %d; want %v, %d", applicable, lists, testCase.applicable, testCase.wantLists)
+			}
+			if testCase.wantError == "" && err != nil || testCase.wantError != "" && (err == nil || !strings.Contains(err.Error(), testCase.wantError)) {
+				t.Fatalf("error = %v; want %q", err, testCase.wantError)
+			}
+			for _, expectedError := range []error{testCase.getError, testCase.listError} {
+				if expectedError != nil && !errors.Is(err, expectedError) {
+					t.Errorf("error = %v; want preserved identity %v", err, expectedError)
+				}
+			}
+			if testCase.canceled && !errors.Is(err, context.Canceled) {
+				t.Errorf("error = %v; want preserved cancellation", err)
+			}
+		})
+	}
+}
+
 func TestControlPlaneTrustBundleProbe(t *testing.T) {
 	probeFailure := errors.New("exec unavailable")
 	for _, testCase := range []struct {
