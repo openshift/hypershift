@@ -178,10 +178,10 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
 
 .PHONY: verify-parallel
-verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema verify-capi-decoupling lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs verify-makefile
+verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema verify-capi-decoupling lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs verify-makefile verify-capi-sync-script
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-capi-decoupling verify-docs-nav verify-tekton-pipeline-pairs verify-makefile ## Run the same checks as the GHA verify workflow.
+verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-capi-decoupling verify-docs-nav verify-tekton-pipeline-pairs verify-makefile verify-capi-sync-script ## Run the same checks as the GHA verify workflow.
 	$(MAKE) verify-git-clean
 
 .PHONY: verify
@@ -739,6 +739,14 @@ verify-makefile: $(PYTHON_VENV_STAMP)
 		$(PYTHON_VENV)/bin/python3 -m pytest -q hack/verify-makefile_test.py; \
 	else \
 		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/verify-makefile_test.py; \
+	fi
+
+.PHONY: verify-capi-sync-script
+verify-capi-sync-script: $(PYTHON_VENV_STAMP)
+	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
+		$(PYTHON_VENV)/bin/python3 -m pytest -q hack/capi-sync-provider_test.py; \
+	else \
+		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/capi-sync-provider_test.py; \
 	fi
 
 .PHONY: verify-tekton-pipeline-pairs
