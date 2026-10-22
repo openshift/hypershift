@@ -13,6 +13,7 @@ import (
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
@@ -211,6 +212,22 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 			InitialNodePoolReplicas: &oneInitialReplica,
 			CreateArgs:              clusterArgs(),
 		},
+		// Etcd sharding can only be configured at creation time, so it needs a
+		// dedicated cluster rather than being layered onto an existing variant.
+		// The EtcdSharding feature gate is TechPreviewNoUpgrade and gates the
+		// spec.etcd.managed.shards field itself, so unless the HyperShift
+		// Operator is installed with --tech-preview-no-upgrade the field is
+		// absent from the CRD, the shards are dropped at admission, and the
+		// specs skip via etcdShardsOrSkip.
+		{
+			Variant:     "etcd-sharded",
+			DestroyArgs: destroyArgs,
+			CreateArgs: clusterArgs(append([]string{
+				"--public-only",
+				// Shards run 3 replicas, which needs an HA control plane.
+				"--control-plane-availability-policy=HighlyAvailable",
+			}, v2util.EtcdShardingCreateArgs("")...)...),
+		},
 	}
 }
 
@@ -340,6 +357,26 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 						Name:        "etcd-chaos",
 						Variant:     "upgrade",
 						LabelFilter: "etcd-chaos",
+					},
+				},
+			},
+			{
+				Name: "etcd-sharding",
+				Steps: []TestGroup{
+					// Shard deployment, kube-apiserver routing, per-kind key
+					// placement, shard member restart and day-2 immutability.
+					{
+						Name:        "etcd-sharding",
+						Variant:     "etcd-sharded",
+						LabelFilter: "etcd-sharding",
+					},
+					// Cluster operations with sharding enabled: runs after the
+					// sharding specs so it also covers recovery from the shard
+					// member restart.
+					{
+						Name:        "post-sharding-health",
+						Variant:     "etcd-sharded",
+						LabelFilter: "hosted-cluster-health || control-plane-workloads",
 					},
 				},
 			},
