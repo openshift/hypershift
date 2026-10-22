@@ -12,6 +12,7 @@ import (
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/pkg/manifests"
 	pkgetcdrecovery "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -349,6 +350,7 @@ func (r *HostedClusterReconciler) reconcileEtcdRecoveryRoleBinding(roleBinding *
 }
 
 func (r *HostedClusterReconciler) reconcileEtcdRecoveryJob(job *batchv1.Job, hc *hyperv1.HostedCluster) error {
+	hcpNS := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 	if job.Labels == nil {
 		job.Labels = map[string]string{}
 	}
@@ -406,6 +408,8 @@ func (r *HostedClusterReconciler) reconcileEtcdRecoveryJob(job *batchv1.Job, hc 
 						},
 					},
 				},
+				NodeSelector:       hc.Spec.NodeSelector,
+				Tolerations:        append(controlplanecomponent.ControlPlaneIsolationTolerations(hcpNS), hc.Spec.Tolerations...),
 				RestartPolicy:      corev1.RestartPolicyNever,
 				ServiceAccountName: etcdrecoverymanifests.EtcdRecoveryServiceAccount("").Name,
 				Volumes: []corev1.Volume{
