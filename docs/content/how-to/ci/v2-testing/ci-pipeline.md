@@ -135,6 +135,30 @@ multiple concurrent lanes.
 
 See [Labels](writing-tests.md#labels-two-layer-model) for how to control which tests run in each group.
 
+#### Shipped test plans
+
+A plan that a CI job needs is checked into `test/e2e/v2/testplans/` and copied
+into the `hypershift-tests` image by `Dockerfile.e2e`, so a job selects one by
+pointing `TEST_PLAN` at `/hypershift/testplans/<name>.yaml` rather than
+carrying plan YAML in the openshift/release step definition. Plans are data,
+not code, so they need their own `COPY` in the Dockerfile — adding a plan file
+alone is not enough to make it available to a job.
+
+`TestShippedTestPlansAreValid` in `test/e2e/v2/lifecycle` parses every shipped
+plan and validates it against the `ClusterSpecs` of the platform it targets, so
+renaming or dropping a variant fails `make test` instead of the job that uses
+it.
+
+Use a dedicated plan when a variant should not run in a platform's
+`DefaultTestPlan()` — for example `aws-etcd-sharding.yaml` and
+`azure-etcd-sharding.yaml` select only the `etcd-sharded` variant, which is
+deliberately absent from both platforms' `TestMatrix()` so the regular AWS and
+Azure jobs do not pay for an extra cluster. They back the
+`periodic-ci-openshift-hypershift-main-e2e-aws-etcd-sharding` (daily) and
+`periodic-ci-openshift-hypershift-main-e2e-azure-etcd-sharding` (weekly) jobs,
+both of which install the operator with `--tech-preview-no-upgrade` because
+`EtcdSharding` is a `TechPreviewNoUpgrade` management cluster feature gate.
+
 ### `dump-guests`
 
 **Source:** `test/e2e/v2/cmd/dump-guests/`  
