@@ -36,8 +36,8 @@ type localZoneOptions struct {
 }
 
 type localZoneEC2 interface {
+	subnetEC2
 	DescribeAvailabilityZones(context.Context, *ec2.DescribeAvailabilityZonesInput, ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error)
-	DescribeSubnets(context.Context, *ec2.DescribeSubnetsInput, ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error)
 	DescribeInstanceTypeOfferings(context.Context, *ec2.DescribeInstanceTypeOfferingsInput, ...func(*ec2.Options)) (*ec2.DescribeInstanceTypeOfferingsOutput, error)
 	DescribeInstanceTypes(context.Context, *ec2.DescribeInstanceTypesInput, ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error)
 	DescribeInstances(context.Context, *ec2.DescribeInstancesInput, ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
@@ -52,7 +52,7 @@ func localZoneOptionsFromEnv(getenv func(string) string) (localZoneOptions, erro
 		return options, nil
 	}
 	if options.zone == "" || options.instanceType == "" || options.volumeType == "" {
-		return options, fmt.Errorf("local zone coverage requires E2E_AUTONODE_LOCAL_ZONE, E2E_AUTONODE_LOCAL_ZONE_INSTANCE_TYPE and E2E_AUTONODE_LOCAL_ZONE_VOLUME_TYPE; v2 also requires E2E_AUTONODE_LOCAL_ZONE_SUBNET_ID")
+		return options, fmt.Errorf("local zone coverage requires E2E_AUTONODE_LOCAL_ZONE, E2E_AUTONODE_LOCAL_ZONE_INSTANCE_TYPE and E2E_AUTONODE_LOCAL_ZONE_VOLUME_TYPE")
 	}
 	if options.volumeType != "gp2" && options.volumeType != "gp3" {
 		return options, fmt.Errorf("local zone root volume type must be gp2 or gp3, supported by the selected zone; got %q", options.volumeType)
@@ -138,9 +138,9 @@ func validateLocalZoneNode(node *corev1.Node, existing []corev1.Node, pool, zone
 // RunLocalZoneTest provisions a new AutoNode in an explicitly configured Local Zone subnet
 // and requires a successful workload on that Ready node. It skips only when all Local Zone inputs
 // are absent, never opts an account into a zone, and never modifies a supplied subnet.
-// If no subnet is supplied, createSubnet must prepare one in the hosted cluster VPC
-// and return its cleanup function; that cleanup runs after node teardown.
-func RunLocalZoneTest(ctx context.Context, t testing.TB, client crclient.Client, hc *hyperv1.HostedCluster, ec2client localZoneEC2, getenv func(string) string, createSubnet func(context.Context, string) (string, func())) {
+// If no subnet is supplied, it creates one in the hosted cluster VPC and associates
+// an existing IPv4 default NAT route table. Cleanup runs after node teardown.
+func RunLocalZoneTest(ctx context.Context, t testing.TB, client crclient.Client, hc *hyperv1.HostedCluster, ec2client localZoneEC2, getenv func(string) string) {
 	t.Helper()
 	g := NewWithT(t)
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
@@ -148,7 +148,7 @@ func RunLocalZoneTest(ctx context.Context, t testing.TB, client crclient.Client,
 	options, err := localZoneOptionsFromEnv(getenv)
 	g.Expect(err).NotTo(HaveOccurred(), "parse Local Zone test inputs")
 	if options == (localZoneOptions{}) {
-		t.Skip("Local Zone coverage not requested; set E2E_AUTONODE_LOCAL_ZONE and its subnet, instance and volume inputs")
+		t.Skip("Local Zone coverage not requested; set E2E_AUTONODE_LOCAL_ZONE and its instance and volume inputs")
 	}
 	g.Expect(hc.Spec.Platform.Type).To(Equal(hyperv1.AWSPlatform))
 	g.Expect(hc.Spec.Platform.AWS).NotTo(BeNil())
@@ -165,12 +165,24 @@ func RunLocalZoneTest(ctx context.Context, t testing.TB, client crclient.Client,
 	g.Expect(instanceTypes.InstanceTypes).To(HaveLen(1), "describe must resolve exactly one requested instance type")
 	g.Expect(instanceTypes.InstanceTypes[0].ProcessorInfo).NotTo(BeNil(), "requested instance type must report processor capabilities")
 	g.Expect(instanceTypes.InstanceTypes[0].ProcessorInfo.SupportedArchitectures).To(ContainElement(ec2types.ArchitectureTypeX8664))
+	name := "local-zone-" + string(uuid.NewUUID())[:8]
+	safeToDeleteSubnet := true
 	if options.subnet == "" {
-		g.Expect(createSubnet).NotTo(BeNil(), "this entry point requires E2E_AUTONODE_LOCAL_ZONE_SUBNET_ID")
 		g.Expect(validateLocalZone(options, hc.Spec.Platform.AWS.Region, hc.Spec.Platform.AWS.CloudProviderConfig.VPC, zones.AvailabilityZones, nil, offerings.InstanceTypeOfferings)).To(Succeed())
-		var cleanup func()
-		options.subnet, cleanup = createSubnet(ctx, options.zone)
-		t.Cleanup(cleanup)
+		var cleanup func(context.Context) error
+		options.subnet, cleanup, err = createLocalZoneSubnet(ctx, ec2client, hc.Spec.Platform.AWS.CloudProviderConfig.VPC, options.zone, name, hc.Spec.InfraID, hc.Name)
+		t.Cleanup(func() {
+			if !safeToDeleteSubnet {
+				t.Errorf("cleanup: retaining owned subnet because NodeClaim termination was not confirmed")
+				return
+			}
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			if err := cleanup(cleanupCtx); err != nil {
+				t.Errorf("cleanup: delete owned Local Zone subnet: %v", err)
+			}
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "prepare a Local Zone subnet in the hosted cluster VPC")
 		g.Expect(options.subnet).NotTo(BeEmpty())
 	}
 	subnets, err := ec2client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{SubnetIds: []string{options.subnet}})
@@ -179,10 +191,12 @@ func RunLocalZoneTest(ctx context.Context, t testing.TB, client crclient.Client,
 
 	before := &corev1.NodeList{}
 	g.Expect(client.List(ctx, before)).To(Succeed(), "snapshot existing nodes before Local Zone provisioning")
-	name := "local-zone-" + string(uuid.NewUUID())[:8]
 	nodeClass, nodePool, pod := localZoneResources(name, hc.Spec.InfraID, options)
 	for _, object := range []crclient.Object{nodeClass, nodePool, pod} {
 		g.Expect(client.Create(ctx, object)).To(Succeed(), "create Local Zone test resource %T", object)
+		if object == nodePool {
+			safeToDeleteSubnet = false
+		}
 		t.Cleanup(func() {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 			defer cancel()
@@ -206,6 +220,7 @@ func RunLocalZoneTest(ctx context.Context, t testing.TB, client crclient.Client,
 					g.Expect(client.List(cleanupCtx, claims, crclient.MatchingLabels{karpenterv1.NodePoolLabelKey: name})).To(Succeed())
 					g.Expect(claims.Items).To(BeEmpty(), "wait for instance termination before deleting NodeClass")
 				}, 5*time.Minute, 5*time.Second).Should(Succeed())
+				safeToDeleteSubnet = true
 			}
 		})
 	}

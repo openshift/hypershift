@@ -117,7 +117,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:AutoNode] Local Zone
 			configured = configured || internal.GetEnvVarValue(name) != ""
 		}
 		if !configured {
-			Skip("Local Zone coverage not requested; set E2E_AUTONODE_LOCAL_ZONE and its subnet, instance and volume inputs")
+			Skip("Local Zone coverage not requested; set E2E_AUTONODE_LOCAL_ZONE and its instance and volume inputs")
 		}
 		tc := internal.GetTestContext()
 		hc, err := tc.GetHostedCluster()
@@ -127,7 +127,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:AutoNode] Local Zone
 		hcClient, err := tc.GetHostedClusterClient(hc)
 		Expect(err).NotTo(HaveOccurred())
 		ec2client := v2util.NewEC2Client(tc.Context, internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE"), hc.Spec.Platform.AWS.Region)
-		autonode.RunLocalZoneTest(tc.Context, GinkgoTB(), hcClient, hc, ec2client, internal.GetEnvVarValue, nil)
+		autonode.RunLocalZoneTest(tc.Context, GinkgoTB(), hcClient, hc, ec2client, internal.GetEnvVarValue)
 	})
 })
 

@@ -179,7 +179,7 @@ func TestValidateLocalZoneNode(t *testing.T) {
 
 func TestRunLocalZoneTest(t *testing.T) {
 	t.Run("When coverage is not configured, it should skip without accessing AWS or Kubernetes", func(t *testing.T) {
-		RunLocalZoneTest(context.Background(), t, nil, nil, nil, func(string) string { return "" }, nil)
+		RunLocalZoneTest(context.Background(), t, nil, nil, nil, func(string) string { return "" })
 		t.Fatal("unconfigured coverage must skip")
 	})
 	for _, testCase := range []struct {
@@ -187,7 +187,10 @@ func TestRunLocalZoneTest(t *testing.T) {
 		createSubnet  bool
 	}{
 		{name: "When configured correctly, it should verify bootstrap workload and EC2 placement"},
-		{name: "When a subnet factory is supplied, it should create and clean up the subnet", createSubnet: true},
+		{name: "When no subnet is supplied, it should create and clean up a subnet", createSubnet: true},
+		{name: "When subnet association fails, it should clean up the owned subnet", createSubnet: true, failure: "associate"},
+		{name: "When provisioning fails after subnet setup, it should clean up both", createSubnet: true, failure: "pool"},
+		{name: "When NodePool cleanup fails, it should retain the subnet and report the failure", createSubnet: true, failure: "pool-delete"},
 		{name: "When the requested zone is not local, it should fail before provisioning", failure: "zone"},
 		{name: "When NodePool creation fails, it should clean up the NodeClass", failure: "pool"},
 		{name: "When the workload fails, it should fail promptly and clean up resources", failure: "pod"},
@@ -202,6 +205,7 @@ func TestRunLocalZoneTest(t *testing.T) {
 			}
 			scheme.AddKnownTypes(schema.GroupVersion{Group: karpenterapis.Group, Version: "v1"}, &karpenterv1.NodePool{}, &karpenterv1.NodePoolList{}, &karpenterv1.NodeClaim{}, &karpenterv1.NodeClaimList{})
 			created, deleted := 0, 0
+			ec2client := &localZoneEC2Stub{failure: testCase.failure, subnetEC2Stub: subnetEC2Stub{failure: testCase.failure}}
 			client := fake.NewClientBuilder().WithScheme(scheme).WithInterceptorFuncs(interceptor.Funcs{
 				Create: func(ctx context.Context, client crclient.WithWatch, object crclient.Object, opts ...crclient.CreateOption) error {
 					if _, ok := object.(*karpenterv1.NodePool); ok && testCase.failure == "pool" {
@@ -225,23 +229,21 @@ func TestRunLocalZoneTest(t *testing.T) {
 					return nil
 				},
 				Delete: func(ctx context.Context, client crclient.WithWatch, object crclient.Object, opts ...crclient.DeleteOption) error {
+					if _, ok := object.(*karpenterv1.NodePool); ok && testCase.failure == "pool-delete" {
+						return fmt.Errorf("injected NodePool deletion failure")
+					}
 					if err := client.Delete(ctx, object, opts...); err != nil {
 						return err
 					}
 					deleted++
+					ec2client.events = append(ec2client.events, fmt.Sprintf("delete %T", object))
 					return nil
 				},
 			}).Build()
 			hc := &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{InfraID: "infra-test", AutoNode: hyperv1.AutoNode{Provisioner: hyperv1.ProvisionerConfig{Name: hyperv1.ProvisionerKarpenter, Karpenter: hyperv1.KarpenterConfig{Platform: hyperv1.AWSPlatform}}}, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{Region: "us-west-2", CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{VPC: "vpc-test"}}}}}
 			values := map[string]string{"E2E_AUTONODE_LOCAL_ZONE": "us-west-2-lax-1a", "E2E_AUTONODE_LOCAL_ZONE_SUBNET_ID": "subnet-local", "E2E_AUTONODE_LOCAL_ZONE_INSTANCE_TYPE": "m5.xlarge", "E2E_AUTONODE_LOCAL_ZONE_VOLUME_TYPE": "gp2"}
-			var factory func(context.Context, string) (string, func())
-			subnetCreated, subnetCleaned := false, false
 			if testCase.createSubnet {
 				delete(values, "E2E_AUTONODE_LOCAL_ZONE_SUBNET_ID")
-				factory = func(context.Context, string) (string, func()) {
-					subnetCreated = true
-					return "subnet-local", func() { subnetCleaned = true }
-				}
 			}
 			testTB := &localZoneTestTB{TB: t}
 			failed := false
@@ -254,31 +256,56 @@ func TestRunLocalZoneTest(t *testing.T) {
 						failed = true
 					}
 				}()
-				RunLocalZoneTest(context.Background(), testTB, client, hc, &localZoneEC2Stub{failure: testCase.failure}, func(name string) string { return values[name] }, factory)
+				RunLocalZoneTest(context.Background(), testTB, client, hc, ec2client, func(name string) string { return values[name] })
 			}()
 			for index := len(testTB.cleanups) - 1; index >= 0; index-- {
 				testTB.cleanups[index]()
 			}
-			if failed != (testCase.failure != "") {
+			if failed != (testCase.failure != "" && testCase.failure != "pool-delete") {
 				t.Fatalf("unexpected failure state %t: %s", failed, testTB.failure)
 			}
-			if created != deleted {
-				t.Fatalf("cleanup mismatch: %d resources created, %d deleted", created, deleted)
-			}
-			if testCase.createSubnet && (!subnetCreated || !subnetCleaned) {
-				t.Fatal("created subnet must be cleaned up")
-			}
-			if testCase.failure == "zone" && created != 0 {
-				t.Fatal("invalid prerequisites must fail before provisioning")
-			}
+			verifyLocalZoneCleanup(t, testTB, ec2client, created, deleted, testCase.createSubnet, testCase.failure)
 		})
+	}
+}
+
+func verifyLocalZoneCleanup(t *testing.T, testTB *localZoneTestTB, ec2client *localZoneEC2Stub, created, deleted int, createSubnet bool, failure string) {
+	t.Helper()
+	if failure == "pool-delete" {
+		if len(testTB.cleanupErrors) != 2 || ec2client.deleted || created-deleted != 1 {
+			t.Fatalf("failed node teardown must retain the subnet and report errors: %v", testTB.cleanupErrors)
+		}
+		return
+	}
+	if len(testTB.cleanupErrors) != 0 {
+		t.Fatalf("unexpected cleanup errors: %v", testTB.cleanupErrors)
+	}
+	if created != deleted {
+		t.Fatalf("cleanup mismatch: %d resources created, %d deleted", created, deleted)
+	}
+	if createSubnet && (ec2client.created == nil || !ec2client.deleted) {
+		t.Fatal("created subnet must be cleaned up even after setup or provisioning failure")
+	}
+	if !createSubnet && ec2client.created != nil {
+		t.Fatal("supplied subnet must not cause network creation")
+	}
+	if createSubnet && failure == "" && strings.Join(ec2client.events, ",") != "create subnet,associate,delete *v1.Pod,delete *v1.NodePool,delete *v1.OpenshiftEC2NodeClass,disassociate,delete subnet" {
+		t.Fatalf("unexpected cleanup order: %v", ec2client.events)
+	}
+	if failure == "zone" && created != 0 {
+		t.Fatal("invalid prerequisites must fail before provisioning")
 	}
 }
 
 type localZoneTestTB struct {
 	testing.TB
-	cleanups []func()
-	failure  string
+	cleanups      []func()
+	failure       string
+	cleanupErrors []string
+}
+
+func (testTB *localZoneTestTB) Errorf(format string, args ...interface{}) {
+	testTB.cleanupErrors = append(testTB.cleanupErrors, fmt.Sprintf(format, args...))
 }
 
 func (testTB *localZoneTestTB) Cleanup(cleanup func()) {
@@ -289,7 +316,10 @@ func (testTB *localZoneTestTB) Fatalf(format string, args ...interface{}) {
 	panic(testTB)
 }
 
-type localZoneEC2Stub struct{ failure string }
+type localZoneEC2Stub struct {
+	subnetEC2Stub
+	failure string
+}
 
 func (stub *localZoneEC2Stub) DescribeAvailabilityZones(context.Context, *ec2.DescribeAvailabilityZonesInput, ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
 	zoneType := "local-zone"
@@ -297,9 +327,6 @@ func (stub *localZoneEC2Stub) DescribeAvailabilityZones(context.Context, *ec2.De
 		zoneType = "availability-zone"
 	}
 	return &ec2.DescribeAvailabilityZonesOutput{AvailabilityZones: []ec2types.AvailabilityZone{{ZoneName: ptr.To("us-west-2-lax-1a"), ZoneType: &zoneType, RegionName: ptr.To("us-west-2"), State: ec2types.AvailabilityZoneStateAvailable, OptInStatus: ec2types.AvailabilityZoneOptInStatusOptedIn}}}, nil
-}
-func (stub *localZoneEC2Stub) DescribeSubnets(context.Context, *ec2.DescribeSubnetsInput, ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error) {
-	return &ec2.DescribeSubnetsOutput{Subnets: []ec2types.Subnet{{SubnetId: ptr.To("subnet-local"), AvailabilityZone: ptr.To("us-west-2-lax-1a"), VpcId: ptr.To("vpc-test"), State: ec2types.SubnetStateAvailable}}}, nil
 }
 func (stub *localZoneEC2Stub) DescribeInstanceTypeOfferings(context.Context, *ec2.DescribeInstanceTypeOfferingsInput, ...func(*ec2.Options)) (*ec2.DescribeInstanceTypeOfferingsOutput, error) {
 	return &ec2.DescribeInstanceTypeOfferingsOutput{InstanceTypeOfferings: []ec2types.InstanceTypeOffering{{Location: ptr.To("us-west-2-lax-1a"), InstanceType: ec2types.InstanceTypeM5Xlarge}}}, nil
