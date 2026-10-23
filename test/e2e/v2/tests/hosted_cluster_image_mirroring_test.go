@@ -11,14 +11,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	"github.com/openshift/hypershift/test/e2e/v2/util/mirrorregistry"
 
-	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -55,20 +52,16 @@ func RegisterHostedClusterImageMirroringTests(getTestCtx internal.TestContextGet
 		hostedClient, err := tc.GetHostedClusterClientViaPortForward(hc)
 		Expect(err).NotTo(HaveOccurred(), "open hosted client for HC %s/%s", hc.Namespace, hc.Name)
 		DeferCleanup(hostedClient.Close)
-		e2eutil.EventuallyObjects(GinkgoTB(), tc.Context,
-			fmt.Sprintf("HC %s/%s hosted ImageDigestMirrorSet/cluster mappings and worker role", hc.Namespace, hc.Name),
-			func(ctx context.Context) ([]*configv1.ImageDigestMirrorSet, error) {
-				return imageMirroringGetIDMS(ctx, hostedClient)
-			},
-			[]e2eutil.Predicate[[]*configv1.ImageDigestMirrorSet]{func(objects []*configv1.ImageDigestMirrorSet) (bool, string, error) {
-				if len(objects) != 1 || objects[0] == nil || objects[0].Name != "cluster" || objects[0].Namespace != "" {
-					return false, "expected exactly one nonnil cluster-scoped ImageDigestMirrorSet/cluster", nil
-				}
-				return true, "", nil
-			}}, []e2eutil.Predicate[*configv1.ImageDigestMirrorSet]{func(object *configv1.ImageDigestMirrorSet) (bool, string, error) {
-				return imageMirroringCheckIDMS([]*configv1.ImageDigestMirrorSet{object}, expected)
-			}},
-			e2eutil.WithTimeout(10*time.Minute), e2eutil.WithInterval(3*time.Second), e2eutil.WithoutConditionDump())
+		Eventually(func(ctx context.Context, g Gomega) {
+			objects, err := imageMirroringGetIDMS(ctx, hostedClient)
+			g.Expect(err).NotTo(HaveOccurred(), "get hosted ImageDigestMirrorSet/cluster")
+			done, reason, err := imageMirroringCheckIDMS(objects, expected)
+			if err != nil {
+				StopTrying("check hosted ImageDigestMirrorSet/cluster").Wrap(err).Now()
+			}
+			g.Expect(done).To(BeTrue(), reason)
+		}).WithContext(tc.Context).WithTimeout(10*time.Minute).WithPolling(3*time.Second).Should(Succeed(),
+			"HC %s/%s hosted ImageDigestMirrorSet/cluster mappings and worker role", hc.Namespace, hc.Name)
 	})
 
 	It("should propagate imageContentSources independently to the control plane ignition ConfigMap", func() {
@@ -76,23 +69,19 @@ func RegisterHostedClusterImageMirroringTests(getTestCtx internal.TestContextGet
 		hc, expected := imageMirroringSetupOrSkip(tc)
 		Expect(tc.ControlPlaneNamespace).NotTo(BeEmpty(), "HC %s/%s must have a control plane namespace", hc.Namespace, hc.Name)
 
-		e2eutil.EventuallyObjects(GinkgoTB(), tc.Context,
-			fmt.Sprintf("HC %s/%s ConfigMap %s/%s decoded IDMS mappings and labels", hc.Namespace, hc.Name, tc.ControlPlaneNamespace, imageMirroringIgnitionName),
-			func(ctx context.Context) ([]*corev1.ConfigMap, error) {
-				return imageMirroringGetConfigMap(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
-			},
-			[]e2eutil.Predicate[[]*corev1.ConfigMap]{func(objects []*corev1.ConfigMap) (bool, string, error) {
-				if len(objects) != 1 || objects[0] == nil || objects[0].Name != imageMirroringIgnitionName || objects[0].Namespace != tc.ControlPlaneNamespace {
-					return false, fmt.Sprintf("expected exactly one nonnil ConfigMap %s/%s", tc.ControlPlaneNamespace, imageMirroringIgnitionName), nil
-				}
-				return true, "", nil
-			}}, []e2eutil.Predicate[*corev1.ConfigMap]{func(object *corev1.ConfigMap) (bool, string, error) {
-				return imageMirroringCheckConfigMap([]*corev1.ConfigMap{object}, tc.ControlPlaneNamespace, expected)
-			}},
-			e2eutil.WithTimeout(10*time.Minute), e2eutil.WithInterval(3*time.Second), e2eutil.WithoutConditionDump())
+		Eventually(func(ctx context.Context, g Gomega) {
+			objects, err := imageMirroringGetConfigMap(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
+			g.Expect(err).NotTo(HaveOccurred(), "get ConfigMap %s/%s", tc.ControlPlaneNamespace, imageMirroringIgnitionName)
+			done, reason, err := imageMirroringCheckConfigMap(objects, tc.ControlPlaneNamespace, expected)
+			if err != nil {
+				StopTrying(fmt.Sprintf("check ConfigMap %s/%s", tc.ControlPlaneNamespace, imageMirroringIgnitionName)).Wrap(err).Now()
+			}
+			g.Expect(done).To(BeTrue(), reason)
+		}).WithContext(tc.Context).WithTimeout(10*time.Minute).WithPolling(3*time.Second).Should(Succeed(),
+			"HC %s/%s ConfigMap %s/%s decoded IDMS mappings and labels", hc.Namespace, hc.Name, tc.ControlPlaneNamespace, imageMirroringIgnitionName)
 	})
 }
 
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ImageMirroring] Hosted Cluster Image Mirroring", Label("lifecycle", "image-mirroring"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ImageMirroring] Hosted Cluster Image Mirroring", Label("lifecycle", "image-mirroring", internal.InformingLabel), func() {
 	RegisterHostedClusterImageMirroringTests(internal.GetTestContext)
 })
