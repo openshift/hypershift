@@ -19,7 +19,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
             backup:
               platform: Azure
               azure:
@@ -67,7 +67,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
         platform:
           type: AWS
         pullSecret:
@@ -108,7 +108,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
         platform:
           type: AWS
         pullSecret:
@@ -154,7 +154,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
         platform:
           type: AWS
         pullSecret:
@@ -195,7 +195,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
         platform:
           type: AWS
         pullSecret:
@@ -238,7 +238,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
@@ -293,7 +293,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
         platform:
           type: AWS
         pullSecret:
@@ -334,7 +334,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
         platform:
           type: AWS
         pullSecret:
@@ -377,7 +377,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica

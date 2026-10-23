@@ -59585,7 +59585,7 @@ k8s.io/apimachinery/pkg/api/resource.Quantity
 <td>
 <em>(Optional)</em>
 <p>size is the minimum size of the data volume for each etcd member.
-Default is 8Gi.
+Default is 32Gi.
 This field is immutable</p>
 </td>
 </tr>
