@@ -1661,15 +1661,15 @@ func TestAMISelectorTerms(t *testing.T) {
 		expectedAMIs   []awskarpenterv1.AMISelectorTerm
 	}{
 		{
-			name:     "when user data secret is created for supported platform, and labels exist it should return the expected AMIs",
+			name:     "When user data secret has AMI labels for a supported platform, it should return the expected AMIs",
 			platform: hyperv1.AWSPlatform,
 			userDataSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "user-data-secret",
 					Namespace: "test-namespace",
 					Labels: map[string]string{
-						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "ami-123",
-						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureARM64): "ami-456",
+						karpenterutil.ArchToImageMetadataKey(hyperv1.ArchitectureAMD64, hyperkarpenterv1.UserDataAMILabel): "ami-123",
+						karpenterutil.ArchToImageMetadataKey(hyperv1.ArchitectureARM64, hyperkarpenterv1.UserDataAMILabel): "ami-456",
 					},
 				},
 			},
@@ -1683,22 +1683,22 @@ func TestAMISelectorTerms(t *testing.T) {
 			},
 		},
 		{
-			name:     "when user data secret is created for unsupported platform, and labels exist it should return an error",
-			platform: hyperv1.AzurePlatform,
+			name:     "When platform is OpenStack and AMI labels exist, it should return an unsupported platform error",
+			platform: hyperv1.OpenStackPlatform,
 			userDataSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "user-data-secret",
 					Namespace: "test-namespace",
 					Labels: map[string]string{
-						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "ami-123",
-						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureARM64): "ami-456",
+						karpenterutil.ArchToImageMetadataKey(hyperv1.ArchitectureAMD64, hyperkarpenterv1.UserDataAMILabel): "ami-123",
+						karpenterutil.ArchToImageMetadataKey(hyperv1.ArchitectureARM64, hyperkarpenterv1.UserDataAMILabel): "ami-456",
 					},
 				},
 			},
-			expectedError: "failed to get supported architectures: unsupported platform: Azure",
+			expectedError: "failed to get supported architectures: unsupported platform: OpenStack",
 		},
 		{
-			name:     "when user data secret is created for supported platform, but no AMIs labels exist it should return an error",
+			name:     "When user data secret has no AMI labels for a supported platform, it should return an error",
 			platform: hyperv1.AWSPlatform,
 			userDataSecret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{

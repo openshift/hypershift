@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/imageregistry"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
@@ -110,9 +111,16 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to create guest kubeconfig: %w", err)
 	}
 
+	hcp, err := karpenterutil.GetHCP(ctx, managementCluster.GetAPIReader(), namespace)
+	if err != nil {
+		return fmt.Errorf("failed to get HCP: %w", err)
+	}
+
+	nodeClassGroupKind := resolveNodeClassGroupKind(hcp.Spec.Platform.Type)
+
 	if standaloneAdapter {
 		// In standalone mode the standalone karpenter-operator reconciles the Karpenter CRDs we need
-		if err := waitForKarpenterCRDs(ctx, guestKubeconfig); err != nil {
+		if err := waitForKarpenterCRDs(ctx, guestKubeconfig, hcp.Spec.Platform.Type); err != nil {
 			return fmt.Errorf("failed waiting for standalone Karpenter CRDs: %w", err)
 		}
 	}
@@ -165,6 +173,12 @@ func run(ctx context.Context) error {
 		}
 	}
 
+	// Embedded mode installs NodeClass CRDs during controller setup; discover only after installation.
+	nodeClassGVK, err := waitForNodeClassGVK(ctx, mgr.GetRESTMapper(), nodeClassGroupKind)
+	if err != nil {
+		return fmt.Errorf("failed to resolve NodeClass GVK: %w", err)
+	}
+
 	imageRegistryOverrides := map[string][]string{}
 	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
 	if ok {
@@ -195,6 +209,7 @@ func run(ctx context.Context) error {
 	}
 
 	kir := karpenterignition.KarpenterIgnitionReconciler{
+		NodeClassGVK:            nodeClassGVK,
 		ReleaseProvider:         releaseProvider,
 		VersionResolver:         releaseinfo.NewCincinnatiVersionResolver(),
 		ImageMetadataProvider:   imageMetaDataProvider,
