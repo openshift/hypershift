@@ -49,6 +49,8 @@ type OADPBackupOptions struct {
 	// Required
 	HCName      string
 	HCNamespace string
+	// KubeconfigPath selects the management cluster for this CLI invocation. Empty uses KUBECONFIG.
+	KubeconfigPath string
 
 	// Optional
 	Name                     string   // Custom name for the backup
@@ -68,6 +70,8 @@ type OADPRestoreOptions struct {
 	// Required
 	HCName      string
 	HCNamespace string
+	// KubeconfigPath selects the management cluster for this CLI invocation. Empty uses KUBECONFIG.
+	KubeconfigPath string
 
 	// One of these is required
 	FromBackup   string // Name of the backup to restore from
@@ -112,6 +116,8 @@ type FixDrOidcIamOptions struct {
 	// HostedCluster options (alternative to manual specification)
 	HCName      string
 	HCNamespace string
+	// KubeconfigPath selects the management cluster for this CLI invocation. Empty uses KUBECONFIG.
+	KubeconfigPath string
 
 	// Manual specification options
 	InfraID    string
@@ -152,6 +158,7 @@ func RunOADPBackup(ctx context.Context, logger logr.Logger, artifactDir string, 
 
 	args := buildBackupArgs(backupOpts)
 	cmd := exec.CommandContext(ctx, hypershiftCLI, args...)
+	setKubeconfig(cmd, backupOpts.KubeconfigPath)
 
 	logPath := fmt.Sprintf("oadp-backup-%s-%s.log", backupOpts.HCNamespace, backupOpts.HCName)
 
@@ -192,6 +199,7 @@ func RunOADPRestore(ctx context.Context, logger logr.Logger, artifactDir string,
 
 	args := buildRestoreArgs(restoreOpts)
 	cmd := exec.CommandContext(ctx, hypershiftCLI, args...)
+	setKubeconfig(cmd, restoreOpts.KubeconfigPath)
 
 	logPath := fmt.Sprintf("oadp-restore-%s-%s.log", restoreOpts.HCNamespace, restoreOpts.HCName)
 
@@ -458,6 +466,7 @@ func RunFixDrOidcIam(ctx context.Context, logger logr.Logger, artifactDir string
 
 	args := buildFixDrOidcIamArgs(fixOpts)
 	cmd := exec.CommandContext(ctx, hypershiftCLI, args...)
+	setKubeconfig(cmd, fixOpts.KubeconfigPath)
 
 	var logPath string
 	if fixOpts.HCName != "" {
@@ -472,6 +481,24 @@ func RunFixDrOidcIam(ctx context.Context, logger logr.Logger, artifactDir string
 	}
 
 	return framework.RunCommand(logger, opts, logPath, cmd)
+}
+
+func setKubeconfig(cmd *exec.Cmd, kubeconfigPath string) {
+	if kubeconfigPath == "" {
+		return
+	}
+	cmd.Env = withEnvVar(os.Environ(), "KUBECONFIG", kubeconfigPath)
+}
+
+func withEnvVar(env []string, name, value string) []string {
+	prefix := name + "="
+	result := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, prefix) {
+			result = append(result, entry)
+		}
+	}
+	return append(result, prefix+value)
 }
 
 // buildFixDrOidcIamArgs constructs the command line arguments for fix dr-oidc-iam.
