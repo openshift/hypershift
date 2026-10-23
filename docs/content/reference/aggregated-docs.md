@@ -68842,6 +68842,271 @@ This document outlines the support matrix that involved these three entities.
 
 ---
 
+## Source: docs/content/reference/nodepool-rollout-state-machine.md
+
+---
+title: NodePool Rollout State Machine
+---
+
+# NodePool Rollout State Machine
+
+This document describes the secret-maintenance state machine that controls which token and user-data secrets `Token.Reconcile()` maintains on each reconcile cycle. The state machine ensures that management-side configuration changes (such as HAProxy image bumps) do not trigger unnecessary node replacements, while spec-driven changes (user MachineConfig edits, version upgrades) still produce rollouts.
+
+For a higher-level overview of what triggers rollouts and how they execute, see NodePool Rollouts.
+
+## Dual-Hash System
+
+The NodePool controller computes two families of configuration hashes:
+
+| Hash | Includes | Purpose |
+|------|----------|---------|
+| `Hash()` | All config inputs: MCO config, HAProxy config, proxy (with platform defaults), pull secret, trust bundle, release version, RHEL stream | Names the token and user-data secrets. Uniquely identifies a full payload. |
+| `HashWithoutVersion()` | Same as `Hash()` minus the release version and global configuration | Legacy config-only comparison. |
+| `RolloutHash()` | Spec-driven inputs only: MCO config (without HAProxy), proxy (user-set fields only), pull secret, trust bundle, release version, RHEL stream, endpoint config | Determines whether a node-replacing rollout is needed. |
+| `RolloutHashWithoutVersion()` | Same as `RolloutHash()` minus the release version | Detects config-only changes independently from version changes. |
+
+The key insight is that `Hash()` can change when only management-side content changes (e.g., an operator upgrade bumps the HAProxy image digest). In that case, `RolloutHash()` stays the same, and no rollout should occur. But the secrets are named using `Hash()`, so the controller must decide which hash to use when maintaining secrets.
+
+### What Is Excluded from the Rollout Hash
+
+The rollout hash excludes content that changes due to operator upgrades rather than user intent:
+
+- **HAProxy image digest** — can change on an operator release without changing node connectivity.
+- **Platform-computed proxy defaults** — `NoProxy` CIDRs and metadata endpoints are derived by operator code; changes to that code should not roll nodes.
+
+Connectivity-affecting HAProxy inputs (endpoint access mode, API server address/port) are captured in a separate `endpointConfig` field that **is** included in the rollout hash.
+
+!!! note
+    If a future change needs to include a new piece of HAProxy configuration in rollout decisions, it should be added to `endpointConfig` or a new rollout-hash input, gated behind a hash version bump (see PR #9007).
+
+## Annotations
+
+Four annotations on the NodePool track the rollout lifecycle:
+
+| Annotation | Key | Set by | Cleared by |
+|------------|-----|--------|------------|
+| **Current Config** | `hypershift.openshift.io/nodePoolCurrentConfig` | `reconcileMachineDeploymentStatus` / `reconcileMachineSetStatus` on rollout completion | Never (overwritten) |
+| **Current Config Version** | `hypershift.openshift.io/nodePoolCurrentConfigVersion` | Same as above; records the full `Hash()` of the completed payload | Never (overwritten) |
+| **Current Rollout Config** | `hypershift.openshift.io/nodePoolCurrentRolloutConfig` | `seedRolloutAnnotation` on first reconcile; status reconciliation on completion | Never (overwritten) |
+| **In-Progress Rollout Config** | `hypershift.openshift.io/nodePoolInProgressRolloutConfig` | `seedRolloutAnnotation` when adopting an existing rollout; propagation when a CAPI workload write succeeds | Status reconciliation on rollout completion (`delete`) |
+
+The MachineDeployment or MachineSet also stores `hypershift.openshift.io/nodePoolTargetRolloutConfig` on its **top-level metadata**. This records `RolloutHash()` in the same API write as the bootstrap reference and remains after completion. It takes precedence over the NodePool's in-progress marker, so a failed NodePool patch cannot lose the request identity or make a later request adopt the wrong payload. Seeding this metadata does not change the machine template or any config hash.
+
+### Annotation Lifecycle
+
+```
+ New NodePool                 Operator Upgrade              Spec Change              Completion
+ ──────────                   ────────────────              ───────────              ──────────
+ currentConfig:       ──      currentConfig:       H1_cfg   currentConfig:  H1_cfg   currentConfig:  H2_cfg
+ currentConfigVer:    ──      currentConfigVer:    H1       currentConfigVer: H1     currentConfigVer: H2
+ currentRolloutCfg:   ──  →   currentRolloutCfg:   R1   →   currentRolloutCfg: R1 →  currentRolloutCfg: R2
+ inProgressRollout:   ──      inProgressRollout:   ──       inProgressRollout: R2    inProgressRollout: (deleted)
+```
+
+- On a **new NodePool**, no annotations exist. `isOutdated()` returns true and secrets are created. The rollout baseline is seeded during reconciliation; propagation records the in-progress target, and completion records the completed hashes and clears the in-progress annotation.
+- On **operator upgrade**, `seedRolloutAnnotation` writes `currentRolloutConfig` if absent. If an unfinished legacy rollout already uses the requested release, it also records the adopted request in `inProgressRolloutConfig`. A different requested release gets a new payload, even when the request arrived before migration. A later config or version request can supersede an adopted target before completion. The completed config version is left to status reconciliation.
+- On **retry after a failed NodePool patch**, the workload's target annotation supplies the persisted request and restores missing or stale in-progress tracking. This recovery runs even when the rollout baseline already exists.
+- On a **spec-driven change**, `propagateVersionAndTemplate` writes `inProgressRolloutConfig` when it updates the CAPI workload.
+- On **completion**, status reconciliation updates all config annotations and deletes `inProgressRolloutConfig`.
+
+## The `resolveEffectiveHash` State Machine
+
+Each reconcile cycle, `resolveEffectiveHash` (called from `Token.Reconcile()`) determines which full hash to use for maintaining secrets and records one of seven states.
+
+### Inputs
+
+| Input | Source | Description |
+|-------|--------|-------------|
+| `outdated` | `isOutdated()` | True when a spec-driven change (version, config, or reversion) requires reconciliation of the rollout target |
+| `deployedHash` | CAPI workload's `bootstrap.dataSecretName` | The full hash extracted from the MachineDeployment or MachineSet's current bootstrap secret reference. Empty if the workload does not exist or has no bootstrap reference. |
+| `completedHash` | `nodePoolAnnotationCurrentConfigVersion` | The full hash of the last completed rollout payload |
+| `inProgress` | Workload's `nodePoolTargetRolloutConfig`, falling back to the NodePool's `nodePoolInProgressRolloutConfig` | The rollout hash associated with the deployed bootstrap reference; the workload copy remains after completion |
+| `Hash()` | Current configuration | The calculated full payload hash |
+| `RolloutHash()` | Current spec-driven configuration | The calculated rollout hash |
+| Target and completed versions | `Version()` and `nodePool.Status.Version` | A mismatch can indicate either a fresh version upgrade or one still in progress |
+| Deployed version | CAPI workload's `spec.template.spec.version` | Distinguishes a legacy rollout at the requested release from one that needs a different release payload |
+
+The decision uses two derived signals:
+
+```go
+deployedDiffers := deployedHash != "" && deployedHash != Hash()
+rolloutInProgress := deployedHash != completedHash || Version() != nodePool.Status.Version
+```
+
+`rolloutInProgress` is consulted only when `outdated` and `deployedDiffers` are true. A version mismatch alone does not prove a rollout has already started: when the deployed and completed hashes match and `inProgress` is empty, the state is `NewRollout`.
+
+Before considering adoption or continuation, a known deployed version that differs from the requested version selects the current `Hash()`. It is `SupersededRollout` when the deployed hash is ahead of completion, otherwise `NewRollout`.
+
+### States
+
+```mermaid
+flowchart TD
+    Outdated{"outdated?"}
+    Outdated -->|No| Drift{"deployedDiffers?"}
+    Drift -->|Yes| Management["ManagementDrift: deployedHash"]
+    Drift -->|No| Completed{"completedHash present and differs from Hash()?"}
+    Completed -->|Yes| CompletedDrift["CompletedDrift: completedHash"]
+    Completed -->|No| Steady["Steady: Hash()"]
+
+    Outdated -->|Yes| Deployed{"deployedDiffers?"}
+    Deployed -->|No| New["NewRollout: Hash()"]
+    Deployed -->|Yes| Version{"known deployed version differs from requested?"}
+    Version -->|Yes| VersionAhead{"deployedHash differs from completedHash?"}
+    VersionAhead -->|Yes| Superseded["SupersededRollout: Hash()"]
+    VersionAhead -->|No| New
+    Version -->|No| InFlight{"rolloutInProgress?"}
+    InFlight -->|No| New
+    InFlight -->|Yes| Marker{"inProgress present?"}
+    Marker -->|No| Ahead{"deployedHash differs from completedHash?"}
+    Ahead -->|Yes| Adopted["AdoptedRollout: deployedHash"]
+    Ahead -->|No| New
+    Marker -->|Yes| Same{"inProgress matches RolloutHash()?"}
+    Same -->|Yes| Continued["ContinuedRollout: deployedHash"]
+    Same -->|No| Superseded
+```
+
+When `outdated` is true and the deployed hash is absent or already matches `Hash()`, the state is always `NewRollout`, regardless of the completed hash or in-progress annotation. `CompletedDrift` and `Steady` are only selected when `outdated` is false.
+
+### State Descriptions
+
+#### 1. Steady
+
+- **Condition**: `!outdated`, and the deployed and completed hashes are each absent or match `Hash()`.
+- **Action**: Maintain secrets under `Hash()`.
+- **Meaning**: No spec-driven change is pending and no recorded full hash differs from the current calculation.
+
+#### 2. ManagementDrift
+
+- **Condition**: `!outdated` and `deployedDiffers`.
+- **Action**: Maintain secrets under `deployedHash`.
+- **Meaning**: The rollout decision does not require a change, but the CAPI workload references a different full hash. Its secrets must stay in sync with ignition server token rotation. This commonly follows management-side content changes such as an HAProxy image bump.
+
+!!! warning
+    If the deployed secrets are not maintained, the ignition server's periodic token rotation will eventually invalidate the token UUID embedded in the user-data secret. New machines joining the NodePool will fail ignition with HTTP 511.
+
+#### 3. CompletedDrift
+
+- **Condition**: `!outdated`, `!deployedDiffers`, and `completedHash` is present and differs from `Hash()`.
+- **Action**: Maintain secrets under `completedHash`.
+- **Meaning**: The completed annotation provides the fallback hash when the deployed hash is absent or matches `Hash()`. The CAPI workload does not have to be absent for this state to apply.
+
+#### 4. NewRollout
+
+- **Condition**: `outdated`, and either `!deployedDiffers`, `!rolloutInProgress`, or `deployedHash == completedHash` with an empty `inProgress` or a different known deployed version.
+- **Action**: Create/maintain secrets under `Hash()`.
+- **Meaning**: Use the current calculated target without retaining or superseding a different active target. This covers new NodePools, fresh config or version changes after a completed rollout, and a current target that is already deployed but has not finished rolling out. The in-progress annotation may be present in this state.
+
+#### 5. AdoptedRollout
+
+- **Condition**: `outdated`, `deployedDiffers`, `inProgress` is empty, `deployedHash != completedHash`, and the deployed version is unknown or matches the requested release.
+- **Action**: Maintain secrets under `deployedHash`.
+- **Meaning**: Without an in-progress annotation, the deployed hash being ahead of completion is treated as an existing rollout target. This preserves the active bootstrap secrets when adopting a rollout started by an older operator. An empty completed hash also satisfies this condition when the deployed hash is present and differs from `Hash()`.
+
+!!! note
+    This decision depends on the absence of `inProgress`, not on the presence or absence of `currentRolloutConfig`. When migration seeds the rollout baseline, it also records `inProgress` for an existing unfinished rollout so later requests are distinguishable from the adopted request.
+
+#### 6. ContinuedRollout
+
+- **Condition**: `outdated`, `deployedDiffers`, `rolloutInProgress`, a nonempty `inProgress` matching `RolloutHash()`, and the deployed version is unknown or matches the requested release.
+- **Action**: Maintain secrets under `deployedHash`.
+- **Meaning**: The same rollout is still pending while the calculated full hash differs from its deployed target, typically because of management-side drift. The version comparison allows this state even when the deployed and completed hashes match.
+
+#### 7. SupersededRollout
+
+- **Condition**: `outdated`, `deployedDiffers`, and either a different known deployed version with `deployedHash != completedHash`, or `rolloutInProgress` with a nonempty `inProgress` differing from `RolloutHash()`.
+- **Action**: Create/maintain secrets under `Hash()`.
+- **Meaning**: A new spec-driven target supersedes a previously recorded rollout. A fresh version upgrade without an in-progress annotation is `NewRollout` instead.
+
+### States Across Reconcile Cycles
+
+The state is recalculated from these inputs on every reconcile; the previous `secretState` is not an input. State names describe the secret-maintenance decision, rather than a persistent phase of the rollout.
+
+For example, a spec change from a completed target selects `NewRollout`, including when that target has management drift. After the new target is propagated, subsequent reconciles continue to select `NewRollout` while the deployed hash matches `Hash()` and completion is pending. Management drift during that rollout can instead select `ContinuedRollout`.
+
+When the rollout completes and no further spec change is pending, the state becomes `Steady` if the deployed and completed hashes match `Hash()`. If management drift remains, it becomes `ManagementDrift`, maintaining the completed rollout's deployed secrets.
+
+## Integration Points
+
+### `isOutdated()`
+
+`isOutdated()` determines whether a spec-driven change requires new secrets. It uses `RolloutHashWithoutVersion()` (not `Hash()`) to compare against the `currentRolloutConfig` annotation, plus a separate version comparison against `Status.Version`.
+
+The deployed workload's version and rollout target are checked first. A version or target mismatch also makes `isOutdated()` true, allowing a reversion to supersede a pending target even when the NodePool's baseline or in-progress marker was not saved. Legacy workloads fall back to the NodePool's in-progress marker. The result feeds into `resolveEffectiveHash` as the `outdated` input.
+
+**Migration behavior**: When `currentRolloutConfig` is absent but a completed config-version annotation exists, and no rollout target has been recorded, `isOutdated()` checks only for version changes. Config changes during migration are absorbed into the new baseline because the opaque full-hash comparison cannot distinguish user config changes from management-only drift. A desired release that differs from the deployed workload's release still gets a new payload.
+
+### `cleanupOutdated()`
+
+Called before `resolveEffectiveHash` when `outdated` is true. It marks the **previous** token secret (named with the completed hash) for expiration and deletes the previous user-data secret, except on AWS and KubeVirt where the user-data secret is retained for existing Machines.
+
+**Guard**: During migration (no rollout annotation), if the completed hash matches the deployed bootstrap hash, cleanup is skipped to avoid invalidating the secret the CAPI workload actively references.
+
+### Secret Janitor
+
+The secret janitor runs as a separate controller that garbage-collects orphaned token and user-data secrets. It accepts secrets matching any of three hashes:
+
+1. **Current `Hash()`** — the latest calculated payload hash.
+2. **Completed hash** — from `nodePoolAnnotationCurrentConfigVersion`. Protects secrets during ManagementDrift.
+3. **Active CAPI bootstrap hash** — from the MachineDeployment or MachineSet's `bootstrap.dataSecretName`. Protects secrets during in-progress rollouts.
+
+Any secret that does not match one of these three categories is cleaned up (token secrets are given an expiration annotation; user-data secrets are deleted immediately).
+
+!!! important
+    The janitor must accept the same set of hashes that `resolveEffectiveHash` may select. If the janitor's valid-hash set is narrower than the state machine's, it will delete secrets that `Token.Reconcile()` is actively maintaining, causing a delete/recreate loop.
+
+### CAPI Propagation
+
+`propagateVersionAndTemplate` (MachineDeployment) and `propagateVersionAndTemplateToMachineSet` (MachineSet) decide when to update the CAPI workload's bootstrap secret reference. They are gated on the rollout hash, not the full hash:
+
+```
+versionChanged := targetVersion != workload.Spec.Template.Spec.Version
+rolloutConfigChanged := currentRolloutConfig != "" && RolloutHashWithoutVersion() != currentRolloutConfig
+revertPending := inProgressRollout != "" && RolloutHash() != inProgressRollout
+```
+
+Here `inProgressRollout` comes from the workload's target annotation, falling back to NodePool tracking. When any gate is true, the workload is updated to point at the user-data secret named with `EffectiveHash()` (the output of `resolveEffectiveHash`). The NodePool's `inProgressRolloutConfig` annotation is set to `RolloutHash()`. The workload's top-level target annotation is saved with its bootstrap reference, including when adopting a legacy workload.
+
+When none is true, the workload's bootstrap reference is not updated. Management-side-only changes do not propagate.
+
+`reconcileWorkload` retains NodePool annotation and status changes only when the CAPI workload write succeeds. If the write fails, it restores the NodePool state from before the mutation. This matters because the main reconciler still patches the NodePool on errors: persisting an unpropagated in-progress target would make a version upgrade retry maintain the old bootstrap payload.
+
+### Status Reconciliation
+
+On rollout completion (`MachineDeploymentComplete` or `machineSetInPlaceRolloutIsComplete`):
+
+1. `Status.Version` is updated.
+2. `currentRolloutConfig` is set to the target rollout hash.
+3. `currentConfigVersion` is set to the deployed bootstrap hash (extracted from the workload's current bootstrap secret name), ensuring the completed hash tracks what actually rolled out.
+4. `inProgressRolloutConfig` is deleted.
+
+!!! note
+    The completed hash is derived from the workload's bootstrap secret name, not from `Hash()`. This is important because a reversion (A→B→A) or management drift can cause the completed payload hash to differ from the current `Hash()` even when the rollout config matches.
+
+## Comparing `UpdatingConfig` and `ConfigUpdatePending`
+
+Both conditions mention "config" and "update", but they answer different questions:
+
+- **`UpdatingConfig`** answers *"is a config rollout happening right now?"* It is `True` while the rollout hash differs from the completed baseline recorded in the `currentRolloutConfig` annotation — i.e. while nodes are actively being replaced (`Replace`) or updated in place (`InPlace`) to apply a spec-driven change.
+- **`ConfigUpdatePending`** answers *"has management-side content changed without a rollout being triggered?"* It is `True` when the full payload hash differs from the last-applied payload but the rollout hash has not changed (see Dual-Hash System).
+
+| State | Meaning | Operator action |
+|---|---|---|
+| `UpdatingConfig=False`, `ConfigUpdatePending=False` | No config change or deferred management drift is reported. Initial provisioning or a version-only rollout may still be running. | Check `UpdatingVersion` and readiness/completion before treating the NodePool as converged. |
+| `UpdatingConfig=True` (`AsExpected`) | A spec-driven config change is rolling out (`Replace`) or being applied in place (`InPlace`). | Monitor until it returns to `False`. |
+| `UpdatingConfig=False`, reason `InplaceUpgradeFailed` | An in-place config rollout failed. | Investigate the MachineSet upgrade and NodePool events. |
+| `ConfigUpdatePending=True` (`ManagementConfigDrift`) | Management-side content (e.g. HAProxy image) changed without triggering a rollout. Existing and replaced nodes keep the previous management-side configuration until the next spec-driven rollout. | None required. The change rides along with the next release upgrade or user config change; trigger any spec-driven rollout to converge sooner. |
+
+The two conditions are never `True` at the same time: drift is only reported while no config or version update is detected (`hasDrift && !isUpdating`). Management content that changes after a rollout starts is deferred while the controller maintains that rollout's existing payload. `ConfigUpdatePending` can therefore become `True` after the rollout completes; the next spec-driven rollout includes the deferred content.
+
+!!! note "Fresh NodePools"
+    `UpdatingConfig` stays `False` for a NodePool's entire initial rollout: the baseline is seeded from the current target (see `seedRolloutAnnotation`), so applying the initial config is not a change relative to a completed baseline. The initial rollout is surfaced by `UpdatingVersion` instead (`Status.Version` is only set at completion, so it is `True` for the whole initial rollout).
+
+!!! note "Version changes have their own condition"
+    Release version changes are surfaced by `UpdatingVersion` and are excluded from `UpdatingConfig`. A release upgrade that also changes config content can show both `UpdatingVersion=True` and `UpdatingConfig=True`.
+
+
+---
+
 ## Source: docs/content/reference/nodepool-rollouts.md
 
 ---

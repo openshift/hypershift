@@ -10,6 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/api"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -282,6 +283,7 @@ func TestUpdatingConfigCondition(t *testing.T) {
 		upgradeType           hyperv1.UpgradeType
 		machineSetExists      bool
 		machineSetUpgradeFail bool
+		freshNodePool         bool
 		isUpdatingConfig      bool
 		expectedStatus        corev1.ConditionStatus
 		expectedReason        string
@@ -294,6 +296,17 @@ func TestUpdatingConfigCondition(t *testing.T) {
 			expectedMessagePart: "",
 			machineSetExists:    true,
 			isUpdatingConfig:    false,
+		},
+		{
+			// A fresh NodePool has no rollout annotation until its first
+			// reconcile seeds it; the initial config application is not a
+			// change from a completed baseline, so UpdatingConfig is False
+			// (UpdatingVersion surfaces the initial rollout instead).
+			name:                "NodePool is fresh (no rollout annotation yet) and not updating config",
+			freshNodePool:       true,
+			expectedStatus:      corev1.ConditionFalse,
+			expectedReason:      hyperv1.AsExpectedReason,
+			expectedMessagePart: "",
 		},
 		{
 			name:                "NodePool is Replace and updating config",
@@ -351,6 +364,7 @@ func TestUpdatingConfigCondition(t *testing.T) {
 					IgnitionEndpoint: "https://ignition.cluster-name.myns.devcluster.openshift.com",
 				},
 			}
+			kubeconfig := withKubeconfig(hostedCluster)
 
 			// change pull secret name to simulate node pool config update
 			if tc.isUpdatingConfig {
@@ -392,11 +406,13 @@ func TestUpdatingConfigCondition(t *testing.T) {
 				ignitionConfig,
 				ignitionConfig2,
 				ignitionConfig3,
+				kubeconfig,
 			).Build()
 
+			releaseVersion := semver.MustParse("4.18.0").String()
 			r := &NodePoolReconciler{
 				Client:          client,
-				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
+				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: releaseVersion},
 				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 					Result: &dockerv1client.DockerImageConfig{
 						Config: &docker10.DockerConfig{
@@ -404,6 +420,22 @@ func TestUpdatingConfigCondition(t *testing.T) {
 						},
 					},
 				},
+			}
+
+			// Compute the baseline rollout hash from the pre-mutation inputs so
+			// isUpdatingConfig can detect whether the mutation changed it.
+			if tc.freshNodePool {
+				// A fresh NodePool has no rollout annotation until its first
+				// reconcile seeds it.
+				nodePool.Annotations = map[string]string{}
+			} else if !tc.isUpdatingConfig {
+				baselineToken, tokenErr := r.token(ctx, hostedCluster, nodePool)
+				g.Expect(tokenErr).To(BeNil())
+				nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = baselineToken.RolloutHashWithoutVersion()
+			} else {
+				// For the "updating" cases, seed a stale rollout hash that won't
+				// match the post-mutation token.
+				nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = "stale-rollout-hash"
 			}
 
 			if tc.machineSetExists {
@@ -507,6 +539,8 @@ func TestUpdatingVersionCondition(t *testing.T) {
 				},
 			}
 
+			kubeconfig := withKubeconfig(hostedCluster)
+
 			nodePool := &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "nodepool-name",
@@ -537,6 +571,7 @@ func TestUpdatingVersionCondition(t *testing.T) {
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
 				nodePool,
 				hostedCluster,
+				kubeconfig,
 				pullSecret,
 				ignitionServerCACert,
 				machineConfig,
@@ -591,10 +626,8 @@ func TestValidMachineConfigCondition(t *testing.T) {
 			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
 			InfraID:    "fake-infra-id",
 		},
-		Status: hyperv1.HostedClusterStatus{
-			KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"},
-		},
 	}
+	kubeconfig := withKubeconfig(hostedCluster)
 
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
@@ -614,6 +647,7 @@ func TestValidMachineConfigCondition(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
 		nodePool, hostedCluster, pullSecret, ignitionServerCACert,
 		machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3,
+		kubeconfig,
 	).Build()
 
 	r := &NodePoolReconciler{
@@ -717,6 +751,36 @@ spec:
 	}
 
 	return pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3
+}
+
+// withKubeconfig points the HostedCluster's status at an admin kubeconfig
+// secret and returns that secret, mirroring an established public cluster:
+// resolving the API server endpoint, which feeds the rollout hash, requires
+// the secret to be present.
+func withKubeconfig(hc *hyperv1.HostedCluster) *corev1.Secret {
+	kubeconfig := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: hc.Name + "-kubeconfig", Namespace: hc.Namespace},
+		Data: map[string][]byte{
+			"kubeconfig": []byte(fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- name: cluster
+  cluster:
+    server: https://api.%s.%s.example.com:6443
+contexts:
+- name: context
+  context:
+    cluster: cluster
+    user: user
+current-context: context
+users:
+- name: user
+  user: {}
+`, hc.Name, hc.Namespace)),
+		},
+	}
+	hc.Status.KubeConfig = &corev1.LocalObjectReference{Name: kubeconfig.Name}
+	return kubeconfig
 }
 
 func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, machineSetUpgradeFail bool) *v1beta2.MachineSet {
@@ -1014,6 +1078,378 @@ func TestValidateKubevirtAdditionalNetworkNamespaces(t *testing.T) {
 			} else {
 				g.Expect(err).ToNot(HaveOccurred(), tc.name)
 			}
+		})
+	}
+}
+func TestConfigUpdatePendingCondition(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	tests := []struct {
+		name           string
+		isUpdatingSpec bool
+		hasDrift       bool
+		expectedStatus corev1.ConditionStatus
+		expectedReason string
+	}{
+		{
+			name:           "When there is no drift and no update in progress, it should report condition as false",
+			isUpdatingSpec: false,
+			hasDrift:       false,
+			expectedStatus: corev1.ConditionFalse,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:           "When management drift is detected and no spec update is in progress, it should report condition as true",
+			isUpdatingSpec: false,
+			hasDrift:       true,
+			expectedStatus: corev1.ConditionTrue,
+			expectedReason: hyperv1.ManagementConfigDriftReason,
+		},
+		{
+			name:           "When both drift and spec update are in progress, it should report condition as false because UpdatingConfig takes precedence",
+			isUpdatingSpec: true,
+			hasDrift:       true,
+			expectedStatus: corev1.ConditionFalse,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+
+			pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3 := setupTestObjects()
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
+					InfraID:    "fake-infra-id",
+				},
+				Status: hyperv1.HostedClusterStatus{
+					IgnitionEndpoint: "https://ignition.cluster-name.myns.devcluster.openshift.com",
+				},
+			}
+			kubeconfig := withKubeconfig(hostedCluster)
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "nodepool-name",
+					Namespace: "myns",
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentConfig: "some-full-hash",
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: hostedCluster.Name,
+					Release: hyperv1.Release{
+						Image: "fake-release-image",
+					},
+					Config: []corev1.LocalObjectReference{
+						{Name: "machineconfig-1"},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: semver.MustParse("4.18.0").String(),
+				},
+			}
+
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+				nodePool,
+				hostedCluster,
+				kubeconfig,
+				pullSecret,
+				ignitionServerCACert,
+				machineConfig,
+				ignitionConfig,
+				ignitionConfig2,
+				ignitionConfig3,
+			).Build()
+
+			r := &NodePoolReconciler{
+				Client:          client,
+				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
+				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					Result: &dockerv1client.DockerImageConfig{
+						Config: &docker10.DockerConfig{
+							Labels: map[string]string{},
+						},
+					},
+				},
+			}
+
+			// First, compute the actual token to get hashes
+			token, err := r.token(ctx, hostedCluster, nodePool)
+			g.Expect(err).To(BeNil())
+
+			rolloutHash := token.RolloutHashWithoutVersion()
+			fullHash := token.Hash()
+
+			// Set the current rollout config to match (no spec change)
+			nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = rolloutHash
+
+			if tc.isUpdatingSpec {
+				// Simulate a spec-driven rollout in progress by making the rollout hash differ
+				nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = "stale-rollout-hash"
+			}
+
+			if tc.hasDrift {
+				// Simulate management-side drift: full hash differs from current but rollout hash matches
+				nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = "old-full-hash-differs-from-" + fullHash
+			} else {
+				nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = fullHash
+			}
+
+			_, err = r.configUpdatePendingCondition(ctx, nodePool, hostedCluster)
+			g.Expect(err).To(BeNil())
+
+			condition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolConfigUpdatePendingConditionType)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(tc.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+		})
+	}
+}
+
+// payloadConditionScenario selects a secret-maintenance state for the payload
+// condition tests (ValidGeneratedPayload, ReachedIgnitionEndpoint).
+type payloadConditionScenario struct {
+	// inFlightRollout selects stateContinuedRollout in resolveEffectiveHash:
+	// the completed rollout annotation is stale, the in-progress annotation
+	// matches the current rollout hash, and the CAPI workload references a
+	// full hash that differs from the currently calculated one
+	// (management-side drift during an in-flight rollout).
+	inFlightRollout bool
+	// noWorkload means no CAPI workload exists yet (young NodePool).
+	noWorkload bool
+	// noInfraID means the HostedCluster has no InfraID yet.
+	noInfraID bool
+}
+
+// setupPayloadConditionTest builds a reconciler with a NodePool in the given
+// scenario, creating the CAPI workload and the token secret that the
+// scenario's effective hash resolves to. The token secret carries both a
+// valid payload reason and the ignition-reached annotation so it satisfies
+// the ValidGeneratedPayload and ReachedIgnitionEndpoint conditions alike.
+func setupPayloadConditionTest(t *testing.T, scenario payloadConditionScenario) (*NodePoolReconciler, *hyperv1.NodePool, *hyperv1.HostedCluster) {
+	g := NewGomegaWithT(t)
+	ctx := t.Context()
+
+	pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3 := setupTestObjects()
+
+	hostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
+		Spec: hyperv1.HostedClusterSpec{
+			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
+			InfraID:    "fake-infra-id",
+		},
+		Status: hyperv1.HostedClusterStatus{
+			IgnitionEndpoint: "https://ignition.cluster-name.myns.devcluster.openshift.com",
+		},
+	}
+	kubeconfig := withKubeconfig(hostedCluster)
+	if scenario.noInfraID {
+		hostedCluster.Spec.InfraID = ""
+	}
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "nodepool-name",
+			Namespace:   "myns",
+			Annotations: map[string]string{},
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hostedCluster.Name,
+			Release: hyperv1.Release{
+				Image: "fake-release-image",
+			},
+			Management: hyperv1.NodePoolManagement{
+				UpgradeType: hyperv1.UpgradeTypeReplace,
+			},
+			Config: []corev1.LocalObjectReference{
+				{Name: "machineconfig-1"},
+			},
+		},
+		Status: hyperv1.NodePoolStatus{
+			Version: semver.MustParse("4.18.0").String(),
+		},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+		nodePool,
+		hostedCluster,
+		kubeconfig,
+		pullSecret,
+		ignitionServerCACert,
+		machineConfig,
+		ignitionConfig,
+		ignitionConfig2,
+		ignitionConfig3,
+	).Build()
+
+	r := &NodePoolReconciler{
+		Client:          client,
+		ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+			Result: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{
+					Labels: map[string]string{},
+				},
+			},
+		},
+	}
+
+	// Compute the hashes the condition's own token build will reproduce.
+	// Annotations are not hash inputs, so setting them below does not change
+	// the hashes the conditions calculate.
+	baselineToken, err := r.token(ctx, hostedCluster, nodePool)
+	g.Expect(err).To(BeNil())
+	currentHash := baselineToken.Hash()
+
+	// extractHashFromSecretName splits on "-", so the fake hash must not
+	// contain hyphens.
+	const deployedHash = "deadbeefcafe"
+
+	if scenario.inFlightRollout {
+		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = "stale-rollout-hash"
+		nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = baselineToken.RolloutHash()
+		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = "oldcompletedhash"
+	} else {
+		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = baselineToken.RolloutHashWithoutVersion()
+		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = currentHash
+	}
+
+	// The hash the conditions are expected to resolve: during an in-flight
+	// rollout with drift it is the deployed hash, otherwise the current one.
+	resolvedHash := currentHash
+	if !scenario.noWorkload {
+		workloadHash := currentHash
+		if scenario.inFlightRollout {
+			workloadHash = deployedHash
+			resolvedHash = deployedHash
+		}
+		machineDeployment := &v1beta2.MachineDeployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      nodePool.Name,
+				Namespace: hostedCluster.Namespace + "-" + hostedCluster.Name,
+			},
+			Spec: v1beta2.MachineDeploymentSpec{
+				Template: v1beta2.MachineTemplateSpec{
+					Spec: v1beta2.MachineSpec{
+						Bootstrap: v1beta2.Bootstrap{
+							DataSecretName: ptr.To(fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, nodePool.Name, workloadHash)),
+						},
+					},
+				},
+			},
+		}
+		err = client.Create(ctx, machineDeployment)
+		g.Expect(err).To(BeNil())
+	}
+
+	tokenSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, nodePool.Name, resolvedHash),
+			Namespace: hostedCluster.Namespace + "-" + hostedCluster.Name,
+			Annotations: map[string]string{
+				TokenSecretIgnitionReachedAnnotation: "True",
+			},
+		},
+		Data: map[string][]byte{
+			ignserver.TokenSecretReasonKey: []byte(hyperv1.AsExpectedReason),
+		},
+	}
+	err = client.Create(ctx, tokenSecret)
+	g.Expect(err).To(BeNil())
+
+	return r, nodePool, hostedCluster
+}
+
+func TestValidGeneratedPayloadCondition(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	tests := []struct {
+		name     string
+		scenario payloadConditionScenario
+	}{
+		{
+			name:     "steady state resolves the current token secret",
+			scenario: payloadConditionScenario{},
+		},
+		{
+			// Regression test: the token built by r.token() carries no
+			// deployed bootstrap hash. Without resolving it,
+			// resolveEffectiveHash cannot select ContinuedRollout and the
+			// condition looks up the current Hash() secret, which does not
+			// exist while the rollout is in flight.
+			name: "in-flight rollout with management drift resolves the deployed token secret",
+			scenario: payloadConditionScenario{
+				inFlightRollout: true,
+			},
+		},
+		{
+			name: "no CAPI workload resolves the current token secret",
+			scenario: payloadConditionScenario{
+				noWorkload: true,
+			},
+		},
+		{
+			name: "HostedCluster without InfraID resolves the current token secret",
+			scenario: payloadConditionScenario{
+				noInfraID:  true,
+				noWorkload: true,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			r, nodePool, hostedCluster := setupPayloadConditionTest(t, tc.scenario)
+
+			_, err := r.validGeneratedPayloadCondition(ctx, nodePool, hostedCluster)
+			g.Expect(err).To(BeNil())
+
+			condition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidGeneratedPayloadConditionType)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(corev1.ConditionTrue))
+			g.Expect(condition.Reason).To(Equal(hyperv1.AsExpectedReason))
+		})
+	}
+}
+
+func TestReachedIgnitionEndpointCondition(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	tests := []struct {
+		name     string
+		scenario payloadConditionScenario
+	}{
+		{
+			name:     "steady state resolves the current token secret",
+			scenario: payloadConditionScenario{},
+		},
+		{
+			// Regression test: see TestValidGeneratedPayloadCondition.
+			name: "in-flight rollout with management drift resolves the deployed token secret",
+			scenario: payloadConditionScenario{
+				inFlightRollout: true,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			r, nodePool, hostedCluster := setupPayloadConditionTest(t, tc.scenario)
+
+			_, err := r.reachedIgnitionEndpointCondition(ctx, nodePool, hostedCluster)
+			g.Expect(err).To(BeNil())
+
+			condition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReachedIgnitionEndpoint)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(corev1.ConditionTrue))
+			g.Expect(condition.Reason).To(Equal(hyperv1.AsExpectedReason))
 		})
 	}
 }

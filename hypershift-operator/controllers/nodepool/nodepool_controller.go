@@ -67,16 +67,23 @@ import (
 )
 
 const (
-	finalizer                                = "hypershift.openshift.io/finalizer"
-	autoscalerMaxAnnotation                  = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
-	autoscalerMinAnnotation                  = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
-	nodePoolAnnotation                       = "hypershift.openshift.io/nodePool"
-	nodePoolAnnotationCurrentConfig          = "hypershift.openshift.io/nodePoolCurrentConfig"
-	nodePoolAnnotationCurrentConfigVersion   = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
-	nodePoolAnnotationTargetConfigVersion    = "hypershift.openshift.io/nodePoolTargetConfigVersion"
-	nodePoolAnnotationUpgradeInProgressTrue  = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
-	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
-	nodePoolAnnotationMaxUnavailable         = "hypershift.openshift.io/nodePoolMaxUnavailable"
+	finalizer                                 = "hypershift.openshift.io/finalizer"
+	autoscalerMaxAnnotation                   = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size"
+	autoscalerMinAnnotation                   = "cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size"
+	nodePoolAnnotation                        = "hypershift.openshift.io/nodePool"
+	nodePoolAnnotationCurrentConfig           = "hypershift.openshift.io/nodePoolCurrentConfig"
+	nodePoolAnnotationCurrentConfigVersion    = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+	nodePoolAnnotationTargetConfigVersion     = "hypershift.openshift.io/nodePoolTargetConfigVersion"
+	nodePoolAnnotationCurrentRolloutConfig    = "hypershift.openshift.io/nodePoolCurrentRolloutConfig"
+	nodePoolAnnotationInProgressRolloutConfig = "hypershift.openshift.io/nodePoolInProgressRolloutConfig"
+	nodePoolAnnotationUpgradeInProgressTrue   = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
+	nodePoolAnnotationUpgradeInProgressFalse  = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
+	nodePoolAnnotationMaxUnavailable          = "hypershift.openshift.io/nodePoolMaxUnavailable"
+
+	// Stored on the CAPI workload's metadata with its bootstrap reference, so
+	// request identity survives a failed subsequent NodePool patch. Keeping it
+	// off the machine template avoids triggering a rollout when it is seeded.
+	nodePoolAnnotationTargetRolloutConfig = "hypershift.openshift.io/nodePoolTargetRolloutConfig"
 
 	// ec2InstanceMetadataHTTPTokensAnnotation can be set to change the instance metadata options of the nodepool underlying EC2 instances
 	// possible values are 'required' (i.e. IMDSv2) or 'optional' which is the default.
@@ -351,6 +358,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		r.supportedVersionSkewCondition,
 		r.validMachineConfigCondition,
 		r.updatingConfigCondition,
+		r.configUpdatePendingCondition,
 		r.updatingVersionCondition,
 		// Conditition that depends on a valid config/token.
 		r.validGeneratedPayloadCondition,
@@ -462,14 +470,25 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// 2. - Reconcile towards expected state of the world.
+
+	// Look up the CAPI workload's current bootstrap hash before token
+	// reconciliation so effectiveSecrets() can maintain the in-progress
+	// rollout target when management-side drift changes the calculated hash.
+	if err := r.resolveDeployedBootstrapHash(ctx, token, nodePool, hcluster); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if err := token.Reconcile(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	seedRolloutAnnotation(token)
 
 	// non automated infrastructure should not have any machine level cluster-api components
 	if !isAutomatedMachineManagement(nodePool) {
 		targetConfigHash := token.HashWithoutVersion()
 		targetPayloadConfigHash := token.Hash()
+		targetRolloutConfigHash := token.RolloutHashWithoutVersion()
 		nodePool.Status.Version = releaseImage.Version()
 		if nodePool.Annotations == nil {
 			nodePool.Annotations = make(map[string]string)
@@ -480,6 +499,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
 		}
 		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetPayloadConfigHash
+		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
 		return ctrl.Result{}, nil
 	}
 
@@ -544,6 +564,58 @@ func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.Hosted
 		return nil, fmt.Errorf("failed to create token: %w", err)
 	}
 	return token, nil
+}
+
+// resolveDeployedBootstrapHash looks up the full hash currently referenced by
+// the CAPI workload's bootstrap secret (MachineDeployment for Replace,
+// MachineSet for InPlace) and records it on the token. resolveEffectiveHash()
+// needs the deployed hash to maintain the in-flight rollout target when
+// management-side drift changes the calculated hash. The workload version and
+// target annotation distinguish the persisted request from a newer one, even
+// when NodePool tracking was not saved. It is shared by the main
+// reconcile and the payload conditions so both resolve effective secrets
+// against the same deployed state.
+// No hash is set when the workload does not exist yet, including when the
+// HostedCluster has no InfraID: the conditions loop runs before the main
+// reconcile's early returns, so that case is reachable here.
+func (r *NodePoolReconciler) resolveDeployedBootstrapHash(ctx context.Context, token *Token, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) error {
+	if hcluster.Spec.InfraID == "" {
+		// No infra has been created yet: no CAPI workload can exist.
+		return nil
+	}
+	capi, err := newCAPI(token, hcluster.Spec.InfraID)
+	if err != nil {
+		return fmt.Errorf("error getting capi client: %w", err)
+	}
+	var deployedBootstrapHash, deployedVersion, deployedRolloutConfig string
+	switch nodePool.Spec.Management.UpgradeType {
+	case hyperv1.UpgradeTypeReplace:
+		md := capi.machineDeployment()
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(md), md); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get MachineDeployment for deployed bootstrap hash: %w", err)
+			}
+		} else if md.Spec.Template.Spec.Bootstrap.DataSecretName != nil {
+			deployedBootstrapHash = extractHashFromSecretName(*md.Spec.Template.Spec.Bootstrap.DataSecretName)
+			deployedVersion = md.Spec.Template.Spec.Version
+			deployedRolloutConfig = md.Annotations[nodePoolAnnotationTargetRolloutConfig]
+		}
+	case hyperv1.UpgradeTypeInPlace:
+		ms := capi.machineSet()
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ms), ms); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get MachineSet for deployed bootstrap hash: %w", err)
+			}
+		} else if ms.Spec.Template.Spec.Bootstrap.DataSecretName != nil {
+			deployedBootstrapHash = extractHashFromSecretName(*ms.Spec.Template.Spec.Bootstrap.DataSecretName)
+			deployedVersion = ms.Spec.Template.Spec.Version
+			deployedRolloutConfig = ms.Annotations[nodePoolAnnotationTargetRolloutConfig]
+		}
+	}
+	token.SetDeployedBootstrapHash(deployedBootstrapHash)
+	token.deployedVersion = deployedVersion
+	token.deployedRolloutConfig = deployedRolloutConfig
+	return nil
 }
 
 func isArchAndPlatformSupported(nodePool *hyperv1.NodePool) bool {
@@ -804,8 +876,25 @@ func isUpdatingVersion(nodePool *hyperv1.NodePool, targetVersion string) bool {
 	return targetVersion != nodePool.Status.Version
 }
 
+// isUpdatingConfig reports whether a spec-driven config change is being
+// rolled out: the target rollout config differs from the last completed
+// rollout config. An absent rollout annotation deliberately means "not
+// updating" rather than "differs from everything": seedRolloutAnnotation
+// seeds the baseline from the current target on a NodePool's first reconcile,
+// so absence means either a fresh NodePool — whose initial config application
+// is not a change from a baseline and is surfaced by UpdatingVersion instead
+// (Status.Version is only set at completion) — or a NodePool on its first
+// reconcile after an operator upgrade, where pending config changes are
+// absorbed into the baseline by the documented migration policy. A config
+// mutation landing before the first reconcile is absorbed the same way: the
+// initial rollout still delivers it, but UpdatingConfig never transitions to
+// True.
 func isUpdatingConfig(nodePool *hyperv1.NodePool, targetConfigHash string) bool {
-	return targetConfigHash != nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig]
+	currentHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentRolloutConfig]
+	if currentHash == "" {
+		return false
+	}
+	return targetConfigHash != currentHash
 }
 
 func isUpdatingMachineTemplate(nodePool *hyperv1.NodePool, targetMachineTemplate string) bool {
@@ -898,6 +987,69 @@ func MachineDeploymentComplete(deployment *capiv1.MachineDeployment, machineSets
 	}
 
 	return true
+}
+
+// seedRolloutAnnotation seeds the rollout config annotation on the first
+// reconcile a NodePool lacks it: either a freshly created NodePool or the
+// first reconcile after an operator upgrade. Because the baseline is seeded
+// from the current target, a fresh NodePool's initial config application is
+// not reported by UpdatingConfig (UpdatingVersion covers it until
+// completion), and pre-upgrade config changes are absorbed into the baseline
+// as the documented migration policy. The completed hash is left for CAPI
+// status reconciliation: a workload template can match the desired hash
+// before its rollout completes. An existing rollout also needs an in-progress
+// marker so subsequent requests can supersede the adopted target.
+// On subsequent reconciles, recover missing or stale in-progress tracking from
+// the request persisted with the workload's bootstrap reference.
+func seedRolloutAnnotation(token *Token) {
+	nodePool := token.nodePool
+	if nodePool.Annotations == nil {
+		nodePool.Annotations = make(map[string]string)
+	}
+	completedHash := nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+	rolloutInProgress := token.deployedBootstrapHash != "" && token.deployedBootstrapHash != completedHash
+	hasInProgressMarker := nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] != ""
+	if token.deployedRolloutConfig != "" && (rolloutInProgress || token.Version() != nodePool.Status.Version || hasInProgressMarker) {
+		// Recover tracking from the workload if its write succeeded but the
+		// NodePool patch failed. This also replaces a stale previous request.
+		nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = token.deployedRolloutConfig
+	}
+	if _, ok := nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]; ok {
+		return
+	}
+
+	// Always seed immediately. Migration policy: pre-migration config changes
+	// are absorbed into the baseline because an opaque full-hash comparison
+	// cannot distinguish user config changes from management-only drift.
+	// Once seeded, the standard rollout-hash comparison detects future changes.
+	nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = token.RolloutHashWithoutVersion()
+
+	versionMatches := token.deployedVersion == "" || token.deployedVersion == token.Version()
+	if rolloutInProgress && nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] == "" && versionMatches {
+		// The deployed target predates this operator and has not completed.
+		// Record the request we adopted now: without this marker, a later
+		// spec change would be mistaken for another adoption of the old payload.
+		nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = token.RolloutHash()
+	}
+}
+
+// extractHashFromSecretName extracts the config hash from a user-data secret
+// name. User-data secrets follow the pattern: user-data-{nodepool-name}-{hash}
+// ("user-data" contributes two hyphen-separated segments, so valid names have
+// at least 4 parts; nodepool names can contain hyphens and add more).
+// Token secret names are NOT supported: they use the "token" prefix
+// (token-{nodepool-name}-{hash}, see TokenSecretPrefix), which yields only 3
+// parts for a hyphen-free nodepool name and silently returns "".
+// Returns empty string if the name doesn't match the expected pattern.
+// Keep in sync with the e2e copy in test/e2e/upgrade_hypershift_operator_test_helpers.go.
+func extractHashFromSecretName(secretName string) string {
+	parts := strings.Split(secretName, "-")
+	// Minimum 4 parts: user-data prefix (2 segments), nodepool-name, hash
+	if len(parts) < 4 {
+		return ""
+	}
+	// The hash is the last component
+	return parts[len(parts)-1]
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
