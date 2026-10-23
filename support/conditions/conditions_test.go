@@ -118,4 +118,25 @@ func TestExpectedHCConditions(t *testing.T) {
 		hc.Status.ControlPlaneVersion.Desired.Version = "5.1.0"
 		g.Expect(ExpectedHCConditions(hc)[hyperv1.ValidGCPCredentials]).To(Equal(metav1.ConditionTrue))
 	})
+
+	t.Run("When the ignition server is not disabled, it should expect IgnitionEndpointAvailable True", func(t *testing.T) {
+		g := NewWithT(t)
+		hc := &hyperv1.HostedCluster{}
+		got, ok := ExpectedHCConditions(hc)[hyperv1.IgnitionEndpointAvailable]
+		g.Expect(ok).To(BeTrue())
+		g.Expect(got).To(Equal(metav1.ConditionTrue))
+	})
+
+	t.Run("When the ignition server is disabled, it should not expect the IgnitionEndpointAvailable condition", func(t *testing.T) {
+		g := NewWithT(t)
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					hyperv1.DisableIgnitionServerAnnotation: "true",
+				},
+			},
+		}
+		_, ok := ExpectedHCConditions(hc)[hyperv1.IgnitionEndpointAvailable]
+		g.Expect(ok).To(BeFalse())
+	})
 }
