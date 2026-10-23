@@ -2,7 +2,7 @@ module github.com/openshift/hypershift/hack/capi-vendor/agent
 
 go 1.25.7
 
-require github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
+require github.com/openshift/cluster-api-provider-agent/api v0.0.0-20261020022711-7c58c828d062
 
 require (
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
@@ -23,14 +23,12 @@ require (
 	github.com/go-openapi/swag/typeutils v0.25.4 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.4 // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/onsi/ginkgo/v2 v2.28.1 // indirect
 	github.com/onsi/gomega v1.39.1 // indirect
 	github.com/openshift/api v0.0.0-20260416105050-3c6b218b8a80 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
