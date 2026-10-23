@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/support/awsapi"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
@@ -86,6 +87,44 @@ type loadBalancerIdentityState struct {
 var ErrLoadBalancerOwnershipUnverified = errors.New("load balancer ownership could not be verified")
 
 var errOwnedTargetGroupStillAttached = errors.New("a cluster-owned target group is still attached to a load balancer")
+
+type loadBalancerCleanupScope struct {
+	arns         sets.Set[string]
+	missingNames sets.Set[string]
+}
+
+func (s loadBalancerCleanupScope) matchesAttachment(targetGroup elbv2types.TargetGroup) (bool, error) {
+	if s.arns.HasAny(targetGroup.LoadBalancerArns...) {
+		return true, nil
+	}
+	if len(s.missingNames) == 0 {
+		return false, nil
+	}
+	// Only stateless named cleanup uses this fallback; recorded cleanup requires an exact ARN.
+	targetGroupARN, err := arn.Parse(aws.ToString(targetGroup.TargetGroupArn))
+	if err != nil || targetGroupARN.Service != "elasticloadbalancing" {
+		return false, errors.New("could not verify target group attachment")
+	}
+	for _, attachment := range targetGroup.LoadBalancerArns {
+		loadBalancerARN, err := arn.Parse(attachment)
+		if err != nil || loadBalancerARN.Service != "elasticloadbalancing" {
+			return false, errors.New("could not verify target group attachment")
+		}
+		resource := strings.Split(loadBalancerARN.Resource, "/")
+		if len(resource) != 4 || resource[0] != "loadbalancer" || resource[2] == "" || resource[3] == "" {
+			return false, errors.New("could not verify target group attachment")
+		}
+		switch resource[1] {
+		case "app", "net", "gwy":
+		default:
+			return false, errors.New("could not verify target group attachment")
+		}
+		if loadBalancerARN.Partition == targetGroupARN.Partition && loadBalancerARN.AccountID == targetGroupARN.AccountID && loadBalancerARN.Region == targetGroupARN.Region && s.missingNames.Has(resource[2]) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 
 // DeleteLoadBalancers deletes load balancers and target groups selected by their VPC.
 func DeleteLoadBalancers(ctx context.Context, clients LoadBalancerClients, selector LoadBalancerSelector, log logr.Logger) []error {
@@ -237,6 +276,7 @@ func cleanupNamedLoadBalancers(ctx context.Context, clients LoadBalancerClients,
 		ByName: make(map[string]NamedLoadBalancerCleanupResult, len(names)),
 	}
 	targetGroupARNsByName := make(map[string]sets.Set[string], len(names))
+	cleanupScope := loadBalancerCleanupScope{arns: sets.New[string](), missingNames: sets.New[string]()}
 	needOrphanTargetGroupScan := false
 	for _, name := range names {
 		if err := ctx.Err(); err != nil {
@@ -251,8 +291,11 @@ func cleanupNamedLoadBalancers(ctx context.Context, clients LoadBalancerClients,
 		}
 		if clients.ELBV2 != nil {
 			var loadBalancerErrs, targetGroupErrs []error
+			var loadBalancerScope loadBalancerCleanupScope
 			var scan bool
-			targetGroupARNsByName[name], loadBalancerErrs, targetGroupErrs, scan = deleteNamedV2LoadBalancersWithoutScan(ctx, clients.ELBV2, selector, []string{name}, log)
+			targetGroupARNsByName[name], loadBalancerScope, loadBalancerErrs, targetGroupErrs, scan = deleteNamedV2LoadBalancersWithoutScan(ctx, clients.ELBV2, selector, []string{name}, log)
+			cleanupScope.arns.Insert(loadBalancerScope.arns.UnsortedList()...)
+			cleanupScope.missingNames.Insert(loadBalancerScope.missingNames.UnsortedList()...)
 			needOrphanTargetGroupScan = needOrphanTargetGroupScan || scan
 			nameErrs = append(nameErrs, loadBalancerErrs...)
 			result.OrphanTargetGroupErr = errors.Join(result.OrphanTargetGroupErr, errors.Join(targetGroupErrs...))
@@ -268,7 +311,7 @@ func cleanupNamedLoadBalancers(ctx context.Context, clients LoadBalancerClients,
 		result.OrphanTargetGroupScanAttempt = true
 		if clients.ELBV2 != nil {
 			var scanErrs []error
-			result.OrphanTargetGroupARNs, scanErrs = deleteOwnedV2TargetGroups(ctx, clients.ELBV2, selector, log)
+			result.OrphanTargetGroupARNs, scanErrs = deleteOwnedV2TargetGroups(ctx, clients.ELBV2, selector, cleanupScope, log)
 			result.OrphanTargetGroupErr = errors.Join(result.OrphanTargetGroupErr, errors.Join(scanErrs...))
 			result.OrphanTargetGroupScanSuccess = result.OrphanTargetGroupErr == nil
 		} else {
@@ -397,8 +440,13 @@ func CleanupRecordedLoadBalancers(ctx context.Context, clients LoadBalancerClien
 	}
 	result := LoadBalancerCleanupResult{ByName: make(map[string]NamedLoadBalancerCleanupResult)}
 	byName := make(map[string][]LoadBalancerIdentity)
+	cleanupLoadBalancerARNs := sets.New[string]()
 	for _, identity := range identities {
 		byName[identity.Name] = append(byName[identity.Name], identity)
+		// Retain recorded ARNs even when AWS now reports the load balancer NotFound.
+		if identity.Type == V2LoadBalancerResource && identity.ARN != "" {
+			cleanupLoadBalancerARNs.Insert(identity.ARN)
+		}
 	}
 	for name, nameIdentities := range byName {
 		var errs []error
@@ -431,7 +479,7 @@ func CleanupRecordedLoadBalancers(ctx context.Context, clients LoadBalancerClien
 			result.OrphanTargetGroupErr = errors.New("ELBV2 client is required for the orphan target-group scan")
 		} else {
 			var errs []error
-			result.OrphanTargetGroupARNs, errs = deleteOwnedV2TargetGroups(ctx, clients.ELBV2, selector, log)
+			result.OrphanTargetGroupARNs, errs = deleteOwnedV2TargetGroups(ctx, clients.ELBV2, selector, loadBalancerCleanupScope{arns: cleanupLoadBalancerARNs}, log)
 			result.OrphanTargetGroupErr = errors.Join(errs...)
 		}
 	}
@@ -852,13 +900,13 @@ func deleteV2LoadBalancers(ctx context.Context, client awsapi.ELBV2API, selector
 }
 
 func deleteNamedV2LoadBalancers(ctx context.Context, client awsapi.ELBV2API, selector LoadBalancerSelector, names []string, log logr.Logger) (sets.Set[string], []error) {
-	targetGroupARNs, loadBalancerErrs, targetGroupErrs, scanOrphanedTargetGroups := deleteNamedV2LoadBalancersWithoutScan(ctx, client, selector, names, log)
+	targetGroupARNs, cleanupScope, loadBalancerErrs, targetGroupErrs, scanOrphanedTargetGroups := deleteNamedV2LoadBalancersWithoutScan(ctx, client, selector, names, log)
 	var errs []error
 	errs = append(errs, loadBalancerErrs...)
 	errs = append(errs, targetGroupErrs...)
 	if scanOrphanedTargetGroups {
 		// Target groups can outlive a named load balancer that's gone or was partially removed in this pass.
-		orphanedTargetGroupARNs, orphanedErrs := deleteOwnedV2TargetGroups(ctx, client, selector, log)
+		orphanedTargetGroupARNs, orphanedErrs := deleteOwnedV2TargetGroups(ctx, client, selector, cleanupScope, log)
 		for arn := range orphanedTargetGroupARNs {
 			targetGroupARNs.Insert(arn)
 		}
@@ -867,8 +915,9 @@ func deleteNamedV2LoadBalancers(ctx context.Context, client awsapi.ELBV2API, sel
 	return targetGroupARNs, errs
 }
 
-func deleteNamedV2LoadBalancersWithoutScan(ctx context.Context, client awsapi.ELBV2API, selector LoadBalancerSelector, names []string, log logr.Logger) (sets.Set[string], []error, []error, bool) {
+func deleteNamedV2LoadBalancersWithoutScan(ctx context.Context, client awsapi.ELBV2API, selector LoadBalancerSelector, names []string, log logr.Logger) (sets.Set[string], loadBalancerCleanupScope, []error, []error, bool) {
 	targetGroupARNs := sets.New[string]()
+	cleanupScope := loadBalancerCleanupScope{arns: sets.New[string](), missingNames: sets.New[string]()}
 	var loadBalancerErrs, targetGroupErrs []error
 	scanOrphanedTargetGroups := false
 	for _, name := range names {
@@ -877,6 +926,7 @@ func deleteNamedV2LoadBalancersWithoutScan(ctx context.Context, client awsapi.EL
 		}
 		output, err := client.DescribeLoadBalancers(ctx, &elasticloadbalancingv2.DescribeLoadBalancersInput{Names: []string{name}})
 		if isNotFound(err) {
+			cleanupScope.missingNames.Insert(name)
 			scanOrphanedTargetGroups = true
 			continue
 		}
@@ -885,6 +935,7 @@ func deleteNamedV2LoadBalancersWithoutScan(ctx context.Context, client awsapi.EL
 			continue
 		}
 		if len(output.LoadBalancers) == 0 {
+			cleanupScope.missingNames.Insert(name)
 			scanOrphanedTargetGroups = true
 			continue
 		}
@@ -906,6 +957,7 @@ func deleteNamedV2LoadBalancersWithoutScan(ctx context.Context, client awsapi.EL
 			if appendContextError(ctx, &loadBalancerErrs) {
 				break
 			}
+			cleanupScope.arns.Insert(aws.ToString(loadBalancer.LoadBalancerArn))
 			loadBalancerTargetGroups, loadBalancerErr, targetGroupErr := deleteNamedV2LoadBalancerDetailed(ctx, client, loadBalancer, selector, log)
 			for arn := range loadBalancerTargetGroups {
 				targetGroupARNs.Insert(arn)
@@ -921,10 +973,10 @@ func deleteNamedV2LoadBalancersWithoutScan(ctx context.Context, client awsapi.EL
 		}
 	}
 	appendContextError(ctx, &loadBalancerErrs)
-	return targetGroupARNs, loadBalancerErrs, targetGroupErrs, scanOrphanedTargetGroups
+	return targetGroupARNs, cleanupScope, loadBalancerErrs, targetGroupErrs, scanOrphanedTargetGroups
 }
 
-func deleteOwnedV2TargetGroups(ctx context.Context, client awsapi.ELBV2API, selector LoadBalancerSelector, log logr.Logger) (sets.Set[string], []error) {
+func deleteOwnedV2TargetGroups(ctx context.Context, client awsapi.ELBV2API, selector LoadBalancerSelector, cleanupScope loadBalancerCleanupScope, log logr.Logger) (sets.Set[string], []error) {
 	targetGroupARNs := sets.New[string]()
 	var errs []error
 	ownedTargetGroupStillAttached := false
@@ -945,6 +997,16 @@ func deleteOwnedV2TargetGroups(ctx context.Context, client awsapi.ELBV2API, sele
 			if selector.VPCID != aws.ToString(targetGroup.VpcId) || targetGroup.TargetGroupArn == nil {
 				continue
 			}
+			if len(targetGroup.LoadBalancerArns) > 0 {
+				selected, err := cleanupScope.matchesAttachment(targetGroup)
+				if err != nil {
+					errs = append(errs, err)
+					continue
+				}
+				if !selected {
+					continue
+				}
+			}
 			owned, err := v2ResourceHasClusterTag(ctx, client, targetGroup.TargetGroupArn, selector.InfraID)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("failed to inspect target group tags: %w", err))
@@ -952,7 +1014,7 @@ func deleteOwnedV2TargetGroups(ctx context.Context, client awsapi.ELBV2API, sele
 			}
 			if owned {
 				if len(targetGroup.LoadBalancerArns) > 0 {
-					// Keep cleanup pending until AWS reports the owned group detached.
+					// Keep cleanup pending until AWS detaches the group from the selected load balancer.
 					ownedTargetGroupStillAttached = true
 					continue
 				}
