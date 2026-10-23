@@ -62,6 +62,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/smithy-go"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -5524,6 +5525,8 @@ func TestReconcileDeletion(t *testing.T) {
 			g.Expect(cond.Status).To(Equal(tt.wantCondStatus))
 		})
 	}
+
+	t.Run("managed ingress DNS zone cleanup", testReconcileDeletionManagedDNSZones)
 }
 
 func TestReconcileDeletionAWSEndpointServices(t *testing.T) {
@@ -5743,6 +5746,103 @@ func TestReconcileDeletionAWSEndpointServices(t *testing.T) {
 				g.Expect(fakeClient.Get(ctx, client.ObjectKey{Namespace: "test-ns", Name: name}, ep)).To(Succeed())
 				g.Expect(!ep.DeletionTimestamp.IsZero()).To(Equal(wantDeleting), "AWSEndpointService %s deletion state", name)
 			}
+		})
+	}
+}
+
+func TestDefaultRoute53Client(t *testing.T) {
+	t.Run("When given an AWS config and options, it should return a Route53 client with the options applied", func(t *testing.T) {
+		g := NewWithT(t)
+
+		c := defaultRoute53Client(aws.Config{Region: "us-east-1"}, func(o *route53.Options) {
+			o.Region = "us-west-2"
+		})
+
+		client, ok := c.(*route53.Client)
+		g.Expect(ok).To(BeTrue(), "expected a *route53.Client, got %T", c)
+		g.Expect(client.Options().Region).To(Equal("us-west-2"))
+	})
+}
+
+func testReconcileDeletionManagedDNSZones(t *testing.T) {
+	tests := []struct {
+		name string
+		// setupRoute53Mock registers the only Route53 calls allowed; the mock is strict.
+		setupRoute53Mock  func(*awsapi.MockROUTE53API)
+		wantErr           bool
+		wantFinalizerKept bool
+	}{
+		{
+			name: "When the managed ingress zones are deleted, it should remove the HCP finalizer",
+			setupRoute53Mock: func(m *awsapi.MockROUTE53API) {
+				expectZoneDeleted(m, "Z-PUB", nil)
+				expectZoneDeleted(m, "Z-PRIV", nil)
+			},
+			wantFinalizerKept: false,
+		},
+		{
+			name: "When deleting a managed ingress zone fails, it should return an error and keep the HCP finalizer",
+			setupRoute53Mock: func(m *awsapi.MockROUTE53API) {
+				expectZoneDeleted(m, "Z-PUB", &smithy.GenericAPIError{Code: "Throttling"})
+			},
+			wantErr:           true,
+			wantFinalizerKept: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			mockCtrl := gomock.NewController(t)
+
+			// No default security group exists, so that deletion step is a no-op.
+			mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+			mockEC2.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2.DescribeSecurityGroupsOutput{}, nil)
+			mockR53 := awsapi.NewMockROUTE53API(mockCtrl)
+			tt.setupRoute53Mock(mockR53)
+
+			hcp := managedDNSHCP(
+				hyperv1.AWSDNSZoneStatus{ZoneID: "Z-PUB", ZoneType: hyperv1.PublicIngressZone},
+				hyperv1.AWSDNSZoneStatus{ZoneID: "Z-PRIV", ZoneType: hyperv1.PrivateIngressZone},
+			)
+			hcp.Name = "test-hcp"
+			hcp.Namespace = "test-ns"
+			hcp.Finalizers = []string{finalizer}
+			hcp.Annotations = map[string]string{hyperv1.CleanupCloudResourcesAnnotation: "true"}
+			hcp.Spec.InfraID = "test-infra"
+			hcp.Spec.Platform.Type = hyperv1.AWSPlatform
+			// Guest cloud resources are already gone, so deletion proceeds to the DNS zones.
+			hcp.Status.Conditions = []metav1.Condition{
+				{Type: string(hyperv1.CloudResourcesDestroyed), Status: metav1.ConditionTrue, Reason: hyperv1.AsExpectedReason},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(dnsEndpointScheme(g)).
+				WithObjects(hcp).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+			// Re-read from fake client so the object has a ResourceVersion.
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+			r := withRoute53Mock(&HostedControlPlaneReconciler{
+				Client:    fakeClient,
+				Log:       ctrl.Log.WithName("test"),
+				ec2Client: mockEC2,
+			}, mockR53)
+
+			_, err := r.reconcileDeletion(ctx, hcp)
+			if tt.wantErr {
+				g.Expect(err).To(MatchError(ContainSubstring("failed to cleanup ingress DNS zones")))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			updated := &hyperv1.HostedControlPlane{}
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+			g.Expect(controllerutil.ContainsFinalizer(updated, finalizer)).To(Equal(tt.wantFinalizerKept))
 		})
 	}
 }

@@ -15,7 +15,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
+	"github.com/aws/smithy-go"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -381,17 +383,182 @@ func TestVerifyNSDelegation(t *testing.T) {
 	}
 }
 
-func TestDestroyAWSManagedIngressDNSZones(t *testing.T) {
-	t.Run("When managed DNS is not enabled, it should be a no-op", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		r := &HostedControlPlaneReconciler{}
-		hcp := &hyperv1.HostedControlPlane{
-			Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{}}},
-		}
+// dnsEndpointScheme returns a scheme that the fake client can use to store
+// DNSEndpoint objects as unstructured.
+func dnsEndpointScheme(g Gomega) *runtime.Scheme {
+	scheme := runtime.NewScheme()
+	g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+	scheme.AddKnownTypeWithName(dnsEndpointGVK, &unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(dnsEndpointGVK.GroupVersion().WithKind("DNSEndpointList"), &unstructured.UnstructuredList{})
+	return scheme
+}
 
-		// awsSession is nil; the guard must return before any AWS client is built.
-		g.Expect(r.destroyAWSManagedIngressDNSZones(context.Background(), hcp)).To(Succeed())
-	})
+// expectZoneDeleted expects Route53 to drain and delete exactly the given zone.
+// The input matchers pin the zone ID so a test fails if the wrong zone is deleted.
+func expectZoneDeleted(m *awsapi.MockROUTE53API, zoneID string, deleteErr error) {
+	m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Cond(func(in *route53.ListResourceRecordSetsInput) bool {
+		return aws.ToString(in.HostedZoneId) == zoneID
+	}), gomock.Any()).Return(&route53.ListResourceRecordSetsOutput{}, nil)
+	m.EXPECT().DeleteHostedZone(gomock.Any(), gomock.Cond(func(in *route53.DeleteHostedZoneInput) bool {
+		return aws.ToString(in.Id) == zoneID
+	}), gomock.Any()).Return(&route53.DeleteHostedZoneOutput{}, deleteErr)
+}
+
+// expectZoneAccessDenied expects Route53 to deny access to the given zone on the
+// first call of the delete flow, as it does when the role lacks Route53 permissions.
+func expectZoneAccessDenied(m *awsapi.MockROUTE53API, zoneID string) {
+	m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Cond(func(in *route53.ListResourceRecordSetsInput) bool {
+		return aws.ToString(in.HostedZoneId) == zoneID
+	}), gomock.Any()).Return(nil, &smithy.GenericAPIError{Code: "AccessDenied"})
+}
+
+// withRoute53Mock makes the reconciler use the given mock for Route53 calls.
+func withRoute53Mock(r *HostedControlPlaneReconciler, m awsapi.ROUTE53API) *HostedControlPlaneReconciler {
+	r.awsSession = &aws.Config{}
+	r.newRoute53Client = func(aws.Config, ...func(*route53.Options)) awsapi.ROUTE53API { return m }
+	return r
+}
+
+func TestDestroyAWSManagedIngressDNSZones(t *testing.T) {
+	publicZone := hyperv1.AWSDNSZoneStatus{ZoneID: "Z-PUB", ZoneType: hyperv1.PublicIngressZone}
+	privateZone := hyperv1.AWSDNSZoneStatus{ZoneID: "Z-PRIV", ZoneType: hyperv1.PrivateIngressZone}
+
+	tests := []struct {
+		name               string
+		managedDNSDisabled bool
+		zones              []hyperv1.AWSDNSZoneStatus
+		sharedVPC          bool
+		// existingDNSEndpoint seeds the delegation DNSEndpoint; without it the
+		// delete returns NotFound, which must be tolerated.
+		existingDNSEndpoint bool
+		// setupMock registers the only Route53 calls allowed; the mock is
+		// strict, so any other call (e.g. deleting the wrong zone) fails the test.
+		setupMock     func(*awsapi.MockROUTE53API)
+		errorContains string
+	}{
+		{
+			name:               "When managed DNS is not enabled, it should be a no-op",
+			managedDNSDisabled: true,
+			zones:              []hyperv1.AWSDNSZoneStatus{publicZone, privateZone},
+			setupMock:          func(m *awsapi.MockROUTE53API) {},
+		},
+		{
+			name:  "When a standard cluster is deleted, it should delete both the public and private ingress zones",
+			zones: []hyperv1.AWSDNSZoneStatus{publicZone, privateZone},
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				expectZoneDeleted(m, "Z-PUB", nil)
+				expectZoneDeleted(m, "Z-PRIV", nil)
+			},
+		},
+		{
+			name: "When a shared VPC cluster is deleted, it should delete only the public zone and leave the VPC owner's private zone",
+			// Shared VPC clusters never record a private zone. It is recorded here
+			// anyway so the test proves the shared VPC guard skips it, rather than
+			// passing because the zone is absent.
+			zones:     []hyperv1.AWSDNSZoneStatus{publicZone, privateZone},
+			sharedVPC: true,
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				expectZoneDeleted(m, "Z-PUB", nil)
+			},
+		},
+		{
+			name:      "When no zones were recorded in status, it should make no Route53 calls",
+			setupMock: func(m *awsapi.MockROUTE53API) {},
+		},
+		{
+			name:                "When a DNSEndpoint exists, it should delete it",
+			existingDNSEndpoint: true,
+			setupMock:           func(m *awsapi.MockROUTE53API) {},
+		},
+		{
+			name:  "When the zones were already deleted externally, it should succeed",
+			zones: []hyperv1.AWSDNSZoneStatus{publicZone, privateZone},
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				expectZoneDeleted(m, "Z-PUB", &route53types.NoSuchHostedZone{})
+				expectZoneDeleted(m, "Z-PRIV", &route53types.NoSuchHostedZone{})
+			},
+		},
+		{
+			name:  "When Route53 denies access to the zones, it should orphan both and not block deletion",
+			zones: []hyperv1.AWSDNSZoneStatus{publicZone, privateZone},
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				expectZoneAccessDenied(m, "Z-PUB")
+				expectZoneAccessDenied(m, "Z-PRIV")
+			},
+		},
+		{
+			name:  "When the public zone deletion fails transiently, it should return the error before touching the private zone",
+			zones: []hyperv1.AWSDNSZoneStatus{publicZone, privateZone},
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				expectZoneDeleted(m, "Z-PUB", &smithy.GenericAPIError{Code: "Throttling"})
+			},
+			errorContains: "public ingress zone Z-PUB",
+		},
+		{
+			name:  "When the private zone deletion fails transiently, it should return the error",
+			zones: []hyperv1.AWSDNSZoneStatus{publicZone, privateZone},
+			setupMock: func(m *awsapi.MockROUTE53API) {
+				expectZoneDeleted(m, "Z-PUB", nil)
+				expectZoneDeleted(m, "Z-PRIV", &smithy.GenericAPIError{Code: "Throttling"})
+			},
+			errorContains: "private ingress zone Z-PRIV",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			mockR53 := awsapi.NewMockROUTE53API(gomock.NewController(t))
+			tt.setupMock(mockR53)
+
+			hcp := managedDNSHCP(tt.zones...)
+			hcp.Name = "test-hcp"
+			hcp.Namespace = "test-ns"
+			if tt.managedDNSDisabled {
+				hcp.Spec.Platform.AWS.ManagedDNS = hyperv1.AWSManagedDNSSpec{}
+			}
+			if tt.sharedVPC {
+				hcp.Spec.Platform.AWS.SharedVPC = &hyperv1.AWSSharedVPC{}
+			}
+
+			dnsEndpoint := &unstructured.Unstructured{}
+			dnsEndpoint.SetGroupVersionKind(dnsEndpointGVK)
+			dnsEndpoint.SetName("test-hcp-ingress-delegation")
+			dnsEndpoint.SetNamespace("test-ns")
+			clientBuilder := fake.NewClientBuilder().WithScheme(dnsEndpointScheme(g))
+			if tt.existingDNSEndpoint {
+				clientBuilder = clientBuilder.WithObjects(dnsEndpoint)
+			}
+			fakeClient := clientBuilder.Build()
+
+			r := &HostedControlPlaneReconciler{Client: fakeClient}
+			if !tt.managedDNSDisabled {
+				// When managed DNS is disabled awsSession stays nil, so building
+				// any AWS client would panic: the guard must return first.
+				r = withRoute53Mock(r, mockR53)
+				r.lastDNSReconcile.Store(hcp.Name, time.Now())
+			}
+
+			err := r.destroyAWSManagedIngressDNSZones(context.Background(), hcp)
+			if tt.errorContains != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tt.errorContains)))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+
+			if tt.managedDNSDisabled {
+				return
+			}
+
+			_, throttled := r.lastDNSReconcile.Load(hcp.Name)
+			g.Expect(throttled).To(BeFalse(), "the DNS reconcile throttle entry should be cleared")
+
+			got := &unstructured.Unstructured{}
+			got.SetGroupVersionKind(dnsEndpointGVK)
+			err = fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(dnsEndpoint), got)
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "the DNSEndpoint should not exist after destroy, got err %v", err)
+		})
+	}
 }
 
 func TestReconcileDNSEndpoint(t *testing.T) {
