@@ -675,7 +675,7 @@ verify-capi-sync:
 # compiles the ones it imports), and that packages consuming the localized
 # types still compile. Faster than staticcheck and points at the cause.
 .PHONY: verify-capi-decoupling
-verify-capi-decoupling:
+verify-capi-decoupling: verify-capi-sync
 	@CAPI_PROVIDERS="$(CAPI_PROVIDERS)" $(DIR)/hack/verify-capi-decoupling.sh
 
 .PHONY: workspace-sync
