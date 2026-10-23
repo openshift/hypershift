@@ -174,8 +174,45 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		return ctrl.Result{}, nil
 	}
 
+	// A Secret is only safe to remove when nothing references it as bootstrap
+	// data. The expected names above are recomputed on every reconcile from
+	// the current config Hash(), while the MachineDeployment and in-flight
+	// Machines keep referencing the Secret of the config generation they were
+	// created from (e.g. while a rollout is in progress, or for Machines
+	// created by the cluster autoscaler outside of any rollout). A provider
+	// machine whose bootstrap data Secret does not resolve never starts
+	// provisioning: no error, no providerID.
+	isReferenced, err := r.isReferencedAsBootstrapData(ctx, token, secret)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if isReferenced {
+		log.Info("Skipping secret removal: still referenced as bootstrap data")
+		// Requeue so the Secret is cleaned up once the references are gone:
+		// clearing them (Machine deletion) does not produce a Secret event.
+		return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+	}
+
 	log.WithValues("options", names, "valid", valid).Info("removing secret as it does not match the expected set of names")
 	return ctrl.Result{}, cleanup(ctx, r.Client, secret)
+}
+
+// isReferencedAsBootstrapData reports whether the given Secret is still
+// referenced as bootstrap data by the NodePool's machinery. Token Secrets are
+// paired with the user data Secret of the same generation (token-<np>-<hash>
+// <-> user-data-<np>-<hash>), so a token counts as referenced while its
+// paired user data Secret is.
+func (r *secretJanitor) isReferencedAsBootstrapData(ctx context.Context, token *Token, secret *corev1.Secret) (bool, error) {
+	nameToCheck := secret.Name
+	if strings.HasPrefix(secret.Name, TokenSecretPrefix) {
+		nameToCheck = pairedUserDataSecretName(secret.Name)
+	}
+	referenced, err := token.referencedBootstrapDataSecretNames(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to collect bootstrap data Secret references: %w", err)
+	}
+	_, isReferenced := referenced[nameToCheck]
+	return isReferenced, nil
 }
 
 // shouldKeepOldUserData determines if the old user data should be kept.

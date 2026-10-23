@@ -24,8 +24,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/clarketm/json"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
@@ -175,14 +177,159 @@ func (t *Token) isOutdated() bool {
 	return t.Hash() != t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
 }
 
+// referencedBootstrapDataSecretNames returns the set of user-data Secret names
+// currently referenced as bootstrap data by this NodePool's machinery: the
+// MachineDeployment/MachineSet bootstrap template and every in-flight Machine
+// annotated with the NodePool annotation. This is the source of truth for
+// whether an "outdated" Secret may be deleted: the cluster autoscaler can
+// create new Machines referencing a Secret at any time, outside of any
+// rollout, and provider machines (e.g. AzureMachine) only start provisioning
+// when the referenced bootstrap data Secret still exists.
+func (t *Token) referencedBootstrapDataSecretNames(ctx context.Context) (map[string]struct{}, error) {
+	refs := map[string]struct{}{}
+	nodePoolKey := client.ObjectKeyFromObject(t.nodePool).String()
+
+	machineDeployment := &capiv1.MachineDeployment{
+		ObjectMeta: metav1.ObjectMeta{Name: t.nodePool.GetName(), Namespace: t.controlplaneNamespace},
+	}
+	if err := t.Get(ctx, client.ObjectKeyFromObject(machineDeployment), machineDeployment); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to get MachineDeployment: %w", err)
+		}
+	} else if name := ptr.Deref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, ""); name != "" {
+		refs[name] = struct{}{}
+	}
+
+	machineSet := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{Name: t.nodePool.GetName(), Namespace: t.controlplaneNamespace},
+	}
+	if err := t.Get(ctx, client.ObjectKeyFromObject(machineSet), machineSet); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to get MachineSet: %w", err)
+		}
+	} else if name := ptr.Deref(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, ""); name != "" {
+		refs[name] = struct{}{}
+	}
+
+	machineList := &capiv1.MachineList{}
+	if err := t.List(ctx, machineList, client.InNamespace(t.controlplaneNamespace)); err != nil {
+		return nil, fmt.Errorf("failed to list Machines: %w", err)
+	}
+	for i := range machineList.Items {
+		machine := &machineList.Items[i]
+		if machine.GetAnnotations()[nodePoolAnnotation] != nodePoolKey {
+			continue
+		}
+		if name := ptr.Deref(machine.Spec.Bootstrap.DataSecretName, ""); name != "" {
+			refs[name] = struct{}{}
+		}
+	}
+	return refs, nil
+}
+
+// repairMissingReferencedSecrets keeps bootstrap data Secrets that are still
+// referenced by the MachineDeployment/MachineSet or by an in-flight Machine
+// usable by Machines that have not booted yet. A provider machine whose
+// bootstrap data Secret does not resolve never starts provisioning: it reports
+// no error and no providerID, and silently hangs until the MachineHealthCheck
+// nodeStartupTimeout fires. The same hang happens when the Secret exists but
+// embeds a token the ignition server no longer serves (its paired token
+// Secret is gone). Re-created or refreshed Secrets keep the referenced
+// (name-stable) name but carry the current configuration content and the
+// current token, which is valid for any Machine that has not booted yet.
+// Machines that already booted with the old content are unaffected.
+func (t *Token) repairMissingReferencedSecrets(ctx context.Context, tokenBytes []byte) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	referenced, err := t.referencedBootstrapDataSecretNames(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to collect bootstrap data Secret references: %w", err)
+	}
+
+	for referencedName := range referenced {
+		userDataSecret := &corev1.Secret{}
+		err := t.Get(ctx, client.ObjectKey{Namespace: t.controlplaneNamespace, Name: referencedName}, userDataSecret)
+		switch {
+		case err == nil:
+			// The Secret exists, but the bootstrap ignition config it carries is
+			// only servable while the token it embeds is known to the ignition
+			// server, which requires the paired token Secret
+			// (token-<np>-<hash> <-> user-data-<np>-<hash>) to exist: when the
+			// token Secret is gone (e.g. expired and deleted by the ignition
+			// server's token controller), Machines booting from this Secret
+			// keep receiving "Token not found" and never join the cluster.
+			// Refresh the Secret with the current token so Machines created
+			// from it can bootstrap again. The refresh repeats on every
+			// reconciliation for as long as the pair is missing, which also
+			// keeps a previously repaired Secret in sync with later token
+			// rotations.
+			if !strings.HasPrefix(referencedName, UserDataSecrePrefix+"-") {
+				continue
+			}
+			pairedTokenSecret := &corev1.Secret{}
+			err := t.Get(ctx, client.ObjectKey{Namespace: t.controlplaneNamespace, Name: pairedTokenSecretName(referencedName)}, pairedTokenSecret)
+			switch {
+			case apierrors.IsNotFound(err):
+				if result, err := t.CreateOrUpdate(ctx, t.Client, userDataSecret, func() error {
+					return t.reconcileUserDataSecret(log, userDataSecret, string(tokenBytes))
+				}); err != nil {
+					return fmt.Errorf("failed to refresh user data Secret %q: %w", referencedName, err)
+				} else if result != controllerutil.OperationResultNone {
+					log.Info("Refreshed user data Secret whose paired token Secret is missing", "secret", referencedName, "result", result)
+				}
+			case err != nil:
+				return fmt.Errorf("failed to get paired token Secret for user data Secret %q: %w", referencedName, err)
+			}
+		case apierrors.IsNotFound(err):
+			missing := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+				Namespace: t.controlplaneNamespace,
+				Name:      referencedName,
+			}}
+			if result, err := t.CreateOrUpdate(ctx, t.Client, missing, func() error {
+				return t.reconcileUserDataSecret(log, missing, string(tokenBytes))
+			}); err != nil {
+				return fmt.Errorf("failed to repair user data Secret %q: %w", referencedName, err)
+			} else {
+				log.Info("Repaired missing user data Secret", "secret", referencedName, "result", result)
+			}
+		default:
+			return fmt.Errorf("failed to get referenced user data Secret %q: %w", referencedName, err)
+		}
+	}
+	return nil
+}
+
 func (t *Token) cleanupOutdated(ctx context.Context) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	// A Secret being deleted is only truly "outdated" when nothing references
+	// it. Machines created concurrently by the cluster autoscaler (which is not
+	// a spec-driven rollout, so none of the rollout-control gates cover it) can
+	// reference the Secret at the moment of deletion; when that happens the
+	// provider machine never starts provisioning (no error, no providerID) and
+	// the VM silently never boots. Check references before every deletion.
+	referenced, err := t.referencedBootstrapDataSecretNames(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to collect bootstrap data Secret references: %w", err)
+	}
+
 	tokenSecret := t.outdatedTokenSecret()
-	err := t.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret)
+	err = t.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to get token Secret: %w", err)
 	}
 	if err == nil {
-		if err := setExpirationTimestampOnToken(ctx, t.Client, tokenSecret, nil); err != nil && !apierrors.IsNotFound(err) {
+		// The token Secret is paired with the user data Secret of the same
+		// config generation (token-<np>-<hash> <-> user-data-<np>-<hash>).
+		// Keep the token valid while its paired user data Secret is still
+		// referenced as bootstrap data, so Machines that have not booted yet
+		// can still fetch their ignition payload once the expiry grace period
+		// would have passed.
+		pairedUserDataName := pairedUserDataSecretName(tokenSecret.Name)
+		if _, isReferenced := referenced[pairedUserDataName]; isReferenced {
+			log.Info("Skipping token Secret expiration: paired user data Secret is still referenced as bootstrap data",
+				"secret", tokenSecret.Name)
+		} else if err := setExpirationTimestampOnToken(ctx, t.Client, tokenSecret, nil); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to set expiration on token Secret: %w", err)
 		}
 	}
@@ -201,7 +348,14 @@ func (t *Token) cleanupOutdated(ctx context.Context) error {
 			return fmt.Errorf("failed to get user data Secret: %w", err)
 		}
 		if err == nil {
-			if err := t.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
+			// An outdated user data Secret must also not be deleted while it
+			// is still referenced as bootstrap data: a Machine that has not
+			// booted yet (e.g. one created by the cluster autoscaler, outside
+			// of any rollout) can never start provisioning without it.
+			if _, isReferenced := referenced[userDataSecret.Name]; isReferenced {
+				log.Info("Skipping user data Secret deletion: still referenced as bootstrap data",
+					"secret", userDataSecret.Name)
+			} else if err := t.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to delete user data Secret: %w", err)
 			} else if err == nil {
 				ctrl.LoggerFrom(ctx).Info("Deleted outdated Secret", "secret", client.ObjectKeyFromObject(userDataSecret).String(), "nodePool", client.ObjectKeyFromObject(t.nodePool).String())
@@ -263,10 +417,25 @@ func (t *Token) Reconcile(ctx context.Context) error {
 	} else {
 		log.Info("Reconciled user data Secret", "result", result)
 	}
+
+	// A bootstrap data Secret that is still referenced but has gone missing
+	// (e.g. deleted while a Machine created outside of a rollout was starting
+	// up) leaves the provider machine unable to provision. Re-create any
+	// missing referenced Secret with the current configuration content.
+	if err := t.repairMissingReferencedSecrets(ctx, tokenBytes); err != nil {
+		return fmt.Errorf("failed to repair missing referenced user data Secrets: %w", err)
+	}
 	return nil
 }
 
 const UserDataSecrePrefix = "user-data"
+
+// pairedTokenSecretName maps a user data Secret name to the name of the token
+// Secret of the same config generation (user-data-<np>-<hash> <->
+// token-<np>-<hash>).
+func pairedTokenSecretName(userDataSecretName string) string {
+	return TokenSecretPrefix + strings.TrimPrefix(userDataSecretName, UserDataSecrePrefix)
+}
 
 func (t *Token) UserDataSecret() *corev1.Secret {
 	return &corev1.Secret{
@@ -287,6 +456,13 @@ func (t *Token) outdatedUserDataSecret() *corev1.Secret {
 }
 
 const TokenSecretPrefix = "token"
+
+// pairedUserDataSecretName maps a token Secret name to the name of the user
+// data Secret of the same config generation (token-<np>-<hash> <->
+// user-data-<np>-<hash>).
+func pairedUserDataSecretName(tokenSecretName string) string {
+	return UserDataSecrePrefix + strings.TrimPrefix(tokenSecretName, TokenSecretPrefix)
+}
 
 func (t *Token) TokenSecret() *corev1.Secret {
 	return &corev1.Secret{
