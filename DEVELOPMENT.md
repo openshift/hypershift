@@ -68,7 +68,11 @@ make update                   # Full update (api-deps, workspace-sync, capi-sync
 make capi-sync                # Sync CAPI provider types (incremental)
 make capi-sync-force          # Force re-sync all CAPI providers
 make verify-capi-sync         # Verify CAPI sync is clean (CI target)
+make gmp-sync                 # Regenerate the pinned GMP API snapshot
+make verify-gmp-sync          # Verify the GMP snapshot reproduces without changing tracked files
 ```
+
+For GMP API updates, see [the package maintenance guide](support/gmpmonitoring/README.md#maintenance).
 
 ## Development Patterns
 

@@ -27,6 +27,11 @@ filters:
     - gcp-reviewers
     labels:
     - area/platform/gcp
+  "^(support/gmpmonitoring/|support/metrics/monitoring_api_group.*\\.go$|hack/gmp-api-gen/|hack/gmp-api-source/|hack/update-gmp-api\\.sh$)":
+    reviewers:
+    - gcp-reviewers
+    labels:
+    - area/platform/gcp
   "^(api|cmd|control-plane-operator|docs|hypershift-operator|product-cli|test)/.*ibmcloud.*":
     labels:
     - area/platform/ibmcloud

@@ -74,6 +74,8 @@ type ControlPlaneContext struct {
 	EnableCIDebugOutput bool
 	// MetricsSet specifies which metrics to use in the service/pod-monitors.
 	MetricsSet metrics.MetricsSet
+	// MonitoringAPIGroup selects which monitoring API group to emit monitors for.
+	MonitoringAPIGroup metrics.MonitoringAPIGroup
 	// OmitOwnerReference determines whether the HCP OwnerReference should be omitted from resources deployed by this component.
 	// This is useful when the component is not managed by the same HostedControlPlane controller like capi and the CPO itself.
 	OmitOwnerReference bool
@@ -110,6 +112,7 @@ type WorkloadContext struct {
 	DefaultSecurityContextUID int64
 	EnableCIDebugOutput       bool
 	MetricsSet                metrics.MetricsSet
+	MonitoringAPIGroup        metrics.MonitoringAPIGroup
 
 	// skip generation of certificates for unit tests
 	SkipCertificateSigning bool
@@ -127,6 +130,7 @@ func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
 		DefaultSecurityContextUID: cp.DefaultSecurityContextUID,
 		EnableCIDebugOutput:       cp.EnableCIDebugOutput,
 		MetricsSet:                cp.MetricsSet,
+		MonitoringAPIGroup:        cp.MonitoringAPIGroup,
 		ImageMetadataProvider:     cp.ImageMetadataProvider,
 		SkipCertificateSigning:    cp.SkipCertificateSigning,
 	}

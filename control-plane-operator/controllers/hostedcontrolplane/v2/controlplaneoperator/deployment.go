@@ -30,6 +30,13 @@ const (
 func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
 
+	// Validate the monitoring API group before propagating it so an invalid value or
+	// GMP/RHOBS conflict fails here rather than crashlooping the CPO it is stamped onto.
+	monitoringAPIGroup, err := metrics.MonitoringAPIGroupFromEnv()
+	if err != nil {
+		return err
+	}
+
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Image = cpo.Image
 
@@ -121,6 +128,12 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 					Value: "1",
 				},
 			)
+		}
+		if monitoringAPIGroup != metrics.MonitoringAPIGroupCoreOS {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  metrics.MonitoringAPIGroupEnvVar,
+				Value: string(monitoringAPIGroup),
+			})
 		}
 		if os.Getenv("ENABLE_SIZE_TAGGING") == "1" {
 			c.Env = append(c.Env,

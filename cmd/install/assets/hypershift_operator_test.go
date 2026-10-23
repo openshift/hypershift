@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -935,10 +936,38 @@ func TestBuildArgs(t *testing.T) {
 func TestBuildEnvVars(t *testing.T) {
 	tests := []struct {
 		name           string
+		installerRHOBS string
 		deployment     HyperShiftOperatorDeployment
 		expectContains []corev1.EnvVar
 		expectAbsent   []string
 	}{
+		{
+			name:           "When GMP is selected, it should propagate the monitoring API group",
+			deployment:     HyperShiftOperatorDeployment{MonitoringAPIGroup: metrics.MonitoringAPIGroupGMP},
+			expectContains: []corev1.EnvVar{{Name: metrics.MonitoringAPIGroupEnvVar, Value: string(metrics.MonitoringAPIGroupGMP)}},
+		},
+		{
+			name:           "When only the installer enables RHOBS, it should emit GMP without RHOBS",
+			installerRHOBS: "1",
+			deployment:     HyperShiftOperatorDeployment{MonitoringAPIGroup: metrics.MonitoringAPIGroupGMP},
+			expectContains: []corev1.EnvVar{{Name: metrics.MonitoringAPIGroupEnvVar, Value: string(metrics.MonitoringAPIGroupGMP)}},
+			expectAbsent:   []string{rhobsmonitoring.EnvironmentVariable},
+		},
+		{
+			name:         "When CoreOS is explicit, it should retain the default environment",
+			deployment:   HyperShiftOperatorDeployment{MonitoringAPIGroup: metrics.MonitoringAPIGroupCoreOS},
+			expectAbsent: []string{metrics.MonitoringAPIGroupEnvVar},
+		},
+		{
+			name:         "When monitoring selection is unset, it should retain the default environment",
+			expectAbsent: []string{metrics.MonitoringAPIGroupEnvVar},
+		},
+		{
+			name:           "When RHOBS uses CoreOS selection, it should retain the RHOBS environment",
+			deployment:     HyperShiftOperatorDeployment{MonitoringAPIGroup: metrics.MonitoringAPIGroupCoreOS, RHOBSMonitoring: true},
+			expectContains: []corev1.EnvVar{{Name: rhobsmonitoring.EnvironmentVariable, Value: "1"}},
+			expectAbsent:   []string{metrics.MonitoringAPIGroupEnvVar},
+		},
 		{
 			name: "When TechPreviewNoUpgrade is enabled, it should include HYPERSHIFT_FEATURESET env var",
 			deployment: HyperShiftOperatorDeployment{
@@ -1066,6 +1095,7 @@ func TestBuildEnvVars(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			t.Setenv(rhobsmonitoring.EnvironmentVariable, tc.installerRHOBS)
 			envVars := tc.deployment.buildEnvVars()
 			for _, expected := range tc.expectContains {
 				g.Expect(envVars).To(ContainElement(expected))
