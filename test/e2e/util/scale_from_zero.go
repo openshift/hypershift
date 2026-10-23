@@ -14,6 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
@@ -29,6 +31,32 @@ func PrepareScaleFromZeroUpgrade(nodePool *hyperv1.NodePool) (*hyperv1.NodePool,
 	prepared.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{Min: ptr.To(*nodePool.Spec.Replicas), Max: *nodePool.Spec.Replicas + 1}
 	prepared.Spec.Replicas = nil
 	return prepared, nil
+}
+
+func UpdateScaleFromZeroUpgrade(ctx context.Context, managementClient client.Client, key client.ObjectKey, backoff wait.Backoff) (*hyperv1.NodePool, error) {
+	var updated *hyperv1.NodePool
+	err := retry.RetryOnConflict(backoff, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current := &hyperv1.NodePool{}
+		if err := managementClient.Get(ctx, key, current); err != nil {
+			return err
+		}
+		prepared, err := PrepareScaleFromZeroUpgrade(current)
+		if err != nil {
+			return err
+		}
+		if err := managementClient.Update(ctx, prepared); err != nil {
+			return err
+		}
+		updated = prepared
+		return nil
+	})
+	if err != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return updated, err
 }
 
 func ValidateScaleFromZeroUpgradeReplicas(object client.Object, nodePool *hyperv1.NodePool) error {

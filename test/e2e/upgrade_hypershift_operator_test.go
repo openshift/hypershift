@@ -23,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -155,9 +156,8 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			for i := range nodepools.Items {
 				t.Logf("Found NodePool %s", nodepools.Items[i].Name)
 				if *scaleFromZeroUpgradeChecks {
-					prepared, err := e2eutil.PrepareScaleFromZeroUpgrade(&nodepools.Items[i])
+					prepared, err := e2eutil.UpdateScaleFromZeroUpgrade(ctx, mgmtClient, crclient.ObjectKeyFromObject(&nodepools.Items[i]), retry.DefaultRetry)
 					g.Expect(err).NotTo(gomega.HaveOccurred())
-					g.Expect(mgmtClient.Update(ctx, prepared)).To(gomega.Succeed())
 					nodepools.Items[i] = *prepared
 				}
 				nodePoolsMap[nodepools.Items[i].Name] = &nodepools.Items[i]
