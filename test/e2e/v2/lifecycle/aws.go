@@ -124,14 +124,17 @@ func (a *AWSPlatformConfig) ClusterSpecs(releaseImage, n1Image string) []Cluster
 		},
 	}
 
-	// Only include the KMS re-encryption variant when the primary etcd KMS key ARN is configured.
-	// This prevents the variant from appearing in regular e2e-v2-aws jobs that don't set this env var.
+	// Always include kms-reencryption so the variant set is stable regardless of environment.
+	// --kms-key-arn is only appended when the ARN is configured; without it the cluster uses
+	// the default AESCBC encryption.
+	kmsExtraArgs := extraArgs
 	if kmsKeyARN := os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN"); kmsKeyARN != "" {
-		specs = append(specs, ClusterSpec{
-			Variant:   "kms-reencryption",
-			ExtraArgs: append(extraArgs, "--kms-key-arn="+kmsKeyARN),
-		})
+		kmsExtraArgs = append(extraArgs, "--kms-key-arn="+kmsKeyARN)
 	}
+	specs = append(specs, ClusterSpec{
+		Variant:   "kms-reencryption",
+		ExtraArgs: kmsExtraArgs,
+	})
 
 	return specs
 }
@@ -194,15 +197,11 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 			Variant:     "karpenter-upgrade",
 			LabelFilter: "karpenter-upgrade",
 		},
-	}
-	// Only include kms-reencryption in the matrix when the KMS key is configured,
-	// mirroring the guard in ClusterSpecs to keep the plan and available specs in sync.
-	if os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN") != "" {
-		parallelGroups = append(parallelGroups, TestGroup{
+		{
 			Name:        "kms-reencryption",
 			Variant:     "kms-reencryption",
 			LabelFilter: "etcd-encryption-reencryption",
-		})
+		},
 	}
 	return TestMatrix{
 		Parallel: parallelGroups,
