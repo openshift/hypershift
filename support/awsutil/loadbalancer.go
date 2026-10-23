@@ -85,6 +85,8 @@ type loadBalancerIdentityState struct {
 // ErrLoadBalancerOwnershipUnverified identifies a resource that failed ownership checks.
 var ErrLoadBalancerOwnershipUnverified = errors.New("load balancer ownership could not be verified")
 
+var errOwnedTargetGroupStillAttached = errors.New("a cluster-owned target group is still attached to a load balancer")
+
 // DeleteLoadBalancers deletes load balancers and target groups selected by their VPC.
 func DeleteLoadBalancers(ctx context.Context, clients LoadBalancerClients, selector LoadBalancerSelector, log logr.Logger) []error {
 	if err := selector.validate(); err != nil {
@@ -94,6 +96,9 @@ func DeleteLoadBalancers(ctx context.Context, clients LoadBalancerClients, selec
 	var errs []error
 	if clients.ELB != nil {
 		errs = append(errs, deleteClassicLoadBalancers(ctx, clients.ELB, selector, log)...)
+	}
+	if appendContextError(ctx, &errs) {
+		return errs
 	}
 	if clients.ELBV2 != nil {
 		errs = append(errs, deleteV2LoadBalancers(ctx, clients.ELBV2, selector, log)...)
@@ -138,12 +143,18 @@ func InspectLoadBalancersByName(ctx context.Context, clients LoadBalancerClients
 
 	observations := make(map[string]NamedLoadBalancerObservation)
 	for _, name := range uniqueNonEmpty(names) {
+		if err := ctx.Err(); err != nil {
+			return observations, err
+		}
 		observation := NamedLoadBalancerObservation{}
 		classicOutput, err := clients.ELB.DescribeLoadBalancers(ctx, &elasticloadbalancing.DescribeLoadBalancersInput{LoadBalancerNames: []string{name}})
 		if err != nil && !isNotFound(err) {
 			observation.Err = errors.Join(observation.Err, fmt.Errorf("failed to inspect ELB: %w", err))
 		} else if err == nil {
 			for _, loadBalancer := range classicOutput.LoadBalancerDescriptions {
+				if err := ctx.Err(); err != nil {
+					return observations, err
+				}
 				if aws.ToString(loadBalancer.LoadBalancerName) != name {
 					continue
 				}
@@ -151,6 +162,9 @@ func InspectLoadBalancersByName(ctx context.Context, clients LoadBalancerClients
 				if selector.VPCID != aws.ToString(loadBalancer.VPCId) {
 					observation.Unverified = true
 					continue
+				}
+				if err := ctx.Err(); err != nil {
+					return observations, err
 				}
 				owned, tagErr := classicLoadBalancerHasClusterTag(ctx, clients.ELB, loadBalancer.LoadBalancerName, selector.InfraID)
 				if tagErr != nil {
@@ -167,11 +181,17 @@ func InspectLoadBalancersByName(ctx context.Context, clients LoadBalancerClients
 			}
 		}
 
+		if err := ctx.Err(); err != nil {
+			return observations, err
+		}
 		v2Output, err := clients.ELBV2.DescribeLoadBalancers(ctx, &elasticloadbalancingv2.DescribeLoadBalancersInput{Names: []string{name}})
 		if err != nil && !isNotFound(err) {
 			observation.Err = errors.Join(observation.Err, fmt.Errorf("failed to inspect ELBV2 load balancer: %w", err))
 		} else if err == nil {
 			for _, loadBalancer := range v2Output.LoadBalancers {
+				if err := ctx.Err(); err != nil {
+					return observations, err
+				}
 				if aws.ToString(loadBalancer.LoadBalancerName) != name {
 					continue
 				}
@@ -179,6 +199,9 @@ func InspectLoadBalancersByName(ctx context.Context, clients LoadBalancerClients
 				if selector.VPCID != aws.ToString(loadBalancer.VpcId) {
 					observation.Unverified = true
 					continue
+				}
+				if err := ctx.Err(); err != nil {
+					return observations, err
 				}
 				owned, tagErr := v2ResourceHasClusterTag(ctx, clients.ELBV2, loadBalancer.LoadBalancerArn, selector.InfraID)
 				if tagErr != nil {
@@ -193,6 +216,9 @@ func InspectLoadBalancersByName(ctx context.Context, clients LoadBalancerClients
 					Name: name, Type: V2LoadBalancerResource, ARN: aws.ToString(loadBalancer.LoadBalancerArn), VPCID: selector.VPCID,
 				})
 			}
+		}
+		if err := ctx.Err(); err != nil {
+			return observations, err
 		}
 		observations[name] = observation
 	}
@@ -213,9 +239,15 @@ func cleanupNamedLoadBalancers(ctx context.Context, clients LoadBalancerClients,
 	targetGroupARNsByName := make(map[string]sets.Set[string], len(names))
 	needOrphanTargetGroupScan := false
 	for _, name := range names {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
 		var nameErrs []error
 		if clients.ELB != nil {
 			nameErrs = append(nameErrs, deleteNamedClassicLoadBalancers(ctx, clients.ELB, selector, []string{name}, log)...)
+		}
+		if err := ctx.Err(); err != nil {
+			return result, err
 		}
 		if clients.ELBV2 != nil {
 			var loadBalancerErrs, targetGroupErrs []error
@@ -226,6 +258,9 @@ func cleanupNamedLoadBalancers(ctx context.Context, clients LoadBalancerClients,
 			result.OrphanTargetGroupErr = errors.Join(result.OrphanTargetGroupErr, errors.Join(targetGroupErrs...))
 		}
 		result.ByName[name] = NamedLoadBalancerCleanupResult{Err: errors.Join(nameErrs...)}
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
 	}
 
 	scanOrphanTargetGroups = scanOrphanTargetGroups && needOrphanTargetGroupScan
@@ -240,8 +275,14 @@ func cleanupNamedLoadBalancers(ctx context.Context, clients LoadBalancerClients,
 			result.OrphanTargetGroupErr = errors.New("ELBV2 client is required for the orphan target-group scan")
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 
 	for _, name := range names {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
 		nameResult := result.ByName[name]
 		remaining, verifyErr := countNamedLoadBalancerResources(ctx, clients, selector, []string{name}, targetGroupARNsByName[name])
 		if verifyErr != nil {
@@ -251,6 +292,9 @@ func cleanupNamedLoadBalancers(ctx context.Context, clients LoadBalancerClients,
 		result.ByName[name] = nameResult
 	}
 	if result.OrphanTargetGroupScanAttempt && result.OrphanTargetGroupScanSuccess {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
 		remaining, verifyErr := countTargetGroupsByARN(ctx, clients.ELBV2, selector, result.OrphanTargetGroupARNs)
 		if verifyErr != nil {
 			result.OrphanTargetGroupErr = errors.Join(result.OrphanTargetGroupErr, verifyErr)
@@ -264,6 +308,11 @@ func verifyLoadBalancerIdentities(ctx context.Context, clients LoadBalancerClien
 	states := make(map[LoadBalancerIdentity]loadBalancerIdentityState, len(identities))
 	for _, identity := range identities {
 		state := loadBalancerIdentityState{}
+		if err := ctx.Err(); err != nil {
+			state.Err = err
+			states[identity] = state
+			continue
+		}
 		switch identity.Type {
 		case ClassicLoadBalancerResource:
 			if clients.ELB == nil {
@@ -286,6 +335,10 @@ func verifyLoadBalancerIdentities(ctx context.Context, clients LoadBalancerClien
 				if aws.ToString(loadBalancer.VPCId) != identity.VPCID || identity.VPCID != selector.VPCID {
 					state.Unverified = true
 					continue
+				}
+				if err := ctx.Err(); err != nil {
+					state.Err = err
+					break
 				}
 				owned, err := classicLoadBalancerHasClusterTag(ctx, clients.ELB, loadBalancer.LoadBalancerName, selector.InfraID)
 				if err != nil {
@@ -315,6 +368,10 @@ func verifyLoadBalancerIdentities(ctx context.Context, clients LoadBalancerClien
 				if aws.ToString(loadBalancer.LoadBalancerName) != identity.Name || aws.ToString(loadBalancer.VpcId) != identity.VPCID || identity.VPCID != selector.VPCID {
 					state.Unverified = true
 					continue
+				}
+				if err := ctx.Err(); err != nil {
+					state.Err = err
+					break
 				}
 				owned, err := v2ResourceHasClusterTag(ctx, clients.ELBV2, loadBalancer.LoadBalancerArn, selector.InfraID)
 				if err != nil {
@@ -346,6 +403,9 @@ func CleanupRecordedLoadBalancers(ctx context.Context, clients LoadBalancerClien
 	for name, nameIdentities := range byName {
 		var errs []error
 		for _, identity := range nameIdentities {
+			if err := ctx.Err(); err != nil {
+				return result, err
+			}
 			switch identity.Type {
 			case ClassicLoadBalancerResource:
 				err := deleteRecordedClassicLoadBalancer(ctx, clients.ELB, selector, identity, log)
@@ -356,8 +416,14 @@ func CleanupRecordedLoadBalancers(ctx context.Context, clients LoadBalancerClien
 			default:
 				errs = append(errs, fmt.Errorf("unsupported load balancer identity type %q", identity.Type))
 			}
+			if err := ctx.Err(); err != nil {
+				return result, err
+			}
 		}
 		result.ByName[name] = NamedLoadBalancerCleanupResult{Err: errors.Join(errs...)}
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
 	}
 	if scanOrphanTargetGroups {
 		result.OrphanTargetGroupScanAttempt = true
@@ -368,6 +434,9 @@ func CleanupRecordedLoadBalancers(ctx context.Context, clients LoadBalancerClien
 			result.OrphanTargetGroupARNs, errs = deleteOwnedV2TargetGroups(ctx, clients.ELBV2, selector, log)
 			result.OrphanTargetGroupErr = errors.Join(errs...)
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
 	}
 	states := verifyLoadBalancerIdentities(ctx, clients, selector, identities)
 	for name, nameIdentities := range byName {
@@ -386,6 +455,9 @@ func CleanupRecordedLoadBalancers(ctx context.Context, clients LoadBalancerClien
 		result.ByName[name] = nameResult
 	}
 	if result.OrphanTargetGroupScanAttempt && result.OrphanTargetGroupErr == nil {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
 		remaining, verifyErr := countTargetGroupsByARN(ctx, clients.ELBV2, selector, result.OrphanTargetGroupARNs)
 		result.OrphanTargetGroupErr = verifyErr
 		result.OrphanTargetGroupScanSuccess = verifyErr == nil && remaining == 0
@@ -396,6 +468,9 @@ func CleanupRecordedLoadBalancers(ctx context.Context, clients LoadBalancerClien
 func deleteRecordedClassicLoadBalancer(ctx context.Context, client awsapi.ELBAPI, selector LoadBalancerSelector, identity LoadBalancerIdentity, log logr.Logger) error {
 	if client == nil {
 		return errors.New("classic ELB client is unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	output, err := client.DescribeLoadBalancers(ctx, &elasticloadbalancing.DescribeLoadBalancersInput{LoadBalancerNames: []string{identity.Name}})
 	if isNotFound(err) {
@@ -411,6 +486,9 @@ func deleteRecordedClassicLoadBalancer(ctx context.Context, client awsapi.ELBAPI
 		if identity.VPCID != selector.VPCID || aws.ToString(loadBalancer.VPCId) != identity.VPCID {
 			return ErrLoadBalancerOwnershipUnverified
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		owned, err := classicLoadBalancerHasClusterTag(ctx, client, loadBalancer.LoadBalancerName, selector.InfraID)
 		if err != nil {
 			return fmt.Errorf("failed to inspect recorded classic load balancer ownership: %w", err)
@@ -418,8 +496,14 @@ func deleteRecordedClassicLoadBalancer(ctx context.Context, client awsapi.ELBAPI
 		if !owned {
 			return ErrLoadBalancerOwnershipUnverified
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if _, err := client.DeleteLoadBalancer(ctx, &elasticloadbalancing.DeleteLoadBalancerInput{LoadBalancerName: loadBalancer.LoadBalancerName}); err != nil && !isNotFound(err) {
 			return fmt.Errorf("failed to delete recorded classic load balancer: %w", err)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		log.Info("Deleted classic load balancer")
 		return nil
@@ -430,6 +514,9 @@ func deleteRecordedClassicLoadBalancer(ctx context.Context, client awsapi.ELBAPI
 func deleteRecordedV2LoadBalancer(ctx context.Context, client awsapi.ELBV2API, selector LoadBalancerSelector, identity LoadBalancerIdentity, log logr.Logger) error {
 	if client == nil {
 		return errors.New("ELBV2 client is unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	output, err := client.DescribeLoadBalancers(ctx, &elasticloadbalancingv2.DescribeLoadBalancersInput{LoadBalancerArns: []string{identity.ARN}})
 	if isNotFound(err) {
@@ -444,6 +531,9 @@ func deleteRecordedV2LoadBalancer(ctx context.Context, client awsapi.ELBV2API, s
 		}
 		if aws.ToString(loadBalancer.LoadBalancerName) != identity.Name || identity.VPCID != selector.VPCID || aws.ToString(loadBalancer.VpcId) != identity.VPCID {
 			return ErrLoadBalancerOwnershipUnverified
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		owned, err := v2ResourceHasClusterTag(ctx, client, loadBalancer.LoadBalancerArn, selector.InfraID)
 		if err != nil {
@@ -522,6 +612,9 @@ func CountLoadBalancerResources(ctx context.Context, clients LoadBalancerClients
 			errs = append(errs, fmt.Errorf("failed to count ELB load balancers: %w", err))
 		}
 	}
+	if appendContextError(ctx, &errs) {
+		return count, errors.Join(errs...)
+	}
 	if clients.ELBV2 != nil {
 		currentCount, err := countV2LoadBalancerResources(ctx, clients.ELBV2, selector)
 		count += currentCount
@@ -534,48 +627,58 @@ func CountLoadBalancerResources(ctx context.Context, clients LoadBalancerClients
 
 // LoadBalancerNameFromHostname extracts an AWS load balancer name from a Service status hostname.
 func LoadBalancerNameFromHostname(hostname string) string {
-	hostname = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(hostname), "."))
-	if !isAWSLoadBalancerHostname(hostname) {
+	parts, ok := parseAWSLoadBalancerHostname(hostname)
+	if !ok {
 		return ""
 	}
-
-	labels := strings.Split(strings.TrimSuffix(hostname, ".cn"), ".")
-	loadBalancerLabel := strings.TrimPrefix(labels[len(labels)-5], "internal-")
-	if loadBalancerLabel == "" {
-		return ""
-	}
-	if lastHyphen := strings.LastIndex(loadBalancerLabel, "-"); lastHyphen > 0 {
-		return loadBalancerLabel[:lastHyphen]
-	}
-	return loadBalancerLabel
+	return parts.Name
 }
 
 // LoadBalancerRegionFromHostname extracts the AWS region from a load balancer hostname.
 func LoadBalancerRegionFromHostname(hostname string) string {
-	hostname = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(hostname), "."))
-	if !isAWSLoadBalancerHostname(hostname) {
+	parts, ok := parseAWSLoadBalancerHostname(hostname)
+	if !ok {
 		return ""
 	}
-	labels := strings.Split(strings.TrimSuffix(hostname, ".cn"), ".")
-	last := len(labels) - 1
-	if labels[last-2] == "elb" {
-		return labels[last-3]
-	}
-	if labels[last-3] == "elb" {
-		return labels[last-2]
-	}
-	return ""
+	return parts.Region
 }
 
-func isAWSLoadBalancerHostname(hostname string) bool {
+type awsLoadBalancerHostnameParts struct {
+	Name   string
+	Region string
+}
+
+func parseAWSLoadBalancerHostname(hostname string) (awsLoadBalancerHostnameParts, bool) {
+	hostname = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(hostname), "."))
 	labels := strings.Split(strings.TrimSuffix(hostname, ".cn"), ".")
 	if len(labels) < 5 {
-		return false
+		return awsLoadBalancerHostnameParts{}, false
 	}
 
 	last := len(labels) - 1
-	return (labels[last-2] == "elb" && labels[last-1] == "amazonaws" && labels[last] == "com") ||
-		(labels[last-3] == "elb" && labels[last-1] == "amazonaws" && labels[last] == "com")
+	if labels[last-1] != "amazonaws" || labels[last] != "com" {
+		return awsLoadBalancerHostnameParts{}, false
+	}
+
+	regionIndex := last - 3
+	if labels[last-2] != "elb" {
+		if labels[last-3] != "elb" {
+			return awsLoadBalancerHostnameParts{}, false
+		}
+		regionIndex = last - 2
+	}
+
+	loadBalancerLabel := strings.TrimPrefix(labels[last-4], "internal-")
+	if loadBalancerLabel == "" || labels[regionIndex] == "" {
+		return awsLoadBalancerHostnameParts{}, false
+	}
+	if lastHyphen := strings.LastIndex(loadBalancerLabel, "-"); lastHyphen > 0 {
+		loadBalancerLabel = loadBalancerLabel[:lastHyphen]
+	}
+	if loadBalancerLabel == "" {
+		return awsLoadBalancerHostnameParts{}, false
+	}
+	return awsLoadBalancerHostnameParts{Name: loadBalancerLabel, Region: labels[regionIndex]}, true
 }
 
 func (s LoadBalancerSelector) validate() error {
@@ -599,11 +702,17 @@ func deleteClassicLoadBalancers(ctx context.Context, client awsapi.ELBAPI, selec
 	var errs []error
 	paginator := elasticloadbalancing.NewDescribeLoadBalancersPaginator(client, &elasticloadbalancing.DescribeLoadBalancersInput{})
 	for paginator.HasMorePages() {
+		if appendContextError(ctx, &errs) {
+			return errs
+		}
 		output, err := paginator.NextPage(ctx)
 		if err != nil {
 			return append(errs, err)
 		}
 		for _, loadBalancer := range output.LoadBalancerDescriptions {
+			if appendContextError(ctx, &errs) {
+				return errs
+			}
 			if selector.VPCID != aws.ToString(loadBalancer.VPCId) {
 				continue
 			}
@@ -614,12 +723,16 @@ func deleteClassicLoadBalancers(ctx context.Context, client awsapi.ELBAPI, selec
 			}
 		}
 	}
+	appendContextError(ctx, &errs)
 	return errs
 }
 
 func deleteNamedClassicLoadBalancers(ctx context.Context, client awsapi.ELBAPI, selector LoadBalancerSelector, names []string, log logr.Logger) []error {
 	var errs []error
 	for _, name := range names {
+		if appendContextError(ctx, &errs) {
+			break
+		}
 		output, err := client.DescribeLoadBalancers(ctx, &elasticloadbalancing.DescribeLoadBalancersInput{LoadBalancerNames: []string{name}})
 		if isNotFound(err) {
 			continue
@@ -629,6 +742,9 @@ func deleteNamedClassicLoadBalancers(ctx context.Context, client awsapi.ELBAPI, 
 			continue
 		}
 		for _, loadBalancer := range output.LoadBalancerDescriptions {
+			if appendContextError(ctx, &errs) {
+				return errs
+			}
 			if selector.VPCID != aws.ToString(loadBalancer.VPCId) {
 				continue
 			}
@@ -640,6 +756,9 @@ func deleteNamedClassicLoadBalancers(ctx context.Context, client awsapi.ELBAPI, 
 			if !owned {
 				continue
 			}
+			if appendContextError(ctx, &errs) {
+				return errs
+			}
 			if _, err := client.DeleteLoadBalancer(ctx, &elasticloadbalancing.DeleteLoadBalancerInput{LoadBalancerName: loadBalancer.LoadBalancerName}); err != nil && !isNotFound(err) {
 				errs = append(errs, fmt.Errorf("failed to delete ELB: %w", err))
 			} else if err == nil {
@@ -647,6 +766,7 @@ func deleteNamedClassicLoadBalancers(ctx context.Context, client awsapi.ELBAPI, 
 			}
 		}
 	}
+	appendContextError(ctx, &errs)
 	return errs
 }
 
@@ -654,6 +774,9 @@ func countClassicLoadBalancers(ctx context.Context, client awsapi.ELBAPI, select
 	count := 0
 	paginator := elasticloadbalancing.NewDescribeLoadBalancersPaginator(client, &elasticloadbalancing.DescribeLoadBalancersInput{})
 	for paginator.HasMorePages() {
+		if err := ctx.Err(); err != nil {
+			return count, err
+		}
 		output, err := paginator.NextPage(ctx)
 		if err != nil {
 			return count, err
@@ -664,6 +787,9 @@ func countClassicLoadBalancers(ctx context.Context, client awsapi.ELBAPI, select
 			}
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return count, err
+	}
 	return count, nil
 }
 
@@ -671,12 +797,18 @@ func deleteV2LoadBalancers(ctx context.Context, client awsapi.ELBV2API, selector
 	var errs []error
 	lbPaginator := elasticloadbalancingv2.NewDescribeLoadBalancersPaginator(client, &elasticloadbalancingv2.DescribeLoadBalancersInput{})
 	for lbPaginator.HasMorePages() {
+		if appendContextError(ctx, &errs) {
+			return errs
+		}
 		output, err := lbPaginator.NextPage(ctx)
 		if err != nil {
 			errs = append(errs, err)
 			break
 		}
 		for _, loadBalancer := range output.LoadBalancers {
+			if appendContextError(ctx, &errs) {
+				return errs
+			}
 			if selector.VPCID != aws.ToString(loadBalancer.VpcId) {
 				continue
 			}
@@ -687,15 +819,24 @@ func deleteV2LoadBalancers(ctx context.Context, client awsapi.ELBV2API, selector
 			}
 		}
 	}
+	if appendContextError(ctx, &errs) {
+		return errs
+	}
 
 	tgPaginator := elasticloadbalancingv2.NewDescribeTargetGroupsPaginator(client, &elasticloadbalancingv2.DescribeTargetGroupsInput{})
 	for tgPaginator.HasMorePages() {
+		if appendContextError(ctx, &errs) {
+			return errs
+		}
 		output, err := tgPaginator.NextPage(ctx)
 		if err != nil {
 			errs = append(errs, err)
 			break
 		}
 		for _, targetGroup := range output.TargetGroups {
+			if appendContextError(ctx, &errs) {
+				return errs
+			}
 			if selector.VPCID != aws.ToString(targetGroup.VpcId) {
 				continue
 			}
@@ -706,6 +847,7 @@ func deleteV2LoadBalancers(ctx context.Context, client awsapi.ELBV2API, selector
 			}
 		}
 	}
+	appendContextError(ctx, &errs)
 	return errs
 }
 
@@ -730,6 +872,9 @@ func deleteNamedV2LoadBalancersWithoutScan(ctx context.Context, client awsapi.EL
 	var loadBalancerErrs, targetGroupErrs []error
 	scanOrphanedTargetGroups := false
 	for _, name := range names {
+		if appendContextError(ctx, &loadBalancerErrs) {
+			break
+		}
 		output, err := client.DescribeLoadBalancers(ctx, &elasticloadbalancingv2.DescribeLoadBalancersInput{Names: []string{name}})
 		if isNotFound(err) {
 			scanOrphanedTargetGroups = true
@@ -744,6 +889,9 @@ func deleteNamedV2LoadBalancersWithoutScan(ctx context.Context, client awsapi.EL
 			continue
 		}
 		for _, loadBalancer := range output.LoadBalancers {
+			if appendContextError(ctx, &loadBalancerErrs) {
+				break
+			}
 			if selector.VPCID != aws.ToString(loadBalancer.VpcId) {
 				continue
 			}
@@ -754,6 +902,9 @@ func deleteNamedV2LoadBalancersWithoutScan(ctx context.Context, client awsapi.EL
 			}
 			if !owned {
 				continue
+			}
+			if appendContextError(ctx, &loadBalancerErrs) {
+				break
 			}
 			loadBalancerTargetGroups, loadBalancerErr, targetGroupErr := deleteNamedV2LoadBalancerDetailed(ctx, client, loadBalancer, selector, log)
 			for arn := range loadBalancerTargetGroups {
@@ -769,23 +920,117 @@ func deleteNamedV2LoadBalancersWithoutScan(ctx context.Context, client awsapi.EL
 			}
 		}
 	}
+	appendContextError(ctx, &loadBalancerErrs)
 	return targetGroupARNs, loadBalancerErrs, targetGroupErrs, scanOrphanedTargetGroups
 }
 
 func deleteOwnedV2TargetGroups(ctx context.Context, client awsapi.ELBV2API, selector LoadBalancerSelector, log logr.Logger) (sets.Set[string], []error) {
 	targetGroupARNs := sets.New[string]()
 	var errs []error
+	ownedTargetGroupStillAttached := false
 	paginator := elasticloadbalancingv2.NewDescribeTargetGroupsPaginator(client, &elasticloadbalancingv2.DescribeTargetGroupsInput{})
 	for paginator.HasMorePages() {
+		if appendContextError(ctx, &errs) {
+			return targetGroupARNs, errs
+		}
 		output, err := paginator.NextPage(ctx)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to list ELBV2 target groups for cleanup: %w", err))
 			break
 		}
 		for _, targetGroup := range output.TargetGroups {
-			// Only clean up target groups that are no longer attached to a load balancer.
-			if len(targetGroup.LoadBalancerArns) > 0 {
+			if appendContextError(ctx, &errs) {
+				return targetGroupARNs, errs
+			}
+			if selector.VPCID != aws.ToString(targetGroup.VpcId) || targetGroup.TargetGroupArn == nil {
 				continue
+			}
+			owned, err := v2ResourceHasClusterTag(ctx, client, targetGroup.TargetGroupArn, selector.InfraID)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to inspect target group tags: %w", err))
+				continue
+			}
+			if owned {
+				if len(targetGroup.LoadBalancerArns) > 0 {
+					// Keep cleanup pending until AWS reports the owned group detached.
+					ownedTargetGroupStillAttached = true
+					continue
+				}
+				targetGroupARNs.Insert(aws.ToString(targetGroup.TargetGroupArn))
+			}
+		}
+	}
+	if appendContextError(ctx, &errs) {
+		return targetGroupARNs, errs
+	}
+	if ownedTargetGroupStillAttached {
+		errs = append(errs, errOwnedTargetGroupStillAttached)
+	}
+
+	errs = append(errs, deleteV2TargetGroupsByARN(ctx, client, targetGroupARNs, log)...)
+	return targetGroupARNs, errs
+}
+
+func deleteNamedV2LoadBalancer(ctx context.Context, client awsapi.ELBV2API, loadBalancer elbv2types.LoadBalancer, selector LoadBalancerSelector, log logr.Logger) (sets.Set[string], error) {
+	targetGroupARNs, loadBalancerErr, targetGroupErr := deleteNamedV2LoadBalancerDetailed(ctx, client, loadBalancer, selector, log)
+	return targetGroupARNs, errors.Join(loadBalancerErr, targetGroupErr)
+}
+
+func deleteNamedV2LoadBalancerDetailed(ctx context.Context, client awsapi.ELBV2API, loadBalancer elbv2types.LoadBalancer, selector LoadBalancerSelector, log logr.Logger) (sets.Set[string], error, error) {
+	targetGroupARNs, targetGroupErrs := findOwnedV2TargetGroupsForLoadBalancer(ctx, client, loadBalancer.LoadBalancerArn, selector)
+	if appendContextError(ctx, &targetGroupErrs) {
+		return targetGroupARNs, nil, errors.Join(targetGroupErrs...)
+	}
+
+	listenerARNs, loadBalancerErrs := describeV2LoadBalancerListeners(ctx, client, loadBalancer.LoadBalancerArn)
+	if appendContextError(ctx, &loadBalancerErrs) {
+		return targetGroupARNs, errors.Join(loadBalancerErrs...), errors.Join(targetGroupErrs...)
+	}
+	for _, listenerARN := range listenerARNs {
+		if appendContextError(ctx, &loadBalancerErrs) {
+			return targetGroupARNs, errors.Join(loadBalancerErrs...), errors.Join(targetGroupErrs...)
+		}
+		if _, err := client.DeleteListener(ctx, &elasticloadbalancingv2.DeleteListenerInput{ListenerArn: listenerARN}); err != nil && !isNotFound(err) {
+			loadBalancerErrs = append(loadBalancerErrs, fmt.Errorf("failed to delete listener for ELBV2 load balancer: %w", err))
+		}
+	}
+	if appendContextError(ctx, &loadBalancerErrs) {
+		return targetGroupARNs, errors.Join(loadBalancerErrs...), errors.Join(targetGroupErrs...)
+	}
+
+	if _, err := client.DeleteLoadBalancer(ctx, &elasticloadbalancingv2.DeleteLoadBalancerInput{LoadBalancerArn: loadBalancer.LoadBalancerArn}); err != nil && !isNotFound(err) {
+		loadBalancerErrs = append(loadBalancerErrs, fmt.Errorf("failed to delete ELBV2 load balancer: %w", err))
+	} else if err == nil {
+		log.Info("Deleted ELBV2 load balancer")
+	}
+	if appendContextError(ctx, &loadBalancerErrs) {
+		return targetGroupARNs, errors.Join(loadBalancerErrs...), errors.Join(targetGroupErrs...)
+	}
+
+	targetGroupErrs = append(targetGroupErrs, deleteV2TargetGroupsByARN(ctx, client, targetGroupARNs, log)...)
+
+	return targetGroupARNs, errors.Join(loadBalancerErrs...), errors.Join(targetGroupErrs...)
+}
+
+func findOwnedV2TargetGroupsForLoadBalancer(ctx context.Context, client awsapi.ELBV2API, loadBalancerARN *string, selector LoadBalancerSelector) (sets.Set[string], []error) {
+	targetGroupARNs := sets.New[string]()
+	var errs []error
+	paginator := elasticloadbalancingv2.NewDescribeTargetGroupsPaginator(client, &elasticloadbalancingv2.DescribeTargetGroupsInput{LoadBalancerArn: loadBalancerARN})
+	for paginator.HasMorePages() {
+		if appendContextError(ctx, &errs) {
+			return targetGroupARNs, errs
+		}
+		output, err := paginator.NextPage(ctx)
+		if isNotFound(err) {
+			break
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to find target groups for ELBV2 load balancer: %w", err))
+			break
+		}
+		for _, targetGroup := range output.TargetGroups {
+			if appendContextError(ctx, &errs) {
+				break
 			}
 			if selector.VPCID != aws.ToString(targetGroup.VpcId) || targetGroup.TargetGroupArn == nil {
 				continue
@@ -800,94 +1045,54 @@ func deleteOwnedV2TargetGroups(ctx context.Context, client awsapi.ELBV2API, sele
 			}
 		}
 	}
+	appendContextError(ctx, &errs)
+	return targetGroupARNs, errs
+}
 
+func describeV2LoadBalancerListeners(ctx context.Context, client awsapi.ELBV2API, loadBalancerARN *string) ([]*string, []error) {
+	var listenerARNs []*string
+	var errs []error
+	paginator := elasticloadbalancingv2.NewDescribeListenersPaginator(client, &elasticloadbalancingv2.DescribeListenersInput{LoadBalancerArn: loadBalancerARN})
+	for paginator.HasMorePages() {
+		if appendContextError(ctx, &errs) {
+			return listenerARNs, errs
+		}
+		output, err := paginator.NextPage(ctx)
+		if isNotFound(err) {
+			break
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to find listeners for ELBV2 load balancer: %w", err))
+			break
+		}
+		for _, listener := range output.Listeners {
+			listenerARNs = append(listenerARNs, listener.ListenerArn)
+		}
+	}
+	appendContextError(ctx, &errs)
+	return listenerARNs, errs
+}
+
+func deleteV2TargetGroupsByARN(ctx context.Context, client awsapi.ELBV2API, targetGroupARNs sets.Set[string], log logr.Logger) []error {
 	arns := make([]string, 0, len(targetGroupARNs))
 	for arn := range targetGroupARNs {
 		arns = append(arns, arn)
 	}
 	sort.Strings(arns)
+
+	var errs []error
 	for _, arn := range arns {
+		if appendContextError(ctx, &errs) {
+			return errs
+		}
 		if _, err := client.DeleteTargetGroup(ctx, &elasticloadbalancingv2.DeleteTargetGroupInput{TargetGroupArn: aws.String(arn)}); err != nil && !isNotFound(err) {
 			errs = append(errs, fmt.Errorf("failed to delete target group: %w", err))
 		} else if err == nil {
 			log.Info("Deleted target group")
 		}
 	}
-	return targetGroupARNs, errs
-}
-
-func deleteNamedV2LoadBalancer(ctx context.Context, client awsapi.ELBV2API, loadBalancer elbv2types.LoadBalancer, selector LoadBalancerSelector, log logr.Logger) (sets.Set[string], error) {
-	targetGroupARNs, loadBalancerErr, targetGroupErr := deleteNamedV2LoadBalancerDetailed(ctx, client, loadBalancer, selector, log)
-	return targetGroupARNs, errors.Join(loadBalancerErr, targetGroupErr)
-}
-
-func deleteNamedV2LoadBalancerDetailed(ctx context.Context, client awsapi.ELBV2API, loadBalancer elbv2types.LoadBalancer, selector LoadBalancerSelector, log logr.Logger) (sets.Set[string], error, error) {
-	targetGroupARNs := sets.New[string]()
-	var loadBalancerErrs, targetGroupErrs []error
-	targetGroupsPaginator := elasticloadbalancingv2.NewDescribeTargetGroupsPaginator(client, &elasticloadbalancingv2.DescribeTargetGroupsInput{LoadBalancerArn: loadBalancer.LoadBalancerArn})
-	for targetGroupsPaginator.HasMorePages() {
-		targetGroups, err := targetGroupsPaginator.NextPage(ctx)
-		if isNotFound(err) {
-			break
-		}
-		if err != nil {
-			targetGroupErrs = append(targetGroupErrs, fmt.Errorf("failed to find target groups for ELBV2 load balancer: %w", err))
-			break
-		}
-		for _, targetGroup := range targetGroups.TargetGroups {
-			if selector.VPCID != aws.ToString(targetGroup.VpcId) || targetGroup.TargetGroupArn == nil {
-				continue
-			}
-			owned, err := v2ResourceHasClusterTag(ctx, client, targetGroup.TargetGroupArn, selector.InfraID)
-			if err != nil {
-				targetGroupErrs = append(targetGroupErrs, fmt.Errorf("failed to inspect target group tags: %w", err))
-				continue
-			}
-			if owned {
-				targetGroupARNs.Insert(aws.ToString(targetGroup.TargetGroupArn))
-			}
-		}
-	}
-
-	var listenerARNs []*string
-	listenersPaginator := elasticloadbalancingv2.NewDescribeListenersPaginator(client, &elasticloadbalancingv2.DescribeListenersInput{LoadBalancerArn: loadBalancer.LoadBalancerArn})
-	for listenersPaginator.HasMorePages() {
-		listeners, err := listenersPaginator.NextPage(ctx)
-		if isNotFound(err) {
-			break
-		}
-		if err != nil {
-			loadBalancerErrs = append(loadBalancerErrs, fmt.Errorf("failed to find listeners for ELBV2 load balancer: %w", err))
-			break
-		}
-		for _, listener := range listeners.Listeners {
-			listenerARNs = append(listenerARNs, listener.ListenerArn)
-		}
-	}
-	for _, listenerARN := range listenerARNs {
-		if _, err := client.DeleteListener(ctx, &elasticloadbalancingv2.DeleteListenerInput{ListenerArn: listenerARN}); err != nil && !isNotFound(err) {
-			loadBalancerErrs = append(loadBalancerErrs, fmt.Errorf("failed to delete listener for ELBV2 load balancer: %w", err))
-		}
-	}
-	sortedTargetGroupARNs := make([]string, 0, len(targetGroupARNs))
-	for arn := range targetGroupARNs {
-		sortedTargetGroupARNs = append(sortedTargetGroupARNs, arn)
-	}
-	sort.Strings(sortedTargetGroupARNs)
-	for _, arn := range sortedTargetGroupARNs {
-		if _, err := client.DeleteTargetGroup(ctx, &elasticloadbalancingv2.DeleteTargetGroupInput{TargetGroupArn: aws.String(arn)}); err != nil && !isNotFound(err) {
-			targetGroupErrs = append(targetGroupErrs, fmt.Errorf("failed to delete target group: %w", err))
-		} else if err == nil {
-			log.Info("Deleted target group")
-		}
-	}
-
-	if _, err := client.DeleteLoadBalancer(ctx, &elasticloadbalancingv2.DeleteLoadBalancerInput{LoadBalancerArn: loadBalancer.LoadBalancerArn}); err != nil && !isNotFound(err) {
-		loadBalancerErrs = append(loadBalancerErrs, fmt.Errorf("failed to delete ELBV2 load balancer: %w", err))
-	} else if err == nil {
-		log.Info("Deleted ELBV2 load balancer")
-	}
-	return targetGroupARNs, errors.Join(loadBalancerErrs...), errors.Join(targetGroupErrs...)
+	appendContextError(ctx, &errs)
+	return errs
 }
 
 func countV2LoadBalancerResources(ctx context.Context, client awsapi.ELBV2API, selector LoadBalancerSelector) (int, error) {
@@ -896,31 +1101,47 @@ func countV2LoadBalancerResources(ctx context.Context, client awsapi.ELBV2API, s
 
 	lbPaginator := elasticloadbalancingv2.NewDescribeLoadBalancersPaginator(client, &elasticloadbalancingv2.DescribeLoadBalancersInput{})
 	for lbPaginator.HasMorePages() {
+		if appendContextError(ctx, &errs) {
+			break
+		}
 		output, err := lbPaginator.NextPage(ctx)
 		if err != nil {
 			errs = append(errs, err)
 			break
 		}
 		for _, loadBalancer := range output.LoadBalancers {
+			if appendContextError(ctx, &errs) {
+				break
+			}
 			if selector.VPCID == aws.ToString(loadBalancer.VpcId) {
 				count++
 			}
 		}
 	}
+	if appendContextError(ctx, &errs) {
+		return count, errors.Join(errs...)
+	}
 
 	tgPaginator := elasticloadbalancingv2.NewDescribeTargetGroupsPaginator(client, &elasticloadbalancingv2.DescribeTargetGroupsInput{})
 	for tgPaginator.HasMorePages() {
+		if appendContextError(ctx, &errs) {
+			break
+		}
 		output, err := tgPaginator.NextPage(ctx)
 		if err != nil {
 			errs = append(errs, err)
 			break
 		}
 		for _, targetGroup := range output.TargetGroups {
+			if appendContextError(ctx, &errs) {
+				break
+			}
 			if selector.VPCID == aws.ToString(targetGroup.VpcId) {
 				count++
 			}
 		}
 	}
+	appendContextError(ctx, &errs)
 
 	return count, errors.Join(errs...)
 }
@@ -930,6 +1151,9 @@ func countNamedLoadBalancerResources(ctx context.Context, clients LoadBalancerCl
 	var errs []error
 	if clients.ELB != nil {
 		for _, name := range names {
+			if appendContextError(ctx, &errs) {
+				return count, errors.Join(errs...)
+			}
 			output, err := clients.ELB.DescribeLoadBalancers(ctx, &elasticloadbalancing.DescribeLoadBalancersInput{LoadBalancerNames: []string{name}})
 			if isNotFound(err) {
 				continue
@@ -939,6 +1163,9 @@ func countNamedLoadBalancerResources(ctx context.Context, clients LoadBalancerCl
 				continue
 			}
 			for _, loadBalancer := range output.LoadBalancerDescriptions {
+				if appendContextError(ctx, &errs) {
+					return count, errors.Join(errs...)
+				}
 				if selector.VPCID != aws.ToString(loadBalancer.VPCId) {
 					continue
 				}
@@ -955,6 +1182,9 @@ func countNamedLoadBalancerResources(ctx context.Context, clients LoadBalancerCl
 	}
 	if clients.ELBV2 != nil {
 		for _, name := range names {
+			if appendContextError(ctx, &errs) {
+				return count, errors.Join(errs...)
+			}
 			output, err := clients.ELBV2.DescribeLoadBalancers(ctx, &elasticloadbalancingv2.DescribeLoadBalancersInput{Names: []string{name}})
 			if isNotFound(err) {
 				continue
@@ -964,6 +1194,9 @@ func countNamedLoadBalancerResources(ctx context.Context, clients LoadBalancerCl
 				continue
 			}
 			for _, loadBalancer := range output.LoadBalancers {
+				if appendContextError(ctx, &errs) {
+					return count, errors.Join(errs...)
+				}
 				if selector.VPCID != aws.ToString(loadBalancer.VpcId) {
 					continue
 				}
@@ -978,6 +1211,9 @@ func countNamedLoadBalancerResources(ctx context.Context, clients LoadBalancerCl
 			}
 		}
 		for arn := range targetGroupARNs {
+			if appendContextError(ctx, &errs) {
+				return count, errors.Join(errs...)
+			}
 			output, err := clients.ELBV2.DescribeTargetGroups(ctx, &elasticloadbalancingv2.DescribeTargetGroupsInput{TargetGroupArns: []string{arn}})
 			if isNotFound(err) {
 				continue
@@ -987,6 +1223,9 @@ func countNamedLoadBalancerResources(ctx context.Context, clients LoadBalancerCl
 				continue
 			}
 			for _, targetGroup := range output.TargetGroups {
+				if appendContextError(ctx, &errs) {
+					return count, errors.Join(errs...)
+				}
 				if selector.VPCID != aws.ToString(targetGroup.VpcId) {
 					continue
 				}
@@ -1001,6 +1240,7 @@ func countNamedLoadBalancerResources(ctx context.Context, clients LoadBalancerCl
 			}
 		}
 	}
+	appendContextError(ctx, &errs)
 	return count, errors.Join(errs...)
 }
 
@@ -1014,6 +1254,9 @@ func countTargetGroupsByARN(ctx context.Context, client awsapi.ELBV2API, selecto
 	count := 0
 	var errs []error
 	for _, arn := range arns {
+		if appendContextError(ctx, &errs) {
+			return count, errors.Join(errs...)
+		}
 		output, err := client.DescribeTargetGroups(ctx, &elasticloadbalancingv2.DescribeTargetGroupsInput{TargetGroupArns: []string{arn}})
 		if isNotFound(err) {
 			continue
@@ -1030,12 +1273,29 @@ func countTargetGroupsByARN(ctx context.Context, client awsapi.ELBV2API, selecto
 			if selector.VPCID != aws.ToString(targetGroup.VpcId) {
 				continue
 			}
+			if appendContextError(ctx, &errs) {
+				return count, errors.Join(errs...)
+			}
 			if _, err := v2ResourceHasClusterTag(ctx, client, targetGroup.TargetGroupArn, selector.InfraID); err != nil {
 				errs = append(errs, fmt.Errorf("failed to verify target group tags: %w", err))
 			}
 		}
 	}
+	appendContextError(ctx, &errs)
 	return count, errors.Join(errs...)
+}
+
+func appendContextError(ctx context.Context, errs *[]error) bool {
+	if err := ctx.Err(); err != nil {
+		for _, existing := range *errs {
+			if errors.Is(existing, err) {
+				return true
+			}
+		}
+		*errs = append(*errs, err)
+		return true
+	}
+	return false
 }
 
 func classicLoadBalancerHasClusterTag(ctx context.Context, client awsapi.ELBAPI, name *string, infraID string) (bool, error) {

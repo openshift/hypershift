@@ -2799,7 +2799,7 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 		if remaining.Len() == 0 {
 			reason = "CloudResourcesDestroyed"
 			status = metav1.ConditionTrue
-			message = "All guest resources destroyed"
+			message = "All cloud resources destroyed"
 		} else {
 			reason = "RemainingCloudResources"
 			status = metav1.ConditionFalse

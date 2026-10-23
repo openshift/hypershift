@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/util/retry"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -881,14 +882,31 @@ func (r *reconciler) saveAWSLoadBalancerCleanupProgress(ctx context.Context, con
 	if err != nil {
 		return fmt.Errorf("failed to serialize AWS load balancer cleanup progress: %w", err)
 	}
-	if configMap.Data == nil {
-		configMap.Data = map[string]string{}
+	if !exists {
+		if configMap.Data == nil {
+			configMap.Data = map[string]string{}
+		}
+		configMap.Data[awsLoadBalancerProgressDataKey] = string(serialized)
+		return r.cpClient.Create(ctx, configMap)
 	}
-	configMap.Data[awsLoadBalancerProgressDataKey] = string(serialized)
-	if exists {
-		return r.cpClient.Update(ctx, configMap)
+
+	progressKey := client.ObjectKeyFromObject(configMap)
+	progressReader := r.cpAPIReader
+	if progressReader == nil {
+		progressReader = r.cpClient
 	}
-	return r.cpClient.Create(ctx, configMap)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &corev1.ConfigMap{}
+		if err := progressReader.Get(ctx, progressKey, latest); err != nil {
+			return err
+		}
+		if latest.Data == nil {
+			latest.Data = map[string]string{}
+		}
+		latest.Data[awsLoadBalancerProgressDataKey] = string(serialized)
+		latest.OwnerReferences = configMap.OwnerReferences
+		return r.cpClient.Update(ctx, latest)
+	})
 }
 
 func awsLoadBalancerProgressConfigMapName(uid types.UID) string {
