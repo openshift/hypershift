@@ -2,7 +2,6 @@ package releaseinfo
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -38,9 +37,6 @@ func TestProviderWithOpenShiftImageRegistryOverridesDecorator_Lookup(t *testing.
 	}
 	provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{
 		Delegate: delegate,
-		OpenShiftImageRegistryOverrides: map[string][]string{
-			canonicalReleaseImage: {mirroredReleaseImage},
-		},
 		// Mock repoSetupFn to avoid real network calls for mirror verification.
 		repoSetupFn: func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
 			ref, err := reference.Parse(imageRef)
@@ -49,8 +45,10 @@ func TestProviderWithOpenShiftImageRegistryOverridesDecorator_Lookup(t *testing.
 			}
 			return nil, &ref, nil
 		},
-		lock: sync.Mutex{},
 	}
+	provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+		canonicalReleaseImage: {mirroredReleaseImage},
+	})
 
 	pullSecret := []byte(`{"auths":{}}`)
 	// Call the Lookup method and validate GetMirroredReleaseImage.
@@ -83,12 +81,11 @@ func TestProviderWithOpenShiftImageRegistryOverridesDecorator_LookupWithNilRepoS
 	// is assigned but never called, avoiding real network calls.
 	provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{
 		Delegate: delegate,
-		OpenShiftImageRegistryOverrides: map[string][]string{
-			"no-match-source": {"no-match-mirror"},
-		},
 		// repoSetupFn intentionally nil to exercise the default fallback.
-		lock: sync.Mutex{},
 	}
+	provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+		"no-match-source": {"no-match-mirror"},
+	})
 
 	pullSecret := []byte(`{"auths":{}}`)
 	result, err := provider.Lookup(t.Context(), directImage, pullSecret)

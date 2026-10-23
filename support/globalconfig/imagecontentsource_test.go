@@ -9,7 +9,6 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/imageregistry"
-	"github.com/openshift/hypershift/support/releaseinfo"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -204,15 +203,15 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 
 	// Define test cases
 	testCases := []struct {
-		name               string
-		capChecker         capabilities.CapabiltyChecker
-		registryOverrides  map[string]string
-		idms               *configv1.ImageDigestMirrorSetList
-		icsp               *operatorv1alpha1.ImageContentSourcePolicyList
-		expectedRelease    *releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator
-		expectedMetadata   *imageregistry.RegistryClientImageMetadataProvider
-		expectedError      error
-		expectedErrorMatch string
+		name                    string
+		capChecker              capabilities.CapabiltyChecker
+		registryOverrides       map[string]string
+		idms                    *configv1.ImageDigestMirrorSetList
+		icsp                    *operatorv1alpha1.ImageContentSourcePolicyList
+		expectedOverrides       map[string][]string
+		expectedRegistryOverrides map[string]string
+		expectedError           error
+		expectedErrorMatch      string
 	}{
 		{
 			name: "Test with ICSP and IDMS capabilities",
@@ -227,55 +226,27 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 			},
 			idms: createFakeIDMS(),
 			icsp: createFakeICSP(),
-			expectedRelease: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-				Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-					Delegate: &releaseinfo.CachedProvider{
-						Inner: &releaseinfo.RegistryClientProvider{},
-						Cache: map[string]*releaseinfo.ReleaseImage{},
-					},
-					RegistryOverrides: map[string]string{
-						"registry1": "override1",
-						"registry2": "override2",
-					},
+			expectedOverrides: map[string][]string{
+				"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
+				"registry2": {"mirror1", "mirror2"},
+				"registry1.sample.com/samplens/sampleimage@sha256:123456": {
+					"mirror1.sample.com/samplens/sampleimage@sha256:123456",
+					"mirror1.sample.com/samplens/sampleimage@sha256:123456",
 				},
-				OpenShiftImageRegistryOverrides: map[string][]string{
-					"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
-					"registry2": {"mirror1", "mirror2"},
-					"registry1.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror1.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror1.sample.com/samplens/sampleimage@sha256:123456",
-					},
-					"registry2.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror2.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror2.sample.com/samplens/sampleimage@sha256:123456",
-					},
-					"registry3.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
-					},
+				"registry2.sample.com/samplens/sampleimage@sha256:123456": {
+					"mirror2.sample.com/samplens/sampleimage@sha256:123456",
+					"mirror2.sample.com/samplens/sampleimage@sha256:123456",
+				},
+				"registry3.sample.com/samplens/sampleimage@sha256:123456": {
+					"mirror3.sample.com/samplens/sampleimage@sha256:123456",
+					"mirror3.sample.com/samplens/sampleimage@sha256:123456",
+					"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
+					"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
 				},
 			},
-			expectedMetadata: &imageregistry.RegistryClientImageMetadataProvider{
-				OpenShiftImageRegistryOverrides: map[string][]string{
-					"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
-					"registry2": {"mirror1", "mirror2"},
-					"registry1.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror1.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror1.sample.com/samplens/sampleimage@sha256:123456",
-					},
-					"registry2.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror2.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror2.sample.com/samplens/sampleimage@sha256:123456",
-					},
-					"registry3.sample.com/samplens/sampleimage@sha256:123456": {
-						"mirror3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirror3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
-						"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
-					},
-				},
+			expectedRegistryOverrides: map[string]string{
+				"registry1": "override1",
+				"registry2": "override2",
 			},
 			expectedError: nil,
 		},
@@ -290,21 +261,10 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 				"registry1": "override1",
 				"registry2": "override2",
 			},
-			expectedRelease: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-				Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-					Delegate: &releaseinfo.CachedProvider{
-						Inner: &releaseinfo.RegistryClientProvider{},
-						Cache: map[string]*releaseinfo.ReleaseImage{},
-					},
-					RegistryOverrides: map[string]string{
-						"registry1": "override1",
-						"registry2": "override2",
-					},
-				},
-				OpenShiftImageRegistryOverrides: nil,
-			},
-			expectedMetadata: &imageregistry.RegistryClientImageMetadataProvider{
-				OpenShiftImageRegistryOverrides: nil,
+			expectedOverrides: nil,
+			expectedRegistryOverrides: map[string]string{
+				"registry1": "override1",
+				"registry2": "override2",
 			},
 			expectedError: nil,
 		},
@@ -342,11 +302,79 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 			}
 
-			// Check release provider
-			g.Expect(provider.GetReleaseProvider()).To(Equal(tc.expectedRelease))
+			// Check release provider overrides via getter
+			releaseProvider := provider.GetReleaseProvider()
+			g.Expect(releaseProvider.GetOpenShiftImageRegistryOverrides()).To(Equal(tc.expectedOverrides))
+			g.Expect(releaseProvider.GetRegistryOverrides()).To(Equal(tc.expectedRegistryOverrides))
 
-			// Check image metadata provider
-			g.Expect(provider.GetMetadataProvider()).To(Equal(tc.expectedMetadata))
+			// Check image metadata provider overrides via getter
+			metadataProvider := provider.GetMetadataProvider()
+			metadataImpl, ok := metadataProvider.(*imageregistry.RegistryClientImageMetadataProvider)
+			g.Expect(ok).To(BeTrue())
+			g.Expect(metadataImpl.GetOpenShiftImageRegistryOverrides()).To(Equal(tc.expectedOverrides))
 		})
+	}
+}
+
+func TestCommonRegistryProviderConcurrentReconcileAndRead(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	capChecker := &capabilities.MockCapabilityChecker{
+		MockHas: func(capability ...capabilities.CapabilityType) bool {
+			return slices.Contains(capability, capabilities.CapabilityIDMS)
+		},
+	}
+
+	idms := createFakeIDMS()
+	idmsObjs := make([]client.Object, len(idms.Items))
+	for i, item := range idms.Items {
+		idmsObjs[i] = &item
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(idmsObjs...).Build()
+
+	provider, err := NewCommonRegistryProvider(t.Context(), capChecker, fakeClient, map[string]string{
+		"registry1": "override1",
+	})
+	g.Expect(err).ToNot(HaveOccurred())
+
+	done := make(chan struct{})
+	reconcileErr := make(chan error, 1)
+
+	// Writer: continuously reconcile mirror data
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			if err := provider.Reconcile(t.Context(), fakeClient); err != nil {
+				reconcileErr <- err
+				return
+			}
+		}
+	}()
+
+	// Readers: concurrently read overrides from both providers
+	for i := 0; i < 4; i++ {
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					overrides := provider.GetReleaseProvider().GetOpenShiftImageRegistryOverrides()
+					_ = overrides
+
+					metadataImpl := provider.GetMetadataProvider().(*imageregistry.RegistryClientImageMetadataProvider)
+					metaOverrides := metadataImpl.GetOpenShiftImageRegistryOverrides()
+					_ = metaOverrides
+				}
+			}
+		}()
+	}
+
+	<-done
+
+	select {
+	case err := <-reconcileErr:
+		t.Fatalf("Reconcile failed: %v", err)
+	default:
 	}
 }
