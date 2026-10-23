@@ -49,16 +49,17 @@ aliases:
     - vismishr
     - rutvik23
   karpenter-approvers:
+    - LucasAndFlores
     - elmiko
     - enxebre
     - jkyros
     - joelsmith
+    - linkvt
     - maxcao13
     - muraee
   karpenter-reviewers:
-    - elmiko
-    - enxebre
-    - jkyros
+    - LucasAndFlores
+    - linkvt
     - joelsmith
     - maxcao13
     - muraee
