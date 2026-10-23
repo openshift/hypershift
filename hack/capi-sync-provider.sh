@@ -157,7 +157,7 @@ while read -r pkg; do
         [[ -n "$prefix" ]] || continue
         allow_args+=(--allow "$prefix")
     done < <(allow_prefixes "$PROVIDER:$sub")
-    copy_types "$SRC/$sub" "$DST_DIR/$sub" "${allow_args[@]}"
+    copy_types "$SRC/$sub" "$DST_DIR/$sub" ${allow_args[@]+"${allow_args[@]}"}
 done < <(provider_packages)
 
 while read -r glob; do
