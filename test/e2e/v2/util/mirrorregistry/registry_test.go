@@ -279,7 +279,7 @@ func TestConfigure(t *testing.T) {
 					return client.Get(ctx, key, obj, opts...)
 				},
 			}).Build()
-			r := &Registry{client: client, opts: opts}
+			r := &Registry{client: client, opts: opts, pollInterval: time.Millisecond}
 			serving := KeyPair{CertPEM: []byte("new-serving-certificate")}
 			timeout := 30 * time.Second
 			if tt.persistent {
@@ -328,7 +328,7 @@ func TestConfigure(t *testing.T) {
 		// Skip the reconciliation read; fail the first rollout read and cancel
 		// after the next successful read of this not-yet-ready Deployment.
 		client, readErr := registryRecoveredReadClient(t, deployment, 1, cancel)
-		r := &Registry{client: client, opts: opts}
+		r := &Registry{client: client, opts: opts, pollInterval: time.Millisecond}
 		err := r.configure(ctx, false, KeyPair{CertPEM: []byte("new-serving-certificate")})
 		assertRegistryRecoveredReadError(t, err, readErr)
 	})
@@ -369,7 +369,7 @@ func TestWaitGone(t *testing.T) {
 					return client.Get(ctx, key, obj, opts...)
 				},
 			}).Build()
-			r := &Registry{client: client, opts: opts}
+			r := &Registry{client: client, opts: opts, pollInterval: time.Millisecond}
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 			cap := 20 * time.Second
@@ -396,7 +396,7 @@ func TestWaitGone(t *testing.T) {
 		defer cancel()
 		namespace := buildNamespace(opts)
 		client, readErr := registryRecoveredReadClient(t, namespace, 0, cancel)
-		r := &Registry{client: client, opts: opts}
+		r := &Registry{client: client, opts: opts, pollInterval: time.Millisecond}
 		err := r.waitGone(ctx, namespace, 20*time.Second, "test namespace deletion")
 		assertRegistryRecoveredReadError(t, err, readErr)
 	})
@@ -433,7 +433,7 @@ func TestWaitAdmitted(t *testing.T) {
 			if !tt.missing {
 				builder = builder.WithObjects(route)
 			}
-			r := &Registry{client: builder.Build(), opts: opts}
+			r := &Registry{client: builder.Build(), opts: opts, pollInterval: time.Millisecond}
 			timeout := 30 * time.Second
 			if tt.persistent {
 				timeout = time.Second
@@ -463,7 +463,7 @@ func TestWaitAdmitted(t *testing.T) {
 		defer cancel()
 		route := buildRoute(opts, registryTestHost)
 		client, readErr := registryRecoveredReadClient(t, route, 0, cancel)
-		r := &Registry{client: client, opts: opts}
+		r := &Registry{client: client, opts: opts, pollInterval: time.Millisecond}
 		err := r.waitAdmitted(ctx, route)
 		assertRegistryRecoveredReadError(t, err, readErr)
 	})
@@ -570,7 +570,7 @@ func TestDeExpose(t *testing.T) {
 				builder = builder.WithObjects(route)
 			}
 			client := builder.Build()
-			r := &Registry{client: client, opts: opts}
+			r := &Registry{client: client, opts: opts, pollInterval: time.Millisecond}
 			calls := 0
 			httpClient := &http.Client{Transport: registryRoundTripper(func(req *http.Request) (*http.Response, error) {
 				calls++
@@ -622,7 +622,7 @@ func TestDeExpose(t *testing.T) {
 		host := strings.Replace(strings.TrimPrefix(server.URL, "https://"), "127.0.0.1", "localhost", 1)
 		route := buildRoute(opts, host)
 		client := fake.NewClientBuilder().WithScheme(registryTestScheme(t)).WithObjects(route, buildCASecret(opts, storedCA)).Build()
-		r := &Registry{client: client, opts: opts}
+		r := &Registry{client: client, opts: opts, pollInterval: time.Millisecond}
 		resolved, stored, err := r.resolveCA(t.Context())
 		if err != nil {
 			t.Fatal(err)

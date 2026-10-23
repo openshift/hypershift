@@ -32,15 +32,16 @@ const (
 )
 
 type jobCopier struct {
-	client crclient.Client
-	image  string
-	name   string
+	client       crclient.Client
+	image        string
+	name         string
+	pollInterval time.Duration
 }
 
 var _ ImageCopier = (*jobCopier)(nil)
 
 func newJobCopier(client crclient.Client, image, name string) *jobCopier {
-	return &jobCopier{client: client, image: image, name: name}
+	return &jobCopier{client: client, image: image, name: name, pollInterval: copyPollInterval}
 }
 
 func jobDeadlineSeconds(ctx context.Context, now time.Time) int64 {
@@ -204,7 +205,7 @@ func (c *jobCopier) Copy(ctx context.Context, req CopyRequest) (*CopyResult, err
 	if err := c.deleteCopyResources(ctx, req.Namespace, name); err != nil {
 		return nil, err
 	}
-	if err := wait.PollUntilContextCancel(ctx, copyPollInterval, true, func(ctx context.Context) (bool, error) {
+	if err := wait.PollUntilContextCancel(ctx, c.pollInterval, true, func(ctx context.Context) (bool, error) {
 		err := c.client.Get(ctx, crclient.ObjectKey{Namespace: req.Namespace, Name: name}, &batchv1.Job{})
 		return apierrors.IsNotFound(err), copyReadError(ctx, crclient.IgnoreNotFound(err))
 	}); err != nil {
@@ -259,7 +260,7 @@ func copyReadError(ctx context.Context, err error) error {
 // callers should supply a context deadline to bound that case as well.
 func (c *jobCopier) waitForResult(ctx context.Context, namespace, name string) (*CopyResult, error) {
 	var result CopyResult
-	err := wait.PollUntilContextCancel(ctx, copyPollInterval, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextCancel(ctx, c.pollInterval, true, func(ctx context.Context) (bool, error) {
 		// With immediate=true, PollUntilContextCancel invokes the condition
 		// even for an already-canceled context. Do not process or clean up a
 		// completed Job in that case (fake clients may ignore cancellation).

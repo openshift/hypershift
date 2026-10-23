@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -271,6 +272,9 @@ func TestNew(t *testing.T) {
 			}
 			if got == nil || got.client != client || got.opts.Namespace != DefaultNamespace || got.opts.Name != DefaultName || got.opts.Image != DefaultRegistryImage || !got.opts.Storage.Size.Equal(resource.MustParse(DefaultStorageSize)) || got.opts.CopierImage != tt.options.CopierImage {
 				t.Fatalf("New() registry = %#v, want client %p and defaulted options", got, client)
+			}
+			if got.pollInterval != 5*time.Second {
+				t.Fatalf("New() poll interval = %v, want 5s", got.pollInterval)
 			}
 			if tt.options.Copier != nil {
 				if got.opts.Copier != tt.options.Copier {

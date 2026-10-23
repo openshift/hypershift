@@ -48,11 +48,14 @@ cat /tmp/copy-result.json > /dev/termination-log
 )
 
 func TestNewJobCopier(t *testing.T) {
-	t.Run("When given a client image and name, it should retain them", func(t *testing.T) {
+	t.Run("When given a client image and name, it should retain them and default the poll interval", func(t *testing.T) {
 		client := fake.NewClientBuilder().Build()
 		copier := newJobCopier(client, "registry.ci.openshift.org/ocp/4.20:cli", "release-mirror")
 		if copier.client != client || copier.image != "registry.ci.openshift.org/ocp/4.20:cli" || copier.name != "release-mirror" {
 			t.Fatalf("unexpected copier: %+v", copier)
+		}
+		if copier.pollInterval != 5*time.Second {
+			t.Fatalf("copier poll interval = %v, want 5s", copier.pollInterval)
 		}
 	})
 }
@@ -451,6 +454,7 @@ func TestJobCopierWaitForResult(t *testing.T) {
 				},
 			}).Build()
 			copier := newJobCopier(client, "registry.ci.openshift.org/ocp/4.20:cli", DefaultName)
+			copier.pollInterval = time.Millisecond
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			if tc.cancel {
@@ -553,7 +557,9 @@ func TestJobCopierCopy(t *testing.T) {
 					return client.Create(ctx, object, opts...)
 				},
 			}).Build()
-			_, err = newJobCopier(client, "registry.ci.openshift.org/ocp/4.20:cli", DefaultName).Copy(t.Context(), req)
+			copier := newJobCopier(client, "registry.ci.openshift.org/ocp/4.20:cli", DefaultName)
+			copier.pollInterval = time.Millisecond
+			_, err = copier.Copy(t.Context(), req)
 			if tc.noCA {
 				if err == nil || !strings.Contains(err.Error(), "CA bundle is required") || created {
 					t.Fatalf("expected CA validation before creation: %v", err)

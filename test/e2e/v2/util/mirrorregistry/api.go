@@ -2,6 +2,7 @@ package mirrorregistry
 
 import (
 	"context"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
@@ -216,8 +217,9 @@ type ImageCopier interface {
 
 // Registry is a mirror registry fixture bound to a management cluster.
 type Registry struct {
-	client crclient.Client
-	opts   Options
+	client       crclient.Client
+	opts         Options
+	pollInterval time.Duration
 }
 
 // New returns a Registry for the management cluster reachable through
@@ -231,7 +233,7 @@ func New(client crclient.Client, opts Options) (*Registry, error) {
 	if opts.Copier == nil {
 		opts.Copier = newJobCopier(client, opts.CopierImage, opts.Name)
 	}
-	return &Registry{client: client, opts: opts}, nil
+	return &Registry{client: client, opts: opts, pollInterval: registryPollInterval}, nil
 }
 
 // Setup deploys the registry, mirrors the content in req, switches the

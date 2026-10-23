@@ -115,7 +115,7 @@ func (r *Registry) setup(ctx context.Context, req MirrorRequest) (*Result, error
 	if err := r.waitAdmitted(ctx, route); err != nil {
 		return nil, err
 	}
-	if err := waitEndpoint(ctx, httpClient, host, true); err != nil {
+	if err := waitEndpoint(ctx, httpClient, host, true, r.pollInterval); err != nil {
 		return nil, err
 	}
 	result, err := buildResult(r.opts, host, ca.CertPEM, req, copyRes)
@@ -178,7 +178,7 @@ func (r *Registry) deExpose(ctx context.Context, httpClient *http.Client, host s
 	if err := r.waitGone(ctx, route, 2*time.Minute, "de-expose Route"); err != nil {
 		return err
 	}
-	return waitEndpoint(ctx, httpClient, host, false)
+	return waitEndpoint(ctx, httpClient, host, false, r.pollInterval)
 }
 
 func (r *Registry) reconcile(ctx context.Context, desired crclient.Object) error {
@@ -244,7 +244,7 @@ func (r *Registry) configure(ctx context.Context, readOnly bool, serving KeyPair
 		return fmt.Errorf("configure registry readOnly=%t: %w", readOnly, err)
 	}
 	var lastErr error
-	err := wait.PollUntilContextTimeout(ctx, registryPollInterval, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, r.pollInterval, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
@@ -268,7 +268,7 @@ func (r *Registry) configure(ctx context.Context, readOnly bool, serving KeyPair
 func (r *Registry) waitGone(ctx context.Context, obj crclient.Object, cap time.Duration, step string) error {
 	key := crclient.ObjectKeyFromObject(obj)
 	var lastErr error
-	err := wait.PollUntilContextTimeout(ctx, registryPollInterval, cap, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, r.pollInterval, cap, true, func(ctx context.Context) (bool, error) {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
@@ -287,7 +287,7 @@ func (r *Registry) waitGone(ctx context.Context, obj crclient.Object, cap time.D
 
 func (r *Registry) waitAdmitted(ctx context.Context, route *routev1.Route) error {
 	var lastErr error
-	err := wait.PollUntilContextTimeout(ctx, registryPollInterval, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, r.pollInterval, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
@@ -314,14 +314,14 @@ func (r *Registry) waitAdmitted(ctx context.Context, route *routev1.Route) error
 	return nil
 }
 
-func waitEndpoint(ctx context.Context, client *http.Client, host string, exposed bool) error {
+func waitEndpoint(ctx context.Context, client *http.Client, host string, exposed bool, pollInterval time.Duration) error {
 	cap, step := 2*time.Minute, "wait for routing withdrawal"
 	if exposed {
 		cap, step = 5*time.Minute, "verify registry endpoint"
 	}
 	url := "https://" + host + "/v2/"
 	var lastErr error
-	err := wait.PollUntilContextTimeout(ctx, registryPollInterval, cap, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, pollInterval, cap, true, func(ctx context.Context) (bool, error) {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
