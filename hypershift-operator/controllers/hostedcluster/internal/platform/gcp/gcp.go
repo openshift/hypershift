@@ -547,6 +547,29 @@ func ComputeGCPCredentialConditions(hc *hyperv1.HostedCluster, hcp *hyperv1.Host
 	return changed
 }
 
+// ComputeGCPResourceTagsSupportCondition reports whether the selected control
+// plane operator image can propagate configured resource tags to the guest cluster.
+func ComputeGCPResourceTagsSupportCondition(hc *hyperv1.HostedCluster, supported bool) bool {
+	if hc.Spec.Platform.GCP == nil || len(hc.Spec.Platform.GCP.ResourceTags) == 0 {
+		return meta.RemoveStatusCondition(&hc.Status.Conditions, string(hyperv1.GCPResourceTagsSupported))
+	}
+
+	condition := metav1.Condition{
+		Type:               string(hyperv1.GCPResourceTagsSupported),
+		ObservedGeneration: hc.Generation,
+	}
+	if supported {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.AsExpectedReason
+		condition.Message = "The control plane operator image supports GCP resource tag propagation"
+	} else {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = "UnsupportedControlPlaneOperatorImage"
+		condition.Message = "The selected control plane operator image does not support GCP resource tag propagation"
+	}
+	return meta.SetStatusCondition(&hc.Status.Conditions, condition)
+}
+
 // validateWorkloadIdentityConfiguration validates the Workload Identity Federation configuration.
 // This ensures all required fields are present and properly formatted.
 func validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedCluster) error {

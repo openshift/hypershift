@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
-func TestReconcileGCPCredentialConditions(t *testing.T) {
+func TestReconcileGCPConditions(t *testing.T) {
 	for _, tc := range []struct {
 		name                               string
 		hcVersion, hcpVersion              string
@@ -266,4 +266,100 @@ func TestReconcileGCPCredentialConditions(t *testing.T) {
 		g.Expect(err).To(MatchError(ContainSubstring("failed to update GCP credential status")))
 		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 	})
+}
+
+func TestReconcileGCPResourceTagsSupportCondition(t *testing.T) {
+	g := NewWithT(t)
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "gcp", Namespace: "clusters", Generation: 3},
+		Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+			Type: hyperv1.GCPPlatform,
+			GCP:  &hyperv1.GCPPlatformSpec{ResourceTags: []hyperv1.GCPResourceTag{{Key: "environment", Value: "production"}}},
+		}},
+	}
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).WithObjects(hc).Build()
+	r := &HostedClusterReconciler{Client: c}
+
+	g.Expect(r.reconcileGCPResourceTagsSupportCondition(t.Context(), hc, false)).To(Succeed())
+	persisted := &hyperv1.HostedCluster{}
+	g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), persisted)).To(Succeed())
+	condition := meta.FindStatusCondition(persisted.Status.Conditions, string(hyperv1.GCPResourceTagsSupported))
+	g.Expect(condition).NotTo(BeNil())
+	g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+	g.Expect(condition.Reason).To(Equal("UnsupportedControlPlaneOperatorImage"))
+}
+
+func TestValidateGCPResourceTagsSupport(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		resourceTags      []hyperv1.GCPResourceTag
+		labelsResolved    bool
+		imageLabels       map[string]string
+		expectedError     string
+		expectedStatus    metav1.ConditionStatus
+		expectedReason    string
+		expectNoCondition bool
+	}{
+		{
+			name:              "When resource tags are omitted it should not require CPO support",
+			labelsResolved:    true,
+			imageLabels:       map[string]string{},
+			expectNoCondition: true,
+		},
+		{
+			name:           "When the CPO image supports resource tags it should succeed",
+			resourceTags:   []hyperv1.GCPResourceTag{{Key: "environment", Value: "production"}},
+			labelsResolved: true,
+			imageLabels: map[string]string{
+				controlPlaneOperatorSupportsGCPResourceTagsLabel: "true",
+			},
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:           "When the CPO image does not support resource tags it should block provisioning",
+			resourceTags:   []hyperv1.GCPResourceTag{{Key: "environment", Value: "production"}},
+			labelsResolved: true,
+			imageLabels:    map[string]string{},
+			expectedError:  "requires a control plane operator image",
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: "UnsupportedControlPlaneOperatorImage",
+		},
+		{
+			name:              "When CPO image labels cannot be resolved it should continue without changing the condition",
+			resourceTags:      []hyperv1.GCPResourceTag{{Key: "environment", Value: "production"}},
+			expectNoCondition: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "gcp", Namespace: "clusters", Generation: 3},
+				Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.GCPPlatform,
+					GCP:  &hyperv1.GCPPlatformSpec{ResourceTags: tc.resourceTags},
+				}},
+			}
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).WithObjects(hc).Build()
+			r := &HostedClusterReconciler{Client: c}
+
+			err := r.validateGCPResourceTagsSupport(t.Context(), hc, tc.labelsResolved, tc.imageLabels)
+			if tc.expectedError == "" {
+				g.Expect(err).NotTo(HaveOccurred())
+			} else {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedError)))
+			}
+
+			persisted := &hyperv1.HostedCluster{}
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hc), persisted)).To(Succeed())
+			condition := meta.FindStatusCondition(persisted.Status.Conditions, string(hyperv1.GCPResourceTagsSupported))
+			if tc.expectNoCondition {
+				g.Expect(condition).To(BeNil())
+				return
+			}
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(tc.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+		})
+	}
 }
