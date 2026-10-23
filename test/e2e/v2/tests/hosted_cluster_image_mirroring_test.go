@@ -52,7 +52,7 @@ func RegisterHostedClusterImageMirroringTests(getTestCtx internal.TestContextGet
 		hostedClient, err := tc.GetHostedClusterClientViaPortForward(hc)
 		Expect(err).NotTo(HaveOccurred(), "open hosted client for HC %s/%s", hc.Namespace, hc.Name)
 		DeferCleanup(hostedClient.Close)
-		Eventually(func(ctx context.Context, g Gomega) {
+		Eventually(func(g Gomega, ctx context.Context) {
 			objects, err := imageMirroringGetIDMS(ctx, hostedClient)
 			g.Expect(err).NotTo(HaveOccurred(), "get hosted ImageDigestMirrorSet/cluster")
 			done, reason, err := imageMirroringCheckIDMS(objects, expected)
@@ -69,7 +69,7 @@ func RegisterHostedClusterImageMirroringTests(getTestCtx internal.TestContextGet
 		hc, expected := imageMirroringSetupOrSkip(tc)
 		Expect(tc.ControlPlaneNamespace).NotTo(BeEmpty(), "HC %s/%s must have a control plane namespace", hc.Namespace, hc.Name)
 
-		Eventually(func(ctx context.Context, g Gomega) {
+		Eventually(func(g Gomega, ctx context.Context) {
 			objects, err := imageMirroringGetConfigMap(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 			g.Expect(err).NotTo(HaveOccurred(), "get ConfigMap %s/%s", tc.ControlPlaneNamespace, imageMirroringIgnitionName)
 			done, reason, err := imageMirroringCheckConfigMap(objects, tc.ControlPlaneNamespace, expected)
