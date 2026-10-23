@@ -2,7 +2,6 @@ package karpenterignition
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,9 +23,12 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 
@@ -45,7 +47,7 @@ import (
 )
 
 const (
-	openshiftEC2NodeClassAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodeClassCurrentConfigVersion"
+	nodeClassAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodeClassCurrentConfigVersion"
 
 	// nodePoolAnnotationCurrentConfigVersion mirrors the annotation from nodepool_controller.go
 	// It's used to track the current config version for outdated token cleanup
@@ -57,6 +59,7 @@ const (
 type KarpenterIgnitionReconciler struct {
 	ManagementClient        client.Client
 	GuestClient             client.Client
+	NodeClassGVK            schema.GroupVersionKind
 	ReleaseProvider         releaseinfo.Provider
 	VersionResolver         releaseinfo.VersionResolver
 	ImageMetadataProvider   imageregistry.ImageMetadataProvider
@@ -73,11 +76,11 @@ func (r *KarpenterIgnitionReconciler) SetupWithManager(mgr ctrl.Manager, managem
 
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		Named("karpenter-ignition-controller").
-		// Watch OpenshiftEC2NodeClass in the guest cluster (main manager)
-		For(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+		// Watch the configured NodeClass in the guest cluster (main manager)
+		For(newNodeClass(r.NodeClassGVK).object).
 		// Watch HostedControlPlane in the management cluster
 		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &hyperv1.HostedControlPlane{},
-			handler.EnqueueRequestsFromMapFunc(r.mapToOpenshiftEC2NodeClasses),
+			handler.EnqueueRequestsFromMapFunc(r.mapToNodeClasses),
 			r.hcpPredicate())).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
@@ -89,7 +92,7 @@ func (r *KarpenterIgnitionReconciler) SetupWithManager(mgr ctrl.Manager, managem
 
 func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling Karpenter ignition config for OpenshiftEC2NodeClass", "nodeclass", req.Name)
+	log.Info("Reconciling Karpenter ignition config for NodeClass", "nodeclass", req.Name)
 
 	hcp, err := karpenterutil.GetHCP(ctx, r.ManagementClient, r.Namespace)
 	if err != nil {
@@ -107,18 +110,31 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, nil
 	}
 
-	openshiftEC2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-	if err := r.GuestClient.Get(ctx, req.NamespacedName, openshiftEC2NodeClass); err != nil {
+	nodeClass := newNodeClass(r.NodeClassGVK)
+	if err := r.GuestClient.Get(ctx, req.NamespacedName, nodeClass.object); err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("OpenshiftEC2NodeClass not found, aborting reconcile")
+			log.Info("NodeClass not found, aborting reconcile")
 			return ctrl.Result{}, nil
 		}
-		return ctrl.Result{}, fmt.Errorf("failed to get OpenshiftEC2NodeClass: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to get NodeClass: %w", err)
 	}
 
 	// Handle deletion: clean up management-cluster ConfigMap before finalizer is removed
-	if !openshiftEC2NodeClass.DeletionTimestamp.IsZero() {
-		return r.reconcileDeletedNodeClass(ctx, hcp, openshiftEC2NodeClass)
+	if !nodeClass.object.GetDeletionTimestamp().IsZero() {
+		return r.reconcileDeletedNodeClass(ctx, hcp, nodeClass.object)
+	}
+
+	specVersion, err := nodeClass.specVersion()
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	statusVersion, err := nodeClass.statusVersion()
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	kubeletConfig, err := nodeClass.kubeletConfig()
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
 	if err := r.reconcileTaintConfigMap(ctx, hcp); err != nil {
@@ -131,31 +147,31 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	releaseImage, version, requeue := currentClusterRelease(hostedCluster)
-	if requeue && openshiftEC2NodeClass.Spec.Version == "" {
+	if requeue && specVersion == "" {
 		log.Info("No version history available for unpinned NodeClass, requeueing")
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	// When the user requests a version for the OpenshiftEC2NodeClass we perform further validation and lookup of the release image.
+	// When the user requests a version for the NodeClass we perform further validation and lookup of the release image.
 	// We only detect skew and if the version is valid in this case, as under normal circumstances we can assume the release image
 	// and version on the HostedCluster and HostedControlPlane have already been validated.
 	var skewErr error
-	if openshiftEC2NodeClass.Spec.Version != "" {
-		version = openshiftEC2NodeClass.Spec.Version
+	if specVersion != "" {
+		version = specVersion
 
-		if err := validateVersion(hostedCluster, version, openshiftEC2NodeClass.Status.Version); err != nil {
-			if updateErr := r.updateVersionStatus(ctx, openshiftEC2NodeClass, "", version, err); updateErr != nil {
+		if err := validateVersion(hostedCluster, version, statusVersion); err != nil {
+			if updateErr := r.updateVersionStatus(ctx, nodeClass, "", version, err, nil); updateErr != nil {
 				log.Error(updateErr, "failed to update version status after validation error")
 			}
-			return ctrl.Result{}, fmt.Errorf("failed to validate version for OpenshiftEC2NodeClass %q: %w", openshiftEC2NodeClass.Name, err)
+			return ctrl.Result{}, fmt.Errorf("failed to validate version for NodeClass %q: %w", nodeClass.object.GetName(), err)
 		}
 
 		releaseImage, err = r.resolveReleaseImage(ctx, hcp, version)
 		if err != nil {
-			if updateErr := r.updateVersionStatus(ctx, openshiftEC2NodeClass, "", version, err); updateErr != nil {
+			if updateErr := r.updateVersionStatus(ctx, nodeClass, "", version, err, nil); updateErr != nil {
 				log.Error(updateErr, "failed to update version status after resolve error")
 			}
-			return ctrl.Result{}, fmt.Errorf("failed to resolve version for OpenshiftEC2NodeClass %q: %w", openshiftEC2NodeClass.Name, err)
+			return ctrl.Result{}, fmt.Errorf("failed to resolve version for NodeClass %q: %w", nodeClass.object.GetName(), err)
 		}
 		log.Info("Resolved version to release image", "version", version, "channel", hcp.Spec.Channel, "releaseImage", releaseImage)
 
@@ -166,77 +182,68 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// If spec.kubelet is configured, add a finalizer to clean up the configmap. We can't just use owner
 	// references because this is cross cluster (the configmap lives in the control plane)
-	if !openshiftEC2NodeClass.Spec.Kubelet.IsZero() {
-
-		if !controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer) {
-			original := openshiftEC2NodeClass.DeepCopy()
-			controllerutil.AddFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
-			if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass,
+	if !kubeletConfig.IsZero() {
+		if !controllerutil.ContainsFinalizer(nodeClass.object, kubeletConfigFinalizer) {
+			original := nodeClass.object.DeepCopy()
+			controllerutil.AddFinalizer(nodeClass.object, kubeletConfigFinalizer)
+			if err := r.GuestClient.Patch(ctx, nodeClass.object,
 				client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to add kubelet config finalizer: %w", err)
 			}
 		}
 	}
 
-	if err := r.reconcileKubeletConfigMap(ctx, hcp, openshiftEC2NodeClass); err != nil {
+	if err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass.object, kubeletConfig); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile kubelet config configmap: %w", err)
 	}
 
 	// The reconcile will have deleted the configmap if we make it here, so we can
 	// remove the finalizer
-	if openshiftEC2NodeClass.Spec.Kubelet.IsZero() && controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer) {
-		original := openshiftEC2NodeClass.DeepCopy()
-		controllerutil.RemoveFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
-		if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass,
+	if kubeletConfig.IsZero() && controllerutil.ContainsFinalizer(nodeClass.object, kubeletConfigFinalizer) {
+		original := nodeClass.object.DeepCopy()
+		controllerutil.RemoveFinalizer(nodeClass.object, kubeletConfigFinalizer)
+		if err := r.GuestClient.Patch(ctx, nodeClass.object,
 			client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to remove kubelet config finalizer: %w", err)
 		}
 	}
 
-	if err := r.reconcileNodeClassToken(ctx, hcp, hostedCluster, openshiftEC2NodeClass, releaseImage); err != nil {
-		log.Error(err, "failed to reconcile token for OpenshiftEC2NodeClass", "name", openshiftEC2NodeClass.Name)
+	if err := r.reconcileNodeClassToken(ctx, hcp, hostedCluster, nodeClass.object, releaseImage, !kubeletConfig.IsZero()); err != nil {
+		log.Error(err, "failed to reconcile token for NodeClass", "name", nodeClass.object.GetName())
 		// Still update version status so conditions are set even when token reconciliation fails.
 		// Re-fetch the object to get the latest resourceVersion since reconcileNodeClassToken may have patched it.
-		if getErr := r.GuestClient.Get(ctx, client.ObjectKeyFromObject(openshiftEC2NodeClass), openshiftEC2NodeClass); getErr != nil {
-			log.Error(getErr, "failed to re-fetch OpenshiftEC2NodeClass after token reconciliation error")
-		} else {
-			// Re-set the skew condition on the re-fetched object since it may have been lost
-			// due to concurrent status patches from the ec2nodeclass controller.
-			setVersionSkewCondition(openshiftEC2NodeClass, skewErr)
-			if updateErr := r.updateVersionStatus(ctx, openshiftEC2NodeClass, releaseImage, version, nil); updateErr != nil {
-				log.Error(updateErr, "failed to update version status after token reconciliation error")
-			}
+		latestNodeClass := newNodeClass(r.NodeClassGVK)
+		if getErr := r.GuestClient.Get(ctx, client.ObjectKeyFromObject(nodeClass.object), latestNodeClass.object); getErr != nil {
+			log.Error(getErr, "failed to re-fetch NodeClass after token reconciliation error")
+		} else if updateErr := r.updateVersionStatus(ctx, latestNodeClass, releaseImage, version, nil, &skewErr); updateErr != nil {
+			log.Error(updateErr, "failed to update version status after token reconciliation error")
 		}
 		return ctrl.Result{}, err
 	}
 
-	// Set the skew condition right before the final status patch. This must happen here (not earlier)
-	// because reconcileNodeClassToken may update the in-memory object's status via metadata patch
-	// responses, overwriting any previously set in-memory conditions.
-	setVersionSkewCondition(openshiftEC2NodeClass, skewErr)
-	if err := r.updateVersionStatus(ctx, openshiftEC2NodeClass, releaseImage, version, nil); err != nil {
+	if err := r.updateVersionStatus(ctx, nodeClass, releaseImage, version, nil, &skewErr); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update version status: %w", err)
 	}
 
 	return ctrl.Result{}, nil
 }
 
-// reconcileDeletedNodeClass handles cleanup when an OpenshiftEC2NodeClass is being deleted.
+// reconcileDeletedNodeClass handles cleanup when a NodeClass is being deleted.
 // It deletes the kubelet ConfigMap from the management cluster and removes the finalizer
 // to allow the NodeClass deletion to proceed.
 func (r *KarpenterIgnitionReconciler) reconcileDeletedNodeClass(
 	ctx context.Context,
 	hcp *hyperv1.HostedControlPlane,
-	openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass,
+	nodeClass client.Object,
 ) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	if !controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer) {
+	if !controllerutil.ContainsFinalizer(nodeClass, kubeletConfigFinalizer) {
 		return ctrl.Result{}, nil
 	}
 
 	// Delete the kubelet ConfigMap from the management cluster
-	configMapName := karpenterutil.KarpenterNodeClassKubeletConfigName(openshiftEC2NodeClass.Name)
+	configMapName := karpenterutil.KarpenterNodeClassKubeletConfigName(nodeClass.GetName())
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configMapName,
@@ -249,13 +256,13 @@ func (r *KarpenterIgnitionReconciler) reconcileDeletedNodeClass(
 	log.Info("Deleted kubelet config ConfigMap", "name", configMapName)
 
 	// Remove the finalizer to allow NodeClass deletion to proceed
-	original := openshiftEC2NodeClass.DeepCopy()
-	controllerutil.RemoveFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
-	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass,
+	original := nodeClass.DeepCopyObject().(client.Object)
+	controllerutil.RemoveFinalizer(nodeClass, kubeletConfigFinalizer)
+	if err := r.GuestClient.Patch(ctx, nodeClass,
 		client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to remove kubelet config finalizer: %w", err)
 	}
-	log.Info("Removed kubelet config finalizer from OpenshiftEC2NodeClass", "name", openshiftEC2NodeClass.Name)
+	log.Info("Removed kubelet config finalizer from NodeClass", "name", nodeClass.GetName())
 
 	return ctrl.Result{}, nil
 }
@@ -280,17 +287,18 @@ func (r *KarpenterIgnitionReconciler) reconcileTaintConfigMap(ctx context.Contex
 	return err
 }
 
-// reconcileNodeClassToken reconciles the ignition token and user-data secrets for an OpenshiftEC2NodeClass.
+// reconcileNodeClassToken reconciles the ignition token and user-data secrets for a NodeClass.
 func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 	ctx context.Context,
 	hcp *hyperv1.HostedControlPlane,
 	hostedCluster *hyperv1.HostedCluster,
-	openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass,
+	nodeClass client.Object,
 	releaseImage string,
+	hasKubeletConfig bool,
 ) error {
-	log := ctrl.LoggerFrom(ctx).WithValues("nodeclass", openshiftEC2NodeClass.Name)
+	log := ctrl.LoggerFrom(ctx).WithValues("nodeclass", nodeClass.GetName())
 
-	np := r.createInMemoryNodePool(hcp, openshiftEC2NodeClass, releaseImage)
+	np := r.createInMemoryNodePool(hcp, nodeClass, releaseImage, hasKubeletConfig)
 
 	cg, err := r.buildConfigGenerator(ctx, hostedCluster, np, hcp.Namespace)
 	if err != nil {
@@ -304,8 +312,8 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 		return fmt.Errorf("failed to create token: %w", err)
 	}
 
-	// Get the current config version from OpenshiftEC2NodeClass to track outdated tokens
-	currentConfigVersion := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationCurrentConfigVersion]
+	// Get the current config version from the NodeClass to track outdated tokens
+	currentConfigVersion := nodeClass.GetAnnotations()[nodeClassAnnotationCurrentConfigVersion]
 	if currentConfigVersion == "" {
 		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = cg.Hash()
 	} else {
@@ -316,9 +324,9 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 		return fmt.Errorf("failed to reconcile token: %w", err)
 	}
 
-	// Update the OpenshiftEC2NodeClass annotation if the config hash changed
+	// Update the NodeClass annotation if the config hash changed
 	if currentConfigVersion != cg.Hash() {
-		if err := r.updateConfigVersionAnnotation(ctx, openshiftEC2NodeClass, cg.Hash()); err != nil {
+		if err := r.updateConfigVersionAnnotation(ctx, nodeClass, cg.Hash()); err != nil {
 			return err
 		}
 		log.Info("Updated config version annotation", "oldVersion", currentConfigVersion, "newVersion", cg.Hash())
@@ -329,17 +337,18 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 
 func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
 	hcp *hyperv1.HostedControlPlane,
-	openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass,
+	nodeClass client.Object,
 	releaseImage string,
+	hasKubeletConfig bool,
 ) *hyperv1.NodePool {
-	// When Spec.Kubelet is set, the per-nodeclass kubelet ConfigMap is generated with
+	// When kubelet configuration is present, the per-nodeclass kubelet ConfigMap is generated with
 	// KarpenterBaseTaintMap merged in (so registerWithTaints is always present), so
 	// set-karpenter-taint must NOT also be included — the MCO bootstrap rejects two
 	// KubeletConfigs targeting the same MachineConfigPool.
 	var configRefs []corev1.LocalObjectReference
-	if !openshiftEC2NodeClass.Spec.Kubelet.IsZero() {
+	if hasKubeletConfig {
 		configRefs = []corev1.LocalObjectReference{
-			{Name: karpenterutil.KarpenterNodeClassKubeletConfigName(openshiftEC2NodeClass.Name)},
+			{Name: karpenterutil.KarpenterNodeClassKubeletConfigName(nodeClass.GetName())},
 		}
 	} else {
 		configRefs = []corev1.LocalObjectReference{
@@ -349,7 +358,7 @@ func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
 
 	return &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        karpenterutil.KarpenterNodePoolName(openshiftEC2NodeClass),
+			Name:        karpenterutil.KarpenterNodePoolName(nodeClass),
 			Namespace:   hcp.Namespace,
 			Annotations: map[string]string{},
 			Labels: map[string]string{
@@ -489,14 +498,15 @@ func detectVersionSkew(hostedCluster *hyperv1.HostedCluster, version string) err
 	return supportedversion.ValidateVersionSkew(&hostedClusterVersion, &nodeClassVersion)
 }
 
-// reconcileKubeletConfigMap creates, updates, or deletes the per-OpenshiftEC2NodeClass KubeletConfig ConfigMap
-// in the HCP namespace based on whether the nodeclass has KubeletConfig set.
+// reconcileKubeletConfigMap creates, updates, or deletes the per-NodeClass KubeletConfig ConfigMap
+// in the HCP namespace based on the extracted kubelet configuration.
 func (r *KarpenterIgnitionReconciler) reconcileKubeletConfigMap(
 	ctx context.Context,
 	hcp *hyperv1.HostedControlPlane,
-	openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass,
+	nodeClass client.Object,
+	kubeletConfig hyperkarpenterv1.KubeletConfiguration,
 ) error {
-	configMapName := karpenterutil.KarpenterNodeClassKubeletConfigName(openshiftEC2NodeClass.Name)
+	configMapName := karpenterutil.KarpenterNodeClassKubeletConfigName(nodeClass.GetName())
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configMapName,
@@ -505,28 +515,20 @@ func (r *KarpenterIgnitionReconciler) reconcileKubeletConfigMap(
 	}
 
 	// Delete the configmap if there are no kubelet settings on the nodeclass
-	if openshiftEC2NodeClass.Spec.Kubelet.IsZero() {
+	if kubeletConfig.IsZero() {
 		if _, err := k8sutil.DeleteIfNeeded(ctx, r.ManagementClient, cm); err != nil {
 			return fmt.Errorf("failed to delete kubelet config configmap %s: %w", configMapName, err)
 		}
 		return nil
 	}
 
-	// Convert user KubeletConfiguration to a plain map (via JSON round-trip to honor json tags
-	// and omitempty)
-	nodeClassKubeletRaw, err := json.Marshal(openshiftEC2NodeClass.Spec.Kubelet)
+	kubeletMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&kubeletConfig)
 	if err != nil {
-		return fmt.Errorf("failed to marshal user kubelet config: %w", err)
-	}
-	var nodeClassKubeletMap map[string]interface{}
-	if err := json.Unmarshal(nodeClassKubeletRaw, &nodeClassKubeletMap); err != nil {
-		return fmt.Errorf("failed to unmarshal user kubelet config: %w", err)
+		return fmt.Errorf("failed to encode kubelet configuration: %w", err)
 	}
 
-	// Merge nodeclass with the taint base, our taints go in last so they always win —
-	// registerWithTaints is not currently user-settable but this ordering ensures our taint
-	// can never be accidentally overridden
-	merged := mergeKubeletConfigMaps(nodeClassKubeletMap, karpenterutil.KarpenterBaseTaintMap())
+	// Merge the required taints last so user configuration cannot override them.
+	merged := mergeKubeletConfigMaps(kubeletMap, karpenterutil.KarpenterBaseTaintMap())
 	manifest, err := kubeletConfigManifest(configMapName, merged)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubelet config manifest: %w", err)
@@ -597,9 +599,9 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 		return nil, fmt.Errorf("failed to lookup release image: %w", err)
 	}
 
-	haProxyImage, ok := releaseImage.ComponentImages()[haproxy.HAProxyRouterImageName]
-	if !ok {
-		return nil, fmt.Errorf("release image doesn't have %s image", haproxy.HAProxyRouterImageName)
+	haProxyImage, err := nodepool.ResolveHAProxyImage(np, hostedCluster, releaseImage, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve HAProxy image: %w", err)
 	}
 
 	haproxyClient := haproxy.HAProxy{
@@ -703,71 +705,104 @@ func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane, ignitionEndpoint stri
 	return hc, nil
 }
 
-func (r *KarpenterIgnitionReconciler) updateConfigVersionAnnotation(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, newVersion string) error {
-	original := openshiftEC2NodeClass.DeepCopy()
-	if openshiftEC2NodeClass.Annotations == nil {
-		openshiftEC2NodeClass.Annotations = make(map[string]string)
+func (r *KarpenterIgnitionReconciler) updateConfigVersionAnnotation(ctx context.Context, nodeClass client.Object, newVersion string) error {
+	original := nodeClass.DeepCopyObject().(client.Object)
+	annotations := nodeClass.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
 	}
-	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = newVersion
-	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
-		return fmt.Errorf("failed to update config version annotation on OpenshiftEC2NodeClass: %w", err)
+	annotations[nodeClassAnnotationCurrentConfigVersion] = newVersion
+	nodeClass.SetAnnotations(annotations)
+	if err := r.GuestClient.Patch(ctx, nodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("failed to update config version annotation on NodeClass: %w", err)
 	}
 	return nil
 }
 
-// updateVersionStatus updates the OpenshiftEC2NodeClass status with the resolved release image,
+// updateVersionStatus updates the NodeClass status with the resolved release image,
 // resolved version, and sets the VersionResolved condition based on whether resolution succeeded.
 // resolvedVersion is the OpenShift version string (e.g. "4.17.0") corresponding to resolvedImage.
-func (r *KarpenterIgnitionReconciler) updateVersionStatus(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, resolvedImage string, resolvedVersion string, resolveErr error) error {
-	original := openshiftEC2NodeClass.DeepCopy()
-	openshiftEC2NodeClass.Status.ReleaseImage = resolvedImage
-	openshiftEC2NodeClass.Status.Version = resolvedVersion
+// When skewErr is provided, SupportedVersionSkew is updated in the same patch.
+func (r *KarpenterIgnitionReconciler) updateVersionStatus(
+	ctx context.Context,
+	nodeClass *nodeClass,
+	resolvedImage string,
+	resolvedVersion string,
+	resolveErr error,
+	skewErr *error,
+) error {
+	original := nodeClass.object.DeepCopy()
+	if skewErr != nil {
+		if err := setVersionSkewCondition(nodeClass, *skewErr); err != nil {
+			return fmt.Errorf("failed to set version skew condition: %w", err)
+		}
+	}
+	skewConditionChanged := !equality.Semantic.DeepEqual(original.Object["status"], nodeClass.object.Object["status"])
+
+	specVersion, err := nodeClass.specVersion()
+	if err != nil {
+		return err
+	}
+	status, err := nodeClass.status()
+	if err != nil {
+		return err
+	}
+
+	releaseImageChanged := status.ReleaseImage != resolvedImage
+	versionChanged := status.Version != resolvedVersion
+	status.ReleaseImage = resolvedImage
+	status.Version = resolvedVersion
 
 	condition := metav1.Condition{
 		Type:               hyperkarpenterv1.ConditionTypeVersionResolved,
-		ObservedGeneration: openshiftEC2NodeClass.Generation,
+		ObservedGeneration: nodeClass.object.GetGeneration(),
 		LastTransitionTime: metav1.Now(),
 	}
 
-	if openshiftEC2NodeClass.Spec.Version == "" {
+	if specVersion == "" {
 		condition.Status = metav1.ConditionTrue
 		condition.Reason = hyperkarpenterv1.ConditionReasonVersionNotSpecified
 		condition.Message = "No version specified, using control plane release image"
 	} else if resolveErr != nil {
 		condition.Status = metav1.ConditionFalse
 		condition.Reason = hyperkarpenterv1.ConditionReasonResolutionFailed
-		condition.Message = fmt.Sprintf("Failed to resolve version %q: %v", openshiftEC2NodeClass.Spec.Version, resolveErr)
+		condition.Message = fmt.Sprintf("Failed to resolve version %q: %v", specVersion, resolveErr)
 	} else {
 		condition.Status = metav1.ConditionTrue
 		condition.Reason = hyperkarpenterv1.ConditionReasonVersionResolved
-		condition.Message = fmt.Sprintf("Version %q resolved to %s", openshiftEC2NodeClass.Spec.Version, resolvedImage)
+		condition.Message = fmt.Sprintf("Version %q resolved to %s", specVersion, resolvedImage)
 	}
 
-	conditionChanged := meta.SetStatusCondition(&openshiftEC2NodeClass.Status.Conditions, condition)
-
-	releaseImageChanged := original.Status.ReleaseImage != resolvedImage
-	versionChanged := original.Status.Version != resolvedVersion
-	if conditionChanged || releaseImageChanged || versionChanged {
-		if err := r.GuestClient.Status().Patch(ctx, openshiftEC2NodeClass, client.MergeFrom(original)); err != nil {
-			return fmt.Errorf("failed to update version status on OpenshiftEC2NodeClass: %w", err)
+	conditionChanged := meta.SetStatusCondition(&status.Conditions, condition)
+	if conditionChanged || releaseImageChanged || versionChanged || skewConditionChanged {
+		if err := nodeClass.setStatus(status); err != nil {
+			return err
+		}
+		if err := r.GuestClient.Status().Patch(ctx, nodeClass.object, client.MergeFrom(original)); err != nil {
+			return fmt.Errorf("failed to update version status on NodeClass: %w", err)
 		}
 	}
-
 	return nil
 }
 
-// setVersionSkewCondition sets the SupportedVersionSkew condition on the in-memory OpenshiftEC2NodeClass
-// without patching. The condition is persisted when updateVersionStatus patches status, ensuring both
-// VersionResolved and SupportedVersionSkew are set atomically in a single status patch.
-// This avoids race conditions with the ec2nodeclass controller which also patches status.
-func setVersionSkewCondition(openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, skewErr error) {
+// setVersionSkewCondition sets SupportedVersionSkew on the in-memory NodeClass without patching.
+func setVersionSkewCondition(nodeClass *nodeClass, skewErr error) error {
+	version, err := nodeClass.specVersion()
+	if err != nil {
+		return err
+	}
+	status, err := nodeClass.status()
+	if err != nil {
+		return err
+	}
+
 	condition := metav1.Condition{
 		Type:               hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
-		ObservedGeneration: openshiftEC2NodeClass.Generation,
+		ObservedGeneration: nodeClass.object.GetGeneration(),
 		LastTransitionTime: metav1.Now(),
 	}
 
-	if openshiftEC2NodeClass.Spec.Version == "" {
+	if version == "" {
 		condition.Status = metav1.ConditionTrue
 		condition.Reason = hyperkarpenterv1.ConditionReasonVersionNotSpecified
 		condition.Message = "No version specified, nodes use the control plane release image"
@@ -778,17 +813,20 @@ func setVersionSkewCondition(openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC
 	} else {
 		condition.Status = metav1.ConditionTrue
 		condition.Reason = hyperkarpenterv1.ConditionReasonAsExpected
-		condition.Message = fmt.Sprintf("Version %q is within supported skew", openshiftEC2NodeClass.Spec.Version)
+		condition.Message = fmt.Sprintf("Version %q is within supported skew", version)
 	}
 
-	meta.SetStatusCondition(&openshiftEC2NodeClass.Status.Conditions, condition)
+	if !meta.SetStatusCondition(&status.Conditions, condition) {
+		return nil
+	}
+	return nodeClass.setStatus(status)
 }
 
-// mapToOpenshiftEC2NodeClasses maps HCP events to all OpenshiftEC2NodeClass reconcile requests.
-func (r *KarpenterIgnitionReconciler) mapToOpenshiftEC2NodeClasses(ctx context.Context, obj client.Object) []reconcile.Request {
-	nodeClassList := &hyperkarpenterv1.OpenshiftEC2NodeClassList{}
+// mapToNodeClasses maps HCP events to all configured NodeClass reconcile requests.
+func (r *KarpenterIgnitionReconciler) mapToNodeClasses(ctx context.Context, obj client.Object) []reconcile.Request {
+	nodeClassList := newNodeClassList(r.NodeClassGVK)
 	if err := r.GuestClient.List(ctx, nodeClassList); err != nil {
-		ctrl.LoggerFrom(ctx).Error(err, "failed to list OpenshiftEC2NodeClasses")
+		ctrl.LoggerFrom(ctx).Error(err, "failed to list NodeClasses")
 		return nil
 	}
 

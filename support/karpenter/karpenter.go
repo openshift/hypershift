@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -95,7 +95,7 @@ var ErrHCPNotFound = errors.New("hostedcontrolplane not found")
 // SupportedArchitectures returns the list of supported architectures for Karpenter on the given platform.
 func SupportedArchitectures(platform hyperv1.PlatformType) ([]string, error) {
 	switch platform {
-	case hyperv1.AWSPlatform:
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform:
 		return []string{hyperv1.ArchitectureAMD64, hyperv1.ArchitectureARM64}, nil
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", platform)
@@ -117,7 +117,7 @@ func IsKarpenterEnabled(autoNode hyperv1.AutoNode) bool {
 
 // GetHCP retrieves the HostedControlPlane from the given namespace.
 // Returns ErrHCPNotFound if no HCP exists in the namespace.
-func GetHCP(ctx context.Context, c client.Client, namespace string) (*hyperv1.HostedControlPlane, error) {
+func GetHCP(ctx context.Context, c client.Reader, namespace string) (*hyperv1.HostedControlPlane, error) {
 	hcpList := &hyperv1.HostedControlPlaneList{}
 	if err := c.List(ctx, hcpList, client.InNamespace(namespace)); err != nil {
 		return nil, err
@@ -128,18 +128,18 @@ func GetHCP(ctx context.Context, c client.Client, namespace string) (*hyperv1.Ho
 	return &hcpList.Items[0], nil
 }
 
-// KarpenterNodePoolName returns the name of the Karpenter NodePool for a given OpenshiftEC2NodeClass
-func KarpenterNodePoolName(oec2nc *hyperkarpenterv1.OpenshiftEC2NodeClass) string {
-	return fmt.Sprintf("%s-%s", oec2nc.Name, "karpenter")
+// KarpenterNodePoolName returns the name of the Karpenter NodePool for a given NodeClass.
+func KarpenterNodePoolName(nodeClass metav1.Object) string {
+	return fmt.Sprintf("%s-karpenter", nodeClass.GetName())
 }
 
-// ArchToAMILabelKey returns a label key to store the AMI ID for the given architecture.
-// The label is set on Karpenter userData secrets in order to eventually propagate to EC2NodeClass.AMISelectorTerms.
-func ArchToAMILabelKey(arch string) string {
+// ArchToImageMetadataKey returns an architecture-specific label or annotation key.
+// amd64 uses the base key; other architectures append their name as a suffix.
+func ArchToImageMetadataKey(arch, baseKey string) string {
 	if arch == hyperv1.ArchitectureAMD64 {
-		return hyperkarpenterv1.UserDataAMILabel
+		return baseKey
 	}
-	return fmt.Sprintf("%s-%s", hyperkarpenterv1.UserDataAMILabel, arch)
+	return fmt.Sprintf("%s-%s", baseKey, arch)
 }
 
 const EnableStandaloneKarpenterOperatorEnvVar = "ENABLE_STANDALONE_KARPENTER_OPERATOR"
