@@ -16,6 +16,8 @@ import (
 	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	"github.com/aws/smithy-go"
 
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	"github.com/go-logr/logr"
 	"go.uber.org/mock/gomock"
 )
@@ -405,7 +407,7 @@ func TestDeleteOwnedV2TargetGroupsContinuesAfterPaginationFailure(t *testing.T) 
 	}, gomock.Any()).Return(&elasticloadbalancingv2.DeleteTargetGroupOutput{}, nil)
 	gomock.InOrder(firstPage, ownedTags, secondPage, deleteTargetGroup)
 
-	arns, errs := deleteOwnedV2TargetGroups(context.Background(), client, LoadBalancerSelector{VPCID: vpcID, InfraID: infraID}, logr.Discard())
+	arns, errs := deleteOwnedV2TargetGroups(context.Background(), client, LoadBalancerSelector{VPCID: vpcID, InfraID: infraID}, loadBalancerCleanupScope{}, logr.Discard())
 	if len(errs) != 1 || !errors.Is(errs[0], pageErr) {
 		t.Fatalf("expected the pagination error to be reported, got %v", errs)
 	}
@@ -532,6 +534,152 @@ func TestCleanupRecordedLoadBalancersKeepsAttachedTargetGroupPendingAcrossRetrie
 	})
 }
 
+func TestDeleteLoadBalancersByNameKeepsAttachedTargetGroupPendingAcrossRetries(t *testing.T) {
+	t.Run("When a deleted load balancer is NotFound but its target group remains attached, it should keep cleanup pending", func(t *testing.T) {
+		client := awsapi.NewMockELBV2API(gomock.NewController(t))
+		const (
+			name            = "cluster-lb"
+			infraID         = "infra-id"
+			vpcID           = "vpc-owned"
+			loadBalancerARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/cluster-lb/6f8d1268d6ab417d"
+			targetGroupARN  = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/cluster/7f8d1268d6ab417d"
+		)
+		loadBalancerReads := 0
+		client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
+			Names: []string{name},
+		}, gomock.Any()).DoAndReturn(func(context.Context, *elasticloadbalancingv2.DescribeLoadBalancersInput, ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeLoadBalancersOutput, error) {
+			loadBalancerReads++
+			if loadBalancerReads == 1 {
+				return &elasticloadbalancingv2.DescribeLoadBalancersOutput{LoadBalancers: []elbv2types.LoadBalancer{{LoadBalancerArn: aws.String(loadBalancerARN), LoadBalancerName: aws.String(name), VpcId: aws.String(vpcID)}}}, nil
+			}
+			return nil, &smithy.GenericAPIError{Code: "LoadBalancerNotFound"}
+		}).Times(4)
+		targetGroups := &elasticloadbalancingv2.DescribeTargetGroupsOutput{TargetGroups: []elbv2types.TargetGroup{{TargetGroupArn: aws.String(targetGroupARN), VpcId: aws.String(vpcID), LoadBalancerArns: []string{loadBalancerARN}}}}
+		client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{LoadBalancerArn: aws.String(loadBalancerARN)}, gomock.Any()).Return(targetGroups, nil)
+		client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{}, gomock.Any()).Return(targetGroups, nil).Times(2)
+		client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{TargetGroupArns: []string{targetGroupARN}}, gomock.Any()).Return(targetGroups, nil)
+		for resourceARN, calls := range map[string]int{loadBalancerARN: 1, targetGroupARN: 4} {
+			client.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancingv2.DescribeTagsInput{ResourceArns: []string{resourceARN}}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
+				TagDescriptions: []elbv2types.TagDescription{{ResourceArn: aws.String(resourceARN), Tags: []elbv2types.Tag{{Key: aws.String(ClusterTag(infraID)), Value: aws.String("owned")}}}},
+			}, nil).Times(calls)
+		}
+		client.EXPECT().DescribeListeners(gomock.Any(), &elasticloadbalancingv2.DescribeListenersInput{LoadBalancerArn: aws.String(loadBalancerARN)}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeListenersOutput{}, nil)
+		client.EXPECT().DeleteLoadBalancer(gomock.Any(), &elasticloadbalancingv2.DeleteLoadBalancerInput{LoadBalancerArn: aws.String(loadBalancerARN)}, gomock.Any()).Return(&elasticloadbalancingv2.DeleteLoadBalancerOutput{}, nil)
+		resourceInUse := &smithy.GenericAPIError{Code: "ResourceInUse"}
+		client.EXPECT().DeleteTargetGroup(gomock.Any(), &elasticloadbalancingv2.DeleteTargetGroupInput{TargetGroupArn: aws.String(targetGroupARN)}, gomock.Any()).Return(nil, resourceInUse)
+
+		for pass := 1; pass <= 2; pass++ {
+			removed, err := DeleteLoadBalancersByName(t.Context(), LoadBalancerClients{ELBV2: client}, LoadBalancerSelector{VPCID: vpcID, InfraID: infraID}, []string{name}, logr.Discard())
+			if removed || !errors.Is(err, errOwnedTargetGroupStillAttached) {
+				t.Fatalf("pass %d: expected pending attachment, got removed=%t err=%v", pass, removed, err)
+			}
+			if errors.Is(err, resourceInUse) != (pass == 1) {
+				t.Fatalf("pass %d: expected ResourceInUse only on the first pass, got %v", pass, err)
+			}
+		}
+	})
+}
+
+func TestMatchesAttachment(t *testing.T) {
+	const (
+		loadBalancerARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/cluster-lb/6f8d1268d6ab417d"
+		targetGroupARN  = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/cluster/7f8d1268d6ab417d"
+	)
+	tests := []struct {
+		name       string
+		attachment string
+		targetARN  string
+		scope      loadBalancerCleanupScope
+		matches    bool
+		wantErr    bool
+	}{
+		{name: "When the exact ARN is recorded, it should match", attachment: loadBalancerARN, scope: loadBalancerCleanupScope{arns: sets.New(loadBalancerARN)}, matches: true},
+		{name: "When no load balancer is selected, it should not match", attachment: loadBalancerARN},
+		{name: "When the selected name is absent, it should recognize its attachment", attachment: loadBalancerARN, scope: loadBalancerCleanupScope{missingNames: sets.New("cluster-lb")}, matches: true},
+		{name: "When an attachment only shares a name prefix, it should not match", attachment: strings.Replace(loadBalancerARN, "/cluster-lb/", "/cluster-lb-other/", 1), scope: loadBalancerCleanupScope{missingNames: sets.New("cluster-lb")}},
+		{name: "When an attachment is in another region, it should not match by name", attachment: strings.Replace(loadBalancerARN, "us-east-1", "us-west-2", 1), scope: loadBalancerCleanupScope{missingNames: sets.New("cluster-lb")}},
+		{name: "When an attachment is in another account, it should not match by name", attachment: strings.Replace(loadBalancerARN, "123456789012", "123456789013", 1), scope: loadBalancerCleanupScope{missingNames: sets.New("cluster-lb")}},
+		{name: "When an attachment is in another partition, it should not match by name", attachment: strings.Replace(loadBalancerARN, "arn:aws:", "arn:aws-cn:", 1), scope: loadBalancerCleanupScope{missingNames: sets.New("cluster-lb")}},
+		{name: "When both resources are in the China partition, it should recognize the selected name", attachment: strings.ReplaceAll(strings.ReplaceAll(loadBalancerARN, "arn:aws:", "arn:aws-cn:"), "us-east-1", "cn-north-1"), targetARN: strings.ReplaceAll(strings.ReplaceAll(targetGroupARN, "arn:aws:", "arn:aws-cn:"), "us-east-1", "cn-north-1"), scope: loadBalancerCleanupScope{missingNames: sets.New("cluster-lb")}, matches: true},
+		{name: "When an attachment ARN is malformed, it should report uncertainty", attachment: "arn:invalid", scope: loadBalancerCleanupScope{missingNames: sets.New("cluster-lb")}, wantErr: true},
+		{name: "When the target group ARN is malformed, it should report uncertainty", attachment: loadBalancerARN, targetARN: "arn:invalid", scope: loadBalancerCleanupScope{missingNames: sets.New("cluster-lb")}, wantErr: true},
+		{name: "When the attachment service is invalid, it should report uncertainty", attachment: strings.Replace(loadBalancerARN, "elasticloadbalancing", "ec2", 1), scope: loadBalancerCleanupScope{missingNames: sets.New("cluster-lb")}, wantErr: true},
+		{name: "When an attachment has no unique identifier, it should report uncertainty", attachment: strings.Replace(loadBalancerARN, "6f8d1268d6ab417d", "", 1), scope: loadBalancerCleanupScope{missingNames: sets.New("cluster-lb")}, wantErr: true},
+		{name: "When an attachment is not a supported v2 type, it should report uncertainty", attachment: strings.Replace(loadBalancerARN, "/net/", "/unsupported/", 1), scope: loadBalancerCleanupScope{missingNames: sets.New("cluster-lb")}, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.targetARN == "" {
+				test.targetARN = targetGroupARN
+			}
+			matched, err := test.scope.matchesAttachment(elbv2types.TargetGroup{TargetGroupArn: aws.String(test.targetARN), LoadBalancerArns: []string{test.attachment}})
+			if matched != test.matches || (err != nil) != test.wantErr {
+				t.Fatalf("expected matched=%t error=%t, got matched=%t err=%v", test.matches, test.wantErr, matched, err)
+			}
+		})
+	}
+}
+
+func TestCleanupRecordedLoadBalancers(t *testing.T) {
+	const (
+		firstName      = "cluster-lb-a"
+		secondName     = "cluster-lb-b"
+		infraID        = "infra-id"
+		vpcID          = "vpc-owned"
+		firstARN       = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/cluster-lb-a/6f8d1268d6ab417d"
+		secondARN      = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/cluster-lb-b/7f8d1268d6ab417d"
+		otherARN       = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/ingress-lb/8f8d1268d6ab417d"
+		targetGroupARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/ingress/9f8d1268d6ab417d"
+	)
+	tests := []struct {
+		name        string
+		attachments []string
+		pending     bool
+	}{
+		{name: "When an attached group belongs to another load balancer, it should complete the selected cleanup", attachments: []string{otherARN}},
+		{name: "When the first recorded load balancer still has an attachment, it should keep cleanup pending", attachments: []string{firstARN}, pending: true},
+		{name: "When the second recorded load balancer still has an attachment, it should keep cleanup pending", attachments: []string{secondARN}, pending: true},
+		{name: "When any attachment matches a recorded load balancer, it should keep cleanup pending", attachments: []string{otherARN, secondARN}, pending: true},
+		{name: "When an attachment reuses a recorded name with another identity, it should require the exact recorded ARN", attachments: []string{strings.Replace(firstARN, "6f8d1268d6ab417d", "af8d1268d6ab417d", 1)}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := awsapi.NewMockELBV2API(gomock.NewController(t))
+			identities := []LoadBalancerIdentity{
+				{Name: firstName, Type: V2LoadBalancerResource, ARN: firstARN, VPCID: vpcID},
+				{Name: secondName, Type: V2LoadBalancerResource, ARN: secondARN, VPCID: vpcID},
+			}
+			for _, identity := range identities {
+				client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
+					LoadBalancerArns: []string{identity.ARN},
+				}, gomock.Any()).Return(nil, &smithy.GenericAPIError{Code: "LoadBalancerNotFound"}).Times(2)
+			}
+			client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTargetGroupsOutput{
+				TargetGroups: []elbv2types.TargetGroup{{TargetGroupArn: aws.String(targetGroupARN), VpcId: aws.String(vpcID), LoadBalancerArns: test.attachments}},
+			}, nil)
+			if test.pending {
+				client.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancingv2.DescribeTagsInput{
+					ResourceArns: []string{targetGroupARN},
+				}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
+					TagDescriptions: []elbv2types.TagDescription{{ResourceArn: aws.String(targetGroupARN), Tags: []elbv2types.Tag{{Key: aws.String(ClusterTag(infraID)), Value: aws.String("owned")}}}},
+				}, nil)
+			}
+			client.EXPECT().DeleteTargetGroup(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+			result, err := CleanupRecordedLoadBalancers(t.Context(), LoadBalancerClients{ELBV2: client}, LoadBalancerSelector{VPCID: vpcID, InfraID: infraID}, identities, true, logr.Discard())
+			if err != nil || !result.ByName[firstName].LoadBalancersRemoved || !result.ByName[secondName].LoadBalancersRemoved {
+				t.Fatalf("expected recorded load balancer removal, got result=%+v err=%v", result, err)
+			}
+			if test.pending {
+				if result.OrphanTargetGroupScanSuccess || !errors.Is(result.OrphanTargetGroupErr, errOwnedTargetGroupStillAttached) {
+					t.Fatalf("expected the selected attachment to keep the scan pending, got %+v", result)
+				}
+			} else if !result.OrphanTargetGroupScanSuccess || result.OrphanTargetGroupErr != nil {
+				t.Fatalf("expected an unrelated attachment not to block the scan, got %+v", result)
+			}
+		})
+	}
+}
+
 func TestDeleteNamedV2LoadBalancerDoesNotDeleteSharedTargetGroups(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	client := awsapi.NewMockELBV2API(ctrl)
@@ -578,31 +726,92 @@ func TestDeleteNamedV2LoadBalancerDoesNotDeleteSharedTargetGroups(t *testing.T) 
 }
 
 func TestDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
+	const (
+		name            = "cluster-lb"
+		secondName      = "cluster-lb-b"
+		infraID         = "infra-id"
+		vpcID           = "vpc-owned"
+		loadBalancerARN = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/cluster-lb/6f8d1268d6ab417d"
+		secondARN       = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/cluster-lb-b/7f8d1268d6ab417d"
+		otherARN        = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/ingress-lb/8f8d1268d6ab417d"
+		targetGroupARN  = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/cluster/9f8d1268d6ab417d"
+	)
+
 	tests := []struct {
 		name               string
 		tagValue           string
 		loadBalancerExists bool
 		loadBalancerARNs   []string
 		deleteGroup        bool
+		inspectGroupTags   bool
+		pending            bool
 	}{
 		{
-			name:        "When an orphaned target group is owned, it should be deleted",
-			tagValue:    "owned",
-			deleteGroup: true,
+			name:             "When an orphaned target group is owned, it should be deleted",
+			tagValue:         "owned",
+			deleteGroup:      true,
+			inspectGroupTags: true,
 		},
 		{
 			name:               "When a named load balancer is deleted, it should also remove its orphaned target groups",
 			tagValue:           "owned",
 			loadBalancerExists: true,
 			deleteGroup:        true,
+			inspectGroupTags:   true,
 		},
 		{
-			name:     "When an orphaned target group is shared, it should not be deleted",
-			tagValue: "shared",
+			name:             "When an orphaned target group is shared, it should not be deleted",
+			tagValue:         "shared",
+			inspectGroupTags: true,
 		},
 		{
-			name:             "When a target group is still attached, it should not be deleted",
-			loadBalancerARNs: []string{"arn:load-balancer"},
+			name:             "When an absent named load balancer still has an owned attachment, it should keep cleanup pending",
+			tagValue:         "owned",
+			loadBalancerARNs: []string{loadBalancerARN},
+			inspectGroupTags: true,
+			pending:          true,
+		},
+		{
+			name:               "When an owned group is attached to another load balancer, it should not block selected cleanup",
+			tagValue:           "owned",
+			loadBalancerExists: true,
+			loadBalancerARNs:   []string{otherARN},
+		},
+		{
+			name:               "When an owned group is attached to the selected load balancer, it should keep cleanup pending",
+			tagValue:           "owned",
+			loadBalancerExists: true,
+			loadBalancerARNs:   []string{loadBalancerARN},
+			inspectGroupTags:   true,
+			pending:            true,
+		},
+		{
+			name:               "When an owned group is attached to the second selected load balancer, it should keep cleanup pending",
+			tagValue:           "owned",
+			loadBalancerExists: true,
+			loadBalancerARNs:   []string{secondARN},
+			inspectGroupTags:   true,
+			pending:            true,
+		},
+		{
+			name:             "When named load balancers are absent and another load balancer has an attachment, it should complete selected cleanup",
+			loadBalancerARNs: []string{otherARN},
+		},
+
+		{
+			name:               "When any attachment matches the selected load balancer, it should keep cleanup pending",
+			tagValue:           "owned",
+			loadBalancerExists: true,
+			loadBalancerARNs:   []string{otherARN, loadBalancerARN},
+			inspectGroupTags:   true,
+			pending:            true,
+		},
+		{
+			name:               "When a selected load balancer has a shared attached group, it should not claim ownership or block cleanup",
+			tagValue:           "shared",
+			loadBalancerExists: true,
+			loadBalancerARNs:   []string{loadBalancerARN},
+			inspectGroupTags:   true,
 		},
 	}
 
@@ -610,57 +819,59 @@ func TestDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			client := awsapi.NewMockELBV2API(ctrl)
-			const (
-				name            = "cluster-lb"
-				infraID         = "infra-id"
-				vpcID           = "vpc-owned"
-				loadBalancerARN = "arn:load-balancer"
-				targetGroupARN  = "arn:target-group"
-			)
 			calls := []any{}
-			if test.loadBalancerExists {
-				describeLoadBalancer := client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
-					Names: []string{name},
-				}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{
-					LoadBalancers: []elbv2types.LoadBalancer{{LoadBalancerArn: aws.String(loadBalancerARN), LoadBalancerName: aws.String(name), VpcId: aws.String(vpcID)}},
-				}, nil)
-				describeLoadBalancerTags := client.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancingv2.DescribeTagsInput{
-					ResourceArns: []string{loadBalancerARN},
-				}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
-					TagDescriptions: []elbv2types.TagDescription{{
-						ResourceArn: aws.String(loadBalancerARN),
-						Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
-					}},
-				}, nil)
-				describeTargetGroupsForLoadBalancer := client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{
-					LoadBalancerArn: aws.String(loadBalancerARN),
-				}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTargetGroupsOutput{}, nil)
-				describeListeners := client.EXPECT().DescribeListeners(gomock.Any(), &elasticloadbalancingv2.DescribeListenersInput{
-					LoadBalancerArn: aws.String(loadBalancerARN),
-				}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeListenersOutput{}, nil)
-				deleteLoadBalancer := client.EXPECT().DeleteLoadBalancer(gomock.Any(), &elasticloadbalancingv2.DeleteLoadBalancerInput{
-					LoadBalancerArn: aws.String(loadBalancerARN),
-				}, gomock.Any()).Return(&elasticloadbalancingv2.DeleteLoadBalancerOutput{}, nil)
-				calls = append(calls, describeLoadBalancer, describeLoadBalancerTags, describeTargetGroupsForLoadBalancer, describeListeners, deleteLoadBalancer)
-			} else {
-				describeMissingLoadBalancer := client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
-					Names: []string{name},
-				}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{}, nil)
-				calls = append(calls, describeMissingLoadBalancer)
+			for _, candidateName := range []string{name, secondName} {
+				candidateARN := loadBalancerARN
+				if candidateName == secondName {
+					candidateARN = secondARN
+				}
+
+				if test.loadBalancerExists {
+					describeLoadBalancer := client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
+						Names: []string{candidateName},
+					}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{
+						LoadBalancers: []elbv2types.LoadBalancer{{LoadBalancerArn: aws.String(candidateARN), LoadBalancerName: aws.String(candidateName), VpcId: aws.String(vpcID)}},
+					}, nil)
+					describeLoadBalancerTags := client.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancingv2.DescribeTagsInput{
+						ResourceArns: []string{candidateARN},
+					}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
+						TagDescriptions: []elbv2types.TagDescription{{
+							ResourceArn: aws.String(candidateARN),
+							Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+						}},
+					}, nil)
+					describeTargetGroupsForLoadBalancer := client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{
+						LoadBalancerArn: aws.String(candidateARN),
+					}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTargetGroupsOutput{}, nil)
+					describeListeners := client.EXPECT().DescribeListeners(gomock.Any(), &elasticloadbalancingv2.DescribeListenersInput{
+						LoadBalancerArn: aws.String(candidateARN),
+					}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeListenersOutput{}, nil)
+					deleteLoadBalancer := client.EXPECT().DeleteLoadBalancer(gomock.Any(), &elasticloadbalancingv2.DeleteLoadBalancerInput{
+						LoadBalancerArn: aws.String(candidateARN),
+					}, gomock.Any()).Return(&elasticloadbalancingv2.DeleteLoadBalancerOutput{}, nil)
+					calls = append(calls, describeLoadBalancer, describeLoadBalancerTags, describeTargetGroupsForLoadBalancer, describeListeners, deleteLoadBalancer)
+				} else {
+					describeMissingLoadBalancer := client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
+						Names: []string{candidateName},
+					}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{}, nil)
+					calls = append(calls, describeMissingLoadBalancer)
+				}
 			}
 			listTargetGroups := client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTargetGroupsOutput{
 				TargetGroups: []elbv2types.TargetGroup{{TargetGroupArn: aws.String(targetGroupARN), VpcId: aws.String(vpcID), LoadBalancerArns: test.loadBalancerARNs}},
 			}, nil)
 			calls = append(calls, listTargetGroups)
-			describeTargetGroupTags := client.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancingv2.DescribeTagsInput{
-				ResourceArns: []string{targetGroupARN},
-			}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
-				TagDescriptions: []elbv2types.TagDescription{{
-					ResourceArn: aws.String(targetGroupARN),
-					Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(test.tagValue)}},
-				}},
-			}, nil)
-			calls = append(calls, describeTargetGroupTags)
+			if test.inspectGroupTags {
+				describeTargetGroupTags := client.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancingv2.DescribeTagsInput{
+					ResourceArns: []string{targetGroupARN},
+				}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
+					TagDescriptions: []elbv2types.TagDescription{{
+						ResourceArn: aws.String(targetGroupARN),
+						Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(test.tagValue)}},
+					}},
+				}, nil)
+				calls = append(calls, describeTargetGroupTags)
+			}
 			if test.deleteGroup {
 				calls = append(calls, client.EXPECT().DeleteTargetGroup(gomock.Any(), &elasticloadbalancingv2.DeleteTargetGroupInput{
 					TargetGroupArn: aws.String(targetGroupARN),
@@ -668,9 +879,11 @@ func TestDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
 			} else {
 				client.EXPECT().DeleteTargetGroup(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
 			}
-			calls = append(calls, client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
-				Names: []string{name},
-			}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{}, nil))
+			for _, candidateName := range []string{name, secondName} {
+				calls = append(calls, client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
+					Names: []string{candidateName},
+				}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{}, nil))
+			}
 			if test.deleteGroup {
 				calls = append(calls, client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{
 					TargetGroupArns: []string{targetGroupARN},
@@ -678,7 +891,13 @@ func TestDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
 			}
 			gomock.InOrder(calls...)
 
-			removed, err := DeleteLoadBalancersByName(context.Background(), LoadBalancerClients{ELBV2: client}, LoadBalancerSelector{VPCID: vpcID, InfraID: infraID}, []string{name}, logr.Discard())
+			removed, err := DeleteLoadBalancersByName(context.Background(), LoadBalancerClients{ELBV2: client}, LoadBalancerSelector{VPCID: vpcID, InfraID: infraID}, []string{name, secondName}, logr.Discard())
+			if test.pending {
+				if removed || !errors.Is(err, errOwnedTargetGroupStillAttached) {
+					t.Fatalf("expected a selected attachment to keep cleanup pending, got removed=%t err=%v", removed, err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("expected orphaned target group cleanup to complete, got %v", err)
 			}
