@@ -33,7 +33,7 @@ jobs:
           echo "$INSTALL_DIR" >> "$GITHUB_PATH"
       - name: Generate app token
         id: app-token
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.JIRA_SOLVE_CI_APP_ID }}
           private-key: ${{ secrets.JIRA_SOLVE_CI_PRIVATE_KEY }}
