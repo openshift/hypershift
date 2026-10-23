@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/azureutil/velerocreds"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -136,7 +137,7 @@ func newAzureCredential(ctx context.Context, credentialsFile, authType string, c
 	case velerocreds.AuthTypeManagedIdentity:
 		return newManagedIdentityCredential(ctx, credentialsFile)
 	case velerocreds.AuthTypeClientSecret, "":
-		return newClientSecretCredential(credentialsFile)
+		return newClientSecretCredential(credentialsFile, cloudConfig)
 	default:
 		return nil, fmt.Errorf("unsupported auth type: %q (must be %q or %q)", authType, velerocreds.AuthTypeClientSecret, velerocreds.AuthTypeManagedIdentity)
 	}
@@ -146,7 +147,7 @@ func newAzureCredential(ctx context.Context, credentialsFile, authType string, c
 // It accepts both JSON format ({"clientId":..., "clientSecret":..., "tenantId":...}) and
 // dotenv format (AZURE_CLIENT_ID=...\nAZURE_CLIENT_SECRET=...\nAZURE_TENANT_ID=...),
 // to support credentials files that originate from Velero BackupStorageLocation secrets.
-func newClientSecretCredential(credentialsFile string) (azcore.TokenCredential, error) {
+func newClientSecretCredential(credentialsFile string, cloudConfig cloud.Configuration) (azcore.TokenCredential, error) {
 	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read credentials file %q: %w", credentialsFile, err)

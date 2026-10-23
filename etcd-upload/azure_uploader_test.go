@@ -12,6 +12,7 @@ import (
 
 	"github.com/openshift/hypershift/support/azureutil/velerocreds"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 )
 
@@ -115,7 +116,7 @@ func TestAzureBlobUploader(t *testing.T) {
 func TestNewAzureBlobUploader(t *testing.T) {
 	t.Run("When required options are provided it should return a configured uploader", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		uploader, err := NewAzureBlobUploader(context.Background(), "my-container", "mystorageaccount", "", "my-scope", AuthTypeClientSecret, "")
+		uploader, err := NewAzureBlobUploader(context.Background(), "my-container", "mystorageaccount", "", "my-scope", velerocreds.AuthTypeClientSecret, "")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(uploader).ToNot(BeNil())
 		g.Expect(uploader.container).To(Equal("my-container"))
@@ -191,7 +192,7 @@ func TestAzureCredential(t *testing.T) {
 
 		// msi-dataplane will parse the JSON but fail on the invalid certificate.
 		// This proves the managed-identity path is reached and the file is consumed.
-		_, err = newAzureCredential(context.Background(), credFile, velerocreds.AuthTypeManagedIdentity)
+		_, err = newAzureCredential(context.Background(), credFile, velerocreds.AuthTypeManagedIdentity, cloud.AzurePublic)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("managed identity credential"))
 	})
@@ -199,7 +200,7 @@ func TestAzureCredential(t *testing.T) {
 	t.Run("When auth type is managed-identity and credentials file is missing it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
-		_, err := newAzureCredential(context.Background(), "/nonexistent/creds.json", velerocreds.AuthTypeManagedIdentity)
+		_, err := newAzureCredential(context.Background(), "/nonexistent/creds.json", velerocreds.AuthTypeManagedIdentity, cloud.AzurePublic)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("managed identity credential"))
 	})
@@ -208,7 +209,7 @@ func TestAzureCredential(t *testing.T) {
 		// When no credentials file is provided, authType is ignored and
 		// DefaultAzureCredential is used. This matches the behavior where
 		// the controller doesn't pass --credentials-file.
-		_, err := newAzureCredential(context.Background(), "", velerocreds.AuthTypeManagedIdentity)
+		_, err := newAzureCredential(context.Background(), "", velerocreds.AuthTypeManagedIdentity, cloud.AzurePublic)
 		// DefaultAzureCredential will fail in a test environment (no Azure identity),
 		// but the error should NOT mention "managed identity credential".
 		if err != nil {
@@ -232,7 +233,7 @@ func TestAzureCredential(t *testing.T) {
 		credFile := filepath.Join(t.TempDir(), "client-secret-creds.json")
 		g.Expect(os.WriteFile(credFile, data, 0644)).To(Succeed())
 
-		credential, err := newAzureCredential(context.Background(), credFile, velerocreds.AuthTypeClientSecret)
+		credential, err := newAzureCredential(context.Background(), credFile, velerocreds.AuthTypeClientSecret, cloud.AzurePublic)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(credential).ToNot(BeNil())
 	})
@@ -244,7 +245,7 @@ func TestAzureCredential(t *testing.T) {
 		credFile := filepath.Join(t.TempDir(), "cloud")
 		g.Expect(os.WriteFile(credFile, []byte(dotenv), 0644)).To(Succeed())
 
-		credential, err := newClientSecretCredential(credFile)
+		credential, err := newClientSecretCredential(credFile, cloud.AzurePublic)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(credential).ToNot(BeNil())
 	})
@@ -256,7 +257,7 @@ func TestAzureCredential(t *testing.T) {
 		credFile := filepath.Join(t.TempDir(), "cloud")
 		g.Expect(os.WriteFile(credFile, []byte(dotenv), 0644)).To(Succeed())
 
-		_, err := newClientSecretCredential(credFile)
+		_, err := newClientSecretCredential(credFile, cloud.AzurePublic)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("failed to parse credentials file as JSON"))
 		g.Expect(err.Error()).To(ContainSubstring("or dotenv (missing required fields)"))
