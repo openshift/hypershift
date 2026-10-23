@@ -21,12 +21,16 @@ import (
 	"flag"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	appsv1 "k8s.io/api/apps/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	zap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
@@ -89,4 +93,45 @@ var _ = BeforeSuite(func() {
 
 	// Set the global test context
 	internal.SetTestContext(testCtx)
+
+	// EXPERIMENT (main-CPO-on-4.20): log runtime evidence from the LIVE cluster that the
+	// guest is pinned to an old release while the CPO is the PR build. This reads actual
+	// cluster state (not just intent): the HC spec release, its desired version, and the
+	// real control-plane-operator deployment container image. Best-effort; never fails the
+	// suite. Uses GinkgoWriter so output is captured by the test framework.
+	if testCtx.ClusterName != "" && testCtx.ClusterNamespace != "" {
+		// Use a short child context so a stalled management API cannot delay BeforeSuite by
+		// the full transport timeout. Do not replace testCtx.Context, which the suite shares.
+		diagCtx, diagCancel := context.WithTimeout(testCtx.Context, 30*time.Second)
+		defer diagCancel()
+		hc := &hyperv1.HostedCluster{}
+		hcErr := testCtx.MgmtClient.Get(diagCtx, crclient.ObjectKey{Namespace: testCtx.ClusterNamespace, Name: testCtx.ClusterName}, hc)
+		if hcErr != nil {
+			fmt.Fprintf(GinkgoWriter, "EXPERIMENT main-CPO-on-4.20 [v2 BeforeSuite]: could not read HostedCluster for logging: %v\n", hcErr)
+		} else {
+			desiredVersion := "<unknown>"
+			if hc.Status.Version != nil && len(hc.Status.Version.History) > 0 {
+				desiredVersion = hc.Status.Version.History[0].Version
+			}
+			cpoAnnotation := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]
+			fmt.Fprintf(GinkgoWriter, "===== EXPERIMENT main-CPO-on-4.20 RUNTIME EVIDENCE [v2 BeforeSuite] =====\n")
+			fmt.Fprintf(GinkgoWriter, "  HostedCluster: %s/%s\n", hc.Namespace, hc.Name)
+			fmt.Fprintf(GinkgoWriter, "  HC spec.release.image (guest):        %s\n", hc.Spec.Release.Image)
+			fmt.Fprintf(GinkgoWriter, "  HC status desired/current version:    %s\n", desiredVersion)
+			fmt.Fprintf(GinkgoWriter, "  HC control-plane-operator-image annotation (CPO from PR): %s\n", cpoAnnotation)
+
+			cpoDeploy := &appsv1.Deployment{}
+			dErr := testCtx.MgmtClient.Get(diagCtx, crclient.ObjectKey{Namespace: testCtx.ControlPlaneNamespace, Name: "control-plane-operator"}, cpoDeploy)
+			if dErr != nil {
+				fmt.Fprintf(GinkgoWriter, "  deployed CPO image: <could not read control-plane-operator deployment in %s: %v>\n", testCtx.ControlPlaneNamespace, dErr)
+			} else {
+				for _, c := range cpoDeploy.Spec.Template.Spec.Containers {
+					if c.Name == "control-plane-operator" {
+						fmt.Fprintf(GinkgoWriter, "  deployed CPO image (live, from PR payload): %s\n", c.Image)
+					}
+				}
+			}
+			fmt.Fprintf(GinkgoWriter, "========================================================================\n")
+		}
+	}
 })
