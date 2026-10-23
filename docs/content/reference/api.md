@@ -4494,8 +4494,10 @@ created. Nodes will fail to pull images and reach the control plane if that rout
 Outbound SNAT on the cluster Load Balancer is disabled for both values, so a Service of type
 LoadBalancer never becomes an egress path.
 When omitted, behavior matches LoadBalancer.
-UserDefinedRouting can only be chosen when the cluster is created; it cannot be adopted later,
-because the worker NICs of existing nodes are already attached to the Load Balancer backend pool.</p>
+Day-2 transitions between LoadBalancer and UserDefinedRouting are supported in both directions.
+Changing from UserDefinedRouting to LoadBalancer may require a NodePool rollout if the cloud
+controller manager does not automatically add existing nodes to the backend pool.
+UserDefinedRouting cannot be adopted on a cluster that was created without outboundType set.</p>
 </td>
 </tr>
 </tbody>

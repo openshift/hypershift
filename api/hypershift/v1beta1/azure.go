@@ -365,7 +365,6 @@ type AzureNodePoolOSDisk struct {
 // +kubebuilder:validation:XValidation:rule="has(self.topology) && (self.topology == 'Private' || self.topology == 'PublicAndPrivate') ? has(self.private) : !has(self.private)",message="private is required when topology is Private or PublicAndPrivate, and forbidden otherwise"
 // +kubebuilder:validation:XValidation:rule="!has(self.private) || self.private.type != 'PrivateLink' || self.azureAuthenticationConfig.azureAuthenticationConfigType != 'WorkloadIdentities' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)",message="workloadIdentities.controlPlaneOperator is required when Private Link is configured with WorkloadIdentities authentication"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.outboundType) || has(self.outboundType)",message="outboundType cannot be removed once set"
-// +kubebuilder:validation:XValidation:rule="!has(self.outboundType) || !has(oldSelf.outboundType) || self.outboundType == oldSelf.outboundType",message="outboundType is immutable once set"
 // +kubebuilder:validation:XValidation:rule="has(self.outboundType) && !has(oldSelf.outboundType) ? self.outboundType == 'LoadBalancer' : true",message="outboundType cannot be set to UserDefinedRouting on an existing cluster that was created without it"
 type AzurePlatformSpec struct {
 	// cloud is the Azure cloud environment identifier.
@@ -515,8 +514,10 @@ type AzurePlatformSpec struct {
 	// Outbound SNAT on the cluster Load Balancer is disabled for both values, so a Service of type
 	// LoadBalancer never becomes an egress path.
 	// When omitted, behavior matches LoadBalancer.
-	// UserDefinedRouting can only be chosen when the cluster is created; it cannot be adopted later,
-	// because the worker NICs of existing nodes are already attached to the Load Balancer backend pool.
+	// Day-2 transitions between LoadBalancer and UserDefinedRouting are supported in both directions.
+	// Changing from UserDefinedRouting to LoadBalancer may require a NodePool rollout if the cloud
+	// controller manager does not automatically add existing nodes to the backend pool.
+	// UserDefinedRouting cannot be adopted on a cluster that was created without outboundType set.
 	//
 	// +optional
 	OutboundType AzureOutboundType `json:"outboundType,omitempty"`
