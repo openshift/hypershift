@@ -104,6 +104,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -205,6 +206,7 @@ type HostedControlPlaneReconciler struct {
 	awsSession                              *aws.Config
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	newKMSClient                            func(cfg aws.Config, optFns ...func(*kms.Options)) awsapi.KMSAPI
+	newRoute53Client                        func(cfg aws.Config, optFns ...func(*route53.Options)) awsapi.ROUTE53API
 	assumeRoleWithWebIdentity               func(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error)
 	getGuestToken                           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error)
 	EnableCVOManagementClusterMetricsAccess bool
@@ -240,6 +242,9 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 	r.reconcileInfrastructureStatus = r.defaultReconcileInfrastructureStatus
 	r.newKMSClient = func(cfg aws.Config, optFns ...func(*kms.Options)) awsapi.KMSAPI {
 		return kms.NewFromConfig(cfg, optFns...)
+	}
+	r.newRoute53Client = func(cfg aws.Config, optFns ...func(*route53.Options)) awsapi.ROUTE53API {
+		return route53.NewFromConfig(cfg, optFns...)
 	}
 	r.assumeRoleWithWebIdentity = supportawsutil.AssumeRoleWithWebIdentity
 	r.getGuestToken = r.defaultGetGuestToken
