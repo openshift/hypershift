@@ -657,12 +657,14 @@ func TestSetup(t *testing.T) {
 		opts    Options
 		ingress *configv1.Ingress
 		stored  *KeyPair
+		req     MirrorRequest
 		wantErr string
 	}{
 		{name: "When the cluster Ingress is absent, it should fail before changing resources", opts: Options{Copier: testCopier{}}, wantErr: "Ingress cluster"},
 		{name: "When the ingress domain is empty, it should reject the Route host", opts: Options{Copier: testCopier{}}, ingress: &configv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}, wantErr: "ingress domain must not be empty"},
 		{name: "When the supplied CA is malformed, it should fail before deleting the Route", opts: Options{Copier: testCopier{}, IngressDomain: "apps.alesross-mc.alesross.hypershift.devcluster.openshift.com", CA: &KeyPair{CertPEM: []byte("malformed"), KeyPEM: []byte("malformed")}}, wantErr: "prepare TLS"},
 		{name: "When the stored CA is malformed, it should fail before deleting the Route", opts: Options{Copier: testCopier{}, IngressDomain: "apps.alesross-mc.alesross.hypershift.devcluster.openshift.com"}, stored: &KeyPair{CertPEM: []byte("malformed"), KeyPEM: []byte("malformed")}, wantErr: "validate stored CA Secret"},
+		{name: "When the mirror request references an image by tag, it should fail before deleting the Route", opts: Options{Copier: testCopier{}, IngressDomain: "apps.alesross-mc.alesross.hypershift.devcluster.openshift.com"}, req: MirrorRequest{Images: []ImageMapping{{From: "quay.io/libpod/registry:2.8.2"}}}, wantErr: "build copy request"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -679,7 +681,7 @@ func TestSetup(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err := r.Setup(t.Context(), MirrorRequest{})
+			result, err := r.Setup(t.Context(), tt.req)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) || result != nil {
 				t.Fatalf("Setup() = %#v, %v; want error containing %q", result, err, tt.wantErr)
 			}

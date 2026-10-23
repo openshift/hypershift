@@ -54,6 +54,12 @@ func (r *Registry) setup(ctx context.Context, req MirrorRequest) (*Result, error
 	if err != nil {
 		return nil, fmt.Errorf("resolve CA for registry %s/%s: %w", r.opts.Namespace, r.opts.Name, err)
 	}
+	// Reject an invalid request before withdrawing the Route of a working
+	// mirror or making it writable.
+	copyReq, err := buildCopyRequest(r.opts, req, ca.CertPEM)
+	if err != nil {
+		return nil, fmt.Errorf("build copy request for registry %s/%s: %w", r.opts.Namespace, r.opts.Name, err)
+	}
 	tlsOpts := r.opts
 	tlsOpts.CA = &ca
 	_, serving, err := tlsMaterial(tlsOpts, host)
@@ -96,10 +102,6 @@ func (r *Registry) setup(ctx context.Context, req MirrorRequest) (*Result, error
 	}
 	if err := r.configure(ctx, false, serving); err != nil {
 		return nil, err
-	}
-	copyReq, err := buildCopyRequest(r.opts, req, ca.CertPEM)
-	if err != nil {
-		return nil, fmt.Errorf("build copy request for registry %s/%s: %w", r.opts.Namespace, r.opts.Name, err)
 	}
 	copyRes, err := r.opts.Copier.Copy(ctx, copyReq)
 	if err != nil {
