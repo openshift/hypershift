@@ -211,3 +211,698 @@ tests:
           servicePublishingStrategy:
             route: {}
             type: Route
+
+  - name: When updating an unrelated field on an enabled Azure cluster with a legacy omitted control-plane registry identity it should pass
+    initialCRDPatches:
+      # Remove the new control-plane image registry identity validation so the
+      # initial object is admitted as it was by the old CRD.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/6
+      # Restore the old schema requirement and provide a valid value below so
+      # the initial object satisfies the other old managed-identity constraints.
+      - op: add
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/azure/properties/azureAuthenticationConfig/properties/managedIdentities/properties/dataPlane/required/-
+        value: imageRegistryMSIClientID
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  imageRegistryMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  imageRegistryMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+
+  - name: When updating an unrelated field on an enabled Azure cluster with a legacy empty registry identity it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/7
+      - op: add
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/azure/properties/azureAuthenticationConfig/properties/managedIdentities/properties/dataPlane/required/-
+        value: imageRegistryMSIClientID
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  imageRegistry: {credentialsSecretName: image-registry-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  imageRegistryMSIClientID: ""
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  imageRegistry: {credentialsSecretName: image-registry-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  imageRegistryMSIClientID: ""
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+
+  - name: When updating an unrelated field on a registry-disabled Azure cluster with a legacy empty registry identity it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/7
+      - op: add
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/azure/properties/azureAuthenticationConfig/properties/managedIdentities/properties/dataPlane/required/-
+        value: imageRegistryMSIClientID
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities:
+          disabled: [ImageRegistry]
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  imageRegistry: {credentialsSecretName: image-registry-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  imageRegistryMSIClientID: ""
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities:
+          disabled: [ImageRegistry]
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  imageRegistry: {credentialsSecretName: image-registry-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  imageRegistryMSIClientID: ""
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+
+  - name: When updating status on an enabled Azure cluster with a legacy empty registry identity it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/7
+      - op: add
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/azure/properties/azureAuthenticationConfig/properties/managedIdentities/properties/dataPlane/required/-
+        value: imageRegistryMSIClientID
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  imageRegistry: {credentialsSecretName: image-registry-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  imageRegistryMSIClientID: ""
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  imageRegistry: {credentialsSecretName: image-registry-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  imageRegistryMSIClientID: ""
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ignitionEndpoint: https://ignition.example.com
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      status:
+        ignitionEndpoint: https://ignition.example.com
+
+  - name: When updating status on a registry-disabled Azure cluster with a legacy empty registry identity it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/7
+      - op: add
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/azure/properties/azureAuthenticationConfig/properties/managedIdentities/properties/dataPlane/required/-
+        value: imageRegistryMSIClientID
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities:
+          disabled: [ImageRegistry]
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  imageRegistry: {credentialsSecretName: image-registry-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  imageRegistryMSIClientID: ""
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities:
+          disabled: [ImageRegistry]
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  imageRegistry: {credentialsSecretName: image-registry-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  imageRegistryMSIClientID: ""
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ignitionEndpoint: https://ignition.example.com
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      status:
+        ignitionEndpoint: https://ignition.example.com
+
+  - name: When current Go serialization omits a legacy empty registry identity during an unrelated update it should pass
+    initialCRDPatches:
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/x-kubernetes-validations/7
+      - op: add
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/azure/properties/azureAuthenticationConfig/properties/managedIdentities/properties/dataPlane/required/-
+        value: imageRegistryMSIClientID
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  imageRegistry: {credentialsSecretName: image-registry-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  imageRegistryMSIClientID: ""
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: ManagedIdentities
+              managedIdentities:
+                controlPlane:
+                  managedIdentitiesKeyVault: {name: test-kv, tenantID: "87654321-4321-8765-2109-876543210987"}
+                  cloudProvider: {credentialsSecretName: cloud-provider-secret, objectEncoding: utf-8}
+                  nodePoolManagement: {credentialsSecretName: node-pool-management-secret, objectEncoding: utf-8}
+                  controlPlaneOperator: {credentialsSecretName: control-plane-operator-secret, objectEncoding: utf-8}
+                  imageRegistry: {credentialsSecretName: image-registry-secret, objectEncoding: utf-8}
+                  ingress: {credentialsSecretName: ingress-secret, objectEncoding: utf-8}
+                  network: {credentialsSecretName: network-secret, objectEncoding: utf-8}
+                  disk: {credentialsSecretName: disk-secret, objectEncoding: utf-8}
+                  file: {credentialsSecretName: file-secret, objectEncoding: utf-8}
+                dataPlane:
+                  diskMSIClientID: "12345678-1234-5678-9012-123456789012"
+                  fileMSIClientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster

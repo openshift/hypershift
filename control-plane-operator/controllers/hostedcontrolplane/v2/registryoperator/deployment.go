@@ -12,6 +12,15 @@ import (
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	managedAzureCredentialsSecretName := ""
+	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
+		managedIdentity, err := managedAzureImageRegistryIdentity(cpContext.HCP)
+		if err != nil {
+			return err
+		}
+		managedAzureCredentialsSecretName = managedIdentity.CredentialsSecretName
+	}
+
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		proxy.SetEnvVars(&c.Env)
 
@@ -30,7 +39,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		// MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH and mount it as a volume in the image registry pod in the path.
 		if azureutil.IsAroHCPByHCP(cpContext.HCP) {
 			c.Env = append(c.Env,
-				azureutil.CreateEnvVarsForAzureManagedIdentity(cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ImageRegistry.CredentialsSecretName)...)
+				azureutil.CreateEnvVarsForAzureManagedIdentity(managedAzureCredentialsSecretName)...)
 
 			c.VolumeMounts = append(c.VolumeMounts,
 				azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureImageRegistrySecretStoreVolumeName),

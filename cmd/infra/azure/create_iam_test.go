@@ -27,6 +27,33 @@ func TestCreateIAMOptionsValidate(t *testing.T) {
 			expectedError: false,
 			description:   "Should pass when all required fields are provided",
 		},
+		"When supported disabled capabilities are provided it should pass validation": {
+			opts: CreateIAMOptions{
+				Name:                       "test-cluster",
+				InfraID:                    "test-infra-id",
+				CredentialsFile:            "/path/to/creds.json",
+				ResourceGroupName:          "test-rg",
+				OIDCIssuerURL:              "https://issuer.example.com",
+				OutputFile:                 "/path/to/output.json",
+				DisableClusterCapabilities: append([]string(nil), supportedDisabledClusterCapabilities...),
+			},
+			expectedError: false,
+			description:   "Should accept the same disabled capabilities as cluster creation",
+		},
+		"When a disabled capability is misspelled it should return an error": {
+			opts: CreateIAMOptions{
+				Name:                       "test-cluster",
+				InfraID:                    "test-infra-id",
+				CredentialsFile:            "/path/to/creds.json",
+				ResourceGroupName:          "test-rg",
+				OIDCIssuerURL:              "https://issuer.example.com",
+				OutputFile:                 "/path/to/output.json",
+				DisableClusterCapabilities: []string{"ImageRegstry"},
+			},
+			expectedError: true,
+			errorContains: "unknown disabled capability: ImageRegstry",
+			description:   "Should reject misspelled disabled capabilities before Azure mutations",
+		},
 		"When name is empty it should return an error": {
 			opts: CreateIAMOptions{
 				InfraID:           "test-infra-id",

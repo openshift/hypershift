@@ -2,6 +2,7 @@ package azure
 
 import (
 	"context"
+	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -54,12 +55,28 @@ func SetupOperandCredentials(
 
 		azureClientIDs.azureDisk = hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.DiskMSIClientID
 		azureClientIDs.azureFile = hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.FileMSIClientID
-		azureClientIDs.imageRegistry = hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.ImageRegistryMSIClientID
+		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+			azureClientIDs.imageRegistry = hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.ImageRegistryMSIClientID
+			if azureClientIDs.imageRegistry == "" {
+				errs = append(errs, fmt.Errorf("managed Azure image registry client ID is required when the ImageRegistry capability is enabled"))
+			}
+		}
 	} else {
 		azureClientIDs.ingress = string(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.Ingress.ClientID)
 		azureClientIDs.azureDisk = string(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.Disk.ClientID)
 		azureClientIDs.azureFile = string(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.File.ClientID)
-		azureClientIDs.imageRegistry = string(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.ImageRegistry.ClientID)
+		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+			imageRegistryIdentity := hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.ImageRegistry
+			if imageRegistryIdentity.ClientID == "" {
+				errs = append(errs, fmt.Errorf("azure image registry workload identity is required when the ImageRegistry capability is enabled"))
+			} else {
+				azureClientIDs.imageRegistry = string(imageRegistryIdentity.ClientID)
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return errs
 	}
 
 	reconcileErrs := reconcileAzureCloudCredentials(ctx, client, upsertProvider, hcp, secretData, azureClientIDs)
