@@ -408,20 +408,23 @@ func GetServicePrincipalScopes(subscriptionID, managedResourceGroupName, nsgReso
 }
 
 // GetAzureBlobDNSSuffix returns the cloud-specific DNS suffix for Azure Blob Storage.
-func GetAzureBlobDNSSuffix(cloud string) (string, error) {
-	switch strings.ToUpper(cloud) {
-	case "", "AZURECLOUD", "AZUREPUBLICCLOUD":
+// Cloud names are matched exactly against the HostedCluster API enum, mirroring
+// GetAzureCloudConfiguration: both are called with the same cloud name, so accepting
+// a wider set here would only produce names the caller has already rejected.
+func GetAzureBlobDNSSuffix(cloudName string) (string, error) {
+	switch cloudName {
+	case config.DefaultAzureCloud, "":
 		return azurePublicBlobDNSSuffix, nil
-	case "AZUREGOVERNMENTCLOUD", "AZUREUSGOVERNMENT", "AZUREUSGOVERNMENTCLOUD":
+	case "AzureUSGovernmentCloud":
 		return azureGovernmentBlobDNSSuffix, nil
-	case "AZURECHINACLOUD":
+	case "AzureChinaCloud":
 		return azureChinaBlobDNSSuffix, nil
-	case "AZUREGERMANCLOUD":
+	case "AzureGermanCloud":
 		return azureGermanBlobDNSSuffix, nil
-	case "AZUREBLEUCLOUD":
+	case "AzureBleuCloud":
 		return azureBleuBlobDNSSuffix, nil
 	default:
-		return "", fmt.Errorf("unknown Azure cloud %q", cloud)
+		return "", fmt.Errorf("unknown Azure cloud: %s", cloudName)
 	}
 }
 

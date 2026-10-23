@@ -1215,6 +1215,10 @@ func TestGetAzureBlobDNSSuffix(t *testing.T) {
 		{name: "When cloud is Bleu, it should return the Bleu suffix", cloud: "AzureBleuCloud", wantSuffix: "blob.core.sovcloud-api.fr"},
 		{name: "When cloud is Azure Stack, it should return an error", cloud: "AzureStackCloud", wantErr: true},
 		{name: "When cloud is unknown, it should return an error", cloud: "UnknownCloud", wantErr: true},
+		// Matching is exact so that this function accepts precisely the same
+		// cloud names as GetAzureCloudConfiguration, which gates every caller.
+		{name: "When cloud differs only in case, it should return an error", cloud: "azurepubliccloud", wantErr: true},
+		{name: "When cloud is a legacy government alias, it should return an error", cloud: "AzureUSGovernment", wantErr: true},
 	}
 
 	for _, tt := range tests {

@@ -149,19 +149,20 @@ func TestNewAzureBlobUploader(t *testing.T) {
 
 func TestAzureBlobServiceURL(t *testing.T) {
 	tests := []struct {
+		name    string
 		cloud   string
 		wantURL string
 	}{
-		{cloud: "", wantURL: "https://testaccount.blob.core.windows.net"},
-		{cloud: "AzurePublicCloud", wantURL: "https://testaccount.blob.core.windows.net"},
-		{cloud: "AzureUSGovernmentCloud", wantURL: "https://testaccount.blob.core.usgovcloudapi.net"},
-		{cloud: "AzureChinaCloud", wantURL: "https://testaccount.blob.core.chinacloudapi.cn"},
-		{cloud: "AzureGermanCloud", wantURL: "https://testaccount.blob.core.cloudapi.de"},
-		{cloud: "AzureBleuCloud", wantURL: "https://testaccount.blob.core.sovcloud-api.fr"},
+		{name: "When cloud is empty it should default to the public endpoint", cloud: "", wantURL: "https://testaccount.blob.core.windows.net"},
+		{name: "When cloud is public it should return the public endpoint", cloud: "AzurePublicCloud", wantURL: "https://testaccount.blob.core.windows.net"},
+		{name: "When cloud is government it should return the government endpoint", cloud: "AzureUSGovernmentCloud", wantURL: "https://testaccount.blob.core.usgovcloudapi.net"},
+		{name: "When cloud is China it should return the China endpoint", cloud: "AzureChinaCloud", wantURL: "https://testaccount.blob.core.chinacloudapi.cn"},
+		{name: "When cloud is German it should return the German endpoint", cloud: "AzureGermanCloud", wantURL: "https://testaccount.blob.core.cloudapi.de"},
+		{name: "When cloud is Bleu it should return the Bleu endpoint", cloud: "AzureBleuCloud", wantURL: "https://testaccount.blob.core.sovcloud-api.fr"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.cloud, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			got, err := azureBlobServiceURL("testaccount", tt.cloud)
 			g.Expect(err).ToNot(HaveOccurred())

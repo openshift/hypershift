@@ -135,7 +135,7 @@ func newAzureCredential(ctx context.Context, credentialsFile, authType string, c
 
 	switch authType {
 	case velerocreds.AuthTypeManagedIdentity:
-		return newManagedIdentityCredential(ctx, credentialsFile)
+		return newManagedIdentityCredential(ctx, credentialsFile, cloudConfig)
 	case velerocreds.AuthTypeClientSecret, "":
 		return newClientSecretCredential(credentialsFile, cloudConfig)
 	default:
@@ -181,8 +181,14 @@ func newClientSecretCredential(credentialsFile string, cloudConfig cloud.Configu
 // (certificate-based, mounted via CSI SecretProviderClass) and returns
 // a TokenCredential using the msi-dataplane library. This is the auth path
 // used by ARO HCP.
-func newManagedIdentityCredential(ctx context.Context, credentialsFile string) (azcore.TokenCredential, error) {
-	cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsFile)
+//
+// msi-dataplane overrides ActiveDirectoryAuthorityHost with the credential
+// file's own authenticationEndpoint, so cloudConfig does not determine the AAD
+// authority here. It is still threaded through to match how the control plane
+// operator builds this credential.
+func newManagedIdentityCredential(ctx context.Context, credentialsFile string, cloudConfig cloud.Configuration) (azcore.TokenCredential, error) {
+	cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsFile,
+		dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create managed identity credential from %q: %w", credentialsFile, err)
 	}
