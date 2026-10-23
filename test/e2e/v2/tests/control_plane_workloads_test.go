@@ -77,6 +77,9 @@ var podCrashTolerations = map[string]int32{
 	// registered by the csi-snapshot-controller-operator. During initial rollout or
 	// upgrade the operator's leader election can take longer than the controller's
 	// 30-second startup deadline, causing one crash before the CRD is available.
+	// Upstream fix: https://github.com/kubernetes-csi/external-snapshotter/pull/1475
+	// OCP rebase (merged, ships in OCP 5.1): https://github.com/openshift/csi-external-snapshotter/pull/260
+	// TODO: remove this toleration once CI no longer tests release images older than 5.1.
 	"csi-snapshot-controller": 1,
 	// Allow 1 restart for network-node-identity webhook startup timing
 	"network-node-identity": 1,
