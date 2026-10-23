@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -73,7 +74,9 @@ func managedDNSHostedCluster(tc *internal.TestContext) (*hyperv1.HostedCluster, 
 func AWSManagedDNSTest(getTestCtx internal.TestContextGetter) {
 	Context("AWS Managed Ingress DNS", Label("AWS"), func() {
 		BeforeEach(func() {
-			getTestCtx().SkipIfNotPlatform(hyperv1.AWSPlatform)
+			tc := getTestCtx()
+			tc.SkipIfVersionBelow(e2eutil.Version51)
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
 		})
 
 		It("should report AWSManagedDNSAvailable True with public and private ingress zones", func() {
