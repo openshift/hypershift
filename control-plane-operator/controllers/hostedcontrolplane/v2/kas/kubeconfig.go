@@ -167,10 +167,7 @@ func adaptCustomAdminKubeconfigSecret(cpContext component.WorkloadContext, secre
 }
 
 func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-	url := externalURL(cpContext.InfraStatus)
-	if netutil.IsPrivateHCP(cpContext.HCP) {
-		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
-	}
+	url := bootstrapKubeconfigURL(cpContext.HCP, cpContext.InfraStatus)
 
 	kubeconfig, err := generateKubeConfigWithServingCerts(cpContext, manifests.KASMachineBootstrapClientCertSecret(cpContext.HCP.Namespace), url)
 	if err != nil {
@@ -182,6 +179,22 @@ func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret 
 	}
 	secret.Data[KubeconfigKey] = kubeconfig
 	return nil
+}
+
+// bootstrapKubeconfigURL returns the KAS URL that kubelet uses in its bootstrap kubeconfig.
+// On bare-metal platforms (Agent, None, KubeVirt), kubelet connects through the node-local
+// HAProxy (172.20.0.1 / fd00::1) so that Day 2 LB IP changes don't strand the node.
+func bootstrapKubeconfigURL(hcp *hyperv1.HostedControlPlane, infraStatus infra.InfrastructureStatus) string {
+	if netutil.IsPrivateHCP(hcp) {
+		return internalURL(infraStatus, hcp.Name)
+	}
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AgentPlatform, hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
+		addr := netutil.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
+		return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(addr), infraStatus.APIPort)
+	default:
+		return externalURL(infraStatus)
+	}
 }
 
 func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
