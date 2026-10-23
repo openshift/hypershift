@@ -548,6 +548,121 @@ func TestGetMetadataGetter(t *testing.T) {
 	})
 }
 
+func TestRegistryClientImageMetadataProvider_ConcurrentOverrides(t *testing.T) {
+	t.Run("When mirror overrides are refreshed during lookup, it should use synchronized snapshots", func(t *testing.T) {
+		mirrorCache.mutex.Lock()
+		originalMirrorCache := mirrorCache.cache
+		mirrorCache.cache = make(map[string]mirrorCacheEntry)
+		mirrorCache.mutex.Unlock()
+		defer func() {
+			mirrorCache.mutex.Lock()
+			mirrorCache.cache = originalMirrorCache
+			mirrorCache.mutex.Unlock()
+		}()
+
+		const waitTimeout = time.Second
+		const sourceRegistry = "quay.io"
+		const namespace = "registry-lock-test"
+		const oldMirrorRegistry = "mirror-a.registry-lock-test.example.com"
+		const newMirrorRegistry = "mirror-b.registry-lock-test.example.com"
+		oldMirrorImage := oldMirrorRegistry + "/" + namespace + "/image:latest"
+		newMirrorImage := newMirrorRegistry + "/" + namespace + "/image:latest"
+		canonicalImage := sourceRegistry + "/" + namespace + "/image:latest"
+		requestedImages := make([]string, 0, 2)
+		lookupStarted := make(chan struct{}, 1)
+		releaseLookup := make(chan struct{})
+		lookupDone := make(chan struct{})
+		firstResult := make(chan *reference.DockerImageReference, 1)
+		releaseLookupClosed := false
+		defer func() {
+			if !releaseLookupClosed {
+				close(releaseLookup)
+			}
+		}()
+
+		provider := &RegistryClientImageMetadataProvider{
+			metadataGetter: func(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+				requestedImages = append(requestedImages, imageRef)
+				if imageRef == oldMirrorImage {
+					lookupStarted <- struct{}{}
+					select {
+					case <-releaseLookup:
+					case <-ctx.Done():
+						return nil, nil, nil, ctx.Err()
+					}
+					return nil, nil, nil, fmt.Errorf("mirror unavailable")
+				}
+				return nil, nil, nil, nil
+			},
+		}
+		provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+			sourceRegistry: {oldMirrorRegistry},
+		})
+		parsedRef := reference.DockerImageReference{
+			Registry:  sourceRegistry,
+			Namespace: namespace,
+			Name:      "image",
+			Tag:       "latest",
+		}
+
+		go func() {
+			defer close(lookupDone)
+			firstResult <- provider.seekOverride(t.Context(), parsedRef, []byte(`{"auths":{}}`))
+		}()
+
+		select {
+		case <-lookupStarted:
+		case <-time.After(waitTimeout):
+			t.Fatal("timed out waiting for metadata lookup to block")
+		}
+
+		setDone := make(chan struct{})
+		go func() {
+			provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+				sourceRegistry: {newMirrorRegistry},
+			})
+			close(setDone)
+		}()
+
+		select {
+		case <-setDone:
+		case <-time.After(waitTimeout):
+			t.Fatal("override publication waited for the blocked metadata lookup")
+		}
+
+		close(releaseLookup)
+		releaseLookupClosed = true
+		select {
+		case <-lookupDone:
+		case <-time.After(waitTimeout):
+			t.Fatal("timed out waiting for the first metadata lookup to finish")
+		}
+
+		g := NewWithT(t)
+		g.Expect((<-firstResult).String()).To(Equal(canonicalImage))
+		g.Expect(requestedImages).To(Equal([]string{oldMirrorImage}))
+		g.Expect(provider.seekOverride(t.Context(), parsedRef, []byte(`{"auths":{}}`)).String()).To(Equal(newMirrorImage))
+		g.Expect(requestedImages).To(Equal([]string{oldMirrorImage, newMirrorImage}))
+	})
+}
+
+func TestRegistryClientImageMetadataProvider_SetOpenShiftImageRegistryOverrides(t *testing.T) {
+	t.Run("When the input snapshot is modified, it should preserve the provider state", func(t *testing.T) {
+		g := NewWithT(t)
+		provider := &RegistryClientImageMetadataProvider{}
+		overrides := map[string][]string{
+			"quay.io": {"mirror-a.example.com", "mirror-b.example.com"},
+		}
+
+		provider.SetOpenShiftImageRegistryOverrides(overrides)
+		overrides["quay.io"][0] = "mutated.example.com"
+
+		g.Expect(provider.getOpenShiftImageRegistryOverrides()).To(Equal(map[string][]string{
+			"quay.io": {"mirror-a.example.com", "mirror-b.example.com"},
+		}))
+	})
+}
+
 func TestImageLabels(t *testing.T) {
 	testCases := []struct {
 		name     string
