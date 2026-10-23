@@ -78,6 +78,7 @@ func RegisterKarpenterTests(getTestCtx internal.TestContextGetter) {
 	KarpenterKubeletPropagationTest(getTestCtx)
 	KarpenterAutoNodeLifecycleTest(getTestCtx)
 	KarpenterCPUOptionsNestedVirtualization(getTestCtx)
+	KarpenterCustomDHCPDomainTest(getTestCtx)
 	// This test intentionally leaves dangling resources so cluster teardown must
 	// force-terminate nodes despite a blocking PDB. It must run last.
 	KarpenterBillingConsolidationTest(getTestCtx)
@@ -390,14 +391,14 @@ func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 				{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
 			}
 			// quay.io/openshift/origin-pod does not support arm64
-			armWorkLoads := v2util.TestWorkloadWithImage("arm-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: armNodePool.Name}, "registry.access.redhat.com/ubi10/ubi-minimal:10.1")
+			armWorkloads := v2util.TestWorkloadWithImage("arm-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: armNodePool.Name}, "registry.access.redhat.com/ubi10/ubi-minimal:10.1")
 
 			armNodeLabels := map[string]string{
 				karpenterv1.NodePoolLabelKey: armNodePool.Name,
 				"kubernetes.io/arch":         "arm64",
 			}
 
-			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, armNodePool, armWorkLoads, armNodeLabels, false)
+			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, armNodePool, armWorkloads, armNodeLabels, false)
 
 			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, armNodeLabels)
 			v2util.WaitForReadyKarpenterPods(Default, ctx, hcClient, nodes, nil, 1, map[string]string{"app": "arm-app"})
@@ -480,12 +481,12 @@ func KarpenterInstanceProfileTest(getTestCtx internal.TestContextGetter) {
 
 			// Now provision actual nodes to verify EC2 instances get the instance profile
 			testNodePool := v2util.BaseNodePool("instance-profile-test", "default")
-			testWorkLoads := v2util.TestWorkload("instance-profile-web-app", 1, map[string]string{
+			testWorkloads := v2util.TestWorkload("instance-profile-web-app", 1, map[string]string{
 				karpenterv1.NodePoolLabelKey: testNodePool.Name,
 			})
 			testNodeLabels := map[string]string{karpenterv1.NodePoolLabelKey: testNodePool.Name}
 
-			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, testNodePool, testWorkLoads, testNodeLabels, false)
+			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, testNodePool, testWorkloads, testNodeLabels, false)
 
 			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
 
@@ -687,7 +688,7 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 
 			// Create a Karpenter NodePool that references the custom EC2NodeClass
 			testNodePool := v2util.BaseNodePool("version-test", nc.Name)
-			testWorkLoads := v2util.TestWorkload("version-test-app", 1, map[string]string{
+			testWorkloads := v2util.TestWorkload("version-test-app", 1, map[string]string{
 				karpenterv1.NodePoolLabelKey: testNodePool.Name,
 			})
 			// Use only the nodepool label to select nodes exclusively tied to our version-test nodeclass.
@@ -695,7 +696,7 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 				karpenterv1.NodePoolLabelKey: testNodePool.GetName(),
 			}
 
-			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, testNodePool, testWorkLoads, testNodeLabels, false)
+			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, testNodePool, testWorkloads, testNodeLabels, false)
 
 			// Log diagnostic info about the version-test NodeClass infrastructure.
 			hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
@@ -753,7 +754,7 @@ func KarpenterNodeClassVersionTest(getTestCtx internal.TestContextGetter) {
 
 			// Trigger cleanup and wait for nodes to fully terminate so stale
 			// NodeClaims don't leak vCPUs into subsequent sequential tests.
-			Expect(hcClient.Delete(ctx, testWorkLoads)).To(Succeed())
+			Expect(hcClient.Delete(ctx, testWorkloads)).To(Succeed())
 			Expect(hcClient.Delete(ctx, testNodePool)).To(Succeed())
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 0, testNodeLabels)
 
@@ -1185,12 +1186,12 @@ func KarpenterArbitrarySubnetTest(getTestCtx internal.TestContextGetter) {
 
 			// Launch a node in the custom subnet to verify it's functional.
 			testNodePool := v2util.BaseNodePool("arbitrary-subnet-test", customNodeClass.Name)
-			testWorkLoads := v2util.TestWorkload("arbitrary-subnet-web-app", 1, map[string]string{
+			testWorkloads := v2util.TestWorkload("arbitrary-subnet-web-app", 1, map[string]string{
 				karpenterv1.NodePoolLabelKey: testNodePool.Name,
 			})
 			testNodeLabels := map[string]string{karpenterv1.NodePoolLabelKey: testNodePool.Name}
 
-			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, testNodePool, testWorkLoads, testNodeLabels, false)
+			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, testNodePool, testWorkloads, testNodeLabels, false)
 
 			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
 			By(fmt.Sprintf("Verifying node launched in arbitrary subnet %s", subnetID))
@@ -1205,7 +1206,7 @@ func KarpenterArbitrarySubnetTest(getTestCtx internal.TestContextGetter) {
 
 			// Trigger cleanup; the deferred cleanup handles final subnet removal.
 			// No need to wait for node deprovisioning — subsequent tests use isolated NodePools.
-			Expect(hcClient.Delete(ctx, testWorkLoads)).To(Succeed())
+			Expect(hcClient.Delete(ctx, testWorkloads)).To(Succeed())
 			Expect(hcClient.Delete(ctx, testNodePool)).To(Succeed())
 		})
 	})
@@ -1345,12 +1346,12 @@ func KarpenterKubeletPropagationTest(getTestCtx internal.TestContextGetter) {
 
 			// Create Karpenter NodePool pointing at the custom nodeclass and workloads to provision nodes.
 			testNodePool := v2util.BaseNodePool("kubelet-config-test", nc.Name)
-			testWorkLoads := v2util.TestWorkload("kubelet-config-web-app", 1, map[string]string{
+			testWorkloads := v2util.TestWorkload("kubelet-config-web-app", 1, map[string]string{
 				karpenterv1.NodePoolLabelKey: testNodePool.Name,
 			})
 			testNodeLabels := map[string]string{karpenterv1.NodePoolLabelKey: testNodePool.Name}
 
-			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, testNodePool, testWorkLoads, testNodeLabels, false)
+			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, testNodePool, testWorkloads, testNodeLabels, false)
 
 			// Wait for nodes to be provisioned
 			e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
@@ -1567,15 +1568,15 @@ func KarpenterCPUOptionsNestedVirtualization(getTestCtx internal.TestContextGett
 			testNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
 				{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
 			}
-			testWorkLoads := v2util.TestWorkload("cpu-options-web-app", 1, map[string]string{
+			testWorkloads := v2util.TestWorkload("cpu-options-web-app", 1, map[string]string{
 				karpenterv1.NodePoolLabelKey: testNodePool.Name,
 			})
 			testNodeLabels := map[string]string{karpenterv1.NodePoolLabelKey: testNodePool.Name}
 
-			Expect(hcClient.Create(ctx, testWorkLoads)).To(Succeed())
+			Expect(hcClient.Create(ctx, testWorkloads)).To(Succeed())
 			DeferCleanup(func() {
-				if err := hcClient.Delete(ctx, testWorkLoads); err != nil && !apierrors.IsNotFound(err) {
-					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete Deployment %s", testWorkLoads.Name)
+				if err := hcClient.Delete(ctx, testWorkloads); err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete Deployment %s", testWorkloads.Name)
 				}
 			})
 			Expect(hcClient.Create(ctx, testNodePool)).To(Succeed())
@@ -1599,6 +1600,79 @@ func KarpenterCPUOptionsNestedVirtualization(getTestCtx internal.TestContextGett
 				)
 				GinkgoWriter.Printf("Instance %s has CpuOptions.NestedVirtualization=%s", instanceID, instance.CpuOptions.NestedVirtualization)
 			}
+		})
+	})
+}
+
+func KarpenterCustomDHCPDomainTest(getTestCtx internal.TestContextGetter) {
+	Context("[Feature:AutoNode] Custom DHCP domain", func() {
+		BeforeEach(func() {
+			tc := getTestCtx()
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			if !karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
+				Skip("AutoNode not configured on hosted cluster")
+			}
+		})
+
+		It("should register a node named after the custom DHCP domain of the VPC", func() {
+			tc := getTestCtx()
+			ctx := tc.Context
+			t := GinkgoTB()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			hcClient, err := tc.GetHostedClusterClient(hc)
+			Expect(err).NotTo(HaveOccurred())
+			awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
+			ec2client := v2util.NewEC2Client(ctx, awsCredsFile, hc.Spec.Platform.AWS.Region)
+			vpcID := hc.Spec.Platform.AWS.CloudProviderConfig.VPC
+
+			vpcs, err := ec2client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{VpcIds: []string{vpcID}})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(vpcs.Vpcs).To(HaveLen(1))
+			originalDHCPOptionsID := vpcs.Vpcs[0].DhcpOptionsId
+
+			// DHCP option sets are immutable, so create a set with a custom domain and associate it with the VPC.
+			// The cluster tag lets the infra destroy delete the set if the cleanup below fails.
+			const domain = "custom-dhcp.example.internal"
+			dhcpOptions, err := ec2client.CreateDhcpOptions(ctx, &ec2.CreateDhcpOptionsInput{
+				DhcpConfigurations: []ec2types.NewDhcpConfiguration{
+					{Key: aws.String("domain-name"), Values: []string{domain}},
+					{Key: aws.String("domain-name-servers"), Values: []string{"AmazonProvidedDNS"}},
+				},
+				TagSpecifications: []ec2types.TagSpecification{{
+					ResourceType: ec2types.ResourceTypeDhcpOptions,
+					Tags:         []ec2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + hc.Spec.InfraID), Value: aws.String("owned")}},
+				}},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				// EC2 is eventually consistent, so deleting the set right after restoring the original association
+				// can fail with DependencyViolation until the set is no longer seen as associated.
+				Eventually(func() error {
+					_, err := ec2client.DeleteDhcpOptions(ctx, &ec2.DeleteDhcpOptionsInput{DhcpOptionsId: dhcpOptions.DhcpOptions.DhcpOptionsId})
+					return err
+				}).WithTimeout(2*time.Minute).WithPolling(10*time.Second).Should(Succeed(), "cleanup: failed to delete DHCP options")
+			})
+
+			_, err = ec2client.AssociateDhcpOptions(ctx, &ec2.AssociateDhcpOptionsInput{DhcpOptionsId: dhcpOptions.DhcpOptions.DhcpOptionsId, VpcId: aws.String(vpcID)})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				_, err := ec2client.AssociateDhcpOptions(ctx, &ec2.AssociateDhcpOptionsInput{DhcpOptionsId: originalDHCPOptionsID, VpcId: aws.String(vpcID)})
+				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to restore the original DHCP options")
+			})
+
+			testNodePool := v2util.BaseNodePool("custom-dhcp-domain-test", "default")
+			testWorkloads := v2util.TestWorkload("custom-dhcp-domain-app", 1, map[string]string{karpenterv1.NodePoolLabelKey: testNodePool.Name})
+			testNodeLabels := map[string]string{karpenterv1.NodePoolLabelKey: testNodePool.Name}
+			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, testNodePool, testWorkloads, testNodeLabels, false)
+
+			// The node only becomes ready if the Karpenter machine approver approved its CSRs.
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+			instance, _ := v2util.DescribeEC2Instance(Default, ctx, ec2client, nodes[0])
+			hostLabel, _, _ := strings.Cut(aws.ToString(instance.PrivateDnsName), ".")
+			Expect(nodes[0].Name).To(Equal(hostLabel+"."+domain), "node name should use the custom DHCP domain")
 		})
 	})
 }
@@ -1633,12 +1707,12 @@ func KarpenterBillingConsolidationTest(getTestCtx internal.TestContextGetter) {
 			GinkgoWriter.Printf("Baseline billing metric vCPUs from native NodePools: %d\n", baseline)
 
 			karpenterNodePool := v2util.BaseNodePool("on-demand", "default")
-			workLoads := v2util.TestWorkload("web-app", 2, map[string]string{
+			workloads := v2util.TestWorkload("web-app", 2, map[string]string{
 				karpenterv1.NodePoolLabelKey: karpenterNodePool.Name,
 			})
 			nodeLabels := map[string]string{karpenterv1.NodePoolLabelKey: karpenterNodePool.Name}
 
-			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, karpenterNodePool, workLoads, nodeLabels, true)
+			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, karpenterNodePool, workloads, nodeLabels, true)
 
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 2, nodeLabels)
 			By("Validating billing vCPUs after provisioning two nodes")
@@ -1649,7 +1723,7 @@ func KarpenterBillingConsolidationTest(getTestCtx internal.TestContextGetter) {
 			waitForBillingMetricVCPUs(ctx, tc.MgmtClient, hc, baseline+8)
 
 			By("Scaling workload to 1 replica to verify deprovisioning and consolidation")
-			err = e2eutil.UpdateObject(t, ctx, hcClient, workLoads, func(obj *appsv1.Deployment) {
+			err = e2eutil.UpdateObject(t, ctx, hcClient, workloads, func(obj *appsv1.Deployment) {
 				obj.Spec.Replicas = ptr.To(int32(1))
 			})
 			Expect(err).NotTo(HaveOccurred())
