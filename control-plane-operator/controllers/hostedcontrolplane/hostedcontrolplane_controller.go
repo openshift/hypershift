@@ -171,7 +171,20 @@ const (
 
 	cpoAzureCredentials = "CPOAzureCredentials"
 	kmsAzureCredentials = "KMSAzureCredentials"
+
+	// azureAPITimeout bounds individual Azure SDK calls from this controller
+	// (Key Vault Encrypt, VNET/NSG/RG GETs). Without a deadline, a hung Azure
+	// endpoint stalls the entire hostedcontrolplane reconcile for 15+ minutes.
+	// 30s matches the CPO azureprivatelinkservice controller; the HO uses 2m
+	// for slower Private Link Service operations.
+	azureAPITimeout = 30 * time.Second
 )
+
+// azureCallContext returns a child context with azureAPITimeout. Callers must
+// invoke the returned cancel to release the timer.
+func azureCallContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, azureAPITimeout)
+}
 
 type HostedControlPlaneReconciler struct {
 	client.Client
@@ -3678,7 +3691,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 					fmt.Sprintf("failed to get Azure cloud configuration: %v", err))
 				return
 			}
-			cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}))
+			cred, err = dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}))
 			if err != nil {
 				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
 					fmt.Sprintf("failed to obtain azure client credentials: %v", err))
@@ -3752,7 +3765,9 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		Algorithm: ptr.To(azkeys.EncryptionAlgorithmRSAOAEP256),
 		Value:     []byte("text"),
 	}
-	if _, err := keysClient.Encrypt(ctx, azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
+	encryptCtx, encryptCancel := azureCallContext(ctx)
+	defer encryptCancel()
+	if _, err := keysClient.Encrypt(encryptCtx, azureKmsSpec.ActiveKey.KeyName, azureKmsSpec.ActiveKey.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
 		condition = metav1.Condition{
 			Type:               string(hyperv1.ValidAzureKMSConfig),
 			ObservedGeneration: hcp.Generation,
@@ -3842,17 +3857,23 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 	}
 
 	// Retrieve full vnet information from the VNET ID
-	vnet, err := hyperazureutil.GetVnetInfoFromVnetID(ctx, hcp.Spec.Platform.Azure.VnetID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
+	vnetCtx, vnetCancel := azureCallContext(ctx)
+	defer vnetCancel()
+	vnet, err := hyperazureutil.GetVnetInfoFromVnetID(vnetCtx, hcp.Spec.Platform.Azure.VnetID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
 		return fmt.Errorf("failed to get vnet info to verify its location: %w", err)
 	}
 	// Retrieve full network security group information from the network security group ID
-	nsg, err := hyperazureutil.GetNetworkSecurityGroupInfo(ctx, hcp.Spec.Platform.Azure.SecurityGroupID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
+	nsgCtx, nsgCancel := azureCallContext(ctx)
+	defer nsgCancel()
+	nsg, err := hyperazureutil.GetNetworkSecurityGroupInfo(nsgCtx, hcp.Spec.Platform.Azure.SecurityGroupID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
 		return fmt.Errorf("failed to get network security group info to verify its location: %w", err)
 	}
 	// Retrieve full resource group information from the resource group name
-	rg, err := hyperazureutil.GetResourceGroupInfo(ctx, hcp.Spec.Platform.Azure.ResourceGroupName, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
+	rgCtx, rgCancel := azureCallContext(ctx)
+	defer rgCancel()
+	rg, err := hyperazureutil.GetResourceGroupInfo(rgCtx, hcp.Spec.Platform.Azure.ResourceGroupName, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
 		return fmt.Errorf("failed to get resource group info to verify its location: %w", err)
 	}
