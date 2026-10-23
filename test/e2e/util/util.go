@@ -138,6 +138,15 @@ var (
 		// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
 		"kubevirt-csi":                  20,
 		"aws-ebs-csi-driver-controller": 1,
+		// Allow 1 restart for csi-snapshot-controller: the snapshot-controller starts with
+		// CSIVolumeGroupSnapshot=true and requires the volumegroupsnapshots CRD, which is
+		// registered by the csi-snapshot-controller-operator. During initial rollout or
+		// upgrade the operator's leader election can take longer than the controller's
+		// 30-second startup deadline, causing one crash before the CRD is available.
+		// Upstream fix: https://github.com/kubernetes-csi/external-snapshotter/pull/1475
+		// OCP rebase (merged, ships in OCP 5.1): https://github.com/openshift/csi-external-snapshotter/pull/260
+		// TODO: remove this toleration once CI no longer tests release images older than 5.1.
+		"csi-snapshot-controller": 1,
 		// Allow 1 restart for network-node-identity webhook startup timing
 		"network-node-identity": 1,
 		// temporary workaround for https://issues.redhat.com/browse/CNV-76520
