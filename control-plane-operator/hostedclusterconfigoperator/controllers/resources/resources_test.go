@@ -1072,6 +1072,7 @@ func TestDestroyCloudResources(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
 		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Message).To(Equal("All cloud resources destroyed"))
 	}
 
 	verifyNotDoneCond := func(g *WithT, c client.Client) {
@@ -1705,6 +1706,34 @@ type failingProgressWriteClient struct {
 	err error
 }
 
+type conflictingProgressWriteClient struct {
+	client.Client
+	conflicts   int
+	updateCalls int
+}
+
+func (c *conflictingProgressWriteClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	if _, ok := obj.(*corev1.ConfigMap); ok {
+		c.updateCalls++
+		if c.conflicts > 0 {
+			c.conflicts--
+			latest := &corev1.ConfigMap{}
+			if err := c.Client.Get(ctx, client.ObjectKeyFromObject(obj), latest); err != nil {
+				return err
+			}
+			if latest.Data == nil {
+				latest.Data = map[string]string{}
+			}
+			latest.Data["concurrent-update"] = "preserve"
+			if err := c.Client.Update(ctx, latest); err != nil {
+				return err
+			}
+			return apierrors.NewConflict(schema.GroupResource{Resource: "configmaps"}, obj.GetName(), errors.New("injected resource version conflict"))
+		}
+	}
+	return c.Client.Update(ctx, obj, opts...)
+}
+
 type failingProgressReadClient struct {
 	client.Client
 	err error
@@ -1868,6 +1897,53 @@ func TestLoadAWSLoadBalancerCleanupProgress(t *testing.T) {
 				g.Expect(loadErr.Error()).NotTo(ContainSubstring(test.sensitive))
 			})
 		}
+	})
+}
+
+func TestSaveAWSLoadBalancerCleanupProgress(t *testing.T) {
+	t.Run("When an update conflicts, it should reread and preserve concurrent ConfigMap data", func(t *testing.T) {
+		ctx := t.Context()
+		key := client.ObjectKey{Namespace: "test-hcp", Name: "aws-lb-cleanup-test"}
+		ownerReference := metav1.OwnerReference{APIVersion: "hypershift.openshift.io/v1beta1", Kind: "HostedControlPlane", Name: "test-hcp", UID: "hcp-uid"}
+		original := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: key.Namespace, Name: key.Name, OwnerReferences: []metav1.OwnerReference{ownerReference}},
+			Data: map[string]string{
+				awsLoadBalancerProgressDataKey: `{"hcpUID":"hcp-uid","infraID":"infra-id","services":{}}`,
+				"unrelated":                    "keep",
+			},
+		}
+		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(original).Build()
+		conflictingClient := &conflictingProgressWriteClient{Client: managementClient, conflicts: 1}
+		cachedClient := &staleProgressReadClient{Client: conflictingClient, staleProgressConfigMapReads: true}
+		r := &reconciler{cpClient: cachedClient, cpAPIReader: managementClient}
+
+		configMap := &corev1.ConfigMap{}
+		if err := managementClient.Get(ctx, key, configMap); err != nil {
+			t.Fatal(err)
+		}
+		progress := &awsLoadBalancerCleanupProgress{
+			HCPUID: "hcp-uid", InfraID: "infra-id", Services: map[string]awsLoadBalancerServiceProof{
+				"service-uid": {Namespace: "default", Name: "load-balancer"},
+			},
+		}
+		if err := r.saveAWSLoadBalancerCleanupProgress(ctx, configMap, true, progress); err != nil {
+			t.Fatalf("expected conflict retry to succeed, got %v", err)
+		}
+		if conflictingClient.updateCalls != 2 {
+			t.Fatalf("expected one conflict and one retry, got %d updates", conflictingClient.updateCalls)
+		}
+
+		updated := &corev1.ConfigMap{}
+		if err := managementClient.Get(ctx, key, updated); err != nil {
+			t.Fatal(err)
+		}
+		g := NewGomegaWithT(t)
+		g.Expect(updated.Data["unrelated"]).To(Equal("keep"))
+		g.Expect(updated.Data["concurrent-update"]).To(Equal("preserve"))
+		g.Expect(updated.OwnerReferences).To(Equal([]metav1.OwnerReference{ownerReference}))
+		persisted := &awsLoadBalancerCleanupProgress{}
+		g.Expect(json.Unmarshal([]byte(updated.Data[awsLoadBalancerProgressDataKey]), persisted)).To(Succeed())
+		g.Expect(persisted.Services).To(HaveKey("service-uid"))
 	})
 }
 
@@ -2683,7 +2759,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("AWS orphan target-group cleanup failed; resources may remain"))
 		g.Expect(elbClient.describeCalls).To(BeNumerically(">", 0), "classic ELB NotFound must not invalidate the matching ELBV2 load balancer")
-		g.Expect(elbv2Client.deleteOrder).To(Equal([]string{"listener", "target-group", "load-balancer"}))
+		g.Expect(elbv2Client.deleteOrder).To(Equal([]string{"listener", "load-balancer", "target-group"}))
 		g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{}))).To(BeTrue())
 
 		progressKey := client.ObjectKey{Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID)}
@@ -2698,7 +2774,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
 		g.Expect(removed).To(BeTrue())
 		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(elbv2Client.deleteOrder).To(Equal([]string{"listener", "target-group", "load-balancer"}), "retrying a recorded NotFound identity must not issue a second deletion")
+		g.Expect(elbv2Client.deleteOrder).To(Equal([]string{"listener", "load-balancer", "target-group"}), "retrying a recorded NotFound identity must not issue a second deletion")
 		g.Expect(elbv2Client.targetGroupScanCalls).To(Equal(2))
 		g.Expect(apierrors.IsNotFound(managementClient.Get(t.Context(), progressKey, &corev1.ConfigMap{}))).To(BeTrue())
 	})
