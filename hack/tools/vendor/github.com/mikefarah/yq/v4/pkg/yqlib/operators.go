@@ -3,9 +3,9 @@ package yqlib
 import (
 	"container/list"
 	"fmt"
+	"log/slog"
 
 	"github.com/jinzhu/copier"
-	logging "gopkg.in/op/go-logging.v1"
 )
 
 type operatorHandler func(d *dataTreeNavigator, context Context, expressionNode *ExpressionNode) (Context, error)
@@ -13,7 +13,7 @@ type operatorHandler func(d *dataTreeNavigator, context Context, expressionNode 
 type compoundCalculation func(lhs *ExpressionNode, rhs *ExpressionNode) *ExpressionNode
 
 func compoundAssignFunction(d *dataTreeNavigator, context Context, expressionNode *ExpressionNode, calculation compoundCalculation) (Context, error) {
-	lhs, err := d.GetMatchingNodes(context, expressionNode.LHS)
+	lhs, err := d.GetMatchingNodes(context.WritableClone(), expressionNode.LHS)
 	if err != nil {
 		return Context{}, err
 	}
@@ -88,7 +88,7 @@ func resultsForRHS(d *dataTreeNavigator, context Context, lhsCandidate *Candidat
 
 	for rightEl := rhs.MatchingNodes.Front(); rightEl != nil; rightEl = rightEl.Next() {
 		rhsCandidate := rightEl.Value.(*CandidateNode)
-		if !log.IsEnabledFor(logging.DEBUG) {
+		if !log.IsEnabledFor(slog.LevelDebug) {
 			log.Debugf("Applying lhs: %v, rhsCandidate, %v", NodeToString(lhsCandidate), NodeToString(rhsCandidate))
 		}
 		resultCandidate, err := prefs.Calculation(d, context, lhsCandidate, rhsCandidate)
@@ -118,7 +118,7 @@ func doCrossFunc(d *dataTreeNavigator, context Context, expressionNode *Expressi
 	}
 	log.Debugf("crossFunction LHS len: %v", lhs.MatchingNodes.Len())
 
-	if prefs.CalcWhenEmpty && lhs.MatchingNodes.Len() == 0 {
+	if prefs.CalcWhenEmpty && context.MatchingNodes.Len() > 0 && lhs.MatchingNodes.Len() == 0 {
 		err := resultsForRHS(d, context, nil, prefs, expressionNode.RHS, results)
 		if err != nil {
 			return Context{}, err
