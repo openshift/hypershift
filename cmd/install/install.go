@@ -411,6 +411,11 @@ func (o *Options) validateMiscConfig() []error {
 			errs = append(errs, fmt.Errorf("not a valid platform type: %s", platform))
 		}
 	}
+	// Temporary: CAPO v0.15 uses v1beta2 while HyperShift still creates v1beta1 objects.
+	// Conversion webhooks must be enabled when using OpenStack to facilitate the conversion between api versions
+	if o.DisableCAPIConversionWebhook && isOpenStackPlatformEnabled(o.PlatformsToInstall) {
+		errs = append(errs, fmt.Errorf("--disable-capi-conversion-webhook cannot be used when installing OpenStack CRDs"))
+	}
 	if len(o.ImagePullPolicy) > 0 {
 		normalized := strings.ToLower(o.ImagePullPolicy)
 		switch normalized {
@@ -1124,6 +1129,18 @@ func isAzurePlatformEnabled(platformsToInstall []string) bool {
 	}
 	for _, platform := range platformsToInstall {
 		if strings.EqualFold(platform, "azure") {
+			return true
+		}
+	}
+	return false
+}
+
+func isOpenStackPlatformEnabled(platformsToInstall []string) bool {
+	if len(platformsToInstall) == 0 {
+		return true
+	}
+	for _, platform := range platformsToInstall {
+		if strings.EqualFold(platform, "openstack") {
 			return true
 		}
 	}
