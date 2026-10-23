@@ -181,6 +181,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			t.Log("Capturing bootstrap chain state before operator upgrade")
 			preUpgradeBootstrapState, err = captureBootstrapChain(ctx, mgmtClient, hcpNameSpace, nodePoolsMap, useCAPIv1Beta1)
 			g.Expect(err).ToNot(gomega.HaveOccurred(), "Failed to capture pre-upgrade bootstrap state")
+			g.Expect(preUpgradeBootstrapState).To(gomega.HaveLen(len(nodePoolsMap)), "Bootstrap state must cover every NodePool")
 			t.Logf("Captured bootstrap state for %d NodePools", len(preUpgradeBootstrapState))
 		})).To(gomega.BeTrue(), "Calculating HyperShift Operator upgrade invariants should succeed")
 
@@ -306,6 +307,11 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			t.Log("Verifying complete rollout invariants after rotation")
 			err = verifyCompleteRolloutInvariants(ctx, mgmtClient, hcpNameSpace, nodePoolsMap, machineDeploymentMap, useCAPIv1Beta1)
 			g.Expect(err).ToNot(gomega.HaveOccurred(), "Rollout invariants should hold after rotation")
+			if *scaleFromZeroUpgradeChecks {
+				current, err := e2eutil.SnapshotScaleFromZeroRollout(ctx, mgmtClient, guestClient, hcpNameSpace, capiVersion, globalOpts.Platform)
+				g.Expect(err).NotTo(gomega.HaveOccurred())
+				g.Expect(reflect.DeepEqual(current, rolloutSnapshot)).To(gomega.BeTrue(), "token rotation must not change worker identities, templates, or scalable specs")
+			}
 
 			t.Log("✓ Token rotation verification passed - operator upgrade did not break rotation or credential updates")
 		})).To(gomega.BeTrue(), "Token rotation verification should succeed")

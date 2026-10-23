@@ -81,8 +81,16 @@ func captureBootstrapChain(ctx context.Context, client crclient.Client, namespac
 				}
 				bootstrapSecretName = md.Spec.Template.Spec.Bootstrap.DataSecretName
 			}
+		} else if useCAPIv1Beta1 {
+			ms := &capiv1beta1.MachineSet{}
+			if err := client.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: npName}, ms); err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				return nil, fmt.Errorf("failed to get MachineSet %s/%s: %w", namespace, npName, err)
+			}
+			bootstrapSecretName = ms.Spec.Template.Spec.Bootstrap.DataSecretName
 		} else {
-			// InPlace uses MachineSet (always v1beta2)
 			ms := &capiv1beta2.MachineSet{}
 			if err := client.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: npName}, ms); err != nil {
 				if apierrors.IsNotFound(err) {
@@ -244,6 +252,12 @@ func verifyBootstrapChainIntact(ctx context.Context, client crclient.Client, nam
 			}
 			currentBootstrapRef = md.Spec.Template.Spec.Bootstrap.DataSecretName
 		}
+	} else if useCAPIv1Beta1 {
+		ms := &capiv1beta1.MachineSet{}
+		if err := client.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: nodePool.Name}, ms); err != nil {
+			return fmt.Errorf("failed to get MachineSet: %w", err)
+		}
+		currentBootstrapRef = ms.Spec.Template.Spec.Bootstrap.DataSecretName
 	} else {
 		ms := &capiv1beta2.MachineSet{}
 		if err := client.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: nodePool.Name}, ms); err != nil {
