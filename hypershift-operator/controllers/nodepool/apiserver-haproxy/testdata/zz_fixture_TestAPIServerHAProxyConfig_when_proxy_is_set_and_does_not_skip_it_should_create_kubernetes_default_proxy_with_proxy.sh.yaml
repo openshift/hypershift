@@ -1,0 +1,42 @@
+ignition:
+  version: 3.2.0
+storage:
+  files:
+  - contents:
+      source: data:text/plain;charset=utf-8;base64,IyEvdXNyL2Jpbi9lbnYgYmFzaApzZXQgLXgKaXAgYWRkciBhZGQgY2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbS8zMiBicmQgY2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbSBzY29wZSBob3N0IGRldiBsbwppcCByb3V0ZSBhZGQgY2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbS8zMiBkZXYgbG8gc2NvcGUgbGluayBzcmMgY2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbQo=
+    mode: 493
+    overwrite: true
+    path: /usr/local/bin/setup-apiserver-ip.sh
+  - contents:
+      source: data:text/plain;charset=utf-8;base64,IyEvdXNyL2Jpbi9lbnYgYmFzaApzZXQgLXgKaXAgYWRkciBkZWxldGUgY2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbS8zMiBkZXYgbG8KaXAgcm91dGUgZGVsIGNsdXN0ZXIuaW50ZXJuYWwuZXhhbXBsZS5jb20vMzIgZGV2IGxvIHNjb3BlIGxpbmsgc3JjIGNsdXN0ZXIuaW50ZXJuYWwuZXhhbXBsZS5jb20K
+    mode: 493
+    overwrite: true
+    path: /usr/local/bin/teardown-apiserver-ip.sh
+  - contents:
+      source: data:text/plain;charset=utf-8;base64,YXBpVmVyc2lvbjogdjEKa2luZDogUG9kCm1ldGFkYXRhOgogIGxhYmVsczoKICAgIGs4cy1hcHA6IGt1YmUtYXBpc2VydmVyLXByb3h5CiAgbmFtZToga3ViZS1hcGlzZXJ2ZXItcHJveHkKICBuYW1lc3BhY2U6IGt1YmUtc3lzdGVtCnNwZWM6CiAgY29udGFpbmVyczoKICAtIGNvbW1hbmQ6CiAgICAtIGNvbnRyb2wtcGxhbmUtb3BlcmF0b3IKICAgIC0ga3ViZXJuZXRlcy1kZWZhdWx0LXByb3h5CiAgICAtIC0tbGlzdGVuLWFkZHI9Y2x1c3Rlci5pbnRlcm5hbC5leGFtcGxlLmNvbTo4NDQzCiAgICAtIC0tcHJveHktYWRkcj0xMC4wLjEzOS4xMDM6MzEyOAogICAgLSAtLWFwaXNlcnZlci1hZGRyPWNsdXN0ZXIuZXhhbXBsZS5jb206NDQzCiAgICBpbWFnZTogaHR0cDovLzEwLjAuMTM5LjEwMzozMTI4CiAgICBuYW1lOiBrdWJlcm5ldGVzLWRlZmF1bHQtcHJveHkKICAgIHJlc291cmNlczoKICAgICAgcmVxdWVzdHM6CiAgICAgICAgY3B1OiAxM20KICAgICAgICBtZW1vcnk6IDE2TWkKICAgIHNlY3VyaXR5Q29udGV4dDoKICAgICAgcnVuQXNVc2VyOiAxMDAxCiAgaG9zdE5ldHdvcms6IHRydWUKICBwcmlvcml0eUNsYXNzTmFtZTogc3lzdGVtLW5vZGUtY3JpdGljYWwKc3RhdHVzOiB7fQo=
+    mode: 420
+    overwrite: true
+    path: /etc/kubernetes/manifests/kube-apiserver-proxy.yaml
+  - contents:
+      source: data:text/plain;charset=utf-8;base64,IyBTeXN0ZW0td2lkZSBwcm94eSBjb25maWd1cmF0aW9uIGZvciBIeXBlclNoaWZ0CiMgR2VuZXJhdGVkIGJ5IGh5cGVyc2hpZnQtb3BlcmF0b3IKIyBUaGlzIGVuc3VyZXMgYWxsIHByb2Nlc3NlcyAoaW5jbHVkaW5nIGludGVyYWN0aXZlIHNoZWxscykgdXNlIHRoZSBwcm94eQoKZXhwb3J0IEhUVFBfUFJPWFk9aHR0cDovLzEwLjAuMTM5LjEwMzozMTI4CmV4cG9ydCBIVFRQU19QUk9YWT1odHRwOi8vMTAuMC4xMzkuMTAzOjMxMjgKZXhwb3J0IE5PX1BST1hZPWxvY2FsaG9zdCwxMjcuMC4wLjEsLnN2YywuY2x1c3Rlci5sb2NhbAo=
+    mode: 420
+    overwrite: true
+    path: /etc/profile.d/proxy.sh
+systemd:
+  units:
+  - contents: |
+      [Unit]
+      Description=Sets up local IP to proxy API server requests
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/setup-apiserver-ip.sh
+      ExecStop=/usr/local/bin/teardown-apiserver-ip.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+    enabled: true
+    name: apiserver-ip.service
