@@ -13,6 +13,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/awsapi"
+	"github.com/openshift/hypershift/support/upsert"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -21,6 +22,8 @@ import (
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/aws/smithy-go"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -28,6 +31,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -544,6 +548,181 @@ func TestEnsureVPCEndpoint(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestReconcileAWSEndpointService(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name          string
+		noDNS         bool
+		unknownName   bool
+		private       bool
+		cachedZone    bool
+		failure       string
+		expectedError string
+	}{
+		{name: "When an endpoint has no DNS entries, it should leave DNS status unchanged", noDNS: true},
+		{name: "When the service has no DNS mapping, it should leave DNS status unchanged", unknownName: true},
+		{name: "When the zone is uncached, it should cache the zone and remove stale public external names"},
+		{name: "When the zone is cached, it should reuse it without a lookup", cachedZone: true},
+		{name: "When the endpoint is private, it should reconcile API and OAuth external names", private: true},
+		{name: "When zone lookup fails, it should preserve DNS status and return the error", failure: "lookup", expectedError: "zone lookup failed"},
+		{name: "When record creation fails, it should preserve DNS status and return the error", failure: "record", expectedError: "record creation failed"},
+		{name: "When external service creation fails, it should aggregate the errors", private: true, failure: "create", expectedError: "failed to create external services for private endpoints"},
+		{name: "When listing stale services fails, it should return the error", failure: "list", expectedError: "cannot list private external services"},
+		{name: "When deleting stale services fails, it should aggregate the errors", failure: "delete", expectedError: "failed to delete private external service"},
+		{name: "When endpoint lookup fails, it should stop before DNS reconciliation", failure: "endpoint", expectedError: "endpoint lookup failed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assertions := NewGomegaWithT(t)
+			mockController := gomock.NewController(t)
+			ec2Client := awsapi.NewMockEC2API(mockController)
+			route53Client := awsapi.NewMockROUTE53API(mockController)
+			builder := &clientBuilder{}
+			if test.cachedZone {
+				builder.setLocalHostedZoneID("zone-test")
+			}
+			scheme := runtime.NewScheme()
+			assertions.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			assertions.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+			stale := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "stale", Namespace: "clusters-test", Labels: map[string]string{externalPrivateServiceLabel: "true"}}}
+			stalePresence := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "stale-presence", Namespace: "clusters-test", Labels: map[string]string{externalPrivateServiceLabel: "false"}}}
+			unrelated := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "unrelated", Namespace: "clusters-test"}}
+			var created, deleted []string
+			kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stale, stalePresence, unrelated).WithInterceptorFuncs(interceptor.Funcs{
+				Create: func(ctx context.Context, client crclient.WithWatch, object crclient.Object, options ...crclient.CreateOption) error {
+					if test.failure == "create" {
+						created = append(created, object.GetName())
+						return errors.New("service creation failed")
+					}
+					return client.Create(ctx, object, options...)
+				},
+				List: func(ctx context.Context, client crclient.WithWatch, list crclient.ObjectList, options ...crclient.ListOption) error {
+					if test.failure == "list" {
+						return errors.New("service list failed")
+					}
+					return client.List(ctx, list, options...)
+				},
+				Delete: func(ctx context.Context, client crclient.WithWatch, object crclient.Object, options ...crclient.DeleteOption) error {
+					if test.failure == "delete" {
+						deleted = append(deleted, object.GetName())
+						return errors.New("service deletion failed")
+					}
+					return client.Delete(ctx, object, options...)
+				},
+			}).Build()
+			reconciler := &AWSEndpointServiceReconciler{Client: kubeClient, CreateOrUpdateProvider: upsert.New(false), awsClientBuilder: builder}
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters-test", UID: "hcp-test"},
+				Spec:       hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public}}},
+			}
+			if test.private {
+				hcp.Spec.Platform.AWS.EndpointAccess = hyperv1.Private
+				hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+					{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route, Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"}}},
+					{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route, Route: &hyperv1.RoutePublishingStrategy{Hostname: "oauth.example.com"}}},
+				}
+			}
+			service := &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-private", Namespace: hcp.Namespace},
+				Status:     hyperv1.AWSEndpointServiceStatus{EndpointID: "vpce-test", EndpointServiceName: "service-test", SecurityGroupID: "sg-test", DNSNames: []string{"previous"}, DNSZoneID: "previous-zone"},
+			}
+			if test.unknownName {
+				service.Name = "unknown"
+			}
+			ec2Client.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2v2.DescribeSecurityGroupsOutput{SecurityGroups: []ec2types.SecurityGroup{{GroupId: aws.String("sg-test")}}}, nil)
+			endpoint := ec2types.VpcEndpoint{VpcEndpointId: aws.String("vpce-test"), ServiceName: aws.String("service-test"), Groups: []ec2types.SecurityGroupIdentifier{{GroupId: aws.String("sg-test")}}}
+			if !test.noDNS {
+				endpoint.DnsEntries = []ec2types.DnsEntry{{DnsName: aws.String("endpoint.example.com")}}
+			}
+			var endpointError error
+			if test.failure == "endpoint" {
+				endpointError = errors.New("endpoint lookup failed")
+			}
+			ec2Client.EXPECT().DescribeVpcEndpoints(gomock.Any(), &ec2v2.DescribeVpcEndpointsInput{VpcEndpointIds: []string{"vpce-test"}}).Return(&ec2v2.DescribeVpcEndpointsOutput{VpcEndpoints: []ec2types.VpcEndpoint{endpoint}}, endpointError)
+			if !test.noDNS && !test.unknownName && test.failure != "endpoint" {
+				if !test.cachedZone {
+					var lookupError error
+					if test.failure == "lookup" {
+						lookupError = errors.New("zone lookup failed")
+					}
+					route53Client.EXPECT().ListHostedZones(gomock.Any(), gomock.Any(), gomock.Any()).Return(&route53sdk.ListHostedZonesOutput{HostedZones: []route53types.HostedZone{{Id: aws.String("/hostedzone/zone-test"), Name: aws.String("test.hypershift.local."), Config: &route53types.HostedZoneConfig{PrivateZone: true}}}}, lookupError)
+				}
+				if test.failure != "lookup" {
+					var recordError error
+					if test.failure == "record" {
+						recordError = errors.New("record creation failed")
+					}
+					route53Client.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, input *route53sdk.ChangeResourceRecordSetsInput, options ...func(*route53sdk.Options)) (*route53sdk.ChangeResourceRecordSetsOutput, error) {
+						assertions.Expect(aws.ToString(input.HostedZoneId)).To(Equal("zone-test"))
+						assertions.Expect(input.ChangeBatch.Changes).To(HaveLen(1))
+						record := input.ChangeBatch.Changes[0]
+						assertions.Expect(record.Action).To(Equal(route53types.ChangeActionUpsert))
+						assertions.Expect(aws.ToString(record.ResourceRecordSet.Name)).To(Equal("api.test.hypershift.local"))
+						assertions.Expect(record.ResourceRecordSet.Type).To(Equal(route53types.RRTypeCname))
+						assertions.Expect(record.ResourceRecordSet.ResourceRecords).To(Equal([]route53types.ResourceRecord{{Value: aws.String("endpoint.example.com")}}))
+						return &route53sdk.ChangeResourceRecordSetsOutput{}, recordError
+					})
+				}
+			}
+			ctx := logr.NewContext(t.Context(), logr.Discard())
+			err := reconciler.reconcileAWSEndpointService(ctx, service, hcp, ec2Client, route53Client)
+			if test.expectedError != "" {
+				assertions.Expect(err).To(MatchError(ContainSubstring(test.expectedError)))
+				if test.failure == "create" {
+					assertions.Expect(created).To(ConsistOf("kube-apiserver-private-external", "oauth-private-external"))
+					for _, serviceType := range []string{"api", "oauth"} {
+						assertions.Expect(err.Error()).To(ContainSubstring("failed to reconcile " + serviceType + " external service: service creation failed"))
+					}
+				}
+				if test.failure == "delete" {
+					assertions.Expect(deleted).To(ConsistOf(stale.Name, stalePresence.Name))
+					for _, name := range deleted {
+						assertions.Expect(err.Error()).To(ContainSubstring("failed to delete private external service " + name + ": service deletion failed"))
+					}
+				}
+			} else {
+				assertions.Expect(err).NotTo(HaveOccurred())
+			}
+			if test.noDNS || test.unknownName || test.failure == "lookup" || test.failure == "record" || test.failure == "endpoint" {
+				assertions.Expect(service.Status.DNSNames).To(Equal([]string{"previous"}))
+				assertions.Expect(service.Status.DNSZoneID).To(Equal("previous-zone"))
+			} else {
+				assertions.Expect(service.Status.DNSNames).To(Equal([]string{"api.test.hypershift.local"}))
+				assertions.Expect(service.Status.DNSZoneID).To(Equal("zone-test"))
+				assertions.Expect(builder.getLocalHostedZoneID()).To(Equal("zone-test"))
+			}
+			assertions.Expect(kubeClient.Get(ctx, crclient.ObjectKeyFromObject(unrelated), &corev1.Service{})).To(Succeed())
+			for _, staleService := range []*corev1.Service{stale, stalePresence} {
+				lookupError := kubeClient.Get(ctx, crclient.ObjectKeyFromObject(staleService), &corev1.Service{})
+				if test.expectedError == "" && !test.noDNS && !test.unknownName && !test.private {
+					assertions.Expect(apierrors.IsNotFound(lookupError)).To(BeTrue())
+				} else {
+					assertions.Expect(lookupError).NotTo(HaveOccurred())
+				}
+			}
+			if test.expectedError == "" && !test.noDNS && !test.unknownName {
+				if test.private {
+					for name, hostname := range map[string]string{"kube-apiserver-private-external": "api.example.com", "oauth-private-external": "oauth.example.com"} {
+						external := &corev1.Service{}
+						assertions.Expect(kubeClient.Get(ctx, crclient.ObjectKey{Namespace: hcp.Namespace, Name: name}, external)).To(Succeed())
+						assertions.Expect(external.Spec.Type).To(Equal(corev1.ServiceTypeExternalName))
+						assertions.Expect(external.Spec.ExternalName).To(Equal("endpoint.example.com"))
+						assertions.Expect(external.Labels[externalPrivateServiceLabel]).To(Equal("true"))
+						assertions.Expect(external.Annotations[hyperv1.ExternalDNSHostnameAnnotation]).To(Equal(hostname))
+						assertions.Expect(external.OwnerReferences).To(HaveLen(1))
+						assertions.Expect(external.OwnerReferences[0].UID).To(Equal(hcp.UID))
+						assertions.Expect(external.OwnerReferences[0].Name).To(Equal(hcp.Name))
+						assertions.Expect(external.OwnerReferences[0].Kind).To(Equal("HostedControlPlane"))
+						assertions.Expect(external.OwnerReferences[0].APIVersion).To(Equal("hypershift.openshift.io/v1beta1"))
+						assertions.Expect(external.OwnerReferences[0].Controller).To(Equal(aws.Bool(true)))
+					}
+				}
+			}
+		})
 	}
 }
 
