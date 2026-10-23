@@ -2396,40 +2396,66 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
 	controlPlaneNamespace string,
 ) error {
-	if hcluster.Spec.Configuration == nil {
-		return nil
+	if hcluster.UID == "" || controlPlaneNamespace == "" || controlPlaneNamespace == hcluster.Namespace {
+		return fmt.Errorf("global config sync requires a HostedCluster UID and a separate control plane namespace")
 	}
-	configMapRefs := configrefs.ConfigMapRefs(hcluster.Spec.Configuration)
+	var configMapRefs, secretRefs []string
+	if hcluster.Spec.Configuration != nil {
+		configMapRefs = configrefs.ConfigMapRefs(hcluster.Spec.Configuration)
+		secretRefs = configrefs.SecretRefs(hcluster.Spec.Configuration)
+	}
 	for _, configMapRef := range configMapRefs {
 		sourceCM := &corev1.ConfigMap{}
 		if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef}, sourceCM); err != nil {
 			return fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef, err)
 		}
+		if err := validateGlobalConfigMapSource(sourceCM, hcluster); err != nil {
+			return fmt.Errorf("invalid referenced configmap %s/%s: %w", sourceCM.Namespace, sourceCM.Name, err)
+		}
 		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); err != nil {
-			return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+			return fmt.Errorf("failed to set referenced resource annotation on configmap %s/%s: %w", sourceCM.Namespace, sourceCM.Name, err)
 		}
 		destCM := &corev1.ConfigMap{}
 		destCM.Name = sourceCM.Name
 		destCM.Namespace = controlPlaneNamespace
 		if _, err := createOrUpdate(ctx, r.Client, destCM, func() error {
-			destCM.Annotations = sourceCM.Annotations
-			destCM.Labels = sourceCM.Labels
-			destCM.Data = sourceCM.Data
-			destCM.BinaryData = sourceCM.BinaryData
-			destCM.Immutable = sourceCM.Immutable
+			tracked := globalConfigMapTracked(destCM, hcluster)
+			_, hasCopyLabel := destCM.Labels[globalConfigCopyLabel]
+			_, hasOwnerUID := destCM.Annotations[globalConfigOwnerUIDAnnotation]
+			cluster, hasCluster := destCM.Annotations[k8sutil.HostedClusterAnnotation]
+			if len(destCM.OwnerReferences) > 0 || (hasCluster && cluster != client.ObjectKeyFromObject(hcluster).String()) || ((hasCopyLabel || hasOwnerUID) && !tracked) {
+				return fmt.Errorf("destination configmap has conflicting ownership or global config provenance")
+			}
+			track := tracked || destCM.ResourceVersion == ""
+			copied := sourceCM.DeepCopy()
+			destCM.Annotations = copied.Annotations
+			destCM.Labels = copied.Labels
+			destCM.Data = copied.Data
+			destCM.BinaryData = copied.BinaryData
+			destCM.Immutable = copied.Immutable
+			if track {
+				if destCM.Labels == nil {
+					destCM.Labels = map[string]string{}
+				}
+				destCM.Labels[globalConfigCopyLabel] = "true"
+				if destCM.Annotations == nil {
+					destCM.Annotations = map[string]string{}
+				}
+				destCM.Annotations[globalConfigOwnerUIDAnnotation] = string(hcluster.UID)
+				destCM.Annotations[k8sutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
+			}
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
 		}
 	}
-	secretRefs := configrefs.SecretRefs(hcluster.Spec.Configuration)
 	for _, secretRef := range secretRefs {
 		sourceSecret := &corev1.Secret{}
 		if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef}, sourceSecret); err != nil {
 			return fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
 		}
 		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceSecret); err != nil {
-			return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+			return fmt.Errorf("failed to set referenced resource annotation on secret %s/%s: %w", sourceSecret.Namespace, sourceSecret.Name, err)
 		}
 		if err := ensureHostedResourcesAreEmpty(ctx, r.Client, hcluster, sourceSecret); err != nil {
 			return fmt.Errorf("failed to validate referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
@@ -2438,17 +2464,18 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 		destSecret.Name = sourceSecret.Name
 		destSecret.Namespace = controlPlaneNamespace
 		if _, err := createOrUpdate(ctx, r.Client, destSecret, func() error {
-			destSecret.Annotations = sourceSecret.Annotations
-			destSecret.Labels = sourceSecret.Labels
-			destSecret.Data = sourceSecret.Data
-			destSecret.Immutable = sourceSecret.Immutable
-			destSecret.Type = sourceSecret.Type
+			copied := sourceSecret.DeepCopy()
+			destSecret.Annotations = copied.Annotations
+			destSecret.Labels = copied.Labels
+			destSecret.Data = copied.Data
+			destSecret.Immutable = copied.Immutable
+			destSecret.Type = copied.Type
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile secret %s/%s: %w", destSecret.Namespace, destSecret.Name, err)
 		}
 	}
-	return nil
+	return r.cleanupGlobalConfigMaps(ctx, hcluster, controlPlaneNamespace, sets.New[string](configMapRefs...))
 }
 
 // reconcileKubeconfigSync syncs the kubeconfig secret from the HCP namespace
