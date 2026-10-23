@@ -29,6 +29,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	secretencryption "github.com/openshift/hypershift/support/secretencryption"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -42,13 +43,15 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// kasMaxAllowedRestarts is the restart ceiling checked after re-encryption completes.
-// One restart is expected (KAS rolls out with the updated EncryptionConfiguration); 2
-// allows a single transient failure on top of that without masking a true crash loop.
+// kasMaxAllowedRestarts is the per-rotation restart delta ceiling checked after
+// re-encryption completes. One restart is expected (KAS rolls out with the updated
+// EncryptionConfiguration); 2 allows a single transient failure without masking a
+// true crash loop. Checked as a delta from a pre-rotation baseline to avoid false
+// failures from restarts that occurred before the test on a shared cluster.
 const kasMaxAllowedRestarts = int32(2)
 
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdEncryptionReencryption] Etcd Encryption Re-encryption",
-	Label("etcd-encryption-reencryption"), func() {
+var _ = Describe("[sig-hypershift][Jira:Hypershift] Etcd Encryption Re-encryption",
+	Label("lifecycle", "etcd-encryption-reencryption"), func() {
 		var testCtx *internal.TestContext
 
 		BeforeEach(func() {
@@ -74,16 +77,22 @@ func RegisterEtcdEncryptionReencryptionTests(getTestCtx internal.TestContextGett
 	ConditionBubbleUpTest(getTestCtx)
 }
 
-// waitForReEncryptionStarted waits until TargetKey.Provider is non-empty, which means
-// the reconciler has started a new rotation. TargetKey is set at the beginning of a
-// rotation and stays set until the rotation completes — it is a level trigger, not an
-// edge trigger, so it cannot be missed regardless of the poll interval.
+// waitForReEncryptionStarted waits until TargetKey.Provider is non-empty (the reconciler
+// has started a rotation) and EtcdDataEncryptionUpToDate is False (the in-progress condition
+// is set). Together these assert the not-True step of the True → False → True lifecycle.
+// TargetKey is a level trigger set for the duration of the rotation, so it cannot be missed
+// regardless of poll interval.
 func waitForReEncryptionStarted(ctx context.Context, mgmtClient crclient.Client, hcKey crclient.ObjectKey, timeout time.Duration) {
 	Eventually(func(g Gomega) {
 		hc := &hyperv1.HostedCluster{}
 		g.Expect(mgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 		g.Expect(hc.Status.SecretEncryption.TargetKey.Provider).NotTo(BeEmpty(),
 			"TargetKey.Provider should be set once rotation has started")
+		cond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
+		g.Expect(cond).NotTo(BeNil(), "EtcdDataEncryptionUpToDate condition should exist during rotation")
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse),
+			"EtcdDataEncryptionUpToDate should be False while rotation is in progress, got reason=%s message=%s",
+			cond.Reason, cond.Message)
 	}, timeout, 5*time.Second).Should(Succeed())
 }
 
@@ -115,20 +124,98 @@ func verifyReEncryptionStatus(hc *hyperv1.HostedCluster, expectedProvider hyperv
 		"history[0].startedTime should be set")
 	Expect(hc.Status.SecretEncryption.History[0].CompletionTime.IsZero()).To(BeFalse(),
 		"history[0].completionTime should be set")
+
+	// Verify that the history fingerprints reflect the actual key rotation.
+	// From.Fingerprint and To.Fingerprint must differ (the key actually changed),
+	// and To.Fingerprint must match the current ActiveKey (the rotation targeted the right key).
+	var kvType hyperv1.AzureKMSKeyVaultType
+	if hc.Spec.SecretEncryption.KMS != nil && hc.Spec.SecretEncryption.KMS.Azure != nil {
+		kvType = hc.Spec.SecretEncryption.KMS.Azure.KeyVaultType
+	}
+	activeFP := secretencryption.FingerprintFromKeyStatus(&hc.Status.SecretEncryption.ActiveKey, kvType)
+	Expect(activeFP).NotTo(BeEmpty(), "could not compute fingerprint from ActiveKey")
+	Expect(hc.Status.SecretEncryption.History[0].To.Fingerprint).To(Equal(activeFP),
+		"history[0].to.fingerprint should match the current active key fingerprint")
+	Expect(hc.Status.SecretEncryption.History[0].From.Fingerprint).NotTo(Equal(activeFP),
+		"history[0].from.fingerprint should differ from to.fingerprint — rotation must change the key")
 }
 
-func listStorageVersionMigrations(ctx context.Context, guestClient crclient.Client) (*unstructured.UnstructuredList, error) {
+// svmWriteKeyAnnotation is the annotation the library-go migrator stamps on every
+// StorageVersionMigration to identify which encryption write-key triggered it.
+const svmWriteKeyAnnotation = "encryption.apiserver.operator.openshift.io/write-key"
+
+// verifyStorageVersionMigrations asserts that at least one StorageVersionMigration in
+// the guest cluster was created for the current rotation (identified by the write-key
+// annotation) and that every such migration has a Succeeded condition = True.
+// Filtering by the annotation rules out SVMs left over from bootstrap or prior rotations.
+func verifyStorageVersionMigrations(ctx context.Context, guestClient crclient.Client, hc *hyperv1.HostedCluster) {
+	// Compute the fingerprint the controller uses for the write-key annotation.
+	// ActiveKey holds the key that was just rotated to (TargetKey is cleared on completion).
+	var kvType hyperv1.AzureKMSKeyVaultType
+	if hc.Spec.SecretEncryption.KMS != nil && hc.Spec.SecretEncryption.KMS.Azure != nil {
+		kvType = hc.Spec.SecretEncryption.KMS.Azure.KeyVaultType
+	}
+	fp := secretencryption.FingerprintFromKeyStatus(&hc.Status.SecretEncryption.ActiveKey, kvType)
+	Expect(fp).NotTo(BeEmpty(), "could not compute fingerprint from ActiveKey — Status may not have been updated yet")
+	writeKey := "encryption-key-" + fp
+
 	svmList := &unstructured.UnstructuredList{}
 	svmList.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "migration.k8s.io",
 		Version: "v1alpha1",
 		Kind:    "StorageVersionMigrationList",
 	})
-	err := guestClient.List(ctx, svmList)
-	return svmList, err
+	Expect(guestClient.List(ctx, svmList)).To(Succeed(), "failed to list StorageVersionMigration CRs")
+
+	var matched []unstructured.Unstructured
+	for _, svm := range svmList.Items {
+		if svm.GetAnnotations()[svmWriteKeyAnnotation] == writeKey {
+			matched = append(matched, svm)
+		}
+	}
+	Expect(matched).NotTo(BeEmpty(),
+		"no StorageVersionMigration found with write-key annotation %q — rotation did not trigger migrations", writeKey)
+
+	for _, svm := range matched {
+		conditions, _, _ := unstructured.NestedSlice(svm.Object, "status", "conditions")
+		var succeeded bool
+		for _, raw := range conditions {
+			cond, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if cond["type"] == "Succeeded" && cond["status"] == "True" {
+				succeeded = true
+				break
+			}
+		}
+		Expect(succeeded).To(BeTrue(),
+			"StorageVersionMigration %s (write-key %q) did not reach Succeeded=True", svm.GetName(), writeKey)
+	}
 }
 
-func verifyKASHealth(ctx context.Context, mgmtClient crclient.Client, controlPlaneNamespace string) {
+// captureKASRestartCounts snapshots the current restart count of every KAS pod container.
+// Pass the result to verifyKASHealth to measure only the delta introduced by the rotation,
+// avoiding false failures from restarts that already occurred on the shared cluster.
+func captureKASRestartCounts(ctx context.Context, mgmtClient crclient.Client, controlPlaneNamespace string) map[string]int32 {
+	kasPods := &corev1.PodList{}
+	Expect(mgmtClient.List(ctx, kasPods,
+		crclient.InNamespace(controlPlaneNamespace),
+		crclient.MatchingLabels{"app": "kube-apiserver"},
+	)).To(Succeed())
+	counts := make(map[string]int32)
+	for _, pod := range kasPods.Items {
+		for _, cs := range pod.Status.ContainerStatuses {
+			counts[pod.Name+"/"+cs.Name] = cs.RestartCount
+		}
+	}
+	return counts
+}
+
+// verifyKASHealth polls until all KAS pods are Running and no container's restart count
+// has increased by more than kasMaxAllowedRestarts since the preRotationRestarts snapshot.
+// Containers absent from the snapshot (new pods after a rollout) are compared against 0.
+func verifyKASHealth(ctx context.Context, mgmtClient crclient.Client, controlPlaneNamespace string, preRotationRestarts map[string]int32) {
 	Eventually(func(g Gomega) {
 		kasPods := &corev1.PodList{}
 		g.Expect(mgmtClient.List(ctx, kasPods,
@@ -146,8 +233,11 @@ func verifyKASHealth(ctx context.Context, mgmtClient crclient.Client, controlPla
 					g.Expect(cs.State.Waiting.Reason).NotTo(Equal("CrashLoopBackOff"),
 						"KAS pod %s container %s is in CrashLoopBackOff", pod.Name, cs.Name)
 				}
-				g.Expect(cs.RestartCount).To(BeNumerically("<=", kasMaxAllowedRestarts),
-					"KAS pod %s container %s has %d restarts", pod.Name, cs.Name, cs.RestartCount)
+				baseline := preRotationRestarts[pod.Name+"/"+cs.Name]
+				delta := cs.RestartCount - baseline
+				g.Expect(delta).To(BeNumerically("<=", kasMaxAllowedRestarts),
+					"KAS pod %s container %s restarted %d time(s) during rotation (baseline %d, current %d)",
+					pod.Name, cs.Name, delta, baseline, cs.RestartCount)
 			}
 		}
 	}, 5*time.Minute, 15*time.Second).Should(Succeed())
@@ -188,8 +278,11 @@ func verifyKASLogsNoDecryptionErrors(ctx context.Context, controlPlaneNamespace 
 			logBytes, err := io.ReadAll(logStream)
 			logStream.Close()
 			if err != nil {
-				GinkgoWriter.Printf("WARNING: failed to read logs for KAS pod %s (previous=%v): %v\n", pod.Name, previous, err)
-				continue
+				if previous {
+					GinkgoWriter.Printf("WARNING: failed to read previous logs for KAS pod %s: %v\n", pod.Name, err)
+					continue
+				}
+				Expect(err).NotTo(HaveOccurred(), "failed to read current logs for KAS pod %s", pod.Name)
 			}
 			Expect(string(logBytes)).NotTo(ContainSubstring("no matching prefix found"),
 				"KAS pod %s logs (previous=%v) contain decryption error 'no matching prefix found'", pod.Name, previous)
@@ -208,10 +301,10 @@ type rotationCase struct {
 	// expectedProvider is the SecretEncryptionProvider expected in Status after rotation.
 	expectedProvider hyperv1.SecretEncryptionProvider
 	// applies returns (true, "") when this case should run, or (false, skipReason) to skip.
-	applies func(hc *hyperv1.HostedCluster, tc *internal.TestContext) (bool, string)
+	applies func(hc *hyperv1.HostedCluster) (bool, string)
 	// prepare does any provider-specific setup (e.g. creating secrets), registers its own
 	// DeferCleanups, and returns the alternate key identifier to rotate to.
-	prepare func(ctx context.Context, tc *internal.TestContext, hc *hyperv1.HostedCluster) (alternate string, err error)
+	prepare func(ctx context.Context, tc *internal.TestContext) (alternate string, err error)
 	// getActiveKey extracts the current active-key identifier from the HC spec.
 	getActiveKey func(hc *hyperv1.HostedCluster) string
 	// setActiveKey mutates the HC spec's active-key field in-place.
@@ -229,7 +322,7 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			ok, reason := rc.applies(hc, tc)
+			ok, reason := rc.applies(hc)
 			if !ok {
 				Skip(reason)
 			}
@@ -252,7 +345,7 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 			// Re-fetch to get a fresh resource version and current Spec before patching.
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 
-			alternate, err := rc.prepare(ctx, tc, hc)
+			alternate, err := rc.prepare(ctx, tc)
 			Expect(err).NotTo(HaveOccurred(), "failed to prepare rotation")
 
 			original := rc.getActiveKey(hc)
@@ -262,6 +355,7 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 				})
 			})
 
+			kasBaseline := captureKASRestartCounts(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 			rotateAndWait(ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
 				rc.setActiveKey(hc, alternate)
 			})
@@ -270,12 +364,9 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 			verifyReEncryptionStatus(hc, rc.expectedProvider)
 			rc.verifyProviderField(hc, alternate)
 
-			svmList, err := listStorageVersionMigrations(ctx, hostedClusterClient)
-			Expect(err).NotTo(HaveOccurred(), "failed to list StorageVersionMigration CRs")
-			Expect(svmList.Items).NotTo(BeEmpty(),
-				"StorageVersionMigration CRs should exist after key rotation")
+			verifyStorageVersionMigrations(ctx, hostedClusterClient, hc)
 
-			verifyKASHealth(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
+			verifyKASHealth(ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kasBaseline)
 			verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
 
 			Eventually(func(g Gomega) {
@@ -287,11 +378,19 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 
 // rotateAndWait applies mutate to the HostedCluster spec, then waits for re-encryption
 // to start and complete. mutate must set the new active key value in-place.
+// If the mutation produces no diff (spec already at the desired key), rotateAndWait
+// returns immediately without patching or waiting — the controller treats spec==activeKey
+// as steady state and will not start a rotation.
 func rotateAndWait(ctx context.Context, tc *internal.TestContext, hcKey crclient.ObjectKey, mutate func(*hyperv1.HostedCluster)) {
 	hc := &hyperv1.HostedCluster{}
 	Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 	base := hc.DeepCopy()
 	mutate(hc)
+	patchData, err := crclient.MergeFrom(base).Data(hc)
+	Expect(err).NotTo(HaveOccurred(), "failed to compute patch data")
+	if string(patchData) == "{}" {
+		return
+	}
 	Expect(tc.MgmtClient.Patch(ctx, hc, crclient.MergeFrom(base))).To(Succeed())
 	waitForReEncryptionStarted(ctx, tc.MgmtClient, hcKey, 5*time.Minute)
 	waitForReEncryptionComplete(ctx, tc.MgmtClient, hcKey, 25*time.Minute)
@@ -303,7 +402,7 @@ func AWSKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 		contextLabel:     "[Feature:AWSKMSReencryption] AWS KMS Key Rotation",
 		itLabel:          "should re-encrypt all etcd data after active key rotation",
 		expectedProvider: hyperv1.SecretEncryptionProviderAWS,
-		applies: func(hc *hyperv1.HostedCluster, _ *internal.TestContext) (bool, string) {
+		applies: func(hc *hyperv1.HostedCluster) (bool, string) {
 			if hc.Spec.Platform.Type != hyperv1.AWSPlatform ||
 				hc.Spec.SecretEncryption.Type != hyperv1.KMS ||
 				hc.Spec.SecretEncryption.KMS == nil ||
@@ -315,7 +414,7 @@ func AWSKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			}
 			return true, ""
 		},
-		prepare: func(_ context.Context, _ *internal.TestContext, _ *hyperv1.HostedCluster) (string, error) {
+		prepare: func(_ context.Context, _ *internal.TestContext) (string, error) {
 			return internal.GetEnvVarValue("E2E_AWS_KMS_KEY_ARN_ALTERNATE"), nil
 		},
 		getActiveKey: func(hc *hyperv1.HostedCluster) string {
@@ -331,25 +430,30 @@ func AWSKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
+// azureKMSRotationApplies is the shared skip guard for Azure KMS rotation tests.
+// It returns (true, "") when the cluster is Azure with KMS configured and
+// E2E_AZURE_KMS_KEY_VERSION_ALTERNATE is set, or (false, reason) otherwise.
+func azureKMSRotationApplies(hc *hyperv1.HostedCluster) (bool, string) {
+	if hc.Spec.Platform.Type != hyperv1.AzurePlatform ||
+		hc.Spec.SecretEncryption.Type != hyperv1.KMS ||
+		hc.Spec.SecretEncryption.KMS == nil ||
+		hc.Spec.SecretEncryption.KMS.Azure == nil {
+		return false, "Azure KMS key rotation test requires Azure platform with KMS configured"
+	}
+	if internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE") == "" {
+		return false, "E2E_AZURE_KMS_KEY_VERSION_ALTERNATE is not set"
+	}
+	return true, ""
+}
+
 // AzureKMSKeyRotationTest validates the re-encryption lifecycle after rotating the Azure KMS key version.
 func AzureKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 	runSingleRotationTest(getTestCtx, rotationCase{
 		contextLabel:     "[Feature:AzureKMSReencryption] Azure KMS Key Rotation",
 		itLabel:          "should re-encrypt all etcd data after key version rotation",
 		expectedProvider: hyperv1.SecretEncryptionProviderAzure,
-		applies: func(hc *hyperv1.HostedCluster, _ *internal.TestContext) (bool, string) {
-			if hc.Spec.Platform.Type != hyperv1.AzurePlatform ||
-				hc.Spec.SecretEncryption.Type != hyperv1.KMS ||
-				hc.Spec.SecretEncryption.KMS == nil ||
-				hc.Spec.SecretEncryption.KMS.Azure == nil {
-				return false, "Azure KMS key rotation test requires Azure platform with KMS configured"
-			}
-			if internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE") == "" {
-				return false, "E2E_AZURE_KMS_KEY_VERSION_ALTERNATE is not set"
-			}
-			return true, ""
-		},
-		prepare: func(_ context.Context, _ *internal.TestContext, _ *hyperv1.HostedCluster) (string, error) {
+		applies:          azureKMSRotationApplies,
+		prepare: func(_ context.Context, _ *internal.TestContext) (string, error) {
 			return internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE"), nil
 		},
 		getActiveKey: func(hc *hyperv1.HostedCluster) string {
@@ -371,13 +475,13 @@ func AESCBCKeyRotationTest(getTestCtx internal.TestContextGetter) {
 		contextLabel:     "[Feature:AESCBCReencryption] AESCBC Key Rotation",
 		itLabel:          "should re-encrypt secrets after active key rotation",
 		expectedProvider: hyperv1.SecretEncryptionProviderAESCBC,
-		applies: func(hc *hyperv1.HostedCluster, _ *internal.TestContext) (bool, string) {
+		applies: func(hc *hyperv1.HostedCluster) (bool, string) {
 			if hc.Spec.SecretEncryption.Type != hyperv1.AESCBC || hc.Spec.SecretEncryption.AESCBC == nil {
 				return false, "AESCBC key rotation test requires AESCBC encryption configured"
 			}
 			return true, ""
 		},
-		prepare: func(ctx context.Context, tc *internal.TestContext, _ *hyperv1.HostedCluster) (string, error) {
+		prepare: func(ctx context.Context, tc *internal.TestContext) (string, error) {
 			keyData := make([]byte, 32)
 			if _, err := rand.Read(keyData); err != nil {
 				return "", fmt.Errorf("failed to generate random AESCBC key data: %w", err)
@@ -417,23 +521,17 @@ func AESCBCKeyRotationTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-// AzureKMSConsecutiveKeyRotationTest validates that two back-to-back key rotations
-// complete successfully, exercising the mid-rotation handling code path.
+// AzureKMSConsecutiveKeyRotationTest validates that two sequential key rotations
+// (alternate → original) each complete successfully end-to-end.
 func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 	Context("[Feature:AzureKMSReencryption] Azure KMS Consecutive Key Rotation", func() {
 		BeforeEach(func() {
 			tc := getTestCtx()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
-			if hc.Spec.Platform.Type != hyperv1.AzurePlatform ||
-				hc.Spec.SecretEncryption.Type != hyperv1.KMS ||
-				hc.Spec.SecretEncryption.KMS == nil ||
-				hc.Spec.SecretEncryption.KMS.Azure == nil {
-				Skip("Azure KMS consecutive key rotation test requires Azure platform with KMS configured")
-			}
-			alternateVersion := internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE")
-			if alternateVersion == "" {
-				Skip("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE is not set")
+			ok, reason := azureKMSRotationApplies(hc)
+			if !ok {
+				Skip(reason)
 			}
 		})
 
@@ -457,6 +555,7 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			alternateVersion := internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE")
 
 			By("Performing first key rotation: original -> alternate")
+			kas1Baseline := captureKASRestartCounts(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 			rotateAndWait(ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
 				hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion = alternateVersion
 			})
@@ -467,11 +566,13 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			Expect(hc.Status.SecretEncryption.History).NotTo(BeEmpty(),
 				"history should have at least one entry after first rotation")
 
+			verifyKASHealth(ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas1Baseline)
 			Eventually(func(g Gomega) {
 				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
 			}, 2*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("Performing second key rotation: alternate -> original")
+			kas2Baseline := captureKASRestartCounts(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 			rotateAndWait(ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
 				hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion = originalVersion
 			})
@@ -487,7 +588,7 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			Expect(hc.Status.SecretEncryption.History[1].State).To(Equal(hyperv1.EncryptionMigrationStateCompleted),
 				"second history entry should also be Completed")
 
-			verifyKASHealth(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
+			verifyKASHealth(ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas2Baseline)
 			verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
 
 			Eventually(func(g Gomega) {
