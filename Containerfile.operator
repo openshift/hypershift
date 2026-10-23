@@ -1,8 +1,8 @@
-FROM registry.redhat.io/rhel9/go-toolset:1.23.6-1745588370 AS builder
+FROM registry.redhat.io/openshift/golang-builder:golang-builder-v1.23-rhel9 AS builder
 
 WORKDIR /hypershift
 
-COPY --chown=default . .
+COPY . .
 
 RUN make hypershift \
   && make hypershift-operator \
