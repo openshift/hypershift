@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	"github.com/google/go-cmp/cmp"
 	"go.uber.org/mock/gomock"
 )
@@ -204,6 +207,53 @@ func TestDeduplicateSubnetsByAZ(t *testing.T) {
 			expectDescribeCall: true,
 			expectErr:          true,
 		},
+		{
+			name:            "When a single edge-zone subnet is cached, it should preserve the shortcut",
+			subnetIDs:       []string{"subnet-edge"},
+			cachedAZs:       map[string]string{"subnet-edge": "us-east-1-atl-1a"},
+			expectedSubnets: []string{"subnet-edge"},
+		},
+		{
+			name:      "When a cold cache includes an edge zone, it should filter before deduplicating",
+			subnetIDs: []string{"subnet-edge", "subnet-bbb", "subnet-aaa"},
+			describeOutput: &ec2v2.DescribeSubnetsOutput{Subnets: []ec2types.Subnet{
+				{SubnetId: aws.String("subnet-edge"), AvailabilityZone: aws.String("us-east-1-atl-1a")},
+				{SubnetId: aws.String("subnet-bbb"), AvailabilityZone: aws.String("us-east-1a")},
+				{SubnetId: aws.String("subnet-aaa"), AvailabilityZone: aws.String("us-east-1a")},
+			}},
+			expectDescribeCall: true,
+			expectedSubnets:    []string{"subnet-aaa"},
+		},
+		{
+			name:            "When a warm cache includes an edge zone, it should filter without an AWS lookup",
+			subnetIDs:       []string{"subnet-edge", "subnet-aaa"},
+			cachedAZs:       map[string]string{"subnet-edge": "us-east-1-atl-1a", "subnet-aaa": "us-east-1a"},
+			expectedSubnets: []string{"subnet-aaa"},
+		},
+		{
+			name:      "When a partial cache includes an edge zone, it should fetch only the missing subnet",
+			subnetIDs: []string{"subnet-edge", "subnet-aaa"},
+			cachedAZs: map[string]string{"subnet-edge": "us-east-1-atl-1a"},
+			describeOutput: &ec2v2.DescribeSubnetsOutput{Subnets: []ec2types.Subnet{
+				{SubnetId: aws.String("subnet-aaa"), AvailabilityZone: aws.String("us-east-1a")},
+			}},
+			expectDescribeCall: true,
+			expectedSubnets:    []string{"subnet-aaa"},
+		},
+		{
+			name:               "When metadata is missing for a subnet, it should keep the unknown candidate",
+			subnetIDs:          []string{"subnet-edge", "subnet-unknown"},
+			describeOutput:     &ec2v2.DescribeSubnetsOutput{},
+			cachedAZs:          map[string]string{"subnet-edge": "us-east-1-atl-1a"},
+			expectDescribeCall: true,
+			expectedSubnets:    []string{"subnet-unknown"},
+		},
+		{
+			name:      "When every cached subnet is excluded, it should return an error",
+			subnetIDs: []string{"subnet-edge", "subnet-wavelength"},
+			cachedAZs: map[string]string{"subnet-edge": "us-east-1-atl-1a", "subnet-wavelength": "us-east-1-wl1-bos-wlz-1"},
+			expectErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -213,14 +263,20 @@ func TestDeduplicateSubnetsByAZ(t *testing.T) {
 			mockEC2 := awsapi.NewMockEC2API(mockCtrl)
 
 			if tt.expectDescribeCall {
-				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), gomock.Any()).Return(tt.describeOutput, tt.describeErr)
+				var uncached []string
+				for _, subnetID := range tt.subnetIDs {
+					if _, cached := tt.cachedAZs[subnetID]; !cached {
+						uncached = append(uncached, subnetID)
+					}
+				}
+				mockEC2.EXPECT().DescribeSubnets(gomock.Any(), &ec2v2.DescribeSubnetsInput{SubnetIds: uncached}).Return(tt.describeOutput, tt.describeErr)
 			}
 
 			r := &AWSEndpointServiceReconciler{
 				subnetAZCache: tt.cachedAZs,
 			}
 
-			gotSubnets, err := r.deduplicateSubnetsByAZ(context.Background(), mockEC2, tt.subnetIDs)
+			gotSubnets, err := r.deduplicateSubnetsByAZ(context.Background(), mockEC2, tt.subnetIDs, "us-east-1")
 
 			if tt.expectErr {
 				g.Expect(err).To(HaveOccurred())
@@ -230,6 +286,276 @@ func TestDeduplicateSubnetsByAZ(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(gotSubnets).To(Equal(tt.expectedSubnets))
 		})
+	}
+}
+
+func TestSelectEndpointSubnets(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		region   string
+		zones    map[string]string
+		expected []string
+		excluded []string
+	}{
+		{name: "When input is empty, it should return no subnets", region: "us-east-1", expected: []string{}},
+		{
+			name:     "When the region is empty with standard zones, it should preserve same-AZ deduplication",
+			zones:    map[string]string{"subnet-aaa": "us-east-1a", "subnet-bbb": "us-east-1a", "subnet-ccc": "us-east-1b"},
+			expected: []string{"subnet-aaa", "subnet-ccc"},
+		},
+		{
+			name:     "When the region is empty with edge and unknown zones, it should retain candidates before deduplication",
+			zones:    map[string]string{"subnet-edge": "us-east-1-atl-1a", "subnet-wave": "us-east-1-wl1-bos-wlz-1", "subnet-aaa": "", "subnet-bbb": ""},
+			expected: []string{"subnet-aaa", "subnet-edge", "subnet-wave"},
+		},
+		{
+			name:     "When standard and edge zones are mixed, it should keep one subnet per standard AZ",
+			region:   "us-east-1",
+			zones:    map[string]string{"subnet-aaa": "us-east-1a", "subnet-bbb": "us-east-1a", "subnet-ccc": "us-east-1b", "subnet-edge": "us-east-1-atl-1a", "subnet-wave": "us-east-1-wl1-bos-wlz-1"},
+			expected: []string{"subnet-aaa", "subnet-ccc"},
+			excluded: []string{"subnet-edge (us-east-1-atl-1a)", "subnet-wave (us-east-1-wl1-bos-wlz-1)"},
+		},
+		{
+			name:   "When the region is GovCloud, it should accept its standard AZs",
+			region: "us-gov-west-1", zones: map[string]string{"subnet-aaa": "us-gov-west-1a", "subnet-bbb": "us-gov-west-1b"},
+			expected: []string{"subnet-aaa", "subnet-bbb"},
+		},
+		{
+			name:   "When the region is China, it should accept its standard AZs",
+			region: "cn-north-1", zones: map[string]string{"subnet-aaa": "cn-north-1a", "subnet-bbb": "cn-north-1b"},
+			expected: []string{"subnet-aaa", "subnet-bbb"},
+		},
+		{
+			name:     "When known zones do not match the region plus one lowercase letter, it should exclude all of them",
+			region:   "us-east-1",
+			zones:    map[string]string{"subnet-other": "us-west-2a", "subnet-upper": "us-east-1A", "subnet-extra": "us-east-1aa", "subnet-region": "us-east-1"},
+			excluded: []string{"subnet-extra (us-east-1aa)", "subnet-other (us-west-2a)", "subnet-region (us-east-1)", "subnet-upper (us-east-1A)"},
+		},
+		{
+			name:   "When zones are unknown, it should preserve their existing deduplication bucket",
+			region: "us-east-1", zones: map[string]string{"subnet-aaa": "", "subnet-bbb": "", "subnet-edge": "us-east-1-atl-1a"},
+			expected: []string{"subnet-aaa"}, excluded: []string{"subnet-edge (us-east-1-atl-1a)"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assertions := NewGomegaWithT(t)
+			var subnetIDs []string
+			for subnetID := range test.zones {
+				subnetIDs = append(subnetIDs, subnetID)
+			}
+			var records []string
+			logger := funcr.New(func(prefix, args string) { records = append(records, args) }, funcr.Options{})
+			selected, err := selectEndpointSubnets(subnetIDs, test.zones, test.region, logger)
+			if test.expected == nil {
+				assertions.Expect(errors.Is(err, errNoEligibleSubnets)).To(BeTrue())
+				assertions.Expect(err.Error()).To(Equal("no eligible subnets for VPC endpoint: excluded subnets: " + strings.Join(test.excluded, ", ")))
+			} else {
+				assertions.Expect(err).NotTo(HaveOccurred())
+			}
+			assertions.Expect(selected).To(Equal(test.expected))
+			assertions.Expect(records).To(HaveLen(len(test.excluded)))
+			for _, excluded := range test.excluded {
+				subnetID, zone, _ := strings.Cut(excluded, " (")
+				assertions.Expect(strings.Join(records, "\n")).To(ContainSubstring(subnetID))
+				assertions.Expect(strings.Join(records, "\n")).To(ContainSubstring(strings.TrimSuffix(zone, ")")))
+			}
+		})
+	}
+}
+
+func TestEnsureVPCEndpoint(t *testing.T) {
+	for _, desired := range [][]string{{}, {"subnet-single"}} {
+		t.Run(fmt.Sprintf("When AWS configuration is missing with %d subnets, it should preserve the configuration error without EC2 calls", len(desired)), func(t *testing.T) {
+			assertions := NewGomegaWithT(t)
+			mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
+			service := &hyperv1.AWSEndpointService{Spec: hyperv1.AWSEndpointServiceSpec{SubnetIDs: desired}}
+			reconciler := &AWSEndpointServiceReconciler{}
+			endpointID, entries, err := reconciler.ensureVPCEndpoint(t.Context(), mockEC2, service, &hyperv1.HostedControlPlane{}, logr.Discard())
+			assertions.Expect(err).To(MatchError("AWS platform information not provided in HostedControlPlane"))
+			assertions.Expect(endpointID).To(BeEmpty())
+			assertions.Expect(entries).To(BeEmpty())
+			assertions.Expect(service.Spec.SubnetIDs).To(Equal(desired))
+		})
+	}
+
+	tests := []struct {
+		name        string
+		desired     []string
+		zones       map[string]string
+		warm        bool
+		lookupError bool
+		missingAWS  bool
+		emptyRegion bool
+		expected    []string
+		expectError bool
+	}{
+		{
+			name:    "When AWS configuration is missing with a cold cache, it should preserve configuration validation and existing endpoint updates",
+			desired: []string{"subnet-bbb", "subnet-aaa", "subnet-edge"}, missingAWS: true,
+			zones:    map[string]string{"subnet-bbb": "us-east-1a", "subnet-aaa": "us-east-1a", "subnet-edge": "us-east-1-atl-1a"},
+			expected: []string{"subnet-aaa", "subnet-edge"},
+		},
+		{
+			name:    "When AWS configuration is missing with a warm cache, it should preserve configuration validation and existing endpoint updates",
+			desired: []string{"subnet-bbb", "subnet-aaa", "subnet-edge"}, missingAWS: true, warm: true,
+			zones:    map[string]string{"subnet-bbb": "us-east-1a", "subnet-aaa": "us-east-1a", "subnet-edge": "us-east-1-atl-1a"},
+			expected: []string{"subnet-aaa", "subnet-edge"},
+		},
+		{
+			name:    "When AWS configuration has an empty region, it should retain candidates before deduplication",
+			desired: []string{"subnet-bbb", "subnet-aaa", "subnet-edge"}, emptyRegion: true,
+			zones:    map[string]string{"subnet-bbb": "us-east-1a", "subnet-aaa": "us-east-1a", "subnet-edge": "us-east-1-atl-1a"},
+			expected: []string{"subnet-aaa", "subnet-edge"},
+		},
+		{
+			name:     "When a cold cache has standard and edge subnets, it should use only standard subnets",
+			desired:  []string{"subnet-edge", "subnet-aaa", "subnet-bbb"},
+			zones:    map[string]string{"subnet-edge": "us-east-1-atl-1a", "subnet-aaa": "us-east-1a", "subnet-bbb": "us-east-1b"},
+			expected: []string{"subnet-aaa", "subnet-bbb"},
+		},
+		{
+			name:    "When a warm cache has standard and edge subnets, it should use only standard subnets",
+			desired: []string{"subnet-edge", "subnet-aaa", "subnet-bbb"}, warm: true,
+			zones:    map[string]string{"subnet-edge": "us-east-1-wl1-bos-wlz-1", "subnet-aaa": "us-east-1a", "subnet-bbb": "us-east-1b"},
+			expected: []string{"subnet-aaa", "subnet-bbb"},
+		},
+		{
+			name:    "When all inspected subnets are excluded, it should stop before any endpoint operation",
+			desired: []string{"subnet-edge", "subnet-wave"},
+			zones:   map[string]string{"subnet-edge": "us-east-1-atl-1a", "subnet-wave": "us-east-1-wl1-bos-wlz-1"}, expectError: true,
+		},
+		{
+			name:    "When all cached subnets are excluded, it should stop before any endpoint operation",
+			desired: []string{"subnet-edge", "subnet-wave"}, warm: true,
+			zones: map[string]string{"subnet-edge": "us-east-1-atl-1a", "subnet-wave": "us-east-1-wl1-bos-wlz-1"}, expectError: true,
+		},
+		{
+			name:    "When DescribeSubnets fails with a cached exclusion, it should use the complete original list",
+			desired: []string{"subnet-edge", "subnet-aaa"}, lookupError: true,
+			zones: map[string]string{"subnet-edge": "us-east-1-atl-1a"}, expected: []string{"subnet-edge", "subnet-aaa"},
+		},
+		{
+			name:    "When zone metadata is missing, it should keep an unknown subnet alongside standard subnets",
+			desired: []string{"subnet-edge", "subnet-unknown", "subnet-aaa"},
+			zones:   map[string]string{"subnet-edge": "us-east-1-atl-1a", "subnet-aaa": "us-east-1a"}, expected: []string{"subnet-aaa", "subnet-unknown"},
+		},
+		{
+			name:    "When only one cached edge subnet is desired, it should preserve the shortcut",
+			desired: []string{"subnet-edge"}, warm: true,
+			zones: map[string]string{"subnet-edge": "us-east-1-atl-1a"}, expected: []string{"subnet-edge"},
+		},
+		{
+			name:    "When no subnet is desired, it should preserve the empty input shortcut",
+			desired: []string{}, expected: []string{},
+		},
+		{
+			name:    "When only standard subnets share an AZ, it should preserve deterministic deduplication",
+			desired: []string{"subnet-bbb", "subnet-aaa"},
+			zones:   map[string]string{"subnet-bbb": "us-east-1a", "subnet-aaa": "us-east-1a"}, expected: []string{"subnet-aaa"},
+		},
+	}
+	for _, test := range tests {
+		for _, existing := range []bool{false, true} {
+			operation := "create"
+			if existing {
+				operation = "modify"
+			}
+			t.Run(test.name+" on "+operation, func(t *testing.T) {
+				assertions := NewGomegaWithT(t)
+				mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
+				reconciler := &AWSEndpointServiceReconciler{}
+				if test.warm || test.lookupError {
+					reconciler.subnetAZCache = make(map[string]string)
+					for subnetID, zone := range test.zones {
+						reconciler.subnetAZCache[subnetID] = zone
+					}
+				}
+				if !test.warm && len(test.desired) > 1 {
+					var uncached []string
+					output := &ec2v2.DescribeSubnetsOutput{}
+					for _, subnetID := range test.desired {
+						if _, cached := reconciler.subnetAZCache[subnetID]; !cached {
+							uncached = append(uncached, subnetID)
+							if zone, known := test.zones[subnetID]; known {
+								output.Subnets = append(output.Subnets, ec2types.Subnet{SubnetId: aws.String(subnetID), AvailabilityZone: aws.String(zone)})
+							}
+						}
+					}
+					var lookupErr error
+					if test.lookupError {
+						lookupErr = errors.New("synthetic DescribeSubnets failure")
+					}
+					mockEC2.EXPECT().DescribeSubnets(gomock.Any(), &ec2v2.DescribeSubnetsInput{SubnetIds: uncached}).Return(output, lookupErr)
+				}
+				service := &hyperv1.AWSEndpointService{
+					Spec:   hyperv1.AWSEndpointServiceSpec{SubnetIDs: append([]string{}, test.desired...)},
+					Status: hyperv1.AWSEndpointServiceStatus{EndpointServiceName: "synthetic-service", SecurityGroupID: "sg-synthetic"},
+				}
+				if existing {
+					service.Status.EndpointID = "vpce-synthetic"
+				}
+				hcp := &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1", CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+						VPC: "vpc-synthetic", Subnet: &hyperv1.AWSResourceReference{ID: aws.String("subnet-aaa")},
+					}},
+				}}}
+				if test.missingAWS {
+					hcp.Spec.Platform.AWS = nil
+				} else if test.emptyRegion {
+					hcp.Spec.Platform.AWS.Region = ""
+				}
+				expectConfigError := test.missingAWS && !existing
+				if !test.expectError && !expectConfigError {
+					if existing {
+						mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), &ec2v2.DescribeVpcEndpointsInput{VpcEndpointIds: []string{"vpce-synthetic"}}).Return(&ec2v2.DescribeVpcEndpointsOutput{VpcEndpoints: []ec2types.VpcEndpoint{{
+							VpcEndpointId: aws.String("vpce-synthetic"), ServiceName: aws.String("synthetic-service"), SubnetIds: []string{"subnet-aaa"},
+							Groups: []ec2types.SecurityGroupIdentifier{{GroupId: aws.String("sg-synthetic")}},
+						}}}, nil)
+						var added, removed []string
+						foundExisting := false
+						for _, subnetID := range test.expected {
+							if subnetID == "subnet-aaa" {
+								foundExisting = true
+							} else {
+								added = append(added, subnetID)
+							}
+						}
+						if !foundExisting {
+							removed = []string{"subnet-aaa"}
+						}
+						if len(added) > 0 || len(removed) > 0 {
+							mockEC2.EXPECT().ModifyVpcEndpoint(gomock.Any(), &ec2v2.ModifyVpcEndpointInput{
+								VpcEndpointId: aws.String("vpce-synthetic"), AddSubnetIds: added, RemoveSubnetIds: removed,
+							}).Return(&ec2v2.ModifyVpcEndpointOutput{}, nil)
+						}
+					} else {
+						mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2v2.DescribeVpcEndpointsOutput{}, nil)
+						mockEC2.EXPECT().CreateVpcEndpoint(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, input *ec2v2.CreateVpcEndpointInput, options ...func(*ec2v2.Options)) (*ec2v2.CreateVpcEndpointOutput, error) {
+							assertions.Expect(input.SubnetIds).To(Equal(test.expected))
+							return &ec2v2.CreateVpcEndpointOutput{VpcEndpoint: &ec2types.VpcEndpoint{VpcEndpointId: aws.String("vpce-synthetic")}}, nil
+						})
+					}
+				}
+				endpointID, _, err := reconciler.ensureVPCEndpoint(t.Context(), mockEC2, service, hcp, logr.Discard())
+				if test.expectError {
+					assertions.Expect(errors.Is(err, errNoEligibleSubnets)).To(BeTrue())
+					assertions.Expect(err.Error()).To(Equal("no eligible subnets for VPC endpoint: excluded subnets: subnet-edge (us-east-1-atl-1a), subnet-wave (us-east-1-wl1-bos-wlz-1)"))
+					assertions.Expect(endpointID).To(BeEmpty())
+					assertions.Expect(service.Spec.SubnetIDs).To(Equal(test.desired))
+				} else if expectConfigError {
+					assertions.Expect(err).To(MatchError("AWS platform information not provided in HostedControlPlane"))
+					assertions.Expect(endpointID).To(BeEmpty())
+					assertions.Expect(service.Spec.SubnetIDs).To(Equal(test.expected))
+				} else {
+					assertions.Expect(err).NotTo(HaveOccurred())
+					assertions.Expect(endpointID).To(Equal("vpce-synthetic"))
+					assertions.Expect(service.Spec.SubnetIDs).To(Equal(test.expected))
+				}
+			})
+		}
 	}
 }
 

@@ -616,10 +616,12 @@ func diffIDs(desired []string, existing []string) (added, removed []string) {
 	return
 }
 
+var errNoEligibleSubnets = errors.New("no eligible subnets for VPC endpoint")
+
 // deduplicateSubnetsByAZ ensures at most one subnet per AZ is passed to
 // CreateVpcEndpoint/ModifyVpcEndpoint, since AWS rejects requests with
 // multiple subnets in the same AZ.
-func (r *AWSEndpointServiceReconciler) deduplicateSubnetsByAZ(ctx context.Context, ec2Client awsapi.EC2API, subnetIDs []string) ([]string, error) {
+func (r *AWSEndpointServiceReconciler) deduplicateSubnetsByAZ(ctx context.Context, ec2Client awsapi.EC2API, subnetIDs []string, region string) ([]string, error) {
 	if len(subnetIDs) <= 1 {
 		return subnetIDs, nil
 	}
@@ -641,7 +643,7 @@ func (r *AWSEndpointServiceReconciler) deduplicateSubnetsByAZ(ctx context.Contex
 			azForSubnet[id] = r.subnetAZCache[id]
 		}
 		r.subnetAZMu.RUnlock()
-		return pickOneSubnetPerAZ(subnetIDs, azForSubnet), nil
+		return selectEndpointSubnets(subnetIDs, azForSubnet, region, ctrl.LoggerFrom(ctx))
 	}
 	r.subnetAZMu.RUnlock()
 
@@ -679,7 +681,26 @@ func (r *AWSEndpointServiceReconciler) deduplicateSubnetsByAZ(ctx context.Contex
 	}
 	r.subnetAZMu.Unlock()
 
-	return pickOneSubnetPerAZ(subnetIDs, azForSubnet), nil
+	return selectEndpointSubnets(subnetIDs, azForSubnet, region, ctrl.LoggerFrom(ctx))
+}
+
+func selectEndpointSubnets(subnetIDs []string, azForSubnet map[string]string, region string, log logr.Logger) ([]string, error) {
+	eligible := make([]string, 0, len(subnetIDs))
+	var excluded []string
+	for _, subnetID := range subnetIDs {
+		zone := azForSubnet[subnetID]
+		if region != "" && zone != "" && !(len(zone) == len(region)+1 && strings.HasPrefix(zone, region) && zone[len(region)] >= 'a' && zone[len(region)] <= 'z') {
+			log.Info("excluding subnet in nonstandard availability zone from VPC endpoint", "subnetID", subnetID, "zone", zone)
+			excluded = append(excluded, fmt.Sprintf("%s (%s)", subnetID, zone))
+			continue
+		}
+		eligible = append(eligible, subnetID)
+	}
+	if len(eligible) == 0 && len(excluded) > 0 {
+		sort.Strings(excluded)
+		return nil, fmt.Errorf("%w: excluded subnets: %s", errNoEligibleSubnets, strings.Join(excluded, ", "))
+	}
+	return pickOneSubnetPerAZ(eligible, azForSubnet), nil
 }
 
 func pickOneSubnetPerAZ(subnetIDs []string, azForSubnet map[string]string) []string {
@@ -746,8 +767,15 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 }
 
 func (r *AWSEndpointServiceReconciler) ensureVPCEndpoint(ctx context.Context, ec2Client awsapi.EC2API, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, log logr.Logger) (string, []ec2types.DnsEntry, error) {
-	deduped, err := r.deduplicateSubnetsByAZ(ctx, ec2Client, awsEndpointService.Spec.SubnetIDs)
+	region := ""
+	if hcp.Spec.Platform.AWS != nil {
+		region = hcp.Spec.Platform.AWS.Region
+	}
+	deduped, err := r.deduplicateSubnetsByAZ(ctx, ec2Client, awsEndpointService.Spec.SubnetIDs, region)
 	if err != nil {
+		if errors.Is(err, errNoEligibleSubnets) {
+			return "", nil, err
+		}
 		log.Error(err, "failed to deduplicate subnets by AZ, proceeding with original list")
 	} else {
 		awsEndpointService.Spec.SubnetIDs = deduped
