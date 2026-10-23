@@ -469,7 +469,95 @@ func TestReconcile(t *testing.T) {
 		expectedResult reconcile.Result
 		expectError    bool
 		verify         func(g Gomega, node *corev1.Node)
+		nextTaints     []corev1.Taint
+		nextLabels     map[string]string
+		removeTaints   bool
+		verifyNext     func(g Gomega, node *corev1.Node)
+		expectNoUpdate bool
 	}{
+		{
+			name: "When an initialized Node lost a NoExecute taint, it should backfill labels without restoring the taint",
+			node: newTestNode(map[string]string{labelsSyncedAnnotation: "true"}, nil),
+			machine: newTestMachine(
+				map[string]string{nodePoolAnnotationTaints: taintsJSON([]corev1.Taint{{Key: "dedicated", Value: "old", Effect: corev1.TaintEffectNoExecute}})},
+				map[string]string{managedLabel(testGlobalPSLabel): "true"},
+			),
+			verify: func(g Gomega, node *corev1.Node) {
+				g.Expect(node.Labels).To(HaveKeyWithValue(testGlobalPSLabel, "true"))
+				g.Expect(node.Spec.Taints).To(BeEmpty())
+			},
+		},
+		{
+			name: "When an initialized Node has a previous hash, it should not replay removed taints during migration",
+			node: newTestNode(map[string]string{labelsSyncedAnnotation: "previoushash"}, nil),
+			machine: newTestMachine(
+				map[string]string{nodePoolAnnotationTaints: taintsJSON([]corev1.Taint{{Key: "dedicated", Value: "old", Effect: corev1.TaintEffectNoExecute}})},
+				map[string]string{managedLabel(testGlobalPSLabel): "true"},
+			),
+			verify: func(g Gomega, node *corev1.Node) {
+				g.Expect(node.Labels).To(HaveKeyWithValue(testGlobalPSLabel, "true"))
+				g.Expect(node.Spec.Taints).To(BeEmpty())
+			},
+			nextTaints: []corev1.Taint{{Key: "dedicated", Value: "new", Effect: corev1.TaintEffectNoExecute}},
+			verifyNext: func(g Gomega, node *corev1.Node) {
+				g.Expect(node.Spec.Taints).To(Equal([]corev1.Taint{{Key: "dedicated", Value: "new", Effect: corev1.TaintEffectNoExecute}}))
+			},
+		},
+		{
+			name: "When only labels change after a taint is removed, it should leave the taint removed",
+			node: newTestNode(nil, nil),
+			machine: newTestMachine(
+				map[string]string{nodePoolAnnotationTaints: taintsJSON([]corev1.Taint{{Key: "dedicated", Value: "old", Effect: corev1.TaintEffectNoExecute}})},
+				nil,
+			),
+			verify: func(g Gomega, node *corev1.Node) {
+				g.Expect(node.Spec.Taints).To(HaveLen(1))
+			},
+			nextLabels:   map[string]string{managedLabel(testGlobalPSLabel): "true"},
+			removeTaints: true,
+			verifyNext: func(g Gomega, node *corev1.Node) {
+				g.Expect(node.Labels).To(HaveKeyWithValue(testGlobalPSLabel, "true"))
+				g.Expect(node.Spec.Taints).To(BeEmpty())
+			},
+		},
+		{
+			name: "When duplicate desired taint identities reverse order, it should apply the new last value",
+			node: newTestNode(nil, nil),
+			machine: newTestMachine(
+				map[string]string{nodePoolAnnotationTaints: taintsJSON([]corev1.Taint{
+					{Key: "dedicated", Value: "a", Effect: corev1.TaintEffectNoSchedule},
+					{Key: "dedicated", Value: "b", Effect: corev1.TaintEffectNoSchedule},
+				})}, nil,
+			),
+			verify: func(g Gomega, node *corev1.Node) {
+				g.Expect(node.Spec.Taints).To(Equal([]corev1.Taint{{Key: "dedicated", Value: "b", Effect: corev1.TaintEffectNoSchedule}}))
+			},
+			nextTaints: []corev1.Taint{
+				{Key: "dedicated", Value: "b", Effect: corev1.TaintEffectNoSchedule},
+				{Key: "dedicated", Value: "a", Effect: corev1.TaintEffectNoSchedule},
+			},
+			verifyNext: func(g Gomega, node *corev1.Node) {
+				g.Expect(node.Spec.Taints).To(Equal([]corev1.Taint{{Key: "dedicated", Value: "a", Effect: corev1.TaintEffectNoSchedule}}))
+				expectedHash, err := computeSyncHash(map[string]string{hyperv1.NodePoolLabel: "test-nodepool"}, node.Spec.Taints)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(node.Annotations[labelsSyncedAnnotation]).To(Equal(expectedHash))
+			},
+		},
+		{
+			name: "When duplicate desired taints retain the same effective value, it should not update the Node",
+			node: newTestNode(nil, nil),
+			machine: newTestMachine(
+				map[string]string{nodePoolAnnotationTaints: taintsJSON([]corev1.Taint{
+					{Key: "dedicated", Value: "a", Effect: corev1.TaintEffectNoSchedule},
+					{Key: "dedicated", Value: "b", Effect: corev1.TaintEffectNoSchedule},
+				})}, nil,
+			),
+			nextTaints: []corev1.Taint{{Key: "dedicated", Value: "b", Effect: corev1.TaintEffectNoSchedule}},
+			verifyNext: func(g Gomega, node *corev1.Node) {
+				g.Expect(node.Spec.Taints).To(Equal([]corev1.Taint{{Key: "dedicated", Value: "b", Effect: corev1.TaintEffectNoSchedule}}))
+			},
+			expectNoUpdate: true,
+		},
 		{
 			name: "When labels have not been synced, it should sync labels and taints and set hash annotation",
 			node: newTestNode(nil, map[string]string{}),
@@ -506,7 +594,8 @@ func TestReconcile(t *testing.T) {
 			node: func() *corev1.Node {
 				labels := map[string]string{hyperv1.NodePoolLabel: "test-nodepool"}
 				hash, _ := computeSyncHash(labels, []corev1.Taint{})
-				return newTestNode(map[string]string{labelsSyncedAnnotation: hash}, labels)
+				taintsHash, _ := computeSyncHash(nil, nil)
+				return newTestNode(map[string]string{labelsSyncedAnnotation: hash, taintsSyncedAnnotation: taintsHash}, labels)
 			}(),
 			machine: newTestMachine(
 				map[string]string{nodePoolAnnotationTaints: taintsJSON([]corev1.Taint{})},
@@ -655,6 +744,31 @@ func TestReconcile(t *testing.T) {
 				err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(tc.node), updatedNode)
 				g.Expect(err).NotTo(HaveOccurred())
 				tc.verify(g, updatedNode)
+			}
+			if tc.verifyNext != nil {
+				updatedNode := &corev1.Node{}
+				g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(tc.node), updatedNode)).To(Succeed())
+				if tc.removeTaints {
+					updatedNode.Spec.Taints = nil
+					g.Expect(guestClient.Update(t.Context(), updatedNode)).To(Succeed())
+				}
+				updatedMachine := &capiv1.Machine{}
+				g.Expect(mgmtClient.Get(t.Context(), client.ObjectKeyFromObject(tc.machine), updatedMachine)).To(Succeed())
+				if tc.nextTaints != nil {
+					updatedMachine.Annotations[nodePoolAnnotationTaints] = taintsJSON(tc.nextTaints)
+				}
+				if tc.nextLabels != nil {
+					updatedMachine.Labels = tc.nextLabels
+				}
+				g.Expect(mgmtClient.Update(t.Context(), updatedMachine)).To(Succeed())
+				previousVersion := updatedNode.ResourceVersion
+				_, err := r.Reconcile(t.Context(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(tc.node)})
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(tc.node), updatedNode)).To(Succeed())
+				tc.verifyNext(g, updatedNode)
+				if tc.expectNoUpdate {
+					g.Expect(updatedNode.ResourceVersion).To(Equal(previousVersion))
+				}
 			}
 		})
 	}

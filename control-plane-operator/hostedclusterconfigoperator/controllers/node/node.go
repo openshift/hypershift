@@ -28,6 +28,7 @@ import (
 const (
 	nodePoolAnnotation       = "hypershift.openshift.io/nodePool"
 	labelsSyncedAnnotation   = "hypershift.openshift.io/labelsSynced"
+	taintsSyncedAnnotation   = "hypershift.openshift.io/taintsSynced"
 	nodePoolAnnotationTaints = "hypershift.openshift.io/nodePoolTaints"
 	labelManagedPrefix       = "managed.hypershift.openshift.io"
 )
@@ -79,12 +80,20 @@ func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			return reconcile.Result{}, err
 		}
 	}
+	taints = mergeTaints(nil, taints)
 
 	expectedHash, err := computeSyncHash(labelsToSync, taints)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to compute sync hash: %w", err)
 	}
-	if labelsHaveSynced(node, expectedHash) {
+	expectedTaintsHash, err := computeSyncHash(nil, taints)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to compute taints sync hash: %w", err)
+	}
+	previousTaintsHash := node.Annotations[taintsSyncedAnnotation]
+	_, initialized := node.Annotations[labelsSyncedAnnotation]
+	syncTaints := !initialized || (previousTaintsHash != "" && previousTaintsHash != expectedTaintsHash)
+	if labelsHaveSynced(node, expectedHash) && previousTaintsHash == expectedTaintsHash {
 		return reconcile.Result{}, nil
 	}
 
@@ -93,6 +102,7 @@ func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			node.Annotations = make(map[string]string)
 		}
 		node.Annotations[labelsSyncedAnnotation] = expectedHash
+		node.Annotations[taintsSyncedAnnotation] = expectedTaintsHash
 
 		if node.Labels == nil {
 			node.Labels = make(map[string]string)
@@ -102,7 +112,9 @@ func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// may have labels set by kubelet, autoscaler, or other controllers.
 		maps.Copy(node.Labels, labelsToSync)
 
-		node.Spec.Taints = mergeTaints(node.Spec.Taints, taints)
+		if syncTaints {
+			node.Spec.Taints = mergeTaints(node.Spec.Taints, taints)
+		}
 
 		return nil
 	})
