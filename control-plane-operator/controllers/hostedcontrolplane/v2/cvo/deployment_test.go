@@ -171,7 +171,7 @@ func TestResourcesToRemove(t *testing.T) {
 				g.Expect(resources).NotTo(ContainElement("machineconfigs.machineconfiguration.openshift.io"))
 				g.Expect(resources).NotTo(ContainElement("machineconfigpools.machineconfiguration.openshift.io"))
 				g.Expect(resources).NotTo(ContainElement("kube-storage-version-migrator-operator"))
-				g.Expect(resources).NotTo(ContainElement("kube-storage-version-migrator"))
+				g.Expect(resources).NotTo(ContainElement("migrator"))
 			},
 		},
 		{
