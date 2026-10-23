@@ -14,6 +14,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/v2/util/mirrorregistry"
 
 	imagev1 "github.com/openshift/api/image/v1"
@@ -118,6 +119,7 @@ func TestAWSPlatformConfigPreCreate(t *testing.T) {
 		missingStream bool
 		newError      bool
 		setupError    bool
+		emptySources  bool
 		writeError    bool
 		wantError     string
 	}{
@@ -126,6 +128,7 @@ func TestAWSPlatformConfigPreCreate(t *testing.T) {
 		{name: "When the CLI ImageStream is missing, it should return the lookup error", missingStream: true, wantError: "read ImageStream"},
 		{name: "When registry initialization fails, it should return the error", newError: true, wantError: "initialize mirror registry"},
 		{name: "When registry setup fails, it should return the error", setupError: true, wantError: "set up mirror registry"},
+		{name: "When setup returns no image content sources, it should return the validation error", emptySources: true, wantError: "no image content sources"},
 		{name: "When artifact writing fails, it should return the error", writeError: true, wantError: "write mirror registry file"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -161,7 +164,16 @@ func TestAWSPlatformConfigPreCreate(t *testing.T) {
 					if tt.setupError {
 						return nil, errors.New("copy failed")
 					}
-					return &mirrorregistry.Result{Host: "mirror-registry-test-mirror-registry.apps.alesross-mc.alesross.hypershift.devcluster.openshift.com", CABundlePEM: []byte("test-ca")}, nil
+					host := "mirror-registry-test-mirror-registry.apps.alesross-mc.alesross.hypershift.devcluster.openshift.com"
+					result := &mirrorregistry.Result{
+						Host:                host,
+						CABundlePEM:         []byte("test-ca"),
+						ImageContentSources: []hyperv1.ImageContentSource{{Source: "quay.io/libpod/registry", Mirrors: []string{host + "/quay.io/libpod/registry"}}},
+					}
+					if tt.emptySources {
+						result.ImageContentSources = nil
+					}
+					return result, nil
 				}}, nil
 			}
 			scheme := runtime.NewScheme()

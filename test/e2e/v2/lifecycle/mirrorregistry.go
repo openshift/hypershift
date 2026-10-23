@@ -41,6 +41,9 @@ func cliImage(ctx context.Context, cl crclient.Client) (string, error) {
 }
 
 func writeMirrorRegistryResult(sharedDir string, result *mirrorregistry.Result) error {
+	if len(result.ImageContentSources) == 0 {
+		return fmt.Errorf("mirror registry result has no image content sources")
+	}
 	ics, err := yaml.Marshal(result.ImageContentSources)
 	if err != nil {
 		return fmt.Errorf("marshal mirror image content sources: %w", err)

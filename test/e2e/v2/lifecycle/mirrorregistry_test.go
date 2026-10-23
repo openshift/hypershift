@@ -65,10 +65,12 @@ func TestCliImage(t *testing.T) {
 
 func TestWriteMirrorRegistryResult(t *testing.T) {
 	for _, tt := range []struct {
-		name        string
-		blockedFile string
+		name         string
+		blockedFile  string
+		emptySources bool
 	}{
 		{name: "When setup returns a result, it should write the CA and mappings and JSON without CA"},
+		{name: "When setup returns no image content sources, it should fail before writing any files", emptySources: true},
 		{name: "When the CA path cannot be written, it should return the file error", blockedFile: "mirror-registry-ca.pem"},
 		{name: "When the mappings path cannot be written, it should return the file error", blockedFile: "mirror-registry-ics.yaml"},
 		{name: "When the JSON path cannot be written, it should return the file error", blockedFile: "mirror-registry.json"},
@@ -88,7 +90,23 @@ func TestWriteMirrorRegistryResult(t *testing.T) {
 				ImageContentSources: []hyperv1.ImageContentSource{{Source: "quay.io/libpod/registry", Mirrors: []string{host + "/quay.io/libpod/registry"}}},
 				Images:              []mirrorregistry.MirroredImage{{From: mirrorregistry.DefaultRegistryImage, SourceRef: mirrorregistry.DefaultRegistryImage, MirrorRef: host + "/" + mirrorregistry.DefaultRegistryImage}},
 			}
+			if tt.emptySources {
+				result.ImageContentSources = nil
+			}
 			err := writeMirrorRegistryResult(dir, result)
+			if tt.emptySources {
+				if err == nil || !strings.Contains(err.Error(), "no image content sources") {
+					t.Fatalf("got %v, want error for empty image content sources", err)
+				}
+				files, err := os.ReadDir(dir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(files) != 0 {
+					t.Fatalf("expected no files to be written, got %v", files)
+				}
+				return
+			}
 			if tt.blockedFile != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.blockedFile) {
 					t.Fatalf("got %v, want error for %s", err, tt.blockedFile)
