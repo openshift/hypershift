@@ -543,6 +543,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Reject unsafe external KubeVirt credentials before anything below can
+	// discover the infrastructure cluster, including during deletion.
+	if err := r.reconcileKubevirtCredentialSafety(ctx, hcluster, hcp); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Phase 2: Deletion handling — if the cluster is being deleted, clean up and return early.
 	var hcDestroyGracePeriod time.Duration
 
@@ -1897,13 +1903,7 @@ func (r *HostedClusterReconciler) reconcilePlatformCredentialsWithStatus(
 	controlPlaneNamespace string, p platform.Platform,
 ) error {
 	if err := p.ReconcileCredentials(ctx, r.Client, createOrUpdate, hcluster, controlPlaneNamespace); err != nil {
-		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-			Type:               string(hyperv1.PlatformCredentialsFound),
-			Status:             metav1.ConditionFalse,
-			Reason:             hyperv1.PlatformCredentialsNotFoundReason,
-			ObservedGeneration: hcluster.Generation,
-			Message:            err.Error(),
-		})
+		setPlatformCredentialsNotFound(hcluster, err)
 		if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
 			return fmt.Errorf("failed to reconcile platform credentials: %w, failed to update status: %w", err, statusErr)
 		}
