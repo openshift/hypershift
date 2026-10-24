@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpofeaturegates "github.com/openshift/hypershift/control-plane-operator/featuregates"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 
@@ -40,6 +41,15 @@ const (
 	MaxFreeDifferenceRatioArg        AutoscalerArg = "--max-free-difference-ratio"
 	KubeClientQPSArg                 AutoscalerArg = "--kube-client-qps"
 	KubeClientBurstArg               AutoscalerArg = "--kube-client-burst"
+	SkipNodesWithLocalStorageArg     AutoscalerArg = "--skip-nodes-with-local-storage"
+	BalanceSimilarNodeGroupsArg      AutoscalerArg = "--balance-similar-node-groups"
+	IgnoreDaemonsetsUtilizationArg   AutoscalerArg = "--ignore-daemonsets-utilization"
+	CoresTotalArg                    AutoscalerArg = "--cores-total"
+	MemoryTotalArg                   AutoscalerArg = "--memory-total"
+	GPUTotalArg                      AutoscalerArg = "--gpu-total"
+	CordonNodeBeforeTerminatingArg   AutoscalerArg = "--cordon-node-before-terminating"
+	NewPodScaleUpDelayArg            AutoscalerArg = "--new-pod-scale-up-delay"
+	LogVerbosityArg                  AutoscalerArg = "--v"
 )
 
 // Constants for expander flags
@@ -90,6 +100,17 @@ func (a AutoscalerArg) Value(v interface{}) string {
 
 func autoscalerArgs(options *hyperv1.ClusterAutoscaling, platformType hyperv1.PlatformType, log logr.Logger) []string {
 	args := []string{}
+	args = append(args, SkipNodesWithLocalStorageArg.Value(skipNodesWithLocalStorage(options)))
+	args = append(args, BalanceSimilarNodeGroupsArg.Value(balanceSimilarNodeGroups(options)))
+	if arg, ok := ignoreDaemonsetsUtilizationArg(options); ok {
+		args = append(args, arg)
+	}
+	args = append(args, resourceLimitArgs(options)...)
+	args = append(args, logVerbosityArg(options))
+
+	if arg, ok := newPodScaleUpDelayArg(options); ok {
+		args = append(args, arg)
+	}
 
 	switch options.Scaling {
 	case hyperv1.ScaleUpOnly:
@@ -154,16 +175,122 @@ func autoscalerArgs(options *hyperv1.ClusterAutoscaling, platformType hyperv1.Pl
 		args = append(args, ExpanderArg.Value(strings.Join([]string{priorityFlag, leastWasteFlag}, ",")))
 	}
 
-	// Since we hardcode "balance-similar-node-groups" to true in the deployment yaml
 	// Append basic ignore labels for a specific cloud provider.
 	args = appendBasicIgnoreLabels(args, platformType)
 
 	return args
 }
 
+// skipNodesWithLocalStorage returns the effective value for the
+// "--skip-nodes-with-local-storage" flag. The field only takes effect when the
+// HostedClusterAutoscalerConfiguration feature gate is enabled; otherwise HyperShift's
+// historical default of false is preserved.
+func skipNodesWithLocalStorage(options *hyperv1.ClusterAutoscaling) bool {
+	if !cpofeaturegates.Gate().Enabled(cpofeaturegates.HostedClusterAutoscalerConfiguration) {
+		return false
+	}
+	return options.LocalStorageScaleDown == hyperv1.LocalStorageScaleDownSkip
+}
+
+// balanceSimilarNodeGroups returns the effective value for the
+// "--balance-similar-node-groups" flag. The field only takes effect when the
+// HostedClusterAutoscalerConfiguration feature gate is enabled; otherwise HyperShift's
+// historical default of true is preserved.
+func balanceSimilarNodeGroups(options *hyperv1.ClusterAutoscaling) bool {
+	if !cpofeaturegates.Gate().Enabled(cpofeaturegates.HostedClusterAutoscalerConfiguration) {
+		return true
+	}
+	return options.SimilarNodeGroupBalancing != hyperv1.SimilarNodeGroupBalancingDoNotBalance
+}
+
+// ignoreDaemonsetsUtilizationArg returns the rendered "--ignore-daemonsets-utilization" flag
+// and whether it should be emitted. The flag is only rendered when the
+// HostedClusterAutoscalerConfiguration feature gate is enabled and DaemonSetUtilization is
+// explicitly set; otherwise no flag is emitted, preserving the autoscaler's own default.
+func ignoreDaemonsetsUtilizationArg(options *hyperv1.ClusterAutoscaling) (string, bool) {
+	if !cpofeaturegates.Gate().Enabled(cpofeaturegates.HostedClusterAutoscalerConfiguration) {
+		return "", false
+	}
+	switch options.DaemonSetUtilization {
+	case hyperv1.DaemonSetUtilizationExclude:
+		return IgnoreDaemonsetsUtilizationArg.Value(true), true
+	case hyperv1.DaemonSetUtilizationInclude:
+		return IgnoreDaemonsetsUtilizationArg.Value(false), true
+	default:
+		return "", false
+	}
+}
+
+// resourceLimitArgs returns the rendered "--cores-total", "--memory-total", and
+// "--gpu-total" arguments for the configured resourceLimits. These flags only take effect
+// when the HostedClusterAutoscalerConfiguration feature gate is enabled; otherwise no
+// resource-limit flags are emitted, preserving the autoscaler's own default of effectively
+// unlimited resources.
+func resourceLimitArgs(options *hyperv1.ClusterAutoscaling) []string {
+	if !cpofeaturegates.Gate().Enabled(cpofeaturegates.HostedClusterAutoscalerConfiguration) {
+		return nil
+	}
+
+	var args []string
+
+	limits := options.ResourceLimits
+	if limits.Cores.Min != nil && limits.Cores.Max != nil {
+		args = append(args, CoresTotalArg.Value(fmt.Sprintf("%d:%d", *limits.Cores.Min, *limits.Cores.Max)))
+	}
+
+	if limits.Memory.Min != nil && limits.Memory.Max != nil {
+		args = append(args, MemoryTotalArg.Value(fmt.Sprintf("%d:%d", *limits.Memory.Min, *limits.Memory.Max)))
+	}
+
+	for _, gpu := range limits.GPUs {
+		if gpu.Min == nil || gpu.Max == nil {
+			continue
+		}
+		args = append(args, GPUTotalArg.Value(fmt.Sprintf("%s:%d:%d", gpu.Type, *gpu.Min, *gpu.Max)))
+	}
+
+	return args
+}
+
+// logVerbosityArg returns the rendered "--v" argument. Exactly one is always rendered: when the
+// HostedClusterAutoscalerConfiguration feature gate is enabled and LogVerbosity is set, its value is
+// used directly, including an explicit 0; otherwise HyperShift's historical default of 4 is preserved.
+func logVerbosityArg(options *hyperv1.ClusterAutoscaling) string {
+	if cpofeaturegates.Gate().Enabled(cpofeaturegates.HostedClusterAutoscalerConfiguration) && options.LogVerbosity != nil {
+		return LogVerbosityArg.Value(*options.LogVerbosity)
+	}
+	return LogVerbosityArg.Value(4)
+}
+
+// newPodScaleUpDelayArg returns the rendered "--new-pod-scale-up-delay" argument and whether it should
+// be emitted. The flag only takes effect when the HostedClusterAutoscalerConfiguration feature gate is
+// enabled and NewPodScaleUpDelay is set; otherwise no flag is emitted, preserving the autoscaler's own
+// default of "0s".
+func newPodScaleUpDelayArg(options *hyperv1.ClusterAutoscaling) (string, bool) {
+	if !cpofeaturegates.Gate().Enabled(cpofeaturegates.HostedClusterAutoscalerConfiguration) {
+		return "", false
+	}
+	if options.ScaleUp.NewPodScaleUpDelay == "" {
+		return "", false
+	}
+	return NewPodScaleUpDelayArg.Value(options.ScaleUp.NewPodScaleUpDelay), true
+}
+
 func ScaleDownArgs(sd *hyperv1.ScaleDownConfig) []string {
 	args := []string{
 		ScaleDownEnabledArg.Value(true),
+	}
+
+	if cpofeaturegates.Gate().Enabled(cpofeaturegates.HostedClusterAutoscalerConfiguration) {
+		// The autoscaler image's own default does not match "not cordoning" when the flag is
+		// omitted (confirmed by live testing), so HyperShift always renders an explicit value
+		// instead of deferring to it.
+		switch sd.CordonNodeBeforeTerminating {
+		case hyperv1.CordonNodeBeforeTerminatingEnabled:
+			args = append(args, CordonNodeBeforeTerminatingArg.Value(true))
+		default:
+			args = append(args, CordonNodeBeforeTerminatingArg.Value(false))
+		}
 	}
 
 	if sd.DelayAfterAddSeconds != nil {
