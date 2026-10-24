@@ -215,7 +215,7 @@ func (r *HostedControlPlaneReconciler) destroyAWSManagedIngressDNSZones(ctx cont
 	defer r.lastDNSReconcile.Delete(hcp.Name)
 
 	log := ctrl.LoggerFrom(ctx)
-	route53Client := route53.NewFromConfig(*r.awsSession)
+	route53Client := r.newRoute53Client(*r.awsSession)
 
 	// Delete DNSEndpoint CR (best-effort)
 	dnsEndpoint := &unstructured.Unstructured{}
