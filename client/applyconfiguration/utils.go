@@ -297,6 +297,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.IngressOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("InPlaceUpgrade"):
 		return &hypershiftv1beta1.InPlaceUpgradeApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("InstallationStatus"):
+		return &hypershiftv1beta1.InstallationStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KarpenterAWSConfig"):
 		return &hypershiftv1beta1.KarpenterAWSConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KarpenterAzureConfig"):

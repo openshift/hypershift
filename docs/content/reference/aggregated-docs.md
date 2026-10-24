@@ -49682,6 +49682,14 @@ A failure here often means a software bug or a non-stable cluster.</p>
 <td><p>KubeVirtNodesLiveMigratable indicates if all nodes (VirtualMachines) of the kubevirt
 hosted cluster can be live migrated without experiencing a node restart</p>
 </td>
+</tr><tr><td><p>&#34;ManagementClusterResourcePressure&#34;</p></td>
+<td><p>ManagementClusterResourcePressure indicates whether any control plane pods
+are experiencing scheduling failures due to resource pressure on the
+management cluster (e.g., insufficient CPU, memory, or node capacity).
+<strong>True</strong> means one or more control plane pods cannot be scheduled.
+<strong>False</strong> means all control plane pods are scheduled or running.
+<strong>Unknown</strong> means the pod status could not be determined.</p>
+</td>
 </tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
 desired platform are valid.
@@ -53652,6 +53660,37 @@ SecretEncryptionStatus
 <p>secretEncryption tracks the state of secret encryption key rotation and re-encryption.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>installationStage</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.InstallationStage">
+InstallationStage
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>installationStage tracks the current phase of the initial cluster
+provisioning lifecycle. The value progresses forward through the
+defined stages and never moves backward.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>installationStageTransitionTime,omitempty,omitzero</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>installationStageTransitionTime is the time at which the installationStage
+last transitioned to a new value.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedControlPlaneInitializationStatus { #hypershift.openshift.io/v1beta1.HostedControlPlaneInitializationStatus }
@@ -54519,6 +54558,37 @@ HostedControlPlaneInitializationStatus
 <p>initialization contains fields that track the status of the initialization of the HostedControlPlane.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>installationStage</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.InstallationStage">
+InstallationStage
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>installationStage tracks the current phase of the initial control plane
+provisioning lifecycle. The value progresses forward through the
+defined stages and never moves backward.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>installationStageTransitionTime,omitempty,omitzero</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>installationStageTransitionTime is the time at which the installationStage
+last transitioned to a new value.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###IBMCloudKMSAuthSpec { #hypershift.openshift.io/v1beta1.IBMCloudKMSAuthSpec }
@@ -55038,6 +55108,48 @@ certificate referenced here is no longer served.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###InstallationStage { #hypershift.openshift.io/v1beta1.InstallationStage }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>,
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>InstallationStage describes the current phase of a HostedCluster or
+HostedControlPlane during initial provisioning. The value progresses
+forward through the defined stages and never moves backward.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ControlPlaneProvisioning&#34;</p></td>
+<td><p>InstallationStageControlPlaneProvisioning indicates that control plane
+components are being created and started.</p>
+</td>
+</tr><tr><td><p>&#34;Initializing&#34;</p></td>
+<td><p>InstallationStageInitializing indicates the cluster has been created
+but no control plane components have started yet.</p>
+</td>
+</tr><tr><td><p>&#34;InstallationComplete&#34;</p></td>
+<td><p>InstallationStageInstallationComplete indicates that the cluster
+installation has completed successfully.</p>
+</td>
+</tr><tr><td><p>&#34;WaitingForKubeconfig&#34;</p></td>
+<td><p>InstallationStageWaitingForKubeconfig indicates that all control plane
+components are available and the cluster is waiting for a kubeconfig
+secret to be created.</p>
+</td>
+</tr><tr><td><p>&#34;WaitingForOperators&#34;</p></td>
+<td><p>InstallationStageWaitingForOperators indicates that a kubeconfig is
+available and the cluster is waiting for the ClusterVersion to report
+all operators as available.</p>
+</td>
+</tr></tbody>
 </table>
 ###InstanceType { #hypershift.openshift.io/v1beta1.InstanceType }
 <p>

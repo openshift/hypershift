@@ -8518,6 +8518,39 @@ spec:
                   It exposes the config for instances to become kubernetes nodes.
                 maxLength: 1024
                 type: string
+              installation:
+                description: |-
+                  installation tracks the progress of initial cluster provisioning.
+                  Nil means installation stage tracking is not yet available
+                  (e.g. CPO version skew during upgrade).
+                minProperties: 1
+                properties:
+                  lastTransitionTime:
+                    description: |-
+                      lastTransitionTime is the time at which stage last transitioned
+                      to a new value.
+                    format: date-time
+                    type: string
+                  stage:
+                    allOf:
+                    - enum:
+                      - Initializing
+                      - ControlPlaneProvisioning
+                      - WaitingForKubeconfig
+                      - WaitingForOperators
+                      - InstallationComplete
+                    - enum:
+                      - Initializing
+                      - ControlPlaneProvisioning
+                      - WaitingForKubeconfig
+                      - WaitingForOperators
+                      - InstallationComplete
+                    description: |-
+                      stage is the current phase of the installation lifecycle.
+                      The value progresses forward through the defined stages and never
+                      moves backward.
+                    type: string
+                type: object
               kubeadminPassword:
                 description: |-
                   kubeadminPassword is a reference to the secret that contains the initial

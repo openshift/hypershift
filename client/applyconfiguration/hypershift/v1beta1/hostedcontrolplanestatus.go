@@ -46,6 +46,7 @@ type HostedControlPlaneStatusApplyConfiguration struct {
 	Configuration                  *ConfigurationStatusApplyConfiguration                    `json:"configuration,omitempty"`
 	SecretEncryption               *SecretEncryptionStatusApplyConfiguration                 `json:"secretEncryption,omitempty"`
 	Initialization                 *HostedControlPlaneInitializationStatusApplyConfiguration `json:"initialization,omitempty"`
+	Installation                   *InstallationStatusApplyConfiguration                     `json:"installation,omitempty"`
 }
 
 // HostedControlPlaneStatusApplyConfiguration constructs a declarative configuration of the HostedControlPlaneStatus type for use with
@@ -216,5 +217,13 @@ func (b *HostedControlPlaneStatusApplyConfiguration) WithSecretEncryption(value 
 // If called multiple times, the Initialization field is set to the value of the last call.
 func (b *HostedControlPlaneStatusApplyConfiguration) WithInitialization(value *HostedControlPlaneInitializationStatusApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
 	b.Initialization = value
+	return b
+}
+
+// WithInstallation sets the Installation field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Installation field is set to the value of the last call.
+func (b *HostedControlPlaneStatusApplyConfiguration) WithInstallation(value *InstallationStatusApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
+	b.Installation = value
 	return b
 }

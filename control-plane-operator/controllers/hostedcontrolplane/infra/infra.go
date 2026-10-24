@@ -49,6 +49,12 @@ type InfrastructureStatus struct {
 	NeedInternalRouter      bool
 	ExternalHCPRouterHost   string
 	NeedExternalRouter      bool
+
+	// RouteNotAdmitted is true when one or more HCP-managed Routes have not been
+	// admitted by the router (empty .status.ingress or Admitted=False).
+	RouteNotAdmitted bool
+	// RouteNotAdmittedMsg describes which routes are not admitted.
+	RouteNotAdmittedMsg string
 }
 
 func (s InfrastructureStatus) IsReady() bool {
@@ -168,6 +174,15 @@ func (r *Reconciler) ReconcileInfrastructureStatus(ctx context.Context, hcp *hyp
 		infraStatus.Message = strings.Join(messages, "; ")
 	}
 
+	// Check Route admission status by inspecting Route resources directly.
+	notAdmittedRoutes, routeErr := r.CheckRouteAdmission(ctx, hcp)
+	if routeErr != nil {
+		errs = append(errs, routeErr)
+	} else if len(notAdmittedRoutes) > 0 {
+		infraStatus.RouteNotAdmitted = true
+		infraStatus.RouteNotAdmittedMsg = fmt.Sprintf("Routes not admitted: %s", strings.Join(notAdmittedRoutes, ", "))
+	}
+
 	return infraStatus, utilerrors.NewAggregate(errs)
 }
 
@@ -206,6 +221,44 @@ func (r *Reconciler) AdmitHCPManagedRoutes(ctx context.Context, hcp *hyperv1.Hos
 	}
 
 	return nil
+}
+
+// CheckRouteAdmission inspects all HCP-managed Routes in the namespace and
+// returns a list of route names that are not admitted. A route is considered
+// not admitted if it has no .status.ingress entries, or if the Admitted
+// condition on any ingress entry is not True.
+func (r *Reconciler) CheckRouteAdmission(ctx context.Context, hcp *hyperv1.HostedControlPlane) (notAdmittedRoutes []string, err error) {
+	routeList := &routev1.RouteList{}
+	if err := r.Client.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list routes: %w", err)
+	}
+
+	for i := range routeList.Items {
+		route := &routeList.Items[i]
+		if _, hasHCPLabel := route.Labels[netutil.HCPRouteLabel]; !hasHCPLabel {
+			continue
+		}
+		if !routeIsAdmitted(route) {
+			notAdmittedRoutes = append(notAdmittedRoutes, route.Name)
+		}
+	}
+	return notAdmittedRoutes, nil
+}
+
+// routeIsAdmitted returns true if the route has at least one ingress entry
+// with Admitted=True.
+func routeIsAdmitted(route *routev1.Route) bool {
+	if len(route.Status.Ingress) == 0 {
+		return false
+	}
+	for _, ing := range route.Status.Ingress {
+		for _, cond := range ing.Conditions {
+			if cond.Type == routev1.RouteAdmitted && cond.Status == corev1.ConditionTrue {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {

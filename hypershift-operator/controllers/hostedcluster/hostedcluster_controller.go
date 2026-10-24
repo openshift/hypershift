@@ -936,6 +936,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Copy the control plane version status from the hostedcontrolplane
 	propagateControlPlaneVersion(hcluster, hcp)
+	propagateInstallationStage(hcluster, hcp)
 
 	// Set the AutoNodeEnabled condition reflecting both spec intent and actual component rollout progress.
 	autoNodeCondition, autoNodeProgressing := r.reconcileAutoNodeEnabledCondition(ctx, hcluster, controlPlaneNamespace.Name)
@@ -1024,6 +1025,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 	}
+
+	// Set ManagementClusterResourcePressure condition based on pod scheduling failures.
+	reconcileManagementClusterResourcePressure(ctx, r.Client, hcluster, controlPlaneNamespace.Name)
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -6133,6 +6137,16 @@ func propagateControlPlaneVersion(hcluster *hyperv1.HostedCluster, hcp *hyperv1.
 		return
 	}
 	hcluster.Status.ControlPlaneVersion = *hcp.Status.ControlPlaneVersion.DeepCopy()
+}
+
+// propagateInstallationStage copies the Installation status from the
+// HostedControlPlane to the HostedCluster.
+// When HCP is nil (not yet created) the existing HC value is preserved.
+func propagateInstallationStage(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) {
+	if hcp == nil {
+		return
+	}
+	hcluster.Status.Installation = hcp.Status.Installation.DeepCopy()
 }
 
 func computeGCPPSCCondition(gcpPSCList hyperv1.GCPPrivateServiceConnectList, conditionType hyperv1.ConditionType) metav1.Condition {

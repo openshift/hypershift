@@ -8331,6 +8331,38 @@ spec:
                   the current readiness of the cluster's control plane.
                   This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L238-L252
                 type: boolean
+              installation:
+                description: |-
+                  installation tracks the progress of initial control plane provisioning.
+                  Nil means installation stage tracking is not yet available.
+                minProperties: 1
+                properties:
+                  lastTransitionTime:
+                    description: |-
+                      lastTransitionTime is the time at which stage last transitioned
+                      to a new value.
+                    format: date-time
+                    type: string
+                  stage:
+                    allOf:
+                    - enum:
+                      - Initializing
+                      - ControlPlaneProvisioning
+                      - WaitingForKubeconfig
+                      - WaitingForOperators
+                      - InstallationComplete
+                    - enum:
+                      - Initializing
+                      - ControlPlaneProvisioning
+                      - WaitingForKubeconfig
+                      - WaitingForOperators
+                      - InstallationComplete
+                    description: |-
+                      stage is the current phase of the installation lifecycle.
+                      The value progresses forward through the defined stages and never
+                      moves backward.
+                    type: string
+                type: object
               kubeConfig:
                 description: |-
                   kubeConfig is a reference to the secret containing the default kubeconfig

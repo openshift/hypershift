@@ -2793,6 +2793,12 @@ type HostedClusterStatus struct {
 	// secretEncryption tracks the state of secret encryption key rotation and re-encryption.
 	// +optional
 	SecretEncryption SecretEncryptionStatus `json:"secretEncryption,omitzero"`
+
+	// installation tracks the progress of initial cluster provisioning.
+	// Nil means installation stage tracking is not yet available
+	// (e.g. CPO version skew during upgrade).
+	// +optional
+	Installation *InstallationStatus `json:"installation,omitempty"`
 }
 
 // AutoNodeStatus contains the observed state of the AutoNode provisioner.

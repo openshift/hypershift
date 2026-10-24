@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
@@ -15,8 +16,6 @@ import (
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/upsert"
-
-	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -2216,6 +2215,122 @@ func TestReconcileOAuthService_AzureLoadBalancer(t *testing.T) {
 			err = fakeClient.List(t.Context(), &routes, client.InNamespace(targetNamespace))
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(routes.Items).To(BeEmpty())
+		})
+	}
+}
+
+func TestCheckRouteAdmission(t *testing.T) {
+	const ns = "test-hcp-ns"
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: ns},
+	}
+
+	admittedRoute := func(name string) *routev1.Route {
+		return &routev1.Route{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ns,
+				Labels:    map[string]string{netutil.HCPRouteLabel: ns},
+			},
+			Status: routev1.RouteStatus{
+				Ingress: []routev1.RouteIngress{
+					{
+						Host:       name + ".example.com",
+						RouterName: "default",
+						Conditions: []routev1.RouteIngressCondition{
+							{Type: routev1.RouteAdmitted, Status: corev1.ConditionTrue},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	notAdmittedRoute := func(name string) *routev1.Route {
+		return &routev1.Route{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ns,
+				Labels:    map[string]string{netutil.HCPRouteLabel: ns},
+			},
+			// Empty Status.Ingress = not admitted.
+		}
+	}
+
+	testCases := []struct {
+		name                   string
+		routes                 []client.Object
+		expectedNotAdmitted    int
+		expectedNotAdmittedIDs []string
+	}{
+		{
+			name:                "When no routes exist it should return empty",
+			routes:              nil,
+			expectedNotAdmitted: 0,
+		},
+		{
+			name:                "When all routes are admitted it should return empty",
+			routes:              []client.Object{admittedRoute("kas"), admittedRoute("oauth")},
+			expectedNotAdmitted: 0,
+		},
+		{
+			name:                   "When a route is not admitted it should return that route",
+			routes:                 []client.Object{admittedRoute("kas"), notAdmittedRoute("oauth")},
+			expectedNotAdmitted:    1,
+			expectedNotAdmittedIDs: []string{"oauth"},
+		},
+		{
+			name:                "When route has no HCP label it should be skipped",
+			routes: []client.Object{
+				// Route without HCP label — should be ignored.
+				&routev1.Route{
+					ObjectMeta: metav1.ObjectMeta{Name: "unmanaged", Namespace: ns},
+				},
+			},
+			expectedNotAdmitted: 0,
+		},
+		{
+			name: "When route has Admitted=False it should be not admitted",
+			routes: []client.Object{
+				&routev1.Route{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "failing-route",
+						Namespace: ns,
+						Labels:    map[string]string{netutil.HCPRouteLabel: ns},
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{
+								Conditions: []routev1.RouteIngressCondition{
+									{Type: routev1.RouteAdmitted, Status: corev1.ConditionFalse, Reason: "HostAlreadyClaimed"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedNotAdmitted:    1,
+			expectedNotAdmittedIDs: []string{"failing-route"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			for _, obj := range tc.routes {
+				builder = builder.WithObjects(obj)
+			}
+
+			r := NewReconciler(builder.Build(), testIngressDomain)
+			notAdmitted, err := r.CheckRouteAdmission(context.Background(), hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(notAdmitted).To(HaveLen(tc.expectedNotAdmitted))
+			for _, id := range tc.expectedNotAdmittedIDs {
+				g.Expect(notAdmitted).To(ContainElement(id))
+			}
 		})
 	}
 }

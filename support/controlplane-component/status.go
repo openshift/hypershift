@@ -1,9 +1,12 @@
 package controlplanecomponent
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
@@ -192,6 +195,13 @@ func (c *controlPlaneWorkload[T]) setAvailableCondition(cpContext ControlPlaneCo
 	}
 
 	status, reason, message := c.workloadProvider.IsAvailable(workloadObject)
+	if status == metav1.ConditionFalse {
+		diagReason, diagMessage := diagnosePodFailure(cpContext, c.name)
+		if diagReason != "" {
+			reason = diagReason
+			message = diagMessage
+		}
+	}
 	meta.SetStatusCondition(conditions, metav1.Condition{
 		Type:    string(hyperv1.ControlPlaneComponentAvailable),
 		Status:  status,
@@ -303,4 +313,111 @@ func (c *controlPlaneWorkload[T]) checkOperandsRolloutStatus(cpContext WorkloadC
 	}
 
 	return true, nil
+}
+
+const maxDiagnosticMessageLen = 256
+
+// diagnosePodFailure inspects pods for the given component and returns a
+// structured reason and message if a pod-level failure is detected.
+// It uses a short timeout to avoid blocking reconciliation.
+// Returns ("", "") if no diagnosable failure is found or on error.
+func diagnosePodFailure(cpContext ControlPlaneContext, componentName string) (string, string) {
+	ctx, cancel := context.WithTimeout(cpContext, 5*time.Second)
+	defer cancel()
+
+	// Look up the workload (Deployment or StatefulSet) to get its label selector.
+	deployment := &appsv1.Deployment{}
+	if err := cpContext.Client.Get(ctx, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: componentName}, deployment); err != nil {
+		// Try StatefulSet
+		sts := &appsv1.StatefulSet{}
+		if stsErr := cpContext.Client.Get(ctx, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: componentName}, sts); stsErr != nil {
+			return "", ""
+		}
+		return diagnosePodsBySelector(ctx, cpContext.Client, cpContext.HCP.Namespace, sts.Spec.Selector)
+	}
+	return diagnosePodsBySelector(ctx, cpContext.Client, cpContext.HCP.Namespace, deployment.Spec.Selector)
+}
+
+func diagnosePodsBySelector(ctx context.Context, c client.Client, namespace string, selector *metav1.LabelSelector) (string, string) {
+	if selector == nil {
+		return "", ""
+	}
+	sel, err := metav1.LabelSelectorAsSelector(selector)
+	if err != nil {
+		return "", ""
+	}
+
+	podList := &corev1.PodList{}
+	if err := c.List(ctx, podList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: sel}); err != nil {
+		return "", ""
+	}
+
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+
+		// Check for scheduling failures.
+		for _, cond := range pod.Status.Conditions {
+			if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == "Unschedulable" {
+				return hyperv1.ReasonPodSchedulingFailed, truncateMessage(sanitizeSchedulerMessage(pod.Name, cond.Message))
+			}
+		}
+
+		// Check container statuses for CrashLoopBackOff and ImagePullBackOff.
+		for _, cs := range pod.Status.ContainerStatuses {
+			if cs.State.Waiting != nil {
+				switch cs.State.Waiting.Reason {
+				case "CrashLoopBackOff":
+					msg := fmt.Sprintf("Pod %s container %s: CrashLoopBackOff", pod.Name, cs.Name)
+					if cs.LastTerminationState.Terminated != nil {
+						msg += fmt.Sprintf(" (%s)", cs.LastTerminationState.Terminated.Reason)
+					}
+					return hyperv1.ReasonCrashLoopBackOff, truncateMessage(msg)
+				case "ImagePullBackOff", "ErrImagePull":
+					return hyperv1.ReasonImagePullBackOff, truncateMessage(fmt.Sprintf("Pod %s container %s: %s", pod.Name, cs.Name, cs.State.Waiting.Reason))
+				}
+			}
+		}
+		for _, cs := range pod.Status.InitContainerStatuses {
+			if cs.State.Waiting != nil {
+				switch cs.State.Waiting.Reason {
+				case "CrashLoopBackOff":
+					return hyperv1.ReasonCrashLoopBackOff, truncateMessage(fmt.Sprintf("Pod %s init container %s: CrashLoopBackOff", pod.Name, cs.Name))
+				case "ImagePullBackOff", "ErrImagePull":
+					return hyperv1.ReasonImagePullBackOff, truncateMessage(fmt.Sprintf("Pod %s init container %s: %s", pod.Name, cs.Name, cs.State.Waiting.Reason))
+				}
+			}
+		}
+	}
+
+	return "", ""
+}
+
+func truncateMessage(msg string) string {
+	if len(msg) > maxDiagnosticMessageLen {
+		return msg[:maxDiagnosticMessageLen-3] + "..."
+	}
+	return msg
+}
+
+// insufficientResourcePattern matches "Insufficient <resource>" in scheduler messages.
+var insufficientResourcePattern = regexp.MustCompile(`Insufficient\s+([\w][\w-]*)`)
+
+// sanitizeSchedulerMessage extracts only resource-type information from a raw
+// scheduler message to avoid leaking management cluster details (node names,
+// IPs, cluster size) into conditions visible to hosted cluster users.
+func sanitizeSchedulerMessage(podName, rawMessage string) string {
+	matches := insufficientResourcePattern.FindAllStringSubmatch(rawMessage, -1)
+	if len(matches) == 0 {
+		return fmt.Sprintf("Pod %s is unschedulable", podName)
+	}
+	seen := make(map[string]struct{})
+	var resources []string
+	for _, m := range matches {
+		res := m[1]
+		if _, ok := seen[res]; !ok {
+			seen[res] = struct{}{}
+			resources = append(resources, res)
+		}
+	}
+	return fmt.Sprintf("Pod %s is unschedulable: Insufficient %s", podName, strings.Join(resources, ", Insufficient "))
 }
