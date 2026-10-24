@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 
@@ -63,7 +64,25 @@ func (s *server) validate() error {
 	if s.apiServerAddr == "" {
 		errs = append(errs, errors.New("--apiserver-addr is mandatory"))
 	}
-	return utilerrors.NewAggregate(errs)
+	if err := utilerrors.NewAggregate(errs); err != nil {
+		return err
+	}
+	s.listenAddr = normalizeTCPAddress(s.listenAddr)
+	s.proxyAddr = normalizeTCPAddress(s.proxyAddr)
+	s.apiServerAddr = normalizeTCPAddress(s.apiServerAddr)
+	return nil
+}
+
+func normalizeTCPAddress(address string) string {
+	separator := strings.LastIndexByte(address, ':')
+	if separator < 0 {
+		return address
+	}
+	host, port := address[:separator], address[separator+1:]
+	if parsed, err := netip.ParseAddr(host); err == nil && parsed.Is6() {
+		return net.JoinHostPort(host, port)
+	}
+	return address
 }
 
 func (s *server) run(ctx context.Context) error {
