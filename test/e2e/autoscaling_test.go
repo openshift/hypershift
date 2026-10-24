@@ -5,6 +5,7 @@ package e2e
 import (
 	"bufio"
 	"context"
+	"flag"
 	"fmt"
 	"strings"
 	"testing"
@@ -18,17 +19,18 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+var scaleFromZeroCapacitySource = flag.String("e2e.scale-from-zero-capacity-source", "native", "Capacity source to require: native or annotations. The annotations case requires an approved fixture that keeps native template capacity absent.")
+var scaleFromZeroUpgradeType = flag.String("e2e.scale-from-zero-upgrade-type", string(hyperv1.UpgradeTypeReplace), "NodePool upgrade type to exercise: Replace or InPlace")
 
 func TestAutoscaling(t *testing.T) {
 	t.Parallel()
@@ -678,28 +680,24 @@ func testAutoscalerRespectsNodePoolPause(ctx context.Context, mgtClient crclient
 }
 
 func TestNodePoolAutoscalingScaleFromZero(t *testing.T) {
+	if *scaleFromZeroCapacitySource != "native" && *scaleFromZeroCapacitySource != "annotations" {
+		t.Fatal("e2e.scale-from-zero-capacity-source must be native or annotations")
+	}
+	if *scaleFromZeroUpgradeType != string(hyperv1.UpgradeTypeReplace) && *scaleFromZeroUpgradeType != string(hyperv1.UpgradeTypeInPlace) {
+		t.Fatal("e2e.scale-from-zero-upgrade-type must be Replace or InPlace")
+	}
 	if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
 		t.Skip("test only supported on AWS and Azure platforms")
 	}
 
-	// Get management client to check for scale-from-zero secret
-	mgtClient, err := e2eutil.GetClient()
-	if err != nil {
-		t.Fatalf("failed to get management client: %v", err)
-	}
-
-	// Check if scale-from-zero is enabled by looking for the credentials secret
-	// The instance type provider is enabled when this secret is set
-	scaleFromZeroSecret := &corev1.Secret{}
-	err = mgtClient.Get(testContext, crclient.ObjectKey{
-		Namespace: "hypershift",
-		Name:      "hypershift-operator-scale-from-zero-credentials",
-	}, scaleFromZeroSecret)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			t.Skip("test requires scale-from-zero to be enabled on the HyperShift Operator (secret hypershift-operator-scale-from-zero-credentials not found)")
+	if *scaleFromZeroCapacitySource == "annotations" {
+		managementClient, err := e2eutil.GetClient()
+		if err != nil {
+			t.Fatal(err)
 		}
-		t.Fatalf("failed to check for scale-from-zero secret: %v", err)
+		if err := managementClient.Get(testContext, crclient.ObjectKey{Namespace: "hypershift", Name: "hypershift-operator-scale-from-zero-credentials"}, &corev1.Secret{}); err != nil {
+			t.Fatalf("annotation fallback requires the provider credentials fixture: %v", err)
+		}
 	}
 
 	t.Parallel()
@@ -717,6 +715,7 @@ func TestNodePoolAutoscalingScaleFromZero(t *testing.T) {
 
 func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) func(t *testing.T) {
 	return func(t *testing.T) {
+		t.Logf("Scale-from-zero capacity source: %s; upgrade type: %s", *scaleFromZeroCapacitySource, *scaleFromZeroUpgradeType)
 		g := NewWithT(t)
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -743,6 +742,10 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 			},
 		}
 		nodepools.Items[0].Spec.DeepCopyInto(&scaleFromZeroNP.Spec)
+		scaleFromZeroNP.Spec.Management.UpgradeType = hyperv1.UpgradeType(*scaleFromZeroUpgradeType)
+		if scaleFromZeroNP.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+			scaleFromZeroNP.Spec.Management.Replace = nil
+		}
 		scaleFromZeroNP.Spec.Replicas = nil // Must be nil when using autoscaling
 		scaleFromZeroNP.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
 			Min: ptr.To[int32](0), // Scale from zero
@@ -757,107 +760,15 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create scale-from-zero nodepool")
 		t.Logf("Created NodePool %s with autoscaling min=0, max=2", scaleFromZeroNP.Name)
 
-		// Verify capacity information is available either via Status.Capacity (CAPI 1.11+)
-		// or via annotations (pre-CAPI 1.11)
-		t.Log("Verifying scale-from-zero capacity information is available")
-		md := &capiv1.MachineDeployment{}
-		var hasNativeCapacity bool
-		var capacitySource string
-		e2eutil.EventuallyObject(t, ctx, "MachineDeployment to have capacity information",
-			func(ctx context.Context) (*capiv1.MachineDeployment, error) {
-				// MachineDeployment is in the hosted cluster namespace with same name as NodePool
-				err := mgtClient.Get(ctx, crclient.ObjectKey{
-					Namespace: manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name),
-					Name:      scaleFromZeroNP.Name,
-				}, md)
-				return md, err
-			},
-			[]e2eutil.Predicate[*capiv1.MachineDeployment]{
-				func(md *capiv1.MachineDeployment) (done bool, reasons string, err error) {
-					// Check if we have a valid infrastructure reference
-					if md.Spec.Template.Spec.InfrastructureRef.Name == "" {
-						return false, "MachineDeployment missing infrastructureRef", nil
-					}
-
-					// Get the AWSMachineTemplate to check for Status.Capacity
-					awsMachineTemplate := &capiaws.AWSMachineTemplate{}
-					err = mgtClient.Get(ctx, crclient.ObjectKey{
-						Namespace: md.Namespace,
-						Name:      md.Spec.Template.Spec.InfrastructureRef.Name,
-					}, awsMachineTemplate)
-					if err != nil {
-						return false, fmt.Sprintf("failed to get AWSMachineTemplate: %v", err), err
-					}
-
-					// Check for native Status.Capacity (CAPI 1.11+)
-					if len(awsMachineTemplate.Status.Capacity) > 0 {
-						t.Logf("Found native Status.Capacity on AWSMachineTemplate %s", awsMachineTemplate.Name)
-						// Validate required capacity fields
-						if _, ok := awsMachineTemplate.Status.Capacity[corev1.ResourceCPU]; !ok {
-							return false, "Status.Capacity missing CPU", nil
-						}
-						if _, ok := awsMachineTemplate.Status.Capacity[corev1.ResourceMemory]; !ok {
-							return false, "Status.Capacity missing Memory", nil
-						}
-						hasNativeCapacity = true
-						capacitySource = "Status.Capacity"
-						return true, "native Status.Capacity present with CPU and Memory", nil
-					}
-
-					// Fall back to checking annotations (pre-CAPI 1.11)
-					t.Logf("No Status.Capacity found, checking for workaround annotations on MachineDeployment")
-					if _, ok := md.Annotations["machine.openshift.io/vCPU"]; !ok {
-						return false, "missing both Status.Capacity and vCPU annotation", nil
-					}
-					if _, ok := md.Annotations["machine.openshift.io/memoryMb"]; !ok {
-						return false, "missing both Status.Capacity and memoryMb annotation", nil
-					}
-					// GPU annotation is optional - only set when instance type has GPUs
-					labels, ok := md.Annotations["capacity.cluster-autoscaler.kubernetes.io/labels"]
-					if !ok {
-						return false, "missing capacity labels annotation", nil
-					}
-					if !strings.Contains(labels, "kubernetes.io/arch=") {
-						return false, "capacity labels missing architecture", nil
-					}
-					hasNativeCapacity = false
-					capacitySource = "annotations"
-					return true, "all capacity annotations present", nil
-				},
-			},
-			e2eutil.WithTimeout(5*time.Minute),
-		)
-
-		// Log capacity information based on source
-		if hasNativeCapacity {
-			// Get the AWSMachineTemplate again to display capacity info
-			awsMachineTemplate := &capiaws.AWSMachineTemplate{}
-			err = mgtClient.Get(ctx, crclient.ObjectKey{
-				Namespace: md.Namespace,
-				Name:      md.Spec.Template.Spec.InfrastructureRef.Name,
-			}, awsMachineTemplate)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get AWSMachineTemplate for logging")
-
-			cpuQty := awsMachineTemplate.Status.Capacity[corev1.ResourceCPU]
-			memQty := awsMachineTemplate.Status.Capacity[corev1.ResourceMemory]
-			gpuQty := awsMachineTemplate.Status.Capacity["nvidia.com/gpu"]
-			t.Logf("Capacity via %s: CPU=%s, Memory=%s, GPU=%s",
-				capacitySource,
-				cpuQty.String(),
-				memQty.String(),
-				gpuQty.String())
-		} else {
-			gpuValue := md.Annotations["machine.openshift.io/GPU"]
-			if gpuValue == "" {
-				gpuValue = "none (non-GPU instance)"
+		capacityCheck := func() error {
+			object, capacity, err := e2eutil.GetScaleFromZeroCapacity(ctx, mgtClient, manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name), scaleFromZeroNP, "v1beta2")
+			if err != nil {
+				return err
 			}
-			t.Logf("Capacity via %s: vCPU=%s, memoryMb=%s, GPU=%s, labels=%s",
-				capacitySource,
-				md.Annotations["machine.openshift.io/vCPU"],
-				md.Annotations["machine.openshift.io/memoryMb"],
-				gpuValue,
-				md.Annotations["capacity.cluster-autoscaler.kubernetes.io/labels"])
+			return e2eutil.ValidateScaleFromZeroCapacity(object.GetAnnotations(), capacity, *scaleFromZeroCapacitySource)
 		}
+		g.Eventually(capacityCheck, 5*time.Minute, time.Second).Should(Succeed())
+		t.Logf("Verified %s capacity on %s pool", *scaleFromZeroCapacitySource, scaleFromZeroNP.Spec.Management.UpgradeType)
 
 		// Verify NodePool autoscaling is enabled
 		e2eutil.EventuallyObject(t, ctx, "NodePool autoscaling to be enabled",
@@ -885,6 +796,9 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), scaleFromZeroNP)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(scaleFromZeroNP.Status.Replicas).To(Equal(int32(0)), "NodePool should start with 0 replicas")
+		selectedNodes := &corev1.NodeList{}
+		g.Expect(guestClient.List(ctx, selectedNodes, crclient.MatchingLabels(scaleFromZeroNP.Spec.NodeLabels))).To(Succeed())
+		g.Expect(selectedNodes.Items).To(BeEmpty(), "the selected pool must have no existing worker nodes")
 		t.Log("Confirmed NodePool has 0 replicas")
 
 		// Create workload to trigger scale-up from 0
@@ -897,6 +811,8 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 			Spec: batchv1.JobSpec{
 				Template: corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{
+						NodeSelector: scaleFromZeroNP.Spec.NodeLabels,
+						Tolerations:  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 						Containers: []corev1.Container{
 							{
 								Name:    "workload",
@@ -952,6 +868,7 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 			},
 			[]e2eutil.Predicate[*hyperv1.NodePool]{
 				func(np *hyperv1.NodePool) (done bool, reasons string, err error) {
+					g.Expect(capacityCheck()).To(Succeed(), "the selected capacity source must remain active throughout scale-up")
 					if np.Status.Replicas > 0 {
 						return true, fmt.Sprintf("NodePool scaled to %d replicas", np.Status.Replicas), nil
 					}
@@ -991,6 +908,14 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 					Status: metav1.ConditionTrue,
 				}),
 				e2eutil.Predicate[*corev1.Pod](func(pod *corev1.Pod) (done bool, reasons string, err error) {
+					g.Expect(capacityCheck()).To(Succeed())
+					if pod.Spec.NodeName != "" {
+						node := &corev1.Node{}
+						if err := guestClient.Get(ctx, crclient.ObjectKey{Name: pod.Spec.NodeName}, node); err != nil {
+							return false, "failed to read scheduled node", err
+						}
+						g.Expect(node.Labels).To(HaveKeyWithValue("scale-from-zero-test", "true"))
+					}
 					if pod.Status.Phase == corev1.PodRunning || pod.Status.Phase == corev1.PodSucceeded {
 						return true, fmt.Sprintf("pod %s is %s", pod.Name, pod.Status.Phase), nil
 					}
