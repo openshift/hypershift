@@ -49,7 +49,7 @@ repos:
         language: system
         stages: [pre-commit]
         files: '\.go$'
-        exclude: '^api/'
+        exclude: '^(api|pkg/capi)/'
       - id: run-gitlint
         name: Run gitlint
         description: Runs `make run-gitlint` to validate commit messages.

@@ -692,6 +692,15 @@ spec:
                   - providerID
                   type: object
                 type: array
+              virtualMachineScaleSetID:
+                description: |-
+                  VirtualMachineScaleSetID specifies the VMSS Flex resource id that the virtual machine should be
+                  created in.
+                  The field input must be a valid Azure resource ID for a Virtual Machine Scale Set resource, for example
+                  '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/virtualMachineScaleSets/{vmssName}'.
+                  The referenced Virtual Machine Scale Set must already exist and use Flexible orchestration mode.
+                  It is optional but may not be changed once set.
+                type: string
               vmExtensions:
                 description: VMExtensions specifies a list of extensions to be added
                   to the virtual machine.
