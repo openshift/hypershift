@@ -204,6 +204,29 @@ func (r *HostedClusterReconciler) findFailingEtcdPod(ctx context.Context, log lo
 	}
 
 	for _, pod := range etcdPodList.Items {
+		// Check if the pod has been evicted by the taint manager due to an unreachable node.
+		// When a management-cluster node becomes unreachable, Kubernetes adds a
+		// node.kubernetes.io/unreachable:NoExecute taint. After the pod's toleration grace
+		// period expires (default 300s), the taint eviction controller sets a DisruptionTarget
+		// condition with reason DeletionByTaintManager.
+		//
+		// We detect this via the pod-level DisruptionTarget condition rather than reading the
+		// Node object directly. Although the HO reconciler has cluster-scoped access and could
+		// read nodes, we keep the detection logic consistent with the recovery job (which runs
+		// with a namespaced Role and cannot read nodes without a ClusterRole). The ~5-minute
+		// delay before this condition appears is acceptable and acts as a natural debounce
+		// against transient node disruptions.
+		for _, cond := range pod.Status.Conditions {
+			if cond.Type == corev1.DisruptionTarget &&
+				cond.Status == corev1.ConditionTrue &&
+				cond.Reason == "DeletionByTaintManager" {
+				log.Info("detected etcd pod on unreachable node (DisruptionTarget/DeletionByTaintManager)",
+					"name", pod.Name, "namespace", pod.Namespace)
+				return &pod, nil
+			}
+		}
+
+		// Existing check: pod is crash-looping on a reachable node.
 		for _, containerStatus := range pod.Status.ContainerStatuses {
 			if containerStatus.State.Waiting != nil && containerStatus.RestartCount > 0 && containerStatus.Name == "etcd" {
 				log.Info("detected etcd failing pod", "name", pod.Name, "namespace", pod.Namespace)
