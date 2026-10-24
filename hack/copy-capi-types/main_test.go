@@ -43,6 +43,100 @@ func TestIsAllowedImport(t *testing.T) {
 	}
 }
 
+func TestPackageDir(t *testing.T) {
+	// A module whose build list resolves a package from a nested module, the
+	// layout CAPI v1.14 uses for sigs.k8s.io/cluster-api/api.
+	root := t.TempDir()
+	writeFile := func(rel, content string) {
+		t.Helper()
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile("vendormod/go.mod", "module github.com/openshift/hypershift/hack/capi-vendor/azure\n\ngo 1.22\n\nrequire (\n\tsigs.k8s.io/cluster-api v1.14.0\n\tsigs.k8s.io/cluster-api/api v1.14.0\n)\n\nreplace (\n\tsigs.k8s.io/cluster-api => ../capi\n\tsigs.k8s.io/cluster-api/api => ../capiapi\n)\n")
+	writeFile("vendormod/vendor_imports.go", "package azure\n\nimport (\n\t_ \"sigs.k8s.io/cluster-api/api/core/v1beta1\"\n\t_ \"sigs.k8s.io/cluster-api/errors\"\n)\n")
+	writeFile("capi/go.mod", "module sigs.k8s.io/cluster-api\n\ngo 1.22\n")
+	writeFile("capi/errors/errors.go", "package errors\n")
+	writeFile("capiapi/go.mod", "module sigs.k8s.io/cluster-api/api\n\ngo 1.22\n")
+	writeFile("capiapi/core/v1beta1/types.go", "package v1beta1\n")
+	modDir := filepath.Join(root, "vendormod")
+
+	tests := []struct {
+		name       string
+		importPath string
+		wantDir    string
+		wantErr    bool
+	}{
+		{name: "When a package lives in a nested module, it should resolve to that module's directory", importPath: "sigs.k8s.io/cluster-api/api/core/v1beta1", wantDir: "capiapi/core/v1beta1"},
+		{name: "When a package lives in the parent module, it should resolve to the parent module's directory", importPath: "sigs.k8s.io/cluster-api/errors", wantDir: "capi/errors"},
+		{name: "When no module in the build list provides the package, it should return an error", importPath: "sigs.k8s.io/cluster-api/util/conditions", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := packageDir(t.Context(), modDir, tt.importPath)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("packageDir(%q) = %q, want error", tt.importPath, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("packageDir(%q): %v", tt.importPath, err)
+			}
+			// t.TempDir can sit behind a symlink (/var -> /private/var on macOS).
+			wantDir, err := filepath.EvalSymlinks(filepath.Join(root, tt.wantDir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotDir, err := filepath.EvalSymlinks(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotDir != wantDir {
+				t.Errorf("packageDir(%q) = %q, want %q", tt.importPath, gotDir, wantDir)
+			}
+		})
+	}
+}
+
+func TestFilterEnv(t *testing.T) {
+	env := []string{"PATH=/usr/bin", "GOWORK=/tmp/go.work", "GOFLAGS=-mod=vendor", "HOME=/home/dev"}
+
+	tests := []struct {
+		name string
+		keys []string
+		want []string
+	}{
+		{
+			name: "When a variable is inherited, it should be removed so an appended value wins",
+			keys: []string{"GOWORK"},
+			want: []string{"PATH=/usr/bin", "GOFLAGS=-mod=vendor", "HOME=/home/dev"},
+		},
+		{
+			name: "When several variables are inherited, it should remove all of them",
+			keys: []string{"GO111MODULE", "GOWORK", "GOFLAGS"},
+			want: []string{"PATH=/usr/bin", "HOME=/home/dev"},
+		},
+		{
+			name: "When only a prefix of a variable name matches, it should keep the variable",
+			keys: []string{"GO"},
+			want: env,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := filterEnv(env, tt.keys...)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("filterEnv() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestImportAlias(t *testing.T) {
 	tests := []struct {
 		name     string

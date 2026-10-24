@@ -415,11 +415,15 @@ test-e2ev2-unit:
 
 # Run tests only for Go packages with changes relative to PULL_BASE_SHA.
 # Skips entirely if no .go files changed. No generate dependency (verify-quick handles it).
+#
+# pkg/capi/ and hack/capi-vendor/ are separate Go modules; go test from the root
+# module fails on them with "does not contain package". Correctness of synced
+# types is verified by go build ./... on the root module.
 .PHONY: test-changed
 test-changed:
 	@CHANGED_DIRS=$$(git diff --name-only $(PULL_BASE_SHA)...HEAD -- '*.go' | \
 		while IFS= read -r file; do dirname "$$file"; done | \
-		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -vE '^\./api(/|$$)' | grep -v '^\./hack/tools/' | grep -vE '^\./test/e2e(/|$$)'); \
+		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -vE '^\./(api|pkg/capi|hack/capi-vendor)(/|$$)' | grep -v '^\./hack/tools/' | grep -vE '^\./test/e2e(/|$$)'); \
 	if [ -z "$$CHANGED_DIRS" ]; then \
 		echo "No Go files changed relative to $(PULL_BASE_SHA), skipping tests."; \
 	else \
