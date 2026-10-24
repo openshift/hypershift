@@ -563,6 +563,27 @@ func TestSetControlPlaneIsolationNodeFailureTolerations(t *testing.T) {
 	}
 }
 
+func TestControlPlaneIsolationTolerations(t *testing.T) {
+	t.Run("When given a hosted control plane namespace, it should tolerate the control plane and that cluster's NoSchedule taints", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		g.Expect(ControlPlaneIsolationTolerations("clusters-example")).To(Equal([]corev1.Toleration{
+			{
+				Key:      "hypershift.openshift.io/control-plane",
+				Operator: corev1.TolerationOpEqual,
+				Value:    "true",
+				Effect:   corev1.TaintEffectNoSchedule,
+			},
+			{
+				Key:      "hypershift.openshift.io/cluster",
+				Operator: corev1.TolerationOpEqual,
+				Value:    "clusters-example",
+				Effect:   corev1.TaintEffectNoSchedule,
+			},
+		}))
+	})
+}
+
 func TestApplyRequestsOverrides(t *testing.T) {
 	tests := []struct {
 		name                   string

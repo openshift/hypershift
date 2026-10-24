@@ -280,20 +280,7 @@ func (c *controlPlaneWorkload[T]) setControlPlaneIsolation(podTemplate *corev1.P
 	}
 
 	// set Tolerations
-	podTemplate.Spec.Tolerations = []corev1.Toleration{
-		{
-			Key:      controlPlaneLabelTolerationKey,
-			Operator: corev1.TolerationOpEqual,
-			Value:    "true",
-			Effect:   corev1.TaintEffectNoSchedule,
-		},
-		{
-			Key:      hyperv1.HostedClusterLabel,
-			Operator: corev1.TolerationOpEqual,
-			Value:    clusterKey(hcp),
-			Effect:   corev1.TaintEffectNoSchedule,
-		},
-	}
+	podTemplate.Spec.Tolerations = ControlPlaneIsolationTolerations(clusterKey(hcp))
 	if isolateAsRequestServing {
 		podTemplate.Spec.Tolerations = append(podTemplate.Spec.Tolerations, corev1.Toleration{
 			Key:      hyperv1.RequestServingComponentLabel,
@@ -397,6 +384,28 @@ func (c *controlPlaneWorkload[T]) setControlPlaneIsolation(podTemplate *corev1.P
 				},
 			},
 		}
+	}
+}
+
+// ControlPlaneIsolationTolerations returns the tolerations every control plane pod
+// carries so it can schedule onto management cluster Nodes tainted for hosted
+// control planes, or dedicated to the hosted control plane in hcpNamespace.
+// Pods created outside this framework should use it to stay schedulable on the
+// same Nodes as the rest of the control plane.
+func ControlPlaneIsolationTolerations(hcpNamespace string) []corev1.Toleration {
+	return []corev1.Toleration{
+		{
+			Key:      controlPlaneLabelTolerationKey,
+			Operator: corev1.TolerationOpEqual,
+			Value:    "true",
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+		{
+			Key:      hyperv1.HostedClusterLabel,
+			Operator: corev1.TolerationOpEqual,
+			Value:    hcpNamespace,
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
 	}
 }
 
