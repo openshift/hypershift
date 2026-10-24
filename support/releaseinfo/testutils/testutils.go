@@ -54,8 +54,8 @@ func InitReleaseImageOrDie(version string) *releaseinfo.ReleaseImage {
 						From: &corev1.ObjectReference{Name: ""},
 					},
 					{
-						Name: haproxy.HAProxyRouterImageName,
-						From: &corev1.ObjectReference{Name: ""},
+						Name: haproxy.HAProxyImageNames[0],
+						From: &corev1.ObjectReference{Name: "haproxy-router"},
 					},
 				},
 			},

@@ -68,8 +68,8 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 						From: &corev1.ObjectReference{Name: ""},
 					},
 					{
-						Name: haproxy.HAProxyRouterImageName,
-						From: &corev1.ObjectReference{Name: ""},
+						Name: haproxy.HAProxyImageNames[0],
+						From: &corev1.ObjectReference{Name: "haproxy-router"},
 					},
 				},
 			},

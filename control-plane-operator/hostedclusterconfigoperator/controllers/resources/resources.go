@@ -1090,9 +1090,9 @@ func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1
 	}
 	sort.Strings(componentNames)
 
-	haproxyImage, ok := releaseImage.ComponentImages()["haproxy-router"]
+	haproxyImage, ok := releaseImage.ComponentImages()["haproxy-router-haproxy32"]
 	if !ok {
-		return fmt.Errorf("haproxy-router image not found in release payload")
+		return fmt.Errorf("haproxy-router-haproxy32 image not found in release payload")
 	}
 
 	if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {

@@ -582,3 +582,59 @@ func TestJoinDefaultPortIfMissing(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveHAProxyImage(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name            string
+		componentImages map[string]string
+		expectedImage   string
+		wantErr         bool
+	}{
+		{
+			name: "When only the preferred image name is present, it should use it",
+			componentImages: map[string]string{
+				HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router-haproxy32:latest",
+			},
+			expectedImage: "registry.test.io/openshift/haproxy-router-haproxy32:latest",
+		},
+		{
+			name: "When only a fallback image name is present, it should use it",
+			componentImages: map[string]string{
+				HAProxyImageNames[1]: "registry.test.io/openshift/haproxy-router:latest",
+			},
+			expectedImage: "registry.test.io/openshift/haproxy-router:latest",
+		},
+		{
+			name: "When both the preferred and fallback image names are present, it should prefer the first one",
+			componentImages: map[string]string{
+				HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router-haproxy32:latest",
+				HAProxyImageNames[1]: "registry.test.io/openshift/haproxy-router:latest",
+			},
+			expectedImage: "registry.test.io/openshift/haproxy-router-haproxy32:latest",
+		},
+		{
+			name:            "When none of the known image names are present, it should return an error",
+			componentImages: map[string]string{"some-other-image": "registry.test.io/openshift/some-other-image:latest"},
+			wantErr:         true,
+		},
+		{
+			name:            "When componentImages is empty, it should return an error",
+			componentImages: map[string]string{},
+			wantErr:         true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result, err := ResolveHAProxyImage(tt.componentImages)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tt.expectedImage))
+		})
+	}
+}
