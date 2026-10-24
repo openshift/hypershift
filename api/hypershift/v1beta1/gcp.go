@@ -107,6 +107,7 @@ type GCPNetworkConfig struct {
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.storage.contains('@') && self.workloadIdentity.serviceAccountsEmails.storage.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="storage service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.imageRegistry.contains('@') && self.workloadIdentity.serviceAccountsEmails.imageRegistry.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="imageRegistry service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.network.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="network service account must belong to the same project"
+// +kubebuilder:validation:XValidation:rule="!has(self.workloadIdentity.serviceAccountsEmails.ingress) || self.workloadIdentity.serviceAccountsEmails.ingress.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="ingress service account must belong to the same project"
 type GCPPlatformSpec struct {
 	// project is the GCP project ID.
 	// A valid project ID must satisfy the following rules:
@@ -376,6 +377,31 @@ type GCPServiceAccountsEmails struct {
 	// +required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Network is immutable"
 	Network GCPServiceAccountEmail `json:"network,omitempty"`
+
+	// ingress is the Google Service Account email for the cluster Ingress Operator
+	// that manages the default IngressController's wildcard (*.apps) Cloud DNS records.
+	// This GSA requires the following IAM role:
+	// - roles/dns.admin (DNS Admin - for managing records in the ingress managed zone)
+	// See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+	//
+	// When the Ingress capability is enabled (the default), creating the cluster
+	// through the CLI without this field fails fast, and a cluster created
+	// without it (e.g. via direct YAML) reports a non-blocking
+	// IngressCredentialsFound condition: the guest ingress operator runs
+	// without credentials and cannot publish the *.apps DNS records. Because
+	// the field is immutable, such a cluster cannot be fixed after creation.
+	// When the Ingress capability is disabled, this field is ignored. The email
+	// must belong to the GCP project in spec.project, and it can only be set at
+	// creation time.
+	//
+	// This is a user-provided value referencing a pre-created Google Service Account.
+	// Typically obtained from the output of `hypershift infra create gcp` which creates
+	// the required service accounts with appropriate IAM roles and WIF bindings.
+	//
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Ingress is immutable"
+	Ingress GCPServiceAccountEmail `json:"ingress,omitempty"`
 }
 
 // GCPOnHostMaintenance defines the behavior when a host maintenance event occurs.

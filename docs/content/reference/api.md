@@ -7008,6 +7008,14 @@ and reports missing images if any.</p>
 e.g. load balancers were created successfully.
 A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.</p>
 </td>
+</tr><tr><td><p>&#34;IngressCredentialsFound&#34;</p></td>
+<td><p>IngressCredentialsFound indicates whether the optional ingress-operator
+credentials are configured. It is only evaluated for platforms whose
+ingress operator needs cloud credentials (today: GCP). A False condition
+is non-blocking: the HostedCluster keeps reconciling, but the guest
+ingress operator runs without cloud credentials and cannot publish the
+*.apps DNS records.</p>
+</td>
 </tr><tr><td><p>&#34;IngressDefaultCertificateSynced&#34;</p></td>
 <td><p>IngressDefaultCertificateSynced indicates whether the user-provided default
 ingress certificate referenced by
@@ -7724,6 +7732,40 @@ Once set, this value is immutable.</p>
 The maximum length of 265 is derived from Azure resource naming limits
 (see <a href="https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules):">https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules):</a>
 /subscriptions/ (15) + UUID (36) + /resourceGroups/ (16) + resource group name (90)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingressAcmeChallengeTarget</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ingressAcmeChallengeTarget delegates the ACME DNS-01 challenge for the
+ingress wildcard certificate (*.apps of the cluster&rsquo;s ingress domain) to
+an external solver. When set, the control plane operator creates a CNAME
+record named _acme-challenge.<ingress domain> in the public ingress DNS
+zone it manages for the cluster, pointing at this fully qualified target,
+and owns and reconciles that record; it never touches any other record
+at that name. This lets a certificate issuer running outside the cluster
+(e.g. a central cert-manager with DNS-01 access to the zone this target
+lives in) solve the challenge for the wildcard certificate even though
+it cannot write the ingress zone itself.
+The target must be a name the external solver is configured to write TXT
+records for, conventionally an _acme-challenge name in a centrally
+managed zone, and must differ from the record name it is attached to.
+The record name follows the cluster&rsquo;s ingress domain: apps.<baseDomainPrefix>.<baseDomain>
+by default, or the spec.configuration.ingress domain/appsDomain override
+when set; the record is only created when that name is inside the
+cluster&rsquo;s base domain. The field can be set at creation or added later,
+but once set it cannot be changed or removed.
+When unset, no record is created (and a record left by an earlier
+controller revision at the legacy name is removed), and the deployment
+is responsible for issuing the ingress wildcard certificate, solving its
+DNS-01 challenge in the ingress zone itself.
+Today only the GCP platform consumes this field; other platforms ignore it.</p>
 </td>
 </tr>
 </tbody>
@@ -9451,6 +9493,36 @@ This GSA requires the following IAM roles:
 - roles/compute.networkUser (Compute Network User - for using subnets)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingress</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ingress is the Google Service Account email for the cluster Ingress Operator
+that manages the default IngressController&rsquo;s wildcard (*.apps) Cloud DNS records.
+This GSA requires the following IAM role:
+- roles/dns.admin (DNS Admin - for managing records in the ingress managed zone)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.</p>
+<p>When the Ingress capability is enabled (the default), creating the cluster
+through the CLI without this field fails fast, and a cluster created
+without it (e.g. via direct YAML) reports a non-blocking
+IngressCredentialsFound condition: the guest ingress operator runs
+without credentials and cannot publish the *.apps DNS records. Because
+the field is immutable, such a cluster cannot be fixed after creation.
+When the Ingress capability is disabled, this field is ignored. The email
+must belong to the GCP project in spec.project, and it can only be set at
+creation time.</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
 Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
 the required service accounts with appropriate IAM roles and WIF bindings.</p>

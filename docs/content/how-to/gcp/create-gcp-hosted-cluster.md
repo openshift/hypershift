@@ -35,6 +35,7 @@ hypershift create cluster gcp \
   --storage-service-account=<storage-sa-email> \
   --image-registry-service-account=<image-registry-sa-email> \
   --network-service-account=<network-sa-email> \
+  --ingress-service-account=<ingress-sa-email> \
   --service-account-signing-key-path=<path-to-sa-signer.key> \
   --oidc-issuer-url=<oidc-issuer-url> \
   --base-domain=<your-dns-domain> \
@@ -85,6 +86,7 @@ hypershift create cluster gcp \
 | `--storage-service-account` | Yes | GCP PD CSI Driver SA email |
 | `--image-registry-service-account` | Yes | Image Registry Operator SA email |
 | `--network-service-account` | Yes | Cloud Network Config Controller SA email |
+| `--ingress-service-account` | Conditional | Ingress Operator SA email (manages *.apps Cloud DNS). Required when the Ingress capability is enabled (the default); omit it only when Ingress is disabled via `--disable-cluster-capabilities=Ingress,Console`. |
 | `--service-account-signing-key-path` | Yes | Path to RSA private key for OIDC token signing |
 | `--oidc-issuer-url` | Yes | OIDC issuer URL |
 | `--node-pool-replicas` | Yes | Number of worker nodes (default: 0) |
@@ -94,6 +96,15 @@ hypershift create cluster gcp \
 | `--machine-type` | No | GCP machine type (default: `n2-standard-4`) |
 | `--zone` | Conditional | GCP zone for nodes. Required when `--node-pool-replicas >= 0` (default). Optional when `--node-pool-replicas=-1` (no NodePool created). |
 | `--boot-image` | No | Override RHCOS boot image from release payload |
+
+## DNS
+
+The control plane operator creates three Cloud DNS zones in the hosted cluster's project: a private `{cluster}-hypershift.local` zone, and public/private ingress zones for `--base-domain`. Records for the API server and `*.apps` endpoints are managed in these zones automatically.
+
+Two things are expected from the deployment, not from HyperShift:
+
+- **Zone delegation**: the parent zone of `--base-domain` must delegate to the public ingress zone's name servers (surfaced in the HostedControlPlane status) for the ingress zone to be resolvable.
+- **Ingress certificate**: the ingress operator serves the `*.apps` wildcard with the cluster's default certificate unless a publicly-trusted one is provided. When the deployment runs a certificate issuer outside the cluster that must solve the ACME DNS-01 challenge for the wildcard (e.g. a central cert-manager with access to the parent zone, but not to the ingress zone in the hosted cluster's project), set `spec.dns.ingressAcmeChallengeTarget` on the HostedCluster to the fully qualified name that issuer is configured to write challenge TXT records for, conventionally `_acme-challenge.<...>` in the parent zone. The operator then creates a CNAME `_acme-challenge.<ingress domain>` → that target in the public ingress zone, so the external issuer can solve the challenge by following the CNAME. The field can be set at creation or added later, but once set it cannot be changed or removed. When the field is unset no record is created and the deployment handles the ingress wildcard certificate's DNS-01 challenge itself.
 
 ## Monitor Cluster Creation
 

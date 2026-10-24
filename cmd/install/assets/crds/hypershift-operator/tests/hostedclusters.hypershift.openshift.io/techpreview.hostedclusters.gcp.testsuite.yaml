@@ -34,6 +34,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -90,6 +91,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -146,6 +148,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -202,6 +205,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -258,6 +262,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -314,6 +319,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -370,6 +376,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -427,6 +434,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -484,6 +492,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -540,6 +549,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -596,6 +606,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -652,6 +663,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -708,6 +720,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: INVALID-EMAIL
         pullSecret:
           name: secret
@@ -764,6 +777,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@wrong-project.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -820,6 +834,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -931,6 +946,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@wrong-project.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -988,6 +1004,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
             resourceLabels:
               - key: googfoo
@@ -1047,6 +1064,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
             resourceLabels:
               - key: goog-partner-solution-foo
@@ -1106,6 +1124,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
             resourceLabels:
               - key: goog-partner-solution
@@ -1137,6 +1156,293 @@ tests:
             type: Route
             route: {}
 
+  - name: When GCP cluster is created without ingress service account and Ingress capability disabled it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities:
+          disabled:
+          - Ingress
+          - Console
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When GCP cluster is created with ingress service account it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When GCP ingress service account belongs to different project it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@wrong-project.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "ingress service account must belong to the same project"
+
+  - name: When dns.ingressAcmeChallengeTarget is a valid challenge name it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+          ingressAcmeChallengeTarget: _acme-challenge.apps.central.example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+
+  - name: When dns.ingressAcmeChallengeTarget does not start with _acme-challenge it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+          ingressAcmeChallengeTarget: apps.central.example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "ingressAcmeChallengeTarget must be a fully qualified name starting with _acme-challenge."
+
   onUpdate:
   # --- GCP network service account immutability ---
   - name: When GCP network service account is changed it should fail
@@ -1166,6 +1472,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1219,6 +1526,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: different@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1275,6 +1583,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1328,6 +1637,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1397,6 +1707,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
                 nodePool: nodepool@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
@@ -1460,6 +1771,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@wrong-project.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1513,6 +1825,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@other-wrong-project.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1574,6 +1887,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@wrong-project.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1627,6 +1941,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@wrong-project.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1696,6 +2011,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@wrong-project.iam.gserviceaccount.com
                 nodePool: nodepool@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
@@ -1754,6 +2070,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1807,6 +2124,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: different@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1869,6 +2187,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@wrong-project.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1922,6 +2241,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@other-wrong-project.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -1983,6 +2303,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@wrong-project.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -2036,6 +2357,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@wrong-project.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
         pullSecret:
           name: secret
@@ -2105,6 +2427,7 @@ tests:
                 cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
                 controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
                 imageRegistry: imageregistry@wrong-project.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
                 network: cnccsa@my-project-123.iam.gserviceaccount.com
                 nodePool: nodepool@my-project-123.iam.gserviceaccount.com
                 storage: storage@my-project-123.iam.gserviceaccount.com
@@ -2135,3 +2458,524 @@ tests:
           servicePublishingStrategy:
             route: {}
             type: Route
+  - name: When GCP ingress service account is changed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: different@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "Ingress is immutable"
+
+  - name: When dns.ingressAcmeChallengeTarget is changed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+          ingressAcmeChallengeTarget: _acme-challenge.apps.central.example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+          ingressAcmeChallengeTarget: _acme-challenge.apps.other.example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "ingressAcmeChallengeTarget is immutable"
+
+  - name: When dns.ingressAcmeChallengeTarget is removed it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+          ingressAcmeChallengeTarget: _acme-challenge.apps.central.example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "ingressAcmeChallengeTarget cannot be removed once set"
+
+  - name: When dns.ingressAcmeChallengeTarget is added after creation it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+          ingressAcmeChallengeTarget: _acme-challenge.apps.central.example.com
+        platform:
+          type: GCP
+          gcp:
+            project: my-project-123
+            region: us-central1
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            workloadIdentity:
+              projectNumber: "123456789012"
+              poolID: my-wif-pool
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        capabilities: {}
+        controllerAvailabilityPolicy: HighlyAvailable
+        dns:
+          baseDomain: example.com
+          ingressAcmeChallengeTarget: _acme-challenge.apps.central.example.com
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 8Gi
+              type: PersistentVolume
+          managementType: Managed
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: https://kubernetes.default.svc
+        networking:
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        platform:
+          gcp:
+            endpointAccess: Private
+            networkConfig:
+              network:
+                name: my-network
+              privateServiceConnectSubnet:
+                name: my-psc-subnet
+            project: my-project-123
+            region: us-central1
+            workloadIdentity:
+              poolID: my-wif-pool
+              projectNumber: '123456789012'
+              providerID: my-wif-provider
+              serviceAccountsEmails:
+                cloudController: cloudcontroller@my-project-123.iam.gserviceaccount.com
+                controlPlane: controlplane@my-project-123.iam.gserviceaccount.com
+                imageRegistry: imageregistry@my-project-123.iam.gserviceaccount.com
+                ingress: ingressop@my-project-123.iam.gserviceaccount.com
+                network: cnccsa@my-project-123.iam.gserviceaccount.com
+                nodePool: nodepool@my-project-123.iam.gserviceaccount.com
+                storage: storage@my-project-123.iam.gserviceaccount.com
+          type: GCP
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route: {}
+            type: Route
+

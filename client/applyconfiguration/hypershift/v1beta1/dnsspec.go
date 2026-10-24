@@ -20,10 +20,11 @@ package v1beta1
 // DNSSpecApplyConfiguration represents a declarative configuration of the DNSSpec type for use
 // with apply.
 type DNSSpecApplyConfiguration struct {
-	BaseDomain       *string `json:"baseDomain,omitempty"`
-	BaseDomainPrefix *string `json:"baseDomainPrefix,omitempty"`
-	PublicZoneID     *string `json:"publicZoneID,omitempty"`
-	PrivateZoneID    *string `json:"privateZoneID,omitempty"`
+	BaseDomain                 *string `json:"baseDomain,omitempty"`
+	BaseDomainPrefix           *string `json:"baseDomainPrefix,omitempty"`
+	PublicZoneID               *string `json:"publicZoneID,omitempty"`
+	PrivateZoneID              *string `json:"privateZoneID,omitempty"`
+	IngressAcmeChallengeTarget *string `json:"ingressAcmeChallengeTarget,omitempty"`
 }
 
 // DNSSpecApplyConfiguration constructs a declarative configuration of the DNSSpec type for use with
@@ -61,5 +62,13 @@ func (b *DNSSpecApplyConfiguration) WithPublicZoneID(value string) *DNSSpecApply
 // If called multiple times, the PrivateZoneID field is set to the value of the last call.
 func (b *DNSSpecApplyConfiguration) WithPrivateZoneID(value string) *DNSSpecApplyConfiguration {
 	b.PrivateZoneID = &value
+	return b
+}
+
+// WithIngressAcmeChallengeTarget sets the IngressAcmeChallengeTarget field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the IngressAcmeChallengeTarget field is set to the value of the last call.
+func (b *DNSSpecApplyConfiguration) WithIngressAcmeChallengeTarget(value string) *DNSSpecApplyConfiguration {
+	b.IngressAcmeChallengeTarget = &value
 	return b
 }

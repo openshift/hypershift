@@ -20,11 +20,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/gcputil"
+	"github.com/openshift/hypershift/support/globalconfig"
 
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/dns/v1"
@@ -311,56 +312,30 @@ func createARecord(ctx context.Context, svc *dns.Service, projectID, zoneName, r
 	})
 }
 
-// gcpZoneNameRegexp validates GCP Cloud DNS managed zone names.
-// Must start with a lowercase letter and contain only lowercase letters, numbers, and hyphens.
-var gcpZoneNameRegexp = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-
-// validateZoneName validates that a name meets GCP Cloud DNS managed zone naming constraints.
-func validateZoneName(name string) error {
-	if !gcpZoneNameRegexp.MatchString(name) {
-		return fmt.Errorf("zone name %q is invalid: must start with a lowercase letter and contain only lowercase letters, numbers, and hyphens", name)
-	}
-	return nil
-}
-
-// truncateName truncates a name to the specified maximum length.
-func truncateName(name string, maxLen int) string {
-	if len(name) <= maxLen {
-		return name
-	}
-	return name[:maxLen]
-}
-
 // generateZoneNames generates Cloud DNS zone names and DNS names from cluster name and base domain.
+// The zone-name derivation is shared with support/gcputil so that the guest dns.config
+// wiring (support/globalconfig) computes the identical public/private ingress zone names.
 // Returns an error if the generated zone names would violate GCP naming constraints.
 func generateZoneNames(clusterName, baseDomain string) (zoneNames, error) {
-	// Convert base domain to zone name format (dots -> hyphens)
-	baseZoneName := strings.ReplaceAll(baseDomain, ".", "-")
+	hypershiftLocal, err := gcputil.HypershiftLocalZoneName(clusterName)
+	if err != nil {
+		return zoneNames{}, err
+	}
+	public, err := gcputil.PublicIngressZoneName(baseDomain)
+	if err != nil {
+		return zoneNames{}, err
+	}
+	private, err := gcputil.PrivateIngressZoneName(baseDomain)
+	if err != nil {
+		return zoneNames{}, err
+	}
 
-	// GCP DNS zone names must be <= 63 characters
-	// Leave room for suffixes: "-public" (7) or "-private" (8) chars
-	maxBaseNameLen := 63 - 8
-	baseZoneName = truncateName(baseZoneName, maxBaseNameLen)
-
-	names := zoneNames{
-		hypershiftLocalZoneName: truncateName(fmt.Sprintf("%s-hypershift-local", clusterName), 63),
-		publicIngressZoneName:   truncateName(fmt.Sprintf("%s-public", baseZoneName), 63),
-		privateIngressZoneName:  truncateName(fmt.Sprintf("%s-private", baseZoneName), 63),
+	return zoneNames{
+		hypershiftLocalZoneName: hypershiftLocal,
+		publicIngressZoneName:   public,
+		privateIngressZoneName:  private,
 		ingressDNSName:          ensureDNSDot(baseDomain),
-	}
-
-	// Validate all generated zone names
-	if err := validateZoneName(names.hypershiftLocalZoneName); err != nil {
-		return zoneNames{}, fmt.Errorf("invalid hypershift.local zone name derived from cluster %q: %w", clusterName, err)
-	}
-	if err := validateZoneName(names.publicIngressZoneName); err != nil {
-		return zoneNames{}, fmt.Errorf("invalid public ingress zone name derived from baseDomain %q: %w", baseDomain, err)
-	}
-	if err := validateZoneName(names.privateIngressZoneName); err != nil {
-		return zoneNames{}, fmt.Errorf("invalid private ingress zone name derived from baseDomain %q: %w", baseDomain, err)
-	}
-
-	return names, nil
+	}, nil
 }
 
 // DNSSetupResult contains the results of setting up cluster DNS zones.
@@ -378,7 +353,9 @@ type DNSSetupResult struct {
 	IngressDNSName string
 
 	// PublicIngressNSRecords are the authoritative name servers for the public ingress zone.
-	// These must be delegated from the regional zone by the CLS/CLM delegation controller.
+	// Whoever manages the parent zone of the base domain must delegate to
+	// these for the ingress zone to be resolvable (e.g. an NS record created
+	// by the deployment's own tooling; HyperShift does not do this itself).
 	// Example: ["ns-cloud-a1.googledomains.com.", "ns-cloud-a2.googledomains.com.", ...]
 	// Note: Private zones don't need delegation - they're only accessible within the VPC.
 	PublicIngressNSRecords []string
@@ -459,14 +436,7 @@ func ensureZones(ctx context.Context, svc *dns.Service, createZones bool, projec
 
 // reconcileRecords ensures required DNS records exist with correct values.
 // All record operations are idempotent (similar to AWS Route53 UPSERT).
-func reconcileRecords(ctx context.Context, svc *dns.Service, projectID, hypershiftZone, publicZone, hypershiftDNSName, ingressDNS, baseDomain, pscEndpointIP string) error {
-	// Create ACME challenge CNAME record in public zone
-	acmeRecordName := fmt.Sprintf("_acme-challenge.apps.%s", ingressDNS)
-	acmeTarget := ensureDNSDot(fmt.Sprintf("_acme-challenge.%s", baseDomain))
-	if err := createCNAMERecord(ctx, svc, projectID, publicZone, acmeRecordName, acmeTarget, 300); err != nil {
-		return fmt.Errorf("failed to reconcile ACME challenge CNAME: %w", err)
-	}
-
+func reconcileRecords(ctx context.Context, svc *dns.Service, projectID, hypershiftZone, publicZone, hypershiftDNSName, ingressDomain, baseDomain, acmeChallengeTarget, pscEndpointIP string) error {
 	// Create api A record in hypershift.local zone pointing to PSC endpoint
 	apiRecordName := fmt.Sprintf("api.%s", hypershiftDNSName)
 	if err := createARecord(ctx, svc, projectID, hypershiftZone, apiRecordName, pscEndpointIP, 60); err != nil {
@@ -477,6 +447,109 @@ func reconcileRecords(ctx context.Context, svc *dns.Service, projectID, hypershi
 	appsRecordName := fmt.Sprintf("*.apps.%s", hypershiftDNSName)
 	if err := createARecord(ctx, svc, projectID, hypershiftZone, appsRecordName, pscEndpointIP, 60); err != nil {
 		return fmt.Errorf("failed to reconcile apps A record: %w", err)
+	}
+
+	// Create the opt-in ACME challenge delegation CNAME in the public ingress
+	// zone (see acmeChallengeRecord), after the critical records above so an
+	// optional-feature failure cannot block them. When no target is configured,
+	// remove the record an earlier controller revision (which created it
+	// unconditionally) left at the legacy name: a leftover CNAME blocks the TXT
+	// records an in-zone DNS-01 solver needs to write.
+	if acmeRecordName, acmeTarget, ok := acmeChallengeRecord(ingressDomain, baseDomain, acmeChallengeTarget); ok {
+		if err := createCNAMERecord(ctx, svc, projectID, publicZone, acmeRecordName, acmeTarget, 300); err != nil {
+			return fmt.Errorf("failed to reconcile ACME challenge CNAME: %w", err)
+		}
+	} else if err := deleteCNAMERecord(ctx, svc, projectID, publicZone, legacyAcmeRecordName(baseDomain), legacyAcmeCNAMETarget(baseDomain)); err != nil {
+		return fmt.Errorf("failed to clean up legacy ACME challenge CNAME: %w", err)
+	}
+
+	return nil
+}
+
+// acmeChallengeRecord returns the CNAME record delegating the ingress
+// wildcard's ACME DNS-01 challenge to an external solver, and whether one
+// should be created at all.
+//
+// The record name is the DNS-01 challenge name of the ingress wildcard
+// certificate (_acme-challenge prefixed to the cluster's ingress domain,
+// apps.<baseDomainPrefix>.<baseDomain> by default, or the
+// spec.configuration.ingress override when set), created in the public
+// ingress zone this operator manages in the cluster's project. Pointing it at
+// the configured target lets an external certificate issuer with a DNS-01
+// solver for the target's zone (and CNAME following) solve the challenge for
+// the wildcard certificate even though it cannot write the ingress zone
+// itself.
+//
+// No record is created without an explicit target (spec.dns.
+// ingressAcmeChallengeTarget on the HostedCluster): the target is a property
+// of the deployment's DNS topology, not something derivable from the cluster.
+// The record is also skipped when the ingress domain is not inside the
+// cluster's base domain (a spec.configuration.ingress override pointing
+// elsewhere): the public ingress zone is not authoritative for such a name. A
+// target equal to the record name is a self-referential CNAME no resolver can
+// follow (compared case-insensitively, as DNS names are) and is likewise
+// skipped.
+func acmeChallengeRecord(ingressDomain, baseDomain, target string) (recordName, recordTarget string, ok bool) {
+	if target == "" {
+		return "", "", false
+	}
+	recordName = fmt.Sprintf("_acme-challenge.%s", ingressDomain)
+	if !dnsNameIsWithin(recordName, baseDomain) {
+		return "", "", false
+	}
+	if strings.EqualFold(ensureDNSDot(target), ensureDNSDot(recordName)) {
+		return "", "", false
+	}
+	return recordName, target, true
+}
+
+// dnsNameIsWithin reports whether name is equal to or a subdomain of parent
+// (label-boundary aware, case-insensitive).
+func dnsNameIsWithin(name, parent string) bool {
+	name = strings.ToLower(ensureDNSDot(name))
+	parent = strings.ToLower(ensureDNSDot(parent))
+	return name == parent || strings.HasSuffix(name, "."+parent)
+}
+
+// legacyAcmeRecordName is the record name used by earlier controller
+// revisions, which created the ACME challenge CNAME unconditionally at
+// _acme-challenge.apps.<baseDomain> for every GCP cluster.
+func legacyAcmeRecordName(baseDomain string) string {
+	return fmt.Sprintf("_acme-challenge.apps.%s", baseDomain)
+}
+
+// legacyAcmeCNAMETarget is the value earlier controller revisions wrote at
+// legacyAcmeRecordName. The cleanup path only removes a record carrying
+// exactly this value; a CNAME with any other value at that name was put
+// there by someone else and must be preserved.
+func legacyAcmeCNAMETarget(baseDomain string) string {
+	return ensureDNSDot(fmt.Sprintf("_acme-challenge.%s", baseDomain))
+}
+
+// deleteCNAMERecord removes the CNAME record at recordName when its value is
+// removableTarget; a record with any other value is left untouched. It is a
+// no-op when the record does not exist.
+func deleteCNAMERecord(ctx context.Context, svc *dns.Service, projectID, zoneName, recordName, removableTarget string) error {
+	recordName = ensureDNSDot(recordName)
+
+	existing, err := findRecord(ctx, svc, projectID, zoneName, recordName, "CNAME")
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return nil
+	}
+	if len(existing.Rrdatas) != 1 || existing.Rrdatas[0] != ensureDNSDot(removableTarget) {
+		return nil
+	}
+
+	change := &dns.Change{
+		Deletions: []*dns.ResourceRecordSet{existing},
+	}
+	apiCtx, cancel := context.WithTimeout(ctx, dnsAPITimeout)
+	defer cancel()
+	if _, err := svc.Changes.Create(projectID, zoneName, change).Context(apiCtx).Do(); err != nil {
+		return fmt.Errorf("failed to delete CNAME record %s: %w", recordName, err)
 	}
 
 	return nil
@@ -522,7 +595,7 @@ func validateReconcileInput(hcp *hyperv1.HostedControlPlane, pscEndpointIP strin
 //  1. Private hypershift.local zone
 //  2. Public ingress zone
 //  3. Private ingress zone
-//  4. ACME challenge CNAME in public zone (delegates to regional zone)
+//  4. ACME challenge CNAME in public zone (opt-in; see acmeChallengeRecord)
 //  5. A record for api.{cluster}.hypershift.local -> PSC endpoint IP
 //
 // Parameters:
@@ -576,23 +649,33 @@ func ReconcileDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane, pscEndpo
 		return nil, err
 	}
 
+	// The ingress wildcard's ACME challenge is delegated to an external solver
+	// only when the deployment configures an explicit target; the record name
+	// follows the cluster's ingress domain (apps.<baseDomainPrefix>.<baseDomain>
+	// by default, or the spec.configuration.ingress override when set).
+	ingressDomain := globalconfig.IngressDomain(hcp)
+	acmeChallengeTarget := hcp.Spec.DNS.IngressAcmeChallengeTarget
+
 	// Reconcile DNS records
-	if err := reconcileRecords(ctx, svc, projectID, names.hypershiftLocalZoneName, names.publicIngressZoneName, hypershiftDNSName, names.ingressDNSName, baseDomain, pscEndpointIP); err != nil {
+	if err := reconcileRecords(ctx, svc, projectID, names.hypershiftLocalZoneName, names.publicIngressZoneName, hypershiftDNSName, ingressDomain, baseDomain, acmeChallengeTarget, pscEndpointIP); err != nil {
 		return nil, err
 	}
 
 	// Build lists of created records for status population
 	apiRecordName := fmt.Sprintf("api.%s", hypershiftDNSName)
 	appsRecordName := fmt.Sprintf("*.apps.%s", hypershiftDNSName)
-	acmeRecordName := fmt.Sprintf("_acme-challenge.apps.%s", names.ingressDNSName)
 
 	hypershiftLocalCreatedRecords := []string{
 		apiRecordName,
 		appsRecordName,
 	}
 
-	publicIngressCreatedRecords := []string{
-		acmeRecordName,
+	// The ACME challenge CNAME is only created when the deployment configured
+	// a delegation target (see acmeChallengeRecord); report it in the status
+	// only then, so it never lists a record that does not exist.
+	publicIngressCreatedRecords := []string{}
+	if acmeRecordName, _, ok := acmeChallengeRecord(ingressDomain, baseDomain, acmeChallengeTarget); ok {
+		publicIngressCreatedRecords = append(publicIngressCreatedRecords, acmeRecordName)
 	}
 
 	// Return result with zone information and created records

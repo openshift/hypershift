@@ -134,60 +134,6 @@ func TestIsNotFound(t *testing.T) {
 	}
 }
 
-func TestTruncateName(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		maxLen   int
-		expected string
-	}{
-		{
-			name:     "When name is shorter than max, it should not truncate",
-			input:    "short-name",
-			maxLen:   63,
-			expected: "short-name",
-		},
-		{
-			name:     "When name equals max length, it should not truncate",
-			input:    "exactly-ten",
-			maxLen:   11,
-			expected: "exactly-ten",
-		},
-		{
-			name:     "When name exceeds max length, it should truncate",
-			input:    "this-is-a-very-long-name-that-exceeds-the-maximum-length-allowed",
-			maxLen:   20,
-			expected: "this-is-a-very-long-",
-		},
-		{
-			name:     "When max is 63 and name is 64 chars, it should truncate to 63",
-			input:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // 64 chars
-			maxLen:   63,
-			expected: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // 63 chars
-		},
-		{
-			name:     "When max is 0, it should return empty string",
-			input:    "any-name",
-			maxLen:   0,
-			expected: "",
-		},
-		{
-			name:     "When name is empty, it should return empty",
-			input:    "",
-			maxLen:   63,
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := truncateName(tt.input, tt.maxLen)
-			assert.Equal(t, tt.expected, result)
-			assert.LessOrEqual(t, len(result), tt.maxLen)
-		})
-	}
-}
-
 func TestGenerateZoneNames(t *testing.T) {
 	tests := []struct {
 		name                        string
@@ -450,81 +396,6 @@ func TestZoneNameLengthConstraints(t *testing.T) {
 	}
 }
 
-func TestValidateZoneName(t *testing.T) {
-	tests := []struct {
-		name        string
-		zoneName    string
-		expectError bool
-	}{
-		{
-			name:        "When zone name starts with lowercase letter, it should be valid",
-			zoneName:    "my-zone",
-			expectError: false,
-		},
-		{
-			name:        "When zone name contains only lowercase letters, it should be valid",
-			zoneName:    "myzone",
-			expectError: false,
-		},
-		{
-			name:        "When zone name contains lowercase letters and numbers, it should be valid",
-			zoneName:    "my-zone-123",
-			expectError: false,
-		},
-		{
-			name:        "When zone name contains hyphens, it should be valid",
-			zoneName:    "my-cluster-hypershift-local",
-			expectError: false,
-		},
-		{
-			name:        "When zone name starts with 'in-' (managed service pattern), it should be valid",
-			zoneName:    "in-cluster-abc123-public",
-			expectError: false,
-		},
-		{
-			name:        "When zone name starts with digit, it should be invalid",
-			zoneName:    "123-zone",
-			expectError: true,
-		},
-		{
-			name:        "When zone name starts with hyphen, it should be invalid",
-			zoneName:    "-my-zone",
-			expectError: true,
-		},
-		{
-			name:        "When zone name contains uppercase letters, it should be invalid",
-			zoneName:    "My-Zone",
-			expectError: true,
-		},
-		{
-			name:        "When zone name contains underscore, it should be invalid",
-			zoneName:    "my_zone",
-			expectError: true,
-		},
-		{
-			name:        "When zone name contains dot, it should be invalid",
-			zoneName:    "my.zone",
-			expectError: true,
-		},
-		{
-			name:        "When zone name is empty, it should be invalid",
-			zoneName:    "",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateZoneName(tt.zoneName)
-			if tt.expectError {
-				assert.Error(t, err, "validateZoneName should return error for invalid zone name: %s", tt.zoneName)
-			} else {
-				assert.NoError(t, err, "validateZoneName should not return error for valid zone name: %s", tt.zoneName)
-			}
-		})
-	}
-}
-
 func TestGenerateZoneNamesValidationErrors(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -559,4 +430,106 @@ func TestGenerateZoneNamesValidationErrors(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.errorContains)
 		})
 	}
+}
+
+func TestAcmeChallengeRecord(t *testing.T) {
+	tests := []struct {
+		name           string
+		ingressDomain  string
+		baseDomain     string
+		target         string
+		expectedName   string
+		expectedTarget string
+		expectedOK     bool
+	}{
+		{
+			// Without an explicit target no record is created: the target is a
+			// property of the deployment's DNS topology, not derivable from
+			// the cluster, and the deployment handles the DNS-01 challenge
+			// itself.
+			name:          "When no target is configured, it should create no record",
+			ingressDomain: "apps.example.com",
+			baseDomain:    "example.com",
+			target:        "",
+			expectedOK:    false,
+		},
+		{
+			name:           "When a target is configured, it should delegate the ingress wildcard challenge name to it",
+			ingressDomain:  "apps.example.com",
+			baseDomain:     "example.com",
+			target:         "_acme-challenge.apps.central.example.com",
+			expectedName:   "_acme-challenge.apps.example.com",
+			expectedTarget: "_acme-challenge.apps.central.example.com",
+			expectedOK:     true,
+		},
+		{
+			name:           "When the ingress domain has a cluster prefix, the record name should follow it",
+			ingressDomain:  "apps.my-cluster.example.com",
+			baseDomain:     "example.com",
+			target:         "_acme-challenge.apps.central.example.com",
+			expectedName:   "_acme-challenge.apps.my-cluster.example.com",
+			expectedTarget: "_acme-challenge.apps.central.example.com",
+			expectedOK:     true,
+		},
+		{
+			// A spec.configuration.ingress override pointing outside the base
+			// domain means the public ingress zone is not authoritative for
+			// the challenge name; no record must be created there.
+			name:          "When the ingress domain is outside the base domain, it should create no record",
+			ingressDomain: "apps.other.example.org",
+			baseDomain:    "example.com",
+			target:        "_acme-challenge.apps.central.example.com",
+			expectedOK:    false,
+		},
+		{
+			// A target equal to the record name is a self-referential CNAME
+			// no resolver can follow; it is skipped rather than created.
+			name:          "When the target equals the record name, it should create no record",
+			ingressDomain: "apps.example.com",
+			baseDomain:    "example.com",
+			target:        "_acme-challenge.apps.example.com",
+			expectedOK:    false,
+		},
+		{
+			// DNS names are case-insensitive; the self-reference guard must
+			// compare them case-insensitively too.
+			name:          "When the target equals the record name modulo case, it should create no record",
+			ingressDomain: "apps.example.com",
+			baseDomain:    "example.com",
+			target:        "_ACME-CHALLENGE.Apps.Example.Com",
+			expectedOK:    false,
+		},
+		{
+			name:          "When the target equals the record name modulo a trailing dot, it should create no record",
+			ingressDomain: "apps.example.com",
+			baseDomain:    "example.com",
+			target:        "_acme-challenge.apps.example.com.",
+			expectedOK:    false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recordName, recordTarget, ok := acmeChallengeRecord(tt.ingressDomain, tt.baseDomain, tt.target)
+			assert.Equal(t, tt.expectedOK, ok)
+			assert.Equal(t, tt.expectedName, recordName)
+			assert.Equal(t, tt.expectedTarget, recordTarget)
+		})
+	}
+}
+
+func TestLegacyAcmeRecordHelpers(t *testing.T) {
+	// The legacy record is what earlier controller revisions created
+	// unconditionally for every GCP cluster; the cleanup path must remove
+	// exactly this record and no other.
+	assert.Equal(t, "_acme-challenge.apps.example.com", legacyAcmeRecordName("example.com"))
+	assert.Equal(t, "_acme-challenge.example.com.", legacyAcmeCNAMETarget("example.com"))
+}
+
+func TestDNSNameIsWithin(t *testing.T) {
+	assert.True(t, dnsNameIsWithin("apps.example.com", "example.com"))
+	assert.True(t, dnsNameIsWithin("a.b.example.com", "example.com."))
+	assert.True(t, dnsNameIsWithin("example.com", "example.com"))
+	// Label boundary: a suffix that only shares characters must not match.
+	assert.False(t, dnsNameIsWithin("apps.oexample.com", "example.com"))
+	assert.False(t, dnsNameIsWithin("apps.example.com", "other.example.org"))
 }

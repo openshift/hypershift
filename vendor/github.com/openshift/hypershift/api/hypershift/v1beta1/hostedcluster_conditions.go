@@ -204,6 +204,14 @@ const (
 	// A failure here is unlikely to resolve without the changing user input.
 	PlatformCredentialsFound ConditionType = "PlatformCredentialsFound"
 
+	// IngressCredentialsFound indicates whether the optional ingress-operator
+	// credentials are configured. It is only evaluated for platforms whose
+	// ingress operator needs cloud credentials (today: GCP). A False condition
+	// is non-blocking: the HostedCluster keeps reconciling, but the guest
+	// ingress operator runs without cloud credentials and cannot publish the
+	// *.apps DNS records.
+	IngressCredentialsFound ConditionType = "IngressCredentialsFound"
+
 	// ReconciliationActive indicates if reconciliation of the HostedCluster is
 	// active or paused hostedCluster.spec.pausedUntil.
 	ReconciliationActive ConditionType = "ReconciliationActive"
@@ -367,6 +375,7 @@ const (
 	OIDCConfigurationInvalidReason        = "OIDCConfigurationInvalid"
 	ProxyCABundleInvalidReason            = "ProxyCABundleInvalid"
 	PlatformCredentialsNotFoundReason     = "PlatformCredentialsNotFound"
+	IngressServiceAccountNotFoundReason   = "IngressServiceAccountNotFound"
 	InvalidImageReason                    = "InvalidImage"
 	InvalidIdentityProvider               = "InvalidIdentityProvider"
 	PayloadArchNotFoundReason             = "PayloadArchNotFound"
