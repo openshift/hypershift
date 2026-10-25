@@ -1,6 +1,7 @@
 package crds
 
 import (
+	"slices"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -12,7 +13,7 @@ func TestCAPICRDOverridesWithStorageVersion(t *testing.T) {
 	t.Run("When requesting v1beta1 overrides, it should return all CRDs with v1beta1 storage", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		overrides := CAPICRDOverridesWithStorageVersion("v1beta1")
-		g.Expect(overrides).To(HaveLen(len(capiCRDNames)))
+		g.Expect(overrides).To(HaveLen(len(capiCRDNames) + len(capoConversionOnlyCRDNames)))
 		for _, name := range capiCRDNames {
 			entry, ok := overrides[name]
 			g.Expect(ok).To(BeTrue(), "missing CRD %s", name)
@@ -24,7 +25,7 @@ func TestCAPICRDOverridesWithStorageVersion(t *testing.T) {
 	t.Run("When requesting v1beta2 overrides, it should return all CRDs with v1beta2 storage", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		overrides := CAPICRDOverridesWithStorageVersion("v1beta2")
-		g.Expect(overrides).To(HaveLen(len(capiCRDNames)))
+		g.Expect(overrides).To(HaveLen(len(capiCRDNames) + len(capoConversionOnlyCRDNames)))
 		for _, name := range capiCRDNames {
 			entry, ok := overrides[name]
 			g.Expect(ok).To(BeTrue(), "missing CRD %s", name)
@@ -38,6 +39,19 @@ func TestCAPICRDOverridesWithStorageVersion(t *testing.T) {
 		overrides := CAPICRDOverrides()
 		for _, name := range capiCRDNames {
 			g.Expect(overrides[name].StorageVersion).To(Equal("v1beta1"))
+		}
+	})
+
+	t.Run("When selecting either CAPI storage version, it should keep CAPO v1beta2 with conversion", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		for _, storageVersion := range []string{"v1beta1", "v1beta2"} {
+			overrides := CAPICRDOverridesWithStorageVersion(storageVersion)
+			for _, name := range capoConversionOnlyCRDNames {
+				entry, ok := overrides[name]
+				g.Expect(ok).To(BeTrue(), "missing CRD %s", name)
+				g.Expect(entry.StorageVersion).To(Equal("v1beta2"))
+				g.Expect(entry.NeedsConversion).To(BeTrue())
+			}
 		}
 	})
 }
@@ -123,17 +137,20 @@ func TestGetCustomResourceDefinition(t *testing.T) {
 		name       string
 		file       string
 		version    string
+		versions   int
 		properties [][]string
 	}{
 		{
-			name:    "When loading OpenStackClusterIdentity, it should include the provider version label",
-			file:    "infrastructure.cluster.x-k8s.io_openstackclusteridentities.yaml",
-			version: "v1alpha1",
+			name:     "When loading OpenStackClusterIdentity, it should include the provider version label",
+			file:     "infrastructure.cluster.x-k8s.io_openstackclusteridentities.yaml",
+			version:  "v1alpha1",
+			versions: 1,
 		},
 		{
-			name:    "When loading OpenStackCluster, it should preserve identity types and controller status",
-			file:    "infrastructure.cluster.x-k8s.io_openstackclusters.yaml",
-			version: "v1beta1",
+			name:     "When loading OpenStackCluster, it should preserve identity types and controller status",
+			file:     "infrastructure.cluster.x-k8s.io_openstackclusters.yaml",
+			version:  "v1beta2",
+			versions: 2,
 			properties: [][]string{
 				{"spec", "identityRef", "type"},
 				{"status", "conditions"},
@@ -141,9 +158,10 @@ func TestGetCustomResourceDefinition(t *testing.T) {
 			},
 		},
 		{
-			name:    "When loading OpenStackMachine, it should preserve identity types and controller initialization",
-			file:    "infrastructure.cluster.x-k8s.io_openstackmachines.yaml",
-			version: "v1beta1",
+			name:     "When loading OpenStackMachine, it should preserve identity types and controller initialization",
+			file:     "infrastructure.cluster.x-k8s.io_openstackmachines.yaml",
+			version:  "v1beta2",
+			versions: 2,
 			properties: [][]string{
 				{"spec", "identityRef", "type"},
 				{"status", "initialization", "provisioned"},
@@ -155,11 +173,23 @@ func TestGetCustomResourceDefinition(t *testing.T) {
 			g := NewGomegaWithT(t)
 			crd := getCustomResourceDefinition(CRDS, "cluster-api-provider-openstack/"+tc.file, CAPICRDOverrides())
 			g.Expect(crd.Labels).To(HaveKeyWithValue(capiLabel, tc.version))
-			g.Expect(crd.Spec.Versions).To(HaveLen(1))
-			version := crd.Spec.Versions[0]
+			g.Expect(crd.Spec.Versions).To(HaveLen(tc.versions))
+			versionIndex := slices.IndexFunc(crd.Spec.Versions, func(version apiextensionsv1.CustomResourceDefinitionVersion) bool {
+				return version.Name == tc.version
+			})
+			g.Expect(versionIndex).To(BeNumerically(">=", 0))
+			version := crd.Spec.Versions[versionIndex]
 			g.Expect(version.Name).To(Equal(tc.version))
 			g.Expect(version.Served).To(BeTrue())
 			g.Expect(version.Storage).To(BeTrue())
+			if tc.version == "v1beta2" {
+				oldVersionIndex := slices.IndexFunc(crd.Spec.Versions, func(version apiextensionsv1.CustomResourceDefinitionVersion) bool {
+					return version.Name == "v1beta1"
+				})
+				g.Expect(oldVersionIndex).To(BeNumerically(">=", 0))
+				g.Expect(crd.Spec.Versions[oldVersionIndex].Served).To(BeTrue())
+				g.Expect(crd.Spec.Versions[oldVersionIndex].Storage).To(BeFalse())
+			}
 			for _, properties := range tc.properties {
 				schema := *version.Schema.OpenAPIV3Schema
 				for _, property := range properties {

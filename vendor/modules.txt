@@ -1854,8 +1854,6 @@ k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextension
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1
 # k8s.io/apimachinery v0.37.1
 ## explicit; go 1.26.0
-k8s.io/apimachinery/pkg/api/apitesting
-k8s.io/apimachinery/pkg/api/apitesting/fuzzer
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors
 k8s.io/apimachinery/pkg/api/meta
@@ -1868,7 +1866,6 @@ k8s.io/apimachinery/pkg/api/validate/constraints
 k8s.io/apimachinery/pkg/api/validate/content
 k8s.io/apimachinery/pkg/api/validation
 k8s.io/apimachinery/pkg/apis/asn1
-k8s.io/apimachinery/pkg/apis/meta/fuzzer
 k8s.io/apimachinery/pkg/apis/meta/internalversion
 k8s.io/apimachinery/pkg/apis/meta/internalversion/scheme
 k8s.io/apimachinery/pkg/apis/meta/internalversion/validation
@@ -2652,20 +2649,12 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/cluster-api v1.13.4
-## explicit; go 1.25.0
-sigs.k8s.io/cluster-api/api/addons/v1beta1
-sigs.k8s.io/cluster-api/api/addons/v1beta2
-sigs.k8s.io/cluster-api/api/core/v1beta1
-sigs.k8s.io/cluster-api/api/core/v1beta2
-sigs.k8s.io/cluster-api/api/ipam/v1beta1
-sigs.k8s.io/cluster-api/api/ipam/v1beta2
-sigs.k8s.io/cluster-api/errors
+# sigs.k8s.io/cluster-api v1.14.1
+## explicit; go 1.26.0
 sigs.k8s.io/cluster-api/util
 sigs.k8s.io/cluster-api/util/annotations
 sigs.k8s.io/cluster-api/util/conditions
 sigs.k8s.io/cluster-api/util/conditions/deprecated/v1beta1
-sigs.k8s.io/cluster-api/util/conversion
 sigs.k8s.io/cluster-api/util/labels/format
 sigs.k8s.io/cluster-api/util/patch
 # sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0 => ./pkg/capi/aws
@@ -2690,13 +2679,24 @@ sigs.k8s.io/cluster-api-provider-ibmcloud/capicore/api/core/v1beta1
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
 sigs.k8s.io/cluster-api-provider-kubevirt/capicore/api/core/v1beta2
 sigs.k8s.io/cluster-api-provider-kubevirt/capicore/errors
-# sigs.k8s.io/cluster-api-provider-openstack v0.14.8 => ./pkg/capi/openstack
+# sigs.k8s.io/cluster-api-provider-openstack v0.15.0 => ./pkg/capi/openstack
 ## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1
 sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1
+sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2
 sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta1
+sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta2
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/optional
+# sigs.k8s.io/cluster-api/api v1.14.1
+## explicit; go 1.26.0
+sigs.k8s.io/cluster-api/api/addons/v1beta1
+sigs.k8s.io/cluster-api/api/addons/v1beta2
+sigs.k8s.io/cluster-api/api/core/v1beta1
+sigs.k8s.io/cluster-api/api/core/v1beta2
+sigs.k8s.io/cluster-api/api/deprecated/errors
+sigs.k8s.io/cluster-api/api/ipam/v1beta1
+sigs.k8s.io/cluster-api/api/ipam/v1beta2
 # sigs.k8s.io/controller-runtime v0.25.0
 ## explicit; go 1.26.0
 sigs.k8s.io/controller-runtime
