@@ -9,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/awsapi"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	"github.com/openshift/hypershift/support/diagnostics"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/smithy-go"
@@ -34,7 +35,16 @@ func awsHealthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedCont
 
 	// We try to interact with cloud provider to validate it is operational.
 	if _, err := ec2Client.DescribeVpcEndpoints(ctx, &ec2.DescribeVpcEndpointsInput{}); err != nil {
-		status, reason, message := classifyIdentityProviderError(err)
+		roleARN := ""
+		if !diagnostics.IsEnrichmentDisabled() {
+			if hcp.Spec.Platform.AWS != nil {
+				roleARN = hcp.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN
+			}
+			if roleARN == "" {
+				diagnostics.DiagnosticFallbackCounter.WithLabelValues("aws", "ValidAWSIdentityProvider", "role_arn_unavailable").Inc()
+			}
+		}
+		status, reason, message := classifyIdentityProviderError(err, roleARN)
 		condition := metav1.Condition{
 			Type:               string(hyperv1.ValidAWSIdentityProvider),
 			ObservedGeneration: hcp.Generation,
@@ -89,22 +99,32 @@ var requestIDPattern = regexp.MustCompile(`,?\s*(?:RequestID|HostID): [^\s,]+`)
 // The RequestID lives in the ResponseError wrapper, not in GenericAPIError's
 // ErrorCode()/ErrorMessage(), so using the structured fields produces a stable
 // condition message that won't cause reconciliation loops.
-func classifyIdentityProviderError(err error) (metav1.ConditionStatus, string, string) {
+func classifyIdentityProviderError(err error, roleARN string) (metav1.ConditionStatus, string, string) {
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
 		code := apiErr.ErrorCode()
 		if stsAuthErrorCodes.Has(code) {
-			return metav1.ConditionFalse, hyperv1.InvalidIdentityProvider,
-				fmt.Sprintf("AWS identity provider validation failed: %s: %s", code, apiErr.ErrorMessage())
+			msg := fmt.Sprintf("AWS identity provider validation failed: %s: %s", code, apiErr.ErrorMessage())
+			return metav1.ConditionFalse, hyperv1.InvalidIdentityProvider, appendRoleARN(msg, roleARN)
 		}
 		// Any other AWS API error (throttling, InvalidIdentityToken, ...) can't
 		// prove the provider is invalid.
-		return metav1.ConditionUnknown, hyperv1.AWSErrorReason,
-			fmt.Sprintf("Cannot validate AWS identity provider: %s: %s", code, apiErr.ErrorMessage())
+		msg := fmt.Sprintf("Cannot validate AWS identity provider: %s: %s", code, apiErr.ErrorMessage())
+		return metav1.ConditionUnknown, hyperv1.AWSErrorReason, appendRoleARN(msg, roleARN)
 	}
 
 	// Not an AWS API error: missing/unreadable token file, network timeout, KAS
 	// blip, etc. Sanitize defensively to strip any request IDs.
-	return metav1.ConditionUnknown, hyperv1.StatusUnknownReason,
-		fmt.Sprintf("Cannot validate AWS identity provider: %s", requestIDPattern.ReplaceAllString(err.Error(), ""))
+	msg := fmt.Sprintf("Cannot validate AWS identity provider: %s", requestIDPattern.ReplaceAllString(err.Error(), ""))
+	return metav1.ConditionUnknown, hyperv1.StatusUnknownReason, appendRoleARN(msg, roleARN)
+}
+
+// appendRoleARN appends "; role: <ARN>" to the message when the ARN is
+// available, improving debuggability. When the ARN is empty, the message is
+// returned unchanged.
+func appendRoleARN(msg, roleARN string) string {
+	if roleARN != "" {
+		return msg + "; role: " + roleARN
+	}
+	return msg
 }

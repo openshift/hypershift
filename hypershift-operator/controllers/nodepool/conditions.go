@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/pkg/manifests"
+	"github.com/openshift/hypershift/support/diagnostics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -607,7 +608,14 @@ func (r NodePoolReconciler) reachedIgnitionEndpointCondition(ctx context.Context
 	// if ignition is already reached and InPlace upgrade is used, skip recomputing the NodePoolReachedIgnitionEndpoint condition
 	// to avoid resetting the condition to False because of the missing the annotation on the new generated token-secret.
 	if oldReachedIgnitionEndpointCondition == nil || oldReachedIgnitionEndpointCondition.Status != corev1.ConditionTrue || nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeInPlace {
-		reachedIgnitionEndpointCondition, err := r.createReachedIgnitionEndpointCondition(ctx, tokenSecret, nodePool.Generation)
+		ignitionEndpoint := ""
+		if hcluster != nil && hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+			ignitionEndpoint = hcluster.Status.IgnitionEndpoint
+			if ignitionEndpoint == "" && !diagnostics.IsEnrichmentDisabled() {
+				diagnostics.DiagnosticFallbackCounter.WithLabelValues("aws", "ReachedIgnitionEndpoint", "endpoint_unavailable").Inc()
+			}
+		}
+		reachedIgnitionEndpointCondition, err := r.createReachedIgnitionEndpointCondition(ctx, tokenSecret, nodePool.Generation, ignitionEndpoint)
 		if err != nil {
 			return &ctrl.Result{}, fmt.Errorf("error setting IgnitionReached condition: %w", err)
 		}
@@ -650,7 +658,7 @@ func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, no
 
 	r.setAllMachinesReadyCondition(nodePool, machines)
 
-	r.setAllNodesHealthyCondition(nodePool, machines)
+	r.setAllNodesHealthyCondition(nodePool, machines, hc)
 
 	err = r.setCIDRConflictCondition(ctx, nodePool, machines, hc)
 	if err != nil {
@@ -667,7 +675,7 @@ func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, no
 	return nil
 }
 
-func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine) {
+func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine, hcluster *hyperv1.HostedCluster) {
 	status := corev1.ConditionTrue
 	reason := hyperv1.AsExpectedReason
 	message := hyperv1.AllIsWellMessage
@@ -708,6 +716,15 @@ func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodeP
 		}
 		if numNotHealthy > 0 {
 			reason, message = aggregateMachineReasonsAndMessages(messageMap, numMachines, numNotHealthy, aggregatorMachineStateHealthy)
+			if hcluster != nil && hcluster.Spec.Platform.Type == hyperv1.AWSPlatform && !diagnostics.IsEnrichmentDisabled() {
+				hint := " Possible causes: security group egress rules blocking port 6443, " +
+					"network ACLs, or route table misconfiguration."
+				if len(message)+len(hint) <= maxGlobalMessageLength {
+					message += hint
+				} else {
+					diagnostics.DiagnosticFallbackCounter.WithLabelValues("aws", "AllNodesHealthy", "hint_truncated").Inc()
+				}
+			}
 		}
 	}
 
@@ -907,7 +924,9 @@ func (r *NodePoolReconciler) setCIDRConflictCondition(ctx context.Context, nodeP
 }
 
 // createReachedIgnitionEndpointCondition creates a condition for the NodePool based on the tokenSecret data.
-func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) (*hyperv1.NodePoolCondition, error) { //nolint:unparam // error return kept for API consistency
+// ignitionEndpoint is the HostedCluster's ignition endpoint URL; when non-empty on AWS, the condition
+// message is enriched with the URL and troubleshooting hints.
+func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64, ignitionEndpoint string) (*hyperv1.NodePoolCondition, error) { //nolint:unparam // error return kept for API consistency
 	var condition *hyperv1.NodePoolCondition
 	if err := r.Get(ctx, crclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -931,11 +950,22 @@ func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.C
 	}
 
 	if _, ok := tokenSecret.Annotations[TokenSecretIgnitionReachedAnnotation]; !ok {
+		message := ""
+		if !diagnostics.IsEnrichmentDisabled() {
+			if ignitionEndpoint != "" {
+				message = fmt.Sprintf(
+					"No instances have reached the ignition endpoint (%s). "+
+						"Possible causes: security group ingress misconfiguration, "+
+						"NACL rules blocking traffic to worker subnets, "+
+						"DNS resolution failures, or proxy configuration issues.",
+					ignitionEndpoint)
+			}
+		}
 		condition = &hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolReachedIgnitionEndpoint,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.IgnitionNotReached,
-			Message:            "",
+			Message:            message,
 			ObservedGeneration: generation,
 		}
 		return condition, nil

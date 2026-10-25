@@ -3,6 +3,7 @@ package nodepool
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,7 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"sigs.k8s.io/cluster-api/api/core/v1beta2"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -719,8 +720,8 @@ spec:
 	return pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3
 }
 
-func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, machineSetUpgradeFail bool) *v1beta2.MachineSet {
-	machineSet := &v1beta2.MachineSet{
+func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, machineSetUpgradeFail bool) *capiv1.MachineSet {
+	machineSet := &capiv1.MachineSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      nodePool.Name,
 			Namespace: hostedCluster.Namespace + "-" + hostedCluster.Name,
@@ -1015,5 +1016,226 @@ func TestValidateKubevirtAdditionalNetworkNamespaces(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred(), tc.name)
 			}
 		})
+	}
+}
+
+func TestCreateReachedIgnitionEndpointConditionEnrichment(t *testing.T) {
+	const testIgnitionEndpoint = "https://ignition.example.com"
+
+	testCases := []struct {
+		name                  string
+		ignitionEndpoint      string
+		enrichmentDisabledEnv string
+		expectedMessagePart   string
+		expectEmptyMessage    bool
+	}{
+		{
+			name:                "When ignition not reached on AWS with endpoint URL, message should include URL and hints",
+			ignitionEndpoint:    testIgnitionEndpoint,
+			expectedMessagePart: testIgnitionEndpoint,
+		},
+		{
+			name:               "When ignition not reached with empty endpoint, message should be empty",
+			ignitionEndpoint:   "",
+			expectEmptyMessage: true,
+		},
+		{
+			name:                  "When enrichment is disabled, message should be empty",
+			ignitionEndpoint:      testIgnitionEndpoint,
+			enrichmentDisabledEnv: "1",
+			expectEmptyMessage:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			if tc.enrichmentDisabledEnv != "" {
+				t.Setenv("HYPERSHIFT_DISABLE_DIAGNOSTIC_ENRICHMENT", tc.enrichmentDisabledEnv)
+			}
+
+			tokenSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "token-secret",
+					Namespace: "test-namespace",
+					// No TokenSecretIgnitionReachedAnnotation — triggers "not reached" path
+				},
+			}
+
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tokenSecret).Build()
+			r := &NodePoolReconciler{Client: client}
+
+			condition, err := r.createReachedIgnitionEndpointCondition(t.Context(), tokenSecret, 1, tc.ignitionEndpoint)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(condition).ToNot(BeNil())
+			g.Expect(condition.Status).To(Equal(corev1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(hyperv1.IgnitionNotReached))
+
+			if tc.expectEmptyMessage {
+				g.Expect(condition.Message).To(BeEmpty())
+			} else {
+				g.Expect(condition.Message).To(ContainSubstring(tc.expectedMessagePart))
+				g.Expect(condition.Message).To(ContainSubstring("security group ingress misconfiguration"))
+			}
+		})
+	}
+}
+
+func TestSetAllNodesHealthyConditionAWSHint(t *testing.T) {
+	testCases := []struct {
+		name                  string
+		platformType          hyperv1.PlatformType
+		enrichmentDisabledEnv string
+		hcluster              *hyperv1.HostedCluster
+		expectHint            bool
+	}{
+		{
+			name:         "When unhealthy nodes on AWS, message should include troubleshooting hint",
+			platformType: hyperv1.AWSPlatform,
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			expectHint: true,
+		},
+		{
+			name:         "When unhealthy nodes on non-AWS, message should not include hint",
+			platformType: hyperv1.AzurePlatform,
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform},
+				},
+			},
+			expectHint: false,
+		},
+		{
+			name:                  "When enrichment is disabled on AWS, message should not include hint",
+			platformType:          hyperv1.AWSPlatform,
+			enrichmentDisabledEnv: "1",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+			},
+			expectHint: false,
+		},
+		{
+			name:       "When hcluster is nil, message should not include hint",
+			hcluster:   nil,
+			expectHint: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.enrichmentDisabledEnv != "" {
+				t.Setenv("HYPERSHIFT_DISABLE_DIAGNOSTIC_ENRICHMENT", tc.enrichmentDisabledEnv)
+			}
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-nodepool",
+					Namespace:  "test-namespace",
+					Generation: 1,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Replicas: ptr.To[int32](2),
+				},
+			}
+
+			// Create one unhealthy machine
+			machines := []*capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "machine-1"},
+					Status: capiv1.MachineStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   string(capiv1.MachineNodeHealthyCondition),
+								Status: metav1.ConditionFalse,
+								Reason: "NodeNotReady",
+							},
+						},
+					},
+				},
+			}
+
+			r := &NodePoolReconciler{}
+			r.setAllNodesHealthyCondition(nodePool, machines, tc.hcluster)
+
+			condition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAllNodesHealthyConditionType)
+			if condition == nil {
+				t.Fatal("AllNodesHealthy condition was not set")
+			}
+
+			hasHint := strings.Contains(condition.Message, "security group egress rules blocking port 6443")
+			if tc.expectHint && !hasHint {
+				t.Errorf("Expected message to contain AWS hint, got %q", condition.Message)
+			}
+			if !tc.expectHint && hasHint {
+				t.Errorf("Expected message NOT to contain AWS hint, got %q", condition.Message)
+			}
+		})
+	}
+}
+
+func TestSetAllNodesHealthyConditionHintTruncation(t *testing.T) {
+	// When the aggregated machine message is so long that adding the hint
+	// would exceed maxGlobalMessageLength (3000), the hint should be omitted.
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "test-nodepool",
+			Namespace:  "test-namespace",
+			Generation: 1,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			Replicas: ptr.To[int32](100),
+		},
+	}
+
+	hcluster := &hyperv1.HostedCluster{
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+		},
+	}
+
+	// Generate enough unhealthy machines with distinct reasons to produce a
+	// message that, after aggregation, leaves less than len(hint) chars of
+	// room before maxGlobalMessageLength (3000). Using unique reasons
+	// prevents the aggregator from collapsing them into a single block.
+	var machines []*capiv1.Machine
+	for i := 0; i < 100; i++ {
+		machines = append(machines, &capiv1.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("machine-with-a-very-long-descriptive-name-%03d", i)},
+			Status: capiv1.MachineStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:    string(capiv1.MachineNodeHealthyCondition),
+						Status:  metav1.ConditionFalse,
+						Reason:  fmt.Sprintf("UniqueReasonForMachine%03d", i),
+						Message: "node is not ready due to some long error message that takes up significant space in the condition message field",
+					},
+				},
+			},
+		})
+	}
+
+	r := &NodePoolReconciler{}
+	r.setAllNodesHealthyCondition(nodePool, machines, hcluster)
+
+	condition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAllNodesHealthyConditionType)
+	if condition == nil {
+		t.Fatal("AllNodesHealthy condition was not set")
+	}
+
+	// The message should not exceed maxGlobalMessageLength regardless
+	if len(condition.Message) > maxGlobalMessageLength {
+		t.Errorf("Message length %d exceeds maxGlobalMessageLength %d", len(condition.Message), maxGlobalMessageLength)
+	}
+
+	// The hint should be absent when the message is near the length limit
+	if strings.Contains(condition.Message, "security group egress rules blocking port 6443") {
+		t.Error("Expected hint to be omitted when message is near maxGlobalMessageLength")
 	}
 }

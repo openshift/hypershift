@@ -123,90 +123,111 @@ func TestUpdateRunsAWSIdentityCheckDuringDeletion(t *testing.T) {
 }
 
 func TestClassifyIdentityProviderError(t *testing.T) {
+	const testRoleARN = "arn:aws:iam::123456789012:role/test-cpo-role"
+
 	testCases := []struct {
 		name            string
 		err             error
+		roleARN         string
 		expectedStatus  metav1.ConditionStatus
 		expectedReason  string
 		expectedMessage string
 	}{
 		{
-			name: "When error wraps STS AccessDenied, it should return False with InvalidIdentityProvider",
+			name: "When error wraps STS AccessDenied, it should return False with InvalidIdentityProvider and role ARN",
 			err: fmt.Errorf("operation error EC2: DescribeVpcEndpoints, %w",
 				fmt.Errorf("failed to retrieve credentials, %w",
 					&smithy.GenericAPIError{Code: "AccessDenied", Message: "Not authorized"})),
+			roleARN:         testRoleARN,
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  hyperv1.InvalidIdentityProvider,
-			expectedMessage: "AWS identity provider validation failed: AccessDenied: Not authorized",
+			expectedMessage: "AWS identity provider validation failed: AccessDenied: Not authorized; role: " + testRoleARN,
 		},
 		{
-			name: "When error wraps STS IDPRejectedClaim, it should return False with InvalidIdentityProvider",
+			name: "When error wraps STS IDPRejectedClaim, it should return False with InvalidIdentityProvider and role ARN",
 			err: fmt.Errorf("operation error EC2: DescribeVpcEndpoints, %w",
 				fmt.Errorf("failed to retrieve credentials, %w",
 					&smithy.GenericAPIError{Code: "IDPRejectedClaim", Message: "claim rejected"})),
+			roleARN:         testRoleARN,
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  hyperv1.InvalidIdentityProvider,
-			expectedMessage: "AWS identity provider validation failed: IDPRejectedClaim: claim rejected",
+			expectedMessage: "AWS identity provider validation failed: IDPRejectedClaim: claim rejected; role: " + testRoleARN,
 		},
 		{
-			name: "When error wraps STS ExpiredTokenException, it should return False with InvalidIdentityProvider",
+			name: "When error wraps STS ExpiredTokenException, it should return False with InvalidIdentityProvider and role ARN",
 			err: fmt.Errorf("operation error EC2: DescribeVpcEndpoints, %w",
 				fmt.Errorf("failed to retrieve credentials, %w",
 					&smithy.GenericAPIError{Code: "ExpiredTokenException", Message: "token expired"})),
+			roleARN:         testRoleARN,
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  hyperv1.InvalidIdentityProvider,
-			expectedMessage: "AWS identity provider validation failed: ExpiredTokenException: token expired",
+			expectedMessage: "AWS identity provider validation failed: ExpiredTokenException: token expired; role: " + testRoleARN,
 		},
 		{
-			name: "When error wraps InvalidIdentityToken, it should return Unknown with AWSErrorReason",
+			name: "When error wraps InvalidIdentityToken, it should return Unknown with AWSErrorReason and role ARN",
 			// InvalidIdentityToken can be transient (STS can't fetch OIDC discovery
 			// keys due to network/firewall/latency), so it is not in stsAuthErrorCodes.
 			err: fmt.Errorf("operation error EC2: DescribeVpcEndpoints, %w",
 				fmt.Errorf("failed to retrieve credentials, %w",
 					&smithy.GenericAPIError{Code: "InvalidIdentityToken", Message: "token not valid"})),
+			roleARN:         testRoleARN,
 			expectedStatus:  metav1.ConditionUnknown,
 			expectedReason:  hyperv1.AWSErrorReason,
-			expectedMessage: "Cannot validate AWS identity provider: InvalidIdentityToken: token not valid",
+			expectedMessage: "Cannot validate AWS identity provider: InvalidIdentityToken: token not valid; role: " + testRoleARN,
 		},
 		{
-			name: "When error wraps a non-STS API error like ThrottlingException, it should return Unknown with AWSErrorReason",
+			name: "When error wraps a non-STS API error like ThrottlingException, it should return Unknown with AWSErrorReason and role ARN",
 			err: fmt.Errorf("operation error EC2: DescribeVpcEndpoints, %w",
 				&smithy.GenericAPIError{Code: "ThrottlingException", Message: "Rate exceeded"}),
+			roleARN:         testRoleARN,
 			expectedStatus:  metav1.ConditionUnknown,
 			expectedReason:  hyperv1.AWSErrorReason,
-			expectedMessage: "Cannot validate AWS identity provider: ThrottlingException: Rate exceeded",
+			expectedMessage: "Cannot validate AWS identity provider: ThrottlingException: Rate exceeded; role: " + testRoleARN,
 		},
 		{
-			name: "When error wraps IDPCommunicationError, it should return Unknown with AWSErrorReason",
+			name: "When error wraps IDPCommunicationError, it should return Unknown with AWSErrorReason and role ARN",
 			// IDPCommunicationError means STS could not reach the identity provider.
 			// Per AWS docs this is often transient, so it is not in stsAuthErrorCodes.
 			err: fmt.Errorf("operation error EC2: DescribeVpcEndpoints, %w",
 				fmt.Errorf("failed to retrieve credentials, %w",
 					&smithy.GenericAPIError{Code: "IDPCommunicationError", Message: "could not communicate with IdP"})),
+			roleARN:         testRoleARN,
 			expectedStatus:  metav1.ConditionUnknown,
 			expectedReason:  hyperv1.AWSErrorReason,
-			expectedMessage: "Cannot validate AWS identity provider: IDPCommunicationError: could not communicate with IdP",
+			expectedMessage: "Cannot validate AWS identity provider: IDPCommunicationError: could not communicate with IdP; role: " + testRoleARN,
 		},
 		{
-			name: "When error wraps a plain error with no API error, it should return Unknown with StatusUnknownReason",
+			name: "When error wraps a plain error with no API error, it should return Unknown with StatusUnknownReason and role ARN",
 			err: fmt.Errorf("operation error EC2: DescribeVpcEndpoints, %w",
 				fmt.Errorf("failed to retrieve credentials: %w", errors.New("some unknown error"))),
+			roleARN:         testRoleARN,
 			expectedStatus:  metav1.ConditionUnknown,
 			expectedReason:  hyperv1.StatusUnknownReason,
-			expectedMessage: "Cannot validate AWS identity provider: operation error EC2: DescribeVpcEndpoints, failed to retrieve credentials: some unknown error",
+			expectedMessage: "Cannot validate AWS identity provider: operation error EC2: DescribeVpcEndpoints, failed to retrieve credentials: some unknown error; role: " + testRoleARN,
 		},
 		{
 			name:            "When a non-API error contains RequestID and HostID, they should be scrubbed from the message",
 			err:             fmt.Errorf("https response error StatusCode: 500, RequestID: abc-123-def, HostID: xyz-456-ghi, connection reset"),
+			roleARN:         testRoleARN,
 			expectedStatus:  metav1.ConditionUnknown,
 			expectedReason:  hyperv1.StatusUnknownReason,
-			expectedMessage: "Cannot validate AWS identity provider: https response error StatusCode: 500, connection reset",
+			expectedMessage: "Cannot validate AWS identity provider: https response error StatusCode: 500, connection reset; role: " + testRoleARN,
+		},
+		{
+			name: "When role ARN is empty, message should not include role suffix",
+			err: fmt.Errorf("operation error EC2: DescribeVpcEndpoints, %w",
+				fmt.Errorf("failed to retrieve credentials, %w",
+					&smithy.GenericAPIError{Code: "AccessDenied", Message: "Not authorized"})),
+			roleARN:         "",
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperv1.InvalidIdentityProvider,
+			expectedMessage: "AWS identity provider validation failed: AccessDenied: Not authorized",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			status, reason, message := classifyIdentityProviderError(tc.err)
+			status, reason, message := classifyIdentityProviderError(tc.err, tc.roleARN)
 			if status != tc.expectedStatus {
 				t.Errorf("Expected status %v, got %v", tc.expectedStatus, status)
 			}
@@ -225,6 +246,8 @@ func TestClassifyIdentityProviderError(t *testing.T) {
 // the core property that prevents the controller from churning the condition
 // on every reconcile loop.
 func TestClassifyIdentityProviderErrorMessageStability(t *testing.T) {
+	const testRoleARN = "arn:aws:iam::123456789012:role/test-cpo-role"
+
 	// Simulate the real SDK error chain: OperationError → ResponseError → GenericAPIError.
 	// ResponseError.Error() embeds the RequestID, but errors.As finds the inner
 	// GenericAPIError whose ErrorCode()/ErrorMessage() are stable.
@@ -233,8 +256,8 @@ func TestClassifyIdentityProviderErrorMessageStability(t *testing.T) {
 		return fmt.Errorf("operation error EC2: DescribeVpcEndpoints, https response error StatusCode: 403, RequestID: %s, %w", requestID, inner)
 	}
 
-	_, _, msg1 := classifyIdentityProviderError(makeError("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"))
-	_, _, msg2 := classifyIdentityProviderError(makeError("bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb"))
+	_, _, msg1 := classifyIdentityProviderError(makeError("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"), testRoleARN)
+	_, _, msg2 := classifyIdentityProviderError(makeError("bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb"), testRoleARN)
 
 	if msg1 != msg2 {
 		t.Errorf("When two errors differ only in RequestID, they should produce identical messages, got:\n  %q\n  %q", msg1, msg2)
@@ -246,8 +269,8 @@ func TestClassifyIdentityProviderErrorMessageStability(t *testing.T) {
 		return fmt.Errorf("https response error StatusCode: 500, RequestID: %s, HostID: %s, connection reset", requestID, hostID)
 	}
 
-	_, _, msg3 := classifyIdentityProviderError(makeNonAPIError("aaaa-1111", "host-aaaa"))
-	_, _, msg4 := classifyIdentityProviderError(makeNonAPIError("bbbb-2222", "host-bbbb"))
+	_, _, msg3 := classifyIdentityProviderError(makeNonAPIError("aaaa-1111", "host-aaaa"), testRoleARN)
+	_, _, msg4 := classifyIdentityProviderError(makeNonAPIError("bbbb-2222", "host-bbbb"), testRoleARN)
 
 	if msg3 != msg4 {
 		t.Errorf("When two non-API errors differ only in RequestID/HostID, they should produce identical messages, got:\n  %q\n  %q", msg3, msg4)
@@ -359,6 +382,87 @@ func TestAWSHealthCheckIdentityProviderWithMockEC2(t *testing.T) {
 			}
 			if condition.ObservedGeneration != hcp.Generation {
 				t.Errorf("Expected ObservedGeneration %v, got %v", hcp.Generation, condition.ObservedGeneration)
+			}
+		})
+	}
+}
+
+func TestAWSHealthCheckIdentityProviderEnrichment(t *testing.T) {
+	const testRoleARN = "arn:aws:iam::123456789012:role/test-cpo-role"
+
+	testCases := []struct {
+		name                  string
+		awsPlatformSpec       *hyperv1.AWSPlatformSpec
+		enrichmentDisabledEnv string
+		expectedRoleARNInMsg  bool
+	}{
+		{
+			name: "When HCP has AWS platform with role ARN, error message should include the role ARN",
+			awsPlatformSpec: &hyperv1.AWSPlatformSpec{
+				RolesRef: hyperv1.AWSRolesRef{
+					ControlPlaneOperatorARN: testRoleARN,
+				},
+			},
+			expectedRoleARNInMsg: true,
+		},
+		{
+			name:                 "When HCP has nil AWS platform, error message should not include role ARN",
+			awsPlatformSpec:      nil,
+			expectedRoleARNInMsg: false,
+		},
+		{
+			name: "When enrichment is disabled, error message should not include role ARN",
+			awsPlatformSpec: &hyperv1.AWSPlatformSpec{
+				RolesRef: hyperv1.AWSRolesRef{
+					ControlPlaneOperatorARN: testRoleARN,
+				},
+			},
+			enrichmentDisabledEnv: "1",
+			expectedRoleARNInMsg:  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.enrichmentDisabledEnv != "" {
+				t.Setenv("HYPERSHIFT_DISABLE_DIAGNOSTIC_ENRICHMENT", tc.enrichmentDisabledEnv)
+			}
+
+			mockCtrl := gomock.NewController(t)
+			mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+			mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).
+				Return(nil, &smithy.GenericAPIError{Code: "AccessDenied", Message: "Not authorized"})
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  "test-namespace",
+					Generation: 1,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  tc.awsPlatformSpec,
+					},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: []metav1.Condition{},
+				},
+			}
+
+			_ = awsHealthCheckIdentityProvider(t.Context(), hcp, mockEC2)
+
+			condition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+			if condition == nil {
+				t.Fatal("ValidAWSIdentityProvider condition was not set")
+			}
+
+			hasRoleARN := strings.Contains(condition.Message, "; role: "+testRoleARN)
+			if tc.expectedRoleARNInMsg && !hasRoleARN {
+				t.Errorf("Expected message to contain role ARN, got %q", condition.Message)
+			}
+			if !tc.expectedRoleARNInMsg && hasRoleARN {
+				t.Errorf("Expected message NOT to contain role ARN, got %q", condition.Message)
 			}
 		})
 	}

@@ -7,12 +7,14 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
+	"github.com/openshift/hypershift/support/diagnostics"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/go-logr/logr"
 )
@@ -27,6 +29,10 @@ type HealthCheckUpdater struct {
 	HostedControlPlane client.ObjectKey
 
 	log logr.Logger
+}
+
+func init() {
+	diagnostics.MustRegister(crmetrics.Registry)
 }
 
 func (hcu *HealthCheckUpdater) SetupWithManager(mgr ctrl.Manager) error {
