@@ -51,7 +51,7 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 			case *ast.ImportSpec:
 				if node.Name != nil && node.Name.Name == "_" {
 					pkgPath, err := strconv.Unquote(node.Path.Value)
-					if err == nil && (pkgPath == utilPkgPath || strings.HasPrefix(pkgPath, utilPkgPath+"/")) {
+					if err == nil && isLegacyUtilPkg(pkgPath) {
 						pass.Reportf(node.Pos(), "side-effect import of %s is not allowed from test/e2e/v2; remove the legacy utility dependency", pkgPath)
 					}
 				}
@@ -91,7 +91,7 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 				return true
 			}
 			pkgPath := obj.Pkg().Path()
-			if pkgPath != utilPkgPath && !strings.HasPrefix(pkgPath, utilPkgPath+"/") {
+			if !isLegacyUtilPkg(pkgPath) {
 				return true
 			}
 			symbol := obj.Name()
@@ -118,4 +118,8 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 // There are no package-wide, file-wide, or symbol-prefix exceptions.
 func isAllowed(allowed map[string]map[string][]string, filename, function, symbol string) bool {
 	return slices.Contains(allowed[filename][function], symbol)
+}
+
+func isLegacyUtilPkg(pkgPath string) bool {
+	return pkgPath == utilPkgPath || strings.HasPrefix(pkgPath, utilPkgPath+"/")
 }

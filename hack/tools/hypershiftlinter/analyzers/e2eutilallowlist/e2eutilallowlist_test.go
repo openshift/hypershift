@@ -106,3 +106,25 @@ func TestIsAllowed(t *testing.T) {
 		})
 	}
 }
+
+func TestIsLegacyUtilPkg(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "When the legacy utility package is imported, it should match", path: utilPkgPath, want: true},
+		{name: "When a legacy utility subpackage is imported, it should match", path: utilPkgPath + "/dump", want: true},
+		{name: "When a nested legacy subpackage is imported, it should match", path: utilPkgPath + "/dump/nested", want: true},
+		{name: "When a sibling package shares the prefix, it should not match", path: utilPkgPath + "other"},
+		{name: "When the v2 utility package is imported, it should not match", path: "github.com/openshift/hypershift/test/e2e/v2/util"},
+		{name: "When the package path is empty, it should not match"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isLegacyUtilPkg(tt.path); got != tt.want {
+				t.Errorf("isLegacyUtilPkg(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}
