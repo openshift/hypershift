@@ -640,7 +640,7 @@ func (o *CreateInfraOptions) parseAdditionalTags() error {
 func (o *CreateInfraOptions) ec2Filters(name string) []ec2types.Filter {
 	filters := []ec2types.Filter{
 		{
-			Name:   aws.String(fmt.Sprintf("tag:%s", clusterTag(o.InfraID))),
+			Name:   aws.String("tag:" + supportawsutil.ClusterTag(o.InfraID)),
 			Values: []string{clusterTagValue},
 		},
 	}
@@ -653,14 +653,10 @@ func (o *CreateInfraOptions) ec2Filters(name string) []ec2types.Filter {
 	return filters
 }
 
-func clusterTag(infraID string) string {
-	return fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
-}
-
 func ec2Tags(infraID, clusterName, name string) []ec2types.Tag {
 	tags := []ec2types.Tag{
 		{
-			Key:   aws.String(clusterTag(infraID)),
+			Key:   aws.String(supportawsutil.ClusterTag(infraID)),
 			Value: aws.String(clusterTagValue),
 		},
 	}
