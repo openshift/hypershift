@@ -36,6 +36,7 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 
 		// Nested closures inherit their enclosing function's allowance. Top-level
 		// Ginkgo registrations use their exact Describe label as the function name.
+		used := map[[2]string]bool{} // enclosing scope and utility symbol
 		var scopes []string
 		ast.Inspect(file, func(n ast.Node) bool {
 			// Every non-nil visit must return true to balance the scope stack.
@@ -99,6 +100,7 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 				symbol = strings.TrimPrefix(pkgPath, utilPkgPath+"/") + "." + symbol
 			}
 			if isAllowed(allowed, filename, scope, symbol) {
+				used[[2]string{scope, symbol}] = true
 				return true
 			}
 			if scope == "" {
@@ -110,6 +112,13 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 			})
 			return true
 		})
+		for scope, symbols := range allowed[filename] {
+			for _, symbol := range symbols {
+				if !used[[2]string{scope, symbol}] {
+					pass.Reportf(file.Package, "stale e2eutilallowlist entry %s in %s; remove it from allowlist.go", symbol, scope)
+				}
+			}
+		}
 	}
 	return nil, nil
 }

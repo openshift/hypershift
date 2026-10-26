@@ -1,6 +1,8 @@
 package e2eutilallowlist
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
@@ -14,6 +16,10 @@ func TestRun(t *testing.T) {
 			"TestAllowedSymbols":                {"GetConfig", "Version414", "Version51", "Predicate"},
 			"Allowed.Method":                    {"GetConfig"},
 			`Describe("existing registration")`: {"GetConfig"},
+		},
+		"test/e2e/v2/stale/stale.go": {
+			"Existing": {"GetConfig", "Version414"},
+			"Removed":  {"GetConfig"},
 		},
 		"test/e2e/v2/bad/bad_test.go": {
 			"TestExistingCaller": {"GetConfig"},
@@ -29,6 +35,10 @@ func TestRun(t *testing.T) {
 		{
 			name:    "When references are new, it should reject symbols in new callers and new symbols in existing callers",
 			pattern: "test/e2e/v2/bad",
+		},
+		{
+			name:    "When a function or reference is removed, it should report its unused allowance",
+			pattern: "test/e2e/v2/stale",
 		},
 		{
 			name:    "When legacy utilities are used outside v2, it should leave them unrestricted",
@@ -124,6 +134,21 @@ func TestIsLegacyUtilPkg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := isLegacyUtilPkg(tt.path); got != tt.want {
 				t.Errorf("isLegacyUtilPkg(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAllowlist(t *testing.T) {
+	t.Parallel()
+	for file := range allowlist {
+		t.Run("When "+file+" has allowances, it should exist", func(t *testing.T) {
+			info, err := os.Stat(filepath.Join("../../../../..", file))
+			if err != nil {
+				t.Fatalf("remove allowances for missing file %s: %v", file, err)
+			}
+			if info.IsDir() {
+				t.Fatalf("allowlist key %s is a directory", file)
 			}
 		})
 	}
