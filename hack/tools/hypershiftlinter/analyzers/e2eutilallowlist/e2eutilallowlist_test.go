@@ -7,9 +7,9 @@ import (
 )
 
 func TestRun(t *testing.T) {
+	t.Parallel()
 	// Keep fixture allowances separate from the production migration baseline.
-	original := allowlist
-	allowlist = map[string]map[string][]string{
+	allowed := map[string]map[string][]string{
 		"test/e2e/v2/good/good_test.go": {
 			"TestAllowedSymbols":                {"GetConfig", "Version414", "Version51", "Predicate"},
 			"Allowed.Method":                    {"GetConfig"},
@@ -20,7 +20,7 @@ func TestRun(t *testing.T) {
 			"Allowed.Method":     {"GetConfig"},
 		},
 	}
-	t.Cleanup(func() { allowlist = original })
+	analyzer := newAnalyzer(allowed)
 	for _, tt := range []struct{ name, pattern string }{
 		{
 			name:    "When references match their enclosing function allowances, it should allow nested closures and methods",
@@ -35,11 +35,15 @@ func TestRun(t *testing.T) {
 			pattern: "test/e2e/v1",
 		},
 	} {
-		t.Run(tt.name, func(t *testing.T) { analysistest.Run(t, analysistest.TestData(), Analyzer, tt.pattern) })
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			analysistest.Run(t, analysistest.TestData(), analyzer, tt.pattern)
+		})
 	}
 }
 
 func TestIsAllowed(t *testing.T) {
+	t.Parallel()
 	const file = "test/e2e/v2/internal/test_context.go"
 	for _, tt := range []struct {
 		name, file, function, symbol string
@@ -96,7 +100,7 @@ func TestIsAllowed(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isAllowed(tt.file, tt.function, tt.symbol); got != tt.want {
+			if got := isAllowed(allowlist, tt.file, tt.function, tt.symbol); got != tt.want {
 				t.Errorf("isAllowed(%q, %q, %q) = %v, want %v", tt.file, tt.function, tt.symbol, got, tt.want)
 			}
 		})

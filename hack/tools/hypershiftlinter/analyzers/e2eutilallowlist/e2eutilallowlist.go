@@ -16,13 +16,17 @@ import (
 
 const utilPkgPath = "github.com/openshift/hypershift/test/e2e/util"
 
-var Analyzer = &analysis.Analyzer{
-	Name: "e2eutilallowlist",
-	Doc:  "denies legacy e2e utilities in v2 except for explicitly grandfathered function references",
-	Run:  run,
+var Analyzer = newAnalyzer(allowlist)
+
+func newAnalyzer(allowed map[string]map[string][]string) *analysis.Analyzer {
+	return &analysis.Analyzer{
+		Name: "e2eutilallowlist",
+		Doc:  "denies legacy e2e utilities in v2 except for explicitly grandfathered function references",
+		Run:  func(pass *analysis.Pass) (any, error) { return run(pass, allowed) },
+	}
 }
 
-func run(pass *analysis.Pass) (any, error) {
+func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, error) {
 	for _, file := range pass.Files {
 		filename := filepath.ToSlash(pass.Fset.File(file.Pos()).Name())
 		if !pathutil.IsV2E2ETest(filename) {
@@ -94,7 +98,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if pkgPath != utilPkgPath {
 				symbol = strings.TrimPrefix(pkgPath, utilPkgPath+"/") + "." + symbol
 			}
-			if isAllowed(filename, scope, symbol) {
+			if isAllowed(allowed, filename, scope, symbol) {
 				return true
 			}
 			if scope == "" {
@@ -112,6 +116,6 @@ func run(pass *analysis.Pass) (any, error) {
 
 // isAllowed requires an exact file, enclosing function, and utility symbol.
 // There are no package-wide, file-wide, or symbol-prefix exceptions.
-func isAllowed(filename, function, symbol string) bool {
-	return slices.Contains(allowlist[filename][function], symbol)
+func isAllowed(allowed map[string]map[string][]string, filename, function, symbol string) bool {
+	return slices.Contains(allowed[filename][function], symbol)
 }
