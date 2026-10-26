@@ -112,7 +112,7 @@ func skipIfTLSFlagPropagationNotSupported(ctx context.Context, mgmtClient crclie
 		return
 	}
 	supported, err := componentSupportsTLSConfig(ctx, mgmtClient, namespace, component)
-	Expect(err).NotTo(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred(), "failed to check TLS configuration support for %s in namespace %s", component.name, namespace)
 	if !supported {
 		Skip(fmt.Sprintf("%s container in %s deployment does not have --tls-min-version flag in this operator version",
 			component.deploymentContainer, component.deploymentName))
@@ -131,7 +131,7 @@ func skipIfPKIOperatorTLSConfigNotSupported(ctx context.Context, mgmtClient crcl
 	GinkgoHelper()
 
 	supported, err := componentSupportsTLSConfig(ctx, mgmtClient, namespace, pkiOperatorTLSComponent)
-	Expect(err).NotTo(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred(), "failed to check TLS configuration support for %s in namespace %s", pkiOperatorTLSComponent.name, namespace)
 	if !supported {
 		Skip(fmt.Sprintf("%s deployment does not pass --config in this operator version; the %s TLS config is not rendered",
 			pkiOperatorTLSComponent.name, pkiOperatorTLSComponent.configMapName))
@@ -851,7 +851,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			requireModernProfileCleared(tc)
 
 			supported, err := componentSupportsTLSConfig(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, pkiOperatorTLSComponent)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "failed to check %s TLS configuration support before downgrade restart wait in namespace %s", pkiOperatorTLSComponent.name, tc.ControlPlaneNamespace)
 			if supported {
 				pkiPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
 					pkiOperatorTLSComponent.podAppLabel, pkiPodUIDBeforeMutation)
@@ -870,7 +870,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 
 			supported, err := componentSupportsTLSConfig(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, awsPodIdentityWebhookTLSComponent)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "failed to check %s TLS configuration support before downgrade restart wait in namespace %s", awsPodIdentityWebhookTLSComponent.name, tc.ControlPlaneNamespace)
 			if supported {
 				kasPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
 					awsPodIdentityWebhookTLSComponent.podAppLabel, kasPodUIDBeforeMutation)
@@ -888,7 +888,7 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			requireModernProfileCleared(tc)
 
 			supported, err := componentSupportsTLSConfig(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, konnectivityServerTLSComponent)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred(), "failed to check %s TLS configuration support before downgrade restart wait in namespace %s", konnectivityServerTLSComponent.name, tc.ControlPlaneNamespace)
 			if supported {
 				konnectivityPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
 					konnectivityServerTLSComponent.podAppLabel, konnectivityPodUIDBeforeMutation)

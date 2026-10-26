@@ -3,6 +3,7 @@
 package tests
 
 import (
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -76,8 +77,10 @@ func TestComponentSupportsTLSConfig(t *testing.T) {
 				t.Run(testCase.name, func(t *testing.T) {
 					t.Parallel()
 					assertions := NewWithT(t)
+					diagnosticContext := fmt.Sprintf("%s: %s (deployment clusters-tls/%s, container %s)",
+						component.component.name, testCase.name, component.deploymentName, component.containerName)
 					scheme := runtime.NewScheme()
-					assertions.Expect(appsv1.AddToScheme(scheme)).To(Succeed())
+					assertions.Expect(appsv1.AddToScheme(scheme)).To(Succeed(), "%s: failed to register deployment scheme", diagnosticContext)
 					deployment := &appsv1.Deployment{
 						ObjectMeta: metav1.ObjectMeta{Namespace: "clusters-tls", Name: component.deploymentName},
 						Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
@@ -97,14 +100,14 @@ func TestComponentSupportsTLSConfig(t *testing.T) {
 					}
 					supported, err := componentSupportsTLSConfig(t.Context(), builder.Build(), "clusters-tls", component.component)
 					if testCase.errorSubstring != "" {
-						assertions.Expect(err).To(MatchError(ContainSubstring(testCase.errorSubstring)))
+						assertions.Expect(err).To(MatchError(ContainSubstring(testCase.errorSubstring)), "%s: capability probe should report the expected error", diagnosticContext)
 						if testCase.missingDeployment {
-							assertions.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+							assertions.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "%s: missing deployment should preserve NotFound classification", diagnosticContext)
 						}
 					} else {
-						assertions.Expect(err).NotTo(HaveOccurred())
+						assertions.Expect(err).NotTo(HaveOccurred(), "%s: capability probe should succeed", diagnosticContext)
 					}
-					assertions.Expect(supported).To(Equal(testCase.supported))
+					assertions.Expect(supported).To(Equal(testCase.supported), "%s: unexpected TLS configuration capability", diagnosticContext)
 				})
 			}
 		})
