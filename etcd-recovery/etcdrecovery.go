@@ -363,6 +363,16 @@ func checkEtcdStatus(ctx context.Context, opts options, etcdClient memberLister,
 	case 1:
 		result.failingPod = ptr.To(failingPods[0].Name)
 		result.nodeUnreachable = nodeUnreachable
+		// Recovering deletes the failing pod's data. If a different member is also
+		// unhealthy, that would leave only one member serving and risk losing quorum,
+		// so require the failing pod to be the unhealthy member.
+		for name, healthy := range memberHealth {
+			if !healthy && name != *result.failingPod {
+				result.recoverable = false
+				log.Info("Failing pod is not the unhealthy member. Etcd cluster is not recoverable",
+					"failingPod", *result.failingPod, "unhealthyMember", name)
+			}
+		}
 	default:
 		result.recoverable = false
 		log.Info("More than one failing pod was found. Etcd cluster is not recoverable", "pods", podNames(failingPods))
