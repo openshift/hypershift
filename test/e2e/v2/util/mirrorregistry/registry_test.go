@@ -651,6 +651,87 @@ func TestDeExpose(t *testing.T) {
 	})
 }
 
+func TestWaitEndpoint(t *testing.T) {
+	errConnection := errors.New("connection refused")
+	status := func(code int) func() (*http.Response, error) {
+		return func() (*http.Response, error) {
+			return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}}, nil
+		}
+	}
+	failure := func() (*http.Response, error) { return nil, errConnection }
+	tests := []struct {
+		name      string
+		exposed   bool
+		responses []func() (*http.Response, error)
+		wantCalls int32
+		wantErr   string
+	}{
+		{name: "When waiting for exposure and the registry answers HTTP 200, it should return", exposed: true,
+			responses: []func() (*http.Response, error){status(http.StatusOK)}, wantCalls: 1},
+		{name: "When waiting for exposure and a request fails before HTTP 200, it should keep polling", exposed: true,
+			responses: []func() (*http.Response, error){failure, status(http.StatusOK)}, wantCalls: 2},
+		{name: "When waiting for exposure and requests keep failing, it should time out with the last error", exposed: true,
+			responses: []func() (*http.Response, error){failure}, wantErr: "connection refused"},
+		{name: "When waiting for exposure and the registry keeps answering HTTP 503, it should time out with the last status", exposed: true,
+			responses: []func() (*http.Response, error){status(http.StatusServiceUnavailable)}, wantErr: "HTTP 503"},
+		{name: "When waiting for withdrawal and a request fails, it should treat the endpoint as no longer routed",
+			responses: []func() (*http.Response, error){failure}, wantCalls: 1},
+		{name: "When waiting for withdrawal and the router answers HTTP 503, it should treat the endpoint as no longer routed",
+			responses: []func() (*http.Response, error){status(http.StatusServiceUnavailable)}, wantCalls: 1},
+		{name: "When waiting for withdrawal and the registry still answers HTTP 200 once, it should keep polling",
+			responses: []func() (*http.Response, error){status(http.StatusOK), failure}, wantCalls: 2},
+		{name: "When waiting for withdrawal and the registry keeps answering HTTP 200, it should time out with the last status",
+			responses: []func() (*http.Response, error){status(http.StatusOK)}, wantErr: "HTTP 200"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls atomic.Int32
+			client := &http.Client{Transport: registryRoundTripper(func(req *http.Request) (*http.Response, error) {
+				if got, want := req.URL.String(), "https://"+registryTestHost+"/v2/"; got != want {
+					t.Errorf("request URL = %q, want %q", got, want)
+				}
+				call := int(calls.Add(1))
+				if call > len(tt.responses) {
+					call = len(tt.responses)
+				}
+				return tt.responses[call-1]()
+			})}
+			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+			defer cancel()
+			err := waitEndpoint(ctx, client, registryTestHost, tt.exposed, time.Millisecond)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("waitEndpoint() error = %v, want a deadline error mentioning %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("waitEndpoint() error = %v", err)
+			}
+			if calls.Load() != tt.wantCalls {
+				t.Fatalf("requests = %d, want %d", calls.Load(), tt.wantCalls)
+			}
+		})
+	}
+	t.Run("When waiting for withdrawal and the endpoint serves a certificate the client does not trust, it should treat the endpoint as no longer routed", func(t *testing.T) {
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+		ca, _ := testRegistryTLSMaterial(t)
+		roots := x509.NewCertPool()
+		roots.AppendCertsFromPEM(ca.CertPEM)
+		transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}
+		defer transport.CloseIdleConnections()
+		client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancel()
+		if err := waitEndpoint(ctx, client, strings.TrimPrefix(server.URL, "https://"), false, time.Millisecond); err != nil {
+			t.Fatalf("waitEndpoint() error = %v", err)
+		}
+	})
+}
+
 func TestSetup(t *testing.T) {
 	tests := []struct {
 		name    string

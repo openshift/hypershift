@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"net/url"
 	"sort"
 	"time"
 
@@ -316,39 +317,62 @@ func (r *Registry) waitAdmitted(ctx context.Context, route *routev1.Route) error
 	return nil
 }
 
+// waitEndpoint polls https://<host>/v2/ until it reflects the requested
+// exposure state.
+//
+// With exposed set, it waits for an HTTP 200 verified by client. A request
+// error or any other status means the endpoint is not ready yet.
+//
+// With exposed unset, it waits until the endpoint stops answering HTTP 200.
+// Any request failure or non-200 response counts as "no longer routed",
+// including TLS failures unrelated to the withdrawal, such as an expired
+// certificate or clock skew. That is acceptable for test infrastructure
+// because this is a second check: deExpose calls it only after the Route
+// object is gone. Once the Route is withdrawn, the router answers with its
+// default certificate, so a TLS verification failure is the expected signal.
+// A CA rotation alone does not produce a false result, because the
+// withdrawal client trusts the CA that signed the certificate the running
+// registry pod still serves (see clientForWithdrawal).
 func waitEndpoint(ctx context.Context, client *http.Client, host string, exposed bool, pollInterval time.Duration) error {
 	cap, step := 2*time.Minute, "wait for routing withdrawal"
 	if exposed {
 		cap, step = 5*time.Minute, "verify registry endpoint"
 	}
-	url := "https://" + host + "/v2/"
+	endpoint := (&url.URL{Scheme: "https", Host: host, Path: "/v2/"}).String()
 	var lastErr error
 	err := wait.PollUntilContextTimeout(ctx, pollInterval, cap, true, func(ctx context.Context) (bool, error) {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return false, err
 		}
+		answered := false
 		response, err := client.Do(req)
-		ok := false
-		lastErr = err
-		if err == nil {
-			ok = response.StatusCode == http.StatusOK
+		if err != nil {
+			// No HTTP answer: TLS failure, connection refused, timeout, ...
+			lastErr = err
+		} else {
+			answered = response.StatusCode == http.StatusOK
 			lastErr = fmt.Errorf("HTTP %d", response.StatusCode)
 			response.Body.Close()
 		}
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
-		return ok == exposed, nil
+		if exposed {
+			// Keep polling until the registry answers HTTP 200.
+			return answered, nil
+		}
+		// Withdrawn as soon as the endpoint stops answering HTTP 200.
+		return !answered, nil
 	})
 	if err != nil {
 		if lastErr != nil {
-			return fmt.Errorf("%s at %s (last response: %w): %w", step, url, lastErr, err)
+			return fmt.Errorf("%s at %s (last response: %w): %w", step, endpoint, lastErr, err)
 		}
-		return fmt.Errorf("%s at %s: %w", step, url, err)
+		return fmt.Errorf("%s at %s: %w", step, endpoint, err)
 	}
 	return nil
 }
