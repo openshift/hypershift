@@ -111,24 +111,11 @@ func skipIfTLSFlagPropagationNotSupported(ctx context.Context, mgmtClient crclie
 	if component.deploymentName == "" {
 		return
 	}
-	deployment := &appsv1.Deployment{}
-	Expect(mgmtClient.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: component.deploymentName}, deployment)).
-		To(Succeed(), "failed to get %s deployment", component.deploymentName)
-	for _, container := range deployment.Spec.Template.Spec.Containers {
-		if container.Name == component.deploymentContainer {
-			for _, arg := range container.Command {
-				if strings.HasPrefix(arg, "--tls-min-version=") {
-					return
-				}
-			}
-			for _, arg := range container.Args {
-				if strings.HasPrefix(arg, "--tls-min-version=") {
-					return
-				}
-			}
-			Skip(fmt.Sprintf("%s container in %s deployment does not have --tls-min-version flag in this operator version",
-				component.deploymentContainer, component.deploymentName))
-		}
+	supported, err := componentSupportsTLSConfig(ctx, mgmtClient, namespace, component)
+	Expect(err).NotTo(HaveOccurred())
+	if !supported {
+		Skip(fmt.Sprintf("%s container in %s deployment does not have --tls-min-version flag in this operator version",
+			component.deploymentContainer, component.deploymentName))
 	}
 }
 
@@ -143,25 +130,39 @@ func skipIfTLSFlagPropagationNotSupported(ctx context.Context, mgmtClient crclie
 func skipIfPKIOperatorTLSConfigNotSupported(ctx context.Context, mgmtClient crclient.Client, namespace string) {
 	GinkgoHelper()
 
+	supported, err := componentSupportsTLSConfig(ctx, mgmtClient, namespace, pkiOperatorTLSComponent)
+	Expect(err).NotTo(HaveOccurred())
+	if !supported {
+		Skip(fmt.Sprintf("%s deployment does not pass --config in this operator version; the %s TLS config is not rendered",
+			pkiOperatorTLSComponent.name, pkiOperatorTLSComponent.configMapName))
+	}
+}
+
+func componentSupportsTLSConfig(ctx context.Context, mgmtClient crclient.Client, namespace string, component controlPlaneTLSComponent) (bool, error) {
+	deploymentName, containerName, flag := component.deploymentName, component.deploymentContainer, "--tls-min-version="
+	if component.configMapName != "" {
+		deploymentName, containerName, flag = component.name, component.name, "--config="
+	}
 	deployment := &appsv1.Deployment{}
-	Expect(mgmtClient.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: pkiOperatorTLSComponent.name}, deployment)).
-		To(Succeed(), "failed to get %s deployment", pkiOperatorTLSComponent.name)
+	if err := mgmtClient.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: deploymentName}, deployment); err != nil {
+		return false, fmt.Errorf("failed to get %s deployment: %w", deploymentName, err)
+	}
 	for _, container := range deployment.Spec.Template.Spec.Containers {
-		if container.Name == pkiOperatorTLSComponent.name {
+		if container.Name == containerName {
 			for _, arg := range container.Command {
-				if strings.HasPrefix(arg, "--config=") {
-					return
+				if strings.HasPrefix(arg, flag) {
+					return true, nil
 				}
 			}
 			for _, arg := range container.Args {
-				if strings.HasPrefix(arg, "--config=") {
-					return
+				if strings.HasPrefix(arg, flag) {
+					return true, nil
 				}
 			}
-			Skip(fmt.Sprintf("%s deployment does not pass --config in this operator version; the %s TLS config is not rendered",
-				pkiOperatorTLSComponent.name, pkiOperatorTLSComponent.configMapName))
+			return false, nil
 		}
 	}
+	return false, fmt.Errorf("container %s not found in %s deployment", containerName, deploymentName)
 }
 
 func requireDefaultOrIntermediateTLSProfile(hostedCluster *hyperv1.HostedCluster) {
@@ -849,10 +850,13 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		It("control-plane-pki-operator should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
 			requireModernProfileCleared(tc)
 
-			// Wait for PKI operator pod to restart and pick up the downgraded TLS config
-			pkiPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
-				pkiOperatorTLSComponent.podAppLabel, pkiPodUIDBeforeMutation)
-			GinkgoWriter.Printf("New PKI operator pod UID after downgrade to Intermediate profile: %s\n", pkiPodUIDBeforeMutation)
+			supported, err := componentSupportsTLSConfig(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, pkiOperatorTLSComponent)
+			Expect(err).NotTo(HaveOccurred())
+			if supported {
+				pkiPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
+					pkiOperatorTLSComponent.podAppLabel, pkiPodUIDBeforeMutation)
+				GinkgoWriter.Printf("New PKI operator pod UID after downgrade to Intermediate profile: %s\n", pkiPodUIDBeforeMutation)
+			}
 
 			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
 				pkiOperatorTLSComponent, []tlsVersionExpectation{
@@ -865,10 +869,13 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 			hostedCluster := requireModernProfileCleared(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
 
-			// Wait for kube-apiserver (webhook sidecar) to restart with the downgraded TLS config.
-			kasPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
-				awsPodIdentityWebhookTLSComponent.podAppLabel, kasPodUIDBeforeMutation)
-			GinkgoWriter.Printf("New kube-apiserver pod UID after downgrade to Intermediate profile: %s\n", kasPodUIDBeforeMutation)
+			supported, err := componentSupportsTLSConfig(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, awsPodIdentityWebhookTLSComponent)
+			Expect(err).NotTo(HaveOccurred())
+			if supported {
+				kasPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
+					awsPodIdentityWebhookTLSComponent.podAppLabel, kasPodUIDBeforeMutation)
+				GinkgoWriter.Printf("New kube-apiserver pod UID after downgrade to Intermediate profile: %s\n", kasPodUIDBeforeMutation)
+			}
 
 			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
 				awsPodIdentityWebhookTLSComponent, []tlsVersionExpectation{
@@ -880,11 +887,13 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		It("konnectivity-server should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
 			requireModernProfileCleared(tc)
 
-			// Wait for the kube-apiserver pod (which hosts konnectivity-server) to restart
-			// with the downgraded TLS config.
-			konnectivityPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
-				konnectivityServerTLSComponent.podAppLabel, konnectivityPodUIDBeforeMutation)
-			GinkgoWriter.Printf("New konnectivity-server (kube-apiserver) pod UID after downgrade to Intermediate profile: %s\n", konnectivityPodUIDBeforeMutation)
+			supported, err := componentSupportsTLSConfig(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, konnectivityServerTLSComponent)
+			Expect(err).NotTo(HaveOccurred())
+			if supported {
+				konnectivityPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
+					konnectivityServerTLSComponent.podAppLabel, konnectivityPodUIDBeforeMutation)
+				GinkgoWriter.Printf("New konnectivity-server (kube-apiserver) pod UID after downgrade to Intermediate profile: %s\n", konnectivityPodUIDBeforeMutation)
+			}
 
 			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
 				konnectivityServerTLSComponent, []tlsVersionExpectation{
