@@ -21,7 +21,7 @@ var Analyzer = newAnalyzer(allowlist)
 func newAnalyzer(allowed map[string]map[string][]string) *analysis.Analyzer {
 	return &analysis.Analyzer{
 		Name: "e2eutilallowlist",
-		Doc:  "denies legacy e2e utilities in v2 except for explicitly grandfathered function references",
+		Doc:  "denies legacy e2e utility references in v2 outside the per-file, per-scope baseline",
 		Run:  func(pass *analysis.Pass) (any, error) { return run(pass, allowed) },
 	}
 }

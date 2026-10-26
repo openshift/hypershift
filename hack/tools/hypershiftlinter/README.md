@@ -48,7 +48,7 @@ The plugin ships 9 analyzers, scoped so each rule only fires where it applies.
 | `vacuouspass`       | Flags vacuously-passing tests that iterate a collection without asserting it is non-empty.        |
 | `ipv6url`           | Detects `fmt.Sprintf` URL patterns that break with IPv6; use `net.JoinHostPort` instead.          |
 | `sippyannotation`   | Requires the correct Sippy/Jira `[Feature:X]` annotations on Ginkgo `Describe` blocks.            |
-| `e2eutilallowlist`  | Denies legacy `test/e2e/util` dependencies in v2 except for explicit existing function references. |
+| `e2eutilallowlist`  | Denies legacy `test/e2e/util` references in v2 outside the per-file, per-scope baseline. |
 
 ### HostedCluster and HostedControlPlane status patching (repo-wide, see [CNTRLPLANE-3532](https://redhat.atlassian.net/browse/CNTRLPLANE-3532))
 
