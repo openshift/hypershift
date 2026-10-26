@@ -82,9 +82,9 @@ func RegisterEtcdEncryptionReencryptionTests(getTestCtx internal.TestContextGett
 // is set). Together these assert the not-True step of the True → False → True lifecycle.
 // TargetKey is a level trigger set for the duration of the rotation, so it cannot be missed
 // regardless of poll interval.
-func waitForReEncryptionStarted(ctx context.Context, mgmtClient crclient.Client, hcKey crclient.ObjectKey, timeout time.Duration) {
+func waitForReEncryptionStarted(g Gomega, ctx context.Context, mgmtClient crclient.Client, hcKey crclient.ObjectKey, timeout time.Duration) {
 	GinkgoHelper()
-	Eventually(func(g Gomega) {
+	g.Eventually(func(g Gomega) {
 		hc := &hyperv1.HostedCluster{}
 		g.Expect(mgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 		g.Expect(hc.Status.SecretEncryption.TargetKey.Provider).NotTo(BeEmpty(),
@@ -97,9 +97,9 @@ func waitForReEncryptionStarted(ctx context.Context, mgmtClient crclient.Client,
 	}, timeout, 5*time.Second).Should(Succeed())
 }
 
-func waitForReEncryptionComplete(ctx context.Context, mgmtClient crclient.Client, hcKey crclient.ObjectKey, timeout time.Duration) {
+func waitForReEncryptionComplete(g Gomega, ctx context.Context, mgmtClient crclient.Client, hcKey crclient.ObjectKey, timeout time.Duration) {
 	GinkgoHelper()
-	Eventually(func(g Gomega) {
+	g.Eventually(func(g Gomega) {
 		hc := &hyperv1.HostedCluster{}
 		g.Expect(mgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 		cond := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.EtcdDataEncryptionUpToDate))
@@ -220,9 +220,9 @@ func captureKASRestartCounts(ctx context.Context, mgmtClient crclient.Client, co
 // verifyKASHealth polls until all KAS pods are Running and no container's restart count
 // has increased by more than kasMaxAllowedRestarts since the preRotationRestarts snapshot.
 // Containers absent from the snapshot (new pods after a rollout) are compared against 0.
-func verifyKASHealth(ctx context.Context, mgmtClient crclient.Client, controlPlaneNamespace string, preRotationRestarts map[string]int32) {
+func verifyKASHealth(g Gomega, ctx context.Context, mgmtClient crclient.Client, controlPlaneNamespace string, preRotationRestarts map[string]int32) {
 	GinkgoHelper()
-	Eventually(func(g Gomega) {
+	g.Eventually(func(g Gomega) {
 		kasPods := &corev1.PodList{}
 		g.Expect(mgmtClient.List(ctx, kasPods,
 			crclient.InNamespace(controlPlaneNamespace),
@@ -344,7 +344,7 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 
 			// Ensure no re-encryption is in flight before rotating.
-			waitForReEncryptionComplete(ctx, tc.MgmtClient, hcKey, 5*time.Minute)
+			waitForReEncryptionComplete(Default, ctx, tc.MgmtClient, hcKey, 5*time.Minute)
 
 			hostedClusterClient, err := tc.GetHostedClusterClient(hc)
 			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
@@ -373,7 +373,7 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 
 			verifyStorageVersionMigrations(ctx, hostedClusterClient, hc)
 
-			verifyKASHealth(ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kasBaseline)
+			verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kasBaseline)
 			verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
 
 			Eventually(func(g Gomega) {
@@ -400,8 +400,8 @@ func rotateAndWait(ctx context.Context, tc *internal.TestContext, hcKey crclient
 		return
 	}
 	Expect(tc.MgmtClient.Patch(ctx, hc, crclient.MergeFrom(base))).To(Succeed())
-	waitForReEncryptionStarted(ctx, tc.MgmtClient, hcKey, 5*time.Minute)
-	waitForReEncryptionComplete(ctx, tc.MgmtClient, hcKey, 25*time.Minute)
+	waitForReEncryptionStarted(Default, ctx, tc.MgmtClient, hcKey, 5*time.Minute)
+	waitForReEncryptionComplete(Default, ctx, tc.MgmtClient, hcKey, 25*time.Minute)
 }
 
 // AWSKMSKeyRotationTest validates the re-encryption lifecycle after rotating the AWS KMS active key.
@@ -552,7 +552,7 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 			originalVersion := hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion
 
-			waitForReEncryptionComplete(ctx, tc.MgmtClient, hcKey, 5*time.Minute)
+			waitForReEncryptionComplete(Default, ctx, tc.MgmtClient, hcKey, 5*time.Minute)
 
 			DeferCleanup(func() {
 				rotateAndWait(tc.Context, tc, hcKey, func(hc *hyperv1.HostedCluster) {
@@ -574,7 +574,7 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			Expect(hc.Status.SecretEncryption.History).NotTo(BeEmpty(),
 				"history should have at least one entry after first rotation")
 
-			verifyKASHealth(ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas1Baseline)
+			verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas1Baseline)
 			Eventually(func(g Gomega) {
 				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
 			}, 2*time.Minute, 10*time.Second).Should(Succeed())
@@ -596,7 +596,7 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			Expect(hc.Status.SecretEncryption.History[1].State).To(Equal(hyperv1.EncryptionMigrationStateCompleted),
 				"second history entry should also be Completed")
 
-			verifyKASHealth(ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas2Baseline)
+			verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas2Baseline)
 			verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
 
 			Eventually(func(g Gomega) {

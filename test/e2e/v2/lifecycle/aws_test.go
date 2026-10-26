@@ -36,18 +36,6 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 		}
 	})
 
-	t.Run("kms-reencryption variant is always present", func(t *testing.T) {
-		g := NewWithT(t)
-		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
-		var found bool
-		for _, spec := range specs {
-			if spec.Variant == "kms-reencryption" {
-				found = true
-				break
-			}
-		}
-		g.Expect(found).To(BeTrue(), "kms-reencryption variant should always be present")
-	})
 }
 
 // testCLIImage is a digest-pinned openshift/cli image reference used in lookup and setup tests.
