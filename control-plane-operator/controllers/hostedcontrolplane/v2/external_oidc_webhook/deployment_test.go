@@ -15,6 +15,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -108,4 +109,27 @@ func TestAdaptDeployment(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeploymentManifestProxyConfiguration(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	deployment, err := assets.LoadDeploymentManifest(ComponentName)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+	g.Expect(container).ToNot(BeNil())
+	g.Expect(podspec.FindEnvVar("HTTP_PROXY", container.Env)).To(Equal(&corev1.EnvVar{
+		Name:  "HTTP_PROXY",
+		Value: "http://127.0.0.1:8092",
+	}))
+	g.Expect(podspec.FindEnvVar("HTTPS_PROXY", container.Env)).To(Equal(&corev1.EnvVar{
+		Name:  "HTTPS_PROXY",
+		Value: "http://127.0.0.1:8092",
+	}))
+	g.Expect(podspec.FindEnvVar("ALL_PROXY", container.Env)).To(Equal(&corev1.EnvVar{
+		Name:  "ALL_PROXY",
+		Value: "socks5://127.0.0.1:8090",
+	}))
 }
