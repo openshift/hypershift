@@ -34,6 +34,7 @@ func run(pass *analysis.Pass) (any, error) {
 		// Ginkgo registrations use their exact Describe label as the function name.
 		var scopes []string
 		ast.Inspect(file, func(n ast.Node) bool {
+			// Every non-nil visit must return true to balance the scope stack.
 			if n == nil {
 				scopes = scopes[:len(scopes)-1]
 				return false
