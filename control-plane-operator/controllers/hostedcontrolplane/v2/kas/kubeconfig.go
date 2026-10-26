@@ -168,16 +168,7 @@ func adaptCustomAdminKubeconfigSecret(cpContext component.WorkloadContext, secre
 }
 
 func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-	var url string
-	if netutil.IsPrivateHCP(cpContext.HCP) {
-		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
-	} else if featuregates.Gate().Enabled(featuregates.KubeletHAProxyRouting) &&
-		netutil.UsesNodeLocalKASProxy(cpContext.HCP) {
-		addr := netutil.GetAdvertiseAddress(cpContext.HCP, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
-		url = fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(addr), netutil.HAProxyFrontendPort(cpContext.HCP))
-	} else {
-		url = externalURL(cpContext.InfraStatus)
-	}
+	url := bootstrapKubeconfigURL(cpContext.HCP, cpContext.InfraStatus)
 
 	kubeconfig, err := generateKubeConfigWithServingCerts(cpContext, manifests.KASMachineBootstrapClientCertSecret(cpContext.HCP.Namespace), url)
 	if err != nil {
@@ -189,6 +180,20 @@ func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret 
 	}
 	secret.Data[KubeconfigKey] = kubeconfig
 	return nil
+}
+
+// bootstrapKubeconfigURL returns the KAS URL that kubelet uses in its bootstrap kubeconfig.
+// When KubeletHAProxyRouting gate is enabled, all public clusters route kubelet through the
+// node-local HAProxy (172.20.0.1 / fd00::1) so that Day 2 LB IP changes don't strand the node.
+func bootstrapKubeconfigURL(hcp *hyperv1.HostedControlPlane, infraStatus infra.InfrastructureStatus) string {
+	if netutil.IsPrivateHCP(hcp) {
+		return internalURL(infraStatus, hcp.Name)
+	}
+	if featuregates.Gate().Enabled(featuregates.KubeletHAProxyRouting) {
+		addr := netutil.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
+		return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(addr), netutil.HAProxyFrontendPort(hcp))
+	}
+	return externalURL(infraStatus)
 }
 
 func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
