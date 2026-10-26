@@ -13,14 +13,6 @@ var allowlist = map[string]map[string][]string{
 			"RunCommandInPod",
 		},
 	},
-	"test/e2e/v2/cmd/run-tests/testdata/junitfixture/suite_test.go": {
-		"Describe(\"[sig-hypershift][Jira:Hypershift][Feature:JUnitContract] Synthetic JUnit contract\")#1/It(\"required WIF mutation\")#1": {
-			"Version51",
-		},
-		"validateWIFMutation": {
-			"ValidateGCPWorkloadIdentityWebhookMutation",
-		},
-	},
 	"test/e2e/v2/internal/test_context.go": {
 		"SetupTestContextFromEnv": {
 			"GetConfig",

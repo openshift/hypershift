@@ -82,12 +82,17 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 			case *ast.FuncDecl:
 				scope = node.Name.Name
 				if node.Recv != nil {
-					fn := pass.TypesInfo.Defs[node.Name].(*types.Func)
-					recv := fn.Type().(*types.Signature).Recv().Type()
-					if ptr, ok := recv.(*types.Pointer); ok {
-						recv = ptr.Elem()
+					// Comma-ok defensively: a missing Defs entry or a receiverless
+					// signature would otherwise panic the entire lint run.
+					if fn, ok := pass.TypesInfo.Defs[node.Name].(*types.Func); ok {
+						if signature, ok := fn.Type().(*types.Signature); ok && signature.Recv() != nil {
+							recv := signature.Recv().Type()
+							if ptr, ok := recv.(*types.Pointer); ok {
+								recv = ptr.Elem()
+							}
+							scope = types.TypeString(recv, func(*types.Package) string { return "" }) + "." + scope
+						}
 					}
-					scope = types.TypeString(recv, func(*types.Package) string { return "" }) + "." + scope
 				}
 			case *ast.CallExpr:
 				scope = registrationScope(pass, node, scope, registrations)
