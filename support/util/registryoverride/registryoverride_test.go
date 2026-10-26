@@ -168,3 +168,59 @@ func TestReplace_DoesNotMutateOverrides(t *testing.T) {
 		t.Errorf("overrides map was mutated by Replace; got %v, want %v", overrides, snapshot)
 	}
 }
+
+// TestReplace_IsNotIdempotent pins down that Replace is single-pass: when an override
+// destination is itself matched by a source prefix, applying Replace twice rewrites the
+// image twice. Callers must therefore only pass images that have not been rewritten
+// already, rather than relying on a second call being a no-op.
+func TestReplace_IsNotIdempotent(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		image     string
+		overrides map[string]string
+		wantOnce  string
+		wantTwice string
+	}{
+		{
+			name:      "When the destination is a path below its own source, it should rewrite again on a second pass",
+			image:     "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+			overrides: map[string]string{"quay.io": "quay.io/cache"},
+			wantOnce:  "quay.io/cache/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+			wantTwice: "quay.io/cache/cache/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+		},
+		{
+			name:  "When one override destination is matched by another override source, it should rewrite again on a second pass",
+			image: "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+			overrides: map[string]string{
+				"quay.io":            "mirror.example.com/quay",
+				"mirror.example.com": "mirror.example.com/v2",
+				"registry.redhat.io": "mirror.example.com/rh",
+			},
+			wantOnce:  "mirror.example.com/quay/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+			wantTwice: "mirror.example.com/v2/quay/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+		},
+		{
+			name:      "When the destination shares no prefix with any source, it should be a no-op on a second pass",
+			image:     "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+			overrides: map[string]string{"quay.io": "arohcpocpdev.azurecr.io"},
+			wantOnce:  "arohcpocpdev.azurecr.io/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+			wantTwice: "arohcpocpdev.azurecr.io/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			once := Replace(tc.image, tc.overrides)
+			if once != tc.wantOnce {
+				t.Errorf("Replace(%q, %v) = %q, want %q", tc.image, tc.overrides, once, tc.wantOnce)
+			}
+			twice := Replace(once, tc.overrides)
+			if twice != tc.wantTwice {
+				t.Errorf("Replace(Replace(%q, %v), %v) = %q, want %q", tc.image, tc.overrides, tc.overrides, twice, tc.wantTwice)
+			}
+		})
+	}
+}

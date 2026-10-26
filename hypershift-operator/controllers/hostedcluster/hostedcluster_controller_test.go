@@ -52,6 +52,7 @@ import (
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -9751,6 +9752,35 @@ func TestReconcilePullSecretSync(t *testing.T) {
 	}
 }
 
+// stubReleaseImageProvider is a releaseinfo.Provider returning a fixed release payload.
+// It is used as the delegate of a real RegistryMirrorProviderDecorator so tests exercise
+// the registry rewriting the decorator actually performs, which a mocked provider hides.
+type stubReleaseImageProvider struct {
+	releaseImage *releaseinfo.ReleaseImage
+	err          error
+}
+
+func (p *stubReleaseImageProvider) Lookup(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	return p.releaseImage, nil
+}
+
+// releaseImageWithCPO returns a release payload for version that ships cpoImage as its
+// hypershift component image. InitReleaseImageOrDie omits that tag, and without it
+// GetControlPlaneOperatorImage never reaches the payload branch.
+func releaseImageWithCPO(version, cpoImage string) *releaseinfo.ReleaseImage {
+	releaseImage := testutils.InitReleaseImageOrDie(version)
+	if cpoImage != "" {
+		releaseImage.Spec.Tags = append(releaseImage.Spec.Tags, imagev1.TagReference{
+			Name: "hypershift",
+			From: &corev1.ObjectReference{Name: cpoImage},
+		})
+	}
+	return releaseImage
+}
+
 func TestResolveControlPlaneOperatorImage(t *testing.T) {
 	// t.Setenv is used below for the CPO override table path, which rules out
 	// t.Parallel for this test and its subtests.
@@ -9763,6 +9793,9 @@ func TestResolveControlPlaneOperatorImage(t *testing.T) {
 		overrideTableVersion = "4.20.0"
 		cpoSourceRepo        = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant"
 		cpoMirrorRepo        = "arohcpocpdev.azurecr.io/quay-cache/redhat-user-workloads/crt-redhat-acm-tenant"
+		// payloadCPOImage is the hypershift component image as it ships in the release
+		// payload, before the release provider mirrors it.
+		payloadCPOImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift"
 	)
 
 	// Read the image from the override table rather than hardcoding it, so the
@@ -9778,11 +9811,20 @@ func TestResolveControlPlaneOperatorImage(t *testing.T) {
 		cpoSourceRepo: cpoMirrorRepo,
 	}
 
+	// overlappingOverrides maps a registry onto a path below itself, the shape a pull
+	// through cache namespace on the same registry takes. A mirrored image still matches
+	// the source prefix, so a second rewrite yields "quay.io/cache/cache/...".
+	// registryoverride.Replace is single-pass, so only images that have not been
+	// rewritten already may be passed through it.
+	overlappingOverrides := map[string]string{"quay.io": "quay.io/cache"}
+	cachedCPOOverrideImage := "quay.io/cache" + strings.TrimPrefix(cpoOverrideImage, "quay.io")
+
 	testCases := []struct {
 		name            string
 		annotation      string
 		enableOverrides bool
 		overrides       map[string]string
+		payloadCPOImage string
 		lookupErr       error
 		expectedImage   string
 		expectErr       bool
@@ -9824,6 +9866,35 @@ func TestResolveControlPlaneOperatorImage(t *testing.T) {
 			expectedImage: cpoOverrideImage,
 		},
 		{
+			name:            "When the CPO image comes from the release payload and the override destination matches its own source, it should rewrite the image only once",
+			overrides:       overlappingOverrides,
+			payloadCPOImage: payloadCPOImage,
+			expectedImage:   "quay.io/cache/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+		},
+		{
+			name:            "When the CPO image comes from the release payload and a registry override matches, it should return the image mirrored by the release provider",
+			overrides:       mirrorOverrides,
+			payloadCPOImage: payloadCPOImage,
+			expectedImage:   "arohcpocpdev.azurecr.io/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+		},
+		{
+			name:          "When the CPO image is overridden by annotation and the override destination matches its own source, it should rewrite the image only once",
+			annotation:    cpoOverrideImage,
+			overrides:     overlappingOverrides,
+			expectedImage: cachedCPOOverrideImage,
+		},
+		{
+			name:            "When the CPO image comes from the override table and the override destination matches its own source, it should rewrite the image only once",
+			enableOverrides: true,
+			overrides:       overlappingOverrides,
+			expectedImage:   cachedCPOOverrideImage,
+		},
+		{
+			name:          "When the release payload ships no CPO image, it should return the hypershift operator image unchanged",
+			overrides:     overlappingOverrides,
+			expectedImage: hypershiftOperatorImage,
+		},
+		{
 			name:      "When the release image lookup fails, it should return an error",
 			overrides: mirrorOverrides,
 			lookupErr: errors.New("failed to look up release image"),
@@ -9849,25 +9920,24 @@ func TestResolveControlPlaneOperatorImage(t *testing.T) {
 				t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "1")
 			}
 
-			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
-			mockedProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
-			mockedProvider.EXPECT().GetRegistryOverrides().Return(tc.overrides).AnyTimes()
-			if tc.lookupErr != nil {
-				mockedProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, tc.lookupErr).AnyTimes()
-			} else {
-				mockedProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(testutils.InitReleaseImageOrDie(overrideTableVersion), nil).AnyTimes()
+			// The real decorator, not a mock, so the payload path goes through the same
+			// rewriting it does in production.
+			releaseProvider := &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate: &stubReleaseImageProvider{
+					releaseImage: releaseImageWithCPO(overrideTableVersion, tc.payloadCPOImage),
+					err:          tc.lookupErr,
+				},
+				RegistryOverrides: tc.overrides,
 			}
 
-			image, err := resolveControlPlaneOperatorImage(t.Context(), hcluster, mockedProvider, hypershiftOperatorImage, nil)
+			image, err := resolveControlPlaneOperatorImage(t.Context(), hcluster, releaseProvider, hypershiftOperatorImage, nil)
 
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred(), "it should return an error when the release image lookup fails")
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred(), "it should resolve the control plane operator image")
-			g.Expect(image).To(Equal(tc.expectedImage), "it should apply the registry overrides to the control plane operator image")
+			g.Expect(image).To(Equal(tc.expectedImage), "it should apply the registry overrides to the control plane operator image exactly once")
 		})
 	}
 }

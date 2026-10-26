@@ -3185,23 +3185,33 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 	return nil
 }
 
-// resolveControlPlaneOperatorImage resolves the control plane operator image and applies
-// the release provider's registry overrides to it.
+// resolveControlPlaneOperatorImage resolves the control plane operator image, applying
+// the release provider's registry overrides to the sources that are not mirrored already.
 //
-// GetControlPlaneOperatorImage returns images verbatim for the annotation and CPO override
-// table paths. Only the release payload path is already mirrored, as a side effect of the
-// release provider rewriting the image stream tags it resolves. Without this the CPO
-// deployment runs an image from the original registry even when the operator is configured
-// to mirror everything, and the image metadata lookup that follows reaches out to that
-// registry directly.
+// The annotation and CPO override table images are returned verbatim by
+// GetControlPlaneOperatorImage. Without the override applied here the CPO deployment runs
+// an image from the original registry even when the operator is configured to mirror
+// everything, and the image metadata lookup that follows reaches out to that registry
+// directly.
 //
-// Replace is a no-op when no override matches, so an already mirrored image is left alone.
+// The release payload image is deliberately left alone: releaseinfo.RegistryMirrorProviderDecorator
+// has already rewritten it while resolving the image stream tags. registryoverride.Replace is
+// single-pass and not idempotent, so applying it a second time double rewrites whenever an
+// override destination is itself matched by a source prefix (for example
+// "quay.io=quay.io/cache" turns ".../cache/repo" into ".../cache/cache/repo"). The hypershift
+// operator's own image is left alone as well; it is the image this process is already running
+// from, not an image the HostedCluster asked to have mirrored.
 func resolveControlPlaneOperatorImage(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithRegistryOverrides, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
-	image, err := imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, hypershiftOperatorImage, pullSecret)
+	image, source, err := imageregistry.GetControlPlaneOperatorImageWithSource(ctx, hcluster, releaseProvider, hypershiftOperatorImage, pullSecret)
 	if err != nil {
 		return "", err
 	}
-	return registryoverride.Replace(image, releaseProvider.GetRegistryOverrides()), nil
+	switch source {
+	case imageregistry.CPOImageSourceAnnotation, imageregistry.CPOImageSourceOverrideTable:
+		return registryoverride.Replace(image, releaseProvider.GetRegistryOverrides()), nil
+	default:
+		return image, nil
+	}
 }
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
