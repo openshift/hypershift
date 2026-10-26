@@ -200,6 +200,24 @@ func TestCheckEtcdStatus(t *testing.T) {
 			objects:          []crclient.Object{settledEtcdStatefulSet()},
 			expectErr:        true,
 		},
+		{
+			name: "When the failing pod is not the unhealthy member, it should report the cluster as not recoverable",
+			members: []*etcdserverpb.Member{
+				unstartedMember("etcd-0"),
+				startedMember("etcd-1"),
+				startedMember("etcd-2"),
+			},
+			healthyEndpoints: []string{"etcd-1", "etcd-2"},
+			objects: []crclient.Object{
+				settledEtcdStatefulSet(),
+				etcdPod("etcd-0", true, 0),
+				etcdPod("etcd-1", true, 3),
+				etcdPod("etcd-2", false, 0),
+			},
+			expectRecoverable: false,
+			expectFailingPod:  ptr.To("etcd-1"),
+			expectUnhealthy:   true,
+		},
 	}
 
 	for _, test := range tests {
