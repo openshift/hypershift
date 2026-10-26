@@ -27,9 +27,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	secretencryption "github.com/openshift/hypershift/support/secretencryption"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
-	secretencryption "github.com/openshift/hypershift/support/secretencryption"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -148,7 +148,7 @@ func verifyReEncryptionStatus(hc *hyperv1.HostedCluster, expectedProvider hyperv
 const svmWriteKeyAnnotation = "encryption.apiserver.operator.openshift.io/write-key"
 
 // verifyStorageVersionMigrations asserts that at least one StorageVersionMigration in
-// the guest cluster was created for the current rotation (identified by the write-key
+// the hosted cluster was created for the current rotation (identified by the write-key
 // annotation) and that every such migration has a Succeeded condition = True.
 // Filtering by the annotation rules out SVMs left over from bootstrap or prior rotations.
 func verifyStorageVersionMigrations(ctx context.Context, guestClient crclient.Client, hc *hyperv1.HostedCluster) {
