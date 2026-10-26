@@ -62,28 +62,35 @@ flowchart TD
     DCFr -- "force-with-lease push of<br/>amended commit" --> PR
 
     %% ── docs ─────────────────────────────────────────
-    PR -- "path: docs/**" --> DB["Docs Build"]
+    PR -- "path: docs/** or<br/>.github/workflows/docs-build.yaml" --> DB["Docs Build"]
     DB --> DBr["Docs Build (Reusable)"]
     DB -- "workflow_run · success" --> DDP["Docs Deploy Preview"]
     DDP -- "Cloudflare Pages<br/>pr-N.hypershift.pages.dev" --> PREV(["PR deployment status"])
 
-    PUSHM -- "path: docs/**" --> DP["Docs Publish"]
+    PUSHM -- "path: docs/** or a docs-* workflow file" --> DP["Docs Publish"]
     DP --> DPr["Docs Build (Reusable)"]
     DP --> DPD["Docs Deploy (Reusable)<br/>production=true"]
     DPD -- "Cloudflare Pages<br/>branch=main" --> PROD(["hypershift.pages.dev"])
 
     %% ── repository automation ────────────────────────
     CRON --> UCJR["Update CI Job Registry"]
-    DISP --> UCJR
     UCJR -- "opens PR from<br/>hypershift-community fork" --> PR
 
     PUSHM --> SCF["Sync Community Fork"]
     SCF -- "git push" --> FORK(["hypershift-community/hypershift"])
 
+    %% ── manual runs that feed a chain ───────────────
+    DISP --> CT
+    DISP --> DP
+    DISP --> RRL["Rehearse Release Workflows"]
+    DISP --> UCJR
+
     %% ── plain gates (no downstream effects) ──────────
     PR --> GATES["Codespell · CPO Container Sync · E2E Compile ·<br/>Envtest OCP · Envtest Vanilla Kube · gocacheprog ·<br/>Lint · Unit Tests · Unit Tests (Linter) · Verify ·<br/>Validate CPO Overrides"]
     PUSHM --> POST["Post-merge reruns of the reusable workflows<br/>test · e2e-compile · envtest-kube · envtest-ocp"]
 ```
+
+The graph draws `workflow_dispatch` only for manually runnable workflows that feed a chain — **Create Tag**, **Docs Publish**, **Rehearse Release Workflows** and **Update CI Job Registry**. The remaining manually runnable workflows are listed under [Manual Runs](#manual-runs).
 
 ## 📋 Workflow Catalog
 
@@ -116,8 +123,8 @@ The envtest suite contents and conventions are described in [`test/envtest/READM
 
 | Caller | Reusable | Branches | Path filter | Purpose |
 |--------|----------|----------|-------------|---------|
-| `docs-build.yaml` | `docs-build-reusable.yaml` | main, 4.22 | `docs/**` | Build the Zensical site in strict mode and upload the `docs-site` artifact |
-| `docs-publish.yaml` | `docs-build-reusable.yaml` + `docs-deploy-reusable.yaml` | main (push) | `docs/**` | Build and deploy the production site to `hypershift.pages.dev` |
+| `docs-build.yaml` | `docs-build-reusable.yaml` | main, 4.22 | `docs/**`, `.github/workflows/docs-build.yaml` | Build the Zensical site in strict mode and upload the `docs-site` artifact |
+| `docs-publish.yaml` | `docs-build-reusable.yaml` + `docs-deploy-reusable.yaml` | main (push), `workflow_dispatch` | `docs/**`, `.github/workflows/docs-publish.yaml`, `.github/workflows/docs-build-reusable.yaml`, `.github/workflows/docs-deploy-reusable.yaml` | Build and deploy the production site to `hypershift.pages.dev` |
 
 !!! info
     `docs-deploy.yaml` (*Docs Deploy Preview*) is not a caller/reusable pair. It triggers via `workflow_run` after **Docs Build** completes and deploys the preview. The reusable `docs-deploy-reusable.yaml` supports both production and preview modes, but is currently only called with `production: true` from `docs-publish.yaml`. See [Documentation Preview](docs-preview.md) for both flows.
@@ -181,20 +188,20 @@ sequenceDiagram
 2. **Gitlint** fails.
 3. **Fix Dependabot Commit Messages** fires on `workflow_run` (guarded by `conclusion == 'failure'` **and** `actor.login == 'dependabot[bot]'`).
 4. It amends the commit (rewriting `Updates <lib> from X to Y` lines into bullets) and force-pushes with `--force-with-lease`.
-5. The push re-runs **every** PR workflow on that branch, including Gitlint again.
+5. The push re-runs the PR workflows on that branch whose event and path filters match the new commit — path-filtered ones such as **Docs Build** only re-run when their paths change — including Gitlint again.
 
 The loop terminates when Gitlint passes. Humans' PRs never hit this path — the actor guard requires `dependabot[bot]`.
 
 ### 3. Docs preview (pull requests)
 
-1. **Docs Build** runs on `pull_request` when `docs/**` changes and uploads the `docs-site` artifact.
+1. **Docs Build** runs on `pull_request` when `docs/**` or `.github/workflows/docs-build.yaml` changes and uploads the `docs-site` artifact.
 2. **Docs Deploy Preview** fires on `workflow_run` completion, downloads the artifact, deploys to Cloudflare Pages under `pr-<number>`, and posts a deployment status link on the PR.
 
 PR code is never executed in the deploy workflow, and only the deploy workflow has access to the `docs-preview` environment secrets.
 
 ### 4. Docs production (push to main)
 
-**Docs Publish** runs both stages inside a single workflow: a `build` job calls `docs-build-reusable.yaml`, then a `deploy` job (`needs: build`, `production: true`) calls `docs-deploy-reusable.yaml` from the `docs-production` environment. A `docs-production` concurrency group with `cancel-in-progress: true` ensures only the newest push reaches the site.
+**Docs Publish** runs both stages inside a single workflow: a `build` job calls `docs-build-reusable.yaml`, then a `deploy` job (`needs: build`, `production: true`) calls `docs-deploy-reusable.yaml` from the `docs-production` environment. A `docs-production` concurrency group with `cancel-in-progress: true` cancels an older run in the group as soon as a newer one starts, so a burst of merges converges on the newest commit. Cancellation only stops the workflow: a Cloudflare deploy that an older run had already started can still finish, so this is not a strict ordering guarantee.
 
 ### 5. Nightly CI job registry
 
