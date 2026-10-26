@@ -83,6 +83,7 @@ func RegisterEtcdEncryptionReencryptionTests(getTestCtx internal.TestContextGett
 // TargetKey is a level trigger set for the duration of the rotation, so it cannot be missed
 // regardless of poll interval.
 func waitForReEncryptionStarted(ctx context.Context, mgmtClient crclient.Client, hcKey crclient.ObjectKey, timeout time.Duration) {
+	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		hc := &hyperv1.HostedCluster{}
 		g.Expect(mgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
@@ -97,6 +98,7 @@ func waitForReEncryptionStarted(ctx context.Context, mgmtClient crclient.Client,
 }
 
 func waitForReEncryptionComplete(ctx context.Context, mgmtClient crclient.Client, hcKey crclient.ObjectKey, timeout time.Duration) {
+	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		hc := &hyperv1.HostedCluster{}
 		g.Expect(mgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
@@ -108,6 +110,7 @@ func waitForReEncryptionComplete(ctx context.Context, mgmtClient crclient.Client
 }
 
 func verifyReEncryptionStatus(hc *hyperv1.HostedCluster, expectedProvider hyperv1.SecretEncryptionProvider) {
+	GinkgoHelper()
 	Expect(hc.Status.SecretEncryption.ActiveKey.Provider).To(Equal(expectedProvider),
 		"activeKey provider should be %s", expectedProvider)
 	Expect(hc.Status.SecretEncryption.TargetKey.Provider).To(BeEmpty(),
@@ -149,6 +152,7 @@ const svmWriteKeyAnnotation = "encryption.apiserver.operator.openshift.io/write-
 // annotation) and that every such migration has a Succeeded condition = True.
 // Filtering by the annotation rules out SVMs left over from bootstrap or prior rotations.
 func verifyStorageVersionMigrations(ctx context.Context, guestClient crclient.Client, hc *hyperv1.HostedCluster) {
+	GinkgoHelper()
 	// Compute the fingerprint the controller uses for the write-key annotation.
 	// ActiveKey holds the key that was just rotated to (TargetKey is cleared on completion).
 	var kvType hyperv1.AzureKMSKeyVaultType
@@ -198,6 +202,7 @@ func verifyStorageVersionMigrations(ctx context.Context, guestClient crclient.Cl
 // Pass the result to verifyKASHealth to measure only the delta introduced by the rotation,
 // avoiding false failures from restarts that already occurred on the shared cluster.
 func captureKASRestartCounts(ctx context.Context, mgmtClient crclient.Client, controlPlaneNamespace string) map[string]int32 {
+	GinkgoHelper()
 	kasPods := &corev1.PodList{}
 	Expect(mgmtClient.List(ctx, kasPods,
 		crclient.InNamespace(controlPlaneNamespace),
@@ -216,6 +221,7 @@ func captureKASRestartCounts(ctx context.Context, mgmtClient crclient.Client, co
 // has increased by more than kasMaxAllowedRestarts since the preRotationRestarts snapshot.
 // Containers absent from the snapshot (new pods after a rollout) are compared against 0.
 func verifyKASHealth(ctx context.Context, mgmtClient crclient.Client, controlPlaneNamespace string, preRotationRestarts map[string]int32) {
+	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		kasPods := &corev1.PodList{}
 		g.Expect(mgmtClient.List(ctx, kasPods,
@@ -248,6 +254,7 @@ func verifyKASHealth(ctx context.Context, mgmtClient crclient.Client, controlPla
 // containers catches errors that occurred during pod restarts mid-rotation; a larger
 // TailLines guards against errors scrolling past the tail during the up-to-25-min window.
 func verifyKASLogsNoDecryptionErrors(ctx context.Context, controlPlaneNamespace string) {
+	GinkgoHelper()
 	mgmtRestConfig, err := e2eutil.GetConfig()
 	Expect(err).NotTo(HaveOccurred(), "failed to get management cluster REST config")
 	mgmtKubeClient, err := kubernetes.NewForConfig(mgmtRestConfig)
@@ -382,6 +389,7 @@ func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCas
 // returns immediately without patching or waiting — the controller treats spec==activeKey
 // as steady state and will not start a rotation.
 func rotateAndWait(ctx context.Context, tc *internal.TestContext, hcKey crclient.ObjectKey, mutate func(*hyperv1.HostedCluster)) {
+	GinkgoHelper()
 	hc := &hyperv1.HostedCluster{}
 	Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 	base := hc.DeepCopy()
