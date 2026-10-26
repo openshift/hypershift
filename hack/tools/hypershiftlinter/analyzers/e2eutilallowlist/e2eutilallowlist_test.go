@@ -22,9 +22,18 @@ func TestRun(t *testing.T) {
 	}
 	t.Cleanup(func() { allowlist = original })
 	for _, tt := range []struct{ name, pattern string }{
-		{"When references match their enclosing function allowances, it should allow nested closures and methods", "test/e2e/v2/good"},
-		{"When references are new, it should reject symbols in new callers and new symbols in existing callers", "test/e2e/v2/bad"},
-		{"When legacy utilities are used outside v2, it should leave them unrestricted", "test/e2e/v1"},
+		{
+			name:    "When references match their enclosing function allowances, it should allow nested closures and methods",
+			pattern: "test/e2e/v2/good",
+		},
+		{
+			name:    "When references are new, it should reject symbols in new callers and new symbols in existing callers",
+			pattern: "test/e2e/v2/bad",
+		},
+		{
+			name:    "When legacy utilities are used outside v2, it should leave them unrestricted",
+			pattern: "test/e2e/v1",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) { analysistest.Run(t, analysistest.TestData(), Analyzer, tt.pattern) })
 	}
@@ -36,13 +45,55 @@ func TestIsAllowed(t *testing.T) {
 		name, file, function, symbol string
 		want                         bool
 	}{
-		{"When an existing function references an existing symbol, it should allow it", file, "SetupTestContextFromEnv", "GetConfig", true},
-		{"When an existing symbol is used in another file, it should reject it", "test/e2e/v2/new.go", "SetupTestContextFromEnv", "GetConfig", false},
-		{"When an existing symbol is used in another function, it should reject it", file, "NewCaller", "GetConfig", false},
-		{"When a new symbol is used in an existing function, it should reject it", file, "SetupTestContextFromEnv", "NewUtility", false},
-		{"When a future version constant is used, it should reject it", file, "SetupTestContextFromEnv", "VersionFuture", false},
-		{"When a symbol comes from another utility subpackage, it should reject it", file, "SetupTestContextFromEnv", "dump.GetConfig", false},
-		{"When a reference has no enclosing function, it should reject it", file, "", "GetConfig", false},
+		{
+			name:     "When an existing function references an existing symbol, it should allow it",
+			file:     file,
+			function: "SetupTestContextFromEnv",
+			symbol:   "GetConfig",
+			want:     true,
+		},
+		{
+			name:     "When an existing symbol is used in another file, it should reject it",
+			file:     "test/e2e/v2/new.go",
+			function: "SetupTestContextFromEnv",
+			symbol:   "GetConfig",
+			want:     false,
+		},
+		{
+			name:     "When an existing symbol is used in another function, it should reject it",
+			file:     file,
+			function: "NewCaller",
+			symbol:   "GetConfig",
+			want:     false,
+		},
+		{
+			name:     "When a new symbol is used in an existing function, it should reject it",
+			file:     file,
+			function: "SetupTestContextFromEnv",
+			symbol:   "NewUtility",
+			want:     false,
+		},
+		{
+			name:     "When a future version constant is used, it should reject it",
+			file:     file,
+			function: "SetupTestContextFromEnv",
+			symbol:   "VersionFuture",
+			want:     false,
+		},
+		{
+			name:     "When a symbol comes from another utility subpackage, it should reject it",
+			file:     file,
+			function: "SetupTestContextFromEnv",
+			symbol:   "dump.GetConfig",
+			want:     false,
+		},
+		{
+			name:     "When a reference has no enclosing function, it should reject it",
+			file:     file,
+			function: "",
+			symbol:   "GetConfig",
+			want:     false,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := isAllowed(tt.file, tt.function, tt.symbol); got != tt.want {
