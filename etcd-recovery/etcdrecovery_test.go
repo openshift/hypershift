@@ -670,15 +670,21 @@ func TestDeleteEtcdMemberResources(t *testing.T) {
 func TestMissingMember(t *testing.T) {
 
 	tests := []struct {
-		names    []string
+		members  []*etcdserverpb.Member
 		expected *string
 	}{
 		{
-			names:    []string{"etcd-1", "etcd-2"},
+			members:  []*etcdserverpb.Member{startedMember("etcd-1"), startedMember("etcd-2")},
 			expected: ptr.To("etcd-0"),
 		},
 		{
-			names:    []string{"etcd-0", "etcd-1"},
+			members:  []*etcdserverpb.Member{startedMember("etcd-0"), startedMember("etcd-1")},
+			expected: ptr.To("etcd-2"),
+		},
+		{
+			// An unstarted member reports no name, but it is present and must not be
+			// reported as the missing one.
+			members:  []*etcdserverpb.Member{unstartedMember("etcd-0"), startedMember("etcd-1")},
 			expected: ptr.To("etcd-2"),
 		},
 	}
@@ -686,7 +692,7 @@ func TestMissingMember(t *testing.T) {
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("test-%d", i), func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			actual := missingMember(&etcdserverpb.Member{Name: test.names[0]}, &etcdserverpb.Member{Name: test.names[1]})
+			actual := missingMember(test.members[0], test.members[1])
 			g.Expect(actual).To(Equal(test.expected))
 		})
 	}
