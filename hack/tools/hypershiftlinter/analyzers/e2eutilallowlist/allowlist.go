@@ -1,10 +1,12 @@
 package e2eutilallowlist
 
 // allowlist records existing legacy utility references by exact source file and
-// enclosing function (or top-level Describe registration). Each entry permits only
-// the listed symbols, including references in nested closures. Remove entries as
+// enclosing function, method, or Ginkgo callback scope. Ordinary closures inherit
+// their scope; Ginkgo registrations append their kind, label, and occurrence.
+// Each entry permits only the listed symbols. Remove entries as
 // callers migrate to v2 utilities; do not broaden this migration baseline.
 // Unqualified symbols belong to test/e2e/util; subpackages use e.g. dump.Symbol.
+// Fields and methods include their declaring type, e.g. Condition.Type.
 var allowlist = map[string]map[string][]string{
 	"test/e2e/v2/backuprestore/etcd_snapshot.go": {
 		"VerifyEtcdClusterHealth": {

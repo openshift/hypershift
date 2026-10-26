@@ -79,9 +79,11 @@ unit tests with good/bad `testdata/` fixtures.
 
 `e2eutilallowlist` prevents new v2 dependencies on `test/e2e/util` and its
 subpackages so the v2 framework can become independent of legacy test utilities.
-Existing dependencies have function-specific exceptions in `allowlist.go` to
-allow incremental migration. The check reports unused exceptions so migrations
-must remove them.
+Existing dependencies have exceptions in `allowlist.go` to allow incremental
+migration. Each entry matches an identifier (including types, constants, fields,
+and methods) in one file and scope: a function, `Type.Method`, or Ginkgo callback.
+Ordinary closures inherit their scope; specs and hooks have separate scopes.
+The check reports unused exceptions so migrations must remove them.
 
 When this check flags new code, use an existing v2 helper or implement the needed
 behavior in `test/e2e/v2/util`. Migrate legacy dependencies there as needed and
