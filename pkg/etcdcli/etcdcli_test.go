@@ -82,15 +82,10 @@ func TestDefragment(t *testing.T) {
 			grpcServer := grpc.NewServer()
 			etcdserverpb.RegisterMaintenanceServer(grpcServer, server)
 			etcdserverpb.RegisterClusterServer(grpcServer, server)
-			serveDone := make(chan struct{})
-			go func() { defer close(serveDone); _ = grpcServer.Serve(listener) }()
+			serveDone := make(chan error, 1)
+			go func() { serveDone <- grpcServer.Serve(listener) }()
 			t.Cleanup(func() {
-				grpcServer.Stop()
-				select {
-				case <-serveDone:
-				case <-time.After(3 * time.Second):
-					t.Error("server did not stop")
-				}
+				stopDefragTestServer(t, grpcServer, serveDone)
 			})
 			var createdClient *clientv3.Client
 			getter := &etcdClientGetter{defragTimeout: testCase.timeout, newDefragClient: func(endpoints []string, skipCheck bool, opts ...ClientOption) (*clientv3.Client, error) {
@@ -109,7 +104,11 @@ func TestDefragment(t *testing.T) {
 					return nil, err
 				}
 				createdClient = client
-				t.Cleanup(func() { _ = client.Close() })
+				t.Cleanup(func() {
+					if err := client.Close(); err != nil && !errors.Is(err, context.Canceled) {
+						t.Errorf("client cleanup failed: %v", err)
+					}
+				})
 				checkCtx, checkCancel := context.WithTimeout(context.Background(), 3*time.Second)
 				defer checkCancel()
 				if _, err := client.MemberList(checkCtx); err != nil {
@@ -163,6 +162,19 @@ func TestDefragment(t *testing.T) {
 				t.Error("request exceeded test safety bound")
 			}
 		})
+	}
+}
+
+func stopDefragTestServer(t *testing.T, server *grpc.Server, serveDone <-chan error) {
+	t.Helper()
+	server.Stop()
+	select {
+	case err := <-serveDone:
+		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			t.Errorf("server failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Error("server did not stop")
 	}
 }
 
