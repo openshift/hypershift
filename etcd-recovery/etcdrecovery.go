@@ -252,7 +252,7 @@ func runStatus(ctx context.Context, opts options) (*etcdStatus, error) {
 func missingMember(member1, member2 *etcdserverpb.Member) *string {
 	names := sets.New[string]()
 	for _, m := range []*etcdserverpb.Member{member1, member2} {
-		names.Insert(m.Name)
+		names.Insert(memberName(m))
 	}
 	for _, m := range []string{"etcd-0", "etcd-1", "etcd-2"} {
 		if !names.Has(m) {
