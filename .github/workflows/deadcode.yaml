@@ -1,0 +1,13 @@
+name: Deadcode
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  deadcode:
+    name: Deadcode
+    uses: openshift/hypershift/.github/workflows/deadcode-reusable.yaml@main
+    permissions:
+      contents: read

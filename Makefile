@@ -221,6 +221,19 @@ deadcode: $(DEADCODE) $(DEADCODE_REPORT)
 	$(MAKE) generate GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH)
 	$(DEADCODE_REPORT) -artifact-dir='$(subst ','\'',$(value ARTIFACT_DIR))'
 
+.PHONY: deadcode-gate
+deadcode-gate: ## Fail if the last deadcode scan reported any candidate.
+	@report='$(subst ','\'',$(value ARTIFACT_DIR))/deadcode.txt'; \
+	if [ -s "$$report" ]; then \
+		echo "dead-code candidates found:"; \
+		cat "$$report"; \
+		exit 1; \
+	fi
+
+.PHONY: verify-deadcode
+verify-deadcode: deadcode ## Run a whole-program dead-code scan and fail on any candidate.
+	@$(MAKE) --no-print-directory deadcode-gate
+
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
 
