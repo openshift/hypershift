@@ -3,6 +3,10 @@ package e2eutilallowlist
 import (
 	"fmt"
 	"go/ast"
+	"go/types"
+	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/pathutil"
@@ -10,149 +14,94 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
+const utilPkgPath = "github.com/openshift/hypershift/test/e2e/util"
+
 var Analyzer = &analysis.Analyzer{
 	Name: "e2eutilallowlist",
-	Doc:  "restricts test/e2e/v2 files to a allowlist of approved symbols from test/e2e/util",
+	Doc:  "denies legacy e2e utilities in v2 except for explicitly grandfathered function references",
 	Run:  run,
-}
-
-// allowlist maps package path to set of allowed symbol names.
-var allowlist = map[string]map[string]bool{
-	"github.com/openshift/hypershift/test/e2e/util/dump": {
-		"DumpAzureMachineDiagnostics":   true,
-		"VerifyAzureMachineDiagnostics": true,
-	},
-	"github.com/openshift/hypershift/test/e2e/util": {
-		// Condition/predicate helpers
-		"Condition":                    true,
-		"ConditionPredicate":           true,
-		"Conditions":                   true,
-		"WithPredicates":               true,
-		"EventuallyNotFound":           true,
-		"EventuallyObject":             true,
-		"EventuallyObjects":            true,
-		"Matches":                      true,
-		"MatchesLeaderElectionFailure": true,
-		"OSImageStreamPredicate":       true,
-		"Predicate":                    true,
-		"Reason":                       true,
-		"Status":                       true,
-		"String":                       true,
-		"Type":                         true,
-		"WithClientOptions":            true,
-		"WithGuestConfig":              true,
-		"WithInterval":                 true,
-		"WithTimeout":                  true,
-		"WithTransport":                true,
-		"WithTransportFactory":         true,
-
-		// Client helpers
-		"GetClient":          true,
-		"GetClientForConfig": true,
-		"GetConfig":          true,
-		"UpdateObject":       true,
-
-		// Wait/rollout helpers
-		"WaitForControlPlaneComponentRollout":             true,
-		"WaitForControlPlaneRollout":                      true,
-		"WaitForDataPlaneRollout":                         true,
-		"WaitForGuestKubeConfig":                          true,
-		"WaitForNReadyNodesWithOptions":                   true,
-		"WaitForNodePoolConfigUpdateCompleteWithPlatform": true,
-		"WaitForOAuthLoadBalancerEndpoint":                true,
-		"WaitForReadyNodesByNodePool":                     true,
-		"WaitForReadyNodesByLabels":                       true,
-
-		// Port-forward/transport helpers
-		"SetupGuestKASPortForwardConfig": true,
-		"SetupOAuthPortForwardTransport": true,
-
-		// Cloud provider helpers
-		"GetDefaultSecurityGroup": true,
-		"PutRolePolicy":           true,
-
-		// Utility helpers
-		"ExtractVersionFromReleaseImage": true,
-		"GenerateName":                   true,
-		"HasFieldInCRDSchema":            true,
-		"RunCommandInPod":                true,
-		"SimpleNameGenerator":            true,
-
-		// Validation helpers
-		"ValidateAzureWorkloadIdentityWebhookMutation":     true,
-		"ValidateGCPWorkloadIdentityWebhookMutation":       true,
-		"ValidateIngressOperatorConfiguration":             true,
-		"ValidateKubeAPIServerAllowedCIDRs":                true,
-		"ValidateOAuthIdentityProviderFlow":                true,
-		"ValidateOAuthWithIdentityProviderViaLoadBalancer": true,
-
-		// OIDC helpers
-		"CliClientID":              true,
-		"ConsoleClientID":          true,
-		"ConsoleClientSecretName":  true,
-		"ConsoleClientSecretValue": true,
-		"ExtOIDCConfig":            true,
-		"ExternalOIDCProvider":     true,
-		"GetAuthenticationConfig":  true,
-		"GroupPrefix":              true,
-		"IssuerCAConfigmapName":    true,
-		"IssuerURL":                true,
-		"OIDCProviderName":         true,
-		"ProviderKeycloak":         true,
-		"TestUsers":                true,
-		"UserPrefix":               true,
-	},
 }
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, file := range pass.Files {
-		filename := pass.Fset.File(file.Pos()).Name()
+		filename := filepath.ToSlash(pass.Fset.File(file.Pos()).Name())
 		if !pathutil.IsV2E2ETest(filename) {
 			continue
 		}
+		filename = filename[strings.LastIndex(filename, "test/e2e/v2/"):]
 
+		// Nested closures inherit their enclosing function's allowance. Top-level
+		// Ginkgo registrations use their exact Describe label as the function name.
+		var scopes []string
 		ast.Inspect(file, func(n ast.Node) bool {
+			if n == nil {
+				scopes = scopes[:len(scopes)-1]
+				return false
+			}
+			scope := ""
+			if len(scopes) > 0 {
+				scope = scopes[len(scopes)-1]
+			}
+			switch node := n.(type) {
+			case *ast.ImportSpec:
+				if node.Name != nil && node.Name.Name == "_" {
+					pkgPath, err := strconv.Unquote(node.Path.Value)
+					if err == nil && (pkgPath == utilPkgPath || strings.HasPrefix(pkgPath, utilPkgPath+"/")) {
+						pass.Reportf(node.Pos(), "side-effect import of %s is not allowed from test/e2e/v2; remove the legacy utility dependency", pkgPath)
+					}
+				}
+			case *ast.FuncDecl:
+				scope = node.Name.Name
+				if node.Recv != nil {
+					fn := pass.TypesInfo.Defs[node.Name].(*types.Func)
+					recv := fn.Type().(*types.Signature).Recv().Type()
+					if ptr, ok := recv.(*types.Pointer); ok {
+						recv = ptr.Elem()
+					}
+					scope = types.TypeString(recv, func(*types.Package) string { return "" }) + "." + scope
+				}
+			case *ast.CallExpr:
+				if scope == "" {
+					if name, ok := node.Fun.(*ast.Ident); ok && name.Name == "Describe" && len(node.Args) > 0 {
+						if label, ok := node.Args[0].(*ast.BasicLit); ok {
+							if value, err := strconv.Unquote(label.Value); err == nil {
+								scope = "Describe(" + strconv.Quote(value) + ")"
+							}
+						}
+					}
+				}
+			}
+			scopes = append(scopes, scope)
+
 			ident, ok := n.(*ast.Ident)
 			if !ok {
 				return true
 			}
-
-			// Skip blank identifiers
-			if ident.Name == "_" {
-				return true
-			}
-
-			// Look up the resolved object for this identifier
 			obj := pass.TypesInfo.Uses[ident]
-			if obj == nil {
+			if obj == nil || obj.Pkg() == nil {
 				return true
 			}
-
-			// Skip non-package-level objects
-			if obj.Pkg() == nil {
+			// Package names are imports, not references to utility code.
+			if _, ok := obj.(*types.PkgName); ok {
 				return true
 			}
-
 			pkgPath := obj.Pkg().Path()
-			const utilPkgPath = "github.com/openshift/hypershift/test/e2e/util"
 			if pkgPath != utilPkgPath && !strings.HasPrefix(pkgPath, utilPkgPath+"/") {
 				return true
 			}
-
-			// Check if this symbol is in the allowlist
-			if isAllowed(pkgPath, obj.Name()) {
+			symbol := obj.Name()
+			if pkgPath != utilPkgPath {
+				symbol = strings.TrimPrefix(pkgPath, utilPkgPath+"/") + "." + symbol
+			}
+			if isAllowed(filename, scope, symbol) {
 				return true
 			}
-
-			// Report diagnostic
+			if scope == "" {
+				scope = "package scope"
+			}
 			pass.Report(analysis.Diagnostic{
-				Pos: ident.Pos(),
-				End: ident.End(),
-				Message: fmt.Sprintf(
-					"reference to %s.%s is not allowed from test/e2e/v2; add it to the e2eutilallowlist allowlist or refactor to remove the dependency",
-					pkgPath,
-					obj.Name(),
-				),
+				Pos: ident.Pos(), End: ident.End(),
+				Message: fmt.Sprintf("reference to %s.%s is not allowed from test/e2e/v2 in %s; refactor to remove the legacy utility dependency", pkgPath, obj.Name(), scope),
 			})
 			return true
 		})
@@ -160,23 +109,8 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// isAllowed checks whether a symbol is in the allowlist for its package.
-func isAllowed(pkgPath string, symbolName string) bool {
-	allowed, ok := allowlist[pkgPath]
-	if !ok {
-		return false
-	}
-
-	// Explicit match
-	if allowed[symbolName] {
-		return true
-	}
-
-	// Allow Version* prefix for future version constants
-	if pkgPath == "github.com/openshift/hypershift/test/e2e/util" &&
-		strings.HasPrefix(symbolName, "Version") {
-		return true
-	}
-
-	return false
+// isAllowed requires an exact file, enclosing function, and utility symbol.
+// There are no package-wide, file-wide, or symbol-prefix exceptions.
+func isAllowed(filename, function, symbol string) bool {
+	return slices.Contains(allowlist[filename][function], symbol)
 }

@@ -15,4 +15,17 @@ func TestAllowedSymbols(t *testing.T) {
 	_ = v51
 
 	_ = e2eutil.Predicate[string](nil)
+	func() { _, _ = e2eutil.GetConfig() }()
 }
+
+type Allowed struct{}
+
+func (*Allowed) Method() {
+	_, _ = e2eutil.GetConfig()
+}
+
+func Describe(_ string, f func()) bool { f(); return true }
+
+var _ = Describe("existing registration", func() {
+	func() { _, _ = e2eutil.GetConfig() }()
+})

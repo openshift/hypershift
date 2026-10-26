@@ -6,86 +6,47 @@ import (
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
-func TestAnalyzer(t *testing.T) {
-	testdata := analysistest.TestData()
-
-	tests := []struct {
-		name    string
-		pattern string
-	}{
-		{
-			name:    "When symbols are in the allowlist, it should produce no diagnostics",
-			pattern: "test/e2e/v2/good",
+func TestRun(t *testing.T) {
+	// Keep fixture allowances separate from the production migration baseline.
+	original := allowlist
+	allowlist = map[string]map[string][]string{
+		"test/e2e/v2/good/good_test.go": {
+			"TestAllowedSymbols":                {"GetConfig", "Version414", "Version51", "Predicate"},
+			"Allowed.Method":                    {"GetConfig"},
+			`Describe("existing registration")`: {"GetConfig"},
 		},
-		{
-			name:    "When symbols are not in the allowlist, it should produce diagnostics including for aliased imports",
-			pattern: "test/e2e/v2/bad",
+		"test/e2e/v2/bad/bad_test.go": {
+			"TestExistingCaller": {"GetConfig"},
+			"Allowed.Method":     {"GetConfig"},
 		},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			analysistest.Run(t, testdata, Analyzer, tt.pattern)
-		})
+	t.Cleanup(func() { allowlist = original })
+	for _, tt := range []struct{ name, pattern string }{
+		{"When references match their enclosing function allowances, it should allow nested closures and methods", "test/e2e/v2/good"},
+		{"When references are new, it should reject symbols in new callers and new symbols in existing callers", "test/e2e/v2/bad"},
+		{"When legacy utilities are used outside v2, it should leave them unrestricted", "test/e2e/v1"},
+	} {
+		t.Run(tt.name, func(t *testing.T) { analysistest.Run(t, analysistest.TestData(), Analyzer, tt.pattern) })
 	}
 }
 
 func TestIsAllowed(t *testing.T) {
-	const utilPkg = "github.com/openshift/hypershift/test/e2e/util"
-
-	tests := []struct {
-		name       string
-		pkgPath    string
-		symbolName string
-		want       bool
+	const file = "test/e2e/v2/internal/test_context.go"
+	for _, tt := range []struct {
+		name, file, function, symbol string
+		want                         bool
 	}{
-		{
-			name:       "When Azure diagnostics validation is shared with legacy E2E, it should be allowed",
-			pkgPath:    utilPkg + "/dump",
-			symbolName: "VerifyAzureMachineDiagnostics",
-			want:       true,
-		},
-		{
-			name:       "When Azure teardown diagnostics are reused by v2, it should be allowed",
-			pkgPath:    utilPkg + "/dump",
-			symbolName: "DumpAzureMachineDiagnostics",
-			want:       true,
-		},
-		{
-			name:       "When other legacy dump helpers are referenced, it should reject them",
-			pkgPath:    utilPkg + "/dump",
-			symbolName: "DumpHostedCluster",
-		},
-		{
-			name:       "When symbol is explicitly allowlisted, it should be allowed",
-			pkgPath:    utilPkg,
-			symbolName: "GetConfig",
-			want:       true,
-		},
-		{
-			name:       "When symbol has Version prefix, it should be allowed via wildcard",
-			pkgPath:    utilPkg,
-			symbolName: "VersionFuture",
-			want:       true,
-		},
-		{
-			name:       "When symbol is not in the allowlist, it should not be allowed",
-			pkgPath:    utilPkg,
-			symbolName: "IsLessThan",
-			want:       false,
-		},
-		{
-			name:       "When package is unknown, it should not be allowed",
-			pkgPath:    "github.com/other/pkg",
-			symbolName: "GetConfig",
-			want:       false,
-		},
-	}
-
-	for _, tt := range tests {
+		{"When an existing function references an existing symbol, it should allow it", file, "SetupTestContextFromEnv", "GetConfig", true},
+		{"When an existing symbol is used in another file, it should reject it", "test/e2e/v2/new.go", "SetupTestContextFromEnv", "GetConfig", false},
+		{"When an existing symbol is used in another function, it should reject it", file, "NewCaller", "GetConfig", false},
+		{"When a new symbol is used in an existing function, it should reject it", file, "SetupTestContextFromEnv", "NewUtility", false},
+		{"When a future version constant is used, it should reject it", file, "SetupTestContextFromEnv", "VersionFuture", false},
+		{"When a symbol comes from another utility subpackage, it should reject it", file, "SetupTestContextFromEnv", "dump.GetConfig", false},
+		{"When a reference has no enclosing function, it should reject it", file, "", "GetConfig", false},
+	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isAllowed(tt.pkgPath, tt.symbolName); got != tt.want {
-				t.Errorf("isAllowed(%q, %q) = %v, want %v", tt.pkgPath, tt.symbolName, got, tt.want)
+			if got := isAllowed(tt.file, tt.function, tt.symbol); got != tt.want {
+				t.Errorf("isAllowed(%q, %q, %q) = %v, want %v", tt.file, tt.function, tt.symbol, got, tt.want)
 			}
 		})
 	}

@@ -193,7 +193,7 @@ linters:
       - linters:
           - hypershiftlinter
         path: '^test/e2e/v2/tests/karpenter_test\.go$'
-        text: '^(contextbackground|e2eutilallowlist):'
+        text: '^contextbackground:'
       - linters:
           - ineffassign
         path: '^test/e2e/(nodepool_osp_advanced_test|v2/tests/control_plane_tls_operator_test)\.go$'
