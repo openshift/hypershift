@@ -88,6 +88,7 @@ func TestAdaptDeployment(t *testing.T) {
 		controlPlaneOperatorImage string
 		ignitionEndpoint          string
 		rhobsEnabled              bool
+		setDefaultSecurityContext bool
 		validateFunc              func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext)
 	}{
 		{
@@ -252,7 +253,7 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 		},
 		{
-			name:                      "When standalone mode is enabled, it should add the HyperShift adapter",
+			name:                      "When standalone mode is enabled with SCC, it should omit DEFAULT_SECURITY_CONTEXT_UID from the operator and adapter",
 			platformType:              hyperv1.AWSPlatform,
 			awsRegion:                 "us-west-2",
 			hyperShiftOperatorImage:   "quay.io/hypershift/operator:latest",
@@ -273,6 +274,50 @@ func TestAdaptDeployment(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 
 				g.Expect(podspec.FindContainer("karpenter-adapter", deploymentObj.Spec.Template.Spec.Containers)).ToNot(BeNil())
+				for _, container := range deploymentObj.Spec.Template.Spec.Containers {
+					g.Expect(podspec.FindEnvVar("DEFAULT_SECURITY_CONTEXT_UID", container.Env)).To(BeNil())
+				}
+			},
+		},
+		{
+			name:                      "When the legacy operator runs without SCC, it should omit DEFAULT_SECURITY_CONTEXT_UID",
+			platformType:              hyperv1.AWSPlatform,
+			awsRegion:                 "us-west-2",
+			setDefaultSecurityContext: true,
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(opts.adaptDeployment(cpContext, deploymentObj)).To(Succeed())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(podspec.FindEnvVar("DEFAULT_SECURITY_CONTEXT_UID", container.Env)).To(BeNil())
+			},
+		},
+		{
+			name:                      "When standalone mode is enabled without SCC, it should pass DEFAULT_SECURITY_CONTEXT_UID only to the operator",
+			platformType:              hyperv1.AWSPlatform,
+			awsRegion:                 "us-west-2",
+			setDefaultSecurityContext: true,
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+				opts.StandaloneKarpenterOperatorEnabled = true
+				cpContext.ReleaseImageProvider = &fakeReleaseImageProvider{images: map[string]string{
+					karpenterutil.KarpenterOperatorImageName:    "quay.io/openshift/karpenter-operator:latest",
+					karpenterutil.KarpenterProviderAWSImageName: "quay.io/openshift/karpenter-aws:latest",
+					"token-minter": "quay.io/openshift/token-minter:latest",
+				}}
+				g.Expect(opts.adaptDeployment(cpContext, deploymentObj)).To(Succeed())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: "DEFAULT_SECURITY_CONTEXT_UID", Value: "1001230000"}))
+				adapter := podspec.FindContainer(AdapterContainerName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(adapter).ToNot(BeNil())
+				g.Expect(podspec.FindEnvVar("DEFAULT_SECURITY_CONTEXT_UID", adapter.Env)).To(BeNil())
 			},
 		},
 	}
@@ -312,8 +357,10 @@ func TestAdaptDeployment(t *testing.T) {
 			}
 
 			cpContext := controlplanecomponent.WorkloadContext{
-				Context: t.Context(),
-				HCP:     hcp,
+				Context:                   t.Context(),
+				HCP:                       hcp,
+				SetDefaultSecurityContext: tc.setDefaultSecurityContext,
+				DefaultSecurityContextUID: 1001230000,
 			}
 
 			tc.validateFunc(t, g, opts, cpContext)
