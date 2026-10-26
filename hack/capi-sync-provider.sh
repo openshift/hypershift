@@ -174,14 +174,15 @@ find "$DST_DIR" \( -name '*_test.go' -o -name '*conversion*' \) -exec rm -f {} +
 # repoint the imports at them, so the module carries no dependency on
 # sigs.k8s.io/cluster-api. Driven by the CAPI version this provider resolves
 # to, which differs between providers and must stay independent of the root
-# module's.
+# module's. The tool resolves each CAPI package through this provider's
+# vendor module, which also handles CAPI packages that live in nested modules
+# (CAPI v1.14 moved api/ into sigs.k8s.io/cluster-api/api).
 echo "Localizing CAPI types for $PROVIDER..."
-CAPI_SRC=$(mod_cache_dir "sigs.k8s.io/cluster-api")
 rm -rf "$DST_DIR/capicore"
 run_go run "$COPY_TOOL" --localize \
     --dir "$DST_DIR" \
     --module "$MODULE_PATH" \
-    --capi-root "$CAPI_SRC"
+    --capi-mod-dir "$MOD_DIR"
 
 echo "Running controller-gen for deepcopy..."
 
