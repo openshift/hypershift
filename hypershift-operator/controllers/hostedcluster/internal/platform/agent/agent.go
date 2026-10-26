@@ -119,10 +119,6 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 							PeriodSeconds:       20,
 						},
 						Resources: corev1.ResourceRequirements{
-							Limits: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("200m"),
-								corev1.ResourceMemory: resource.MustParse("100Mi"),
-							},
 							Requests: corev1.ResourceList{
 								corev1.ResourceCPU:    resource.MustParse("100m"),
 								corev1.ResourceMemory: resource.MustParse("20Mi"),
