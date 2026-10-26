@@ -1,6 +1,8 @@
 package e2eutilallowlist
 
 import (
+	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,6 +23,9 @@ func TestRun(t *testing.T) {
 			"Existing": {"GetConfig", "Version414"},
 			"Removed":  {"GetConfig"},
 		},
+		"test/e2e/v2/members/members.go": {
+			"Existing": {"dump.Diagnostics", "dump.Diagnostics.Collect", "dump.Diagnostics.Message"},
+		},
 		"test/e2e/v2/bad/bad_test.go": {
 			"TestExistingCaller": {"GetConfig"},
 			"Allowed.Method":     {"GetConfig"},
@@ -35,6 +40,10 @@ func TestRun(t *testing.T) {
 		{
 			name:    "When references are new, it should reject symbols in new callers and new symbols in existing callers",
 			pattern: "test/e2e/v2/bad",
+		},
+		{
+			name:    "When types share member names, it should allow only the existing declaring type",
+			pattern: "test/e2e/v2/members",
 		},
 		{
 			name:    "When a function or reference is removed, it should report its unused allowance",
@@ -149,6 +158,32 @@ func TestAllowlist(t *testing.T) {
 			}
 			if info.IsDir() {
 				t.Fatalf("allowlist key %s is a directory", file)
+			}
+		})
+	}
+}
+
+func TestMemberName(t *testing.T) {
+	t.Parallel()
+	pkg := types.NewPackage(utilPkgPath, "util")
+	condition := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Condition", nil), types.NewStruct([]*types.Var{types.NewField(token.NoPos, pkg, "Status", types.Typ[types.String], false)}, nil), nil)
+	embedded := types.NewNamed(types.NewTypeName(token.NoPos, pkg, "Wrapper", nil), types.NewStruct([]*types.Var{types.NewField(token.NoPos, pkg, "Condition", condition, true)}, nil), nil)
+	alias := types.NewAlias(types.NewTypeName(token.NoPos, pkg, "Alias", nil), condition)
+	for _, tt := range []struct {
+		name     string
+		receiver types.Type
+		indices  []int
+		want     string
+	}{
+		{name: "When a field belongs to a named type, it should include that type", receiver: condition, indices: []int{0}, want: "Condition.Status"},
+		{name: "When a receiver is a pointer, it should use the named element", receiver: types.NewPointer(condition), want: "Condition.Status"},
+		{name: "When a receiver is an alias, it should use the original type", receiver: alias, want: "Condition.Status"},
+		{name: "When a field is promoted, it should use the declaring type", receiver: embedded, indices: []int{0, 0}, want: "Condition.Status"},
+		{name: "When a type is anonymous, it should retain its structural identity", receiver: types.NewStruct(nil, nil), want: "struct{}.Status"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := memberName(tt.receiver, tt.indices, "Status"); got != tt.want {
+				t.Errorf("memberName() = %q, want %q", got, tt.want)
 			}
 		})
 	}

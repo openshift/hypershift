@@ -36,6 +36,7 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 
 		// Nested closures inherit their enclosing function's allowance. Top-level
 		// Ginkgo registrations use their exact Describe label as the function name.
+		members := map[*ast.Ident]string{}
 		used := map[[2]string]bool{} // enclosing scope and utility symbol
 		var scopes []string
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -54,6 +55,27 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 					pkgPath, err := strconv.Unquote(node.Path.Value)
 					if err == nil && isLegacyUtilPkg(pkgPath) {
 						pass.Reportf(node.Pos(), "side-effect import of %s is not allowed from test/e2e/v2; remove the legacy utility dependency", pkgPath)
+					}
+				}
+			case *ast.SelectorExpr:
+				if selection := pass.TypesInfo.Selections[node]; selection != nil {
+					receiver, indices := selection.Recv(), selection.Index()
+					if method, ok := selection.Obj().(*types.Func); ok {
+						if signature := method.Type().(*types.Signature); signature.Recv() != nil {
+							receiver = signature.Recv().Type()
+						}
+						indices = nil
+					}
+					members[node.Sel] = memberName(receiver, indices, node.Sel.Name)
+				}
+			case *ast.CompositeLit:
+				for _, element := range node.Elts {
+					if pair, ok := element.(*ast.KeyValueExpr); ok {
+						if key, ok := pair.Key.(*ast.Ident); ok {
+							if field, ok := pass.TypesInfo.Uses[key].(*types.Var); ok && field.IsField() {
+								members[key] = memberName(pass.TypesInfo.TypeOf(node), nil, key.Name)
+							}
+						}
 					}
 				}
 			case *ast.FuncDecl:
@@ -96,6 +118,10 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 				return true
 			}
 			symbol := obj.Name()
+			if member := members[ident]; member != "" {
+				symbol = member
+			}
+			reference := pkgPath + "." + symbol
 			if pkgPath != utilPkgPath {
 				symbol = strings.TrimPrefix(pkgPath, utilPkgPath+"/") + "." + symbol
 			}
@@ -108,7 +134,7 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 			}
 			pass.Report(analysis.Diagnostic{
 				Pos: ident.Pos(), End: ident.End(),
-				Message: fmt.Sprintf("reference to %s.%s is not allowed from test/e2e/v2 in %s; refactor to remove the legacy utility dependency", pkgPath, obj.Name(), scope),
+				Message: fmt.Sprintf("reference to %s is not allowed from test/e2e/v2 in %s; refactor to remove the legacy utility dependency", reference, scope),
 			})
 			return true
 		})
@@ -131,4 +157,22 @@ func isAllowed(allowed map[string]map[string][]string, filename, function, symbo
 
 func isLegacyUtilPkg(pkgPath string) bool {
 	return pkgPath == utilPkgPath || strings.HasPrefix(pkgPath, utilPkgPath+"/")
+}
+
+// memberName identifies the declaring type, following promoted fields through
+// embedded structs. Methods pass their declared receiver rather than a promotion path.
+func memberName(receiver types.Type, indices []int, name string) string {
+	receiver = types.Unalias(receiver)
+	if pointer, ok := receiver.(*types.Pointer); ok {
+		receiver = types.Unalias(pointer.Elem())
+	}
+	if len(indices) > 1 {
+		if structure, ok := receiver.Underlying().(*types.Struct); ok {
+			return memberName(structure.Field(indices[0]).Type(), indices[1:], name)
+		}
+	}
+	if named, ok := receiver.(*types.Named); ok {
+		return named.Obj().Name() + "." + name
+	}
+	return types.TypeString(receiver, func(pkg *types.Package) string { return pkg.Path() }) + "." + name
 }
