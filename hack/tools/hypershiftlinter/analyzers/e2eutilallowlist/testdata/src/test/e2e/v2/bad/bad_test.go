@@ -1,6 +1,7 @@
 package bad
 
 import (
+	. "github.com/onsi/ginkgo/v2"
 	"testing"
 
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -46,8 +47,6 @@ func Method()            { _, _ = e2eutil.GetConfig() } // want `reference to .*
 
 var packageReference = e2eutil.GetConfig     // want `reference to .*util.GetConfig is not allowed`
 type PackageType = e2eutil.Predicate[string] // want `reference to .*util.Predicate is not allowed`
-
-func Describe(_ string, f func()) bool { f(); return true }
 
 var _ = Describe("new registration", func() {
 	_, _ = e2eutil.GetConfig() // want `reference to .*util.GetConfig is not allowed`

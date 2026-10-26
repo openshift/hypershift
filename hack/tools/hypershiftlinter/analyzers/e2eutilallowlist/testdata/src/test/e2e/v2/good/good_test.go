@@ -1,6 +1,7 @@
 package good
 
 import (
+	. "github.com/onsi/ginkgo/v2"
 	"testing"
 
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -23,8 +24,6 @@ type Allowed struct{}
 func (*Allowed) Method() {
 	_, _ = e2eutil.GetConfig()
 }
-
-func Describe(_ string, f func()) bool { f(); return true }
 
 var _ = Describe("existing registration", func() {
 	func() { _, _ = e2eutil.GetConfig() }()

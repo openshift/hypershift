@@ -34,10 +34,11 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 		}
 		filename = filename[strings.LastIndex(filename, "test/e2e/v2/"):]
 
-		// Nested closures inherit their enclosing function's allowance. Top-level
-		// Ginkgo registrations use their exact Describe label as the function name.
+		// Ordinary closures inherit their enclosing scope. Ginkgo callbacks get
+		// distinct scopes so new specs cannot inherit a suite or hook allowance.
 		members := map[*ast.Ident]string{}
 		used := map[[2]string]bool{} // enclosing scope and utility symbol
+		registrations := map[string]int{}
 		var scopes []string
 		ast.Inspect(file, func(n ast.Node) bool {
 			// Every non-nil visit must return true to balance the scope stack.
@@ -89,15 +90,7 @@ func run(pass *analysis.Pass, allowed map[string]map[string][]string) (any, erro
 					scope = types.TypeString(recv, func(*types.Package) string { return "" }) + "." + scope
 				}
 			case *ast.CallExpr:
-				if scope == "" {
-					if name, ok := node.Fun.(*ast.Ident); ok && name.Name == "Describe" && len(node.Args) > 0 {
-						if label, ok := node.Args[0].(*ast.BasicLit); ok {
-							if value, err := strconv.Unquote(label.Value); err == nil {
-								scope = "Describe(" + strconv.Quote(value) + ")"
-							}
-						}
-					}
-				}
+				scope = registrationScope(pass, node, scope, registrations)
 			}
 			scopes = append(scopes, scope)
 
@@ -175,4 +168,45 @@ func memberName(receiver types.Type, indices []int, name string) string {
 		return named.Obj().Name() + "." + name
 	}
 	return types.TypeString(receiver, func(pkg *types.Package) string { return pkg.Path() }) + "." + name
+}
+
+// registrationScope isolates Ginkgo callbacks by registration kind, literal label,
+// and occurrence within the parent scope. Imported aliases resolve to the same key.
+func registrationScope(pass *analysis.Pass, call *ast.CallExpr, parent string, occurrences map[string]int) string {
+	var identifier *ast.Ident
+	switch callee := call.Fun.(type) {
+	case *ast.Ident:
+		identifier = callee
+	case *ast.SelectorExpr:
+		identifier = callee.Sel
+	default:
+		return parent
+	}
+	object := pass.TypesInfo.Uses[identifier]
+	if object == nil || object.Pkg() == nil || object.Pkg().Path() != "github.com/onsi/ginkgo/v2" {
+		return parent
+	}
+	name := object.Name()
+	label := ""
+	switch strings.TrimLeft(name, "FPX") {
+	case "Describe", "Context", "When", "It", "Specify", "DescribeTable", "DescribeTableSubtree", "Entry":
+		// Computed labels remain distinct from literal-label registrations.
+		label = "<dynamic>"
+		if len(call.Args) > 0 {
+			if literal, ok := call.Args[0].(*ast.BasicLit); ok {
+				if value, err := strconv.Unquote(literal.Value); err == nil {
+					label = strconv.Quote(value)
+				}
+			}
+		}
+	case "BeforeEach", "JustBeforeEach", "BeforeAll", "BeforeSuite", "AfterEach", "JustAfterEach", "AfterAll", "AfterSuite", "SynchronizedBeforeSuite", "SynchronizedAfterSuite", "ReportBeforeSuite", "ReportAfterSuite", "ReportBeforeEach", "ReportAfterEach", "DeferCleanup":
+	default:
+		return parent
+	}
+	key := name + "(" + label + ")"
+	if parent != "" {
+		key = parent + "/" + key
+	}
+	occurrences[key]++
+	return fmt.Sprintf("%s#%d", key, occurrences[key])
 }

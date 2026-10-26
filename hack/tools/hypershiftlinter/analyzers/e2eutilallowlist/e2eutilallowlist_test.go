@@ -1,12 +1,16 @@
 package e2eutilallowlist
 
 import (
+	"go/ast"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
@@ -15,13 +19,17 @@ func TestRun(t *testing.T) {
 	// Keep fixture allowances separate from the production migration baseline.
 	allowed := map[string]map[string][]string{
 		"test/e2e/v2/good/good_test.go": {
-			"TestAllowedSymbols":                {"GetConfig", "Version414", "Version51", "Predicate"},
-			"Allowed.Method":                    {"GetConfig"},
-			`Describe("existing registration")`: {"GetConfig"},
+			"TestAllowedSymbols":                  {"GetConfig", "Version414", "Version51", "Predicate"},
+			"Allowed.Method":                      {"GetConfig"},
+			`Describe("existing registration")#1`: {"GetConfig"},
 		},
 		"test/e2e/v2/stale/stale.go": {
 			"Existing": {"GetConfig", "Version414"},
 			"Removed":  {"GetConfig"},
+		},
+		"test/e2e/v2/registrations/registrations.go": {
+			`Describe("existing suite")#1/BeforeEach()#1`: {"Version414"},
+			`Describe("duplicate")#1`:                     {"Version414"},
 		},
 		"test/e2e/v2/members/members.go": {
 			"Existing": {"dump.Diagnostics", "dump.Diagnostics.Collect", "dump.Diagnostics.Message"},
@@ -40,6 +48,10 @@ func TestRun(t *testing.T) {
 		{
 			name:    "When references are new, it should reject symbols in new callers and new symbols in existing callers",
 			pattern: "test/e2e/v2/bad",
+		},
+		{
+			name:    "When a spec or duplicate registration is new, it should not inherit an existing scope allowance",
+			pattern: "test/e2e/v2/registrations",
 		},
 		{
 			name:    "When types share member names, it should allow only the existing declaring type",
@@ -184,6 +196,57 @@ func TestMemberName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := memberName(tt.receiver, tt.indices, "Status"); got != tt.want {
 				t.Errorf("memberName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegistrationScope(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name        string
+		expression  string
+		function    string
+		packagePath string
+		parent      string
+		want        string
+	}{
+		{name: "When a top-level suite has a literal label, it should get its own scope", expression: `Describe("suite", nil)`, function: "Describe", packagePath: "github.com/onsi/ginkgo/v2", want: `Describe("suite")#1`},
+		{name: "When a spec is registered through an import alias, it should get a child scope", expression: `g.It("spec", nil)`, function: "It", packagePath: "github.com/onsi/ginkgo/v2", parent: "Existing", want: `Existing/It("spec")#1`},
+		{name: "When a setup hook has no label, it should get its own scope", expression: `BeforeEach(nil)`, function: "BeforeEach", packagePath: "github.com/onsi/ginkgo/v2", parent: "Existing", want: `Existing/BeforeEach()#1`},
+		{name: "When a label is computed, it should remain distinct from literal labels", expression: `It(label, nil)`, function: "It", packagePath: "github.com/onsi/ginkgo/v2", want: `It(<dynamic>)#1`},
+		{name: "When an unrelated function has a Ginkgo name, it should inherit its parent scope", expression: `It("spec", nil)`, function: "It", packagePath: "test/e2e/v2/custom", parent: "Existing", want: "Existing"},
+		{name: "When a Ginkgo function does not register a callback, it should inherit its parent scope", expression: `Expect(nil)`, function: "Expect", packagePath: "github.com/onsi/ginkgo/v2", parent: "Existing", want: "Existing"},
+		{name: "When the callee is a function literal, it should inherit its parent scope", expression: `(func(){})()`, parent: "Existing", want: "Existing"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			expression, err := parser.ParseExpr(tt.expression)
+			if err != nil {
+				t.Fatal(err)
+			}
+			call := expression.(*ast.CallExpr)
+			info := &types.Info{Uses: map[*ast.Ident]types.Object{}}
+			var identifier *ast.Ident
+			switch callee := call.Fun.(type) {
+			case *ast.Ident:
+				identifier = callee
+			case *ast.SelectorExpr:
+				identifier = callee.Sel
+			}
+			if identifier != nil {
+				info.Uses[identifier] = types.NewFunc(token.NoPos, types.NewPackage(tt.packagePath, "ginkgo"), tt.function, nil)
+			}
+			pass := &analysis.Pass{TypesInfo: info}
+			occurrences := map[string]int{}
+			if got := registrationScope(pass, call, tt.parent, occurrences); got != tt.want {
+				t.Errorf("registrationScope() = %q, want %q", got, tt.want)
+			}
+			// Duplicate labels and unlabeled hooks must not share an allowance.
+			if strings.HasSuffix(tt.want, "#1") {
+				want := strings.TrimSuffix(tt.want, "#1") + "#2"
+				if got := registrationScope(pass, call, tt.parent, occurrences); got != want {
+					t.Errorf("duplicate scope = %q, want %q", got, want)
+				}
 			}
 		})
 	}
