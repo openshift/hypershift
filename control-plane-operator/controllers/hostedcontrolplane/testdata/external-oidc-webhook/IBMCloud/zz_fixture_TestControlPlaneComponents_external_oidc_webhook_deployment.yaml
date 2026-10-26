@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 413a8e0f22d19547f7b10abe1dea723d22e69958bf8ec1d2b2a55331ffab02c5
+    hypershift.openshift.io/desired-state-hash: b1e7110883101012f77bc7aaa84479b3ad02651537989f337329712d116b0a08
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: external-oidc-webhook
@@ -96,8 +96,10 @@ spec:
         - /usr/bin/oauth-apiserver
         env:
         - name: HTTP_PROXY
-          value: socks5://127.0.0.1:8090
+          value: http://127.0.0.1:8092
         - name: HTTPS_PROXY
+          value: http://127.0.0.1:8092
+        - name: ALL_PROXY
           value: socks5://127.0.0.1:8090
         - name: NO_PROXY
           value: kube-apiserver
@@ -116,6 +118,35 @@ spec:
           name: serving-cert
         - mountPath: /etc/kubernetes/config/auth-config
           name: auth-config
+        - mountPath: /tmp
+          name: tmp-dir
+      - args:
+        - run
+        - --serving-port=8092
+        - --connect-directly-to-cloud-apis=true
+        - --resolve-from-management-cluster-dns=true
+        command:
+        - /usr/bin/control-plane-operator
+        - konnectivity-https-proxy
+        env:
+        - name: KUBECONFIG
+          value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
+        image: controlplane-operator
+        name: konnectivity-proxy-https
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/kubernetes/secrets/kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/konnectivity/proxy-client
+          name: konnectivity-proxy-cert
+        - mountPath: /etc/konnectivity/proxy-ca
+          name: konnectivity-proxy-ca
         - mountPath: /tmp
           name: tmp-dir
       - args:
