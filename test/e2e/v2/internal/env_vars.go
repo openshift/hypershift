@@ -241,10 +241,4 @@ func init() {
 		"When the value is exactly \"true\", it lowers the minimum hosted-cluster version from 4.23 to 4.22.",
 		false,
 	)
-	// TODO: Should this be a capability check?
-	RegisterEnvVar(
-		"AWS_MULTI_ARCH",
-		"Enable multi-arch cluster tests on AWS",
-		false,
-	)
 }

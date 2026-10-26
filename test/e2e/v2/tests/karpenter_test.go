@@ -350,8 +350,8 @@ func KarpenterARM64ProvisioningTest(getTestCtx internal.TestContextGetter) {
 			if !karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
 				Skip("AutoNode not configured on hosted cluster")
 			}
-			if internal.GetEnvVarValue("AWS_MULTI_ARCH") == "" {
-				Skip("test only supported on multi-arch clusters")
+			if hc.Status.PayloadArch != hyperv1.Multi {
+				Skip("ARM64 provisioning test requires a multi-arch release image")
 			}
 		})
 
