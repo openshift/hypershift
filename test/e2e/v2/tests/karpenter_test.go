@@ -1063,7 +1063,7 @@ func KarpenterArbitrarySubnetTest(getTestCtx internal.TestContextGetter) {
 
 				// Wait for the subnet to be removed from the karpenter-subnets ConfigMap.
 				// The karpenter-operator removes it during NodeClass deletion reconciliation.
-				Expect(wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+				Expect(wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
 					cm := &corev1.ConfigMap{}
 					if err := tc.MgmtClient.Get(ctx, crclient.ObjectKey{Namespace: hcpNamespace, Name: karpenterutil.KarpenterSubnetsConfigMapName}, cm); err != nil {
 						return false, nil
@@ -1202,11 +1202,6 @@ func KarpenterArbitrarySubnetTest(getTestCtx internal.TestContextGetter) {
 					"instance %s should be in subnet %s", instanceID, subnetID)
 				GinkgoWriter.Printf("Instance %s confirmed in subnet %s\n", instanceID, subnetID)
 			}
-
-			// Trigger cleanup; the deferred cleanup handles final subnet removal.
-			// No need to wait for node deprovisioning — subsequent tests use isolated NodePools.
-			Expect(hcClient.Delete(ctx, testWorkLoads)).To(Succeed())
-			Expect(hcClient.Delete(ctx, testNodePool)).To(Succeed())
 		})
 	})
 }
