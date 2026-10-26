@@ -108,7 +108,12 @@ const gcpFirewallProbeImage = "registry.access.redhat.com/ubi9/ubi:latest"
 func EnsureGCPWorkerFirewallTest(getTestCtx internal.TestContextGetter) {
 	When("the hosted cluster is on GCP", func() {
 		BeforeEach(func() {
-			getTestCtx().SkipIfNotPlatform(hyperv1.GCPPlatform)
+			tc := getTestCtx()
+			tc.SkipIfNotPlatform(hyperv1.GCPPlatform)
+			// The CPO-managed worker firewall rule (and the GCPFirewallRulesReady
+			// condition) only ships in 5.0+ control-plane-operators; older release
+			// payloads never set the condition.
+			tc.SkipIfVersionBelow(e2eutil.Version50)
 		})
 
 		It("should reconcile the worker firewall rule and allow cross-node worker traffic", Label("lifecycle", "gcp-worker-firewall"), func() {
