@@ -90,7 +90,7 @@ flowchart TD
     PUSHM --> POST["Post-merge reruns of the reusable workflows<br/>test · e2e-compile · envtest-kube · envtest-ocp"]
 ```
 
-The graph draws `workflow_dispatch` only for manually runnable workflows that feed a chain — **Create Tag**, **Docs Publish**, **Rehearse Release Workflows** and **Update CI Job Registry**. The remaining manually runnable workflows are listed under [Manual Runs](#manual-runs).
+The graph draws `workflow_dispatch` only for manually runnable workflows that feed a chain — **Create Tag**, **Docs Publish**, **Rehearse Release Workflows** and **Update CI Job Registry**. The remaining manually runnable workflows are listed in the **Manual Runs** table further down.
 
 ## 📋 Workflow Catalog
 
@@ -194,7 +194,7 @@ The loop terminates when Gitlint passes. Humans' PRs never hit this path — the
 
 ### 3. Docs preview (pull requests)
 
-1. **Docs Build** runs on `pull_request` when `docs/**` or `.github/workflows/docs-build.yaml` changes and uploads the `docs-site` artifact.
+1. **Docs Build** runs on `pull_request` targeting `main` or `release-4.22` when `docs/**` or `.github/workflows/docs-build.yaml` changes and uploads the `docs-site` artifact.
 2. **Docs Deploy Preview** fires on `workflow_run` completion, downloads the artifact, deploys to Cloudflare Pages under `pr-<number>`, and posts a deployment status link on the PR.
 
 PR code is never executed in the deploy workflow, and only the deploy workflow has access to the `docs-preview` environment secrets.

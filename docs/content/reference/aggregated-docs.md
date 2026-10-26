@@ -13805,7 +13805,7 @@ When a pull request modifies files under `docs/`, GitHub Actions workflows autom
 
 The preview system uses two separate workflows for security, following the reusable workflow pattern described in GitHub Actions Workflows:
 
-1. **Docs Build** (`.github/workflows/docs-build.yaml`) — triggers on `pull_request` for changes under `docs/` or to `docs-build.yaml` itself. The caller delegates to `docs-build-reusable.yaml@main`, which checks out the PR code, builds with Zensical in strict mode, and uploads the built site as an artifact. This workflow has no access to secrets.
+1. **Docs Build** (`.github/workflows/docs-build.yaml`) — triggers on `pull_request` targeting `main` or `release-4.22` for changes under `docs/` or to `docs-build.yaml` itself. The caller delegates to `docs-build-reusable.yaml@main`, which checks out the PR code, builds with Zensical in strict mode, and uploads the built site as an artifact. This workflow has no access to secrets.
 2. **Docs Deploy** (`.github/workflows/docs-deploy.yaml`) — triggers via `workflow_run` when the Docs Build workflow completes successfully. It downloads the built artifact and deploys to Cloudflare Pages. This workflow has access to the `docs-preview` environment secrets but never executes PR code.
 
 GitHub shows a **View deployment** link in the PR timeline via the `docs-preview` environment.
@@ -13948,7 +13948,7 @@ flowchart TD
     PUSHM --> POST["Post-merge reruns of the reusable workflows<br/>test · e2e-compile · envtest-kube · envtest-ocp"]
 ```
 
-The graph draws `workflow_dispatch` only for manually runnable workflows that feed a chain — **Create Tag**, **Docs Publish**, **Rehearse Release Workflows** and **Update CI Job Registry**. The remaining manually runnable workflows are listed under Manual Runs.
+The graph draws `workflow_dispatch` only for manually runnable workflows that feed a chain — **Create Tag**, **Docs Publish**, **Rehearse Release Workflows** and **Update CI Job Registry**. The remaining manually runnable workflows are listed in the **Manual Runs** table further down.
 
 ## 📋 Workflow Catalog
 
@@ -14052,7 +14052,7 @@ The loop terminates when Gitlint passes. Humans' PRs never hit this path — the
 
 ### 3. Docs preview (pull requests)
 
-1. **Docs Build** runs on `pull_request` when `docs/**` or `.github/workflows/docs-build.yaml` changes and uploads the `docs-site` artifact.
+1. **Docs Build** runs on `pull_request` targeting `main` or `release-4.22` when `docs/**` or `.github/workflows/docs-build.yaml` changes and uploads the `docs-site` artifact.
 2. **Docs Deploy Preview** fires on `workflow_run` completion, downloads the artifact, deploys to Cloudflare Pages under `pr-<number>`, and posts a deployment status link on the PR.
 
 PR code is never executed in the deploy workflow, and only the deploy workflow has access to the `docs-preview` environment secrets.
