@@ -1,9 +1,9 @@
 //go:build envtest
 
-// This file is adapted from github.com/openshift/api/tests/crd_filter.go
-// The only change is matchesFeatureSet: openshift/api checks
-// annotations["release.openshift.io/feature-set"], but HyperShift's featuregate
-// manifests use spec.featureSet instead. We check both for compatibility.
+// This file is adapted from github.com/openshift/api/tests/crd_filter.go with two
+// HyperShift-specific changes: matchesFeatureSet checks both the feature-set
+// annotation and spec.featureSet, and perTestRuntimeInfo supports an exact
+// crdFeatureSet annotation selector for suites such as CustomNoUpgrade.
 package envtest
 
 import (
@@ -28,7 +28,7 @@ var (
 	}
 )
 
-func perTestRuntimeInfo(suitePath, crdName string, featureGates []string) (*PerTestRuntimeInfo, error) {
+func perTestRuntimeInfo(suitePath, crdName, crdFeatureSet string, featureGates []string) (*PerTestRuntimeInfo, error) {
 	crdFilesToCheck := []string{}
 
 	relativePathForCRDs := filepath.Join(suitePath, "..", "..", "zz_generated.crd-manifests")
@@ -51,12 +51,15 @@ func perTestRuntimeInfo(suitePath, crdName string, featureGates []string) (*PerT
 		if currCRD.Name != crdName {
 			continue
 		}
+		featureSetAnnotation := currCRD.Annotations["release.openshift.io/feature-set"]
+		if crdFeatureSet != "" && featureSetAnnotation != crdFeatureSet {
+			continue
+		}
 		if len(featureGates) == 0 {
 			crdFilesToCheck = append(crdFilesToCheck, filename)
 			continue
 		}
 
-		featureSetAnnotation := currCRD.Annotations["release.openshift.io/feature-set"]
 		featureSets := sets.New[string]()
 		if featureSetAnnotation != "" {
 			for _, featureSet := range strings.Split(featureSetAnnotation, ",") {

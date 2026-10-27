@@ -39,6 +39,12 @@ suites, err = LoadTestSuiteSpecs(assetsDir, karpenterDir)
    [openshift/api tests](https://github.com/openshift/api/tree/master/tests) format.
 3. Each test case creates a resource from inline YAML and asserts either success or a specific validation error substring.
 
+Suites that must exercise a CRD variant without payload FeatureGate status
+metadata can set `crdFeatureSet` to its exact
+`release.openshift.io/feature-set` annotation. For example,
+`crdFeatureSet: CustomNoUpgrade` selects only that generated schema and leaves
+unknown-feature-gate validation unchanged for all other suites.
+
 ## Running
 
 ```bash

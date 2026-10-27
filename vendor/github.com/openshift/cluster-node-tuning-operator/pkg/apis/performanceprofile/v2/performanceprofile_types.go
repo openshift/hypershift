@@ -50,6 +50,11 @@ const (
 // that conflict with the DRA feature, and enforce the disablement as long as the annotation is present.
 const PerformanceProfileDRAResourceManagementAnnotation = "performance.openshift.io/dra-resource-management"
 
+// PerformanceProfileCPULoadBalancingOvsDpdkAnnotation controls whether the kernel scheduler
+// balances load across ovsDpdk CPUs. Set to "disable" to exclude ovsDpdk CPUs from the
+// kernel's scheduler load balancing pool; absent or "enable" keeps them in the pool (default).
+const PerformanceProfileCPULoadBalancingOvsDpdkAnnotation = "performance.openshift.io/cpu-load-balancing-ovs-dpdk"
+
 // PerformanceProfileSpec defines the desired state of PerformanceProfile.
 type PerformanceProfileSpec struct {
 	// CPU defines a set of CPU related parameters.
@@ -138,6 +143,12 @@ type CPU struct {
 	// alongside the isolated, exclusive resources that are being used already by those workloads.
 	// +optional
 	Shared *CPUSet `json:"shared,omitempty"`
+	// OvsDpdk defines a set of CPUs dedicated for OVS-DPDK PMD (Poll Mode Driver)
+	// threads, fully isolated from the operating system and Kubernetes scheduling.
+	// WorkloadPartitioning or --strict-cpu-reservation kubelet CPUManager policy
+	// option is a prerequisite for this feature.
+	// +optional
+	OvsDpdk *CPUSet `json:"ovsDpdk,omitempty"`
 }
 
 // CPUfrequency defines cpu frequencies for isolated and reserved cpus
@@ -280,8 +291,4 @@ type PerformanceProfileList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []PerformanceProfile `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&PerformanceProfile{}, &PerformanceProfileList{})
 }
