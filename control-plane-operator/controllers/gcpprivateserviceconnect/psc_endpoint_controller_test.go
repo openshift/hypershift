@@ -1967,14 +1967,13 @@ func TestMapHCPToPSC(t *testing.T) {
 		expectNames   []string
 	}{
 		{
-			name:          "When the HCP has the PSC finalizer, it should enqueue every PSC in its namespace",
+			name:          "When the HCP has the PSC finalizer but is not deleting, it should not enqueue PSC resources",
 			hcpFinalizers: []string{hcpGCPPSCFinalizerName},
 			pscObjects: []client.Object{
 				newTestGCPPSC("first", "test-ns", false),
 				newTestGCPPSC("second", "test-ns", false),
-				newTestGCPPSC("other-namespace", "other-ns", false),
 			},
-			expectNames: []string{"first", "second"},
+			expectNames: nil,
 		},
 		{
 			name: "When the HCP does not have the PSC finalizer, it should not enqueue PSC resources",
@@ -1992,13 +1991,23 @@ func TestMapHCPToPSC(t *testing.T) {
 			expectNames:   []string{"test-hcp-psc"}, // Synthetic request
 		},
 		{
-			name:          "When HCP is deleting with PSC CRs present, it should enqueue real PSC CRs",
+			name:          "When HCP is deleting with PSC CRs present, it should enqueue every real PSC CR in its namespace",
 			hcpFinalizers: []string{hcpGCPPSCFinalizerName},
 			hcpDeleting:   true,
 			pscObjects: []client.Object{
 				newTestGCPPSC("first", "test-ns", false),
+				newTestGCPPSC("second", "test-ns", false),
+				newTestGCPPSC("other-namespace", "other-ns", false),
 			},
-			expectNames: []string{"first"}, // Real PSC CR, not synthetic
+			expectNames: []string{"first", "second"}, // Real PSC CRs, not synthetic
+		},
+		{
+			name:        "When HCP is deleting without the PSC finalizer, it should not enqueue PSC resources",
+			hcpDeleting: true,
+			pscObjects: []client.Object{
+				newTestGCPPSC("first", "test-ns", false),
+			},
+			expectNames: nil,
 		},
 		{
 			name:          "When PSC list fails and HCP is deleting, it should still enqueue synthetic request",
@@ -2023,6 +2032,7 @@ func TestMapHCPToPSC(t *testing.T) {
 			if tt.hcpDeleting {
 				now := metav1.Now()
 				hcp.DeletionTimestamp = &now
+				hcp.Finalizers = append(hcp.Finalizers, "other-finalizer")
 			}
 
 			objects := append([]client.Object{hcp}, tt.pscObjects...)
