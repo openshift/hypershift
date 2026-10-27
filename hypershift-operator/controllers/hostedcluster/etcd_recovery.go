@@ -228,21 +228,12 @@ func (r *HostedClusterReconciler) findFailingEtcdPod(ctx context.Context, log lo
 		}
 
 		// Existing check: pod is crash-looping on a reachable node.
-		//
-		// Recovery is only warranted for sustained failure, not a single
-		// transient restart (e.g. during initial etcd member formation or
-		// under momentary node contention): a full member recovery deletes
-		// and re-adds the member, impairing the control plane for the
-		// duration of the recovery. Require the kubelet to have observed a
-		// real crash loop - Waiting.Reason == CrashLoopBackOff is only set
-		// after repeated fast failures - and enough restarts (>= 5) that,
-		// with CrashLoopBackOff backoff (10s doubling up to 5m), the
-		// member has been failing for several minutes before we act.
-		// Node loss is handled separately by the DisruptionTarget check
-		// above, which carries its own ~5-minute debounce.
+		// Require sustained failure (>= 5 restarts) rather than a single
+		// transient restart, which recovery would only make worse. The
+		// Waiting reason is deliberately not restricted, as sustained
+		// start-failure loops may never report CrashLoopBackOff.
 		for _, containerStatus := range pod.Status.ContainerStatuses {
 			if containerStatus.State.Waiting != nil &&
-				containerStatus.State.Waiting.Reason == "CrashLoopBackOff" &&
 				containerStatus.RestartCount >= 5 &&
 				containerStatus.Name == "etcd" {
 				log.Info("detected etcd failing pod", "name", pod.Name, "namespace", pod.Namespace, "restartCount", containerStatus.RestartCount)

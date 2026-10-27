@@ -254,7 +254,7 @@ func TestFindFailingEtcdPod(t *testing.T) {
 			expectFound: false,
 		},
 		{
-			name:      "When one etcd pod is in CrashLoopBackOff with 5+ restarts, it should return that pod",
+			name:      "When one etcd pod has 5+ restarts in CrashLoopBackOff, it should return that pod",
 			namespace: "clusters-test",
 			pods: []crclient.Object{
 				&corev1.Pod{
@@ -437,6 +437,54 @@ func TestFindFailingEtcdPod(t *testing.T) {
 				},
 			},
 			expectFound: false,
+		},
+		{
+			name:      "When one etcd pod has 5+ restarts in a start-failure state, it should return that pod",
+			namespace: "clusters-test",
+			pods: []crclient.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-0", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-1", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								// A sustained start-failure loop may never carry
+								// the CrashLoopBackOff reason; the restart count
+								// alone must be enough to trigger recovery.
+								Name:         "etcd",
+								State:        corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "RunContainerError"}},
+								RestartCount: 5,
+							},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-2", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+			},
+			expectFound:  true,
+			expectedName: "etcd-1",
 		},
 		{
 			name:      "When etcd pod is in CrashLoopBackOff with fewer than 5 restarts, it should not detect it as failing",
