@@ -211,16 +211,19 @@ func (r *GCPPrivateServiceConnectReconciler) enqueueOnAccessOrResourceLabelsChan
 	}
 }
 
-// mapHCPToPSC returns a mapper that enqueues all PSC CRs when the HCP changes.
-// Handles HCP deletion even when PSC CRs are gone to ensure HCP finalizer removal.
+// mapHCPToPSC returns a mapper that enqueues all PSC CRs when an HCP carrying the PSC
+// cleanup finalizer is being deleted. Handles HCP deletion even when PSC CRs are gone to
+// ensure HCP finalizer removal. Other HCP updates are ignored: enqueueing on every HCP
+// status change would run a full GCP reconcile each time, and the spec changes that matter
+// are handled by enqueueOnAccessOrResourceLabelsChange.
 func (r *GCPPrivateServiceConnectReconciler) mapHCPToPSC() handler.MapFunc {
 	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		hcp := obj.(*hyperv1.HostedControlPlane)
 		log := ctrl.Log.WithName("gcp-psc-endpoint-controller").WithValues("hcp", hcp.Namespace)
 
-		// Only process HCPs with our finalizer
+		// Only process deleting HCPs with our finalizer
 		// Skip HCPs that never had PSC resources to avoid unnecessary reconciliations
-		if !controllerutil.ContainsFinalizer(hcp, hcpGCPPSCFinalizerName) {
+		if !controllerutil.ContainsFinalizer(hcp, hcpGCPPSCFinalizerName) || hcp.DeletionTimestamp.IsZero() {
 			return nil
 		}
 
@@ -228,22 +231,19 @@ func (r *GCPPrivateServiceConnectReconciler) mapHCPToPSC() handler.MapFunc {
 		var pscList hyperv1.GCPPrivateServiceConnectList
 		if err := r.List(ctx, &pscList, client.InNamespace(hcp.Namespace)); err != nil {
 			log.Error(err, "Failed to list PSC CRs for HCP watch")
-			// If the HCP is deleting, enqueue the synthetic request anyway so a transient
-			// list error can't strand the HCP finalizer; Reconcile re-lists with backoff.
-			if !hcp.DeletionTimestamp.IsZero() {
-				return []reconcile.Request{{
-					NamespacedName: types.NamespacedName{
-						Name:      hcp.Name + "-psc",
-						Namespace: hcp.Namespace,
-					},
-				}}
-			}
-			return nil
+			// Enqueue the synthetic request anyway so a transient list error can't
+			// strand the HCP finalizer; Reconcile re-lists with backoff.
+			return []reconcile.Request{{
+				NamespacedName: types.NamespacedName{
+					Name:      hcp.Name + "-psc",
+					Namespace: hcp.Namespace,
+				},
+			}}
 		}
 
 		// HCP deleting with no PSC CRs: enqueue a synthetic request so Reconcile can
 		// remove the orphaned HCP finalizer (PSC CRs were deleted before the HCP).
-		if !hcp.DeletionTimestamp.IsZero() && len(pscList.Items) == 0 {
+		if len(pscList.Items) == 0 {
 			log.Info("HCP deleting with no PSC CRs - enqueueing request to remove HCP finalizer")
 			// Use HCP namespace + a known suffix as the PSC name. This assumes no real
 			// PSC CR is named "<hcp>-psc": Reconcile must get NotFound for this name so it
@@ -268,7 +268,7 @@ func (r *GCPPrivateServiceConnectReconciler) mapHCPToPSC() handler.MapFunc {
 		}
 
 		if len(requests) > 0 {
-			log.Info("HCP updated, enqueuing PSC CRs", "count", len(requests))
+			log.Info("HCP deleting, enqueuing PSC CRs", "count", len(requests))
 		}
 
 		return requests
