@@ -762,11 +762,7 @@ var allowlist = map[string]map[string][]string{
 		},
 	},
 	"test/e2e/v2/tests/nodepool_osimagestream_test.go": {
-		"NodePoolOSImageStreamCrossMajorUpgradeTest/It(\"When a NodePool at OCP 4.23 is upgraded to 5.0+, it should switch to rhel-10 by default\")#1": {
-			"Condition",
-			"Condition.Status",
-			"Condition.Type",
-			"ConditionPredicate",
+		"NodePoolOSImageStreamCrossMajorUpgradeTest/It(\"When a NodePool at the configured 4.x previous release is upgraded to 5.x+, it should switch to rhel-10 by default\")#1": {
 			"EventuallyObject",
 			"OSImageStreamPredicate",
 			"Predicate",
@@ -795,11 +791,7 @@ var allowlist = map[string]map[string][]string{
 			"WithInterval",
 			"WithTimeout",
 		},
-		"NodePoolOSImageStreamPinnedRHEL9UpgradeTest/It(\"When a NodePool pinned to rhel-9 is upgraded from 4.23 to 5.0+, it should remain on RHEL-9\")#1": {
-			"Condition",
-			"Condition.Status",
-			"Condition.Type",
-			"ConditionPredicate",
+		"NodePoolOSImageStreamPinnedRHEL9UpgradeTest/It(\"When a NodePool pinned to rhel-9 is upgraded from the configured 4.x previous release to 5.x+, it should remain on RHEL-9\")#1": {
 			"EventuallyObject",
 			"OSImageStreamPredicate",
 			"Predicate",
@@ -823,10 +815,6 @@ var allowlist = map[string]map[string][]string{
 			"WithTimeout",
 		},
 		"NodePoolOSImageStreamUpgradeVerificationTest/It(\"When a NodePool is upgraded, it should report the correct osImageStream in status\")#1": {
-			"Condition",
-			"Condition.Status",
-			"Condition.Type",
-			"ConditionPredicate",
 			"EventuallyObject",
 			"OSImageStreamPredicate",
 			"Predicate",

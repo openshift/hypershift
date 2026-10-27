@@ -185,7 +185,7 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 verify-parallel: verify-codespell verify-codecov verify-api-deps verify-crd-schema verify-capi-sync verify-capi-decoupling lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-capi-decoupling verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
+verify-ci: generate update staticcheck fmt vet lint verify-api-deps verify-crd-schema verify-capi-decoupling verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
 	$(MAKE) verify-git-clean
 
 .PHONY: verify
