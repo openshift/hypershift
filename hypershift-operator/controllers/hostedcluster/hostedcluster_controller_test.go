@@ -1154,6 +1154,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			},
 			hcpAnnotations: map[string]string{
 				k8sutil.DebugDeploymentsAnnotation:                             "control-plane-operator",
+				hyperv1.GCPFirewallSkipDeletionAnnotation:                      "true",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1":   "test1",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test3":   "test3",
 				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override4": "override4",
@@ -1182,6 +1183,19 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			expectedAnnotations: map[string]string{
 				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperv1.AWSKarpenterDefaultInstanceProfile:         "test-instance-profile",
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name: "When HostedCluster has skip-gcp-firewall-rule-cleanup annotation it should propagate to HCP",
+			hcAnnotations: map[string]string{
+				hyperv1.GCPFirewallSkipDeletionAnnotation: "true",
+			},
+			hcpAnnotations: map[string]string{},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.GCPFirewallSkipDeletionAnnotation:          "true",
 				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
