@@ -15,6 +15,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
 	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
@@ -406,7 +407,7 @@ func verifyCredentialPropagationAndIdentity(ctx context.Context, client crclient
 
 // verifyCompleteRolloutInvariants verifies that neither NodePools nor their CAPI workloads
 // have initiated a rollout. This includes generations, config annotations, and updating conditions.
-func verifyCompleteRolloutInvariants(ctx context.Context, client crclient.Client, namespace string, nodePoolsMap map[string]*hyperv1.NodePool, machineDeploymentMap map[string]int64, useCAPIv1Beta1 bool) error {
+func verifyCompleteRolloutInvariants(ctx context.Context, client crclient.Client, namespace string, nodePoolsMap map[string]*hyperv1.NodePool, workloads map[string]*unstructured.Unstructured, useCAPIv1Beta1 bool) error {
 	// Verify all expected NodePools still exist and haven't changed
 	for npName, originalNodePool := range nodePoolsMap {
 		currentNodePool := &hyperv1.NodePool{}
@@ -446,48 +447,24 @@ func verifyCompleteRolloutInvariants(ctx context.Context, client crclient.Client
 	}
 
 	// Verify all expected MachineDeployments/MachineSets still exist and haven't changed
-	currentWorkloads, err := listMachineDeploymentGenerations(ctx, client, namespace, useCAPIv1Beta1)
+	currentWorkloads, err := listOperatorUpgradeWorkloads(ctx, client, namespace, useCAPIv1Beta1)
 	if err != nil {
 		return fmt.Errorf("failed to list current workload generations: %w", err)
 	}
 
-	if len(currentWorkloads) != len(machineDeploymentMap) {
-		return fmt.Errorf("workload count changed from %d to %d", len(machineDeploymentMap), len(currentWorkloads))
+	if len(currentWorkloads) != len(workloads) {
+		return fmt.Errorf("workload count changed from %d to %d", len(workloads), len(currentWorkloads))
 	}
 
-	for name, originalGeneration := range machineDeploymentMap {
-		currentGeneration, exists := currentWorkloads[name]
+	for name, original := range workloads {
+		current, exists := currentWorkloads[name]
 		if !exists {
 			return fmt.Errorf("workload %s no longer exists", name)
 		}
-		if currentGeneration != originalGeneration {
-			return fmt.Errorf("workload %s generation changed from %d to %d",
-				name, originalGeneration, currentGeneration)
+		if err := operatorUpgradeWorkloadUnchanged(original, current); err != nil {
+			return fmt.Errorf("workload %s changed after rotation: %w", name, err)
 		}
 	}
 
 	return nil
-}
-
-// listMachineDeploymentGenerations is a helper that lists MachineDeployment or MachineSet generations.
-func listMachineDeploymentGenerations(ctx context.Context, client crclient.Client, namespace string, useV1Beta1 bool) (map[string]int64, error) {
-	generations := make(map[string]int64)
-	if useV1Beta1 {
-		list := &capiv1beta1.MachineDeploymentList{}
-		if err := client.List(ctx, list, crclient.InNamespace(namespace)); err != nil {
-			return nil, err
-		}
-		for i := range list.Items {
-			generations[list.Items[i].Name] = list.Items[i].Generation
-		}
-	} else {
-		list := &capiv1beta2.MachineDeploymentList{}
-		if err := client.List(ctx, list, crclient.InNamespace(namespace)); err != nil {
-			return nil, err
-		}
-		for i := range list.Items {
-			generations[list.Items[i].Name] = list.Items[i].Generation
-		}
-	}
-	return generations, nil
 }
