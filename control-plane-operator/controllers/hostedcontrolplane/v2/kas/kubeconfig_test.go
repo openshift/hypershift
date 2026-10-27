@@ -6,8 +6,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -194,4 +198,170 @@ func TestGenerateKubeConfigWithServingCerts_WhenClientCertIsMissing(t *testing.T
 	_, err := generateKubeConfigWithServingCerts(cpContext, certSecretRef, "https://api:6443")
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("failed to get client cert secret"))
+}
+
+func TestAdaptBootstrapKubeconfigSecret(t *testing.T) {
+	const namespace = "test-ns"
+
+	rootCAPEM := []byte("-----BEGIN CERTIFICATE-----\nROOTCA\n-----END CERTIFICATE-----\n")
+	clientCertPEM := []byte("-----BEGIN CERTIFICATE-----\nCLIENT\n-----END CERTIFICATE-----\n")
+	clientKeyPEM := []byte("-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----\n")
+
+	baseObjects := func() []corev1.Secret {
+		return []corev1.Secret{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "root-ca", Namespace: namespace},
+				Data:       map[string][]byte{certs.CASignerCertMapKey: rootCAPEM},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "kas-bootstrap-client", Namespace: namespace},
+				Data:       map[string][]byte{corev1.TLSCertKey: clientCertPEM, corev1.TLSPrivateKeyKey: clientKeyPEM},
+			},
+		}
+	}
+
+	int32Ptr := func(v int32) *int32 { return &v }
+	strPtr := func(v string) *string { return &v }
+
+	testCases := []struct {
+		name             string
+		featureSet       string
+		platformType     hyperv1.PlatformType
+		endpointAccess   hyperv1.AWSEndpointAccessType
+		apiServerPort    *int32
+		advertiseAddress *string
+		serviceNetwork   string
+		expectedServer   string
+	}{
+		{
+			name:           "When gate is OFF on Agent platform, it should use external URL",
+			featureSet:     string(configv1.Default),
+			platformType:   hyperv1.AgentPlatform,
+			expectedServer: "https://api.test.example.com:6443",
+		},
+		{
+			name:           "When gate is ON on Agent platform, it should use advertise address",
+			featureSet:     string(configv1.TechPreviewNoUpgrade),
+			platformType:   hyperv1.AgentPlatform,
+			expectedServer: "https://" + config.DefaultAdvertiseIPv4Address + ":6443",
+		},
+		{
+			name:           "When gate is ON on None platform, it should use advertise address",
+			featureSet:     string(configv1.TechPreviewNoUpgrade),
+			platformType:   hyperv1.NonePlatform,
+			expectedServer: "https://" + config.DefaultAdvertiseIPv4Address + ":6443",
+		},
+		{
+			name:           "When gate is ON on KubeVirt platform, it should use advertise address",
+			featureSet:     string(configv1.TechPreviewNoUpgrade),
+			platformType:   hyperv1.KubevirtPlatform,
+			expectedServer: "https://" + config.DefaultAdvertiseIPv4Address + ":6443",
+		},
+		{
+			name:           "When gate is ON on OpenStack platform, it should use advertise address",
+			featureSet:     string(configv1.TechPreviewNoUpgrade),
+			platformType:   hyperv1.OpenStackPlatform,
+			expectedServer: "https://" + config.DefaultAdvertiseIPv4Address + ":6443",
+		},
+		{
+			name:           "When gate is ON on AWS platform, it should use external URL",
+			featureSet:     string(configv1.TechPreviewNoUpgrade),
+			platformType:   hyperv1.AWSPlatform,
+			endpointAccess: hyperv1.Public,
+			expectedServer: "https://api.test.example.com:6443",
+		},
+		{
+			name:           "When gate is ON on Azure platform, it should use external URL",
+			featureSet:     string(configv1.TechPreviewNoUpgrade),
+			platformType:   hyperv1.AzurePlatform,
+			expectedServer: "https://api.test.example.com:6443",
+		},
+		{
+			name:           "When gate is ON on GCP platform, it should use external URL",
+			featureSet:     string(configv1.TechPreviewNoUpgrade),
+			platformType:   hyperv1.GCPPlatform,
+			expectedServer: "https://api.test.example.com:6443",
+		},
+		{
+			name:           "When gate is ON with apiServer.port 443 on Agent platform, it should use port 443",
+			featureSet:     string(configv1.TechPreviewNoUpgrade),
+			platformType:   hyperv1.AgentPlatform,
+			apiServerPort:  int32Ptr(443),
+			expectedServer: "https://" + config.DefaultAdvertiseIPv4Address + ":443",
+		},
+		{
+			name:           "When gate is ON with IPv6 service network, it should use IPv6 advertise address",
+			featureSet:     string(configv1.TechPreviewNoUpgrade),
+			platformType:   hyperv1.AgentPlatform,
+			serviceNetwork: "fd01::/112",
+			expectedServer: "https://[" + config.DefaultAdvertiseIPv6Address + "]:6443",
+		},
+		{
+			name:             "When gate is ON with custom advertise address, it should use custom address",
+			featureSet:       string(configv1.TechPreviewNoUpgrade),
+			platformType:     hyperv1.AgentPlatform,
+			advertiseAddress: strPtr("10.0.0.1"),
+			expectedServer:   "https://10.0.0.1:6443",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			featuregates.ConfigureFeatureSet(tc.featureSet)
+			t.Cleanup(func() { featuregates.ConfigureFeatureSet(string(configv1.Default)) })
+
+			serviceNet := "10.96.0.0/12"
+			if tc.serviceNetwork != "" {
+				serviceNet = tc.serviceNetwork
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: namespace},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: tc.platformType,
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR(serviceNet)}},
+					},
+				},
+			}
+			if tc.apiServerPort != nil || tc.advertiseAddress != nil {
+				hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{
+					Port:             tc.apiServerPort,
+					AdvertiseAddress: tc.advertiseAddress,
+				}
+			}
+			if tc.platformType == hyperv1.AWSPlatform {
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					EndpointAccess: tc.endpointAccess,
+				}
+			}
+
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			for _, obj := range baseObjects() {
+				o := obj
+				clientBuilder.WithObjects(&o)
+			}
+
+			cpContext := controlplanecomponent.WorkloadContext{
+				Context: t.Context(),
+				HCP:     hcp,
+				Client:  clientBuilder.Build(),
+				InfraStatus: infra.InfrastructureStatus{
+					APIHost: "api.test.example.com",
+					APIPort: 6443,
+				},
+			}
+
+			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "bootstrap-kubeconfig", Namespace: namespace}}
+			err := adaptBootstrapKubeconfigSecret(cpContext, secret)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			kubeconfig, err := clientcmd.Load(secret.Data[KubeconfigKey])
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(kubeconfig.Clusters["cluster"].Server).To(Equal(tc.expectedServer))
+		})
+	}
 }

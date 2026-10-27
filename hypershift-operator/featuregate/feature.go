@@ -69,6 +69,15 @@ const (
 	// owner: @typeid
 	// alpha: v0.1.84
 	AWSManagedDNS featuregate.Feature = "AWSManagedDNS"
+
+	// KubeletHAProxyRouting gates the kubelet-through-HAProxy routing change on bare-metal
+	// public clusters (Agent/None/KubeVirt/OpenStack platforms). When enabled, the bootstrap
+	// kubeconfig points kubelet at the HAProxy advertise address instead of the KAS LB IP.
+	// Registered here for HYPERSHIFT_FEATURESET propagation and Day 2 transition work
+	// (CNTRLPLANE-4799/4800). Runtime gate check is in CPO's adaptBootstrapKubeconfigSecret.
+	// owner: @jparrill
+	// alpha: v0.1.84
+	KubeletHAProxyRouting featuregate.Feature = "KubeletHAProxyRouting"
 )
 
 // Initialize new features here
@@ -84,6 +93,7 @@ var (
 	osStreamsFeature               = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 	deterministicLBIPFeature       = featuregates.NewFeature(DeterministicLBIP, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	awsManagedDNSFeature           = featuregates.NewFeature(AWSManagedDNS, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	kubeletHAProxyRoutingFeature   = featuregates.NewFeature(KubeletHAProxyRouting, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -97,6 +107,7 @@ func init() {
 	allFeatures.AddFeature(osStreamsFeature)
 	allFeatures.AddFeature(deterministicLBIPFeature)
 	allFeatures.AddFeature(awsManagedDNSFeature)
+	allFeatures.AddFeature(kubeletHAProxyRoutingFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
