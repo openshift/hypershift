@@ -460,9 +460,9 @@ setup-envtest: $(SETUP_ENVTEST) ## Setup envtest binaries (etcd, kube-apiserver)
 NUM_CORES := $(shell getconf _NPROCESSORS_ONLN || echo 1)
 GO_TEST_FLAGS ?= -race
 
-test: generate test-e2ev2-unit
+test: setup-envtest generate test-e2ev2-unit
 	@echo "Running tests with $(NUM_CORES) parallel jobs..."
-	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(KUBEBUILDER_ASSETS)" $(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
 # Unit tests for the v2 e2e framework itself. These packages are entirely
 # behind the e2ev2 build tag, so the plain `go test ./...` in `test` skips
@@ -511,7 +511,11 @@ COVER_PROFILE ?= cover.out
 .PHONY: test-shard
 test-shard: generate
 	@echo "Running shard tests for packages: $(TEST_PACKAGES)"
-	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
+	KUBEBUILDER_ASSETS="$(KUBEBUILDER_ASSETS)" $(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
+
+ifneq ($(filter ./... ./hypershift-operator/%,$(TEST_PACKAGES)),)
+test-shard: setup-envtest
+endif
 
 # OCP envtest index for downstream kubebuilder assets
 ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml
