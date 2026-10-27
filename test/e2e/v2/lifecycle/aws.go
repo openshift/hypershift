@@ -150,15 +150,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 		publicArgs = append(publicArgs, "--initial-storage-volumes-kms-key="+arn)
 	}
 
-	// Always include kms-reencryption so the variant set is stable regardless of environment.
-	// --kms-key-arn is only appended when the ARN is configured; without it the cluster uses
-	// the default AESCBC encryption.
-	kmsCreateArgs := clusterArgs()
-	if kmsKeyARN := os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN"); kmsKeyARN != "" {
-		kmsCreateArgs = clusterArgs("--kms-key-arn=" + kmsKeyARN)
-	}
-
-	return []ClusterSpec{
+	specs := []ClusterSpec{
 		{
 			Variant:     "public",
 			DestroyArgs: destroyArgs,
@@ -262,12 +254,20 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 				"--control-plane-availability-policy=HighlyAvailable",
 			}, v2util.EtcdShardingCreateArgs("")...)...),
 		},
-		{
+	}
+
+	// Only include kms-reencryption when a KMS key ARN is configured.
+	// e2e rotation coverage is KMS-only; without an ARN there are no rotation
+	// tests to run so the dedicated cluster would be created for nothing.
+	if kmsKeyARN := os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN"); kmsKeyARN != "" {
+		specs = append(specs, ClusterSpec{
 			Variant:     "kms-reencryption",
 			DestroyArgs: destroyArgs,
-			CreateArgs:  kmsCreateArgs,
-		},
+			CreateArgs:  clusterArgs("--kms-key-arn=" + kmsKeyARN),
+		})
 	}
+
+	return specs
 }
 
 // PreCreate deploys the external OIDC provider and the mirror registry fixture

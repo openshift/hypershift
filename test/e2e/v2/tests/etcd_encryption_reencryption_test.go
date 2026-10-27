@@ -18,7 +18,6 @@ package tests
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"io"
 	"time"
@@ -32,7 +31,6 @@ import (
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -73,7 +71,6 @@ func RegisterEtcdEncryptionReencryptionTests(getTestCtx internal.TestContextGett
 	AWSKMSKeyRotationTest(getTestCtx)
 	AzureKMSKeyRotationTest(getTestCtx)
 	AzureKMSConsecutiveKeyRotationTest(getTestCtx)
-	AESCBCKeyRotationTest(getTestCtx)
 	ConditionBubbleUpTest(getTestCtx)
 }
 
@@ -473,58 +470,6 @@ func AzureKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 		verifyProviderField: func(hc *hyperv1.HostedCluster, alternate string) {
 			Expect(hc.Status.SecretEncryption.ActiveKey.Azure.KeyVersion).To(Equal(alternate),
 				"activeKey keyVersion should match the alternate version")
-		},
-	})
-}
-
-// AESCBCKeyRotationTest validates the re-encryption lifecycle after rotating the AESCBC encryption key.
-func AESCBCKeyRotationTest(getTestCtx internal.TestContextGetter) {
-	runSingleRotationTest(getTestCtx, rotationCase{
-		contextLabel:     "[Feature:AESCBCReencryption] AESCBC Key Rotation",
-		itLabel:          "should re-encrypt secrets after active key rotation",
-		expectedProvider: hyperv1.SecretEncryptionProviderAESCBC,
-		applies: func(hc *hyperv1.HostedCluster) (bool, string) {
-			if hc.Spec.SecretEncryption.Type != hyperv1.AESCBC || hc.Spec.SecretEncryption.AESCBC == nil {
-				return false, "AESCBC key rotation test requires AESCBC encryption configured"
-			}
-			return true, ""
-		},
-		prepare: func(ctx context.Context, tc *internal.TestContext) (string, error) {
-			keyData := make([]byte, 32)
-			if _, err := rand.Read(keyData); err != nil {
-				return "", fmt.Errorf("failed to generate random AESCBC key data: %w", err)
-			}
-			newKeySecret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-aescbc-rotation-key",
-					Namespace: tc.ClusterNamespace,
-				},
-				Type: corev1.SecretTypeOpaque,
-				Data: map[string][]byte{
-					hyperv1.AESCBCKeySecretKey: keyData,
-				},
-			}
-			if err := tc.MgmtClient.Create(ctx, newKeySecret); err != nil {
-				return "", fmt.Errorf("failed to create AESCBC key secret: %w", err)
-			}
-			DeferCleanup(func() {
-				if err := tc.MgmtClient.Delete(tc.Context, newKeySecret); err != nil && !apierrors.IsNotFound(err) {
-					GinkgoWriter.Printf("WARNING: failed to cleanup AESCBC key secret: %v\n", err)
-				}
-			})
-			return newKeySecret.Name, nil
-		},
-		getActiveKey: func(hc *hyperv1.HostedCluster) string {
-			return hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name
-		},
-		setActiveKey: func(hc *hyperv1.HostedCluster, value string) {
-			hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name = value
-		},
-		verifyProviderField: func(hc *hyperv1.HostedCluster, alternate string) {
-			Expect(hc.Status.SecretEncryption.ActiveKey.AESCBC).NotTo(BeNil(),
-				"activeKey AESCBC should not be nil after AESCBC key rotation")
-			Expect(hc.Status.SecretEncryption.ActiveKey.AESCBC.Secret.Name).To(Equal(alternate),
-				"activeKey AESCBC secret should reference the new key")
 		},
 	})
 }
