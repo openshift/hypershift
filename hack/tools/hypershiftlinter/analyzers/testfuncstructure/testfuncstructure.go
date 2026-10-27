@@ -28,6 +28,7 @@ var Analyzer = &analysis.Analyzer{
 
 type productionSymbol struct {
 	id            string
+	fn            *types.Func
 	display       string
 	canonicalTest string
 	variants      []testNameVariant
@@ -78,14 +79,16 @@ var excludedBuildTags = sets.New("e2e", "e2ev2", "envtest", "integration", "reqs
 func run(pass *analysis.Pass) (any, error) {
 	symbols := collectProductionSymbols(pass)
 	symbolsByID := make(map[string]*productionSymbol, len(symbols))
+	symbolsByFunc := make(map[*types.Func]*productionSymbol, len(symbols))
 	for _, symbol := range symbols {
 		symbolsByID[symbol.id] = symbol
+		symbolsByFunc[symbol.fn] = symbol
 	}
 
 	tests := collectTests(pass)
 	groups := map[string][]*testFunction{}
 	for _, test := range tests {
-		test.resolution = resolveTest(pass, test, symbols, symbolsByID)
+		test.resolution = resolveTest(pass, test, symbols, symbolsByFunc)
 		switch test.resolution.kind {
 		case resolutionExact, resolutionScenario, resolutionDisconnected:
 			groups[test.resolution.target.id] = append(groups[test.resolution.target.id], test)
@@ -229,10 +232,18 @@ func addProductionSymbol(seen map[string]*productionSymbol, fn *types.Func) {
 	id := symbolID(fn)
 	seen[id] = &productionSymbol{
 		id:            id,
+		fn:            functionOrigin(fn),
 		display:       display,
 		canonicalTest: canonical,
 		variants:      variants,
 	}
+}
+
+func functionOrigin(fn *types.Func) *types.Func {
+	if fn == nil {
+		return nil
+	}
+	return fn.Origin()
 }
 
 func receiverName(fn *types.Func) string {
@@ -436,8 +447,8 @@ func hasNoLintDirective(fn *ast.FuncDecl) bool {
 	return false
 }
 
-func resolveTest(pass *analysis.Pass, test *testFunction, symbols []*productionSymbol, symbolsByID map[string]*productionSymbol) resolution {
-	called := calledProductionSymbols(pass, test.decl, symbolsByID)
+func resolveTest(pass *analysis.Pass, test *testFunction, symbols []*productionSymbol, symbolsByFunc map[*types.Func]*productionSymbol) resolution {
+	called := calledProductionSymbols(pass, test.decl, symbolsByFunc)
 	var exactMatches, scenarioMatches []symbolMatch
 	for _, symbol := range symbols {
 		match, ok := matchSymbol(test.name, symbol)
@@ -466,8 +477,8 @@ func resolveTest(pass *analysis.Pass, test *testFunction, symbols []*productionS
 	}
 
 	calledSymbols := make([]*productionSymbol, 0, len(called))
-	for id := range called {
-		calledSymbols = append(calledSymbols, symbolsByID[id])
+	for symbol := range called {
+		calledSymbols = append(calledSymbols, symbol)
 	}
 	slices.SortFunc(calledSymbols, func(a, b *productionSymbol) int {
 		return strings.Compare(a.id, b.id)
@@ -538,14 +549,14 @@ func betterMatch(candidate, current symbolMatch) bool {
 	return candidate.priority > current.priority
 }
 
-func resolveMatches(matches []symbolMatch, called sets.Set[string]) resolution {
+func resolveMatches(matches []symbolMatch, called sets.Set[*productionSymbol]) resolution {
 	if len(matches) == 1 {
 		match := matches[0]
 		return resolution{kind: match.kind, target: match.symbol, priority: match.priority}
 	}
 
 	calledMatches := slices.DeleteFunc(slices.Clone(matches), func(match symbolMatch) bool {
-		return !called.Has(match.symbol.id)
+		return !called.Has(match.symbol)
 	})
 	if len(calledMatches) == 1 {
 		match := calledMatches[0]
@@ -562,20 +573,19 @@ func resolveMatches(matches []symbolMatch, called sets.Set[string]) resolution {
 	return resolution{kind: resolutionAmbiguous, candidates: candidates}
 }
 
-func calledProductionSymbols(pass *analysis.Pass, test *ast.FuncDecl, symbolsByID map[string]*productionSymbol) sets.Set[string] {
-	called := sets.New[string]()
+func calledProductionSymbols(pass *analysis.Pass, test *ast.FuncDecl, symbolsByFunc map[*types.Func]*productionSymbol) sets.Set[*productionSymbol] {
+	called := sets.New[*productionSymbol]()
 	ast.Inspect(test.Body, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
 		fn := calledFunction(pass, call.Fun)
-		if fn == nil || fn.Pkg() == nil {
+		if fn == nil {
 			return true
 		}
-		id := symbolID(fn)
-		if _, ok := symbolsByID[id]; ok {
-			called.Insert(id)
+		if symbol := symbolsByFunc[functionOrigin(fn)]; symbol != nil {
+			called.Insert(symbol)
 		}
 		return true
 	})
@@ -661,6 +671,25 @@ func reportGroup(pass *analysis.Pass, tests []*testFunction) {
 	if tests[0].resolution.kind == resolutionExact {
 		primary = tests[0]
 		preferred = primary.name
+	}
+	// The external test package can see both the local external test and the
+	// internal test recorded in the production package fact. If the external
+	// test is baselined and the internal canonical test is new, the internal
+	// pass cannot see the conflict. Report it on the new internal declaration
+	// so changed-line filtering evaluates the declaration that introduced it.
+	if primary != nil && primary.imported && !primary.suppressed {
+		for _, test := range tests {
+			if test.imported || !isLegacyException(pass, test) {
+				continue
+			}
+			pass.Report(analysis.Diagnostic{
+				Pos:     primary.namePos,
+				End:     primary.nameEnd,
+				Message: fmt.Sprintf("test function %q adds another top-level test for %s while external test %q still exists; consolidate both under %q using table-driven cases or t.Run subtests", primary.name, symbol.display, test.name, preferred),
+				Related: relatedTest(test, fmt.Sprintf("external top-level test %q", test.name)),
+			})
+			break
+		}
 	}
 	if primary != nil && !shouldSuppress(pass, primary) {
 		for _, test := range tests[1:] {
