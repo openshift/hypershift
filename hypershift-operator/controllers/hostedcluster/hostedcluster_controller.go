@@ -2388,8 +2388,8 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 	ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN,
 	controlPlaneNamespace string,
 ) error {
-	if hcluster.UID == "" || controlPlaneNamespace == "" || controlPlaneNamespace == hcluster.Namespace {
-		return fmt.Errorf("global config sync requires a HostedCluster UID and a separate control plane namespace")
+	if controlPlaneNamespace == "" || controlPlaneNamespace == hcluster.Namespace {
+		return fmt.Errorf("global config sync requires a separate control plane namespace")
 	}
 	var configMapRefs, secretRefs []string
 	if hcluster.Spec.Configuration != nil {
@@ -2401,9 +2401,6 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 		if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef}, sourceCM); err != nil {
 			return fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef, err)
 		}
-		if err := validateGlobalConfigMapSource(sourceCM, hcluster); err != nil {
-			return fmt.Errorf("invalid referenced configmap %s/%s: %w", sourceCM.Namespace, sourceCM.Name, err)
-		}
 		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); err != nil {
 			return fmt.Errorf("failed to set referenced resource annotation on configmap %s/%s: %w", sourceCM.Namespace, sourceCM.Name, err)
 		}
@@ -2411,9 +2408,8 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 		destCM.Name = sourceCM.Name
 		destCM.Namespace = controlPlaneNamespace
 		if _, err := createOrUpdate(ctx, r.Client, destCM, func() error {
-			track, err := globalConfigMapTracking(destCM, hcluster)
-			if err != nil {
-				return err
+			if cluster, exists := destCM.Annotations[k8sutil.HostedClusterAnnotation]; len(destCM.OwnerReferences) != 0 || (exists && cluster != client.ObjectKeyFromObject(hcluster).String()) {
+				return fmt.Errorf("destination configmap has conflicting ownership")
 			}
 			copied := sourceCM.DeepCopy()
 			destCM.Annotations = copied.Annotations
@@ -2421,17 +2417,10 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 			destCM.Data = copied.Data
 			destCM.BinaryData = copied.BinaryData
 			destCM.Immutable = copied.Immutable
-			if track {
-				if destCM.Labels == nil {
-					destCM.Labels = map[string]string{}
-				}
-				destCM.Labels[globalConfigCopyLabel] = "true"
-				if destCM.Annotations == nil {
-					destCM.Annotations = map[string]string{}
-				}
-				destCM.Annotations[globalConfigOwnerUIDAnnotation] = string(hcluster.UID)
-				destCM.Annotations[k8sutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
+			if destCM.Labels == nil {
+				destCM.Labels = map[string]string{}
 			}
+			destCM.Labels[globalConfigCopyLabel] = "true"
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)

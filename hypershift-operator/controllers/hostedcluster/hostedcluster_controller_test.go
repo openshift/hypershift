@@ -2143,8 +2143,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	}
 
 	// Initialize some common data among the HostedClusters
-	for index, testCase := range testCases {
-		testCase.hostedCluster.UID = types.UID(fmt.Sprintf("c66d1ac7-7920-4dc0-9bfa-%012d", index+1))
+	for _, testCase := range testCases {
 		testCase.hostedCluster.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
 			{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
 			{Service: hyperv1.Konnectivity, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},

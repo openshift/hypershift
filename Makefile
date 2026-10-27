@@ -404,9 +404,9 @@ setup-envtest: $(SETUP_ENVTEST) ## Setup envtest binaries (etcd, kube-apiserver)
 NUM_CORES := $(shell getconf _NPROCESSORS_ONLN || echo 1)
 GO_TEST_FLAGS ?= -race
 
-test: setup-envtest generate test-e2ev2-unit
+test: generate test-e2ev2-unit
 	@echo "Running tests with $(NUM_CORES) parallel jobs..."
-	KUBEBUILDER_ASSETS="$(KUBEBUILDER_ASSETS)" $(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
+	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
 .PHONY: test-e2ev2-unit
 test-e2ev2-unit:
@@ -446,11 +446,7 @@ COVER_PROFILE ?= cover.out
 .PHONY: test-shard
 test-shard: generate
 	@echo "Running shard tests for packages: $(TEST_PACKAGES)"
-	KUBEBUILDER_ASSETS="$(KUBEBUILDER_ASSETS)" $(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
-
-ifneq ($(filter ./... ./hypershift-operator/%,$(TEST_PACKAGES)),)
-test-shard: setup-envtest
-endif
+	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m $(TEST_PACKAGES) -coverprofile $(COVER_PROFILE)
 
 # OCP envtest index for downstream kubebuilder assets
 ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envtest-releases.yaml
