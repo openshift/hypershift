@@ -70,13 +70,6 @@ type DiagnosticsOptions struct {
 	serialHTTPClient *http.Client
 }
 
-// DumpMachineDiagnostics collects diagnostics best-effort, returning aggregate
-// collection errors. Every discovered machine's outcome is saved in the summary.
-func DumpMachineDiagnostics(ctx context.Context, kubeClient client.Client, hc *hyperv1.HostedCluster, credentialsFile, artifactDir string, logger logr.Logger) error {
-	_, err := CollectMachineDiagnostics(ctx, kubeClient, hc, DiagnosticsOptions{CredentialsFile: credentialsFile, ArtifactDir: artifactDir}, logger)
-	return err
-}
-
 // CollectMachineDiagnostics collects serial logs before attempting journals.
 // Missing Azure credentials do not prevent API or configured SSH journal access.
 // The report is also written to machine-diagnostics.json, including empty discovery.

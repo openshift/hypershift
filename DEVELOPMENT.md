@@ -63,6 +63,7 @@ make lint-fix                 # Auto-fix linting issues
 make verify                   # Full verification (generate, update, staticcheck, fmt, vet, lint, codespell, gitlint)
 make staticcheck              # Run staticcheck on core packages
 make deadcode                 # Report whole-program dead-code candidates (not a gate)
+make verify-deadcode          # Scan and fail on any dead-code candidate
 make fmt                      # Format code
 make vet                      # Run go vet
 make verify-codespell         # Catch spelling errors in markdown
@@ -79,8 +80,11 @@ make deadcode ARTIFACT_DIR="$PWD/.work/deadcode"
 
 The target builds `golang.org/x/tools/cmd/deadcode` pinned to v0.48.0 from the
 vendored tools module, builds the report helper, and runs `generate` for ignored
-mocks. It does not modify tracked source files or delete candidates. It is not
-part of `verify`, `verify-ci`, or `pre-commit`, and does not enforce a baseline.
+mocks. It does not modify tracked source files or delete candidates. `make
+deadcode` remains reporting-only; `make verify-deadcode` runs the same scan and
+fails when any candidate is reported. Neither is part of `verify`, `verify-ci`,
+or `pre-commit`; the dedicated `Deadcode` GitHub Actions workflow enforces the
+gate on pull requests to `main`.
 
 Analysis loads root-module `./...`, all executable entry points, and test
 executables (`-test`) using tags `integration,e2e,reqserving,e2ev2,backuprestore`.
@@ -121,11 +125,17 @@ invalidates old reports before scanning, stages new reports, and publishes the
 completion summary last. Use a fresh artifact directory for each run: a failed
 Make prerequisite can leave artifacts from an earlier invocation untouched.
 
+`make verify-deadcode` gates on the completed scan: it runs `make deadcode` and
+then `make deadcode-gate`, which fails when `deadcode.txt` is non-empty and
+prints the candidates. `deadcode-gate` can also be run on its own against an
+existing artifact directory.
+
 The analyzer defaults to `GOMEMLIMIT=6GiB` and `GOGC=50`; explicit environment
 values override these defaults and are recorded in the summary. A Go memory
 limit is **not** an RSS or container memory limit. Whole-program analysis can
-require substantial memory. CI scheduling, resources, artifact publication, and
-runtime/memory measurements are owned by the separate CNTRLPLANE-4601 task.
+require substantial memory. The `Deadcode` GitHub Actions workflow runs the gate
+on pull requests to `main` on an ARC runner with a 45-minute timeout and uploads
+the artifact directory on success and failure.
 
 Candidates require human review, not automatic deletion. An unreachable method
 may still be required to satisfy an interface and cannot necessarily be deleted

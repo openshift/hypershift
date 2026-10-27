@@ -50,8 +50,6 @@ import (
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 
@@ -3472,60 +3470,6 @@ func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, h
 		if len(podsWithoutAppLabel) > 0 {
 			t.Fatalf("expected pods [%s] to have app label set", strings.Join(podsWithoutAppLabel, ", "))
 		}
-	})
-}
-
-func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) {
-	t.Run("EnsureDefaultSecurityGroupTags", func(t *testing.T) {
-		AtLeast(t, Version420)
-		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			t.Skip("This test is only applicable for AWS platform")
-		}
-		g := NewWithT(t)
-
-		tagsPolicy := fmt.Sprintf(`{
-			"Version": "2012-10-17",
-			"Statement": [
-				{
-					"Effect": "Allow",
-					"Action": [
-						"ec2:CreateTags",
-						"ec2:DeleteTags"
-					],
-					"Resource": "arn:aws:ec2:*:*:security-group/%s"
-				}
-			]
-		}`, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
-
-		cleanup, err := PutRolePolicy(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
-		defer func() {
-			err := cleanup()
-			g.Expect(err).NotTo(HaveOccurred(), "failed to cleanup role policy for tagging default security group")
-		}()
-
-		day2TagKey := "test-day2-tag"
-		day2TagValue := "test-day2-value"
-
-		// Update the hosted cluster to add a day2 tag
-		err = UpdateObject(t, ctx, client, hostedCluster, func(object *hyperv1.HostedCluster) {
-			object.Spec.Platform.AWS.ResourceTags = append(object.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
-				Key:   day2TagKey,
-				Value: day2TagValue,
-			})
-		})
-		g.Expect(err).NotTo(HaveOccurred(), "failed to update hostedcluster with day2 tag")
-
-		// Ensure that day2 tag is correctly applied to the default security group.
-		g.Eventually(func(g Gomega) {
-			sg, err := GetDefaultSecurityGroup(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get default security group")
-
-			g.Expect(sg.Tags).To(ContainElement(ec2types.Tag{
-				Key:   aws.String(day2TagKey),
-				Value: aws.String(day2TagValue),
-			}))
-		}).WithContext(ctx).WithTimeout(time.Minute * 10).WithPolling(time.Second).Should(Succeed())
 	})
 }
 

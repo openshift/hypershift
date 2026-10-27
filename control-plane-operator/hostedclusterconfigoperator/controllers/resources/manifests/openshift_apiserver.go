@@ -3,8 +3,6 @@ package manifests
 import (
 	"fmt"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
@@ -57,14 +55,6 @@ func OpenShiftAPIServerService(ns string) *corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openshift-apiserver",
 			Namespace: ns,
-		},
-	}
-}
-
-func OpenShiftAPIServerOperator() *operatorv1.OpenShiftAPIServer {
-	return &operatorv1.OpenShiftAPIServer{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster",
 		},
 	}
 }
