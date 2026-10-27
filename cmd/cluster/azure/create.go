@@ -107,6 +107,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", util.SATokenIssuerKeyPathDescription)
 	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, util.DNSZoneRGNameDescription)
 	flags.BoolVar(&opts.AutoNode, "auto-node", opts.AutoNode, "If true, this flag indicates the Hosted Cluster will support the AutoNode feature.")
+	flags.StringVar(&opts.KarpenterClientID, "karpenter-client-id", opts.KarpenterClientID, util.KarpenterClientIDDescription)
 }
 
 // bindEndpointAccessFlags binds the endpoint access flags for Azure private connectivity
@@ -171,6 +172,11 @@ func (o *RawCreateOptions) Validate(ctx context.Context, coreOpts *core.CreateOp
 	// Check if the network security group is set and the resource group is not
 	if o.NetworkSecurityGroupID != "" && o.ResourceGroupName == "" {
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
+	}
+
+	// Infra JSON already records the identity used for role assignment.
+	if coreOpts != nil && coreOpts.InfrastructureJSON != "" && o.KarpenterClientID != "" {
+		return nil, fmt.Errorf("--karpenter-client-id cannot be used with --infra-json; provide it to 'create infra azure' instead")
 	}
 
 	if err := o.validateRoleAssignmentFlags(coreOpts); err != nil {
@@ -481,7 +487,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 
 	if o.AutoNode {
 		if o.infra.KarpenterClientID == "" {
-			return fmt.Errorf("autoNode on Azure requires a Karpenter workload identity; re-run 'hypershift create iam azure' with --enable-karpenter")
+			return fmt.Errorf("autoNode on Azure requires a Karpenter client ID from --karpenter-client-id or --workload-identities-file; with --infra-json, supply the identity when creating infrastructure")
 		}
 		cluster.Spec.AutoNode = hyperv1.AutoNode{
 			Provisioner: hyperv1.ProvisionerConfig{
@@ -739,6 +745,7 @@ func CreateInfraOptions(azureOpts *ValidatedCreateOptions, opts *core.CreateOpti
 		ManagedIdentitiesFile:       azureOpts.ManagedIdentitiesFile,
 		DataPlaneIdentitiesFile:     azureOpts.DataPlaneIdentitiesFile,
 		WorkloadIdentitiesFile:      azureOpts.WorkloadIdentitiesFile,
+		KarpenterClientID:           azureOpts.KarpenterClientID,
 		AssignServicePrincipalRoles: azureOpts.AssignServicePrincipalRoles,
 		AssignCustomHCPRoles:        azureOpts.AssignCustomHCPRoles,
 		DisableClusterCapabilities:  opts.DisableClusterCapabilities,

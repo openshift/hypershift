@@ -24,6 +24,7 @@ type RawCreateOptions struct {
 	ManagedIdentitiesFile                               string
 	DataPlaneIdentitiesFile                             string
 	WorkloadIdentitiesFile                              string
+	KarpenterClientID                                   string
 	AssignServicePrincipalRoles                         bool
 	AssignCustomHCPRoles                                bool
 	IssuerURL                                           string

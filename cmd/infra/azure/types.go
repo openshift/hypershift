@@ -21,6 +21,7 @@ type CreateInfraOptions struct {
 	ManagedIdentitiesFile       string
 	DataPlaneIdentitiesFile     string
 	WorkloadIdentitiesFile      string
+	KarpenterClientID           string
 	AssignServicePrincipalRoles bool
 	DNSZoneRG                   string
 	AssignCustomHCPRoles        bool

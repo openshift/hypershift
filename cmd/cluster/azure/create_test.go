@@ -231,6 +231,11 @@ func TestRoleAssignmentWithInfraJSON(t *testing.T) {
 			expectError: true,
 			errContains: "role assignment flags cannot be used with --infra-json",
 		},
+		"When a Karpenter client ID is set with infra-json, it should require the identity at infrastructure creation": {
+			extraArgs:   []string{"--karpenter-client-id=12345678-1234-1234-1234-123456789012"},
+			expectError: true,
+			errContains: "--karpenter-client-id cannot be used with --infra-json",
+		},
 		"When role assignment flags are not set with infra-json, it should succeed": {
 			extraArgs:   nil,
 			expectError: false,
@@ -499,6 +504,51 @@ func TestCreateCluster(t *testing.T) {
 			testutil.CompareWithFixture(t, manifests)
 		})
 	}
+
+	t.Run("When an explicit Karpenter client ID is supplied, it should survive the infra JSON workflow", func(t *testing.T) {
+		const clientID = "23456789-1234-1234-1234-123456789012"
+		g := NewWithT(t)
+		credentialsFile, infraFile, pullSecretFile := setupAzureTestFixtures(t)
+		rawCore := core.DefaultOptions()
+		rawCore.Name = "karpenter"
+		rawCore.PullSecretFile = pullSecretFile
+		rawCore.Render = true
+		validatedCore, err := rawCore.Validate(t.Context(), nil)
+		g.Expect(err).NotTo(HaveOccurred())
+		coreOpts, err := validatedCore.Complete()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		rawAzure := DefaultOptions()
+		rawAzure.CredentialsFile = credentialsFile
+		flags := pflag.NewFlagSet(t.Name(), pflag.ContinueOnError)
+		BindDeveloperOptions(rawAzure, flags)
+		g.Expect(flags.Parse([]string{"--karpenter-client-id=" + clientID, "--auto-node"})).To(Succeed())
+		validatedAzure, err := rawAzure.Validate(t.Context(), coreOpts)
+		g.Expect(err).NotTo(HaveOccurred())
+		infraOpts, err := CreateInfraOptions(validatedAzure.(*ValidatedCreateOptions), coreOpts)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(infraOpts.KarpenterClientID).To(Equal(clientID))
+
+		rawInfra, err := os.ReadFile(infraFile)
+		g.Expect(err).NotTo(HaveOccurred())
+		infra := &azureinfra.CreateInfraOutput{}
+		g.Expect(json.Unmarshal(rawInfra, infra)).To(Succeed())
+		infra.KarpenterClientID = infraOpts.KarpenterClientID
+		rawInfra, err = json.Marshal(infra)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(os.WriteFile(infraFile, rawInfra, 0600)).To(Succeed())
+
+		// The identity is consumed from infra JSON, not overridden at cluster creation.
+		rawAzure.KarpenterClientID = ""
+		coreOpts.InfrastructureJSON = infraFile
+		validatedAzure, err = rawAzure.Validate(t.Context(), coreOpts)
+		g.Expect(err).NotTo(HaveOccurred())
+		platform, err := validatedAzure.Complete(t.Context(), coreOpts)
+		g.Expect(err).NotTo(HaveOccurred())
+		cluster := &hyperv1.HostedCluster{}
+		g.Expect(platform.ApplyPlatformSpecifics(cluster)).To(Succeed())
+		g.Expect(string(cluster.Spec.AutoNode.Provisioner.Karpenter.Azure.ClientID)).To(Equal(clientID))
+	})
 }
 
 func TestCreateClusterAutoNodeRequiresKarpenterClientID(t *testing.T) {
@@ -562,7 +612,7 @@ func TestCreateClusterAutoNodeRequiresKarpenterClientID(t *testing.T) {
 	}
 	err = core.CreateCluster(ctx, coreOpts, azureOpts, clientProvider)
 	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(ContainSubstring("autoNode on Azure requires a Karpenter workload identity"))
+	g.Expect(err.Error()).To(ContainSubstring("autoNode on Azure requires a Karpenter client ID"))
 }
 
 func TestValidateOAuthPublishingStrategy(t *testing.T) {
