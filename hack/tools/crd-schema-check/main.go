@@ -106,8 +106,8 @@ func run() error {
 		for _, e := range allErrors {
 			fmt.Fprintf(os.Stderr, "  ERROR: %s\n", e)
 		}
-		fmt.Fprintf(os.Stderr, "\nIf this is an intentional API change, see the crdify documentation for exception mechanisms.\n")
-		fmt.Fprintf(os.Stderr, "For pre-existing violations from moved/renamed files, use Prow: /override verify-crd-schema\n")
+		fmt.Fprintf(os.Stderr, "\nIf this is an intentional API change, obtain API review and approval, then use Prow: /override ci/prow/verify-crd-schema\n")
+		fmt.Fprintf(os.Stderr, "This overrides only the schema compatibility check for the current commit; new commits are checked again.\n")
 		return fmt.Errorf("breaking CRD schema changes detected")
 	}
 
@@ -251,8 +251,7 @@ func resolveBaseHash(repo *gogit.Repository, ref string) (*plumbing.Hash, error)
 // Known limitation: lookup is path-based — if a CRD file is moved or renamed
 // between the base commit and HEAD (e.g., during a directory restructure), the
 // new-path file will appear as "new" and skip comparison entirely. This matches
-// the approach used in openshift/api and is acceptable in practice; use
-// `/override verify-crd-schema` for legitimate moves.
+// the path-based lookup used in openshift/api.
 func loadCRDFromCommit(repo *gogit.Repository, hash *plumbing.Hash, path string) (*apiextensionsv1.CustomResourceDefinition, error) {
 	if hash == nil {
 		return nil, nil

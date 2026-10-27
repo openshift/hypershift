@@ -34,7 +34,11 @@ The following guidelines will help ensure a smooth contribution process for both
 
 This project uses [Prow](https://docs.ci.openshift.org/) and [GitHub Actions](https://github.com/openshift/hypershift/actions) for CI. Lightweight checks (linting, unit tests, verification) run automatically on pushes and pull requests. E2E tests that consume real cloud infrastructure only run after a reviewer grants `/lgtm`, to avoid unnecessary resource usage on work-in-progress PRs.
 
-**Adding CI targets:** When you add a new `make` target to `verify-parallel` or any other CI-facing Makefile target, you must also add it to the corresponding GitHub Actions workflow (e.g., `.github/workflows/verify-reusable.yaml` for verify targets, or as a new "reusable" target). GitHub Actions provide fast feedback on PRs; Prow runs heavier e2e tests. Targets that only exist in the Makefile without a matching GH Actions step will not run in CI.
+**Adding CI targets:** When you add a new `make` target to `verify-parallel` or any other CI-facing Makefile target, you must also add it to the corresponding GitHub Actions workflow (e.g., `.github/workflows/verify-reusable.yaml` for verify targets, or as a new "reusable" target), unless it is deliberately owned by a dedicated Prow check as described below. GitHub Actions provide fast feedback on PRs; Prow also runs verification and heavier e2e tests. Adding a Makefile target alone does not schedule it in CI.
+
+**CRD schema compatibility:** General verification runs `make verify-ci` in both Prow (`ci/prow/verify`) and GitHub Actions (`verify / Verify`). Schema compatibility runs separately in the required, always-run Prow check `ci/prow/verify-crd-schema`, using `make verify-crd-schema`. It is intentionally not duplicated in GitHub Actions, so an intentional API change can be accepted without overriding unrelated verification. Local `make verify` still includes schema compatibility.
+
+Use `/test verify-crd-schema` to rerun the schema check. For an intentional incompatible API change, obtain API review and approval before using `/override ci/prow/verify-crd-schema`. This non-sticky override applies only to the current commit; new commits are checked again. It overrides all schema findings for that commit, not just one field, so review every finding. Other verification checks remain required.
 
 See hack/github-actions-runner/README.md for details.
 
