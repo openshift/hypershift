@@ -41,6 +41,20 @@ func globalConfigMapTracked(configMap *corev1.ConfigMap, hc *hyperv1.HostedClust
 		configMap.Annotations[k8sutil.HostedClusterAnnotation] == client.ObjectKeyFromObject(hc).String()
 }
 
+func globalConfigMapTracking(configMap *corev1.ConfigMap, hc *hyperv1.HostedCluster) (bool, error) {
+	tracked := globalConfigMapTracked(configMap, hc)
+	_, hasCopyLabel := configMap.Labels[globalConfigCopyLabel]
+	_, hasOwnerUID := configMap.Annotations[globalConfigOwnerUIDAnnotation]
+	cluster, hasCluster := configMap.Annotations[k8sutil.HostedClusterAnnotation]
+	matchingCluster := hasCluster && cluster == client.ObjectKeyFromObject(hc).String()
+	adopt := matchingCluster && ((!hasCopyLabel && !hasOwnerUID) ||
+		(configMap.Labels[globalConfigCopyLabel] == "true" && configMap.Annotations[globalConfigOwnerUIDAnnotation] != ""))
+	if len(configMap.OwnerReferences) > 0 || (hasCluster && !matchingCluster) || (configMap.ResourceVersion != "" && !matchingCluster) || ((hasCopyLabel || hasOwnerUID) && !tracked && !adopt) {
+		return false, fmt.Errorf("destination configmap has conflicting ownership or global config provenance")
+	}
+	return (tracked || adopt || configMap.ResourceVersion == "") && configMap.Name != controlplaneoperator.UserCABundle(configMap.Namespace).Name, nil
+}
+
 func (reconciler *HostedClusterReconciler) cleanupGlobalConfigMaps(ctx context.Context, hc *hyperv1.HostedCluster, controlPlaneNamespace string, desired sets.Set[string]) error {
 	if hc.UID == "" || controlPlaneNamespace == "" || controlPlaneNamespace == hc.Namespace {
 		return fmt.Errorf("global config cleanup requires a HostedCluster UID and a separate control plane namespace")

@@ -2411,17 +2411,10 @@ func (r *HostedClusterReconciler) reconcileGlobalConfigSync(
 		destCM.Name = sourceCM.Name
 		destCM.Namespace = controlPlaneNamespace
 		if _, err := createOrUpdate(ctx, r.Client, destCM, func() error {
-			tracked := globalConfigMapTracked(destCM, hcluster)
-			_, hasCopyLabel := destCM.Labels[globalConfigCopyLabel]
-			_, hasOwnerUID := destCM.Annotations[globalConfigOwnerUIDAnnotation]
-			cluster, hasCluster := destCM.Annotations[k8sutil.HostedClusterAnnotation]
-			matchingCluster := hasCluster && cluster == client.ObjectKeyFromObject(hcluster).String()
-			adopt := matchingCluster && ((!hasCopyLabel && !hasOwnerUID) ||
-				(destCM.Labels[globalConfigCopyLabel] == "true" && destCM.Annotations[globalConfigOwnerUIDAnnotation] != ""))
-			if len(destCM.OwnerReferences) > 0 || (hasCluster && !matchingCluster) || (destCM.ResourceVersion != "" && !matchingCluster) || ((hasCopyLabel || hasOwnerUID) && !tracked && !adopt) {
-				return fmt.Errorf("destination configmap has conflicting ownership or global config provenance")
+			track, err := globalConfigMapTracking(destCM, hcluster)
+			if err != nil {
+				return err
 			}
-			track := (tracked || adopt || destCM.ResourceVersion == "") && destCM.Name != controlplaneoperator.UserCABundle(controlPlaneNamespace).Name
 			copied := sourceCM.DeepCopy()
 			destCM.Annotations = copied.Annotations
 			destCM.Labels = copied.Labels
