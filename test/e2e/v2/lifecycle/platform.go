@@ -142,8 +142,10 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 			Region: envOrDefault("HYPERSHIFT_AWS_REGION", "us-east-1"),
 			Zones:  envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
 		}, sharedDir), nil
+	case "gcp":
+		return NewGCPPlatformConfig(sharedDir), nil
 	default:
-		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws)", platform)
+		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws, gcp)", platform)
 	}
 }
 

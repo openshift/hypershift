@@ -154,6 +154,8 @@ func (a *AzurePlatformConfig) CreateArgs() []string {
 		"--workload-identities-file=" + a.workloadIdentities,
 		"--assign-service-principal-roles",
 		"--dns-zone-rg-name=" + a.dnsZoneRG,
+		"--pods-labels=hypershift-e2e-test-label=test",
+		"--toleration=key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule",
 	}
 
 	if a.marketplacePublisher != "" {
