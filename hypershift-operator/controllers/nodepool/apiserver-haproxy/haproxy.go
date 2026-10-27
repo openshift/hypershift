@@ -17,9 +17,9 @@ import (
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/util"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
@@ -42,8 +42,30 @@ import (
 
 const (
 	ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel = "io.openshift.hypershift.control-plane-operator-skips-haproxy"
-	HAProxyRouterImageName                                = "haproxy-router"
 )
+
+var (
+	// HAProxyImageNames lists the component image names, in preferred order,
+	// under which the release payload may publish the HAProxy image. Older
+	// and newer release payloads use different names for this component, so each
+	// name is tried in order and the first one present in the payload is used.
+	HAProxyImageNames = []string{
+		"haproxy-router-haproxy32",
+		"haproxy-router",
+	}
+)
+
+// ResolveHAProxyImage returns the HAProxy image from componentImages,
+// trying each name in HAProxyRouterImageNames in order. It only returns an
+// error when none of the known image names are present.
+func ResolveHAProxyImage(componentImages map[string]string) (string, error) {
+	for _, name := range HAProxyImageNames {
+		if image, ok := componentImages[name]; ok && image != "" {
+			return image, nil
+		}
+	}
+	return "", fmt.Errorf("release image doesn't have any of the expected haproxy router images: %v", HAProxyImageNames)
+}
 
 type HAProxy struct {
 	crclient.Client
@@ -52,7 +74,7 @@ type HAProxy struct {
 	HypershiftOperatorImage string
 
 	ReleaseProvider       releaseinfo.Provider
-	ImageMetadataProvider util.ImageMetadataProvider
+	ImageMetadataProvider imageregistry.ImageMetadataProvider
 }
 
 func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *hyperv1.HostedCluster) (m bool, cpoImage string, err error) {
@@ -64,7 +86,7 @@ func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *
 	if !ok {
 		return false, "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
-	controlPlaneOperatorImage, err := util.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
@@ -74,7 +96,7 @@ func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *
 		return false, "", fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
 
-	_, cpoSkips := util.ImageLabels(controlPlaneOperatorImageMetadata)[ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel]
+	_, cpoSkips := imageregistry.ImageLabels(controlPlaneOperatorImageMetadata)[ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel]
 	return cpoSkips, controlPlaneOperatorImage, nil
 }
 
@@ -419,6 +441,7 @@ func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string
 			"k8s-app": name,
 		}
 		pod.Spec.HostNetwork = true
+		pod.Spec.DNSPolicy = corev1.DNSDefault
 		pod.Spec.PriorityClassName = "system-node-critical"
 		pod.Spec.Volumes = []corev1.Volume{
 			{

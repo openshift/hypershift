@@ -96,8 +96,9 @@ func setupCommand(opts *Options, logPath string, cmd *exec.Cmd) (*os.File, *exec
 		cmd.Stderr = logFile
 	}
 
-	for _, env := range cmd.Env {
-		if _, err := fmt.Fprintf(logFile, "$ export %s\n", env); err != nil {
+	// Explicit command environments can include inherited credentials.
+	if len(cmd.Env) > 0 {
+		if _, err := fmt.Fprintln(logFile, "# Command environment omitted from log"); err != nil {
 			return nil, nil, "", err
 		}
 	}

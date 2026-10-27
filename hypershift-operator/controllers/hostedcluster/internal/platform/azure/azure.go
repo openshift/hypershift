@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -30,7 +31,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	azurecapicore "sigs.k8s.io/cluster-api-provider-azure/capicore/api/core/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -328,12 +329,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 
 		// Use the utility function to reconcile credentials
 		if errs := azureutil.ReconcileAzureCredentials(ctx, c, createOrUpdate, baseSecretData, credentialConfigs, hcluster.Spec.Capabilities); len(errs) > 0 {
-			// Combine all errors into a single error
-			var errorStrings []string
-			for _, err := range errs {
-				errorStrings = append(errorStrings, err.Error())
-			}
-			return fmt.Errorf("failed to reconcile Azure credentials: %s", strings.Join(errorStrings, "; "))
+			return fmt.Errorf("failed to reconcile Azure credentials: %w", errors.Join(errs...))
 		}
 	}
 
@@ -497,7 +493,7 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 	azureCluster.Spec.NetworkSpec.NodeOutboundLB.Name = hcluster.Spec.InfraID
 	azureCluster.Spec.NetworkSpec.NodeOutboundLB.BackendPool.Name = hcluster.Spec.InfraID
 
-	azureCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
+	azureCluster.Spec.ControlPlaneEndpoint = azurecapicore.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}

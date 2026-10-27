@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 
@@ -68,10 +68,10 @@ func (r *reconciler) findKubevirtPassthroughServices(ctx context.Context, hcp *h
 	// Add ingress passthrough service only if IngressCapability is enabled
 	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
 		// Manifests for infra/mgmt cluster passthrough service
-		cpService := hcpmanifests.IngressDefaultIngressPassthroughService(kubevirtInfraNamespace(hcp))
+		cpService := hccomanifests.IngressDefaultIngressPassthroughService(kubevirtInfraNamespace(hcp))
 
 		cpService.Name = fmt.Sprintf("%s-%s",
-			hcpmanifests.IngressDefaultIngressPassthroughServiceName,
+			hccomanifests.IngressDefaultIngressPassthroughServiceName,
 			hcp.Spec.Platform.Kubevirt.GenerateID)
 
 		err := r.kubevirtInfraClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService)

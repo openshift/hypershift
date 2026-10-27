@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.26-openshift-4.23 AS builder
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.26-openshift-5.1 AS builder
 WORKDIR /workspace
 
 # Force module mode and leverage Go module caching

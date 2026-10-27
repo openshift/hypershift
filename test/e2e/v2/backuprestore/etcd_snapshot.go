@@ -11,9 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
@@ -23,7 +22,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -55,7 +57,7 @@ func MatchesHCPEtcdBackupName(hcpEtcdBackupName, oadpBackupName string) bool {
 // OADP backup name to have a BackupCompleted condition with the specified status.
 // HCPEtcdBackup names follow the pattern: oadp-<BackupName>-<random>.
 func WaitForHCPEtcdBackupCondition(testCtx *internal.TestContext, backupName string, expectedStatus metav1.ConditionStatus) error {
-	return wait.PollUntilContextTimeout(testCtx.Context, PollInterval, BackupTimeout, true, func(ctx context.Context) (bool, error) {
+	return wait.PollUntilContextTimeout(testCtx.Context, PollInterval, BackupCompletionTimeout, true, func(ctx context.Context) (bool, error) {
 		hcpEtcdBackupList := &hyperv1.HCPEtcdBackupList{}
 		if err := testCtx.MgmtClient.List(ctx, hcpEtcdBackupList, crclient.InNamespace(testCtx.ControlPlaneNamespace)); err != nil {
 			return false, fmt.Errorf("failed to list HCPEtcdBackup resources: %w", err)
@@ -255,7 +257,6 @@ func VerifyEtcdClusterHealth(ctx context.Context, logger logr.Logger, mgmtClient
 
 	return nil
 }
-
 
 // etcdInitLogResult holds the results of parsing etcd-init container logs.
 type etcdInitLogResult struct {

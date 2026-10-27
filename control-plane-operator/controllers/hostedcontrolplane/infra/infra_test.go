@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
@@ -767,17 +768,17 @@ func simulateInfraProvisioning(ctx context.Context, c client.Client, hcp *hyperv
 		hostname string
 	}
 	lbServices := []lbService{
-		{manifests.KubeAPIServerService(hcp.Namespace), kasLBHost},
+		{cpomanifests.KubeAPIServerService(hcp.Namespace), kasLBHost},
 		{manifests.KubeAPIServerPrivateService(hcp.Namespace), kasLBHost},
-		{manifests.KubeAPIServerServiceAzureLB(hcp.Namespace), kasLBHost},
-		{manifests.OauthServerService(hcp.Namespace), testOAuthLBHostname},
+		{cpomanifests.KubeAPIServerServiceAzureLB(hcp.Namespace), kasLBHost},
+		{cpomanifests.OauthServerService(hcp.Namespace), testOAuthLBHostname},
 	}
 
 	// If not using Swift or shared ingress, provision the public and private router services as LB services
 	// Otherwise, only private-router service is created as ClusterIP service.
 	if !netutil.UseSwiftNetworkingHCP(hcp) && !netutil.UseSharedIngressHCP(hcp) {
 		lbServices = append(lbServices, []lbService{
-			{manifests.RouterPublicService(hcp.Namespace), externalRouterLBHost},
+			{cpomanifests.RouterPublicService(hcp.Namespace), externalRouterLBHost},
 			{manifests.PrivateRouterService(hcp.Namespace), internalRouterLBHost},
 		}...)
 	}
@@ -793,8 +794,8 @@ func simulateInfraProvisioning(ctx context.Context, c client.Client, hcp *hyperv
 	// List of all routes that might need admission
 	routes := []*routev1.Route{
 		manifests.KonnectivityServerRoute(hcp.Namespace),
-		manifests.OauthServerExternalPublicRoute(hcp.Namespace),
-		manifests.OauthServerExternalPrivateRoute(hcp.Namespace),
+		cpomanifests.OauthServerExternalPublicRoute(hcp.Namespace),
+		cpomanifests.OauthServerExternalPrivateRoute(hcp.Namespace),
 	}
 
 	for _, route := range routes {
@@ -930,7 +931,7 @@ func TestReconcileInfrastructure_WhenTransitioningFromPublicToPrivate_ItShouldCl
 	publicRoute := &routev1.Route{}
 	err = fakeClient.Get(context.Background(), client.ObjectKey{
 		Namespace: testNamespace,
-		Name:      manifests.KubeAPIServerExternalPublicRoute(testNamespace).Name,
+		Name:      cpomanifests.KubeAPIServerExternalPublicRoute(testNamespace).Name,
 	}, publicRoute)
 	g.Expect(err).NotTo(HaveOccurred())
 
@@ -946,7 +947,7 @@ func TestReconcileInfrastructure_WhenTransitioningFromPublicToPrivate_ItShouldCl
 	// Verify public route is deleted
 	err = fakeClient.Get(context.Background(), client.ObjectKey{
 		Namespace: testNamespace,
-		Name:      manifests.KubeAPIServerExternalPublicRoute(testNamespace).Name,
+		Name:      cpomanifests.KubeAPIServerExternalPublicRoute(testNamespace).Name,
 	}, publicRoute)
 	g.Expect(client.IgnoreNotFound(err)).NotTo(HaveOccurred())
 	g.Expect(err).To(HaveOccurred()) // Should be NotFound
@@ -955,7 +956,7 @@ func TestReconcileInfrastructure_WhenTransitioningFromPublicToPrivate_ItShouldCl
 	privateRoute := &routev1.Route{}
 	err = fakeClient.Get(context.Background(), client.ObjectKey{
 		Namespace: testNamespace,
-		Name:      manifests.KubeAPIServerExternalPrivateRoute(testNamespace).Name,
+		Name:      cpomanifests.KubeAPIServerExternalPrivateRoute(testNamespace).Name,
 	}, privateRoute)
 	g.Expect(err).NotTo(HaveOccurred())
 }
@@ -985,7 +986,7 @@ func TestReconcileInfrastructure_WhenTransitioningFromPrivateToPublic_ItShouldCl
 	privateRoute := &routev1.Route{}
 	err = fakeClient.Get(context.Background(), client.ObjectKey{
 		Namespace: testNamespace,
-		Name:      manifests.KubeAPIServerExternalPrivateRoute(testNamespace).Name,
+		Name:      cpomanifests.KubeAPIServerExternalPrivateRoute(testNamespace).Name,
 	}, privateRoute)
 	g.Expect(err).NotTo(HaveOccurred())
 
@@ -1001,7 +1002,7 @@ func TestReconcileInfrastructure_WhenTransitioningFromPrivateToPublic_ItShouldCl
 	// Verify private route is deleted
 	err = fakeClient.Get(context.Background(), client.ObjectKey{
 		Namespace: testNamespace,
-		Name:      manifests.KubeAPIServerExternalPrivateRoute(testNamespace).Name,
+		Name:      cpomanifests.KubeAPIServerExternalPrivateRoute(testNamespace).Name,
 	}, privateRoute)
 	g.Expect(client.IgnoreNotFound(err)).NotTo(HaveOccurred())
 	g.Expect(err).To(HaveOccurred()) // Should be NotFound
@@ -1010,7 +1011,7 @@ func TestReconcileInfrastructure_WhenTransitioningFromPrivateToPublic_ItShouldCl
 	publicRoute := &routev1.Route{}
 	err = fakeClient.Get(context.Background(), client.ObjectKey{
 		Namespace: testNamespace,
-		Name:      manifests.KubeAPIServerExternalPublicRoute(testNamespace).Name,
+		Name:      cpomanifests.KubeAPIServerExternalPublicRoute(testNamespace).Name,
 	}, publicRoute)
 	g.Expect(err).NotTo(HaveOccurred())
 }
@@ -1036,7 +1037,7 @@ func TestReconcileOAuthService(t *testing.T) {
 		svc := corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace:       targetNamespace,
-				Name:            manifests.OauthServerService(targetNamespace).Name,
+				Name:            cpomanifests.OauthServerService(targetNamespace).Name,
 				OwnerReferences: []metav1.OwnerReference{ownerRef},
 				Labels: map[string]string{
 					"app": "oauth-openshift",
@@ -1074,7 +1075,7 @@ func TestReconcileOAuthService(t *testing.T) {
 				Host: hostname,
 				To: routev1.RouteTargetReference{
 					Kind: "Service",
-					Name: manifests.OauthServerService("").Name,
+					Name: cpomanifests.OauthServerService("").Name,
 				},
 				TLS: &routev1.TLSConfig{
 					Termination:                   routev1.TLSTerminationPassthrough,
@@ -1101,7 +1102,7 @@ func TestReconcileOAuthService(t *testing.T) {
 			Host: "oauth.apps.test.hypershift.local",
 			To: routev1.RouteTargetReference{
 				Kind: "Service",
-				Name: manifests.OauthServerService("").Name,
+				Name: cpomanifests.OauthServerService("").Name,
 			},
 			TLS: &routev1.TLSConfig{
 				Termination:                   routev1.TLSTerminationPassthrough,
@@ -1284,7 +1285,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 		svc := corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: targetNamespace,
-				Name:      manifests.KubeAPIServerService(targetNamespace).Name,
+				Name:      cpomanifests.KubeAPIServerService(targetNamespace).Name,
 				Annotations: map[string]string{
 					"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
 					hyperv1.ExternalDNSHostnameAnnotation:               hostname,
@@ -1346,7 +1347,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 			Host: hostname,
 			To: routev1.RouteTargetReference{
 				Kind: "Service",
-				Name: manifests.KubeAPIServerService("").Name,
+				Name: cpomanifests.KubeAPIServerService("").Name,
 			},
 			TLS: &routev1.TLSConfig{
 				Termination:                   routev1.TLSTerminationPassthrough,
@@ -1369,7 +1370,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 			Host: hostname,
 			To: routev1.RouteTargetReference{
 				Kind: "Service",
-				Name: manifests.KubeAPIServerService("").Name,
+				Name: cpomanifests.KubeAPIServerService("").Name,
 			},
 			TLS: &routev1.TLSConfig{
 				Termination:                   routev1.TLSTerminationPassthrough,
@@ -1391,7 +1392,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 			Host: "api.test.hypershift.local",
 			To: routev1.RouteTargetReference{
 				Kind: "Service",
-				Name: manifests.KubeAPIServerService("").Name,
+				Name: cpomanifests.KubeAPIServerService("").Name,
 			},
 			TLS: &routev1.TLSConfig{
 				Termination:                   routev1.TLSTerminationPassthrough,
@@ -1528,8 +1529,8 @@ func TestReconcileAPIServerService(t *testing.T) {
 				Type: hyperv1.Route,
 			},
 			existingObjects: []client.Object{
-				manifests.KubeAPIServerExternalPublicRoute(targetNamespace),
-				manifests.KubeAPIServerExternalPrivateRoute(targetNamespace),
+				cpomanifests.KubeAPIServerExternalPublicRoute(targetNamespace),
+				cpomanifests.KubeAPIServerExternalPrivateRoute(targetNamespace),
 			},
 
 			expectedServices: []corev1.Service{
@@ -2194,7 +2195,7 @@ func TestReconcileOAuthService_AzureLoadBalancer(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 
 			svc := &corev1.Service{}
-			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(manifests.OauthServerService(targetNamespace)), svc)
+			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(cpomanifests.OauthServerService(targetNamespace)), svc)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeLoadBalancer))
 			g.Expect(svc.Spec.IPFamilyPolicy).To(Equal(&ipFamilyPolicy))

@@ -54,6 +54,12 @@
                     },
                     {
                         "name": "HCPUserFacingOperatorLogs"
+                    },
+                    {
+                        "name": "DeterministicLBIP"
+                    },
+                    {
+                        "name": "AWSManagedDNS"
                     }
                 ],
                 "version": ""

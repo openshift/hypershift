@@ -407,12 +407,46 @@ const (
 	// without triggering an unexpected update of KubeVirt VMs.
 	NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-topology-spread-constraints"
 
+	// NodePoolSupportsKubevirtArchitectureAnnotation indicates that it is safe to set the VMI
+	// Architecture field and inject the kubernetes.io/arch NodeSelector on KubeVirt VMs in
+	// this NodePool without triggering an unexpected fleet-wide rolling update.
+	//
+	// Because nodePool.Spec.Arch has +kubebuilder:default:=amd64, every existing NodePool
+	// already carries Arch="amd64". Setting Architecture="amd64" on the VMI spec changes the
+	// JSON-serialised KubevirtMachineTemplateSpec, which changes the hash-derived template name
+	// and causes CAPI to replace all VMs — identical in impact to the TopologySpreadConstraints
+	// migration. The annotation is only set for new NodePools or NodePools already undergoing a
+	// version update, so idle existing NodePools are never unexpectedly disrupted.
+	NodePoolSupportsKubevirtArchitectureAnnotation = "hypershift.openshift.io/nodepool-supports-kubevirt-architecture"
+
 	// IsKubeVirtRHCOSVolumeLabelName labels rhcos DataVolumes and PVCs, to be able to filter them, e.g. for backup
 	IsKubeVirtRHCOSVolumeLabelName = "hypershift.openshift.io/is-kubevirt-rhcos"
 
 	// SkipControlPlaneNamespaceDeletionAnnotation tells the the hosted cluster controller not to delete the hosted control plane
 	// namespace during hosted cluster deletion when this annotation is set to the value "true".
 	SkipControlPlaneNamespaceDeletionAnnotation = "hypershift.openshift.io/skip-delete-hosted-controlplane-namespace"
+
+	// GCPFirewallSkipDeletionAnnotation is a manual escape hatch for the GCP worker
+	// firewall rule finalizer. If GCP Workload Identity Federation credentials
+	// never become available, the control-plane-operator cannot even check
+	// whether the managed rule exists, so it retains the HCP finalizer and
+	// retries indefinitely. Set this annotation to "true" only after manually
+	// confirming (e.g. via gcloud) that no stale rule is left behind in the
+	// project, to let deletion proceed anyway.
+	GCPFirewallSkipDeletionAnnotation = "hypershift.openshift.io/skip-gcp-firewall-rule-cleanup"
+
+	// GCPFirewallRuleProvisioningAttemptedAnnotation is durable evidence, persisted
+	// before the control-plane-operator mutates GCP, that a managed worker firewall
+	// rule creation was attempted. The control-plane-operator sets it to "true"
+	// immediately before its first InsertFirewall call and only proceeds with the
+	// create once the write succeeds. Its absence therefore proves no rule was
+	// ever created, which lets deletion safely skip cleanup even when WIF
+	// credentials are unavailable (the rule's existence cannot be checked). Its
+	// presence means a rule may exist, so deletion retains the HCP finalizer until
+	// the rule is confirmed gone. It records an attempt, not confirmed existence: a
+	// create that is attempted but fails still sets it, which is deliberately
+	// conservative (it can over-retain the finalizer but can never leak a rule).
+	GCPFirewallRuleProvisioningAttemptedAnnotation = "hypershift.openshift.io/gcp-firewall-rule-provisioning-attempted"
 
 	// DisableIgnitionServerAnnotation controls skipping of the ignition server deployment.
 	DisableIgnitionServerAnnotation = "hypershift.openshift.io/disable-ignition-server"
@@ -538,12 +572,15 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 // +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.secretEncryption) || has(self.secretEncryption)",message="secretEncryption cannot be removed once configured"
+// +kubebuilder:validation:XValidation:rule="self.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue() == oldSelf.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue()",message="initialKMSKeyARN can only be set when the HostedCluster is created and cannot be added or removed afterwards"
+// +kubebuilder:validation:XValidation:rule="!self.?operatorConfiguration.?csiDriverOperator.?aws.hasValue() || self.platform.type == 'AWS'",message="csiDriverOperator.aws can only be set when platform.type is AWS"
+// +kubebuilder:validation:XValidation:rule="!self.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue() || !has(self.platform.aws) || self.operatorConfiguration.csiDriverOperator.aws.initialKMSKeyARN.split(':').size() < 4 || self.operatorConfiguration.csiDriverOperator.aws.initialKMSKeyARN.split(':')[3] == self.platform.aws.region",message="initialKMSKeyARN must be in the same region as the cluster (platform.aws.region)"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
 	// The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
 	// Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
-	// Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+	// Attempting to use a release with a skew against a NodePool release bigger than N-3 for the y-stream will result in leaving the NodePool in an unsupported state.
 	// Changing this field will trigger a rollout of the control plane components.
 	// The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.
 	// +required
@@ -1103,8 +1140,9 @@ type NodePortPublishingStrategy struct {
 	// +required
 	Address string `json:"address"`
 
-	// port is the port of the NodePort service. If <=0, the port is dynamically
-	// assigned when the service is created.
+	// port is the port of the NodePort service.
+	// If omitted, the port is dynamically assigned when the service is created.
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	Port int32 `json:"port,omitempty"`
 }
@@ -1118,6 +1156,43 @@ type LoadBalancerPublishingStrategy struct {
 	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Hostname string `json:"hostname,omitempty"`
+
+	// loadBalancerClass sets Service.spec.loadBalancerClass to select which
+	// LB controller provisions the Service. Required when the management
+	// cluster runs multiple LB controllers (e.g., F5 for management + MetalLB
+	// for tenant workloads). Maps to the Kubernetes Service field directly.
+	// Immutable after creation — matches Kubernetes semantics.
+	// Must be a valid Kubernetes qualified-name: an optional lowercase DNS
+	// subdomain prefix followed by '/' and a name segment starting and ending
+	// with an alphanumeric character (e.g., "example.com/my-lb-class").
+	// Maximum length is 253 characters.
+	//
+	// +openshift:enable:FeatureGate=DeterministicLBIP
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\\/)?[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$')`,message="loadBalancerClass must be a valid qualified-name (e.g., example.com/my-lb-class)"
+	// +kubebuilder:validation:XValidation:rule=`self.contains("/") ? self.split("/")[1].size() <= 63 : self.size() <= 63`,message="loadBalancerClass name segment must be at most 63 characters"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	LoadBalancerClass string `json:"loadBalancerClass,omitempty"`
+
+	// serviceAnnotations is a map of annotations passed through to the
+	// LoadBalancer Service. The user provides the exact annotations their LB
+	// provider expects (e.g., metallb.io/loadBalancerIPs,
+	// service.beta.kubernetes.io/aws-load-balancer-eip-allocations).
+	// Immutable during TechPreview — set at creation, cannot be changed.
+	// Becomes mutable at GA when the Day 2 sidecar mechanism is in place.
+	//
+	// Annotations are applied per-key — existing annotations set by other
+	// controllers are preserved. HyperShift does not validate annotation
+	// values — correctness is the user's responsibility, same as setting
+	// annotations on any Kubernetes Service.
+	// Minimum 1, maximum 10 annotations per service.
+	//
+	// +openshift:enable:FeatureGate=DeterministicLBIP
+	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:validation:MaxProperties=10
+	// +optional
+	ServiceAnnotations map[string]string `json:"serviceAnnotations,omitempty"`
 }
 
 // RoutePublishingStrategy specifies options for exposing a service as a Route.
@@ -1239,7 +1314,7 @@ type ClusterNetworking struct {
 	// networkType specifies the SDN provider used for cluster networking.
 	// Defaults to OVNKubernetes.
 	// This field is required and immutable.
-	// kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="networkType is immutable"
 	// +optional
 	// +kubebuilder:default:="OVNKubernetes"
 	// +immutable
@@ -1991,6 +2066,28 @@ type ClusterAutoscaling struct {
 	//
 	// +optional
 	Expanders []ExpanderString `json:"expanders,omitempty"`
+
+	// kubeClientQPS sets the "--kube-client-qps" flag on cluster-autoscaler.
+	// Controls the maximum queries-per-second the autoscaler may send to the
+	// kube-apiserver. Valid values are -1 through 1000.
+	// When set to -1, client-side rate limiting is disabled.
+	// When set to 0, the flag is passed but client-go applies its default QPS of 5.
+	// When omitted, the flag is not set and the autoscaler uses its default (5).
+	//
+	// +kubebuilder:validation:Minimum=-1
+	// +kubebuilder:validation:Maximum=1000
+	// +optional
+	KubeClientQPS *int32 `json:"kubeClientQPS,omitempty"`
+
+	// kubeClientBurst sets the "--kube-client-burst" flag on cluster-autoscaler.
+	// Controls the maximum burst of queries to the kube-apiserver.
+	// Valid values are 1 through 2000.
+	// When omitted, the flag is not set and the autoscaler uses its default (10).
+	//
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2000
+	// +optional
+	KubeClientBurst int32 `json:"kubeClientBurst,omitempty"`
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance
@@ -2148,21 +2245,21 @@ type PersistentVolumeEtcdStorageSpec struct {
 }
 
 // UnmanagedEtcdSpec specifies configuration which enables the control plane to
-// integrate with an eternally managed etcd cluster.
+// integrate with an externally managed etcd cluster.
 // +openshift:validation:FeatureGateAwareXValidation:featureGate=EtcdSharding,rule="has(oldSelf.shards) == has(self.shards)",message="shards cannot be added or removed after creation"
 type UnmanagedEtcdSpec struct {
-	// endpoint is the full etcd cluster client endpoint URL. For example:
+	// endpoint is the full etcd cluster client endpoint HTTPS URL. For example:
 	//
 	//     https://etcd-client:2379
 	//
-	// If the URL uses an HTTPS scheme, the TLS field is required.
+	// The tls field is required to authenticate to and verify the etcd endpoint.
 	//
 	// +kubebuilder:validation:Pattern=`^https://`
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	Endpoint string `json:"endpoint"`
 
-	// tls specifies TLS configuration for HTTPS etcd client endpoints.
+	// tls specifies the required TLS configuration for the HTTPS etcd client endpoint.
 	// +required
 	TLS EtcdTLSConfig `json:"tls"`
 
@@ -2188,12 +2285,12 @@ type UnmanagedEtcdSpec struct {
 
 // EtcdTLSConfig specifies TLS configuration for HTTPS etcd client endpoints.
 type EtcdTLSConfig struct {
-	// clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
-	// may have the following key/value pairs:
+	// clientSecret refers to a secret for client mTLS authentication with the etcd cluster.
+	// The secret must contain all three of the following key/value pairs:
 	//
-	//     etcd-client-ca.crt: Certificate Authority value
-	//     etcd-client.crt: Client certificate value
-	//     etcd-client.key: Client certificate key value
+	//     etcd-client-ca.crt: CA bundle used to verify the etcd server certificate
+	//     etcd-client.crt: Client certificate used to authenticate to etcd
+	//     etcd-client.key: Private key for the client certificate
 	// +required
 	ClientSecret corev1.LocalObjectReference `json:"clientSecret"`
 }
@@ -2998,6 +3095,14 @@ type OperatorConfiguration struct {
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
 	OAuthServer OAuthServerOperatorSpec `json:"oauthServer,omitzero"`
+
+	// csiDriverOperator configures the CSI drivers of the hosted cluster.
+	// Settings are grouped by platform.
+	//
+	// When omitted, the CSI drivers use their default configuration.
+	//
+	// +optional
+	CSIDriverOperator CSIDriverOperatorSpec `json:"csiDriverOperator,omitzero"`
 }
 
 // +genclient

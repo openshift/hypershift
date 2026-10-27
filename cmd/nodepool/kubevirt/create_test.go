@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/openshift/hypershift/support/testutil"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
 	"github.com/google/go-cmp/cmp"
@@ -69,6 +70,7 @@ func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 	for _, test := range []struct {
 		name                   string
 		input                  RawKubevirtPlatformCreateOptions
+		coreOpts               *core.CreateNodePoolOptions
 		expectedErrorSubstring string
 	}{
 		{
@@ -94,10 +96,40 @@ func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 			},
 			expectedErrorSubstring: `invalid memory quantity "not-a-quantity"`,
 		},
+		{
+			name: "When vm-node-selector kubernetes.io/arch conflicts with --arch, it should return a validation error",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:                2,
+					RootVolumeSize:       32,
+					AttachDefaultNetwork: ptr.To(true),
+					VmNodeSelector: map[string]string{
+						corev1.LabelArchStable: hyperv1.ArchitectureS390X,
+					},
+				},
+			},
+			coreOpts:               &core.CreateNodePoolOptions{Arch: hyperv1.ArchitectureAMD64},
+			expectedErrorSubstring: "conflicts with --arch",
+		},
+		{
+			name: "When vm-node-selector kubernetes.io/arch matches --arch, it should succeed",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Cores:                2,
+					RootVolumeSize:       32,
+					AttachDefaultNetwork: ptr.To(true),
+					VmNodeSelector: map[string]string{
+						corev1.LabelArchStable: hyperv1.ArchitectureAMD64,
+					},
+				},
+			},
+			coreOpts:               &core.CreateNodePoolOptions{Arch: hyperv1.ArchitectureAMD64},
+			expectedErrorSubstring: "",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var errString string
-			if _, err := test.input.Validate(t.Context(), nil); err != nil {
+			if _, err := test.input.Validate(t.Context(), test.coreOpts); err != nil {
 				errString = err.Error()
 			}
 			switch {

@@ -52,8 +52,11 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, fmt.Errorf("--api-server-address is supported only for NodePort service publishing strategy, service publishing strategy %s is used", o.ServicePublishingStrategy)
 	}
 	if o.APIServerAddress == "" && o.ServicePublishingStrategy == NodePortServicePublishingStrategy && !opts.Render {
-		var err error
-		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log, opts.Kubeconfig); err != nil {
+		client, err := opts.Client()
+		if err != nil {
+			return nil, err
+		}
+		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log, client); err != nil {
 			return nil, err
 		}
 	}
@@ -147,7 +150,8 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.AgentLabelSelector, "agentLabelSelector", opts.AgentLabelSelector, "A LabelSelector for selecting Agents according to their labels, e.g., 'size=large,zone notin (az1,az2)'")
 }
 
-func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+func NewCreateCommand(opts *core.RawCreateOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "agent",
 		Short:        "Creates basic functional HostedCluster resources on Agent",
@@ -167,7 +171,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := core.CreateCluster(ctx, opts, agentOpts); err != nil {
+		if err := core.CreateCluster(ctx, opts, agentOpts, clientProvider); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}

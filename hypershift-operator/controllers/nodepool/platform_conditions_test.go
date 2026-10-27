@@ -29,14 +29,15 @@ func TestSetPlatformConditions(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name              string
-		nodePool          *hyperv1.NodePool
-		hostedCluster     *hyperv1.HostedCluster
-		releaseImage      *releaseinfo.ReleaseImage
-		resolvedStream    string
-		expectError       bool
-		expectedCondType  string
-		expectedCondValue corev1.ConditionStatus
+		name                string
+		nodePool            *hyperv1.NodePool
+		hostedCluster       *hyperv1.HostedCluster
+		releaseImage        *releaseinfo.ReleaseImage
+		resolvedStream      string
+		expectError         bool
+		expectedCondType    string
+		expectedCondValue   corev1.ConditionStatus
+		expectedAnnotations map[string]string
 	}{
 		{
 			name: "When platform is AWS and image discovery fails, it should return error",
@@ -155,6 +156,92 @@ func TestSetPlatformConditions(t *testing.T) {
 			expectedCondValue: corev1.ConditionFalse,
 		},
 		{
+			name: "When platform is KubeVirt and arch conflicts with NodeSelector kubernetes.io/arch, it should set NodePoolValidArchPlatform to false",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureS390X,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							RootVolume: &hyperv1.KubevirtRootVolume{
+								KubevirtVolume: hyperv1.KubevirtVolume{
+									Type: hyperv1.KubevirtVolumeTypePersistent,
+									Persistent: &hyperv1.KubevirtPersistentVolume{
+										Size: func() *resource.Quantity { q := resource.MustParse("32Gi"); return &q }(),
+									},
+								},
+							},
+							NodeSelector: map[string]string{
+								"kubernetes.io/arch": hyperv1.ArchitectureAMD64,
+							},
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec:       hyperv1.HostedClusterSpec{},
+			},
+			releaseImage:      nilStreamRelease,
+			resolvedStream:    StreamRHEL9,
+			expectError:       true,
+			expectedCondType:  hyperv1.NodePoolValidArchPlatform,
+			expectedCondValue: corev1.ConditionFalse,
+		},
+		{
+			name: "When platform is KubeVirt and NodePool has no version set, it should set the arch annotation",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureS390X,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							RootVolume: &hyperv1.KubevirtRootVolume{
+								KubevirtVolume: hyperv1.KubevirtVolume{
+									Type: hyperv1.KubevirtVolumeTypePersistent,
+									Persistent: &hyperv1.KubevirtPersistentVolume{
+										Size: func() *resource.Quantity { q := resource.MustParse("32Gi"); return &q }(),
+									},
+								},
+							},
+						},
+					},
+					Release: hyperv1.Release{Image: "quay.io/test:4.17"},
+				},
+				// Status.Version == "" → new NodePool → annotation should be set.
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec:       hyperv1.HostedClusterSpec{},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &v1.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.17.0"}},
+				StreamMetadata: &stream.Stream{
+					Architectures: map[string]stream.Arch{
+						hyperv1.ArchitectureS390X: {
+							Images: stream.Images{
+								KubeVirt: &stream.ContainerImage{
+									DigestRef: "quay.io/openshift/release@sha256:s390x1234",
+								},
+							},
+						},
+					},
+				},
+			},
+			resolvedStream:    "",
+			expectedCondType:  string(hyperv1.NodePoolValidPlatformImageType),
+			expectedCondValue: corev1.ConditionTrue,
+			expectedAnnotations: map[string]string{
+				hyperv1.NodePoolSupportsKubevirtArchitectureAnnotation: "true",
+			},
+		},
+		{
 			name: "When platform is PowerVS and image discovery fails, it should return error",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
@@ -192,7 +279,10 @@ func TestSetPlatformConditions(t *testing.T) {
 			g := NewWithT(t)
 
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
-			r := &NodePoolReconciler{Client: fakeClient}
+			r := &NodePoolReconciler{
+				Client:               fakeClient,
+				KubevirtInfraClients: newKVInfraMapMock(nil),
+			}
 			err := r.setPlatformConditions(t.Context(), tc.hostedCluster, tc.nodePool, "test-cp", tc.releaseImage, tc.resolvedStream)
 			if tc.expectError {
 				g.Expect(err).To(HaveOccurred())
@@ -204,6 +294,10 @@ func TestSetPlatformConditions(t *testing.T) {
 				cond := FindStatusCondition(tc.nodePool.Status.Conditions, tc.expectedCondType)
 				g.Expect(cond).ToNot(BeNil())
 				g.Expect(cond.Status).To(Equal(tc.expectedCondValue))
+			}
+
+			for k, v := range tc.expectedAnnotations {
+				g.Expect(tc.nodePool.Annotations).To(HaveKeyWithValue(k, v))
 			}
 		})
 	}

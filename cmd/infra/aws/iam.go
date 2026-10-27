@@ -600,61 +600,49 @@ var (
 	}
 )
 
-func ingressPermPolicy(publicZone, privateZone string, sharedVPC bool) policyBinding {
+func ingressPermPolicy(publicZone, privateZone string, sharedVPC bool, managedDNS bool) policyBinding {
 	publicZone = ensureHostedZonePrefix(publicZone)
 	privateZone = ensureHostedZonePrefix(privateZone)
 
-	var policy string
-	if sharedVPC {
-		policy = fmt.Sprintf(`{
-			"Version": "2012-10-17",
-			"Statement": [
-				{
-					"Effect": "Allow",
-					"Action": [
-						"elasticloadbalancing:DescribeLoadBalancers",
-						"tag:GetResources",
-						"route53:ListHostedZones"
-					],
-					"Resource": "*"
-				},
-				{
-					"Effect": "Allow",
-					"Action": [
-						"route53:ChangeResourceRecordSets"
-					],
-					"Resource": [
-						"arn:aws:route53:::%s"
-					]
-				}
-			]
-		}`, publicZone)
-	} else {
-		policy = fmt.Sprintf(`{
-			"Version": "2012-10-17",
-			"Statement": [
-				{
-					"Effect": "Allow",
-					"Action": [
-						"elasticloadbalancing:DescribeLoadBalancers",
-						"tag:GetResources",
-						"route53:ListHostedZones"
-					],
-					"Resource": "*"
-				},
-				{
-					"Effect": "Allow",
-					"Action": [
-						"route53:ChangeResourceRecordSets"
-					],
-					"Resource": [
-						"arn:aws:route53:::%s",
-						"arn:aws:route53:::%s"
-					]
-				}
-			]
-		}`, publicZone, privateZone)
+	// changeRecordResource is the Resource list for route53:ChangeResourceRecordSets.
+	// With managed ingress DNS the CPO creates the ingress zones at runtime, so their
+	// IDs are unknown at infra-creation time; grant all hosted zones. Otherwise scope
+	// to the create-time zones: public and private, or public only for shared-VPC
+	// clusters (which reuse the VPC owner's private zone via an assumed role).
+	var changeRecordResource string
+	switch {
+	case managedDNS:
+		changeRecordResource = `"arn:aws:route53:::hostedzone/*"`
+	case sharedVPC:
+		changeRecordResource = fmt.Sprintf(`"arn:aws:route53:::%s"`, publicZone)
+	default:
+		changeRecordResource = fmt.Sprintf(`"arn:aws:route53:::%s",
+						"arn:aws:route53:::%s"`, publicZone, privateZone)
 	}
+
+	policy := fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"elasticloadbalancing:DescribeLoadBalancers",
+						"tag:GetResources",
+						"route53:ListHostedZones"
+					],
+					"Resource": "*"
+				},
+				{
+					"Effect": "Allow",
+					"Action": [
+						"route53:ChangeResourceRecordSets"
+					],
+					"Resource": [
+						%s
+					]
+				}
+			]
+		}`, changeRecordResource)
 
 	return policyBinding{
 		name:                 "openshift-ingress",
@@ -665,11 +653,51 @@ func ingressPermPolicy(publicZone, privateZone string, sharedVPC bool) policyBin
 	}
 }
 
-func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding {
+func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool, managedDNS bool) policyBinding {
 	hostedZone = ensureHostedZonePrefix(hostedZone)
+
+	// With managed ingress DNS the CPO creates, tags and deletes the cluster's
+	// zones at runtime, so their IDs are unknown at infra-creation time; grant
+	// zone management and record access on all hosted zones. Otherwise keep record
+	// access scoped to the create-time local zone. Shared-VPC clusters without
+	// managed DNS get no Route53 access: they reach the VPC owner's local zone via
+	// an assumed role.
+	var route53Actions, recordStatement string
+	switch {
+	case managedDNS:
+		route53Actions = `,
+						"route53:ListHostedZones",
+						"route53:GetHostedZone",
+						"route53:CreateHostedZone",
+						"route53:DeleteHostedZone",
+						"route53:ChangeTagsForResource"`
+		recordStatement = `,
+				{
+					"Effect": "Allow",
+					"Action": [
+						"route53:ChangeResourceRecordSets",
+						"route53:ListResourceRecordSets"
+					],
+					"Resource": "arn:aws:route53:::hostedzone/*"
+				}`
+	case sharedVPC:
+	default:
+		route53Actions = `,
+						"route53:ListHostedZones"`
+		recordStatement = fmt.Sprintf(`,
+				{
+					"Effect": "Allow",
+					"Action": [
+						"route53:ChangeResourceRecordSets",
+						"route53:ListResourceRecordSets"
+					],
+					"Resource": "arn:aws:route53:::%s"
+				}`, hostedZone)
+	}
+
 	var policy string
 	if sharedVPC {
-		policy = `{
+		policy = fmt.Sprintf(`{
 			"Version": "2012-10-17",
 			"Statement": [
 				{
@@ -685,12 +713,12 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 						"ec2:RevokeSecurityGroupEgress",
 						"ec2:DescribeSecurityGroups",
 						"ec2:DescribeVpcs",
-						"ec2:DescribeSubnets"
+						"ec2:DescribeSubnets"%s
 					],
 					"Resource": "*"
-				}
+				}%s
 			]
-		}`
+		}`, route53Actions, recordStatement)
 	} else {
 		policy = fmt.Sprintf(`{
 			"Version": "2012-10-17",
@@ -703,7 +731,6 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 						"ec2:ModifyVpcEndpoint",
 						"ec2:DeleteVpcEndpoints",
 						"ec2:CreateTags",
-						"route53:ListHostedZones",
 						"ec2:CreateSecurityGroup",
 						"ec2:AuthorizeSecurityGroupIngress",
 						"ec2:AuthorizeSecurityGroupEgress",
@@ -712,20 +739,12 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 						"ec2:RevokeSecurityGroupEgress",
 						"ec2:DescribeSecurityGroups",
 						"ec2:DescribeVpcs",
-						"ec2:DescribeSubnets"
+						"ec2:DescribeSubnets"%s
 					],
 					"Resource": "*"
-				},
-				{
-					"Effect": "Allow",
-					"Action": [
-						"route53:ChangeResourceRecordSets",
-						"route53:ListResourceRecordSets"
-					],
-					"Resource": "arn:aws:route53:::%s"
-				}
+				}%s
 			]
-		}`, hostedZone)
+		}`, route53Actions, recordStatement)
 	}
 	return policyBinding{
 		name:                 "control-plane-operator",
@@ -880,12 +899,12 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient aw
 	// TODO: The policies and secrets for these roles can be extracted from the
 	// release payload, avoiding this current hardcoding.
 	bindings := map[*string]policyBinding{
-		&output.Roles.IngressARN:              ingressPermPolicy(o.PublicZoneID, o.PrivateZoneID, sharedVPC),
+		&output.Roles.IngressARN:              ingressPermPolicy(o.PublicZoneID, o.PrivateZoneID, sharedVPC, o.ManagedDNS),
 		&output.Roles.ImageRegistryARN:        imageRegistryPermPolicy,
 		&output.Roles.StorageARN:              awsEBSCSIPermPolicy,
 		&output.Roles.KubeCloudControllerARN:  kubeControllerPolicy,
 		&output.Roles.NodePoolManagementARN:   nodePoolPolicy,
-		&output.Roles.ControlPlaneOperatorARN: controlPlaneOperatorPolicy(o.LocalZoneID, sharedVPC),
+		&output.Roles.ControlPlaneOperatorARN: controlPlaneOperatorPolicy(o.LocalZoneID, sharedVPC, o.ManagedDNS),
 		&output.Roles.NetworkARN:              cloudNetworkConfigControllerPolicy,
 	}
 
@@ -943,62 +962,17 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient aw
 			}`, o.BaseDomain)
 		ingressRoleName := output.Roles.IngressARN[strings.LastIndex(output.Roles.IngressARN, "/")+1:]
 
-		// Cloud Controller Manager's (CCM) managed policy needs to be updated on ROSA to allow new permissions downstream controllers to work.
-		// This inline policy must be removed when the following issue is resolved:
-		// elasticloadbalancing:SetSecurityGroups: https://redhat.atlassian.net/browse/SPLAT-2742
-		ccmPolicyStatement := `{
-				"Effect": "Allow",
-				"Action": [
-					"elasticloadbalancing:SetSecurityGroups"
-				],
-				"Resource": "*"
-			}`
-		ccmRoleName := output.Roles.KubeCloudControllerARN[strings.LastIndex(output.Roles.KubeCloudControllerARN, "/")+1:]
-
-		// Create the inline policy optimizing the policy documents.
-		// If the roles are the same (shared role), create a merged policy document to prevent race condition when updating the roles.
-		if ingressRoleName == ccmRoleName {
-			if _, err := iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
-				PolicyName: aws.String(ingressRoleName),
-				RoleName:   aws.String(ingressRoleName),
-				PolicyDocument: aws.String(fmt.Sprintf(`{
-					"Version": "2012-10-17",
-					"Statement": [
-						%s,
-						%s
-					]
-				}`, ingressPolicyStatement, ccmPolicyStatement)),
-			}); err != nil {
-				return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %w", ingressRoleName, ingressPolicyStatement, err)
-			}
-			logger.Info("Added inline shared policy to ROSA Managed Role", "role", ingressRoleName)
-		} else {
-			// Create the inline policy for the ingress role
-			if _, err := iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
-				PolicyName: aws.String(ingressRoleName),
-				RoleName:   aws.String(ingressRoleName),
-				PolicyDocument: aws.String(fmt.Sprintf(`{
-					"Version": "2012-10-17",
-					"Statement": [%s]
-				}`, ingressPolicyStatement)),
-			}); err != nil {
-				return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %w", ingressRoleName, ingressPolicyStatement, err)
-			}
-			logger.Info("Added inline policy to ROSA Ingress Managed Role", "role", ingressRoleName)
-
-			// Create the inline policy for the Cloud Controller Manager role
-			if _, err := iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
-				PolicyName: aws.String(ccmRoleName),
-				RoleName:   aws.String(ccmRoleName),
-				PolicyDocument: aws.String(fmt.Sprintf(`{
-					"Version": "2012-10-17",
-					"Statement": [%s]
-				}`, ccmPolicyStatement)),
-			}); err != nil {
-				return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %w", ccmRoleName, ccmPolicyStatement, err)
-			}
-			logger.Info("Added inline policy to ROSA Cloud Controller Manager Managed Role", "role", ccmRoleName)
+		if _, err := iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
+			PolicyName: aws.String(ingressRoleName),
+			RoleName:   aws.String(ingressRoleName),
+			PolicyDocument: aws.String(fmt.Sprintf(`{
+				"Version": "2012-10-17",
+				"Statement": [%s]
+			}`, ingressPolicyStatement)),
+		}); err != nil {
+			return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %w", ingressRoleName, ingressPolicyStatement, err)
 		}
+		logger.Info("Added inline policy to ROSA Ingress Managed Role", "role", ingressRoleName)
 	}
 
 	return output, nil

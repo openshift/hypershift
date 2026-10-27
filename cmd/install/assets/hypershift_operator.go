@@ -30,6 +30,7 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -254,7 +255,7 @@ const (
 // CRD installed. Today only google delegates NS records via DNSEndpoint;
 // add providers here as they adopt --source=crd.
 func (p ExternalDNSProvider) UsesCRDSource() bool {
-	return p == GCPExternalDNSProvider
+	return p == GCPExternalDNSProvider || p == AWSExternalDNSProvider
 }
 
 type ExternalDNSDeployment struct {
@@ -443,6 +444,8 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			"--aws-batch-change-interval=10s",
 			fmt.Sprintf("--aws-zones-cache-duration=%s", awsZonesCacheDuration),
 		)
+		// --source=crd and NS record management are added by the shared
+		// UsesCRDSource() block below.
 	case AzureExternalDNSProvider:
 		// Increase the Azure SDK retry count from the default of 3 to handle transient
 		// 429 (Too Many Requests) responses from the Azure DNS API with exponential backoff.
@@ -1132,6 +1135,38 @@ func (o HyperShiftOperatorService) Build() *corev1.Service {
 	}
 }
 
+type HyperShiftOperatorPodDisruptionBudget struct {
+	Namespace *corev1.Namespace
+}
+
+func (o HyperShiftOperatorPodDisruptionBudget) Build() *policyv1.PodDisruptionBudget {
+	return &policyv1.PodDisruptionBudget{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PodDisruptionBudget",
+			APIVersion: policyv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      HypershiftOperatorName,
+			Labels: map[string]string{
+				"name": HypershiftOperatorName,
+			},
+		},
+		Spec: policyv1.PodDisruptionBudgetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": HypershiftOperatorName,
+				},
+			},
+			// Allow one operator pod to be evicted during voluntary disruptions
+			// (e.g. node drains). With the default 2 replicas, this still keeps
+			// one pod available, while avoiding a drain deadlock with 1 replica.
+			MaxUnavailable:             ptr.To(intstr.FromInt32(1)),
+			UnhealthyPodEvictionPolicy: ptr.To(policyv1.AlwaysAllow),
+		},
+	}
+}
+
 type ExternalDNSServiceAccount struct {
 	Namespace *corev1.Namespace
 }
@@ -1176,6 +1211,16 @@ func (o ExternalDNSClusterRole) Build() *rbacv1.ClusterRole {
 					"pods",
 				},
 				Verbs: []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"externaldns.k8s.io"},
+				Resources: []string{"dnsendpoints"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"externaldns.k8s.io"},
+				Resources: []string{"dnsendpoints/status"},
+				Verbs:     []string{"get", "update", "patch"},
 			},
 		},
 	}

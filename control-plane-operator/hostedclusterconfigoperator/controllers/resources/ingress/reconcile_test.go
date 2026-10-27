@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	hccomanifests "github.com/openshift/hypershift/pkg/manifests/hcco"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 
@@ -32,14 +33,14 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 	}{
 		{
 			name:                   "IBM Cloud UPI uses Nodeport publishing strategy",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.IBMCloudPlatform,
 			inputReplicas:          fakeInputReplicas,
 			inputIsIBMCloudUPI:     true,
 			inputIsPrivate:         false,
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -62,7 +63,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		},
 		{
 			name:                   "IBM Cloud Non-UPI uses LoadBalancer publishing strategy (External)",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.IBMCloudPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -70,7 +71,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputIsPrivate:         false,
 			inputLoadBalancerScope: operatorv1.ExternalLoadBalancer,
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -93,7 +94,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		},
 		{
 			name:                   "IBM Cloud Non-UPI uses LoadBalancer publishing strategy (Internal)",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.IBMCloudPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -101,7 +102,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputIsPrivate:         false,
 			inputLoadBalancerScope: operatorv1.InternalLoadBalancer,
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -124,14 +125,14 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		},
 		{
 			name:                   "Kubevirt uses NodePort publishing strategy",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.KubevirtPlatform,
 			inputReplicas:          fakeInputReplicas,
 			inputIsIBMCloudUPI:     false,
 			inputIsPrivate:         false,
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -146,14 +147,14 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		},
 		{
 			name:                   "None Platform uses HostNetwork publishing strategy",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.NonePlatform,
 			inputReplicas:          fakeInputReplicas,
 			inputIsIBMCloudUPI:     false,
 			inputIsPrivate:         false,
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -168,14 +169,14 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		},
 		{
 			name:                   "AWS uses Loadbalancer publishing strategy",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.AWSPlatform,
 			inputReplicas:          fakeInputReplicas,
 			inputIsIBMCloudUPI:     false,
 			inputIsPrivate:         false,
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -190,14 +191,14 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		},
 		{
 			name:                   "Private Publishing Strategy on IBM Cloud",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.IBMCloudPlatform,
 			inputReplicas:          fakeInputReplicas,
 			inputIsIBMCloudUPI:     false,
 			inputIsPrivate:         true,
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -218,13 +219,13 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		},
 		{
 			name:                   "Private Publishing Strategy on other Platforms",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputReplicas:          fakeInputReplicas,
 			inputIsIBMCloudUPI:     false,
 			inputIsPrivate:         true,
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -241,7 +242,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		{
 			name: "Existing ingress controller",
 			inputIngressController: func() *operatorv1.IngressController {
-				ic := manifests.IngressDefaultIngressController()
+				ic := hccomanifests.IngressDefaultIngressController()
 				ic.ResourceVersion = "1"
 				return ic
 			}(),
@@ -251,7 +252,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputIsPrivate:     false,
 			expectedIngressController: &operatorv1.IngressController{
 				ObjectMeta: func() metav1.ObjectMeta {
-					m := manifests.IngressDefaultIngressController().ObjectMeta
+					m := hccomanifests.IngressDefaultIngressController().ObjectMeta
 					m.ResourceVersion = "1"
 					return m
 				}(),
@@ -261,12 +262,12 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		{
 			name:                   "NLB ingress controller service",
 			inputPlatformType:      hyperv1.AWSPlatform,
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputReplicas:          fakeInputReplicas,
 			inputIsNLB:             true,
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -290,7 +291,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		},
 		{
 			name:                   "OpenStack uses Loadbalancer publishing strategy with a floating IP",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.OpenStackPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -298,7 +299,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputIsPrivate:         false,
 			inputLoadBalancerIP:    "1.2.3.4",
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -350,7 +351,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 	}{
 		{
 			name:                   "Custom HostNetwork strategy overrides AWS platform default",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.AWSPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -365,7 +366,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 				},
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -385,7 +386,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 		},
 		{
 			name:                   "Custom NodePort strategy overrides None platform default",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.NonePlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -398,7 +399,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 				},
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -416,7 +417,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 		},
 		{
 			name:                   "Custom LoadBalancer with Internal scope overrides KubeVirt platform default",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.KubevirtPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -429,7 +430,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 				},
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -447,7 +448,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 		},
 		{
 			name:                   "Custom Private strategy overrides AWS platform default",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.AWSPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -458,7 +459,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 				Private: &operatorv1.PrivateStrategy{},
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -474,7 +475,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 		},
 		{
 			name:                   "Custom LoadBalancer with AWS NLB parameters",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.AWSPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -498,7 +499,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 				},
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -527,7 +528,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 		},
 		{
 			name:                   "Custom LoadBalancer strategy with OpenStack floating IP",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.OpenStackPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -545,7 +546,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 				},
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -568,7 +569,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 		},
 		{
 			name:                   "Custom strategy ignores platform defaults and annotations on IBM Cloud UPI",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.IBMCloudPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -581,7 +582,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 				},
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -604,7 +605,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 		},
 		{
 			name:                   "Custom strategy ignores isPrivate annotation",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.AWSPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -617,7 +618,7 @@ func TestReconcileDefaultIngressControllerWithCustomEndpointPublishingStrategy(t
 				},
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -670,7 +671,7 @@ func TestConfigurationPriority(t *testing.T) {
 		// Test 1: User configuration priority over platform defaults
 		{
 			name:                   "User configuration has priority: HostNetwork overrides AWS LoadBalancer default",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.AWSPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -681,7 +682,7 @@ func TestConfigurationPriority(t *testing.T) {
 				Type: operatorv1.HostNetworkStrategyType,
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -696,7 +697,7 @@ func TestConfigurationPriority(t *testing.T) {
 		},
 		{
 			name:                   "User configuration has priority: LoadBalancer overrides None platform HostNetwork default",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.NonePlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -710,7 +711,7 @@ func TestConfigurationPriority(t *testing.T) {
 				},
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -729,7 +730,7 @@ func TestConfigurationPriority(t *testing.T) {
 		// Test 2: User configuration priority over private annotation
 		{
 			name:                   "User configuration has priority: External LoadBalancer not overridden by private annotation on AWS",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.AWSPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -743,7 +744,7 @@ func TestConfigurationPriority(t *testing.T) {
 				},
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -761,7 +762,7 @@ func TestConfigurationPriority(t *testing.T) {
 		},
 		{
 			name:                   "User configuration has priority: NodePort not overridden by private annotation on IBM Cloud UPI",
-			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressController: hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,
 			inputPlatformType:      hyperv1.IBMCloudPlatform,
 			inputReplicas:          fakeInputReplicas,
@@ -775,7 +776,7 @@ func TestConfigurationPriority(t *testing.T) {
 				},
 			},
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -799,7 +800,7 @@ func TestConfigurationPriority(t *testing.T) {
 		// Test 3: Annotation fallback when no user configuration
 		{
 			name:                            "Annotation fallback: Private annotation applies when no user configuration on AWS",
-			inputIngressController:          manifests.IngressDefaultIngressController(),
+			inputIngressController:          hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:              fakeIngressDomain,
 			inputPlatformType:               hyperv1.AWSPlatform,
 			inputReplicas:                   fakeInputReplicas,
@@ -808,7 +809,7 @@ func TestConfigurationPriority(t *testing.T) {
 			inputIsNLB:                      false,
 			inputEndpointPublishingStrategy: nil, // No user configuration
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -824,7 +825,7 @@ func TestConfigurationPriority(t *testing.T) {
 		},
 		{
 			name:                            "Annotation fallback: Private annotation applies when no user configuration on IBM Cloud",
-			inputIngressController:          manifests.IngressDefaultIngressController(),
+			inputIngressController:          hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:              fakeIngressDomain,
 			inputPlatformType:               hyperv1.IBMCloudPlatform,
 			inputReplicas:                   fakeInputReplicas,
@@ -833,7 +834,7 @@ func TestConfigurationPriority(t *testing.T) {
 			inputLoadBalancerScope:          operatorv1.ExternalLoadBalancer,
 			inputEndpointPublishingStrategy: nil, // No user configuration
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -855,7 +856,7 @@ func TestConfigurationPriority(t *testing.T) {
 		// Test 4: Platform defaults when no user configuration and no annotation
 		{
 			name:                            "Platform defaults: AWS uses LoadBalancer when no user configuration",
-			inputIngressController:          manifests.IngressDefaultIngressController(),
+			inputIngressController:          hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:              fakeIngressDomain,
 			inputPlatformType:               hyperv1.AWSPlatform,
 			inputReplicas:                   fakeInputReplicas,
@@ -864,7 +865,7 @@ func TestConfigurationPriority(t *testing.T) {
 			inputIsNLB:                      false,
 			inputEndpointPublishingStrategy: nil, // No user configuration
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -879,7 +880,7 @@ func TestConfigurationPriority(t *testing.T) {
 		},
 		{
 			name:                            "Platform defaults: None platform uses HostNetwork when no user configuration",
-			inputIngressController:          manifests.IngressDefaultIngressController(),
+			inputIngressController:          hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:              fakeIngressDomain,
 			inputPlatformType:               hyperv1.NonePlatform,
 			inputReplicas:                   fakeInputReplicas,
@@ -887,7 +888,7 @@ func TestConfigurationPriority(t *testing.T) {
 			inputIsPrivate:                  false, // No private annotation
 			inputEndpointPublishingStrategy: nil,   // No user configuration
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -902,7 +903,7 @@ func TestConfigurationPriority(t *testing.T) {
 		},
 		{
 			name:                            "Platform defaults: KubeVirt uses NodePort when no user configuration",
-			inputIngressController:          manifests.IngressDefaultIngressController(),
+			inputIngressController:          hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:              fakeIngressDomain,
 			inputPlatformType:               hyperv1.KubevirtPlatform,
 			inputReplicas:                   fakeInputReplicas,
@@ -910,7 +911,7 @@ func TestConfigurationPriority(t *testing.T) {
 			inputIsPrivate:                  false, // No private annotation
 			inputEndpointPublishingStrategy: nil,   // No user configuration
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -925,7 +926,7 @@ func TestConfigurationPriority(t *testing.T) {
 		},
 		{
 			name:                            "Platform defaults: IBM Cloud UPI uses NodePort when no user configuration",
-			inputIngressController:          manifests.IngressDefaultIngressController(),
+			inputIngressController:          hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:              fakeIngressDomain,
 			inputPlatformType:               hyperv1.IBMCloudPlatform,
 			inputReplicas:                   fakeInputReplicas,
@@ -933,7 +934,7 @@ func TestConfigurationPriority(t *testing.T) {
 			inputIsPrivate:                  false, // No private annotation
 			inputEndpointPublishingStrategy: nil,   // No user configuration
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -956,7 +957,7 @@ func TestConfigurationPriority(t *testing.T) {
 		},
 		{
 			name:                            "Platform defaults: AWS with NLB flag uses NLB LoadBalancer when no user configuration",
-			inputIngressController:          manifests.IngressDefaultIngressController(),
+			inputIngressController:          hccomanifests.IngressDefaultIngressController(),
 			inputIngressDomain:              fakeIngressDomain,
 			inputPlatformType:               hyperv1.AWSPlatform,
 			inputReplicas:                   fakeInputReplicas,
@@ -965,7 +966,7 @@ func TestConfigurationPriority(t *testing.T) {
 			inputIsNLB:                      true,  // NLB flag set
 			inputEndpointPublishingStrategy: nil,   // No user configuration
 			expectedIngressController: &operatorv1.IngressController{
-				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				ObjectMeta: hccomanifests.IngressDefaultIngressController().ObjectMeta,
 				Spec: operatorv1.IngressControllerSpec{
 					Domain:   fakeIngressDomain,
 					Replicas: &fakeInputReplicas,
@@ -1221,7 +1222,7 @@ func TestReconcileDefaultIngressPassthroughService(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			service := manifests.IngressDefaultIngressPassthroughService("clusters-hc")
+			service := hccomanifests.IngressDefaultIngressPassthroughService("clusters-hc")
 			err := ReconcileDefaultIngressPassthroughService(service, tt.nodePortService, tt.strategy, hcp)
 			if tt.expectedErr != "" {
 				g.Expect(err).To(HaveOccurred())

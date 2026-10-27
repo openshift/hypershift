@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - 'release-*'
 
 permissions:
   contents: read
@@ -24,4 +25,4 @@ jobs:
           token: ${{ secrets.COMMUNITY_FORK_TOKEN }}
       - run: |
           git remote add community https://github.com/hypershift-community/hypershift.git
-          git push community main
+          git push community "HEAD:refs/heads/${{ github.ref_name }}"

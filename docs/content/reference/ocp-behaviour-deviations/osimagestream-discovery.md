@@ -36,6 +36,19 @@ This produces the same result without additional network access for OSImageStrea
 
 The network-based inspection in standalone OCP is effectively a redundant verification step — the release payload already contains all the information needed to determine OS stream availability. By reading from `ControllerConfig.Spec` fields that the control-plane-operator already populates, the HyperShift path arrives at the same `osImageStream.Status` without crossing the management-to-guest network boundary.
 
+## NodePool Status vs MCO OSImageStream Status
+
+There are two distinct `osImageStream` status fields that should not be confused:
+
+| Field | Resource | Populated by | Source |
+|---|---|---|---|
+| `osImageStream.Status` | OSImageStream (MCO) | Machine Config Controller | `ControllerConfig.Spec.BaseOSContainerImage` and `ControllerConfig.Spec.DefaultStream` — what streams are **available** in the release payload |
+| `status.osImageStream` | NodePool (HyperShift) | NodePool controller | Majority consensus (> N/2) across CAPI Machine `NodeInfo.OSImage` values — what stream is **actually running** on the pool's nodes |
+
+The MCO status answers "what streams does this release support?". The NodePool status answers "what stream are the nodes in this pool actually running?".
+
+The NodePool controller (`hypershift-operator/controllers/nodepool/version.go`) parses each Machine's `NodeInfo.OSImage` string (e.g. `Red Hat Enterprise Linux CoreOS 417.x` → `rhel-9`, `Red Hat Enterprise Linux CoreOS 10.x` → `rhel-10`), counts occurrences, and sets `status.osImageStream` only when a strict majority agrees. Machines with missing `NodeInfo` or unrecognized OS images are excluded from this count. When no majority exists (during rolling replacements, scale-to-zero, or when all machines are excluded), the status retains its previous value to avoid flapping.
+
 ## OSImageStream and Container Runtime Behavior Matrix
 
 The following table documents the expected behavior for each `osImageStream` and container runtime combination in HyperShift. These scenarios were validated through E2E testing during the OSStreams graduation ([CNTRLPLANE-4204](https://issues.redhat.com/browse/CNTRLPLANE-4204)).
@@ -64,7 +77,8 @@ The following table documents the expected behavior for each `osImageStream` and
 
 | Behavior | Standalone OCP | Hosted Control Planes | Notes |
 |---|---|---|---|
-| OSImageStream discovery | Network-based image inspection (`fetchOSImageStream()`) | Local lookup from `ControllerConfig.Spec` fields | See [The Fix](#the-fix) section above |
+| OSImageStream discovery (MCO) | Network-based image inspection (`fetchOSImageStream()`) | Local lookup from `ControllerConfig.Spec` fields | See [The Fix](#the-fix) section above |
+| NodePool `status.osImageStream` | N/A (no NodePool concept) | Majority consensus from CAPI Machine `NodeInfo.OSImage` | See [NodePool Status vs MCO OSImageStream Status](#nodepool-status-vs-mco-osimagestream-status) |
 | Runtime migration on upgrade (4.x → 5.0) | Existing nodes **do not** auto-migrate from `runc` to `crun` | Existing NodePools **do** migrate on upgrade | Same rationale as the [4.17 to 4.18 migration](upgrade-4.17-4.18.md#runtime-migration-from-runc-to-crun); the decision applies to all major upgrades |
 | Runtime migration mechanism (Replace strategy) | N/A | New nodes boot with new payload; old nodes replaced in rolling fashion | New nodes come directly with `crun` on RHEL 10 |
 | Runtime migration mechanism (InPlace strategy) | N/A | Nodes cordoned, drained, rebooted with new ignition payload | Reboot applies new MCS templates with `crun` |

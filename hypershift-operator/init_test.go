@@ -15,6 +15,8 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/go-logr/logr"
 )
 
 func TestGetImageRegistryCABundle(t *testing.T) {
@@ -167,4 +169,15 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunInit(t *testing.T) {
+	t.Setenv("KUBECONFIG", "/nonexistent/kubeconfig")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
+
+	g := NewWithT(t)
+	err := runInit(t.Context(), logr.Discard())
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("unable to get kubernetes config"))
 }

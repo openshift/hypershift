@@ -204,8 +204,10 @@ hostedclusters.hypershift.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
+  - AWSManagedDNS
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
+  - DeterministicLBIP
   - EtcdSharding
   - ExternalOIDC
   - ExternalOIDCExternalClaimsSourcing
@@ -217,6 +219,7 @@ hostedclusters.hypershift.openshift.io:
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - IngressComponentRouteLabels
+  - IngressControllerLBSecurityGroupsAWS
   - KMSEncryption
   - NetworkObservabilityInstall
   - OpenStack
@@ -283,8 +286,10 @@ hostedcontrolplanes.hypershift.openshift.io:
   Capability: ""
   Category: cluster-api
   FeatureGates:
+  - AWSManagedDNS
   - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
+  - DeterministicLBIP
   - EtcdSharding
   - ExternalOIDC
   - ExternalOIDCExternalClaimsSourcing
@@ -296,6 +301,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - IngressComponentRouteLabels
+  - IngressControllerLBSecurityGroupsAWS
   - KMSEncryption
   - NetworkObservabilityInstall
   - OpenStack

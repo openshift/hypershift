@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/pkg/manifests"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
@@ -168,6 +168,22 @@ func ControlPlaneUpgradeTest(getTestCtx internal.TestContextGetter) {
 		ensureNodeCountMatchesNodePoolReplicas(ctx, testCtx.MgmtClient, hcClient, hc)
 		By("Validating MachineDeployment generation after upgrade")
 		ensureMachineDeploymentGeneration(ctx, testCtx.MgmtClient, hc, 1)
+	})
+
+	// Separate It block with Informing label: ResourceDeletesInProgress can
+	// appear when the N-1 payload does not contain the manifest omission fix
+	// (OCPBUGS-130965). Promote to blocking once the fix has propagated to
+	// all N-1 releases.
+	It("should not have ResourceDeletesInProgress after upgrade", Label("Informing"), func() {
+		testCtx := getTestCtx()
+		ctx := testCtx.Context
+
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
+
+		ExpectNoResourceDeletesInProgress(ctx, hcClient)
 	})
 }
 

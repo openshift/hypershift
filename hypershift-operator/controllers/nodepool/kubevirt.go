@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
+	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	corev1 "k8s.io/api/core/v1"
@@ -38,10 +38,18 @@ func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool
 	// be created before the caching is 100% done. But moving this logic here, the caching will be done in parallel
 	// to the ignition settings, and so it will be ready, or almost ready, when the VMs are created.
 	if err := kubevirt.PlatformValidation(nodePool); err != nil {
+		// Surface arch/NodeSelector conflicts under the dedicated ValidArchPlatform condition
+		// so users get specific, actionable feedback rather than a generic machine-config error.
+		condType := hyperv1.NodePoolValidMachineConfigConditionType
+		condReason := hyperv1.NodePoolValidationFailedReason
+		if kubevirt.IsArchConflictError(err) {
+			condType = hyperv1.NodePoolValidArchPlatform
+			condReason = hyperv1.NodePoolInvalidArchPlatform
+		}
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+			Type:               condType,
 			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Reason:             condReason,
 			Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -114,9 +122,12 @@ func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool
 
 	// If this is a new nodepool, or we're currently updating a nodepool, then it is safe to
 	// use the new topologySpreadConstraints feature over pod anti-affinity when
-	// spreading out the VMs across the infra cluster
+	// spreading out the VMs across the infra cluster, and also safe to set the VMI
+	// Architecture field and inject the kubernetes.io/arch NodeSelector without triggering
+	// an unexpected fleet-wide rolling update of existing idle NodePool VMs.
 	if nodePool.Status.Version == "" || isUpdatingVersion(nodePool, releaseImage.Version()) {
 		nodePool.Annotations[hyperv1.NodePoolSupportsKubevirtTopologySpreadConstraintsAnnotation] = "true"
+		nodePool.Annotations[hyperv1.NodePoolSupportsKubevirtArchitectureAnnotation] = "true"
 	}
 
 	return nil
@@ -148,7 +159,7 @@ func (r *NodePoolReconciler) setAllMachinesLMCondition(ctx context.Context, node
 	var mapReason, mapMessage string
 	for _, kubevirtmachine := range kubevirtMachines.Items {
 		for _, cond := range kubevirtmachine.Status.Conditions {
-			if cond.Type == capikubevirt.VMLiveMigratableCondition && cond.Status == corev1.ConditionFalse {
+			if cond.Type == capikubevirt.VMLiveMigratableCondition && cond.Status == metav1.ConditionFalse {
 				mapReason = cond.Reason
 				mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", kubevirtmachine.Name, cond.Reason, cond.Message)
 				numNotLiveMigratable++

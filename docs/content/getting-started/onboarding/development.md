@@ -135,7 +135,7 @@ make test                     # Unit tests with race detection
 make e2e                      # Build E2E test binaries
 
 # Code quality
-make verify                   # Full verification (BEFORE PR) - includes generate, fmt, vet, lint, codespell, gitlint
+make verify                   # Full verification - includes generate, fmt, vet, lint, codespell, gitlint
 make lint                     # golangci-lint
 make lint-fix                 # Auto-fix linting
 make fmt                      # Format
@@ -147,6 +147,12 @@ make api                      # Only regenerate CRDs
 make generate                 # go generate
 make clients                  # Update generated clients
 ```
+
+### Pre-PR Validation
+
+Run proportionate repository-required checks targeting the changes and fix failures. Required change-specific safety, formatting, linting, generation, and test checks still apply; required CI checks remain unchanged. Select broader checks when the scope or risk demands them, and retain the API-specific workflow below.
+
+Review the complete diff, confirm a clean working tree after committing, and report actual commands/results or review evidence, explicitly identifying skipped or unavailable checks.
 
 ### Workflow for API Changes
 

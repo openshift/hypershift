@@ -262,7 +262,7 @@ func buildKASContainerAWSKMSTokenMinter(image string) func(*corev1.Container) {
 			fmt.Sprintf("--service-account-namespace=%s", manifests.KASContainerKMSProviderServiceAccount().Namespace),
 			fmt.Sprintf("--service-account-name=%s", manifests.KASContainerKMSProviderServiceAccount().Name),
 			fmt.Sprintf("--token-file=%s", path.Join(awsKMSVolumeMounts.Path(c.Name, kasVolumeAWSKMSCloudProviderToken().Name), "token")),
-			fmt.Sprintf("--kubeconfig=%s", path.Join(awsKMSVolumeMounts.Path(c.Name, kasVolumeLocalhostKubeconfig), podspec.KubeconfigKey)),
+			fmt.Sprintf("--kubeconfig=%s", path.Join(awsKMSVolumeMounts.Path(c.Name, kasVolumeLocalhostKubeconfig), config.KubeconfigKey)),
 		}
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),

@@ -32,6 +32,23 @@ This directory contains Claude Code skills that are automatically applied when w
 - Includes proper attribution footers
 - Follows conventional commits specification
 
+### Restructure Commits
+
+**Location:** `skills/restructure-commits/` (canonical, harness-neutral); `.claude/skills/restructure-commits/` and `.cursor/rules/restructure-commits.mdc` are thin adapters
+
+**Description:** Model-neutral procedure for rewriting a branch into component-based commits (API, Dependencies, Vendor, CLI, HO, CPO, E2E, Docs, Tooling) without changing its file content.
+
+**Use when:**
+
+- User asks to "redo commits", "restructure commits", "squash by component", or "organize commits"
+- Preparing a branch for PR review or cleaning history after review feedback
+
+**Covers:**
+
+- Ownership rules in `ownership.json`, generated from repository facts by `generate_ownership.py` (`make update`)
+- `commit_layout.py` to plan, stage, and verify commits; `make verify-commit-layout` is the completion gate
+- Safe preflight: PR base resolution, backup branch, tree snapshot, and `--force-with-lease` against the recorded SHA
+
 ### Effective Go
 
 **Location:** `.claude/skills/effective-go/`
@@ -223,31 +240,6 @@ Skills are automatically invoked by Claude based on context. You don't need to d
 ## Available Commands
 
 Commands are manually invoked using `/command-name` syntax.
-
-### Restructure Commits
-
-**Location:** `.claude/commands/restructure-commits.md`
-
-**Description:** Reorganizes all commits on a feature branch into logical, component-based commits that match HyperShift's architecture.
-
-**Usage:**
-
-```
-/restructure-commits
-```
-
-**Use when:**
-
-- User asks to "redo commits", "restructure commits", "squash by component", or "organize commits"
-- Preparing a branch for PR review with clean commit history
-- Branch has many small/WIP commits that should be consolidated
-
-**Covers:**
-
-- Component-based commit grouping (API, Vendor, CLI, HO, CPO, E2E, Docs)
-- Soft reset and re-staging workflow
-- Conventional commit messages with correct type/scope per component
-- Edge cases for file categorization (support/, testdata/, API tests)
 
 ### Fix HyperShift Repo Robot PR
 

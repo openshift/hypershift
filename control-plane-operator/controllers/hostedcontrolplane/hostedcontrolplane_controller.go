@@ -20,6 +20,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	cloudgcp "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/gcp"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -73,6 +74,7 @@ import (
 	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	ignitionmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/awsapi"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
@@ -83,10 +85,12 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/statuspatching"
 	"github.com/openshift/hypershift/support/upsert"
@@ -151,6 +155,17 @@ const (
 
 	resourceDeletionTimeout = 10 * time.Minute
 
+	// awsEndpointServiceCPOFinalizer is the finalizer the awsprivatelink controller adds to
+	// AWSEndpointServices; it is removed once the VPC endpoint in the guest VPC is deleted.
+	awsEndpointServiceCPOFinalizer = "hypershift.openshift.io/control-plane-operator-finalizer"
+
+	// awsEndpointServiceDeletionTimeout bounds how long HCP deletion waits for VPC
+	// endpoint cleanup. It matches the hypershift-operator's awsEndpointDeletionGracePeriod,
+	// whose fallback removes the finalizer once it elapses.
+	awsEndpointServiceDeletionTimeout = 10 * time.Minute
+
+	awsEndpointServiceDeletionRequeueInterval = 10 * time.Second
+
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
 
@@ -184,15 +199,20 @@ type HostedControlPlaneReconciler struct {
 	OperateOnReleaseImage                   string
 	DefaultIngressDomain                    string
 	MetricsSet                              metrics.MetricsSet
+	KASHealthMetrics                        *kas.KASHealthMetrics
 	SREConfigHash                           string
 	ec2Client                               awsapi.EC2API
 	awsSession                              *aws.Config
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
+	newKMSClient                            func(cfg aws.Config, optFns ...func(*kms.Options)) awsapi.KMSAPI
+	assumeRoleWithWebIdentity               func(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error)
+	getGuestToken                           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error)
 	EnableCVOManagementClusterMetricsAccess bool
-	ImageMetadataProvider                   util.ImageMetadataProvider
+	ImageMetadataProvider                   imageregistry.ImageMetadataProvider
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
 	clock                                   clock.Clock
+	lastDNSReconcile                        sync.Map
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
@@ -218,6 +238,11 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 	r.SetDefaultSecurityContext = !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint)
 
 	r.reconcileInfrastructureStatus = r.defaultReconcileInfrastructureStatus
+	r.newKMSClient = func(cfg aws.Config, optFns ...func(*kms.Options)) awsapi.KMSAPI {
+		return kms.NewFromConfig(cfg, optFns...)
+	}
+	r.assumeRoleWithWebIdentity = supportawsutil.AssumeRoleWithWebIdentity
+	r.getGuestToken = r.defaultGetGuestToken
 
 	r.ec2Client, r.awsSession = GetEC2Client(context.Background())
 
@@ -423,6 +448,29 @@ func (r *HostedControlPlaneReconciler) reconcileDeletion(ctx context.Context, ho
 		if !done {
 			return ctrl.Result{RequeueAfter: time.Minute}, nil
 		}
+
+		if err := r.destroyAWSManagedIngressDNSZones(ctx, hostedControlPlane); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to cleanup ingress DNS zones: %w", err)
+		}
+
+		// Guest cloud-resource cleanup has reached its terminal outcome. Tear down
+		// the managed GCP worker firewall rule before removing the finalizer, so it
+		// is gone before the CLI deletes the VPC network. Recoverable failures
+		// (including WIF not yet available) retain the finalizer and retry; an
+		// ownership conflict is a terminal skip so finalization is not blocked.
+		if err := r.destroyGCPWorkerFirewallRules(ctx, hostedControlPlane); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete GCP worker firewall rules: %w", err)
+		}
+	}
+
+	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
+		done, err := r.deleteAWSEndpointServices(ctx, hostedControlPlane)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete AWSEndpointServices: %w", err)
+		}
+		if !done {
+			return ctrl.Result{RequeueAfter: awsEndpointServiceDeletionRequeueInterval}, nil
+		}
 	}
 
 	if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
@@ -444,7 +492,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, 
 	switch hostedControlPlane.Spec.Etcd.ManagementType {
 	case hyperv1.Managed:
 		r.Log.Info("Reconciling etcd cluster status for managed strategy")
-		sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
+		sts := cpomanifests.EtcdStatefulSet(hostedControlPlane.Namespace)
 		if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err != nil {
 			if apierrors.IsNotFound(err) {
 				newCondition = metav1.Condition{
@@ -479,7 +527,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdStatus(ctx context.Context, 
 		restoreCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
 		if restoreCondition == nil {
 			r.Log.Info("Reconciling etcd cluster restore status")
-			sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
+			sts := cpomanifests.EtcdStatefulSet(hostedControlPlane.Namespace)
 			if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err == nil {
 				rc := metav1.Condition{}
 				conditionPtr := r.etcdRestoredCondition(ctx, sts)
@@ -640,8 +688,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != util.HCPControlPlaneReleaseImage(hostedControlPlane) {
-		r.Log.Info("releaseImage is " + util.HCPControlPlaneReleaseImage(hostedControlPlane) + ", but this operator is configured for " + r.OperateOnReleaseImage + ", skipping reconciliation")
+	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane) {
+		r.Log.Info("releaseImage is " + imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane) + ", but this operator is configured for " + r.OperateOnReleaseImage + ", skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
 
@@ -669,6 +717,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	switch hostedControlPlane.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		r.validateAWSKMSConfig(ctx, hostedControlPlane)
+		if err := r.reconcileAWSManagedIngressDNSZones(ctx, hostedControlPlane); err != nil {
+			r.Log.Error(err, "failed to reconcile ingress DNS zones")
+		}
 	case hyperv1.AzurePlatform:
 		r.validateAzureKMSConfig(ctx, hostedControlPlane)
 	}
@@ -731,12 +782,12 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// control plane is initialized (ControlPlaneInitialized condition on the CAPI Cluster).
 	hostedControlPlane.Status.Initialization.ControlPlaneInitialized = ptr.To(true)
 
-	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationActiveCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, reconcilerpolicy.GenerateReconciliationActiveCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.
 	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
-	if isPaused, duration := util.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(r.Log, hostedControlPlane.Spec.PausedUntil); isPaused {
 		r.Log.Info("Reconciliation paused", "pausedUntil", *hostedControlPlane.Spec.PausedUntil)
 		return ctrl.Result{
 			RequeueAfter: duration,
@@ -798,7 +849,7 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 			Message: hyperv1.AllIsWellMessage,
 			Reason:  hyperv1.AsExpectedReason,
 		}
-		if util.HCPOAuthEnabled(hostedControlPlane) {
+		if reconcilerpolicy.HCPOAuthEnabled(hostedControlPlane) {
 			// JoinHostPort brackets IPv6 literals so url.Parse accepts the callback template.
 			hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s/oauth2callback/[identity-provider-name]",
 				net.JoinHostPort(infraStatus.OAuthHost, strconv.Itoa(int(infraStatus.OAuthPort))))
@@ -906,7 +957,7 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlaneVersionStatus(ctx co
 	}
 	// Resolve the release image to its digest so controlPlaneVersion records
 	// the immutable image reference, consistent with how CVO records images.
-	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, util.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
+	_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, imageregistry.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
 		return fmt.Errorf("failed to resolve control plane release image digest: %w", err)
 	}
@@ -1001,12 +1052,12 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		// When the cluster is private, checking the load balancers will depend on whether the load balancer is
 		// using the right subnets. To avoid uncertainty, we'll limit the check to the service endpoint.
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort)
+			return healthCheckKASEndpoint(ctx, cpomanifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort, r.KASHealthMetrics)
 		}
-		return healthCheckKASEndpoint(ctx, manifests.KubeAPIServerService("").Name, config.KASSVCPort)
+		return healthCheckKASEndpoint(ctx, cpomanifests.KubeAPIServerService("").Name, config.KASSVCPort, r.KASHealthMetrics)
 	case serviceStrategy.Type == hyperv1.Route:
 		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
-			externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
+			externalRoute := cpomanifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
 			if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
 				return fmt.Errorf("failed to get kube apiserver external route: %w", err)
 			}
@@ -1015,10 +1066,10 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 			if err != nil {
 				return err
 			}
-			return healthCheckKASEndpoint(ctx, endpoint, port)
+			return healthCheckKASEndpoint(ctx, endpoint, port, r.KASHealthMetrics)
 		}
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
-		svc := manifests.KubeAPIServerService(hcp.Namespace)
+		svc := cpomanifests.KubeAPIServerService(hcp.Namespace)
 		port := config.KASSVCPort
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 			port = config.KASSVCIBMCloudPort
@@ -1027,7 +1078,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 			hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform) {
 			// If Azure or Kubevirt on Azure we get the SVC handling the LB.
 			// TODO(alberto): remove this hack when having proper traffic management for Azure.
-			svc = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
+			svc = cpomanifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
 			port = config.KASSVCLBAzurePort
 		}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
@@ -1051,25 +1102,45 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		} else if LBIngress.IP != "" {
 			ingressPoint = LBIngress.IP
 		}
-		return healthCheckKASEndpoint(ctx, ingressPoint, port)
+		return healthCheckKASEndpoint(ctx, ingressPoint, port, r.KASHealthMetrics)
 	}
 	return nil
 }
 
-func healthCheckKASEndpoint(ctx context.Context, ingressPoint string, port int) error {
-	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz?verbose", ingressPoint, port)
+func kasHealthCheckURL(ingressPoint string, port int) string {
+	return fmt.Sprintf("https://%s/healthz?verbose", net.JoinHostPort(ingressPoint, strconv.Itoa(port)))
+}
+
+func healthCheckKASEndpoint(ctx context.Context, ingressPoint string, port int, metrics *kas.KASHealthMetrics) error {
+	healthEndpoint := kasHealthCheckURL(ingressPoint, port)
 
 	httpClient := util.InsecureHTTPClient()
 	httpClient.Timeout = 10 * time.Second
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthEndpoint, nil)
 	if err != nil {
 		return err
 	}
+
+	start := time.Now()
 	resp, err := httpClient.Do(req)
+	duration := time.Since(start).Seconds()
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+
+	if metrics != nil {
+		metrics.RequestDuration.Observe(duration)
+		if err == nil && resp != nil && resp.StatusCode == http.StatusOK {
+			metrics.Available.Set(1)
+		} else {
+			metrics.Available.Set(0)
+		}
+	}
+
 	if err != nil {
 		return fmt.Errorf("health check to APIServer endpoint %s failed: %w", ingressPoint, err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		failingChecks := parseFailingHealthChecks(resp.Body)
@@ -1163,7 +1234,7 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	}
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer lookupCancel()
-	return r.ReleaseProvider.Lookup(lookupCtx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
+	return r.ReleaseProvider.Lookup(lookupCtx, imageregistry.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {
@@ -1203,6 +1274,15 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	var errs []error
 	if err := r.reconcileCPOV2(ctx, hostedControlPlane, infraStatus, releaseImageProvider, userReleaseImageProvider); err != nil {
+		errs = append(errs, err)
+	}
+
+	// Reconcile the managed GCP worker firewall rule after CPOv2. Only genuine
+	// hard errors are appended to the aggregate; expected recoverable states
+	// (missing WIF creds, missing IAM role, unresolvable infra, conflicts) are
+	// reported via the GCPFirewallRulesReady condition and converge on the next
+	// periodic reconcile without failing the overall HCP reconcile.
+	if err := r.reconcileGCPWorkerFirewallRules(ctx, hostedControlPlane); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -1307,7 +1387,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		}
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		// Reconcile kubeadmin password
 		r.Log.Info("Reconciling kubeadmin password secret")
 		explicitOauthConfig := hcp.Spec.Configuration != nil && hcp.Spec.Configuration.OAuth != nil
@@ -1328,6 +1408,12 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 	r.Log.Info("Reconciling default security group")
 	if err := r.reconcileDefaultSecurityGroup(ctx, hcp); err != nil {
 		return fmt.Errorf("failed to reconcile default security group: %w", err)
+	}
+
+	// Ensure combined-pull-secret exists before CPOv2 components (e.g. OAPI) reconcile.
+	r.Log.Info("Reconciling combined pull secret")
+	if err := r.reconcileCombinedPullSecret(ctx, hcp, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile combined pull secret: %w", err)
 	}
 
 	cpContext := component.ControlPlaneContext{
@@ -1409,7 +1495,43 @@ func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Co
 	return nil
 }
 
+// reconcileCombinedPullSecret ensures combined-pull-secret exists in the HCP
+// namespace before CPOv2 components reconcile. It seeds the secret from
+// pull-secret only when the secret is missing or has no data, so HCCO-merged
+// credentials are never overwritten. This handles upgrade skew where an older
+// HyperShift Operator has not created the secret; HCCO takes ownership for
+// ongoing updates (merging additional registry credentials).
+func (r *HostedControlPlaneReconciler) reconcileCombinedPullSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull-secret for combined-pull-secret bootstrap: %w", err)
+	}
+	pullSecretData, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return fmt.Errorf("pull-secret %q is missing .dockerconfigjson key", pullSecret.Name)
+	}
+
+	combinedSecret := common.CombinedPullSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, combinedSecret, func() error {
+		if len(combinedSecret.Data[corev1.DockerConfigJsonKey]) > 0 {
+			return nil
+		}
+		combinedSecret.Type = corev1.SecretTypeDockerConfigJson
+		combinedSecret.Data = map[string][]byte{
+			corev1.DockerConfigJsonKey: pullSecretData,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile combined-pull-secret: %w", err)
+	}
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) reconcileEtcdCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN) error {
+	if hcp.Spec.Etcd.ManagementType != hyperv1.Managed {
+		return nil
+	}
+
 	etcdSignerSecret := manifests.EtcdSignerSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, etcdSignerSecret, func() error {
 		return pki.ReconcileEtcdSignerSecret(etcdSignerSecret, p.OwnerRef)
@@ -1469,7 +1591,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdCerts(ctx context.Context, h
 	// Reconcile per-shard server and peer TLS secrets.
 	// Shards reuse the default etcd-client-tls secret for client auth (same CA),
 	// but need their own server/peer certs with shard-specific DNS SANs.
-	if hcp.Spec.Etcd.ManagementType == hyperv1.Managed && hcp.Spec.Etcd.Managed != nil {
+	if hcp.Spec.Etcd.Managed != nil {
 		for _, shard := range hcp.Spec.Etcd.Managed.Shards {
 			shardName := fmt.Sprintf("etcd-%s", shard.Name)
 
@@ -1534,7 +1656,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenshiftCerts(ctx context.Conte
 		return fmt.Errorf("failed to reconcile kas admin client secret: %w", err)
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		openshiftOAuthAPIServerCertSecret := manifests.OpenShiftOAuthAPIServerCertSecret(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, openshiftOAuthAPIServerCertSecret, func() error {
 			return pki.ReconcileOpenShiftOAuthAPIServerCertSecret(openshiftOAuthAPIServerCertSecret, rootCASecret, p.OwnerRef)
@@ -1909,6 +2031,13 @@ func (r *HostedControlPlaneReconciler) reconcileAWSPlatformCerts(ctx context.Con
 // GCP PD CSI metrics Services unconditionally. On a GKE management cluster there is no
 // service-ca-operator to honor that annotation, so self-sign unconditionally.
 func (r *HostedControlPlaneReconciler) reconcileGCPPlatformCerts(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN, rootCASecret *corev1.Secret) error {
+	gcpWorkloadIdentityFederationWebhookServingCert := manifests.GCPWorkloadIdentityFederationWebhookServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, gcpWorkloadIdentityFederationWebhookServingCert, func() error {
+		return pki.ReconcileGCPWorkloadIdentityFederationWebhookServingCert(gcpWorkloadIdentityFederationWebhookServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile %s secret: %w", gcpWorkloadIdentityFederationWebhookServingCert.Name, err)
+	}
+
 	gcpPDCsiDriverOperatorServingCert := manifests.GCPPDCsiDriverOperatorServingCert(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, gcpPDCsiDriverOperatorServingCert, func() error {
 		return pki.ReconcileGCPPDCsiDriverOperatorMetricsServingCertSecret(gcpPDCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
@@ -2070,7 +2199,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile managed UserCA configMap: %w", err)
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
+	if reconcilerpolicy.HCPOAuthEnabled(hcp) {
 		if err := r.reconcileOAuthCerts(ctx, hcp, p, createOrUpdate, rootCASecret, trustedCABundle); err != nil {
 			return err
 		}
@@ -2768,6 +2897,60 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 	return false, nil
 }
 
+// deleteAWSEndpointServices deletes the AWSEndpointServices in the HCP namespace and reports
+// whether HCP deletion may proceed. It runs while the HCP (and therefore KAS, token-minter
+// credentials and SharedVPC role configuration) still exists, so the awsprivatelink controller
+// can remove the VPC endpoint in the guest VPC before the control plane is torn down.
+// Only the control-plane-operator finalizer is awaited; the hypershift-operator finalizer does
+// not depend on the HCP and is awaited by the HostedCluster controller. If cleanup does not finish
+// within awsEndpointServiceDeletionTimeout (or credentials are invalid), HCP deletion proceeds and
+// the HostedCluster controller's deleteAWSEndpointServices removes the leftover finalizer.
+func (r *HostedControlPlaneReconciler) deleteAWSEndpointServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	// The hypershift-operator gates its cleanup on GetCredentialStatus, which needs both
+	// ValidOIDCConfiguration and ValidAWSIdentityProvider. We only have ValidAWSIdentityProvider on
+	// the HCP (ValidOIDCConfiguration is a HostedCluster-level condition), so we key off that alone,
+	// like the other HCP credential checks here (hasValidCloudCredentials, security group creation).
+	// Skip only when it is explicitly False; Unknown or missing still tries, since cleanup is best effort.
+	if cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider)); cond != nil && cond.Status == metav1.ConditionFalse {
+		log.Info("Skipping AWSEndpointService cleanup because the AWS identity provider is invalid", "reason", cond.Reason)
+		return true, nil
+	}
+
+	awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
+	if err := r.List(ctx, awsEndpointServiceList, client.InNamespace(hcp.Namespace)); err != nil {
+		return false, fmt.Errorf("failed to list AWSEndpointServices: %w", err)
+	}
+
+	done := true
+	for i := range awsEndpointServiceList.Items {
+		awsEndpointService := &awsEndpointServiceList.Items[i]
+		if awsEndpointService.DeletionTimestamp.IsZero() {
+			log.Info("Deleting AWSEndpointService", "name", awsEndpointService.Name)
+			if err := r.Delete(ctx, awsEndpointService); err != nil && !apierrors.IsNotFound(err) {
+				return false, fmt.Errorf("failed to delete AWSEndpointService %s: %w", awsEndpointService.Name, err)
+			}
+			done = false
+			continue
+		}
+		if !controllerutil.ContainsFinalizer(awsEndpointService, awsEndpointServiceCPOFinalizer) {
+			continue
+		}
+		if elapsed := time.Since(awsEndpointService.DeletionTimestamp.Time); elapsed > awsEndpointServiceDeletionTimeout {
+			log.Error(fmt.Errorf("timed out after %s", duration.ShortHumanDuration(elapsed)),
+				"AWSEndpointService cleanup incomplete, VPC endpoint may be leaked; continuing HCP deletion",
+				"name", awsEndpointService.Name)
+			continue
+		}
+		done = false
+	}
+	if !done {
+		log.Info("Waiting for AWSEndpointService cleanup")
+	}
+	return done, nil
+}
+
 func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	logger := ctrl.LoggerFrom(ctx)
 	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
@@ -2882,6 +3065,150 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 	}
 
 	return creationErr
+}
+
+// reconcileGCPWorkerFirewallRules reconciles the managed GCP worker firewall
+// rule (<infra-id>-internal-cluster) and records the outcome on the HCP's
+// GCPFirewallRulesReady condition.
+//
+// It follows the "degrade, don't wedge" contract: expected recoverable states
+// (missing WIF credentials, insufficient IAM permissions, unresolvable
+// project/VPC, ownership conflicts, in-flight operations) set the condition to
+// False with an actionable message and return nil, so the overall HCP reconcile
+// is not marked failed and component deployment/bootstrap is never blocked. Only
+// genuinely unexpected failures return an error into the reconcile aggregate.
+func (r *HostedControlPlaneReconciler) reconcileGCPWorkerFirewallRules(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	logger := ctrl.LoggerFrom(ctx)
+	if hcp.Spec.Platform.Type != hyperv1.GCPPlatform {
+		return nil
+	}
+
+	logger.Info("Reconciling GCP worker firewall rules")
+	// Captured before NewFirewallManager evaluates hcp.Spec, so the guard below
+	// can detect a concurrent spec change across the PatchStatus refetch instead
+	// of stamping a stale error with the refetched object's generation.
+	evaluatedGeneration := hcp.Generation
+	manager, err := cloudgcp.NewFirewallManager(hcp, logger)
+	if err != nil {
+		// Missing GCP platform spec on a GCP HCP is a configuration problem, not a
+		// transient state: report it but do not wedge the reconcile.
+		result := metav1.Condition{
+			Type:    string(hyperv1.GCPFirewallRulesReady),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.GCPFirewallWaitingForInfra,
+			Message: err.Error(),
+		}
+		if patchErr := statuspatching.PatchStatus(ctx, r.Client, hcp, func() error {
+			if hcp.Generation != evaluatedGeneration {
+				return fmt.Errorf("hcp generation changed from %d to %d while validating GCP platform spec, requeueing to re-evaluate", evaluatedGeneration, hcp.Generation)
+			}
+			result.ObservedGeneration = hcp.Generation
+			meta.SetStatusCondition(&hcp.Status.Conditions, result)
+			return nil
+		}); patchErr != nil {
+			return fmt.Errorf("failed to update GCPFirewallRulesReady status: %w", patchErr)
+		}
+		return nil
+	}
+
+	// Durably record a creation attempt before the manager mutates GCP, so a later
+	// deletion with unavailable WIF credentials can distinguish "no rule was ever
+	// created" from "a rule may exist". See gcpFirewallSkipOnWIFUnavailableReason.
+	manager.SetProvisioningAttemptHook(func(ctx context.Context) error {
+		return r.markGCPFirewallProvisioningAttempted(ctx, hcp)
+	})
+
+	// The result below is derived from the spec at this generation (project, VPC,
+	// network type, infra ID). If the spec changes before we patch, re-evaluate.
+	result := manager.Reconcile(ctx)
+	condition := result.Condition(evaluatedGeneration)
+
+	if patchErr := statuspatching.PatchStatus(ctx, r.Client, hcp, func() error {
+		if hcp.Generation != evaluatedGeneration {
+			return fmt.Errorf("hcp generation changed from %d to %d while reconciling worker firewall rules, requeueing to re-evaluate", evaluatedGeneration, hcp.Generation)
+		}
+		condition.ObservedGeneration = hcp.Generation
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return nil
+	}); patchErr != nil {
+		return fmt.Errorf("failed to update GCPFirewallRulesReady status: %w", patchErr)
+	}
+
+	// Only hard errors enter the reconcile aggregate; degraded/pending outcomes
+	// are communicated by the condition alone.
+	if result.Status == cloudgcp.OutcomeError {
+		return result.Err
+	}
+	return nil
+}
+
+// destroyGCPWorkerFirewallRules deletes the managed GCP worker firewall rule
+// during HCP deletion. A missing rule is success, and an ownership conflict is a
+// terminal skip (the unowned rule is left untouched so finalization can
+// proceed). If WIF credentials are unavailable, deletion normally returns an
+// error so the caller retains the HCP finalizer and retries; see
+// gcpFirewallSkipOnWIFUnavailableReason for the narrow cases where it is safe to
+// skip instead.
+func (r *HostedControlPlaneReconciler) destroyGCPWorkerFirewallRules(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if hcp.Spec.Platform.Type != hyperv1.GCPPlatform {
+		return nil
+	}
+
+	logger := ctrl.LoggerFrom(ctx)
+	manager, err := cloudgcp.NewFirewallManager(hcp, logger)
+	if err != nil {
+		return fmt.Errorf("failed to build GCP firewall manager: %w", err)
+	}
+	return manager.Delete(ctx, gcpFirewallSkipOnWIFUnavailableReason(hcp))
+}
+
+// gcpFirewallSkipOnWIFUnavailableReason decides whether it is safe to let
+// firewall deletion proceed when GCP WIF credentials are unavailable, and
+// returns a non-empty reason if so.
+//
+// It relies only on durable evidence persisted before any GCP mutation, never on
+// the GCPFirewallRulesReady status condition (which is written after the rule is
+// created and can be lost to a failed status patch or overwritten by a later
+// WaitingForCredentials reconcile — so it cannot prove a rule was never created).
+//
+//   - GCPFirewallRuleProvisioningAttemptedAnnotation absent: the control-plane-operator
+//     persists this marker before its first InsertFirewall, so its absence proves
+//     no rule was ever created and deletion is a safe no-op.
+//   - GCPFirewallSkipDeletionAnnotation == "true": an operator has manually
+//     confirmed no rule is left behind and wants deletion to proceed regardless.
+//
+// Otherwise it returns "" so Delete errors, the HCP finalizer is retained, and
+// deletion retries until WIF credentials return and the rule can be checked.
+func gcpFirewallSkipOnWIFUnavailableReason(hcp *hyperv1.HostedControlPlane) string {
+	if hcp.Annotations[hyperv1.GCPFirewallSkipDeletionAnnotation] == "true" {
+		return "explicit " + hyperv1.GCPFirewallSkipDeletionAnnotation + " annotation is set"
+	}
+	if hcp.Annotations[hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation] != "true" {
+		return "the " + hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation + " marker was never persisted; no firewall rule was ever created"
+	}
+	return ""
+}
+
+// markGCPFirewallProvisioningAttempted durably records, before any GCP mutation, that a
+// firewall rule creation is being attempted. It is wired as the manager's
+// before-create hook so the InsertFirewall only runs once this annotation is
+// persisted; see GCPFirewallRuleProvisioningAttemptedAnnotation and
+// gcpFirewallSkipOnWIFUnavailableReason. The patch is additive metadata and does
+// not bump the HCP generation, so it does not disturb the reconcile's
+// generation guard.
+func (r *HostedControlPlaneReconciler) markGCPFirewallProvisioningAttempted(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if hcp.Annotations[hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation] == "true" {
+		return nil
+	}
+	original := hcp.DeepCopy()
+	if hcp.Annotations == nil {
+		hcp.Annotations = map[string]string{}
+	}
+	hcp.Annotations[hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation] = "true"
+	if err := r.Client.Patch(ctx, hcp, client.MergeFrom(original)); err != nil {
+		return fmt.Errorf("failed to persist %s annotation: %w", hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation, err)
+	}
+	return nil
 }
 
 func awsSecurityGroupFilters(infraID string) []ec2types.Filter {
@@ -3129,6 +3456,20 @@ func hasValidCloudCredentials(hcp *hyperv1.HostedControlPlane) (string, bool) {
 	return "", true
 }
 
+func (r *HostedControlPlaneReconciler) defaultGetGuestToken(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+	guestClient, err := r.GetGuestClusterClient(ctx, hcp)
+	if err != nil {
+		return "", fmt.Errorf("failed to create guest client: %w", err)
+	}
+
+	sa := manifests.KASContainerKMSProviderServiceAccount()
+	token, err := k8sutil.CreateTokenForServiceAccount(ctx, sa, k8sutil.ServiceAccountClient(guestClient, sa.Namespace))
+	if err != nil {
+		return "", fmt.Errorf("failed to create token for KMS provider service account: %w", err)
+	}
+	return token, nil
+}
+
 func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
 	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil || hcp.Spec.SecretEncryption.KMS.AWS == nil {
 		// AWS KMS not configured
@@ -3144,32 +3485,31 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 	}
 	log := ctrl.LoggerFrom(ctx)
 
-	guestClient, err := r.GetGuestClusterClient(ctx, hcp)
-	if err != nil {
-		// guest cluster is not ready yet.
-		log.Error(err, "failed to create guest client")
-		return
-	}
-
-	sa := manifests.KASContainerKMSProviderServiceAccount()
-	token, err := k8sutil.CreateTokenForServiceAccount(ctx, sa, k8sutil.ServiceAccountClient(guestClient, sa.Namespace))
-	if err != nil {
-		// service account might not be created in the guest cluster or KAS is not operational.
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAWSKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionUnknown,
-			Message:            fmt.Sprintf("failed to create token for KMS provider service account: %v", err),
-			Reason:             hyperv1.StatusUnknownReason,
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-		return
-	}
-
 	roleArn := hcp.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN
 	kmsKeyArn := hcp.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN
+	kmsRegion := hcp.Spec.SecretEncryption.KMS.AWS.Region
 
-	creds, err := supportawsutil.AssumeRoleWithWebIdentity(ctx, r.awsSession, "control-plane-operator", roleArn, token)
+	if kmsRegion == "" {
+		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidAWSKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            "AWS KMS region is not configured",
+			Reason:             hyperv1.InvalidConfigurationReason,
+		})
+		return
+	}
+
+	token, err := r.getGuestToken(ctx, hcp)
+	if err != nil {
+		// Guest cluster API is unavailable. Attempt a direct KMS key validation
+		// to detect key-level issues that might be causing the guest cluster to be down.
+		log.Error(err, "failed to get guest token for KMS validation, falling back to direct KMS key check")
+		r.validateKMSKeyDirect(ctx, hcp, kmsKeyArn, kmsRegion)
+		return
+	}
+
+	creds, err := r.assumeRoleWithWebIdentity(ctx, r.awsSession, "control-plane-operator", roleArn, token)
 	if err != nil {
 		condition := metav1.Condition{
 			Type:               string(hyperv1.ValidAWSKMSConfig),
@@ -3197,11 +3537,13 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 		Reason:             hyperv1.AsExpectedReason,
 	}
 
-	kmsService := kms.NewFromConfig(awsSession)
+	kmsService := r.newKMSClient(awsSession, func(o *kms.Options) {
+		o.Region = kmsRegion
+	})
 
 	input := &kms.EncryptInput{
 		KeyId:     aws.String(kmsKeyArn),
-		Plaintext: []byte("text"),
+		Plaintext: []byte("test"),
 	}
 	if _, err = kmsService.Encrypt(ctx, input); err != nil {
 		condition = metav1.Condition{
@@ -3213,6 +3555,76 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 		}
 	}
 
+	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+}
+
+// validateKMSKeyDirect attempts to validate the KMS key using the CPO's own
+// credentials when the guest cluster is unavailable. This detects key-level
+// issues (non-existent, disabled, pending deletion) without the full
+// role-assumption chain that depends on the guest cluster API.
+//
+// In self-managed deployments the KMS key and the CPO are in the same AWS
+// account, so the probe surfaces real key errors (NotFoundException,
+// DisabledException, etc.). In ROSA the customer provides a KMS key from
+// their own account while the CPO runs in Red Hat's account; AWS will return
+// AccessDeniedException for all cross-account cases (including non-existent
+// keys) to avoid leaking key existence, so the fallback reports
+// ConditionUnknown.
+func (r *HostedControlPlaneReconciler) validateKMSKeyDirect(ctx context.Context, hcp *hyperv1.HostedControlPlane, kmsKeyArn, kmsRegion string) {
+	if r.awsSession == nil {
+		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidAWSKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Message:            "Unable to validate KMS configuration: guest cluster API is unavailable and no AWS session is configured",
+			Reason:             hyperv1.StatusUnknownReason,
+		})
+		return
+	}
+
+	kmsService := r.newKMSClient(*r.awsSession, func(o *kms.Options) {
+		o.Region = kmsRegion
+	})
+
+	input := &kms.EncryptInput{
+		KeyId:     aws.String(kmsKeyArn),
+		Plaintext: []byte("test"),
+	}
+
+	_, err := kmsService.Encrypt(ctx, input)
+	if err != nil {
+		errorCode := supportawsutil.AWSErrorCode(err)
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAWSKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.StatusUnknownReason,
+		}
+		switch errorCode {
+		case "NotFoundException", "DisabledException", "KeyUnavailableException", "KMSInvalidStateException", "InvalidKeyUsageException":
+			// These errors indicate a problem with the KMS key itself.
+			condition.Status = metav1.ConditionFalse
+			condition.Reason = hyperv1.AWSErrorReason
+			condition.Message = fmt.Sprintf("KMS key validation failed (key: %s), code: %s", kmsKeyArn, errorCode)
+		case "AccessDeniedException":
+			// CPO doesn't have direct access to the key (expected in ROSA cross-account setups).
+			condition.Message = "Unable to validate KMS configuration: guest cluster API is unavailable and direct KMS key access is not permitted"
+		default:
+			condition.Message = fmt.Sprintf("Unable to validate KMS configuration: guest cluster API is unavailable, direct KMS check failed with code: %s", errorCode)
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	// KMS encrypt succeeded with CPO credentials — key is accessible.
+	// Full role-chain validation could not be completed because the guest cluster is unavailable.
+	condition := metav1.Condition{
+		Type:               string(hyperv1.ValidAWSKMSConfig),
+		ObservedGeneration: hcp.Generation,
+		Status:             metav1.ConditionUnknown,
+		Message:            "KMS key is accessible but full validation cannot be completed: guest cluster API is unavailable for role assumption validation",
+		Reason:             hyperv1.StatusUnknownReason,
+	}
 	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 }
 
@@ -3452,7 +3864,7 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 }
 
 func setKASCustomKubeconfigStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane, c client.Client) error {
-	customKubeconfig := manifests.KASCustomKubeconfigSecret(hcp.Namespace, nil)
+	customKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcp.Namespace, nil)
 	if err := c.Get(ctx, client.ObjectKeyFromObject(customKubeconfig), customKubeconfig); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get custom kubeconfig secret: %w", err)

@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/netutil"
 
@@ -179,7 +179,7 @@ func TestGetHealthcheckEndpoint(t *testing.T) {
 				},
 			},
 			useSharedIngress: true,
-			expectedEndpoint: manifests.KubeAPIServerService("").Name,
+			expectedEndpoint: cpomanifests.KubeAPIServerService("").Name,
 			expectedPort:     config.KASSVCPort,
 		},
 	}

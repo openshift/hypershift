@@ -6,6 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+	"github.com/openshift/hypershift/cmd/util"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -95,7 +96,8 @@ func BindDeveloperOptions(opts *RawAWSPlatformCreateOptions, flags *pflag.FlagSe
 	flags.StringVar(&opts.RootVolumeEncryptionKey, "root-volume-kms-key", opts.RootVolumeEncryptionKey, "The KMS key ID or ARN to use for root volume encryption for machines in the NodePool")
 }
 
-func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+func NewCreateCommand(coreOpts *core.CreateNodePoolOptions, clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	platformOpts := DefaultOptions()
 	cmd := &cobra.Command{
 		Use:          "aws",
@@ -116,7 +118,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return coreOpts.CreateRunFunc(opts)(cmd, args)
+		return coreOpts.CreateRunFunc(opts, clientProvider)(cmd, args)
 	}
 
 	return cmd

@@ -109,7 +109,7 @@ spec:
                   the Private Endpoint will be created.
                   The expected format is:
                     /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
-                maxLength: 355
+                maxLength: 357
                 minLength: 1
                 type: string
                 x-kubernetes-validations:
@@ -164,7 +164,7 @@ spec:
                   If not provided, the controller will auto-create a NAT subnet in the HC's VNet.
                   The expected format is:
                     /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
-                maxLength: 355
+                maxLength: 357
                 minLength: 1
                 type: string
                 x-kubernetes-validations:

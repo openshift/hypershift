@@ -71,7 +71,7 @@ jobs:
           - shard: cmd-support
             packages: ./cmd/... ./support/...
           - shard: other
-            packages: ./karpenter-operator/... ./control-plane-pki-operator/... ./contrib/... ./ignition-server/... ./pkg/... ./dnsresolver/... ./product-cli/... ./client/... ./test/integration/... ./test/e2e/util/... ./test/util/... ./availability-prober/... ./konnectivity-socks5-proxy/... ./konnectivity-https-proxy/... ./kubernetes-default-proxy/... ./kubevirtexternalinfra/... ./etcd-defrag/... ./etcd-backup/... ./etcd-recovery/... ./etcd-upload/... ./kas-bootstrap/... ./sharedingress-config-generator/... ./sync-fg-configmap/... ./sync-global-pullsecret/... ./token-minter/...
+            packages: ./karpenter-operator/... ./control-plane-pki-operator/... ./contrib/... ./ignition-server/... ./pkg/... ./dnsresolver/... ./product-cli/... ./client/... ./test/integration/... ./test/e2e/util/... ./test/e2e/v2/util/mirrorregistry/... ./test/util/... ./availability-prober/... ./konnectivity-socks5-proxy/... ./konnectivity-https-proxy/... ./kubernetes-default-proxy/... ./kubevirtexternalinfra/... ./etcd-defrag/... ./etcd-backup/... ./etcd-recovery/... ./etcd-upload/... ./kas-bootstrap/... ./sharedingress-config-generator/... ./sync-fg-configmap/... ./sync-global-pullsecret/... ./token-minter/...
     env:
       GOMODCACHE: /tmp/go-mod-cache
     steps:
@@ -88,7 +88,7 @@ jobs:
       - name: Run tests
         run: make test-shard TEST_PACKAGES="${{ matrix.packages }}" COVER_PROFILE="cover-${{ matrix.shard }}.out"
       - name: Upload to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        uses: codecov/codecov-action@0b35c9ecc4f0529d0eb674914510c22f85b196b4 # v7.1.0
         env:
           HOME: /tmp
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

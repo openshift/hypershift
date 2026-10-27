@@ -42,9 +42,11 @@ import (
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 
 	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -64,6 +66,9 @@ func init() {
 	utilruntime.Must(corev1.AddToScheme(scheme))
 	utilruntime.Must(appsv1.AddToScheme(scheme))
 	utilruntime.Must(routev1.AddToScheme(scheme))
+	utilruntime.Must(configv1.AddToScheme(scheme))
+	utilruntime.Must(imagev1.AddToScheme(scheme))
+	utilruntime.Must(batchv1.AddToScheme(scheme))
 }
 
 const defaultNamespace = "clusters"
@@ -142,7 +147,7 @@ func run(ctx context.Context, cfg envConfig) error {
 	}
 	log.Printf("Using test plan %q", plan.Name)
 
-	allSpecs := cfg.platform.ClusterSpecs(cfg.releaseImage, cfg.n1Image)
+	allSpecs := cfg.platform.ClusterSpecs(ctx, cfg.releaseImage, cfg.n1Image)
 	if err := plan.Validate(allSpecs); err != nil {
 		return err
 	}
@@ -160,10 +165,11 @@ func run(ctx context.Context, cfg envConfig) error {
 		named[i] = namedSpec{ClusterSpec: spec, name: name}
 		clusterNames[spec.Variant] = name
 		entries[i] = lifecycle.ClusterEntry{
-			Variant:   spec.Variant,
-			Name:      name,
-			InfraID:   name,
-			Namespace: cfg.namespace,
+			Variant:     spec.Variant,
+			Name:        name,
+			InfraID:     name,
+			Namespace:   cfg.namespace,
+			DestroyArgs: spec.DestroyArgs,
 		}
 		log.Printf("Cluster %s: name=%s", spec.Variant, name)
 	}
@@ -300,8 +306,7 @@ func buildCreateArgs(cfg envConfig, ns namedSpec) []string {
 		args = append(args, "--etcd-storage-class="+cfg.etcdSC)
 	}
 
-	args = append(args, cfg.platform.CreateArgs()...)
-	args = append(args, ns.ExtraArgs...)
+	args = append(args, ns.CreateArgs...)
 
 	return args
 }

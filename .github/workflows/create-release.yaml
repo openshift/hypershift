@@ -1,0 +1,15 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    uses: openshift/hypershift/.github/workflows/create-release-reusable.yaml@main
+    with:
+      tag-name: ${{ github.ref_name }}
+    permissions:
+      contents: write
+    secrets: inherit

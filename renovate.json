@@ -40,6 +40,45 @@
             "enabled": true
         },
         {
+            "description": "Group root Go module dependency updates on main branch",
+            "matchManagers": [
+                "gomod"
+            ],
+            "matchBaseBranches": [
+                "main"
+            ],
+            "matchFileNames": [
+                "go.mod"
+            ],
+            "groupName": "Go dependencies (operator/control-plane)"
+        },
+        {
+            "description": "Group API Go module dependency updates on main branch",
+            "matchManagers": [
+                "gomod"
+            ],
+            "matchBaseBranches": [
+                "main"
+            ],
+            "matchFileNames": [
+                "api/go.mod"
+            ],
+            "groupName": "Go dependencies (api)"
+        },
+        {
+            "description": "Group Go tooling dependency updates on main branch",
+            "matchManagers": [
+                "gomod"
+            ],
+            "matchBaseBranches": [
+                "main"
+            ],
+            "matchFileNames": [
+                "hack/tools/go.mod"
+            ],
+            "groupName": "Go dependencies (tools)"
+        },
+        {
             "description": "Enable security-only Go updates on release branches",
             "matchManagers": [
                 "gomod"

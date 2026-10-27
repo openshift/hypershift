@@ -13,6 +13,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
+	hcmetrics "github.com/openshift/hypershift/pkg/metrics/hostedcluster"
 	"github.com/openshift/hypershift/support/api"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -90,7 +91,7 @@ func checkMetric(t *testing.T, client client.Client, clock clock.Clock, metricNa
 func TestReportWaitingInitialAvailabilityDuration(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
-			WaitingInitialAvailabilityDurationMetricName,
+			hcmetrics.WaitingInitialAvailabilityDurationMetricName,
 			waitingInitialAvailabilityDurationMetricHelp,
 			expectedValue)
 	}
@@ -145,7 +146,7 @@ func TestReportWaitingInitialAvailabilityDuration(t *testing.T) {
 			checkMetric(t,
 				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
 				clocktesting.NewFakeClock(tc.timestamp),
-				WaitingInitialAvailabilityDurationMetricName, tc.expected)
+				hcmetrics.WaitingInitialAvailabilityDurationMetricName, tc.expected)
 		})
 	}
 }
@@ -153,7 +154,7 @@ func TestReportWaitingInitialAvailabilityDuration(t *testing.T) {
 func TestReportInitialRollingOutDuration(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
-			InitialRollingOutDurationMetricName,
+			hcmetrics.InitialRollingOutDurationMetricName,
 			initialRollingOutDurationMetricHelp,
 			expectedValue)
 	}
@@ -225,7 +226,7 @@ func TestReportInitialRollingOutDuration(t *testing.T) {
 			checkMetric(t,
 				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
 				clocktesting.NewFakeClock(tc.timestamp),
-				InitialRollingOutDurationMetricName,
+				hcmetrics.InitialRollingOutDurationMetricName,
 				tc.expected)
 		})
 	}
@@ -234,7 +235,7 @@ func TestReportInitialRollingOutDuration(t *testing.T) {
 func TestReportUpgradingDuration(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64, previousVersion, newVersion string) *dto.MetricFamily {
 		return &dto.MetricFamily{
-			Name: ptr.To(UpgradingDurationMetricName),
+			Name: ptr.To(hcmetrics.UpgradingDurationMetricName),
 			Help: ptr.To(upgradingDurationMetricHelp),
 			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 			Metric: []*dto.Metric{{
@@ -363,7 +364,7 @@ func TestReportUpgradingDuration(t *testing.T) {
 			checkMetric(t,
 				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
 				clocktesting.NewFakeClock(tc.timestamp),
-				UpgradingDurationMetricName,
+				hcmetrics.UpgradingDurationMetricName,
 				tc.expected)
 		})
 	}
@@ -372,7 +373,7 @@ func TestReportUpgradingDuration(t *testing.T) {
 func TestReportLimitedSuportEnabled(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
-			LimitedSupportEnabledMetricName,
+			hcmetrics.LimitedSupportEnabledMetricName,
 			limitedSupportEnabledMetricHelp,
 			expectedValue)
 	}
@@ -421,7 +422,7 @@ func TestReportLimitedSuportEnabled(t *testing.T) {
 			checkMetric(t,
 				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
 				clock.RealClock{},
-				LimitedSupportEnabledMetricName,
+				hcmetrics.LimitedSupportEnabledMetricName,
 				tc.expected)
 		})
 	}
@@ -430,7 +431,7 @@ func TestReportLimitedSuportEnabled(t *testing.T) {
 func TestReportSilenceAlerts(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
-			SilenceAlertsMetricName,
+			hcmetrics.SilenceAlertsMetricName,
 			silenceAlertsMetricHelp,
 			expectedValue)
 	}
@@ -469,7 +470,7 @@ func TestReportSilenceAlerts(t *testing.T) {
 			checkMetric(t,
 				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
 				clock.RealClock{},
-				SilenceAlertsMetricName,
+				hcmetrics.SilenceAlertsMetricName,
 				tc.expected)
 		})
 	}
@@ -484,7 +485,7 @@ func TestReportProxy(t *testing.T) {
 		}
 
 		return &dto.MetricFamily{
-			Name: ptr.To(ProxyMetricName),
+			Name: ptr.To(hcmetrics.ProxyMetricName),
 			Help: ptr.To(proxyMetricHelp),
 			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 			Metric: []*dto.Metric{{
@@ -554,7 +555,7 @@ func TestReportProxy(t *testing.T) {
 			checkMetric(t,
 				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
 				clock.RealClock{},
-				ProxyMetricName,
+				hcmetrics.ProxyMetricName,
 				tc.expected)
 		})
 	}
@@ -563,7 +564,7 @@ func TestReportProxy(t *testing.T) {
 func TestReportInvalidGcpCreds(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
-			InvalidGcpCredsMetricName,
+			hcmetrics.InvalidGcpCredsMetricName,
 			invalidGcpCredsMetricHelp,
 			expectedValue)
 	}
@@ -653,7 +654,7 @@ func TestReportInvalidGcpCreds(t *testing.T) {
 			checkMetric(t,
 				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
 				clock.RealClock{},
-				InvalidGcpCredsMetricName,
+				hcmetrics.InvalidGcpCredsMetricName,
 				tc.expected)
 		})
 	}
@@ -662,7 +663,7 @@ func TestReportInvalidGcpCreds(t *testing.T) {
 func TestReportInvalidAwsCreds(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
-			InvalidAwsCredsMetricName,
+			hcmetrics.InvalidAwsCredsMetricName,
 			invalidAwsCredsMetricHelp,
 			expectedValue)
 	}
@@ -741,7 +742,7 @@ func TestReportInvalidAwsCreds(t *testing.T) {
 			checkMetric(t,
 				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
 				clock.RealClock{},
-				InvalidAwsCredsMetricName,
+				hcmetrics.InvalidAwsCredsMetricName,
 				tc.expected)
 		})
 	}
@@ -750,7 +751,7 @@ func TestReportInvalidAwsCreds(t *testing.T) {
 func TestReportGuestCloudResourcesDeletionDuration(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
-			GuestCloudResourcesDeletingDurationMetricName,
+			hcmetrics.GuestCloudResourcesDeletingDurationMetricName,
 			guestCloudResourcesDeletingDurationMetricHelp,
 			expectedValue)
 	}
@@ -826,7 +827,7 @@ func TestReportGuestCloudResourcesDeletionDuration(t *testing.T) {
 			checkMetric(t,
 				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
 				clocktesting.NewFakeClock(tc.timestamp),
-				GuestCloudResourcesDeletingDurationMetricName,
+				hcmetrics.GuestCloudResourcesDeletingDurationMetricName,
 				tc.expected)
 		})
 	}
@@ -835,7 +836,7 @@ func TestReportGuestCloudResourcesDeletionDuration(t *testing.T) {
 func TestReportDeletingDuration(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
-			DeletingDurationMetricName,
+			hcmetrics.DeletingDurationMetricName,
 			deletingDurationMetricHelp,
 			expectedValue)
 	}
@@ -897,7 +898,7 @@ func TestReportDeletingDuration(t *testing.T) {
 			checkMetric(t,
 				clientBuilder.Build(),
 				clocktesting.NewFakeClock(tc.timestamp),
-				DeletingDurationMetricName,
+				hcmetrics.DeletingDurationMetricName,
 				tc.expected)
 		})
 	}
@@ -906,7 +907,7 @@ func TestReportDeletingDuration(t *testing.T) {
 func TestReportEtcdManualInterventionRequired(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return &dto.MetricFamily{
-			Name: ptr.To(EtcdManualInterventionRequiredMetricName),
+			Name: ptr.To(hcmetrics.EtcdManualInterventionRequiredMetricName),
 			Help: ptr.To(etcdManualInterventionRequiredMetricHelp),
 			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 			Metric: []*dto.Metric{{
@@ -993,7 +994,7 @@ func TestReportEtcdManualInterventionRequired(t *testing.T) {
 			checkMetric(t,
 				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
 				clocktesting.NewFakeClock(tc.timestamp),
-				EtcdManualInterventionRequiredMetricName,
+				hcmetrics.EtcdManualInterventionRequiredMetricName,
 				tc.expected)
 		})
 	}
@@ -1002,7 +1003,7 @@ func TestReportEtcdManualInterventionRequired(t *testing.T) {
 func TestProxyCAValidity(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
-			ProxyCAValidMetricName,
+			hcmetrics.ProxyCAValidMetricName,
 			proxyCAValidMetricHelp,
 			expectedValue)
 	}
@@ -1092,7 +1093,7 @@ func TestProxyCAValidity(t *testing.T) {
 			checkMetric(t,
 				clientBuilder.Build(),
 				clocktesting.NewFakeClock(tc.timestamp),
-				ProxyCAValidMetricName,
+				hcmetrics.ProxyCAValidMetricName,
 				tc.expected)
 		})
 	}
@@ -1102,7 +1103,7 @@ func TestProxyCAExpiry(t *testing.T) {
 
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
-			ProxyCAExpiryTimestampName,
+			hcmetrics.ProxyCAExpiryTimestampName,
 			proxyCAExpiryTimestampMetricHelp,
 			expectedValue)
 	}
@@ -1182,7 +1183,7 @@ func TestProxyCAExpiry(t *testing.T) {
 			checkMetric(t,
 				clientBuilder.Build(),
 				clocktesting.NewFakeClock(tc.timestamp),
-				ProxyCAExpiryTimestampName,
+				hcmetrics.ProxyCAExpiryTimestampName,
 				tc.expected)
 		})
 	}
@@ -1191,7 +1192,7 @@ func TestProxyCAExpiry(t *testing.T) {
 func TestReportClusterSizeOverride(t *testing.T) {
 	wrapExpectedValueAsMetric := func(size string, expectedValue float64) *dto.MetricFamily {
 		return &dto.MetricFamily{
-			Name: ptr.To(ClusterSizeOverrideMetricName),
+			Name: ptr.To(hcmetrics.ClusterSizeOverrideMetricName),
 			Help: ptr.To(clusterSizeOverrideMetricHelp),
 			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 			Metric: []*dto.Metric{{
@@ -1271,7 +1272,7 @@ func TestReportClusterSizeOverride(t *testing.T) {
 			checkMetric(t,
 				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
 				clocktesting.NewFakeClock(tc.timestamp),
-				ClusterSizeOverrideMetricName,
+				hcmetrics.ClusterSizeOverrideMetricName,
 				tc.expected)
 		})
 	}
@@ -1314,9 +1315,9 @@ func TestHostedClusterAzureInfo(t *testing.T) {
 				SubscriptionID:    "mySubscription888",
 			},
 			managed:            false,
-			expectedMetricName: HostedClusterAzureInfoMetricName,
+			expectedMetricName: hcmetrics.HostedClusterAzureInfoMetricName,
 			expected: &dto.MetricFamily{
-				Name: ptr.To(string(HostedClusterAzureInfoMetricName)),
+				Name: ptr.To(string(hcmetrics.HostedClusterAzureInfoMetricName)),
 				Help: ptr.To(string(HostedClusterAzureInfoMetricHelp)),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
@@ -1343,9 +1344,9 @@ func TestHostedClusterAzureInfo(t *testing.T) {
 				SubscriptionID:    "mySubscription888",
 			},
 			managed:            true,
-			expectedMetricName: HostedClusterManagedAzureInfoMetricName,
+			expectedMetricName: hcmetrics.HostedClusterManagedAzureInfoMetricName,
 			expected: &dto.MetricFamily{
-				Name: ptr.To(string(HostedClusterManagedAzureInfoMetricName)),
+				Name: ptr.To(string(hcmetrics.HostedClusterManagedAzureInfoMetricName)),
 				Help: ptr.To(string(HostedClusterManagedAzureInfoMetricHelp)),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
@@ -1404,7 +1405,7 @@ func TestAcrPullIdentityConfigured(t *testing.T) {
 		{
 			name:               "When platform is not Azure it should not emit a metric",
 			platformType:       hyperv1.AWSPlatform,
-			expectedMetricName: AcrPullIdentityConfiguredMetricName,
+			expectedMetricName: hcmetrics.AcrPullIdentityConfiguredMetricName,
 		},
 		{
 			name:         "When Azure has no containerRegistry configured, it should emit 0",
@@ -1415,9 +1416,9 @@ func TestAcrPullIdentityConfigured(t *testing.T) {
 				ResourceGroupName: "myRG",
 				SubscriptionID:    "mySub",
 			},
-			expectedMetricName: AcrPullIdentityConfiguredMetricName,
+			expectedMetricName: hcmetrics.AcrPullIdentityConfiguredMetricName,
 			expected: &dto.MetricFamily{
-				Name: ptr.To(AcrPullIdentityConfiguredMetricName),
+				Name: ptr.To(hcmetrics.AcrPullIdentityConfiguredMetricName),
 				Help: ptr.To(acrPullIdentityConfiguredMetricHelp),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
@@ -1447,9 +1448,9 @@ func TestAcrPullIdentityConfigured(t *testing.T) {
 					},
 				},
 			},
-			expectedMetricName: AcrPullIdentityConfiguredMetricName,
+			expectedMetricName: hcmetrics.AcrPullIdentityConfiguredMetricName,
 			expected: &dto.MetricFamily{
-				Name: ptr.To(AcrPullIdentityConfiguredMetricName),
+				Name: ptr.To(hcmetrics.AcrPullIdentityConfiguredMetricName),
 				Help: ptr.To(acrPullIdentityConfiguredMetricHelp),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
@@ -1582,7 +1583,7 @@ func TestReportTransitionDurationForAWSEndpointConditions(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			metricFamily := findMetricValue(&result, TransitionDurationMetricName)
+			metricFamily := findMetricValue(&result, hcmetrics.TransitionDurationMetricName)
 			observedConditions := map[string]bool{}
 			if metricFamily != nil {
 				for _, m := range metricFamily.Metric {
@@ -1713,7 +1714,7 @@ func TestReportTransitionDurationForGCPEndpointConditions(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			metricFamily := findMetricValue(&result, TransitionDurationMetricName)
+			metricFamily := findMetricValue(&result, hcmetrics.TransitionDurationMetricName)
 			observedConditions := map[string]bool{}
 			if metricFamily != nil {
 				for _, m := range metricFamily.Metric {

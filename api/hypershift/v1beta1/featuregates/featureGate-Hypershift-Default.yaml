@@ -37,12 +37,18 @@
                         "name": "EtcdSharding"
                     },
                     {
-                        "name": "HCPUserFacingOperatorLogs"
+                        "name": "DeterministicLBIP"
+                    },
+                    {
+                        "name": "AWSManagedDNS"
+                    },
+                    {
+                        "name": "IngressComponentRouteLabels"
                     }
                 ],
                 "enabled": [
-                    # We enable all OCP feature gates only so the CRD contains the fields.
-                    # Each HostedCluster can configure their specific feature gate CR at creation time via spec.configuration.
+                    # These OCP feature gates preserve fields already exposed in the Default CRDs.
+                    # Each HostedCluster can configure its feature gate CR at creation time via spec.configuration.
                     {
                         "name": "ExternalOIDC"
                     },
@@ -60,6 +66,9 @@
                     },
                     {
                         "name": "OSStreams"
+                    },
+                    {
+                        "name": "HCPUserFacingOperatorLogs"
                     }
                 ],
                 "version": ""

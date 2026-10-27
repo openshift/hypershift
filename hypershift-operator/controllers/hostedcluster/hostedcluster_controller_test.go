@@ -29,16 +29,17 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
-	hcpmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	hcpmanifests "github.com/openshift/hypershift/pkg/manifests"
+	etcdrecoverymanifests "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -47,7 +48,6 @@ import (
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -115,7 +115,7 @@ func (rp fakeReleaseProvider) GetReleaseProvider() releaseinfo.ProviderWithOpenS
 	return rp.releaseProvider
 }
 
-func (rp fakeReleaseProvider) GetMetadataProvider() hyperutil.ImageMetadataProvider {
+func (rp fakeReleaseProvider) GetMetadataProvider() imageregistry.ImageMetadataProvider {
 	return &rp.metadataProvider
 }
 
@@ -1155,6 +1155,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			},
 			hcpAnnotations: map[string]string{
 				k8sutil.DebugDeploymentsAnnotation:                             "control-plane-operator",
+				hyperv1.GCPFirewallSkipDeletionAnnotation:                      "true",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1":   "test1",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test3":   "test3",
 				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override4": "override4",
@@ -1172,6 +1173,18 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.DisableClusterAutoscalerAnnotation:                     "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation:             "true",
 				"unrelated": "test",
+			},
+		},
+		{
+			name:          "When deprecated aws-load-balancer-subnets annotation is stale on HCP and absent on HC it should be pruned",
+			hcAnnotations: map[string]string{},
+			hcpAnnotations: map[string]string{
+				hyperv1.AWSLoadBalancerSubnetsAnnotation: "subnet-1,subnet-2",
+			},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
 		},
 		{
@@ -1196,6 +1209,19 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			expectedAnnotations: map[string]string{
 				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperkarpenterv1.KarpenterOperatorImage:            "quay.io/custom/karpenter-operator:test",
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name: "When HostedCluster has skip-gcp-firewall-rule-cleanup annotation it should propagate to HCP",
+			hcAnnotations: map[string]string{
+				hyperv1.GCPFirewallSkipDeletionAnnotation: "true",
+			},
+			hcpAnnotations: map[string]string{},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.GCPFirewallSkipDeletionAnnotation:          "true",
 				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
@@ -6273,7 +6299,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 			},
 		},
 		{
-			name: "When port is 0 for dynamic assignment it should always be valid",
+			name: "When port is omitted (zero value) for dynamic assignment it should always be valid",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -6310,7 +6336,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(10000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(10000), "port must be within the configured range 30000-32767, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -6332,7 +6358,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(65000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(65000), "port must be within the configured range 30000-32767, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -6383,7 +6409,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(40000), "port must be within the configured range 25000-35000 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(40000), "port must be within the configured range 25000-35000, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -9600,6 +9626,126 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			g.Expect(cond.Reason).To(Equal(tc.expectedReason))
 			g.Expect(cond.Message).To(Equal(tc.expectedMessage))
 			g.Expect(cond.ObservedGeneration).To(Equal(hcluster.Generation))
+		})
+	}
+}
+
+func TestReconcilePullSecretSync(t *testing.T) {
+	t.Parallel()
+
+	validPullSecret := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)
+
+	tests := []struct {
+		name             string
+		existingObjects  []crclient.Object
+		interceptorFuncs *interceptor.Funcs
+		expectErr        bool
+		errContains      string
+	}{
+		{
+			name: "When pull secret exists with valid data, it should sync pull-secret to control plane namespace",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
+				},
+			},
+		},
+		{
+			name:        "When pull secret does not exist, it should return error",
+			expectErr:   true,
+			errContains: "pull secret",
+		},
+		{
+			name: "When pull secret is missing .dockerconfigjson key, it should return error",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{},
+				},
+			},
+			expectErr:   true,
+			errContains: ".dockerconfigjson",
+		},
+		{
+			name: "When ensureReferencedResourceAnnotation fails, it should return error",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
+				},
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Update: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.UpdateOption) error {
+					if s, ok := obj.(*corev1.Secret); ok && s.Name == "pull-secret" {
+						return fmt.Errorf("annotation update failed")
+					}
+					return c.Update(ctx, obj, opts...)
+				},
+			},
+			expectErr:   true,
+			errContains: "referenced resource annotation",
+		},
+		{
+			name: "When createOrUpdate for pull-secret fails, it should return error",
+			existingObjects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-ns"},
+					Data:       map[string][]byte{".dockerconfigjson": validPullSecret},
+				},
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Create: func(ctx context.Context, c crclient.WithWatch, obj crclient.Object, opts ...crclient.CreateOption) error {
+					if s, ok := obj.(*corev1.Secret); ok && s.Name == "pull-secret" {
+						return fmt.Errorf("create pull-secret failed")
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			},
+			expectErr:   true,
+			errContains: "create pull-secret failed",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				},
+			}
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(tc.existingObjects...)
+			if tc.interceptorFuncs != nil {
+				builder = builder.WithInterceptorFuncs(*tc.interceptorFuncs)
+			}
+			client := builder.Build()
+
+			r := &HostedClusterReconciler{
+				Client: client,
+			}
+
+			err := r.reconcilePullSecretSync(t.Context(), hcluster, ctrl.CreateOrUpdate, "cp-ns")
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.errContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+				}
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			pullSecret := controlplaneoperator.PullSecret("cp-ns")
+			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
+			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
 		})
 	}
 }

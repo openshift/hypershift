@@ -3,11 +3,19 @@ run:
   allow-parallel-runners: true
 linters:
   enable:
+    - hypershiftlinter
     - kubeapilinter
   disable:
     - staticcheck
   settings:
     custom:
+      hypershiftlinter:
+        path: ../hack/tools/bin/hypershiftlinter.so
+        description: "Enforces HyperShift unit test function structure"
+        settings:
+          analyzers:
+            enable:
+              - testfuncstructure
       kubeapilinter:
         path: ../hack/tools/bin/kube-api-linter.so
         description: kubeapilinter is the Kube-API-Linter and lints Kube like APIs based on API conventions and best practices.

@@ -5,6 +5,8 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
+
 	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,12 +23,12 @@ func TestServiceFunctions(t *testing.T) {
 	}{
 		{
 			name:         "When KubeAPIServerServiceAzureLB is called, it should set namespace correctly",
-			buildFunc:    KubeAPIServerServiceAzureLB,
+			buildFunc:    cpomanifests.KubeAPIServerServiceAzureLB,
 			expectedName: "kube-apiserverlb",
 		},
 		{
 			name:         "When KubeAPIServerService is called, it should set namespace correctly",
-			buildFunc:    KubeAPIServerService,
+			buildFunc:    cpomanifests.KubeAPIServerService,
 			expectedName: "kube-apiserver",
 		},
 		{
@@ -36,18 +38,18 @@ func TestServiceFunctions(t *testing.T) {
 		},
 		{
 			name:         "When KubeAPIServerExternalPrivateService is called, it should set namespace correctly",
-			buildFunc:    KubeAPIServerExternalPrivateService,
+			buildFunc:    cpomanifests.KubeAPIServerExternalPrivateService,
 			expectedName: "kube-apiserver-private-external",
 		},
 		{
 			name:         "When OauthServerService is called, it should set namespace correctly",
-			buildFunc:    OauthServerService,
+			buildFunc:    cpomanifests.OauthServerService,
 			expectedName: "oauth-openshift",
 			expectedApp:  "oauth-openshift",
 		},
 		{
 			name:         "When OauthServerExternalPrivateService is called, it should set namespace correctly",
-			buildFunc:    OauthServerExternalPrivateService,
+			buildFunc:    cpomanifests.OauthServerExternalPrivateService,
 			expectedName: "oauth-private-external",
 		},
 		{
@@ -100,12 +102,12 @@ func TestRouteFunctions(t *testing.T) {
 	}{
 		{
 			name:         "When KubeAPIServerExternalPublicRoute is called, it should set namespace correctly",
-			buildFunc:    KubeAPIServerExternalPublicRoute,
+			buildFunc:    cpomanifests.KubeAPIServerExternalPublicRoute,
 			expectedName: "kube-apiserver",
 		},
 		{
 			name:         "When KubeAPIServerExternalPrivateRoute is called, it should set namespace correctly",
-			buildFunc:    KubeAPIServerExternalPrivateRoute,
+			buildFunc:    cpomanifests.KubeAPIServerExternalPrivateRoute,
 			expectedName: "kube-apiserver-private",
 		},
 		{
@@ -115,12 +117,12 @@ func TestRouteFunctions(t *testing.T) {
 		},
 		{
 			name:         "When OauthServerExternalPublicRoute is called, it should set namespace correctly",
-			buildFunc:    OauthServerExternalPublicRoute,
+			buildFunc:    cpomanifests.OauthServerExternalPublicRoute,
 			expectedName: "oauth",
 		},
 		{
 			name:         "When OauthServerExternalPrivateRoute is called, it should set namespace correctly",
-			buildFunc:    OauthServerExternalPrivateRoute,
+			buildFunc:    cpomanifests.OauthServerExternalPrivateRoute,
 			expectedName: "oauth-private",
 		},
 		{

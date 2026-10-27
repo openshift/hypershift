@@ -93,6 +93,13 @@ const (
 	// values preserved because override is not allowed). False when no conflicts exist or all
 	// conflicts are explicitly allowed via overridePolicy.
 	NodePoolAWSResourceTagConflictConditionType = "AWSResourceTagConflict"
+
+	// NodePoolConfigUpdatePendingConditionType signals that management-side configuration
+	// has changed but no rollout has been triggered. New or replaced nodes will continue
+	// to receive the previous management-side configuration until the next spec-driven rollout.
+	// The full configuration will converge on the next spec-driven rollout
+	// (e.g. release upgrade, user MachineConfig change).
+	NodePoolConfigUpdatePendingConditionType = "ConfigUpdatePending"
 )
 
 // PerformanceProfile Conditions
@@ -135,9 +142,11 @@ const (
 	NodePoolInvalidArchPlatform           = "InvalidArchPlatform"
 	InvalidKubevirtMachineTemplate        = "InvalidKubevirtMachineTemplate"
 	InvalidOpenStackMachineTemplate       = "InvalidOpenStackMachineTemplate"
+	InvalidGCPMachineTemplate             = "InvalidGCPMachineTemplate"
 	CIDRConflictReason                    = "CIDRConflict"
 	NodePoolKubeVirtLiveMigratableReason  = "KubeVirtNodesNotLiveMigratable"
 	NodePoolUnsupportedSkewReason         = "UnsupportedSkew"
 	AWSResourceTagConflictDetectedReason  = "TagConflictDetected"
 	AWSResourceTagNoConflictReason        = "NoTagConflict"
+	ManagementConfigDriftReason           = "ManagementConfigDrift"
 )

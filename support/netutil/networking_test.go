@@ -119,6 +119,66 @@ func TestMachineNetworksToList(t *testing.T) {
 	}
 }
 
+func TestHAProxyFrontendPort(t *testing.T) {
+	tests := []struct {
+		name string
+		hcp  *hyperv1.HostedControlPlane
+		want int32
+	}{
+		{
+			name: "When apiServer.port is nil, it should return default 6443",
+			hcp:  &hyperv1.HostedControlPlane{},
+			want: 6443,
+		},
+		{
+			name: "When apiServer.port is 443, it should return 443",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							Port: ptr.To[int32](443),
+						},
+					},
+				},
+			},
+			want: 443,
+		},
+		{
+			name: "When apiServer.port is 6443, it should return 6443",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							Port: ptr.To[int32](6443),
+						},
+					},
+				},
+			},
+			want: 6443,
+		},
+		{
+			name: "When apiServer.port is custom value, it should return that value",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							Port: ptr.To[int32](8443),
+						},
+					},
+				},
+			},
+			want: 8443,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HAProxyFrontendPort(tt.hcp); got != tt.want {
+				t.Errorf("HAProxyFrontendPort() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsMultusDisabled(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -14,19 +14,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-func DefaultWorkerSGEgressRules() []ec2types.IpPermission {
-	return []ec2types.IpPermission{
-		{
-			IpProtocol: aws.String("-1"),
-			IpRanges: []ec2types.IpRange{
-				{
-					CidrIp: aws.String("0.0.0.0/0"),
-				},
-			},
-		},
-	}
-}
-
 // DefaultWorkerSGIngressRules templates out the required inbound security group rules for the default worker security
 // group. This AWS security group is attached to worker node EC2 instances and the PrivateLink VPC Endpoint for the
 // Hosted Control Plane.

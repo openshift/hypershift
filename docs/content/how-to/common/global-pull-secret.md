@@ -8,6 +8,8 @@ The implementation uses a DaemonSet that updates kubelet pull credentials on the
 
 When you **do** create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster), the system merges it with the original HostedCluster pull secret and deploys the merged result via the same DaemonSet path (still preferring the original secret where registry entries conflict).
 
+In addition to the worker-node path, HCCO maintains a `combined-pull-secret` in the HostedControlPlane namespace on the management cluster. This secret contains the same merged credentials and is mounted by control plane components such as the **OpenShift API Server**, which uses it for **ImageStream imports**. Without this, ImageStream imports that require customer-provided registry credentials would fail because the OAPI only had access to the original pull secret.
+
 !!! note
 
     This feature is designed to work autonomously. With only `HostedCluster.spec.pullSecret`, the Hosted Cluster Config Operator (HCCO) still reconciles `original-pull-secret` and the DaemonSet object in the guest; sync pods run only on [eligible nodes](#platform-and-nodepool-eligibility). Creating `additional-pull-secret` is optional and only needed to add or layer registry credentials beyond the HostedCluster pull secret.
@@ -16,12 +18,12 @@ When you **do** create an `additional-pull-secret` in the `kube-system` namespac
 
 HCCO reconciles Global Pull Secret resources for **every** hosted cluster platform: it always maintains `kube-system/original-pull-secret` (and optional `global-pull-secret`), RBAC, and the `global-pull-secret-syncer` DaemonSet **object** in the data plane.
 
-The DaemonSet pod template requires nodes to have the label **`hypershift.openshift.io/nodepool-globalps-enabled=true`**. Today the HyperShift operator sets that label on **Machines** (and HCCO propagates it to **Nodes**) only for:
+The DaemonSet pod template uses `nodeAffinity` targeting either:
 
-- **AWS** and **Azure** NodePools, and  
-- the **Replace** upgrade strategy (`MachineDeployment` path).
+- nodes labeled **`hypershift.openshift.io/nodepool-globalps-enabled=true`**, set by the HyperShift operator on **Machines** (and propagated by HCCO to **Nodes**) for **AWS** and **Azure** **Replace** NodePools, or
+- nodes labeled with **`karpenter.sh/nodepool`** (automatically present on all Karpenter-managed nodes).
 
-It does **not** set the label for **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or for **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
+It does **not** match **InPlace** NodePools (to avoid conflicting with Machine Config Daemon on kubelet config), or **Replace** on other platforms such as **KubeVirt** (and other providers) in the current implementation—those workers therefore typically have **no** Global Pull Secret sync pods unless something else applies the label.
 
 For platforms without sync pods, pull credentials still come from **ignition/bootstrap** and from in-cluster Secrets (for example `openshift-config/pull-secret`); kubelet on-disk config is not updated by this DaemonSet on those nodes.
 
@@ -106,6 +108,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - On every reconcile, HCCO copies the HostedControlPlane pull secret (sourced from **`HostedCluster.spec.pullSecret`**) into `kube-system/original-pull-secret` so the DaemonSet can mount it on the node.
 - If `additional-pull-secret` is **not** present, HCCO removes the `global-pull-secret` Secret (if it existed) and the DaemonSet syncs **only** the HostedCluster pull secret copy into `/var/lib/kubelet/config.json` on eligible nodes.
 - When `additional-pull-secret` **is** present, reconciliation additionally validates and merges it with the HostedCluster pull secret.
+- HCCO also writes a `combined-pull-secret` into the HostedControlPlane namespace on the management cluster. This secret mirrors the best-available credentials: when `additional-pull-secret` exists it contains the merged result; otherwise it contains a copy of the original pull secret. The Control Plane Operator creates/seeds `combined-pull-secret` from `pull-secret` before CPOv2 components reconcile so that control plane components can start before HCCO runs; HCCO then takes ownership of the secret for ongoing merge and revert updates.
 
 ### Validation and merging (optional additional secret)
 - When `additional-pull-secret` exists, the system validates that it contains a proper DockerConfigJSON format.
@@ -222,6 +225,7 @@ The implementation consists of several key components working together:
 3. **Hosted Cluster Config Operator integration**
    - Reconciles `original-pull-secret` on every pass from the HostedControlPlane pull secret (`HostedCluster.spec.pullSecret`)
    - When `additional-pull-secret` exists, validates, merges, and reconciles `global-pull-secret`; when it does not, removes `global-pull-secret` and relies on `original-pull-secret` only for kubelet sync
+   - Maintains `combined-pull-secret` in the HCP namespace with the best-available credentials for control plane components (e.g., OpenShift API Server ImageStream imports)
    - Orchestrates RBAC and the DaemonSet for both paths
 
 ### Architecture Diagram
@@ -248,6 +252,12 @@ graph TB
 
     %% Secret Creation
     GlobalPSData --> |Creates in kube-system| GlobalPSSecret[global-pull-secret Secret]
+
+    %% Combined Pull Secret in HCP namespace
+    GlobalPSData --> |Writes to HCP namespace| CombinedPS[combined-pull-secret in HCP namespace]
+    OriginalPSData --> |Writes to HCP namespace if no additional PS| CombinedPS
+    CombinedPS --> |Mounted by| OAPI[OpenShift API Server]
+    OAPI --> |Uses for| ImageStreams[ImageStream imports]
 
     %% RBAC Setup
     GlobalPSController --> |Creates RBAC| RBACSetup[Setup RBAC Resources]
@@ -314,6 +324,8 @@ graph TB
     class ValidatePS,MergeSecrets,RBACSetup,UpdateKubeletConfig,RestartKubelet process
     class DaemonSet,DaemonSetPod,Container daemonSet
     class KubeletPath,DbusPath fileSystem
+    class CombinedPS secret
+    class OAPI,ImageStreams process
 ```
 
 ### Key Features
@@ -327,11 +339,11 @@ graph TB
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
   - Restart kubelet.service, which requires root privileges
-- **Smart node targeting**: The DaemonSet uses a `nodeSelector` for `hypershift.openshift.io/nodepool-globalps-enabled=true`; the HyperShift operator only applies that label on **AWS** and **Azure** **Replace** NodePools, so InPlace and other platforms do not get sync pods by default (see [Platform and NodePool eligibility](#platform-and-nodepool-eligibility))
+- **Smart node targeting**: The DaemonSet uses required `nodeAffinity` for `hypershift.openshift.io/nodepool-globalps-enabled=true` OR `karpenter.sh/nodepool Exists`; the HyperShift operator applies the former on **AWS** and **Azure** **Replace** NodePools, and Karpenter automatically injects the latter on its nodes, so InPlace and other platforms do not get sync pods by default (see [Platform and NodePool eligibility](#platform-and-nodepool-eligibility))
 
 ### How scheduling avoids InPlace conflicts
 
-Eligibility is **positive selection**, not NodeAffinity on an InPlace label: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure **do** receive the label so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
+Eligibility is **positive selection** via node affinity: InPlace workers simply **never** receive `hypershift.openshift.io/nodepool-globalps-enabled=true` or `karpenter.sh/nodepool`, so the sync DaemonSet does not place pods on them. Replace workers on AWS/Azure receive the CAPI label and Karpenter nodes receive the Karpenter nodepool label, so the DaemonSet can run there without colliding with MCD on InPlace upgrade paths.
 
 ### Error Handling
 

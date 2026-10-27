@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -607,7 +608,7 @@ func TestCreateOIDCResources(t *testing.T) {
 			}, nil)
 	}
 
-	t.Run("When using ROSA managed policies with separate roles it should create inline policies with SetSecurityGroups", func(t *testing.T) {
+	t.Run("When using ROSA managed policies with separate roles it should only add the ingress inline policy", func(t *testing.T) {
 		g := NewWithT(t)
 		ctrl := gomock.NewController(t)
 		mockIAM := awsapi.NewMockIAMAPI(ctrl)
@@ -615,12 +616,12 @@ func TestCreateOIDCResources(t *testing.T) {
 		mockOIDCProviderLookup(mockIAM)
 		mockOIDCRoleCreation(mockIAM, 7)
 
-		var policyDocuments []string
+		policyDocuments := map[string]string{}
 		mockIAM.EXPECT().PutRolePolicy(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(_ context.Context, input *iam.PutRolePolicyInput, _ ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error) {
-				policyDocuments = append(policyDocuments, *input.PolicyDocument)
+				policyDocuments[*input.RoleName] = *input.PolicyDocument
 				return &iam.PutRolePolicyOutput{}, nil
-			}).Times(2)
+			}).Times(1)
 
 		opts := &CreateIAMOptions{
 			InfraID:                testInfraID,
@@ -634,16 +635,13 @@ func TestCreateOIDCResources(t *testing.T) {
 		g.Expect(output).NotTo(BeNil())
 		g.Expect(output.Roles.IngressARN).NotTo(Equal(output.Roles.KubeCloudControllerARN))
 
-		hasSetSecurityGroups := false
-		for _, doc := range policyDocuments {
-			if strings.Contains(doc, "elasticloadbalancing:SetSecurityGroups") {
-				hasSetSecurityGroups = true
-			}
-		}
-		g.Expect(hasSetSecurityGroups).To(BeTrue())
+		ingressRoleName := output.Roles.IngressARN[strings.LastIndex(output.Roles.IngressARN, "/")+1:]
+		g.Expect(policyDocuments).To(HaveKey(ingressRoleName))
+		g.Expect(policyDocuments[ingressRoleName]).To(ContainSubstring("route53:ChangeResourceRecordSets"))
+		g.Expect(policyDocuments[ingressRoleName]).NotTo(ContainSubstring("elasticloadbalancing:SetSecurityGroups"))
 	})
 
-	t.Run("When using ROSA managed policies with shared role it should create merged inline policy with SetSecurityGroups", func(t *testing.T) {
+	t.Run("When using ROSA managed policies with a shared role it should not add cloud controller permissions inline", func(t *testing.T) {
 		g := NewWithT(t)
 		ctrl := gomock.NewController(t)
 		mockIAM := awsapi.NewMockIAMAPI(ctrl)
@@ -663,7 +661,7 @@ func TestCreateOIDCResources(t *testing.T) {
 			DoAndReturn(func(_ context.Context, input *iam.PutRolePolicyInput, _ ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error) {
 				policyDocument = *input.PolicyDocument
 				return &iam.PutRolePolicyOutput{}, nil
-			})
+			}).Times(1)
 
 		opts := &CreateIAMOptions{
 			InfraID:                testInfraID,
@@ -677,9 +675,150 @@ func TestCreateOIDCResources(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(output).NotTo(BeNil())
 		g.Expect(output.Roles.IngressARN).To(Equal(output.Roles.KubeCloudControllerARN))
-		g.Expect(policyDocument).To(ContainSubstring("elasticloadbalancing:SetSecurityGroups"))
 		g.Expect(policyDocument).To(ContainSubstring("route53:ChangeResourceRecordSets"))
+		g.Expect(policyDocument).NotTo(ContainSubstring("elasticloadbalancing:SetSecurityGroups"))
 	})
+}
+
+func TestIngressPermPolicy(t *testing.T) {
+	tests := []struct {
+		name              string
+		sharedVPC         bool
+		managedDNS        bool
+		expectResources   []string
+		unexpectResources []string
+	}{
+		{
+			name:              "standard cluster scopes ChangeResourceRecordSets to public and private zones",
+			expectResources:   []string{"arn:aws:route53:::hostedzone/PUBLIC", "arn:aws:route53:::hostedzone/PRIVATE"},
+			unexpectResources: []string{"arn:aws:route53:::hostedzone/*"},
+		},
+		{
+			name:              "shared-VPC cluster scopes ChangeResourceRecordSets to the public zone only",
+			sharedVPC:         true,
+			expectResources:   []string{"arn:aws:route53:::hostedzone/PUBLIC"},
+			unexpectResources: []string{"arn:aws:route53:::hostedzone/PRIVATE", "arn:aws:route53:::hostedzone/*"},
+		},
+		{
+			name:              "managed DNS widens ChangeResourceRecordSets to all hosted zones",
+			managedDNS:        true,
+			expectResources:   []string{"arn:aws:route53:::hostedzone/*"},
+			unexpectResources: []string{"arn:aws:route53:::hostedzone/PUBLIC", "arn:aws:route53:::hostedzone/PRIVATE"},
+		},
+		{
+			name:              "managed DNS widens even for shared-VPC clusters",
+			sharedVPC:         true,
+			managedDNS:        true,
+			expectResources:   []string{"arn:aws:route53:::hostedzone/*"},
+			unexpectResources: []string{"arn:aws:route53:::hostedzone/PUBLIC"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			binding := ingressPermPolicy("PUBLIC", "PRIVATE", tt.sharedVPC, tt.managedDNS)
+
+			var doc struct {
+				Statement []struct {
+					Action   []string
+					Resource json.RawMessage
+				}
+			}
+			g.Expect(json.Unmarshal([]byte(binding.policy), &doc)).To(Succeed())
+
+			var recordResource string
+			for _, s := range doc.Statement {
+				for _, a := range s.Action {
+					if a == "route53:ChangeResourceRecordSets" {
+						recordResource = string(s.Resource)
+					}
+				}
+			}
+			g.Expect(recordResource).NotTo(BeEmpty(), "policy should grant route53:ChangeResourceRecordSets")
+
+			for _, r := range tt.expectResources {
+				g.Expect(recordResource).To(ContainSubstring(r))
+			}
+			for _, r := range tt.unexpectResources {
+				g.Expect(recordResource).NotTo(ContainSubstring(r))
+			}
+		})
+	}
+}
+
+func TestControlPlaneOperatorPolicy(t *testing.T) {
+	zoneManagementActions := []string{
+		"route53:GetHostedZone",
+		"route53:CreateHostedZone",
+		"route53:DeleteHostedZone",
+		"route53:ChangeTagsForResource",
+	}
+
+	tests := []struct {
+		name                 string
+		sharedVPC            bool
+		managedDNS           bool
+		expectRecordResource string
+		expectZoneManagement bool
+	}{
+		{
+			name:                 "When managed DNS is disabled, it should scope record access to the local zone and not grant zone management",
+			expectRecordResource: "arn:aws:route53:::hostedzone/LOCAL",
+		},
+		{
+			name:      "When managed DNS is disabled on a shared-VPC cluster, it should not grant any Route53 access",
+			sharedVPC: true,
+		},
+		{
+			name:                 "When managed DNS is enabled, it should grant zone management and record access on all hosted zones",
+			managedDNS:           true,
+			expectRecordResource: "arn:aws:route53:::hostedzone/*",
+			expectZoneManagement: true,
+		},
+		{
+			name:                 "When managed DNS is enabled on a shared-VPC cluster, it should grant zone management and record access on all hosted zones",
+			sharedVPC:            true,
+			managedDNS:           true,
+			expectRecordResource: "arn:aws:route53:::hostedzone/*",
+			expectZoneManagement: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			binding := controlPlaneOperatorPolicy("LOCAL", tt.sharedVPC, tt.managedDNS)
+
+			var doc struct {
+				Statement []struct {
+					Action   []string
+					Resource string
+				}
+			}
+			g.Expect(json.Unmarshal([]byte(binding.policy), &doc)).To(Succeed())
+
+			var actions []string
+			var recordResource string
+			for _, s := range doc.Statement {
+				actions = append(actions, s.Action...)
+				for _, a := range s.Action {
+					if a == "route53:ChangeResourceRecordSets" {
+						recordResource = s.Resource
+					}
+				}
+			}
+
+			g.Expect(recordResource).To(Equal(tt.expectRecordResource))
+			for _, a := range zoneManagementActions {
+				if tt.expectZoneManagement {
+					g.Expect(actions).To(ContainElement(a))
+				} else {
+					g.Expect(actions).NotTo(ContainElement(a))
+				}
+			}
+		})
+	}
 }
 
 func TestEnsureHostedZonePrefix(t *testing.T) {

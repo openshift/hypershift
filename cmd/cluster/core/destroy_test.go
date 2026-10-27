@@ -14,7 +14,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/pkg/manifests"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -81,16 +81,10 @@ func testWidget(namespace, name string, finalizers ...string) *unstructured.Unst
 		"metadata": map[string]interface{}{
 			"name":      name,
 			"namespace": namespace,
-			"finalizers": func() []interface{} {
-				result := make([]interface{}, len(finalizers))
-				for i := range finalizers {
-					result[i] = finalizers[i]
-				}
-				return result
-			}(),
 		},
 	}}
 	widget.SetGroupVersionKind(testWidgetGVK)
+	widget.SetFinalizers(finalizers)
 	return widget
 }
 
@@ -121,9 +115,27 @@ users:
 }
 
 func TestDestroyCluster(t *testing.T) {
+	t.Run("When an injected client contains a hosted cluster, it should destroy that cluster", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hostedCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
+			Spec:       hyperv1.HostedClusterSpec{InfraID: "test-infra"},
+		}
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hostedCluster).Build()
+		opts := &DestroyOptions{
+			ClusterGracePeriod: 1 * time.Second,
+			Name:               hostedCluster.Name,
+			Namespace:          hostedCluster.Namespace,
+			InfraID:            hostedCluster.Spec.InfraID,
+			Log:                log.Log,
+		}
+
+		g.Expect(DestroyCluster(t.Context(), c, hostedCluster, opts, nil)).To(Succeed())
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hostedCluster), &hyperv1.HostedCluster{})).To(HaveOccurred())
+	})
+
 	t.Run("When force destruction is requested, it should initialize discovery before cleanup", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		t.Setenv("FAKE_CLIENT", "true")
 
 		platformSpecificsCalled := false
 		opts := &DestroyOptions{
@@ -136,7 +148,8 @@ func TestDestroyCluster(t *testing.T) {
 			Log:                log.Log,
 		}
 
-		err := DestroyCluster(context.Background(), nil, opts, func(context.Context, *DestroyOptions) error {
+		managementClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		err := DestroyCluster(context.Background(), managementClient, nil, opts, func(context.Context, *DestroyOptions, client.Client) error {
 			platformSpecificsCalled = true
 			return nil
 		})
@@ -147,7 +160,6 @@ func TestDestroyCluster(t *testing.T) {
 
 	t.Run("When force discovery configuration is invalid, it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		t.Setenv("FAKE_CLIENT", "true")
 		opts := &DestroyOptions{
 			ForceDestroy: true,
 			Kubeconfig:   "/nonexistent/kubeconfig",
@@ -156,7 +168,8 @@ func TestDestroyCluster(t *testing.T) {
 			Log:          log.Log,
 		}
 
-		err := DestroyCluster(context.Background(), nil, opts, func(context.Context, *DestroyOptions) error {
+		managementClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		err := DestroyCluster(context.Background(), managementClient, nil, opts, func(context.Context, *DestroyOptions, client.Client) error {
 			return nil
 		})
 
@@ -165,7 +178,6 @@ func TestDestroyCluster(t *testing.T) {
 
 	t.Run("When force discovery client construction fails, it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		t.Setenv("FAKE_CLIENT", "true")
 		platformSpecificsCalled := false
 		opts := &DestroyOptions{
 			ForceDestroy: true,
@@ -176,7 +188,8 @@ func TestDestroyCluster(t *testing.T) {
 			Log:       log.Log,
 		}
 
-		err := DestroyCluster(context.Background(), nil, opts, func(context.Context, *DestroyOptions) error {
+		managementClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+		err := DestroyCluster(context.Background(), managementClient, nil, opts, func(context.Context, *DestroyOptions, client.Client) error {
 			platformSpecificsCalled = true
 			return nil
 		})
@@ -190,9 +203,11 @@ func TestDestroyCluster(t *testing.T) {
 
 		platformSpecificsCalled := false
 		var receivedOpts *DestroyOptions
-		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions) error {
+		var receivedClient client.Client
+		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions, injectedClient client.Client) error {
 			platformSpecificsCalled = true
 			receivedOpts = o
+			receivedClient = injectedClient
 			return nil
 		}
 
@@ -215,6 +230,7 @@ func TestDestroyCluster(t *testing.T) {
 		g.Expect(platformSpecificsCalled).To(BeTrue(), "platform cleanup should be called when the HostedCluster is absent")
 		g.Expect(receivedOpts).ToNot(BeNil(), "platform cleanup should receive destroy options")
 		g.Expect(receivedOpts.AzurePlatform.Cloud).To(Equal("AzurePublicCloud"), "platform cleanup should receive the configured Azure cloud")
+		g.Expect(receivedClient).To(Equal(c))
 	})
 
 	t.Run("When force cleanup fails after the grace period, it should continue with platform cleanup", func(t *testing.T) {
@@ -253,7 +269,7 @@ func TestDestroyCluster(t *testing.T) {
 			Log:                logger,
 		}
 
-		err := destroyCluster(context.Background(), c, &fakeNamespacedResourceDiscovery{err: discoveryErr}, hc, opts, func(context.Context, *DestroyOptions) error {
+		err := destroyCluster(context.Background(), c, &fakeNamespacedResourceDiscovery{err: discoveryErr}, hc, opts, func(context.Context, *DestroyOptions, client.Client) error {
 			platformSpecificsCalled = true
 			return nil
 		})
@@ -273,30 +289,6 @@ func TestDestroyCluster(t *testing.T) {
 		g.Expect(cleanupLogs).ToNot(ContainSubstring("private-cluster"), "cleanup logs should not disclose resource names")
 		g.Expect(cleanupLogs).ToNot(ContainSubstring("private-secret"), "cleanup logs should not disclose secret names")
 		g.Expect(cleanupLogs).ToNot(ContainSubstring("private server response"), "cleanup logs should not disclose raw server messages")
-	})
-
-	t.Run("When kubeconfig is set it should use it for the client", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-
-		platformSpecificsCalled := false
-		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions) error {
-			platformSpecificsCalled = true
-			return nil
-		}
-
-		opts := &DestroyOptions{
-			ClusterGracePeriod: 1 * time.Second,
-			Kubeconfig:         "",
-			Name:               "test-cluster",
-			Namespace:          "clusters",
-			InfraID:            "test-infra",
-			Log:                log.Log,
-		}
-
-		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
-		err := destroyCluster(context.Background(), c, nil, nil, opts, mockPlatformSpecifics)
-		g.Expect(err).ToNot(HaveOccurred(), "destroy should complete when using the default client")
-		g.Expect(platformSpecificsCalled).To(BeTrue(), "platform cleanup should be called with the default client")
 	})
 
 	t.Run("When destroying a hosted cluster with platform specifics, it should set the destroy finalizer and complete successfully", func(t *testing.T) {
@@ -319,7 +311,7 @@ func TestDestroyCluster(t *testing.T) {
 			"destroy finalizer should not be present before destroyCluster runs")
 
 		platformSpecificsCalled := false
-		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions) error {
+		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions, _ client.Client) error {
 			platformSpecificsCalled = true
 			return nil
 		}
@@ -369,7 +361,7 @@ func TestDestroyCluster(t *testing.T) {
 			Build()
 
 		platformSpecificsCalled := false
-		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions) error {
+		mockPlatformSpecifics := func(ctx context.Context, o *DestroyOptions, _ client.Client) error {
 			platformSpecificsCalled = true
 			return nil
 		}
@@ -456,6 +448,7 @@ func TestSafeErrorSummary(t *testing.T) {
 		g.Expect(summary).ToNot(ContainSubstring("private object"), "the summary should not disclose resource names")
 		g.Expect(summary).ToNot(ContainSubstring("private response"), "the summary should not disclose raw error messages")
 	})
+
 }
 
 func TestForceRemoveAllFinalizers(t *testing.T) {
@@ -588,6 +581,7 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 				},
 				Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
 					if namespace, ok := obj.(*corev1.Namespace); ok && namespace.Name == cpNamespace {
+						operations = append(operations, "namespace-patch")
 						namespaceMetadataFinalizersCleared = len(namespace.Finalizers) == 0
 						namespaceSpecFinalizersAtPatch = append([]corev1.FinalizerName(nil), namespace.Spec.Finalizers...)
 						return nil
@@ -686,17 +680,18 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			return -1
 		}
 		namespaceDeleteRequestIndex := indexOf("namespace-delete-1")
-		namespaceDeleteIndex := indexOf("namespace-delete-2")
-		for _, operation := range []string{"namespace-delete-1", "widget-patch", "widget-delete", "widget-list-0", "namespace-delete-2"} {
+		namespacePatchIndex := indexOf("namespace-patch")
+		g.Expect(namespaceDeleteCount).To(Equal(1), "namespace deletion should only be requested once")
+		for _, operation := range []string{"namespace-delete-1", "widget-patch", "widget-delete", "widget-list-0", "namespace-patch"} {
 			g.Expect(indexOf(operation)).To(BeNumerically(">=", 0), "expected operation %q to be recorded", operation)
 		}
 		g.Expect(namespaceTerminating).To(BeTrue(), "the namespace should be Terminating before the resource sweep")
 		g.Expect(namespaceFinalizerRetained).To(BeTrue(), "the content-purge finalizer should remain during the resource sweep")
 		g.Expect(namespaceDeleteRequestIndex).To(BeNumerically("<", indexOf("widget-patch")), "the namespace delete request should precede resource cleanup")
 		g.Expect(indexOf("namespace-finalize")).To(Equal(-1), "force cleanup should never call the namespace finalize subresource")
-		g.Expect(indexOf("widget-patch")).To(BeNumerically("<", namespaceDeleteIndex), "Widget finalizers should be patched before namespace deletion")
-		g.Expect(indexOf("widget-delete")).To(BeNumerically("<", namespaceDeleteIndex), "Widgets should be deleted before namespace deletion")
-		g.Expect(indexOf("widget-list-0")).To(BeNumerically("<", namespaceDeleteIndex), "Widget emptiness should be confirmed before namespace deletion")
+		g.Expect(indexOf("widget-patch")).To(BeNumerically("<", namespacePatchIndex), "Widget finalizers should be patched before namespace metadata cleanup")
+		g.Expect(indexOf("widget-delete")).To(BeNumerically("<", namespacePatchIndex), "Widgets should be deleted before namespace metadata cleanup")
+		g.Expect(indexOf("widget-list-0")).To(BeNumerically("<", namespacePatchIndex), "Widget emptiness should be confirmed before namespace metadata cleanup")
 
 		updatedNamespace := &corev1.Namespace{}
 		err = c.Get(ctx, types.NamespacedName{Name: cpNamespace}, updatedNamespace)
@@ -760,10 +755,16 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 				Spec: corev1.NamespaceSpec{Finalizers: []corev1.FinalizerName{"kubernetes"}},
 			}
 			operationError := fmt.Errorf("%s failed", mode)
+			listCalled := false
+			patchCalled := false
 			c := fake.NewClientBuilder().
 				WithScheme(hyperapi.Scheme).
 				WithObjects(hc, ns).
 				WithInterceptorFuncs(interceptor.Funcs{
+					List: func(ctx context.Context, cl client.WithWatch, objects client.ObjectList, opts ...client.ListOption) error {
+						listCalled = true
+						return cl.List(ctx, objects, opts...)
+					},
 					Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 						if mode == "hostedcluster-get" {
 							if _, ok := obj.(*hyperv1.HostedCluster); ok {
@@ -778,6 +779,7 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 						return cl.Get(ctx, key, obj, opts...)
 					},
 					Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+						patchCalled = true
 						if mode == "namespace-patch" {
 							if _, ok := obj.(*corev1.Namespace); ok {
 								return operationError
@@ -801,6 +803,10 @@ func TestForceRemoveAllFinalizers(t *testing.T) {
 			g.Expect(err).To(HaveOccurred(), "namespace operation failures should be returned")
 			g.Expect(err.Error()).To(ContainSubstring("force removal encountered"), "aggregated cleanup errors should identify force removal")
 			g.Expect(errors.Is(err, operationError)).To(BeTrue(), "aggregated cleanup errors should retain the API cause")
+			if mode == "namespace-get" || mode == "namespace-delete" {
+				g.Expect(listCalled).To(BeFalse(), "cleanup must not sweep a namespace whose deletion could not be requested")
+				g.Expect(patchCalled).To(BeFalse(), "cleanup must preserve finalizers when namespace deletion fails")
+			}
 		})
 	}
 
@@ -1344,6 +1350,23 @@ func TestSupportsVerb(t *testing.T) {
 	}
 }
 
+func TestObjectIdentity(t *testing.T) {
+	tests := []struct {
+		name   string
+		object client.Object
+		want   string
+	}{
+		{name: "When GVK is absent, it should return the Go type", object: &corev1.Pod{}, want: "*v1.Pod"},
+		{name: "When GVK is set, it should return the GVK", object: testWidget("clusters", "test-widget"), want: testWidgetGVK.String()},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(objectIdentity(test.object)).To(Equal(test.want))
+		})
+	}
+}
+
 func TestStripNodePoolFinalizers(t *testing.T) {
 	t.Run("When NodePools belong to different HostedClusters, it should only strip finalizers from matching NodePools", func(t *testing.T) {
 		g := NewGomegaWithT(t)
@@ -1409,17 +1432,29 @@ func TestStripNodePoolFinalizers(t *testing.T) {
 }
 
 func TestGetCluster(t *testing.T) {
-	t.Run("When kubeconfig is invalid it should return an error", func(t *testing.T) {
+	t.Run("When an injected client contains a hosted cluster, it should return that cluster", func(t *testing.T) {
 		g := NewGomegaWithT(t)
-		t.Setenv("FAKE_CLIENT", "")
+		hostedCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "clusters"},
+			Spec:       hyperv1.HostedClusterSpec{InfraID: "test-infra"},
+		}
+		c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(hostedCluster).Build()
+		opts := &DestroyOptions{Name: hostedCluster.Name, Namespace: hostedCluster.Namespace}
+
+		got, err := GetCluster(t.Context(), c, opts)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(got.Name).To(Equal(hostedCluster.Name))
+	})
+
+	t.Run("When the management client is nil, it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
 
 		opts := &DestroyOptions{
-			Kubeconfig: "/nonexistent/kubeconfig",
-			Name:       "test-cluster",
-			Namespace:  "clusters",
+			Name:      "test-cluster",
+			Namespace: "clusters",
 		}
 
-		_, err := GetCluster(context.Background(), opts)
-		g.Expect(err).To(HaveOccurred(), "an invalid kubeconfig should return an error")
+		_, err := GetCluster(context.Background(), nil, opts)
+		g.Expect(err).To(MatchError("management-cluster client is required"))
 	})
 }

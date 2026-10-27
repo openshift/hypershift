@@ -2,6 +2,7 @@ package cvo
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -60,6 +62,8 @@ func TestPreparePayloadScript(t *testing.T) {
 			assertions: func(g Gomega, script string) {
 				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml"))
 				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_09_clusteroperator.yaml"))
 			},
 		},
 		{
@@ -70,16 +74,20 @@ func TestPreparePayloadScript(t *testing.T) {
 			assertions: func(g Gomega, script string) {
 				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml"))
 				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).NotTo(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_09_clusteroperator.yaml"))
 			},
 		},
 		{
-			name:         "When platform is AWS (default), it should remove the ibm-cloud-managed storage operator deployment manifest",
+			name:         "When platform is AWS (default), it should remove the kube-storage-version-migrator-operator manifests",
 			platformType: hyperv1.AWSPlatform,
 			oauthEnabled: true,
 			featureSet:   configv1.Default,
 			assertions: func(g Gomega, script string) {
 				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml"))
 				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_07_deployment-ibm-cloud-managed.yaml"))
+				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_cluster-kube-storage-version-migrator-operator_09_clusteroperator.yaml"))
 			},
 		},
 		{
@@ -162,6 +170,8 @@ func TestResourcesToRemove(t *testing.T) {
 				g.Expect(resources).To(ContainElement("cluster-image-registry-operator"))
 				g.Expect(resources).NotTo(ContainElement("machineconfigs.machineconfiguration.openshift.io"))
 				g.Expect(resources).NotTo(ContainElement("machineconfigpools.machineconfiguration.openshift.io"))
+				g.Expect(resources).NotTo(ContainElement("kube-storage-version-migrator-operator"))
+				g.Expect(resources).NotTo(ContainElement("migrator"))
 			},
 		},
 		{
@@ -188,6 +198,8 @@ func TestResourcesToRemove(t *testing.T) {
 				g.Expect(resources).To(ContainElement("aws-ebs-csi-driver-operator"))
 				g.Expect(resources).To(ContainElement("aws-ebs-csi-driver-controller"))
 				g.Expect(resources).To(ContainElement("csi-snapshot-controller"))
+				g.Expect(resources).To(ContainElement("kube-storage-version-migrator-operator"))
+				g.Expect(resources).To(ContainElement("migrator"))
 			},
 		},
 		{
@@ -255,7 +267,64 @@ func createTestContext(hcp *hyperv1.HostedControlPlane) component.WorkloadContex
 		Context:               context.Background(),
 		Client:                fakeClient,
 		HCP:                   hcp,
+		ReleaseImageProvider:  testutil.FakeImageProvider(),
 		ImageMetadataProvider: fakeImageProvider,
+	}
+}
+
+func TestAdaptDeploymentClusterVersionCapabilities(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name                string
+		featureSet          configv1.FeatureSet
+		releaseVersion      string
+		expectCompatibility bool
+	}{
+		{name: "does not enable compatibility requirements before 5.1", featureSet: configv1.TechPreviewNoUpgrade, releaseVersion: "5.0.0", expectCompatibility: false},
+		{name: "does not enable compatibility requirements for the default feature set", featureSet: configv1.Default, releaseVersion: "5.1.0", expectCompatibility: false},
+		{name: "enables compatibility requirements for TechPreviewNoUpgrade on 5.1", featureSet: configv1.TechPreviewNoUpgrade, releaseVersion: "5.1.0", expectCompatibility: true},
+		{name: "enables compatibility requirements for DevPreviewNoUpgrade on 5.1", featureSet: configv1.DevPreviewNoUpgrade, releaseVersion: "5.1.0", expectCompatibility: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).ToNot(HaveOccurred())
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ClusterID: "test-cluster-id",
+					Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+					Configuration: &hyperv1.ClusterConfiguration{FeatureGate: &configv1.FeatureGateSpec{
+						FeatureGateSelection: configv1.FeatureGateSelection{FeatureSet: test.featureSet},
+					}},
+				},
+			}
+			cpContext := createTestContext(hcp)
+			cpContext.ReleaseImageProvider = testutil.FakeImageProvider(testutil.WithVersion(test.releaseVersion))
+
+			err = (&clusterVersionOperator{}).adaptDeployment(cpContext, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			bootstrap := podspec.FindContainer("bootstrap", deployment.Spec.Template.Spec.InitContainers)
+			g.Expect(bootstrap).ToNot(BeNil())
+			var clusterVersion configv1.ClusterVersion
+			for _, env := range bootstrap.Env {
+				if env.Name == "CLUSTER_VERSION_JSON" {
+					err = json.Unmarshal([]byte(env.Value), &clusterVersion)
+					break
+				}
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(clusterVersion.Spec.Capabilities.AdditionalEnabledCapabilities).To(ContainElement(configv1.ClusterVersionCapabilityBuild))
+			if test.expectCompatibility {
+				g.Expect(clusterVersion.Spec.Capabilities.AdditionalEnabledCapabilities).To(ContainElement(configv1.ClusterVersionCapabilityCompatibilityRequirements))
+			} else {
+				g.Expect(clusterVersion.Spec.Capabilities.AdditionalEnabledCapabilities).ToNot(ContainElement(configv1.ClusterVersionCapabilityCompatibilityRequirements))
+			}
+		})
 	}
 }
 

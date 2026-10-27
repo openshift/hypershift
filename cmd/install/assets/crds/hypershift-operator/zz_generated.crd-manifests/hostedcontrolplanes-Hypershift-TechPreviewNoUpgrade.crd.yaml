@@ -305,6 +305,28 @@ spec:
                     maxItems: 3
                     minItems: 1
                     type: array
+                  kubeClientBurst:
+                    description: |-
+                      kubeClientBurst sets the "--kube-client-burst" flag on cluster-autoscaler.
+                      Controls the maximum burst of queries to the kube-apiserver.
+                      Valid values are 1 through 2000.
+                      When omitted, the flag is not set and the autoscaler uses its default (10).
+                    format: int32
+                    maximum: 2000
+                    minimum: 1
+                    type: integer
+                  kubeClientQPS:
+                    description: |-
+                      kubeClientQPS sets the "--kube-client-qps" flag on cluster-autoscaler.
+                      Controls the maximum queries-per-second the autoscaler may send to the
+                      kube-apiserver. Valid values are -1 through 1000.
+                      When set to -1, client-side rate limiting is disabled.
+                      When set to 0, the flag is passed but client-go applies its default QPS of 5.
+                      When omitted, the flag is not set and the autoscaler uses its default (5).
+                    format: int32
+                    maximum: 1000
+                    minimum: -1
+                    type: integer
                   maxFreeDifferenceRatioPercent:
                     description: |-
                       maxFreeDifferenceRatioPercent sets the maximum difference ratio for free resources between similar node groups. This parameter controls how strict the similarity check is when comparing node groups for load balancing.
@@ -765,6 +787,46 @@ spec:
                                   type: string
                                 type: array
                                 x-kubernetes-list-type: atomic
+                              groups:
+                                description: |-
+                                  groups is an optional, ordered field used to specify the supported groups (formerly known as
+                                  elliptic curves) that are used during the TLS handshake.  The order of the groups represents
+                                  a suggested preference, with the most preferred group first. Note that not all platform
+                                  components honor the ordering: Go-based components use Go's internal preference order and
+                                  treat this list as a filter of allowed groups rather than an ordered preference.
+                                  Operators may remove entries their operands do not support.
+
+                                  When omitted, this means no opinion and the platform is left to choose reasonable defaults which are
+                                  subject to change over time and may be different per platform component depending on the underlying TLS
+                                  libraries they use. If specified, the list must contain at least one and at most 7 groups,
+                                  and each group must be unique.
+
+                                  For example, to use X25519 and secp256r1 (yaml):
+
+                                    groups:
+                                      - X25519
+                                      - secp256r1
+                                items:
+                                  description: |-
+                                    TLSGroup is a supported group identifier that can be used in TLSProfile.Groups.
+                                    There is a one-to-one mapping between these names and the group IDs defined
+                                    in Go's crypto/tls package based on IANA's "TLS Supported Groups" registry:
+                                    https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-parameters-8
+                                    Note that X25519MLKEM768 is a post-quantum hybrid group that is not
+                                    FIPS-approved and should be ignored by components running in FIPS mode.
+                                  enum:
+                                  - X25519
+                                  - secp256r1
+                                  - secp384r1
+                                  - secp521r1
+                                  - X25519MLKEM768
+                                  - SecP256r1MLKEM768
+                                  - SecP384r1MLKEM1024
+                                  type: string
+                                maxItems: 7
+                                minItems: 1
+                                type: array
+                                x-kubernetes-list-type: set
                               minTLSVersion:
                                 description: |-
                                   minTLSVersion is used to specify the minimal version of the TLS protocol
@@ -1843,6 +1905,62 @@ spec:
                                 used by the route.
                               pattern: ^([a-zA-Z0-9\p{S}\p{L}]((-?[a-zA-Z0-9\p{S}\p{L}]{0,62})?)|([a-zA-Z0-9\p{S}\p{L}](([a-zA-Z0-9-\p{S}\p{L}]{0,61}[a-zA-Z0-9\p{S}\p{L}])?)(\.)){1,}([a-zA-Z\p{L}]){2,63})$|^(([a-z0-9][-a-z0-9]{0,61}[a-z0-9]|[a-z0-9]{1,63})[\.]){0,}([a-z0-9][-a-z0-9]{0,61}[a-z0-9]|[a-z0-9]{1,63})$
                               type: string
+                            labels:
+                              additionalProperties:
+                                description: |-
+                                  LabelValue is the value part of a Kubernetes label.
+                                  A label value must be either empty or 1-63 characters, consisting of
+                                  alphanumeric characters, '-', '_', or '.', starting and ending with
+                                  an alphanumeric character.
+                                maxLength: 63
+                                minLength: 0
+                                type: string
+                                x-kubernetes-validations:
+                                - message: label values must be valid Kubernetes label
+                                    values (at most 63 characters, alphanumeric, '-',
+                                    '_', or '.', must start and end with alphanumeric)
+                                  rule: self == "" || self.matches('^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$')
+                              description: |-
+                                labels defines additional labels to be applied to the route created
+                                for the component. These labels are used by the IngressController to
+                                determine which routes it should manage. Changing labels may cause the
+                                route to be reassigned to a different IngressController.
+                                When omitted, no additional labels are applied to the component route.
+                                When specified, labels must contain at least one entry, up to a maximum of 8.
+                                Label keys must be valid qualified names, consisting of a name segment and
+                                an optional prefix separated by a slash (/). The name segment must be at most
+                                63 characters in length and must consist only of alphanumeric characters,
+                                dashes (-), underscores (_), and dots (.), and must start and end with
+                                alphanumeric characters. The prefix, if specified, must be a DNS subdomain:
+                                at most 253 characters in length, consisting of dot-separated segments where
+                                each segment starts and ends with an alphanumeric character.
+                                Label values must be either empty or 1-63 characters, consisting of
+                                alphanumeric characters, dashes (-), underscores (_), or dots (.),
+                                starting and ending with an alphanumeric character.
+                                Keys with the "kubernetes.io/", "k8s.io/", and "openshift.io/" prefixes are reserved and may not be used.
+                              maxProperties: 8
+                              minProperties: 1
+                              type: object
+                              x-kubernetes-map-type: granular
+                              x-kubernetes-validations:
+                              - message: label keys must be between 1 and 63 characters
+                                  in length
+                                rule: self.all(key, key.size() <= 63 && key.size()
+                                  > 0)
+                              - message: label keys must be valid qualified names,
+                                  consisting of an optional DNS subdomain prefix of
+                                  up to 253 characters followed by a slash and a name
+                                  segment of 1-63 characters, that consists only of
+                                  alphanumeric characters, dashes, underscores, and
+                                  dots, and must start and end with an alphanumeric
+                                  character
+                                rule: self.all(key, key.matches('^([a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*\\/)?[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$')
+                                  && key.size() <= 253)
+                              - message: kubernetes.io/, k8s.io/, and openshift.io/
+                                  prefixed label keys are reserved and may not be
+                                  used
+                                rule: self.all(key, !key.startsWith('kubernetes.io/')
+                                  && !key.startsWith('k8s.io/') && !key.startsWith('openshift.io/'))
                             name:
                               description: |-
                                 name is the logical name of the route to customize.
@@ -3794,11 +3912,11 @@ spec:
                     properties:
                       endpoint:
                         description: |-
-                          endpoint is the full etcd cluster client endpoint URL. For example:
+                          endpoint is the full etcd cluster client endpoint HTTPS URL. For example:
 
                               https://etcd-client:2379
 
-                          If the URL uses an HTTPS scheme, the TLS field is required.
+                          The tls field is required to authenticate to and verify the etcd endpoint.
                         maxLength: 255
                         pattern: ^https://
                         type: string
@@ -3938,17 +4056,17 @@ spec:
                         - message: existing shards cannot be replaced
                           rule: oldSelf.all(old, self.exists(cur, cur.name == old.name))
                       tls:
-                        description: tls specifies TLS configuration for HTTPS etcd
-                          client endpoints.
+                        description: tls specifies the required TLS configuration
+                          for the HTTPS etcd client endpoint.
                         properties:
                           clientSecret:
                             description: |-
-                              clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
-                              may have the following key/value pairs:
+                              clientSecret refers to a secret for client mTLS authentication with the etcd cluster.
+                              The secret must contain all three of the following key/value pairs:
 
-                                  etcd-client-ca.crt: Certificate Authority value
-                                  etcd-client.crt: Client certificate value
-                                  etcd-client.key: Client certificate key value
+                                  etcd-client-ca.crt: CA bundle used to verify the etcd server certificate
+                                  etcd-client.crt: Client certificate used to authenticate to etcd
+                                  etcd-client.key: Private key for the client certificate
                             properties:
                               name:
                                 default: ""
@@ -4293,13 +4411,15 @@ spec:
                       networkType specifies the SDN provider used for cluster networking.
                       Defaults to OVNKubernetes.
                       This field is required and immutable.
-                      kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
                     enum:
                     - OpenShiftSDN
                     - Calico
                     - OVNKubernetes
                     - Other
                     type: string
+                    x-kubernetes-validations:
+                    - message: networkType is immutable
+                      rule: self == oldSelf
                   serviceNetwork:
                     default:
                     - cidr: 172.31.0.0/16
@@ -4653,6 +4773,62 @@ spec:
                         - Trace
                         - TraceAll
                         type: string
+                    type: object
+                  csiDriverOperator:
+                    description: |-
+                      csiDriverOperator configures the CSI drivers of the hosted cluster.
+                      Settings are grouped by platform.
+
+                      When omitted, the CSI drivers use their default configuration.
+                    minProperties: 1
+                    properties:
+                      aws:
+                        description: |-
+                          aws configures the AWS EBS CSI driver.
+                          It can only be set when spec.platform.type is AWS.
+
+                          When omitted, no AWS-specific CSI driver configuration is applied and the
+                          default StorageClass uses the AWS account's default EBS encryption settings.
+                        minProperties: 1
+                        properties:
+                          initialKMSKeyARN:
+                            description: |-
+                              initialKMSKeyARN is the ARN of an AWS KMS key used to encrypt volumes
+                              created by the default StorageClass. When set, new PersistentVolumes
+                              provisioned by the default StorageClass are encrypted with this key
+                              instead of the AWS account's default EBS encryption key.
+
+                              When omitted, no KMS key is configured on the default StorageClass and
+                              EBS volumes are encrypted with the AWS account's default EBS encryption
+                              key.
+
+                              The value may be either the ARN or Alias ARN of a KMS key and must follow
+                              the format arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>,
+                              where <partition> is one of aws, aws-cn, aws-us-gov, aws-iso, aws-iso-b,
+                              aws-iso-e, or aws-iso-f; <region> is the AWS region; <account-id> is the
+                              12-digit AWS account identifier; and <key-id-or-alias> is the KMS key ID
+                              or alias name. The key must be in the same region as the cluster
+                              (spec.platform.aws.region).
+
+                              When set, must be between 1 and 2048 characters.
+
+                              This field can only be set when the HostedCluster is created and is
+                              immutable afterwards. Day-2 changes to storage encryption must be made
+                              directly on the ClusterCSIDriver resource in the hosted cluster.
+
+                              The IAM role in spec.platform.aws.rolesRef.storageARN must have
+                              kms:Decrypt, kms:GenerateDataKeyWithoutPlaintext, and kms:CreateGrant
+                              permissions on the specified key.
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: 'initialKMSKeyARN must be a valid AWS KMS key
+                                ARN in the format: arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>'
+                              rule: self.matches('^arn:(aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f):kms:[a-z]([a-z0-9]|-[a-z0-9])*:[0-9]{12}:(key|alias)/.+$')
+                            - message: initialKMSKeyARN is immutable
+                              rule: self == oldSelf
+                        type: object
                     type: object
                   etcd:
                     allOf:
@@ -5777,6 +5953,67 @@ spec:
                         - PublicAndPrivate
                         - Private
                         type: string
+                      managedDNS:
+                        description: |-
+                          managedDNS configures managed Route53 DNS zones for this cluster.
+                          Managed DNS is enabled when this field is set, which requires
+                          ingressDomainPrefix. When enabled, the control plane operator creates and
+                          reconciles the cluster's DNS zones in the customer's AWS account instead of
+                          requiring them to be pre-created externally and passed in as zone IDs.
+                          For standard clusters this covers the .hypershift.local private zone and
+                          the public and private ingress zones. For shared VPC clusters only the
+                          public ingress zone is managed, since the .hypershift.local and private
+                          ingress zones are owned by the VPC owner.
+                          managedDNS can only be set at cluster creation; it cannot be added to or
+                          removed from an existing cluster.
+                        properties:
+                          delegation:
+                            description: |-
+                              delegation configures service-side DNS delegation for certificate generation.
+                              When set, the ControlPlaneOperator creates an ACME DNS01 challenge CNAME in the
+                              public ingress zone and handles NS delegation based on the nsDelegationMode.
+                              When absent, only zones are created and the consuming platform handles
+                              delegation and certificate management.
+                            properties:
+                              nsDelegationMode:
+                                description: |-
+                                  nsDelegationMode specifies how NS delegation records are created in the parent zone.
+                                  "ExternalDNS": the ControlPlaneOperator creates a DNSEndpoint CR in the control plane namespace;
+                                  external-dns creates NS records in the parent zone.
+                                  "Manual": the consuming platform handles NS delegation using nameservers
+                                  reported in HostedCluster status.
+                                enum:
+                                - ExternalDNS
+                                - Manual
+                                type: string
+                            required:
+                            - nsDelegationMode
+                            type: object
+                          ingressDomainPrefix:
+                            description: |-
+                              ingressDomainPrefix is the subdomain prefix for the managed ingress DNS zones.
+                              The zone is created as {ingressDomainPrefix}.{clusterBaseDomain}, where
+                              {clusterBaseDomain} is the cluster base domain configured via the HostedCluster
+                              spec.dns (baseDomainPrefix and baseDomain).
+                              When delegation is configured, this prefix creates a DNS delegation boundary
+                              that separates the ingress zone from the cluster domain, enabling ACME
+                              challenge CNAME delegation back to the parent zone.
+                              Must be 1-63 characters, consist only of lowercase alphanumeric characters or
+                              hyphens, and must start and end with an alphanumeric character.
+                              ingressDomainPrefix is immutable.
+                            maxLength: 63
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: ingressDomainPrefix must consist of lowercase
+                                alphanumeric characters or '-', and must start and
+                                end with an alphanumeric character
+                              rule: self.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+                            - message: ingressDomainPrefix is immutable
+                              rule: self == oldSelf
+                        required:
+                        - ingressDomainPrefix
+                        type: object
                       multiArch:
                         default: false
                         description: |-
@@ -6170,13 +6407,17 @@ spec:
                           before they are terminated, providing a best effort for graceful shutdown.
 
                           Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).
+                          Supports FedRAMP/FIPS endpoints (sqs-fips prefix) and GovCloud regions.
                         maxLength: 512
-                        pattern: ^https://sqs\.[a-z0-9-]+\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$
+                        pattern: ^https://sqs(-fips)?\.([a-z0-9-]+)\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$
                         type: string
                     required:
                     - region
                     - rolesRef
                     type: object
+                    x-kubernetes-validations:
+                    - message: managedDNS cannot be added or removed after creation
+                      rule: has(oldSelf.managedDNS) == has(self.managedDNS)
                   azure:
                     description: azure defines azure specific settings
                     properties:
@@ -7008,8 +7249,8 @@ spec:
                                   If not provided, the controller will auto-create a NAT subnet in the HC's VNet.
                                   The expected format is:
                                     /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
-                                  The maximum length is 355 characters.
-                                maxLength: 355
+                                  The maximum length is 357 characters: 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).
+                                maxLength: 357
                                 minLength: 1
                                 type: string
                                 x-kubernetes-validations:
@@ -7101,22 +7342,26 @@ spec:
                           rule: self == oldSelf
                       subnetID:
                         description: |-
-                          subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
-                          different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
-                          exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must exist under the same subscription ID,
-                          HostedCluster.Spec.Platform.Azure.SubscriptionID.
+                          subnetID is the ID of an existing subnet where the HostedCluster's nodes will be created. It must exist in the same
+                          network as VnetID and under the same subscription as SubscriptionID.
                           subnetID is immutable once set.
                           The subnetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`.
-                          The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                          The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
                           The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
                           The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
                           The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
-                        maxLength: 355
+
+                          MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).
+                        maxLength: 357
                         minLength: 1
                         type: string
                         x-kubernetes-validations:
-                        - message: encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`
+                        - message: subnetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`
                           rule: size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')
+                        - message: the subscriptionId in the subnetID must be a valid
+                            UUID. It should be 5 groups of hyphen separated hexadecimal
+                            characters in the form 8-4-4-4-12
+                          rule: self.split('/')[2].matches('^([0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}|[{][0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}])$')
                         - message: The resourceGroupName should be between 1 and 90
                             characters, consisting only of alphanumeric characters,
                             hyphens, underscores, periods and parenthesis
@@ -7495,6 +7740,7 @@ spec:
                                   - roles/dns.admin (DNS Admin - for managing DNS records)
                                   - roles/compute.networkAdmin (Compute Network Admin - for network management)
                                   - roles/compute.viewer (Compute Viewer - for CCM to read instance metadata)
+                                  - roles/compute.securityAdmin (Security Admin - for managing worker firewall rules)
                                   See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
                                   Format: service-account-name@project-id.iam.gserviceaccount.com
 
@@ -9176,6 +9422,47 @@ spec:
                               - message: hostname must be a valid domain name (e.g.,
                                   example.com)
                                 rule: self.matches('^(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}$')
+                            loadBalancerClass:
+                              description: |-
+                                loadBalancerClass sets Service.spec.loadBalancerClass to select which
+                                LB controller provisions the Service. Required when the management
+                                cluster runs multiple LB controllers (e.g., F5 for management + MetalLB
+                                for tenant workloads). Maps to the Kubernetes Service field directly.
+                                Immutable after creation — matches Kubernetes semantics.
+                                Must be a valid Kubernetes qualified-name: an optional lowercase DNS
+                                subdomain prefix followed by '/' and a name segment starting and ending
+                                with an alphanumeric character (e.g., "example.com/my-lb-class").
+                                Maximum length is 253 characters.
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: loadBalancerClass must be a valid qualified-name
+                                  (e.g., example.com/my-lb-class)
+                                rule: self.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\\/)?[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$')
+                              - message: loadBalancerClass name segment must be at
+                                  most 63 characters
+                                rule: 'self.contains("/") ? self.split("/")[1].size()
+                                  <= 63 : self.size() <= 63'
+                            serviceAnnotations:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                serviceAnnotations is a map of annotations passed through to the
+                                LoadBalancer Service. The user provides the exact annotations their LB
+                                provider expects (e.g., metallb.io/loadBalancerIPs,
+                                service.beta.kubernetes.io/aws-load-balancer-eip-allocations).
+                                Immutable during TechPreview — set at creation, cannot be changed.
+                                Becomes mutable at GA when the Day 2 sidecar mechanism is in place.
+
+                                Annotations are applied per-key — existing annotations set by other
+                                controllers are preserved. HyperShift does not validate annotation
+                                values — correctness is the user's responsibility, same as setting
+                                annotations on any Kubernetes Service.
+                                Minimum 1, maximum 10 annotations per service.
+                              maxProperties: 10
+                              minProperties: 1
+                              type: object
                           type: object
                         nodePort:
                           description: nodePort configures exposing a service using
@@ -9195,9 +9482,10 @@ spec:
                                   || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')
                             port:
                               description: |-
-                                port is the port of the NodePort service. If <=0, the port is dynamically
-                                assigned when the service is created.
+                                port is the port of the NodePort service.
+                                If omitted, the port is dynamically assigned when the service is created.
                               format: int32
+                              minimum: 1
                               type: integer
                           required:
                           - address
@@ -9886,6 +10174,92 @@ spec:
                           addition to any security groups specified in the NodePool.
                         maxLength: 255
                         type: string
+                      dnsZones:
+                        description: |-
+                          dnsZones contains DNS zone information for zones managed by the control plane operator.
+                          Contains 1-2 entries keyed by zoneType, so at most one PublicIngress zone and
+                          one PrivateIngress zone.
+                        items:
+                          description: AWSDNSZoneStatus represents a managed Route53
+                            DNS zone and its metadata.
+                          properties:
+                            name:
+                              description: |-
+                                name is the DNS name of the hosted zone.
+                                name must be at most 253 characters in length (the maximum length of a DNS
+                                name) and must consist only of alphanumeric characters, hyphens, and periods.
+                                Each period-separated segment must start and end with an alphanumeric character.
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: name must be a valid DNS domain name consisting
+                                  of alphanumeric characters, hyphens, and periods,
+                                  where each segment starts and ends with an alphanumeric
+                                  character
+                                rule: self.matches('^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$')
+                            nameServers:
+                              description: |-
+                                nameServers are the authoritative name servers for this zone.
+                                Used for NS delegation when external-dns is not available.
+                                When omitted, there are no name servers to report: private ingress zones
+                                never populate this field, and a public zone has none until its delegation
+                                set has been resolved.
+                                When present, contains 1-8 unique name servers. Each name server must be at
+                                most 253 characters in length and must consist only of alphanumeric characters,
+                                hyphens, and periods, where each period-separated segment starts and ends with
+                                an alphanumeric character.
+                              items:
+                                maxLength: 253
+                                minLength: 1
+                                type: string
+                                x-kubernetes-validations:
+                                - message: each nameServer must be a valid DNS domain
+                                    name consisting of alphanumeric characters, hyphens,
+                                    and periods, where each segment starts and ends
+                                    with an alphanumeric character
+                                  rule: self.matches('^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$')
+                              maxItems: 8
+                              minItems: 1
+                              type: array
+                              x-kubernetes-list-type: set
+                            zoneID:
+                              description: |-
+                                zoneID is the Route53 hosted zone ID.
+                                Must be 2-32 characters and a valid Route53 hosted zone ID: a leading 'Z'
+                                followed by uppercase alphanumeric characters.
+                              maxLength: 32
+                              minLength: 2
+                              type: string
+                              x-kubernetes-validations:
+                              - message: 'zoneID must be a Route53 hosted zone ID:
+                                  a leading ''Z'' followed by uppercase alphanumeric
+                                  characters'
+                                rule: self.matches('^Z[A-Z0-9]+$')
+                            zoneType:
+                              description: |-
+                                zoneType indicates the purpose of the zone.
+                                Valid values are:
+                                "PublicIngress": the public Route53 zone holding the publicly resolvable
+                                ingress DNS records (e.g. *.apps and the console) and ACME certificate
+                                validation records.
+                                "PrivateIngress": the private Route53 zone serving VPC-internal ingress
+                                DNS resolution for the guest cluster.
+                              enum:
+                              - PublicIngress
+                              - PrivateIngress
+                              type: string
+                          required:
+                          - name
+                          - zoneID
+                          - zoneType
+                          type: object
+                        maxItems: 2
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - zoneType
+                        x-kubernetes-list-type: map
                     type: object
                 type: object
               ready:

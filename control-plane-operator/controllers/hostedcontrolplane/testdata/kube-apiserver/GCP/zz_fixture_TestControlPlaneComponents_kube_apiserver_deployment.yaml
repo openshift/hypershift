@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 61f47c215f0276b07bde516c88099af27c900fea0a33c734b5b1e5a05d2f715b
+    hypershift.openshift.io/desired-state-hash: 600f77c26294d0059ad16a1d78a72d131d3c3c8a8b8503a6d1d349e2e200ee00
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -30,7 +30,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2312ad2fb360eec758b110e88a2a4098ca2a4098ce7e69167
+        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2312ad2fb360eec75741638a5741638a5741638a5741638a58b110e88a2a4098ca2a4098ce7e69167
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: kube-apiserver
@@ -336,6 +336,58 @@ spec:
           name: logs
         - mountPath: /tmp
           name: tmp-dir
+      - command:
+        - /usr/bin/gcp-workload-identity-federation-webhook
+        - --annotation-prefix=cloud.google.com
+        - --gcp-default-region=us-central1
+        - --health-probe-bind-address=:8081
+        - --kubeconfig=/var/run/app/kubeconfig/kubeconfig
+        - --metrics-bind-address=127.0.0.1:8080
+        - --token-audience=openshift
+        - --tls-min-version=VersionTLS12
+        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        image: gcp-workload-identity-federation-webhook
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+            scheme: HTTP
+          periodSeconds: 20
+        name: gcp-workload-identity-federation-webhook
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 10m
+            memory: 25Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        startupProbe:
+          failureThreshold: 30
+          httpGet:
+            path: /healthz
+            port: 8081
+            scheme: HTTP
+          periodSeconds: 10
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: gcp-wif-webhook-serving-certs
+        - mountPath: /var/run/app/kubeconfig
+          name: gcp-wif-webhook-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /bin/sh
@@ -622,6 +674,14 @@ spec:
         secret:
           defaultMode: 416
           secretName: konnectivity-cluster
+      - name: gcp-wif-webhook-serving-certs
+        secret:
+          defaultMode: 416
+          secretName: gcp-workload-identity-federation-webhook-serving-cert
+      - name: gcp-wif-webhook-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: gcp-workload-identity-federation-webhook-kubeconfig
       - emptyDir: {}
         name: tmp-dir
 status: {}

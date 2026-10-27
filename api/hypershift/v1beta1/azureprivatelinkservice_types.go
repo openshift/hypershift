@@ -42,7 +42,8 @@ const (
 //	/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
 //
 // +kubebuilder:validation:MinLength=1
-// +kubebuilder:validation:MaxLength=355
+// MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).
+// +kubebuilder:validation:MaxLength=357
 // +kubebuilder:validation:XValidation:rule="self.matches('^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\\\.Network/virtualNetworks/[^/]+/subnets/[^/]+$')",message="must be a valid Azure subnet resource ID (e.g., /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Network/virtualNetworks/{vnet}/subnets/{subnet})"
 type AzureSubnetResourceID string
 

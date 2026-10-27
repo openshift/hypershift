@@ -210,8 +210,8 @@ spec:
                                         * An existing PVC (PersistentVolumeClaim)
                                         If the provisioner or an external controller can support the specified data source,
                                         it will create a new volume based on the contents of the specified data source.
-                                        When the AnyVolumeDataSource feature gate is enabled, dataSource contents will be copied to dataSourceRef,
-                                        and dataSourceRef contents will be copied to dataSource when dataSourceRef.namespace is not specified.
+                                        dataSource contents will be copied to dataSourceRef, and dataSourceRef contents will be
+                                        copied to dataSource when dataSourceRef.namespace is not specified.
                                         If the namespace is specified, then dataSourceRef will not be copied to dataSource.
                                       properties:
                                         apiGroup:
@@ -256,7 +256,6 @@ spec:
                                           specified.
                                         * While dataSource only allows local objects, dataSourceRef allows objects
                                           in any namespaces.
-                                        (Beta) Using this field requires the AnyVolumeDataSource feature gate to be enabled.
                                         (Alpha) Using the namespace field of dataSourceRef requires the CrossNamespaceVolumeDataSource feature gate to be enabled.
                                       properties:
                                         apiGroup:
@@ -3519,6 +3518,11 @@ spec:
                                           Number must be in the range 1 to 65535.
                                           Name must be an IANA_SVC_NAME.
                                         x-kubernetes-int-or-string: true
+                                      protocol:
+                                        description: |-
+                                          Protocol selects the wire protocol for the probe connection.
+                                          Nil defaults to HTTP/1.1.
+                                        type: string
                                       scheme:
                                         description: |-
                                           Scheme to use for connecting to the host.
@@ -3725,6 +3729,11 @@ spec:
                                           Number must be in the range 1 to 65535.
                                           Name must be an IANA_SVC_NAME.
                                         x-kubernetes-int-or-string: true
+                                      protocol:
+                                        description: |-
+                                          Protocol selects the wire protocol for the probe connection.
+                                          Nil defaults to HTTP/1.1.
+                                        type: string
                                       scheme:
                                         description: |-
                                           Scheme to use for connecting to the host.
@@ -4439,6 +4448,13 @@ spec:
                                                 - resource
                                                 type: object
                                                 x-kubernetes-map-type: atomic
+                                              user:
+                                                description: |-
+                                                  user is Optional: The owner UID of the created file.
+                                                  If specified, the item-level user field takes precedence over defaultUser.
+                                                  (Alpha) This field requires the AtomicWriteVolumeUserFields feature gate to be enabled.
+                                                format: int64
+                                                type: integer
                                             required:
                                             - path
                                             type: object
@@ -4695,51 +4711,56 @@ spec:
               conditions:
                 description: Conditions defines current service state of the KubevirtMachine.
                 items:
-                  description: Condition defines an observation of a Cluster API resource
-                    operational state.
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
                   properties:
                     lastTransitionTime:
                       description: |-
                         lastTransitionTime is the last time the condition transitioned from one status to another.
-                        This should be when the underlying condition changed. If that is not known, then using the time when
-                        the API field changed is acceptable.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
                       description: |-
                         message is a human readable message indicating details about the transition.
-                        This field may be empty.
-                      maxLength: 10240
-                      minLength: 1
+                        This may be an empty string.
+                      maxLength: 32768
                       type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
                     reason:
                       description: |-
-                        reason is the reason for the condition's last transition in CamelCase.
-                        The specific API may choose whether or not this field is considered a guaranteed API.
-                        This field may be empty.
-                      maxLength: 256
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
                       minLength: 1
-                      type: string
-                    severity:
-                      description: |-
-                        severity provides an explicit classification of Reason code, so the users or machines can immediately
-                        understand the current situation and act accordingly.
-                        The Severity field MUST be set only when Status=False.
-                      maxLength: 32
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
                       type: string
                     status:
                       description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
                       type: string
                     type:
-                      description: |-
-                        type of condition in CamelCase or in foo.example.com/CamelCase.
-                        Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
-                        can be useful (see .node.status.conditions), the ability to deconflict is important.
-                      maxLength: 256
-                      minLength: 1
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
                   required:
                   - lastTransitionTime
+                  - message
+                  - reason
                   - status
                   - type
                   type: object
@@ -4782,6 +4803,16 @@ spec:
                   can be added as events to the Machine object and/or logged in the
                   controller's output.
                 type: string
+              initialization:
+                description: Initialization tracks CAPI v1beta2 contract initialization
+                  fields.
+                properties:
+                  provisioned:
+                    description: |-
+                      Provisioned indicates that the infrastructure has been provisioned.
+                      Required by CAPI v1beta2 Machine controller to proceed with providerID propagation.
+                    type: boolean
+                type: object
               loadBalancerConfigured:
                 description: |-
                   LoadBalancerConfigured denotes that the machine has been

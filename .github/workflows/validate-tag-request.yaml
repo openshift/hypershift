@@ -1,0 +1,14 @@
+name: Validate Tag Request
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - releases/tags.yaml
+
+jobs:
+  validate:
+    uses: openshift/hypershift/.github/workflows/validate-tag-request-reusable.yaml@main
+    permissions:
+      contents: read

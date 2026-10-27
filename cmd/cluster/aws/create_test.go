@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"os"
@@ -55,7 +56,6 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 		credentials          awsutil.AWSCredentialsOptions
 		credentialSecretName string
 		pullSecretFile       string
-		kubeconfigPath       string
 		expectError          bool
 	}{
 		"When CredentialSecretName and aws-creds are blank, it should return an error": {
@@ -73,9 +73,8 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 			credentials:          awsutil.AWSCredentialsOptions{AWSCredentialsFile: "asdf"},
 			expectError:          false,
 		},
-		"When CredentialSecretName is set with invalid kubeconfig, it should fail": {
+		"When CredentialSecretName is set without a client, it should fail": {
 			credentialSecretName: "my-secret",
-			kubeconfigPath:       "/nonexistent/kubeconfig",
 			credentials:          awsutil.AWSCredentialsOptions{AWSCredentialsFile: "/some/creds"},
 			pullSecretFile:       "asdf",
 			expectError:          true,
@@ -84,7 +83,7 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := ValidateCreateCredentialInfo(test.credentials, test.credentialSecretName, "", test.pullSecretFile, test.kubeconfigPath)
+			err := ValidateCreateCredentialInfo(context.Background(), test.credentials, test.credentialSecretName, "", test.pullSecretFile, nil)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -99,7 +98,6 @@ func TestCreateCluster(t *testing.T) {
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
-	t.Setenv("FAKE_CLIENT", "true")
 
 	rawCreds, err := json.Marshal(&awsutil.STSCreds{
 		Credentials: awsutil.Credentials{
@@ -255,7 +253,7 @@ func TestCreateCluster(t *testing.T) {
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 
-			if err := core.CreateCluster(ctx, coreOpts, awsOpts); err != nil {
+			if err := core.CreateCluster(ctx, coreOpts, awsOpts, nil); err != nil {
 				t.Fatalf("failed to create cluster: %v", err)
 			}
 
@@ -296,4 +294,88 @@ func TestGenerateResources(t *testing.T) {
 		g.Expect(resources).To(HaveLen(1))
 		g.Expect(resources[0].GetLabels()).To(HaveKeyWithValue(util.DeleteWithClusterLabelName, "true"))
 	})
+}
+
+func TestValidateInitialStorageVolumesKMSKey(t *testing.T) {
+	tests := []struct {
+		name      string
+		kmsKeyARN string
+		region    string
+		expectErr string
+	}{
+		{
+			name:      "When no key is set, it should pass",
+			kmsKeyARN: "",
+			region:    "us-east-1",
+		},
+		{
+			name:      "When a valid key ARN in the cluster region is set, it should pass",
+			kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:key/d3cdd9e0-3fd1-47a4-a559-72ae3672c5a6",
+			region:    "us-east-1",
+		},
+		{
+			name:      "When a valid alias ARN in the cluster region is set, it should pass",
+			kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:alias/hypershift-ci",
+			region:    "us-east-1",
+		},
+		{
+			name:      "When the ARN is malformed, it should fail",
+			kmsKeyARN: "not-an-arn",
+			region:    "us-east-1",
+			expectErr: "must be a valid AWS KMS key ARN",
+		},
+		{
+			name:      "When the ARN has no key id after the slash, it should fail",
+			kmsKeyARN: "arn:aws:kms:us-east-1:123456789012:key/",
+			region:    "us-east-1",
+			expectErr: "must be a valid AWS KMS key ARN",
+		},
+		{
+			name:      "When the key is in a different region than the cluster, it should fail",
+			kmsKeyARN: "arn:aws:kms:us-west-2:123456789012:key/d3cdd9e0-3fd1-47a4-a559-72ae3672c5a6",
+			region:    "us-east-1",
+			expectErr: "must reference a key in the cluster region",
+		},
+		{
+			name:      "When a valid GovCloud region key is set, it should pass",
+			kmsKeyARN: "arn:aws-us-gov:kms:us-gov-east-1:123456789012:key/d3cdd9e0-3fd1-47a4-a559-72ae3672c5a6",
+			region:    "us-gov-east-1",
+		},
+		{
+			name:      "When the region is only hyphens, it should fail",
+			kmsKeyARN: "arn:aws:kms:------:123456789012:key/abc-123",
+			region:    "us-east-1",
+			expectErr: "must be a valid AWS KMS key ARN",
+		},
+		{
+			name:      "When the region starts with a hyphen, it should fail",
+			kmsKeyARN: "arn:aws:kms:-us-east-1:123456789012:key/abc-123",
+			region:    "us-east-1",
+			expectErr: "must be a valid AWS KMS key ARN",
+		},
+		{
+			name:      "When the region ends with a hyphen, it should fail",
+			kmsKeyARN: "arn:aws:kms:us-east-1-:123456789012:key/abc-123",
+			region:    "us-east-1",
+			expectErr: "must be a valid AWS KMS key ARN",
+		},
+		{
+			name:      "When the region has consecutive hyphens, it should fail",
+			kmsKeyARN: "arn:aws:kms:us--east-1:123456789012:key/abc-123",
+			region:    "us-east-1",
+			expectErr: "must be a valid AWS KMS key ARN",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			err := validateInitialStorageVolumesKMSKey(tc.kmsKeyARN, tc.region)
+			if tc.expectErr == "" {
+				g.Expect(err).NotTo(HaveOccurred())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectErr))
+			}
+		})
+	}
 }

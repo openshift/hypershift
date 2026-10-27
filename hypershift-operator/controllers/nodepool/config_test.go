@@ -14,6 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -22,7 +23,9 @@ import (
 	imageapi "github.com/openshift/api/image/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -143,6 +146,7 @@ spec:
 			Configuration: &globalConfig,
 		},
 	}
+	kubeconfig := withKubeconfig(hostedCluster)
 
 	testCases := []struct {
 		name                       string
@@ -462,6 +466,10 @@ spec:
 						Name: "additional-trust-bundle",
 					},
 				},
+				Status: hyperv1.HostedClusterStatus{
+					// withKubeconfig provisioned this secret for the shared fixture.
+					KubeConfig: &corev1.LocalObjectReference{Name: hostedCluster.Name + "-kubeconfig"},
+				},
 			},
 		},
 	}
@@ -473,6 +481,7 @@ spec:
 			var client crclient.Client
 			if tc.client {
 				fakeObjects := append(tc.config, coreConfigMaps...)
+				fakeObjects = append(fakeObjects, kubeconfig)
 				client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeObjects...).Build()
 			}
 
@@ -820,6 +829,536 @@ func TestHashWithoutVersion(t *testing.T) {
 			hash := cg.HashWithoutVersion()
 			g.Expect(hash).ToNot(BeEmpty())
 			g.Expect(hash).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestRolloutHash(t *testing.T) {
+	baseCaseUserConfig := "test config"
+	baseCaseReleaseVersion := "4.7.0"
+	baseCasePullSecretName := "pull-secret"
+	baseCaseAdditionalTrustBundleName := "trust-bundle"
+	baseCaseGlobalConfig := "global config"
+	baseCaseRolloutGlobalConfig := "rollout global config"
+	baseCaseHAProxyRawConfig := "haproxy static pod manifest with image digest"
+
+	newConfigGenerator := func(mods ...func(*rolloutConfig)) *ConfigGenerator {
+		rc := &rolloutConfig{
+			// mcoRawConfig includes haproxy in production (prepended by parse()),
+			// so we simulate that by concatenating haproxy + user config.
+			mcoRawConfig:              baseCaseHAProxyRawConfig + "\n---\n" + baseCaseUserConfig,
+			rolloutMcoRawConfig:       baseCaseUserConfig,
+			pullSecretName:            baseCasePullSecretName,
+			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			globalConfig:              baseCaseGlobalConfig,
+			rolloutGlobalConfig:       baseCaseRolloutGlobalConfig,
+			haproxyRawConfig:          baseCaseHAProxyRawConfig,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: baseCaseReleaseVersion},
+				},
+			},
+		}
+		for _, mod := range mods {
+			mod(rc)
+		}
+		return &ConfigGenerator{rolloutConfig: rc}
+	}
+
+	baseCG := newConfigGenerator()
+	baseCaseRolloutHash := baseCG.RolloutHash()
+
+	testCases := []struct {
+		name          string
+		modify        func(*rolloutConfig)
+		expectChanged bool
+	}{
+		{
+			name: "When only the haproxyRawConfig changes it should NOT change the RolloutHash",
+			modify: func(rc *rolloutConfig) {
+				rc.haproxyRawConfig = "different-haproxy-image:v2"
+				rc.mcoRawConfig = "different-haproxy-image:v2" + "\n---\n" + baseCaseUserConfig
+			},
+			expectChanged: false,
+		},
+		{
+			name: "When the user config changes it should change the RolloutHash",
+			modify: func(rc *rolloutConfig) {
+				rc.rolloutMcoRawConfig = "different user config"
+				rc.mcoRawConfig = baseCaseHAProxyRawConfig + "\n---\n" + "different user config"
+			},
+			expectChanged: true,
+		},
+		{
+			name:          "When the pullSecretName changes it should change the RolloutHash",
+			modify:        func(rc *rolloutConfig) { rc.pullSecretName = "different-pull-secret" },
+			expectChanged: true,
+		},
+		{
+			name:          "When the additionalTrustBundleName changes it should change the RolloutHash",
+			modify:        func(rc *rolloutConfig) { rc.additionalTrustBundleName = "different-trust-bundle" },
+			expectChanged: true,
+		},
+		{
+			name:          "When the rolloutGlobalConfig changes it should change the RolloutHash",
+			modify:        func(rc *rolloutConfig) { rc.rolloutGlobalConfig = "different spec proxy config" },
+			expectChanged: true,
+		},
+		{
+			name:          "When only the full globalConfig changes it should NOT change the RolloutHash",
+			modify:        func(rc *rolloutConfig) { rc.globalConfig = "different platform-computed proxy config" },
+			expectChanged: false,
+		},
+		{
+			name: "When the release version changes it should change the RolloutHash",
+			modify: func(rc *rolloutConfig) {
+				rc.releaseImage = &releaseinfo.ReleaseImage{
+					ImageStream: &imageapi.ImageStream{
+						ObjectMeta: metav1.ObjectMeta{Name: "4.8.0"},
+					},
+				}
+			},
+			expectChanged: true,
+		},
+		{
+			name:          "When the rhelStream changes it should change the RolloutHash",
+			modify:        func(rc *rolloutConfig) { rc.rhelStream = "rhel-10" },
+			expectChanged: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			cg := newConfigGenerator(tc.modify)
+			rolloutHash := cg.RolloutHash()
+			g.Expect(rolloutHash).ToNot(BeEmpty())
+
+			if tc.expectChanged {
+				g.Expect(rolloutHash).ToNot(Equal(baseCaseRolloutHash),
+					"RolloutHash should change for spec-driven input changes")
+			} else {
+				g.Expect(rolloutHash).To(Equal(baseCaseRolloutHash),
+					"RolloutHash should NOT change for management-side input changes")
+			}
+		})
+	}
+
+	t.Run("When haproxyRawConfig changes the payload Hash should still change", func(t *testing.T) {
+		g := NewWithT(t)
+
+		original := newConfigGenerator()
+		modified := newConfigGenerator(func(rc *rolloutConfig) {
+			rc.haproxyRawConfig = "completely-different-haproxy-manifest"
+			rc.mcoRawConfig = "completely-different-haproxy-manifest" + "\n---\n" + baseCaseUserConfig
+		})
+
+		g.Expect(modified.RolloutHash()).To(Equal(original.RolloutHash()),
+			"RolloutHash must be stable across management-side changes")
+		g.Expect(modified.Hash()).ToNot(Equal(original.Hash()),
+			"payload Hash must still reflect management-side changes")
+	})
+}
+
+func TestRolloutHashAnnotationSeeding(t *testing.T) {
+	t.Run("When the rollout config annotation is absent, isUpdatingConfig should return false", func(t *testing.T) {
+		g := NewWithT(t)
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{},
+			},
+		}
+
+		g.Expect(isUpdatingConfig(nodePool, "abc123")).To(BeFalse(),
+			"absent annotation should not signal a config update")
+	})
+
+	t.Run("When the rollout config annotation matches the target hash, isUpdatingConfig should return false", func(t *testing.T) {
+		g := NewWithT(t)
+
+		rolloutHash := "abc123"
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentRolloutConfig: rolloutHash,
+				},
+			},
+		}
+
+		g.Expect(isUpdatingConfig(nodePool, rolloutHash)).To(BeFalse(),
+			"matching hashes should not signal a config update")
+	})
+
+	t.Run("When the rollout config annotation differs from the target hash, isUpdatingConfig should return true", func(t *testing.T) {
+		g := NewWithT(t)
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					nodePoolAnnotationCurrentRolloutConfig: "oldHash",
+				},
+			},
+		}
+
+		g.Expect(isUpdatingConfig(nodePool, "newHash")).To(BeTrue(),
+			"differing hashes should signal a config update")
+	})
+}
+
+func TestRolloutGlobalConfigString(t *testing.T) {
+	t.Run("When hosted cluster has proxy spec, rolloutGlobalConfig should not include platform-computed NoProxy entries", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "test",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						Region: "us-east-1",
+					},
+				},
+				Networking: hyperv1.ClusterNetworking{
+					ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.96.0.0/12")}},
+					ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.244.0.0/16")}},
+				},
+				Configuration: &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						HTTPProxy:  "http://proxy.example.com:3128",
+						HTTPSProxy: "https://proxy.example.com:3128",
+						NoProxy:    ".example.com",
+					},
+				},
+			},
+		}
+
+		testReleaseImage := &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"},
+			},
+		}
+
+		rolloutConfig, err := globalConfigString(hcluster, testReleaseImage, true)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		fullConfig, err := globalConfigString(hcluster, testReleaseImage, false)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(rolloutConfig).ToNot(Equal(fullConfig),
+			"rolloutGlobalConfig should differ from fullConfig when platform adds NoProxy defaults")
+
+		g.Expect(rolloutConfig).ToNot(ContainSubstring("169.254.169.254"),
+			"rolloutGlobalConfig should not contain AWS metadata endpoint added by defaultProxyStatus")
+		g.Expect(rolloutConfig).ToNot(ContainSubstring("10.96.0.0"),
+			"rolloutGlobalConfig should not contain service network CIDRs added by defaultProxyStatus")
+	})
+
+	t.Run("When hosted cluster has no proxy spec, both configs should be equal", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "test",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+				},
+			},
+		}
+
+		testReleaseImage := &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"},
+			},
+		}
+
+		rolloutConfig, err := globalConfigString(hcluster, testReleaseImage, true)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		fullConfig, err := globalConfigString(hcluster, testReleaseImage, false)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(rolloutConfig).To(Equal(fullConfig),
+			"without proxy spec, both configs should produce the same output")
+	})
+
+	t.Run("When proxy spec changes, rolloutGlobalConfig should change", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hcluster1 := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						HTTPProxy: "http://proxy1.example.com:3128",
+					},
+				},
+			},
+		}
+
+		hcluster2 := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						HTTPProxy: "http://proxy2.example.com:3128",
+					},
+				},
+			},
+		}
+
+		testReleaseImage := &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"},
+			},
+		}
+
+		config1, err := globalConfigString(hcluster1, testReleaseImage, true)
+		g.Expect(err).ToNot(HaveOccurred())
+		config2, err := globalConfigString(hcluster2, testReleaseImage, true)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(config1).ToNot(Equal(config2),
+			"different proxy specs should produce different rolloutGlobalConfig values")
+	})
+
+	t.Run("When TLSSecurityProfile changes, rolloutGlobalConfig should change", func(t *testing.T) {
+		g := NewWithT(t)
+
+		testReleaseImage := &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{Name: "4.23.0"},
+			},
+		}
+
+		hcluster1 := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					APIServer: &configv1.APIServerSpec{
+						TLSSecurityProfile: &configv1.TLSSecurityProfile{
+							Type: configv1.TLSProfileModernType,
+						},
+					},
+				},
+			},
+		}
+
+		hcluster2 := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					APIServer: &configv1.APIServerSpec{
+						TLSSecurityProfile: &configv1.TLSSecurityProfile{
+							Type: configv1.TLSProfileOldType,
+						},
+					},
+				},
+			},
+		}
+
+		config1, err := globalConfigString(hcluster1, testReleaseImage, true)
+		g.Expect(err).ToNot(HaveOccurred())
+		config2, err := globalConfigString(hcluster2, testReleaseImage, true)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(config1).ToNot(Equal(config2),
+			"different TLS profiles should produce different rolloutGlobalConfig values")
+	})
+
+	t.Run("When non-TLS APIServer fields change, rolloutGlobalConfig should not change", func(t *testing.T) {
+		g := NewWithT(t)
+
+		testReleaseImage := &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{Name: "4.23.0"},
+			},
+		}
+
+		hcluster1 := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					APIServer: &configv1.APIServerSpec{
+						TLSSecurityProfile: &configv1.TLSSecurityProfile{
+							Type: configv1.TLSProfileModernType,
+						},
+					},
+				},
+			},
+		}
+
+		hcluster2 := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: &hyperv1.ClusterConfiguration{
+					APIServer: &configv1.APIServerSpec{
+						TLSSecurityProfile: &configv1.TLSSecurityProfile{
+							Type: configv1.TLSProfileModernType,
+						},
+						ServingCerts: configv1.APIServerServingCerts{
+							NamedCertificates: []configv1.APIServerNamedServingCert{
+								{Names: []string{"api.example.com"}},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		rollout1, err := globalConfigString(hcluster1, testReleaseImage, true)
+		g.Expect(err).ToNot(HaveOccurred())
+		rollout2, err := globalConfigString(hcluster2, testReleaseImage, true)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(rollout1).To(Equal(rollout2),
+			"non-TLS APIServer changes should not affect rolloutGlobalConfig")
+
+		full1, err := globalConfigString(hcluster1, testReleaseImage, false)
+		g.Expect(err).ToNot(HaveOccurred())
+		full2, err := globalConfigString(hcluster2, testReleaseImage, false)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		g.Expect(full1).To(Equal(full2),
+			"non-TLS APIServer changes should not affect the full config either")
+	})
+}
+
+func TestIsOutdated(t *testing.T) {
+	makeToken := func(version string, nodePool *hyperv1.NodePool) *Token {
+		return &Token{
+			ConfigGenerator: &ConfigGenerator{
+				rolloutConfig: &rolloutConfig{
+					rolloutMcoRawConfig:       "config",
+					pullSecretName:            "pull",
+					additionalTrustBundleName: "trust",
+					rolloutGlobalConfig:       "global",
+					releaseImage: &releaseinfo.ReleaseImage{
+						ImageStream: &imageapi.ImageStream{
+							ObjectMeta: metav1.ObjectMeta{Name: version},
+						},
+					},
+				},
+				nodePool: nodePool,
+			},
+		}
+	}
+
+	// Pre-compute the rollout hash for the base config so annotations can match.
+	baseToken := makeToken("4.18.0", &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{}},
+	})
+	baseRolloutHash := baseToken.RolloutHashWithoutVersion()
+	for _, tc := range []struct {
+		name, deployedVersion, deployedRollout, nodePoolTarget string
+		missingBaseline, expected                              bool
+	}{
+		{name: "When the workload version differs from the desired completed version, it should be outdated", deployedVersion: "4.18.1", expected: true},
+		{name: "When the workload request matches but NodePool tracking is stale, it should not be outdated", deployedRollout: baseToken.RolloutHash(), nodePoolTarget: "stale"},
+		{name: "When the workload request differs and the baseline was not saved, it should be outdated", deployedRollout: "previous", missingBaseline: true, expected: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			np := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+					nodePoolAnnotationCurrentConfigVersion:    "completed",
+					nodePoolAnnotationCurrentRolloutConfig:    baseRolloutHash,
+					nodePoolAnnotationInProgressRolloutConfig: tc.nodePoolTarget,
+				}},
+				Status: hyperv1.NodePoolStatus{Version: "4.18.0"},
+			}
+			if tc.missingBaseline {
+				delete(np.Annotations, nodePoolAnnotationCurrentRolloutConfig)
+			}
+			token := makeToken("4.18.0", np)
+			token.deployedVersion = tc.deployedVersion
+			token.deployedRolloutConfig = tc.deployedRollout
+			NewWithT(t).Expect(token.isOutdated()).To(Equal(tc.expected))
+		})
+	}
+
+	testCases := []struct {
+		name     string
+		token    *Token
+		expected bool
+	}{
+		{
+			name: "When a new NodePool has no annotations, it should be outdated",
+			token: makeToken("4.18.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+			}),
+			expected: true,
+		},
+		{
+			name: "When an existing NodePool after upgrade has old annotation but no new annotation, it should not be outdated",
+			token: makeToken("4.18.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentConfigVersion: "old-hash",
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: "4.18.0",
+				},
+			}),
+			expected: false,
+		},
+		{
+			name: "When rollout hash matches and version matches, it should not be outdated",
+			token: makeToken("4.18.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentRolloutConfig: baseRolloutHash,
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: "4.18.0",
+				},
+			}),
+			expected: false,
+		},
+		{
+			name: "When version changes, it should be outdated",
+			token: makeToken("4.19.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentRolloutConfig: baseRolloutHash,
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: "4.18.0",
+				},
+			}),
+			expected: true,
+		},
+		{
+			name: "When rollout config changes, it should be outdated",
+			token: makeToken("4.18.0", &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						nodePoolAnnotationCurrentRolloutConfig: "stale-rollout-hash",
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: "4.18.0",
+				},
+			}),
+			expected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(tc.token.isOutdated()).To(Equal(tc.expected))
 		})
 	}
 }
@@ -1636,7 +2175,7 @@ status:
 				cg.haproxyRawConfig = haproxyIgnititionConfig
 			}
 
-			got, err := cg.generateMCORawConfig(t.Context(), hc.Spec.Capabilities)
+			got, rolloutRaw, err := cg.generateMCORawConfig(t.Context(), hc.Spec.Capabilities)
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
 				if tc.missingCoreConfig {
@@ -1648,6 +2187,16 @@ status:
 			g.Expect(err).ToNot(HaveOccurred())
 			if diff := cmp.Diff(got, tc.expect); diff != "" {
 				t.Errorf("actual config differs from expected: %s", diff)
+			}
+
+			if tc.renderHAProxy {
+				g.Expect(rolloutRaw).ToNot(Equal(got),
+					"rollout config should exclude haproxy content")
+				g.Expect(rolloutRaw).ToNot(ContainSubstring("haproxy"),
+					"rollout config should not contain haproxy content")
+			} else {
+				g.Expect(rolloutRaw).To(Equal(got),
+					"rollout config should equal full config when no haproxy is rendered")
 			}
 		})
 	}
@@ -1941,6 +2490,179 @@ spec:
 	}
 }
 
+func TestGetPlatformConfigs(t *testing.T) {
+	ipv4Networking := hyperv1.ClusterNetworking{
+		ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")}},
+		ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")}},
+	}
+	dualStackNetworking := hyperv1.ClusterNetworking{
+		ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+			{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")},
+			{CIDR: *ipnet.MustParseCIDR("fd01::/48")},
+		},
+		ServiceNetwork: []hyperv1.ServiceNetworkEntry{
+			{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")},
+			{CIDR: *ipnet.MustParseCIDR("fd02::/112")},
+		},
+	}
+
+	testCases := []struct {
+		name          string
+		nodePool      *hyperv1.NodePool
+		networking    hyperv1.ClusterNetworking
+		expectConfigs bool
+	}{
+		{
+			// No config may ever be generated for default-network NodePools:
+			// anything emitted here becomes part of the NodePool config hash and
+			// would trigger a fleet-wide rollout when the HyperShift operator is
+			// upgraded.
+			name: "When platform is KubeVirt with default network on a dual-stack cluster it should return no configs to keep the config hash unchanged",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type:     hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							// AttachDefaultNetwork defaults to true when nil
+						},
+					},
+				},
+			},
+			networking:    dualStackNetworking,
+			expectConfigs: false,
+		},
+		{
+			name: "When platform is KubeVirt with multus primary network on an IPv4-only cluster it should return no configs to keep the config hash unchanged",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AttachDefaultNetwork: ptr.To(false),
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "ns1/localnet-net"},
+							},
+						},
+					},
+				},
+			},
+			networking:    ipv4Networking,
+			expectConfigs: false,
+		},
+		{
+			name: "When platform is KubeVirt with multus primary network on a dual-stack cluster it should return the override config",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+							AttachDefaultNetwork: ptr.To(false),
+							AdditionalNetworks: []hyperv1.KubevirtNetwork{
+								{Name: "ns1/localnet-net"},
+							},
+						},
+					},
+				},
+			},
+			networking:    dualStackNetworking,
+			expectConfigs: true,
+		},
+		{
+			name: "When platform is AWS it should return no configs",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			networking:    dualStackNetworking,
+			expectConfigs: false,
+		},
+		{
+			name: "When platform is KubeVirt with nil Kubevirt spec it should return no configs",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			networking:    dualStackNetworking,
+			expectConfigs: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			cg := &ConfigGenerator{
+				nodePool: tc.nodePool,
+				hostedCluster: &hyperv1.HostedCluster{
+					Spec: hyperv1.HostedClusterSpec{
+						Networking: tc.networking,
+					},
+				},
+			}
+
+			configs, err := cg.getPlatformConfigs()
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectConfigs {
+				g.Expect(configs).ToNot(BeNil())
+				g.Expect(configs).To(HaveLen(1))
+				g.Expect(configs[0].Data).To(HaveKey(TokenSecretConfigKey))
+				g.Expect(configs[0].Data[TokenSecretConfigKey]).ToNot(BeEmpty())
+			} else {
+				g.Expect(configs).To(BeNil())
+			}
+		})
+	}
+}
+
+func TestKubevirtPlatformConfig(t *testing.T) {
+	// The generation matrix (multus/default network, IPv4/dual-stack, non-KubeVirt,
+	// nil spec) is covered by network_test.go's TestGenerateNetworkOverrideMachineConfig,
+	// and the ConfigMap wiring is covered by TestGetPlatformConfigs (which calls this
+	// method). This test only asserts the wiring: the HostedCluster networking is passed
+	// through, so a multus NodePool on a dual-stack cluster yields the no-op override.
+	g := NewWithT(t)
+
+	cg := &ConfigGenerator{
+		nodePool: &hyperv1.NodePool{
+			Spec: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.KubevirtPlatform,
+					Kubevirt: &hyperv1.KubevirtNodePoolPlatform{
+						AttachDefaultNetwork: ptr.To(false),
+						AdditionalNetworks: []hyperv1.KubevirtNetwork{
+							{Name: "ns1/localnet-net"},
+						},
+					},
+				},
+			},
+		},
+		hostedCluster: &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Networking: hyperv1.ClusterNetworking{
+					ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+						{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")},
+						{CIDR: *ipnet.MustParseCIDR("fd01::/48")},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := cg.kubevirtPlatformConfig()
+	g.Expect(err).ToNot(HaveOccurred())
+	// The override MachineConfig replacing the MCO-rendered nmstate files is generated.
+	g.Expect(result).To(ContainSubstring("01-kubevirt-network"))
+	g.Expect(result).To(ContainSubstring("001-nmstate-disable-ipv6-autoconf"))
+	g.Expect(result).To(ContainSubstring("002-nmstate-arp-proxy-ipv6-gw"))
+}
+
 func TestGlobalConfigString(t *testing.T) {
 	expectedGlobalConfigStringWhenEmpty := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
 {"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
@@ -2049,7 +2771,7 @@ null
 
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			output, err := globalConfigString(hcluster, tc.releaseImage)
+			output, err := globalConfigString(hcluster, tc.releaseImage, false)
 			g.Expect(err).ToNot(HaveOccurred())
 			if diff := cmp.Diff(output, tc.expectedOutput); diff != "" {
 				t.Errorf("actual config differs from expected: %s", diff)
@@ -2197,4 +2919,195 @@ func TestCloudConfigHash(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("connection refused"))
 	})
+}
+
+func TestEndpointConfigString(t *testing.T) {
+	testKubeconfig := `apiVersion: v1
+kind: Config
+clusters:
+- name: cluster
+  cluster:
+    server: https://api.example.com:6443
+contexts:
+- name: context
+  context:
+    cluster: cluster
+    user: user
+current-context: context
+users:
+- name: user
+  user: {}
+`
+
+	newPublicAWSHC := func() *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public},
+				},
+			},
+		}
+	}
+
+	newAROHCPCluster := func() *hyperv1.HostedCluster {
+		return &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "test"},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+							AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	withKubeconfigStatus := func(hc *hyperv1.HostedCluster) *hyperv1.HostedCluster {
+		hc.Status.KubeConfig = &corev1.LocalObjectReference{Name: "admin-kubeconfig"}
+		return hc
+	}
+
+	kubeconfigSecret := func(data []byte) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "admin-kubeconfig", Namespace: "test"},
+			Data:       map[string][]byte{"kubeconfig": data},
+		}
+	}
+
+	routerService := func(ingress ...corev1.LoadBalancerIngress) *corev1.Service {
+		svc := sharedingress.RouterPublicService()
+		svc.Status.LoadBalancer.Ingress = ingress
+		return svc
+	}
+
+	tests := []struct {
+		name              string
+		hcluster          *hyperv1.HostedCluster
+		objects           []crclient.Object
+		failKubeconfigGet bool
+		expectedConfig    string
+		expectedErr       string
+	}{
+		{
+			name: "private cluster omits the server component",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "test"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Private},
+					},
+				},
+			},
+			expectedConfig: "private=true",
+		},
+		{
+			name: "public cluster with advertise address and port resolves the kubeconfig server",
+			hcluster: func() *hyperv1.HostedCluster {
+				hc := withKubeconfigStatus(newPublicAWSHC())
+				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{
+					AdvertiseAddress: ptr.To("192.168.1.10"),
+					Port:             ptr.To[int32](6444),
+				}
+				return hc
+			}(),
+			objects:        []crclient.Object{kubeconfigSecret([]byte(testKubeconfig))},
+			expectedConfig: "private=false,addr=192.168.1.10,port=6444,server=https://api.example.com:6443",
+		},
+		{
+			name:           "public cluster resolves the kubeconfig server URL",
+			hcluster:       withKubeconfigStatus(newPublicAWSHC()),
+			objects:        []crclient.Object{kubeconfigSecret([]byte(testKubeconfig))},
+			expectedConfig: "private=false,server=https://api.example.com:6443",
+		},
+		{
+			name:        "public cluster without kubeconfig status fails",
+			hcluster:    newPublicAWSHC(),
+			expectedErr: "waiting on hcluster.Status.KubeConfig to be set",
+		},
+		{
+			name:        "public cluster with missing kubeconfig secret fails",
+			hcluster:    withKubeconfigStatus(newPublicAWSHC()),
+			expectedErr: "failed to get kubeconfig",
+		},
+		{
+			name:        "public cluster with unparsable kubeconfig fails",
+			hcluster:    withKubeconfigStatus(newPublicAWSHC()),
+			objects:     []crclient.Object{kubeconfigSecret([]byte("not-a-kubeconfig"))},
+			expectedErr: "failed to parse kubeconfig",
+		},
+		{
+			// Regression test for the rollout-hash flap: a transient lookup
+			// failure must fail the call instead of silently dropping the
+			// server component and changing the hash.
+			name:              "public cluster with transient kubeconfig lookup failure fails instead of changing the hash",
+			hcluster:          withKubeconfigStatus(newPublicAWSHC()),
+			objects:           []crclient.Object{kubeconfigSecret([]byte(testKubeconfig))},
+			failKubeconfigGet: true,
+			expectedErr:       "failed to get kubeconfig",
+		},
+		{
+			name:           "shared ingress cluster resolves the load balancer IP",
+			hcluster:       newAROHCPCluster(),
+			objects:        []crclient.Object{routerService(corev1.LoadBalancerIngress{IP: "10.0.0.1"})},
+			expectedConfig: "private=false,server=10.0.0.1:6443",
+		},
+		{
+			name:           "shared ingress cluster falls back to the load balancer hostname",
+			hcluster:       newAROHCPCluster(),
+			objects:        []crclient.Object{routerService(corev1.LoadBalancerIngress{Hostname: "router.example.com"})},
+			expectedConfig: "private=false,server=router.example.com:6443",
+		},
+		{
+			// A transient LB state change must not change the hash: the call
+			// fails and the reconcile retries.
+			name:        "shared ingress cluster without load balancer ingress fails",
+			hcluster:    newAROHCPCluster(),
+			objects:     []crclient.Object{routerService()},
+			expectedErr: "waiting on sharedIngress route service to report .Status.LoadBalancer.Ingress",
+		},
+		{
+			name:        "shared ingress cluster with empty ingress address fails",
+			hcluster:    newAROHCPCluster(),
+			objects:     []crclient.Object{routerService(corev1.LoadBalancerIngress{})},
+			expectedErr: "waiting on sharedIngress route service ingress to report an IP or hostname",
+		},
+		{
+			name:        "shared ingress cluster with missing router service fails",
+			hcluster:    newAROHCPCluster(),
+			expectedErr: "failed to get shared ingress router service",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.objects...)
+			if tc.failKubeconfigGet {
+				builder = builder.WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectKey, obj crclient.Object, _ ...crclient.GetOption) error {
+						if _, ok := obj.(*corev1.Secret); ok {
+							return apierrors.NewServiceUnavailable("api server unavailable")
+						}
+						return apierrors.NewNotFound(corev1.Resource("secrets"), "unreachable")
+					},
+				})
+			}
+			client := builder.Build()
+
+			config, err := endpointConfigString(t.Context(), client, tc.hcluster)
+			if tc.expectedErr != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErr))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(config).To(Equal(tc.expectedConfig))
+		})
+	}
 }

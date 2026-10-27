@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	corev1 "k8s.io/api/core/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
@@ -36,6 +37,8 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
 		karpenterNodePool := baseNodePool("on-demand", "default")
+		testTaint := corev1.Taint{Key: "hypershift.io/test", Value: "karpenter-test", Effect: corev1.TaintEffectNoSchedule}
+		karpenterNodePool.Spec.Template.Spec.Taints = []corev1.Taint{testTaint}
 		// TODO(maxcao13): We disable consolidation as a hack to prevent flakiness in this blocking test.
 		// Erroneous consolidation can cause the test to fail where the new Node is consolidated due to Empty or
 		// Underutilized before the old node's pods get scheduled to it. The proper fix should come from upstream
@@ -47,6 +50,12 @@ func TestKarpenterUpgradeControlPlane(t *testing.T) {
 			karpenterv1.NodePoolLabelKey: karpenterNodePool.Name,
 		}
 		workLoads := testWorkload("web-app", int32(replicas), nodeLabels)
+		workLoads.Spec.Template.Spec.Tolerations = []corev1.Toleration{{
+			Key:      testTaint.Key,
+			Operator: corev1.TolerationOpEqual,
+			Value:    testTaint.Value,
+			Effect:   testTaint.Effect,
+		}}
 
 		t.Logf("Starting Karpenter control plane upgrade. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
 

@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/netutil"
@@ -128,8 +129,8 @@ func TestGenerateConfig(t *testing.T) {
 					routes: []client.Object{
 						route(ignitionserver.Route("").Name, testNamespace1, withHost("ignition-server.example.com"), withSvc("ignition-server-proxy")),
 						route(manifests.KonnectivityServerRoute("").Name, testNamespace1, withHost("konnectivity.example.com"), withSvc("konnectivity-server")),
-						route(manifests.OauthServerExternalPublicRoute("").Name, testNamespace1, withHost("oauth-public.example.com"), withSvc("openshift-oauth")),
-						route(manifests.KubeAPIServerExternalPublicRoute("").Name, testNamespace1, withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver")),
+						route(cpomanifests.OauthServerExternalPublicRoute("").Name, testNamespace1, withHost("oauth-public.example.com"), withSvc("openshift-oauth")),
+						route(cpomanifests.KubeAPIServerExternalPublicRoute("").Name, testNamespace1, withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver")),
 					},
 					svcs: []client.Object{
 						svc("ignition-server-proxy", testNamespace1, withClusterIP("1.1.1.1")),
@@ -174,8 +175,8 @@ func TestGenerateConfig(t *testing.T) {
 					routes: []client.Object{
 						route(ignitionserver.Route("").Name, testNamespace2, withHost("ignition-server.example.com"), withSvc("ignition-server-proxy")),
 						route(manifests.KonnectivityServerRoute("").Name, testNamespace2, withHost("konnectivity.example.com"), withSvc("konnectivity-server")),
-						route(manifests.OauthServerExternalPublicRoute("").Name, testNamespace2, withHost("oauth-public.example.com"), withSvc("openshift-oauth")),
-						route(manifests.KubeAPIServerExternalPublicRoute("").Name, testNamespace2, withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver")),
+						route(cpomanifests.OauthServerExternalPublicRoute("").Name, testNamespace2, withHost("oauth-public.example.com"), withSvc("openshift-oauth")),
+						route(cpomanifests.KubeAPIServerExternalPublicRoute("").Name, testNamespace2, withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver")),
 						route(manifests.MetricsProxyRoute("").Name, testNamespace2, withHost("metrics-proxy.example.com"), withSvc("metrics-proxy")),
 					},
 					svcs: []client.Object{
@@ -223,7 +224,7 @@ func TestGenerateConfig(t *testing.T) {
 					},
 					routes: []client.Object{
 						route(ignitionserver.Route("").Name, testNamespace1, withHost("ignition-server.example.com"), withSvc("ignition-server-proxy")),
-						route(manifests.KubeAPIServerExternalPublicRoute("").Name, testNamespace1, withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver")),
+						route(cpomanifests.KubeAPIServerExternalPublicRoute("").Name, testNamespace1, withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver")),
 					},
 					svcs: []client.Object{
 						svc("ignition-server-proxy", testNamespace1, withClusterIP("1.1.1.1")),

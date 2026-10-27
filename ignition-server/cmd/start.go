@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/util"
@@ -179,8 +180,8 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		return nil, fmt.Errorf("unable to create image file cache: %w", err)
 	}
 
-	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
+	imageMetaDataProvider := &imageregistry.RegistryClientImageMetadataProvider{
+		OpenShiftImageRegistryOverrides: imageregistry.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
 	}
 
 	if err = (&controllers.TokenSecretReconciler{
@@ -195,7 +196,7 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 					},
 					RegistryOverrides: registryOverrides,
 				},
-				OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
+				OpenShiftImageRegistryOverrides: imageregistry.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
 			},
 			Client:                mgr.GetClient(),
 			Namespace:             os.Getenv(namespaceEnvVariableName),

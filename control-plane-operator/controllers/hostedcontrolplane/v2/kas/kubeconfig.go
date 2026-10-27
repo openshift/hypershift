@@ -8,11 +8,12 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/netutil"
-	"github.com/openshift/hypershift/support/podspec"
 
 	corev1 "k8s.io/api/core/v1"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
@@ -23,7 +24,7 @@ import (
 )
 
 const (
-	KubeconfigKey = podspec.KubeconfigKey
+	KubeconfigKey = config.KubeconfigKey
 )
 
 func adaptServiceKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
@@ -167,10 +168,7 @@ func adaptCustomAdminKubeconfigSecret(cpContext component.WorkloadContext, secre
 }
 
 func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-	url := externalURL(cpContext.InfraStatus)
-	if netutil.IsPrivateHCP(cpContext.HCP) {
-		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
-	}
+	url := bootstrapKubeconfigURL(cpContext.HCP, cpContext.InfraStatus)
 
 	kubeconfig, err := generateKubeConfigWithServingCerts(cpContext, manifests.KASMachineBootstrapClientCertSecret(cpContext.HCP.Namespace), url)
 	if err != nil {
@@ -182,6 +180,20 @@ func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret 
 	}
 	secret.Data[KubeconfigKey] = kubeconfig
 	return nil
+}
+
+// bootstrapKubeconfigURL returns the KAS URL that kubelet uses in its bootstrap kubeconfig.
+// When KubeletHAProxyRouting gate is enabled, all public clusters route kubelet through the
+// node-local HAProxy (172.20.0.1 / fd00::1) so that Day 2 LB IP changes don't strand the node.
+func bootstrapKubeconfigURL(hcp *hyperv1.HostedControlPlane, infraStatus infra.InfrastructureStatus) string {
+	if netutil.IsPrivateHCP(hcp) {
+		return internalURL(infraStatus, hcp.Name)
+	}
+	if featuregates.Gate().Enabled(featuregates.KubeletHAProxyRouting) {
+		addr := netutil.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
+		return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(addr), netutil.HAProxyFrontendPort(hcp))
+	}
+	return externalURL(infraStatus)
 }
 
 func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
@@ -224,6 +236,29 @@ func adaptAzureWorkloadIdentityWebhookKubeconfigSecret(cpContext component.Workl
 		apiServerPort := netutil.KASPodPort(cpContext.HCP)
 		localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
 		return pki.ReconcileServiceAccountKubeconfigWithURL(secret, csrSigner, rootCACM, "openshift-authentication", "azure-workload-identity-webhook", localhostURL)
+	}
+	return nil
+}
+
+func adaptGCPWorkloadIdentityFederationWebhookKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
+	csrSigner := manifests.CSRSignerCASecret(cpContext.HCP.Namespace)
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
+		return fmt.Errorf("failed to get cluster-signer-ca secret: %w", err)
+	}
+	rootCA := manifests.RootCASecret(cpContext.HCP.Namespace)
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		return fmt.Errorf("failed to get root ca cert secret: %w", err)
+	}
+	rootCACM := &corev1.ConfigMap{
+		Data: map[string]string{
+			certs.CASignerCertMapKey: string(rootCA.Data[certs.CASignerCertMapKey]),
+		},
+	}
+
+	if !cpContext.SkipCertificateSigning {
+		apiServerPort := netutil.KASPodPort(cpContext.HCP)
+		localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
+		return pki.ReconcileServiceAccountKubeconfigWithURL(secret, csrSigner, rootCACM, "openshift-authentication", "gcp-workload-identity-federation-webhook", localhostURL)
 	}
 	return nil
 }
@@ -274,9 +309,9 @@ func GenerateKubeConfig(cpContext component.WorkloadContext, cert *corev1.Secret
 
 func InClusterKASURL(platformType hyperv1.PlatformType) string {
 	if platformType == hyperv1.IBMCloudPlatform {
-		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
+		return fmt.Sprintf("https://%s:%d", cpomanifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
 	}
-	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCPort)
+	return fmt.Sprintf("https://%s:%d", cpomanifests.KubeAPIServerServiceName, config.KASSVCPort)
 }
 
 func customExternalURL(address string, port int32) string {

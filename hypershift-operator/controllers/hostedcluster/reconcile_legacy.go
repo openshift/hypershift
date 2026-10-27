@@ -18,13 +18,16 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	pkgmanifests "github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -343,11 +346,11 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
-	controlPlaneOperatorImage, err := hyperutil.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
-	controlPlaneOperatorImageLabels, err := hyperutil.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
+	controlPlaneOperatorImageLabels, err := imageregistry.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 	}
@@ -499,6 +502,11 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			hyperv1.ControlPlaneConnectionAvailable,
 			hyperv1.EtcdBackupSucceeded,
 		}
+		// GCPFirewallRulesReady is GCP-specific; only propagate it for GCP
+		// HostedClusters so non-GCP clusters don't gain an Unknown condition.
+		if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
+			hcpConditions = append(hcpConditions, hyperv1.GCPFirewallRulesReady)
+		}
 
 		for _, conditionType := range hcpConditions {
 			condition := &metav1.Condition{
@@ -511,6 +519,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 			if hcp != nil {
 				hcpCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(conditionType))
 				if hcpCondition != nil {
+					if conditionType == hyperv1.GCPFirewallRulesReady {
+						hcpCondition = gcpFirewallRulesReadyCondition(hcp, hcpCondition)
+					}
 					condition = hcpCondition
 				} else {
 					condition.Message = "Condition not found in the HCP"
@@ -628,7 +639,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var awsEndpointServiceList hyperv1.AWSEndpointServiceList
 		if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{
@@ -646,7 +657,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 
 	// Copy GCPEndpointAvailable and GCPServiceAttachmentAvailable conditions from the GCPPrivateServiceConnect resources.
 	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var gcpPSCList hyperv1.GCPPrivateServiceConnectList
 		if err := r.List(ctx, &gcpPSCList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{
@@ -665,7 +676,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	// Copy Azure Private Link conditions from the AzurePrivateLinkService resources.
 	// ARO HCP uses Swift networking, not Private Link Services.
 	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform && !netutil.UseSwiftNetworkingHC(hcluster) {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		hcpNamespace := pkgmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 		var azPLSList hyperv1.AzurePrivateLinkServiceList
 		if err := r.List(ctx, &azPLSList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
 			condition := metav1.Condition{
@@ -860,7 +871,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 	}
-	meta.SetStatusCondition(&hcluster.Status.Conditions, hyperutil.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
+	meta.SetStatusCondition(&hcluster.Status.Conditions, reconcilerpolicy.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
 	// Set ValidReleaseImage condition
 	{
@@ -977,7 +988,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 
 	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
-	if isPaused, duration := hyperutil.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
 		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -1193,12 +1204,12 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 		}
+		srcData, srcHasData := src.Data[".dockerconfigjson"]
+		if !srcHasData {
+			return ctrl.Result{}, fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
+		}
 		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, dst, func() error {
-			srcData, srcHasData := src.Data[".dockerconfigjson"]
-			if !srcHasData {
-				return fmt.Errorf("hostedcluster pull secret %q must have a .dockerconfigjson key", src.Name)
-			}
 			dst.Type = corev1.SecretTypeDockerConfigJson
 			if dst.Data == nil {
 				dst.Data = map[string][]byte{}

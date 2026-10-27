@@ -10,13 +10,13 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
-	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -75,7 +75,7 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 			},
 			{
 				Name:  "OPERATE_ON_RELEASE_IMAGE",
-				Value: util.HCPControlPlaneReleaseImage(hcp),
+				Value: imageregistry.HCPControlPlaneReleaseImage(hcp),
 			},
 			{
 				Name:  "OPENSHIFT_IMG_OVERRIDES",

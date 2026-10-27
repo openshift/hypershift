@@ -30,3 +30,5 @@ func SetReleaseImageVersion() error {
 func ShouldRunKarpenterTests() bool {
 	return true
 }
+
+var VersionFuture = "5.2"

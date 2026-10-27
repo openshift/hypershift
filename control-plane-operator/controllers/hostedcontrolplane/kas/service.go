@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
@@ -272,7 +273,7 @@ func reconcileExternalRoute(route *routev1.Route, owner *metav1.OwnerReference, 
 	route.Spec.Host = hostname
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
-		Name: manifests.KubeAPIServerService("").Name,
+		Name: cpomanifests.KubeAPIServerService("").Name,
 	}
 	route.Spec.TLS = &routev1.TLSConfig{
 		Termination:                   routev1.TLSTerminationPassthrough,
@@ -287,24 +288,7 @@ func ReconcileInternalRoute(route *routev1.Route, owner *metav1.OwnerReference) 
 	k8sutil.EnsureOwnerRef(route, owner)
 	route.Spec.Host = fmt.Sprintf("api.%s.hypershift.local", owner.Name)
 	// Assumes owner is the HCP
-	return netutil.ReconcileInternalRoute(route, "", manifests.KubeAPIServerService("").Name)
-}
-
-func ReconcileKonnectivityServerLocalService(svc *corev1.Service, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(svc)
-	svc.Spec.Selector = kasLabels()
-	var portSpec corev1.ServicePort
-	if len(svc.Spec.Ports) > 0 {
-		portSpec = svc.Spec.Ports[0]
-	} else {
-		svc.Spec.Ports = []corev1.ServicePort{portSpec}
-	}
-	portSpec.Port = int32(KonnectivityServerLocalPort)
-	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(KonnectivityServerLocalPort)
-	svc.Spec.Type = corev1.ServiceTypeClusterIP
-	svc.Spec.Ports[0] = portSpec
-	return nil
+	return netutil.ReconcileInternalRoute(route, "", cpomanifests.KubeAPIServerService("").Name)
 }
 
 func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy, hcp *hyperv1.HostedControlPlane) error {

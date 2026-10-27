@@ -31,6 +31,10 @@ type AzurePlatformCreateOptions struct {
 	ImageGeneration               string
 	Arch                          string
 	EncryptionAtHost              string
+	// IPForwarding is a tri-state string ("", "InterfaceAddressesOnly", "AllowAllAddresses")
+	// rather than a bool so that leaving the flag unset stays distinguishable from explicitly
+	// restricting the VMs to their own interface addresses.
+	IPForwarding string
 }
 
 type AzureMarketPlaceImageInfo struct {
@@ -75,6 +79,7 @@ func bindCoreOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) 
 	flags.StringVar(&opts.MarketplaceSKU, "marketplace-sku", opts.MarketplaceSKU, "The Azure Marketplace image SKU.")
 	flags.StringVar(&opts.MarketplaceVersion, "marketplace-version", opts.MarketplaceVersion, "The Azure Marketplace image version.")
 	flags.StringVar(&opts.EncryptionAtHost, "encryption-at-host", opts.EncryptionAtHost, "Enables or disables encryption at host on Azure VMs. Supported values: Enabled, Disabled.")
+	flags.StringVar(&opts.IPForwarding, "ip-forwarding", opts.IPForwarding, "Controls which source and destination IP addresses the Azure VM network interfaces in the NodePool may send and receive traffic for. Set to AllowAllAddresses when nodes forward traffic for BGP-advertised networks or directly routable VM addresses. Supported values: InterfaceAddressesOnly, AllowAllAddresses.")
 }
 
 func BindDeveloperOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) {
@@ -87,7 +92,10 @@ func BindProductFlags(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet)
 	flags.StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, util.InstanceTypeDescription)
 	flags.Int32Var(&opts.DiskSize, "root-disk-size", opts.DiskSize, util.RootDiskSizeDescription)
 	flags.StringVar(&opts.AvailabilityZone, "availability-zone", opts.AvailabilityZone, util.AvailabilityZoneDescription)
+
+	// Networking
 	flags.StringVar(&opts.SubnetID, "nodepool-subnet-id", opts.SubnetID, util.SubnetIDDescription)
+	flags.StringVar(&opts.IPForwarding, "ip-forwarding", opts.IPForwarding, util.IPForwardingDescription)
 
 	// Disk configuration
 	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, util.DiskStorageAccountTypeDescription)
@@ -150,6 +158,12 @@ func (o *RawAzurePlatformCreateOptions) Validate(_ context.Context, _ *core.Crea
 		return nil, fmt.Errorf("flag --encryption-at-host has an invalid value; accepted values are 'Enabled' and 'Disabled'")
 	}
 
+	if o.IPForwarding != "" &&
+		o.IPForwarding != string(hyperv1.AzureIPForwardingInterfaceAddressesOnly) &&
+		o.IPForwarding != string(hyperv1.AzureIPForwardingAllowAllAddresses) {
+		return nil, fmt.Errorf("flag --ip-forwarding has an invalid value; accepted values are 'InterfaceAddressesOnly' and 'AllowAllAddresses'")
+	}
+
 	if !slices.Contains([]string{"", "1", "2", "3"}, o.AvailabilityZone) {
 		return nil, fmt.Errorf("invalid value for --availability-zone: %s", o.AvailabilityZone)
 	}
@@ -176,7 +190,8 @@ func (o *ValidatedAzurePlatformCreateOptions) Complete(_ context.Context, _ *cor
 	}, nil
 }
 
-func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+func NewCreateCommand(coreOpts *core.CreateNodePoolOptions, clientProviders ...*util.ClientProvider) *cobra.Command {
+	clientProvider := util.ResolveClientProvider(clientProviders...)
 	platformOpts := DefaultOptions()
 	cmd := &cobra.Command{
 		Use:          "azure",
@@ -195,7 +210,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return coreOpts.CreateRunFunc(opts)(cmd, args)
+		return coreOpts.CreateRunFunc(opts, clientProvider)(cmd, args)
 	}
 
 	return cmd
@@ -261,6 +276,9 @@ func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1
 		SubnetID:         o.SubnetID,
 		Image:            vmImage,
 		EncryptionAtHost: o.EncryptionAtHost,
+		// Unset stays "", which omitempty drops, so the field never appears in generated
+		// manifests unless the user asked for it.
+		IPForwarding: hyperv1.AzureIPForwarding(o.IPForwarding),
 	}
 
 	if len(o.DiagnosticsStorageAccountType) > 0 {

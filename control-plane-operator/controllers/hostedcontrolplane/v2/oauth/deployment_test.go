@@ -7,8 +7,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -33,7 +33,7 @@ func TestAdaptDeployment(t *testing.T) {
 			name:         "When platform is AWS, it should set NO_PROXY with kube-apiserver, audit-webhook, and oauth in-cluster DNS",
 			platformType: hyperv1.AWSPlatform,
 			wantNoProxy: []string{
-				manifests.KubeAPIServerService("").Name,
+				cpomanifests.KubeAPIServerService("").Name,
 				config.AuditWebhookService,
 				getOAuthServiceDNS(testNamespace),
 			},
@@ -42,7 +42,7 @@ func TestAdaptDeployment(t *testing.T) {
 			name:         "When platform is Azure, it should set NO_PROXY with kube-apiserver, audit-webhook, and oauth in-cluster DNS",
 			platformType: hyperv1.AzurePlatform,
 			wantNoProxy: []string{
-				manifests.KubeAPIServerService("").Name,
+				cpomanifests.KubeAPIServerService("").Name,
 				config.AuditWebhookService,
 				getOAuthServiceDNS(testNamespace),
 			},
@@ -51,7 +51,7 @@ func TestAdaptDeployment(t *testing.T) {
 			name:         "When platform is None, it should set NO_PROXY with kube-apiserver, audit-webhook, and oauth in-cluster DNS",
 			platformType: hyperv1.NonePlatform,
 			wantNoProxy: []string{
-				manifests.KubeAPIServerService("").Name,
+				cpomanifests.KubeAPIServerService("").Name,
 				config.AuditWebhookService,
 				getOAuthServiceDNS(testNamespace),
 			},
@@ -60,7 +60,7 @@ func TestAdaptDeployment(t *testing.T) {
 			name:         "When platform is IBMCloud, it should also include IAM endpoints in NO_PROXY",
 			platformType: hyperv1.IBMCloudPlatform,
 			wantNoProxy: []string{
-				manifests.KubeAPIServerService("").Name,
+				cpomanifests.KubeAPIServerService("").Name,
 				config.AuditWebhookService,
 				getOAuthServiceDNS(testNamespace),
 				"iam.cloud.ibm.com",

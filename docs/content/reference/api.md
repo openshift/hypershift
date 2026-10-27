@@ -465,7 +465,7 @@ Release
 This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
 The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
 Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
-Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+Attempting to use a release with a skew against a NodePool release bigger than N-3 for the y-stream will result in leaving the NodePool in an unsupported state.
 Changing this field will trigger a rollout of the control plane components.
 The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
@@ -1129,9 +1129,9 @@ Release
 <p>release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
 the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).</p>
 <p>Version-skew rules and effects:
-- The minor-version skew relative to the control-plane release must be &lt;= N-2.
-This is not currently enforced, but exceeding this limit is unsupported and
-may lead to unpredictable behavior.
+- The minor-version skew relative to the control-plane release must be &lt;= N-3.
+Exceeding this limit is unsupported and will cause the SupportedVersionSkew
+condition to report False.
 - If the specified release is higher than the HostedCluster&rsquo;s release, the
 NodePool will be degraded and the ValidReleaseImage condition will be false.
 - If the specified release is lower than the NodePool&rsquo;s current y-stream,
@@ -1266,7 +1266,11 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>nodeLabels propagates a list of labels to Nodes, only once on creation.
+<p>nodeLabels propagates a list of labels to Nodes.
+Labels are re-synced additively whenever the desired state changes;
+labels set by other controllers (kubelet, autoscaler) are preserved.
+Removing a label from this map does NOT remove it from existing Nodes;
+only new values or key additions are propagated.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -1281,8 +1285,11 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 </td>
 <td>
 <em>(Optional)</em>
-<p>taints if specified, propagates a list of taints to Nodes, only once on creation.
-These taints are additive to the ones applied by other controllers</p>
+<p>taints if specified, propagates a list of taints to Nodes.
+Taints are re-synced whenever the desired state changes.
+These taints are additive to the ones applied by other controllers.
+Removing a taint from this list does NOT remove it from existing Nodes;
+only new taints are added and existing taint values are updated.</p>
 </td>
 </tr>
 <tr>
@@ -1544,6 +1551,56 @@ If the platform does not support LoadBalancerSourceRanges, this field may have n
 </tr>
 </tbody>
 </table>
+###AWSCSIDriverConfig { #hypershift.openshift.io/v1beta1.AWSCSIDriverConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CSIDriverOperatorSpec">CSIDriverOperatorSpec</a>)
+</p>
+<p>
+<p>AWSCSIDriverConfig specifies configuration for the AWS EBS CSI driver.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>initialKMSKeyARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>initialKMSKeyARN is the ARN of an AWS KMS key used to encrypt volumes
+created by the default StorageClass. When set, new PersistentVolumes
+provisioned by the default StorageClass are encrypted with this key
+instead of the AWS account&rsquo;s default EBS encryption key.</p>
+<p>When omitted, no KMS key is configured on the default StorageClass and
+EBS volumes are encrypted with the AWS account&rsquo;s default EBS encryption
+key.</p>
+<p>The value may be either the ARN or Alias ARN of a KMS key and must follow
+the format arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>,
+where <partition> is one of aws, aws-cn, aws-us-gov, aws-iso, aws-iso-b,
+aws-iso-e, or aws-iso-f; <region> is the AWS region; <account-id> is the
+12-digit AWS account identifier; and <key-id-or-alias> is the KMS key ID
+or alias name. The key must be in the same region as the cluster
+(spec.platform.aws.region).</p>
+<p>When set, must be between 1 and 2048 characters.</p>
+<p>This field can only be set when the HostedCluster is created and is
+immutable afterwards. Day-2 changes to storage encryption must be made
+directly on the ClusterCSIDriver resource in the hosted cluster.</p>
+<p>The IAM role in spec.platform.aws.rolesRef.storageARN must have
+kms:Decrypt, kms:GenerateDataKeyWithoutPlaintext, and kms:CreateGrant
+permissions on the specified key.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AWSCloudProviderConfig { #hypershift.openshift.io/v1beta1.AWSCloudProviderConfig }
 <p>
 (<em>Appears on:</em>
@@ -1667,6 +1724,111 @@ key.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###AWSDNSZoneStatus { #hypershift.openshift.io/v1beta1.AWSDNSZoneStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformStatus">AWSPlatformStatus</a>)
+</p>
+<p>
+<p>AWSDNSZoneStatus represents a managed Route53 DNS zone and its metadata.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>zoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>zoneID is the Route53 hosted zone ID.
+Must be 2-32 characters and a valid Route53 hosted zone ID: a leading &lsquo;Z&rsquo;
+followed by uppercase alphanumeric characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zoneType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneType">
+AWSDNSZoneType
+</a>
+</em>
+</td>
+<td>
+<p>zoneType indicates the purpose of the zone.
+Valid values are:
+&ldquo;PublicIngress&rdquo;: the public Route53 zone holding the publicly resolvable
+ingress DNS records (e.g. *.apps and the console) and ACME certificate
+validation records.
+&ldquo;PrivateIngress&rdquo;: the private Route53 zone serving VPC-internal ingress
+DNS resolution for the guest cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the DNS name of the hosted zone.
+name must be at most 253 characters in length (the maximum length of a DNS
+name) and must consist only of alphanumeric characters, hyphens, and periods.
+Each period-separated segment must start and end with an alphanumeric character.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nameServers</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nameServers are the authoritative name servers for this zone.
+Used for NS delegation when external-dns is not available.
+When omitted, there are no name servers to report: private ingress zones
+never populate this field, and a public zone has none until its delegation
+set has been resolved.
+When present, contains 1-8 unique name servers. Each name server must be at
+most 253 characters in length and must consist only of alphanumeric characters,
+hyphens, and periods, where each period-separated segment starts and ends with
+an alphanumeric character.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSDNSZoneType { #hypershift.openshift.io/v1beta1.AWSDNSZoneType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneStatus">AWSDNSZoneStatus</a>)
+</p>
+<p>
+<p>AWSDNSZoneType defines the purpose of a managed DNS zone.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;PrivateIngress&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;PublicIngress&#34;</p></td>
+<td></td>
+</tr></tbody>
 </table>
 ###AWSEndpointAccessType { #hypershift.openshift.io/v1beta1.AWSEndpointAccessType }
 <p>
@@ -1862,6 +2024,105 @@ AWSKMSAuthSpec
 </td>
 <td>
 <p>auth defines metadata about the management of credentials used to interact with AWS KMS</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSManagedDNSDelegationSpec { #hypershift.openshift.io/v1beta1.AWSManagedDNSDelegationSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSSpec">AWSManagedDNSSpec</a>)
+</p>
+<p>
+<p>AWSManagedDNSDelegationSpec configures service-side DNS delegation for
+certificate generation. When set, the ControlPlaneOperator creates an ACME
+DNS01 challenge CNAME in the public ingress zone pointing back to the parent
+zone, and handles NS delegation based on the nsDelegationMode.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nsDelegationMode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NSDelegationMode">
+NSDelegationMode
+</a>
+</em>
+</td>
+<td>
+<p>nsDelegationMode specifies how NS delegation records are created in the parent zone.
+&ldquo;ExternalDNS&rdquo;: the ControlPlaneOperator creates a DNSEndpoint CR in the control plane namespace;
+external-dns creates NS records in the parent zone.
+&ldquo;Manual&rdquo;: the consuming platform handles NS delegation using nameservers
+reported in HostedCluster status.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSManagedDNSSpec { #hypershift.openshift.io/v1beta1.AWSManagedDNSSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformSpec">AWSPlatformSpec</a>)
+</p>
+<p>
+<p>AWSManagedDNSSpec configures ControlPlaneOperator-managed Route53 DNS zones
+for ingress. When set, the ControlPlaneOperator creates public and private
+ingress Route53 zones in the customer&rsquo;s AWS account using ingressDomainPrefix
+to form the zone domain name.
+Delegation (ACME CNAME + NS records) is configured separately via the
+delegation field.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ingressDomainPrefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ingressDomainPrefix is the subdomain prefix for the managed ingress DNS zones.
+The zone is created as {ingressDomainPrefix}.{clusterBaseDomain}, where
+{clusterBaseDomain} is the cluster base domain configured via the HostedCluster
+spec.dns (baseDomainPrefix and baseDomain).
+When delegation is configured, this prefix creates a DNS delegation boundary
+that separates the ingress zone from the cluster domain, enabling ACME
+challenge CNAME delegation back to the parent zone.
+Must be 1-63 characters, consist only of lowercase alphanumeric characters or
+hyphens, and must start and end with an alphanumeric character.
+ingressDomainPrefix is immutable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>delegation,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSDelegationSpec">
+AWSManagedDNSDelegationSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delegation configures service-side DNS delegation for certificate generation.
+When set, the ControlPlaneOperator creates an ACME DNS01 challenge CNAME in the
+public ingress zone and handles NS delegation based on the nsDelegationMode.
+When absent, only zones are created and the consuming platform handles
+delegation and certificate management.</p>
 </td>
 </tr>
 </tbody>
@@ -2279,7 +2540,32 @@ graceful handling of spot instance terminations.</p>
 and EC2 Instance Rebalance Recommendations via EventBridge rules.
 The AWS Node Termination Handler will poll this queue and cordon/drain nodes
 before they are terminated, providing a best effort for graceful shutdown.</p>
-<p>Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).</p>
+<p>Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).
+Supports FedRAMP/FIPS endpoints (sqs-fips prefix) and GovCloud regions.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>managedDNS,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSSpec">
+AWSManagedDNSSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>managedDNS configures managed Route53 DNS zones for this cluster.
+Managed DNS is enabled when this field is set, which requires
+ingressDomainPrefix. When enabled, the control plane operator creates and
+reconciles the cluster&rsquo;s DNS zones in the customer&rsquo;s AWS account instead of
+requiring them to be pre-created externally and passed in as zone IDs.
+For standard clusters this covers the .hypershift.local private zone and
+the public and private ingress zones. For shared VPC clusters only the
+public ingress zone is managed, since the .hypershift.local and private
+ingress zones are owned by the VPC owner.
+managedDNS can only be set at cluster creation; it cannot be added to or
+removed from an existing cluster.</p>
 </td>
 </tr>
 </tbody>
@@ -2312,6 +2598,22 @@ string
 <p>defaultWorkerSecurityGroupID is the ID of a security group created by
 the control plane operator. It is always added to worker machines in
 addition to any security groups specified in the NodePool.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsZones</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneStatus">
+[]AWSDNSZoneStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsZones contains DNS zone information for zones managed by the control plane operator.
+Contains 1-2 entries keyed by zoneType, so at most one PublicIngress zone and
+one PrivateIngress zone.</p>
 </td>
 </tr>
 </tbody>
@@ -3698,6 +4000,34 @@ applications and dev/test.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureIPForwarding { #hypershift.openshift.io/v1beta1.AzureIPForwarding }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolPlatform">AzureNodePoolPlatform</a>)
+</p>
+<p>
+<p>AzureIPForwarding controls which source and destination IP addresses the network interfaces
+of the VMs in an Azure nodepool may send and receive traffic for.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AllowAllAddresses&#34;</p></td>
+<td><p>AzureIPForwardingAllowAllAddresses allows the VM network interfaces to send and receive
+traffic with any source or destination IP address, including addresses that are not
+assigned to the interface.</p>
+</td>
+</tr><tr><td><p>&#34;InterfaceAddressesOnly&#34;</p></td>
+<td><p>AzureIPForwardingInterfaceAddressesOnly restricts the VM network interfaces to traffic
+whose source or destination IP address is assigned to the interface. This is the Azure
+default.</p>
+</td>
+</tr></tbody>
+</table>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
@@ -4225,10 +4555,11 @@ exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must ex
 HostedCluster.Spec.Platform.Azure.SubscriptionID.
 subnetID is immutable once set.
 The subnetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</code>.
-The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
 The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
 The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
+<p>MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </td>
 </tr>
 <tr>
@@ -4244,6 +4575,33 @@ Diagnostics
 <em>(Optional)</em>
 <p>diagnostics specifies the diagnostics settings for a virtual machine.
 If not specified, then Boot diagnostics will be disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ipForwarding</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureIPForwarding">
+AzureIPForwarding
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ipForwarding controls which source and destination IP addresses the VMs in the nodepool
+may send and receive network traffic for.
+Set this to AllowAllAddresses when nodes must forward traffic on behalf of other
+networks, for example networks advertised to the node over BGP, or VM addresses that are
+directly routable within the virtual network.
+AllowAllAddresses relaxes the Azure platform&rsquo;s source and destination address check on
+the VM network interfaces; InterfaceAddressesOnly leaves that check in place.
+This is unrelated to the cluster network operator&rsquo;s ipForwarding setting, which controls
+OVN-Kubernetes gateway behavior inside the cluster.
+When omitted, the Azure default applies and the VMs send and receive traffic only for
+addresses assigned to their own network interfaces.
+Changing this value replaces the VMs in the nodepool. For nodepools using the InPlace
+upgrade type, changing this value affects only nodes created after the change; existing
+nodes keep their original setting.</p>
 </td>
 </tr>
 </tbody>
@@ -4330,16 +4688,15 @@ string
 </em>
 </td>
 <td>
-<p>subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
-different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
-exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must exist under the same subscription ID,
-HostedCluster.Spec.Platform.Azure.SubscriptionID.
+<p>subnetID is the ID of an existing subnet where the HostedCluster&rsquo;s nodes will be created. It must exist in the same
+network as VnetID and under the same subscription as SubscriptionID.
 subnetID is immutable once set.
 The subnetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</code>.
-The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
 The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
 The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
+<p>MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </td>
 </tr>
 <tr>
@@ -4799,7 +5156,7 @@ This subnet must have privateLinkServiceNetworkPolicies disabled.
 If not provided, the controller will auto-create a NAT subnet in the HC&rsquo;s VNet.
 The expected format is:
 /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
-The maximum length is 355 characters.</p>
+The maximum length is 357 characters: 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </td>
 </tr>
 <tr>
@@ -4978,6 +5335,7 @@ Azure&rsquo;s API.</p>
 The expected format is:</p>
 <pre><code>/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
 </code></pre>
+<p>MaxLength is 85 fixed path characters + 38 for a fully braced UUID + 90 (resource group) + 64 (VNet) + 80 (subnet).</p>
 </p>
 ###AzureSubscriptionID { #hypershift.openshift.io/v1beta1.AzureSubscriptionID }
 <p>
@@ -5350,6 +5708,42 @@ When omitted, nested virtualization is not enabled (AWS default behavior).</p>
 </tr>
 </tbody>
 </table>
+###CSIDriverOperatorSpec { #hypershift.openshift.io/v1beta1.CSIDriverOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>CSIDriverOperatorSpec specifies configuration for the CSI driver operator
+running in the control plane. Platform-specific configuration is nested per platform.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>aws,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSCSIDriverConfig">
+AWSCSIDriverConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws configures the AWS EBS CSI driver.
+It can only be set when spec.platform.type is AWS.</p>
+<p>When omitted, no AWS-specific CSI driver configuration is applied and the
+default StorageClass uses the AWS account&rsquo;s default EBS encryption settings.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###Capabilities { #hypershift.openshift.io/v1beta1.Capabilities }
 <p>
 (<em>Appears on:</em>
@@ -5692,6 +6086,38 @@ Options include:
 * Random - selects a group randomly.
 If not specified, <code>[Priority, LeastWaste]</code> is the default.
 Maximum of 3 expanders can be specified.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeClientQPS</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeClientQPS sets the &ldquo;&ndash;kube-client-qps&rdquo; flag on cluster-autoscaler.
+Controls the maximum queries-per-second the autoscaler may send to the
+kube-apiserver. Valid values are -1 through 1000.
+When set to -1, client-side rate limiting is disabled.
+When set to 0, the flag is passed but client-go applies its default QPS of 5.
+When omitted, the flag is not set and the autoscaler uses its default (5).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeClientBurst</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeClientBurst sets the &ldquo;&ndash;kube-client-burst&rdquo; flag on cluster-autoscaler.
+Controls the maximum burst of queries to the kube-apiserver.
+Valid values are 1 through 2000.
+When omitted, the flag is not set and the autoscaler uses its default (10).</p>
 </td>
 </tr>
 </tbody>
@@ -6063,8 +6489,7 @@ NetworkType
 <em>(Optional)</em>
 <p>networkType specifies the SDN provider used for cluster networking.
 Defaults to OVNKubernetes.
-This field is required and immutable.
-kubebuilder:validation:XValidation:rule=&ldquo;self == oldSelf&rdquo;, message=&ldquo;networkType is immutable&rdquo;</p>
+This field is required and immutable.</p>
 </td>
 </tr>
 <tr>
@@ -6375,6 +6800,11 @@ created in the guest VPC</p>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
 </td>
+</tr><tr><td><p>&#34;AWSManagedDNSAvailable&#34;</p></td>
+<td><p>AWSManagedDNSAvailable indicates whether the managed DNS configuration
+has been successfully created for the hosted cluster. This condition is
+only set when spec.platform.aws.managedDNS is configured.</p>
+</td>
 </tr><tr><td><p>&#34;AutoNodeEnabled&#34;</p></td>
 <td><p>AutoNodeEnabled indicates whether AutoNode is configured and operational for this HostedCluster.
 <strong>True</strong> means AutoNode is configured in the HostedCluster spec and the Karpenter components are fully rolled out and ready.
@@ -6501,6 +6931,18 @@ created in the customer VPC</p>
 </tr><tr><td><p>&#34;GCPEndpointAvailable&#34;</p></td>
 <td><p>GCPEndpointAvailable indicates whether the GCP PSC Endpoint has been
 created in the customer VPC</p>
+</td>
+</tr><tr><td><p>&#34;GCPFirewallRulesReady&#34;</p></td>
+<td><p>GCPFirewallRulesReady indicates whether the control-plane-operator has
+reconciled the managed GCP worker firewall rule (<infra-id>-internal-cluster)
+to its desired state.
+This reconcile is best-effort: expected, recoverable states such as missing
+Workload Identity Federation credentials, insufficient IAM permissions (the
+ctrlplane-op service account is missing roles/compute.securityAdmin), an
+unresolvable project/VPC, or an ownership conflict set this condition to
+False with an actionable message but do not fail the overall HCP reconcile.
+The next periodic reconcile converges automatically once the underlying
+condition clears.</p>
 </td>
 </tr><tr><td><p>&#34;GCPPrivateServiceConnectAvailable&#34;</p></td>
 <td><p>GCPPrivateServiceConnectAvailable indicates overall PSC infrastructure availability</p>
@@ -7848,11 +8290,11 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
-may have the following key/value pairs:</p>
-<pre><code>etcd-client-ca.crt: Certificate Authority value
-etcd-client.crt: Client certificate value
-etcd-client.key: Client certificate key value
+<p>clientSecret refers to a secret for client mTLS authentication with the etcd cluster.
+The secret must contain all three of the following key/value pairs:</p>
+<pre><code>etcd-client-ca.crt: CA bundle used to verify the etcd server certificate
+etcd-client.crt: Client certificate used to authenticate to etcd
+etcd-client.key: Private key for the client certificate
 </code></pre>
 </td>
 </tr>
@@ -8916,6 +9358,7 @@ This GSA requires the following IAM roles:
 - roles/dns.admin (DNS Admin - for managing DNS records)
 - roles/compute.networkAdmin (Compute Network Admin - for network management)
 - roles/compute.viewer (Compute Viewer - for CCM to read instance metadata)
+- roles/compute.securityAdmin (Security Admin - for managing worker firewall rules)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
@@ -9759,7 +10202,7 @@ Release
 This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
 The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
 Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
-Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+Attempting to use a release with a skew against a NodePool release bigger than N-3 for the y-stream will result in leaving the NodePool in an unsupported state.
 Changing this field will trigger a rollout of the control plane components.
 The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
@@ -13511,6 +13954,48 @@ string
 If omitted, the value will be inferred from the corev1.Service Load balancer type .status.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>loadBalancerClass</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>loadBalancerClass sets Service.spec.loadBalancerClass to select which
+LB controller provisions the Service. Required when the management
+cluster runs multiple LB controllers (e.g., F5 for management + MetalLB
+for tenant workloads). Maps to the Kubernetes Service field directly.
+Immutable after creation — matches Kubernetes semantics.
+Must be a valid Kubernetes qualified-name: an optional lowercase DNS
+subdomain prefix followed by &lsquo;/&rsquo; and a name segment starting and ending
+with an alphanumeric character (e.g., &ldquo;example.com/my-lb-class&rdquo;).
+Maximum length is 253 characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAnnotations</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceAnnotations is a map of annotations passed through to the
+LoadBalancer Service. The user provides the exact annotations their LB
+provider expects (e.g., metallb.io/loadBalancerIPs,
+service.beta.kubernetes.io/aws-load-balancer-eip-allocations).
+Immutable during TechPreview — set at creation, cannot be changed.
+Becomes mutable at GA when the Day 2 sidecar mechanism is in place.</p>
+<p>Annotations are applied per-key — existing annotations set by other
+controllers are preserved. HyperShift does not validate annotation
+values — correctness is the user&rsquo;s responsibility, same as setting
+annotations on any Kubernetes Service.
+Minimum 1, maximum 10 annotations per service.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###LogLevel { #hypershift.openshift.io/v1beta1.LogLevel }
@@ -14272,6 +14757,27 @@ which produces significantly higher metrics volume.</p>
 <td></td>
 </tr></tbody>
 </table>
+###NSDelegationMode { #hypershift.openshift.io/v1beta1.NSDelegationMode }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSDelegationSpec">AWSManagedDNSDelegationSpec</a>)
+</p>
+<p>
+<p>NSDelegationMode specifies how NS delegation is performed for managed DNS zones.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ExternalDNS&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Manual&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
 ###NestedVirtualizationPolicy { #hypershift.openshift.io/v1beta1.NestedVirtualizationPolicy }
 <p>
 (<em>Appears on:</em>
@@ -14935,9 +15441,9 @@ Release
 <p>release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
 the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).</p>
 <p>Version-skew rules and effects:
-- The minor-version skew relative to the control-plane release must be &lt;= N-2.
-This is not currently enforced, but exceeding this limit is unsupported and
-may lead to unpredictable behavior.
+- The minor-version skew relative to the control-plane release must be &lt;= N-3.
+Exceeding this limit is unsupported and will cause the SupportedVersionSkew
+condition to report False.
 - If the specified release is higher than the HostedCluster&rsquo;s release, the
 NodePool will be degraded and the ValidReleaseImage condition will be false.
 - If the specified release is lower than the NodePool&rsquo;s current y-stream,
@@ -15072,7 +15578,11 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>nodeLabels propagates a list of labels to Nodes, only once on creation.
+<p>nodeLabels propagates a list of labels to Nodes.
+Labels are re-synced additively whenever the desired state changes;
+labels set by other controllers (kubelet, autoscaler) are preserved.
+Removing a label from this map does NOT remove it from existing Nodes;
+only new values or key additions are propagated.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -15087,8 +15597,11 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 </td>
 <td>
 <em>(Optional)</em>
-<p>taints if specified, propagates a list of taints to Nodes, only once on creation.
-These taints are additive to the ones applied by other controllers</p>
+<p>taints if specified, propagates a list of taints to Nodes.
+Taints are re-synced whenever the desired state changes.
+These taints are additive to the ones applied by other controllers.
+Removing a taint from this list does NOT remove it from existing Nodes;
+only new taints are added and existing taint values are updated.</p>
 </td>
 </tr>
 <tr>
@@ -15308,8 +15821,8 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>port is the port of the NodePort service. If &lt;=0, the port is dynamically
-assigned when the service is created.</p>
+<p>port is the port of the NodePort service.
+If omitted, the port is dynamically assigned when the service is created.</p>
 </td>
 </tr>
 </tbody>
@@ -16336,6 +16849,22 @@ Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
 The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>csiDriverOperator,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CSIDriverOperatorSpec">
+CSIDriverOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>csiDriverOperator configures the CSI drivers of the hosted cluster.
+Settings are grouped by platform.</p>
+<p>When omitted, the CSI drivers use their default configuration.</p>
 </td>
 </tr>
 </tbody>
@@ -18872,7 +19401,7 @@ connections; &ndash;etcd-servers-overrides only overrides server URLs.</p>
 </p>
 <p>
 <p>UnmanagedEtcdSpec specifies configuration which enables the control plane to
-integrate with an eternally managed etcd cluster.</p>
+integrate with an externally managed etcd cluster.</p>
 </p>
 <table>
 <thead>
@@ -18890,10 +19419,10 @@ string
 </em>
 </td>
 <td>
-<p>endpoint is the full etcd cluster client endpoint URL. For example:</p>
+<p>endpoint is the full etcd cluster client endpoint HTTPS URL. For example:</p>
 <pre><code>https://etcd-client:2379
 </code></pre>
-<p>If the URL uses an HTTPS scheme, the TLS field is required.</p>
+<p>The tls field is required to authenticate to and verify the etcd endpoint.</p>
 </td>
 </tr>
 <tr>
@@ -18906,7 +19435,7 @@ EtcdTLSConfig
 </em>
 </td>
 <td>
-<p>tls specifies TLS configuration for HTTPS etcd client endpoints.</p>
+<p>tls specifies the required TLS configuration for the HTTPS etcd client endpoint.</p>
 </td>
 </tr>
 <tr>

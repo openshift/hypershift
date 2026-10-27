@@ -5,7 +5,7 @@ version: v1beta1
 tests:
   onCreate:
   # --- Azure VM image validation ---
-  - name: when marketplace is fully populated with imageGeneration set it should pass
+  - name: when marketplace is fully populated with a maximum-length braced subnetID it should pass
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: NodePool
@@ -31,7 +31,7 @@ tests:
                 imageGeneration: Gen2
             osDisk:
               diskStorageAccountType: Premium_LRS
-            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subnetID: "/subscriptions/{12345678-1234-5678-9012-123456789012}/resourceGroups/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr/providers/Microsoft.Network/virtualNetworks/vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/subnets/ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
           type: Azure
 
   - name: when marketplace is fully populated without imageGeneration it should pass
@@ -191,3 +191,137 @@ tests:
             subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
           type: Azure
     expectedError: "publisher, offer, sku and version must either be all set, or all omitted"
+
+  # --- Azure IP forwarding validation ---
+  - name: when ipForwarding is AllowAllAddresses it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: ImageID
+              imageID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            ipForwarding: AllowAllAddresses
+          type: Azure
+
+  - name: when ipForwarding is InterfaceAddressesOnly it should pass
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: ImageID
+              imageID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            ipForwarding: InterfaceAddressesOnly
+          type: Azure
+
+  - name: when ipForwarding is not a supported value it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: ImageID
+              imageID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            ipForwarding: unsupported
+          type: Azure
+    expectedError: 'Unsupported value: "unsupported": supported values: "InterfaceAddressesOnly", "AllowAllAddresses"'
+
+  # ipForwarding must never be defaulted on: the persisted object has to come back without the
+  # key, or deploying this operator version would change the AzureMachineTemplate hash and roll
+  # every pre-existing Azure NodePool.
+  - name: when ipForwarding is omitted it should pass and must not be defaulted
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            image:
+              type: ImageID
+              imageID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+          type: Azure
+    # encryptionAtHost carries +kubebuilder:default=Enabled and therefore shows up here;
+    # ipForwarding deliberately has no default, so it must be absent from the persisted object.
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      spec:
+        arch: amd64
+        clusterName: some-cluster
+        management:
+          autoRepair: false
+          upgradeType: Replace
+          replace:
+            strategy: RollingUpdate
+            rollingUpdate:
+              maxSurge: 1
+              maxUnavailable: 0
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+        replicas: 0
+        platform:
+          azure:
+            vmSize: Standard_D4s_v5
+            encryptionAtHost: Enabled
+            image:
+              type: ImageID
+              imageID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/images/test-image
+            osDisk:
+              diskStorageAccountType: Premium_LRS
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+          type: Azure

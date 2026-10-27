@@ -20,7 +20,9 @@ package v1beta1
 // LoadBalancerPublishingStrategyApplyConfiguration represents a declarative configuration of the LoadBalancerPublishingStrategy type for use
 // with apply.
 type LoadBalancerPublishingStrategyApplyConfiguration struct {
-	Hostname *string `json:"hostname,omitempty"`
+	Hostname           *string           `json:"hostname,omitempty"`
+	LoadBalancerClass  *string           `json:"loadBalancerClass,omitempty"`
+	ServiceAnnotations map[string]string `json:"serviceAnnotations,omitempty"`
 }
 
 // LoadBalancerPublishingStrategyApplyConfiguration constructs a declarative configuration of the LoadBalancerPublishingStrategy type for use with
@@ -34,5 +36,27 @@ func LoadBalancerPublishingStrategy() *LoadBalancerPublishingStrategyApplyConfig
 // If called multiple times, the Hostname field is set to the value of the last call.
 func (b *LoadBalancerPublishingStrategyApplyConfiguration) WithHostname(value string) *LoadBalancerPublishingStrategyApplyConfiguration {
 	b.Hostname = &value
+	return b
+}
+
+// WithLoadBalancerClass sets the LoadBalancerClass field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the LoadBalancerClass field is set to the value of the last call.
+func (b *LoadBalancerPublishingStrategyApplyConfiguration) WithLoadBalancerClass(value string) *LoadBalancerPublishingStrategyApplyConfiguration {
+	b.LoadBalancerClass = &value
+	return b
+}
+
+// WithServiceAnnotations puts the entries into the ServiceAnnotations field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, the entries provided by each call will be put on the ServiceAnnotations field,
+// overwriting an existing map entries in ServiceAnnotations field with the same key.
+func (b *LoadBalancerPublishingStrategyApplyConfiguration) WithServiceAnnotations(entries map[string]string) *LoadBalancerPublishingStrategyApplyConfiguration {
+	if b.ServiceAnnotations == nil && len(entries) > 0 {
+		b.ServiceAnnotations = make(map[string]string, len(entries))
+	}
+	for k, v := range entries {
+		b.ServiceAnnotations[k] = v
+	}
 	return b
 }

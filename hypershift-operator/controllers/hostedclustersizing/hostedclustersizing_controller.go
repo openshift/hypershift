@@ -11,9 +11,10 @@ import (
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/pkg/manifests"
+	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,7 +41,7 @@ func newReconciler(
 	now func() time.Time,
 	hypershiftOperatorImage string,
 	releaseProvider *releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator,
-	imageMetadataProvider *hyperutil.RegistryClientImageMetadataProvider,
+	imageMetadataProvider *imageregistry.RegistryClientImageMetadataProvider,
 ) *reconciler {
 	return &reconciler{
 		client: hypershiftClient,
@@ -76,11 +77,11 @@ func newReconciler(
 			if !ok {
 				return false, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 			}
-			controlPlaneOperatorImage, err := hyperutil.GetControlPlaneOperatorImage(ctx, hostedCluster, releaseProvider, hypershiftOperatorImage, pullSecretBytes)
+			controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hostedCluster, releaseProvider, hypershiftOperatorImage, pullSecretBytes)
 			if err != nil {
 				return false, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 			}
-			controlPlaneOperatorImageLabels, err := hyperutil.GetControlPlaneOperatorImageLabels(ctx, hostedCluster, controlPlaneOperatorImage, pullSecretBytes, imageMetadataProvider)
+			controlPlaneOperatorImageLabels, err := imageregistry.GetControlPlaneOperatorImageLabels(ctx, hostedCluster, controlPlaneOperatorImage, pullSecretBytes, imageMetadataProvider)
 			if err != nil {
 				return false, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 			}
@@ -190,7 +191,7 @@ func (r *reconciler) reconcile(
 	}
 
 	logger := ctrl.LoggerFrom(ctx)
-	isPaused, duration, err := hyperutil.ProcessPausedUntilField(hostedCluster.Spec.PausedUntil, r.now())
+	isPaused, duration, err := reconcilerpolicy.ProcessPausedUntilField(hostedCluster.Spec.PausedUntil, r.now())
 	if err != nil {
 		logger.Error(err, "error processing hosted cluster paused field")
 		return nil, nil

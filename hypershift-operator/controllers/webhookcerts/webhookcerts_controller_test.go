@@ -531,3 +531,512 @@ func sideEffectNone() *admissionregistrationv1.SideEffectClass {
 	se := admissionregistrationv1.SideEffectClassNone
 	return &se
 }
+
+func TestPatchCRDConversionWebhookCABundles(t *testing.T) {
+	t.Run("When a CRD has a conversion webhook it should patch the caBundle", func(t *testing.T) {
+		g := NewWithT(t)
+
+		crd := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: "hostedclusters.hypershift.openshift.io"},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Group: webhookConfigName,
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Plural:   "hostedclusters",
+					Singular: "hostedcluster",
+					Kind:     "HostedCluster",
+				},
+				Scope: apiextensionsv1.NamespaceScoped,
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+					{Name: "v1beta1", Served: true, Storage: true, Schema: &apiextensionsv1.CustomResourceValidation{
+						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{Type: "object"},
+					}},
+				},
+				Conversion: &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							CABundle: []byte("old-ca"),
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: "hypershift",
+								Name:      "operator",
+							},
+						},
+						ConversionReviewVersions: []string{"v1beta1"},
+					},
+				},
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(crd).Build()
+
+		newCA := []byte("new-ca-bundle")
+		err := patchCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator", newCA)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		updatedCRD := &apiextensionsv1.CustomResourceDefinition{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: crd.Name}, updatedCRD)).To(Succeed())
+		g.Expect(updatedCRD.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(newCA))
+	})
+
+	t.Run("When CRD already has the correct caBundle it should not patch", func(t *testing.T) {
+		g := NewWithT(t)
+
+		correctCA := []byte("correct-ca")
+		crd := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: "hostedclusters.hypershift.openshift.io"},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Group: webhookConfigName,
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Plural:   "hostedclusters",
+					Singular: "hostedcluster",
+					Kind:     "HostedCluster",
+				},
+				Scope: apiextensionsv1.NamespaceScoped,
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+					{Name: "v1beta1", Served: true, Storage: true, Schema: &apiextensionsv1.CustomResourceValidation{
+						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{Type: "object"},
+					}},
+				},
+				Conversion: &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							CABundle: correctCA,
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: "hypershift",
+								Name:      "operator",
+							},
+						},
+						ConversionReviewVersions: []string{"v1beta1"},
+					},
+				},
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(crd).Build()
+
+		err := patchCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator", correctCA)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		updatedCRD := &apiextensionsv1.CustomResourceDefinition{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: crd.Name}, updatedCRD)).To(Succeed())
+		g.Expect(updatedCRD.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(correctCA))
+	})
+
+	t.Run("When CRD points to different service it should not patch", func(t *testing.T) {
+		g := NewWithT(t)
+
+		originalCA := []byte("original-ca")
+		crd := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: "others.example.io"},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Group: "example.io",
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Plural:   "others",
+					Singular: "other",
+					Kind:     "Other",
+				},
+				Scope: apiextensionsv1.NamespaceScoped,
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+					{Name: "v1", Served: true, Storage: true, Schema: &apiextensionsv1.CustomResourceValidation{
+						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{Type: "object"},
+					}},
+				},
+				Conversion: &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							CABundle: originalCA,
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: "other-ns",
+								Name:      "other-service",
+							},
+						},
+						ConversionReviewVersions: []string{"v1"},
+					},
+				},
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(crd).Build()
+
+		err := patchCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator", []byte("new-ca"))
+		g.Expect(err).ToNot(HaveOccurred())
+
+		updatedCRD := &apiextensionsv1.CustomResourceDefinition{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: crd.Name}, updatedCRD)).To(Succeed())
+		g.Expect(updatedCRD.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal(originalCA))
+	})
+}
+
+func TestEnsureLegacyServiceCAMigration(t *testing.T) {
+	t.Run("When service has service-ca annotations it should remove them", func(t *testing.T) {
+		g := NewWithT(t)
+
+		svc := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "operator",
+				Namespace: "hypershift",
+				Annotations: map[string]string{
+					"service.beta.openshift.io/serving-cert-secret-name": "manager-serving-cert",
+				},
+			},
+			Spec: corev1.ServiceSpec{
+				Ports: []corev1.ServicePort{{Port: 443}},
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(svc).Build()
+
+		err := EnsureLegacyServiceCAMigration(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		updatedSvc := &corev1.Service{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: "operator", Namespace: "hypershift"}, updatedSvc)).To(Succeed())
+		g.Expect(updatedSvc.Annotations).ToNot(HaveKey("service.beta.openshift.io/serving-cert-secret-name"))
+	})
+
+	t.Run("When service-ca managed serving cert exists it should delete it", func(t *testing.T) {
+		g := NewWithT(t)
+
+		serviceCACert := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ServingCertSecretName,
+				Namespace: "hypershift",
+				Annotations: map[string]string{
+					"service.beta.openshift.io/originating-service-name": "operator",
+				},
+			},
+			Type: corev1.SecretTypeTLS,
+			Data: map[string][]byte{
+				corev1.TLSCertKey:       []byte("service-ca-cert"),
+				corev1.TLSPrivateKeyKey: []byte("service-ca-key"),
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(serviceCACert).Build()
+
+		err := EnsureLegacyServiceCAMigration(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Serving cert should be deleted.
+		servingSecret := &corev1.Secret{}
+		err = cl.Get(t.Context(), client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}, servingSecret)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("not found"))
+	})
+
+	t.Run("When self-managed serving cert exists it should not delete it", func(t *testing.T) {
+		g := NewWithT(t)
+
+		_, servingSecret, _, err := GenerateInitialWebhookCerts("hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+		originalCert := servingSecret.Data[corev1.TLSCertKey]
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(servingSecret).Build()
+
+		err = EnsureLegacyServiceCAMigration(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Self-managed cert should still exist unchanged.
+		updatedSecret := &corev1.Secret{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: ServingCertSecretName, Namespace: "hypershift"}, updatedSecret)).To(Succeed())
+		g.Expect(updatedSecret.Data[corev1.TLSCertKey]).To(Equal(originalCert))
+	})
+
+	t.Run("When webhook configurations have inject-cabundle annotation it should remove them", func(t *testing.T) {
+		g := NewWithT(t)
+
+		mwc := &admissionregistrationv1.MutatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: webhookConfigName,
+				Annotations: map[string]string{
+					injectCABundleAnnotation: "true",
+				},
+			},
+			Webhooks: []admissionregistrationv1.MutatingWebhook{
+				{
+					Name:                    "defaulting.hypershift.openshift.io",
+					ClientConfig:            admissionregistrationv1.WebhookClientConfig{CABundle: []byte("old")},
+					SideEffects:             sideEffectNone(),
+					AdmissionReviewVersions: []string{"v1"},
+				},
+			},
+		}
+		vwc := &admissionregistrationv1.ValidatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: webhookConfigName,
+				Annotations: map[string]string{
+					injectCABundleAnnotation: "true",
+				},
+			},
+			Webhooks: []admissionregistrationv1.ValidatingWebhook{
+				{
+					Name:                    "validating.hypershift.openshift.io",
+					ClientConfig:            admissionregistrationv1.WebhookClientConfig{CABundle: []byte("old")},
+					SideEffects:             sideEffectNone(),
+					AdmissionReviewVersions: []string{"v1"},
+				},
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(mwc, vwc).Build()
+
+		err := EnsureLegacyServiceCAMigration(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		updatedMWC := &admissionregistrationv1.MutatingWebhookConfiguration{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: webhookConfigName}, updatedMWC)).To(Succeed())
+		g.Expect(updatedMWC.Annotations).ToNot(HaveKey(injectCABundleAnnotation))
+
+		updatedVWC := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: webhookConfigName}, updatedVWC)).To(Succeed())
+		g.Expect(updatedVWC.Annotations).ToNot(HaveKey(injectCABundleAnnotation))
+	})
+
+	t.Run("When no service-ca resources exist it should not error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).Build()
+
+		err := EnsureLegacyServiceCAMigration(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+	})
+}
+
+func TestEnsureCRDConversionWebhookCABundles(t *testing.T) {
+	t.Run("When CA secret exists with valid data it should patch CRD caBundles", func(t *testing.T) {
+		g := NewWithT(t)
+
+		caSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      CASecretName,
+				Namespace: "hypershift",
+			},
+			Data: map[string][]byte{
+				certs.CASignerCertMapKey: []byte("valid-ca-bundle"),
+			},
+		}
+
+		crd := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: "machines.cluster.x-k8s.io"},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Group: "cluster.x-k8s.io",
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Plural:   "machines",
+					Singular: "machine",
+					Kind:     "Machine",
+				},
+				Scope: apiextensionsv1.NamespaceScoped,
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+					{Name: "v1beta1", Served: true, Storage: true, Schema: &apiextensionsv1.CustomResourceValidation{
+						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{Type: "object"},
+					}},
+				},
+				Conversion: &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							CABundle: []byte("old-ca"),
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: "hypershift",
+								Name:      "operator",
+							},
+						},
+						ConversionReviewVersions: []string{"v1beta1"},
+					},
+				},
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret, crd).Build()
+
+		err := EnsureCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		updatedCRD := &apiextensionsv1.CustomResourceDefinition{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: crd.Name}, updatedCRD)).To(Succeed())
+		g.Expect(updatedCRD.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal([]byte("valid-ca-bundle")))
+	})
+
+	t.Run("When CA secret does not exist it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).Build()
+
+		err := EnsureCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to get webhook CA secret"))
+	})
+
+	t.Run("When CA secret exists but caBundle is empty it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		caSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      CASecretName,
+				Namespace: "hypershift",
+			},
+			Data: map[string][]byte{},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret).Build()
+
+		err := EnsureCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("empty caBundle"))
+	})
+
+	t.Run("When called multiple times it should be idempotent", func(t *testing.T) {
+		g := NewWithT(t)
+
+		caSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      CASecretName,
+				Namespace: "hypershift",
+			},
+			Data: map[string][]byte{
+				certs.CASignerCertMapKey: []byte("correct-ca-bundle"),
+			},
+		}
+
+		crd := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: "machinesets.cluster.x-k8s.io"},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Group: "cluster.x-k8s.io",
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Plural:   "machinesets",
+					Singular: "machineset",
+					Kind:     "MachineSet",
+				},
+				Scope: apiextensionsv1.NamespaceScoped,
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+					{Name: "v1beta1", Served: true, Storage: true, Schema: &apiextensionsv1.CustomResourceValidation{
+						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{Type: "object"},
+					}},
+				},
+				Conversion: &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							CABundle: []byte("old-ca"),
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: "hypershift",
+								Name:      "operator",
+							},
+						},
+						ConversionReviewVersions: []string{"v1beta1"},
+					},
+				},
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret, crd).Build()
+
+		// First call should patch the CRD
+		err := EnsureCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Second call should succeed without error (idempotent)
+		err = EnsureCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Verify caBundle is still correct
+		updatedCRD := &apiextensionsv1.CustomResourceDefinition{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: crd.Name}, updatedCRD)).To(Succeed())
+		g.Expect(updatedCRD.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal([]byte("correct-ca-bundle")))
+	})
+
+	t.Run("When CRD points to different service it should not patch that CRD", func(t *testing.T) {
+		g := NewWithT(t)
+
+		caSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      CASecretName,
+				Namespace: "hypershift",
+			},
+			Data: map[string][]byte{
+				certs.CASignerCertMapKey: []byte("hypershift-ca-bundle"),
+			},
+		}
+
+		// CRD for our webhook
+		ourCRD := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: "hostedclusters.hypershift.openshift.io"},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Group: "hypershift.openshift.io",
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Plural:   "hostedclusters",
+					Singular: "hostedcluster",
+					Kind:     "HostedCluster",
+				},
+				Scope: apiextensionsv1.NamespaceScoped,
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+					{Name: "v1beta1", Served: true, Storage: true, Schema: &apiextensionsv1.CustomResourceValidation{
+						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{Type: "object"},
+					}},
+				},
+				Conversion: &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							CABundle: []byte("old-ca"),
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: "hypershift",
+								Name:      "operator",
+							},
+						},
+						ConversionReviewVersions: []string{"v1beta1"},
+					},
+				},
+			},
+		}
+
+		// CRD for a different webhook service
+		otherCRD := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{Name: "others.example.io"},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Group: "example.io",
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Plural:   "others",
+					Singular: "other",
+					Kind:     "Other",
+				},
+				Scope: apiextensionsv1.NamespaceScoped,
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+					{Name: "v1", Served: true, Storage: true, Schema: &apiextensionsv1.CustomResourceValidation{
+						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{Type: "object"},
+					}},
+				},
+				Conversion: &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							CABundle: []byte("other-ca"),
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: "other-ns",
+								Name:      "other-service",
+							},
+						},
+						ConversionReviewVersions: []string{"v1"},
+					},
+				},
+			},
+		}
+
+		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret, ourCRD, otherCRD).Build()
+
+		err := EnsureCRDConversionWebhookCABundles(t.Context(), cl, "hypershift", "operator")
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Our CRD should be patched
+		updatedOurCRD := &apiextensionsv1.CustomResourceDefinition{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: ourCRD.Name}, updatedOurCRD)).To(Succeed())
+		g.Expect(updatedOurCRD.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal([]byte("hypershift-ca-bundle")))
+
+		// Other CRD should NOT be patched
+		updatedOtherCRD := &apiextensionsv1.CustomResourceDefinition{}
+		g.Expect(cl.Get(t.Context(), client.ObjectKey{Name: otherCRD.Name}, updatedOtherCRD)).To(Succeed())
+		g.Expect(updatedOtherCRD.Spec.Conversion.Webhook.ClientConfig.CABundle).To(Equal([]byte("other-ca")))
+	})
+}

@@ -8,7 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
+func NewDestroyCommand(opts *core.DestroyOptions, clientProviders ...*core.ClientProvider) *cobra.Command {
+	clientProvider := core.ResolveClientProvider(clientProviders...)
 	cmd := &cobra.Command{
 		Use:          "azure",
 		Short:        "Destroys a HostedCluster and its associated infrastructure on Azure",
@@ -26,7 +27,11 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	_ = cmd.MarkFlagRequired("dns-zone-rg-name")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		return hypershiftazure.DestroyCluster(cmd.Context(), opts)
+		client, err := clientProvider.ControllerRuntimeClientFor(opts.Kubeconfig)
+		if err != nil {
+			return err
+		}
+		return hypershiftazure.DestroyCluster(cmd.Context(), opts, client)
 	}
 
 	return cmd

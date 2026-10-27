@@ -23,7 +23,6 @@ import (
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,24 +35,6 @@ import (
 )
 
 const testInfraID = "test-infra"
-
-func TestReconcileCRDsStandaloneAdapterOnlyInstallsHyperShiftCRD(t *testing.T) {
-	g := NewWithT(t)
-	guestClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
-	r := &EC2NodeClassReconciler{
-		guestClient:            guestClient,
-		CreateOrUpdateProvider: upsert.New(false),
-		SkipUpstreamCRD:        true,
-	}
-
-	err := r.reconcileCRDs(t.Context(), true)
-	g.Expect(err).NotTo(HaveOccurred())
-
-	crdList := &apiextensionsv1.CustomResourceDefinitionList{}
-	g.Expect(guestClient.List(t.Context(), crdList)).To(Succeed())
-	g.Expect(crdList.Items).To(HaveLen(1))
-	g.Expect(crdList.Items[0].Name).To(Equal(crdOpenshiftEC2NodeClass.Name))
-}
 
 func TestReconcileEC2NodeClass(t *testing.T) {
 	userDataSecret := &corev1.Secret{
@@ -154,6 +135,9 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 					HTTPPutResponseHopLimit: 1,
 					HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
 				},
+				CPUOptions: hyperkarpenterv1.CPUOptions{
+					NestedVirtualization: hyperkarpenterv1.NestedVirtualizationEnabled,
+				},
 			},
 			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
@@ -192,6 +176,9 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 					HTTPProtocolIPv6:        ptr.To("disabled"),
 					HTTPPutResponseHopLimit: ptr.To(int64(1)),
 					HTTPTokens:              ptr.To("required"),
+				},
+				CPUOptions: &awskarpenterv1.CPUOptions{
+					NestedVirtualization: ptr.To("enabled"),
 				},
 			},
 		},
@@ -1347,6 +1334,74 @@ func TestGetUserDataSecret(t *testing.T) {
 				},
 			},
 			expectedSecret: "matching-secret",
+		},
+		{
+			name:      "when multiple userData secrets exist for same NodePool it should return the newest",
+			namespace: "test-namespace",
+			nodeClass: nodeClass,
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "user-data-old",
+						Namespace:         "test-namespace",
+						CreationTimestamp: metav1.Time{Time: time.Date(2026, 9, 24, 3, 0, 0, 0, time.UTC)},
+						Labels: map[string]string{
+							karpenterutil.ManagedByKarpenterLabel: "true",
+						},
+						Annotations: map[string]string{
+							hyperkarpenterv1.TokenSecretNodePoolAnnotation: "test-namespace/" + expectedNodePoolName,
+						},
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "user-data-new",
+						Namespace:         "test-namespace",
+						CreationTimestamp: metav1.Time{Time: time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)},
+						Labels: map[string]string{
+							karpenterutil.ManagedByKarpenterLabel: "true",
+						},
+						Annotations: map[string]string{
+							hyperkarpenterv1.TokenSecretNodePoolAnnotation: "test-namespace/" + expectedNodePoolName,
+						},
+					},
+				},
+			},
+			expectedSecret: "user-data-new",
+		},
+		{
+			name:      "when multiple userData secrets have equal timestamps it should use name as tiebreaker",
+			namespace: "test-namespace",
+			nodeClass: nodeClass,
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "user-data-aaa",
+						Namespace:         "test-namespace",
+						CreationTimestamp: metav1.Time{Time: time.Date(2026, 9, 24, 3, 0, 0, 0, time.UTC)},
+						Labels: map[string]string{
+							karpenterutil.ManagedByKarpenterLabel: "true",
+						},
+						Annotations: map[string]string{
+							hyperkarpenterv1.TokenSecretNodePoolAnnotation: "test-namespace/" + expectedNodePoolName,
+						},
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "user-data-zzz",
+						Namespace:         "test-namespace",
+						CreationTimestamp: metav1.Time{Time: time.Date(2026, 9, 24, 3, 0, 0, 0, time.UTC)},
+						Labels: map[string]string{
+							karpenterutil.ManagedByKarpenterLabel: "true",
+						},
+						Annotations: map[string]string{
+							hyperkarpenterv1.TokenSecretNodePoolAnnotation: "test-namespace/" + expectedNodePoolName,
+						},
+					},
+				},
+			},
+			expectedSecret: "user-data-zzz",
 		},
 		{
 			name:          "when no secrets exist it should return errKarpenterUserDataSecretNotFound",

@@ -68,7 +68,7 @@ func (o *syncFGConfigMapOptions) run(ctx context.Context) error {
 		return fmt.Errorf("failed to read input file %s: %w", o.File, err)
 	}
 
-	c, err := cmdutil.GetClient()
+	c, err := cmdutil.GetClientWithKubeconfig("")
 	if err != nil {
 		return fmt.Errorf("failed to create client: %w", err)
 	}

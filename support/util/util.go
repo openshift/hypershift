@@ -12,16 +12,13 @@ import (
 	"hash/fnv"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
-	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
-	"github.com/openshift/hypershift/support/k8sutil"
-	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 
 	corev1 "k8s.io/api/core/v1"
@@ -29,9 +26,7 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	"github.com/blang/semver"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 )
 
@@ -60,20 +55,6 @@ func ParseNamespacedName(name string) types.NamespacedName {
 		return types.NamespacedName{Namespace: parts[0], Name: parts[1]}
 	}
 	return types.NamespacedName{Name: parts[0]}
-}
-
-func HCControlPlaneReleaseImage(hcluster *hyperv1.HostedCluster) string {
-	if hcluster.Spec.ControlPlaneRelease != nil {
-		return hcluster.Spec.ControlPlaneRelease.Image
-	}
-	return hcluster.Spec.Release.Image
-}
-
-func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {
-	if hcp.Spec.ControlPlaneReleaseImage != nil {
-		return *hcp.Spec.ControlPlaneReleaseImage
-	}
-	return hcp.Spec.ReleaseImage
 }
 
 // CompressAndEncode compresses and base-64 encodes a given byte array. Ideal for loading an
@@ -251,74 +232,6 @@ func RemoveEmptyJSONField(stringData string, field string) string {
 	return stringData
 }
 
-// ConvertRegistryOverridesToCommandLineFlag converts a map of registry sources and their mirrors into a string
-func ConvertRegistryOverridesToCommandLineFlag(registryOverrides map[string]string) string {
-	var commandLineFlagArray []string
-	for registrySource, registryReplacement := range registryOverrides {
-		commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
-	}
-	if len(commandLineFlagArray) > 0 {
-		sort.Strings(commandLineFlagArray)
-		return strings.Join(commandLineFlagArray, ",")
-	}
-	// this is the equivalent of null on a StringToString command line variable.
-	return "="
-}
-
-// ConvertOpenShiftImageRegistryOverridesToCommandLineFlag converts a map of image registry sources and their mirrors into a string
-func ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(registryOverrides map[string][]string) string {
-	var commandLineFlagArray []string
-	var sortedRegistrySources []string
-
-	for k := range registryOverrides {
-		sortedRegistrySources = append(sortedRegistrySources, k)
-	}
-	sort.Strings(sortedRegistrySources)
-
-	for _, registrySource := range sortedRegistrySources {
-		registryReplacements := registryOverrides[registrySource]
-		sort.Strings(registryReplacements)
-		for _, registryReplacement := range registryReplacements {
-			commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
-		}
-	}
-	if len(commandLineFlagArray) > 0 {
-		return strings.Join(commandLineFlagArray, ",")
-	}
-	// this is the equivalent of null on a StringToString command line variable.
-	return "="
-}
-
-// ConvertImageRegistryOverrideStringToMap translates the environment variable containing registry source to mirror
-// mappings back to a map[string]string structure that can be ingested by the registry image content policies release provider
-func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string {
-	registryMirrorPair := strings.Split(envVar, ",")
-
-	if (len(registryMirrorPair) == 1 && registryMirrorPair[0] == "") || envVar == "=" {
-		return nil
-	}
-
-	imageRegistryOverrides := make(map[string][]string)
-
-	for _, pair := range registryMirrorPair {
-		registryMirror := strings.SplitN(pair, "=", 2)
-		if len(registryMirror) != 2 {
-			continue
-		}
-		registry := registryMirror[0]
-		mirror := registryMirror[1]
-
-		// Skip empty registry or mirror entries
-		if registry == "" || mirror == "" {
-			continue
-		}
-
-		imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], mirror)
-	}
-
-	return imageRegistryOverrides
-}
-
 func GetKubeClientSet() (kubeclient.Interface, error) {
 	return GetKubeClientSetWithKubeconfig("")
 }
@@ -360,7 +273,7 @@ func GetMgmtClusterCPUArch(kc kubeclient.Interface) (string, error) {
 }
 
 // DetermineHostedClusterPayloadArch returns the HostedCluster payload's CPU architecture type
-func DetermineHostedClusterPayloadArch(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, imageMetadataProvider ImageMetadataProvider) (hyperv1.PayloadArchType, error) {
+func DetermineHostedClusterPayloadArch(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, imageMetadataProvider imageregistry.ImageMetadataProvider) (hyperv1.PayloadArchType, error) {
 	pullSecretBytes, err := GetPullSecretBytes(ctx, c, hc)
 	if err != nil {
 		return "", err
@@ -382,7 +295,7 @@ func DetermineHostedClusterPayloadArch(ctx context.Context, c client.Client, hc 
 	return arch, nil
 }
 
-func getImageArchitecture(ctx context.Context, image string, pullSecretBytes []byte, imageMetadataProvider ImageMetadataProvider) (hyperv1.PayloadArchType, error) {
+func getImageArchitecture(ctx context.Context, image string, pullSecretBytes []byte, imageMetadataProvider imageregistry.ImageMetadataProvider) (hyperv1.PayloadArchType, error) {
 	imageMetadata, err := imageMetadataProvider.ImageMetadata(ctx, image, pullSecretBytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to look up image metadata for %s: %w", image, err)
@@ -394,73 +307,6 @@ func getImageArchitecture(ctx context.Context, image string, pullSecretBytes []b
 	}
 
 	return "", fmt.Errorf("failed to find image CPU architecture for %s", image)
-}
-
-// PredicatesForHostedClusterAnnotationScoping returns predicate filters for all event types that will ignore incoming
-// event requests for resources in which the parent hostedcluster does not
-// match the "scope" annotation specified in the HOSTEDCLUSTERS_SCOPE_ANNOTATION env var.  If not defined or empty, the
-// default behavior is to accept all events for hostedclusters that do not have the annotation.
-// The ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var must also be set to "true" to enable the scoping feature.
-func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Predicate {
-	hcAnnotationScopingEnabledEnvVal := os.Getenv(k8sutil.EnableHostedClustersAnnotationScopingEnv)
-	hcScopeAnnotationEnvVal := os.Getenv(k8sutil.HostedClustersScopeAnnotationEnv)
-	filter := func(obj client.Object) bool {
-		if hcAnnotationScopingEnabledEnvVal != "true" {
-			return true // process event; the scoping feature has not been enabled via the ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING env var
-		}
-		hostedClusterScopeAnnotation := getHostedClusterScopeAnnotation(obj, r)
-		if hostedClusterScopeAnnotation == "" && hcScopeAnnotationEnvVal == "" {
-			return true // process event; both the operator's scope and hostedcluster's scope are empty
-		}
-		if hostedClusterScopeAnnotation != hcScopeAnnotationEnvVal {
-			return false // ignore event; the associated hostedcluster's scope annotation does not match what is defined in HOSTEDCLUSTERS_SCOPE_ANNOTATION
-		}
-		return true
-	}
-	return predicate.NewPredicateFuncs(filter)
-}
-
-// getHostedClusterScopeAnnotation will extract the "scope" annotation from the hostedcluster resource that owns the specified object.
-// Depending on the object type being passed in, slightly different paths will be used to ultimately retrieve the hostedcluster resource containing the annotation.
-// If an annotation is not found, an empty string is returned.
-func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string {
-	hostedClusterName := ""
-	nodePoolName := ""
-	switch obj := obj.(type) {
-	case *hyperv1.HostedCluster:
-		if obj.GetAnnotations() != nil {
-			return obj.GetAnnotations()[k8sutil.HostedClustersScopeAnnotation]
-		}
-	case *hyperv1.NodePool:
-		hostedClusterName = fmt.Sprintf("%s/%s", obj.Namespace, obj.Spec.ClusterName)
-	default:
-		if obj.GetAnnotations() != nil {
-			nodePoolName = obj.GetAnnotations()["hypershift.openshift.io/nodePool"]
-			hostedClusterName = obj.GetAnnotations()[k8sutil.HostedClusterAnnotation]
-		}
-		if nodePoolName != "" {
-			namespacedName := ParseNamespacedName(nodePoolName)
-			np := &hyperv1.NodePool{}
-			err := r.Get(context.Background(), namespacedName, np)
-			if err != nil {
-				return ""
-			}
-			hostedClusterName = fmt.Sprintf("%s/%s", np.Namespace, np.Spec.ClusterName)
-		}
-	}
-	if hostedClusterName == "" {
-		return ""
-	}
-	namespacedName := ParseNamespacedName(hostedClusterName)
-	hcluster := &hyperv1.HostedCluster{}
-	err := r.Get(context.Background(), namespacedName, hcluster)
-	if err != nil {
-		return ""
-	}
-	if hcluster.GetAnnotations() != nil {
-		return hcluster.GetAnnotations()[k8sutil.HostedClustersScopeAnnotation]
-	}
-	return ""
 }
 
 // SanitizeIgnitionPayload make sure the IgnitionPayload is valid
@@ -487,77 +333,6 @@ func GetPullSecretBytes(ctx context.Context, c client.Client, hc *hyperv1.Hosted
 	}
 
 	return pullSecretBytes, nil
-}
-
-// GetControlPlaneOperatorImage resolves the appropriate control plane operator
-// image based on the following order of precedence (from most to least
-// preferred):
-//
-//  1. The image specified by the ControlPlaneOperatorImageAnnotation on the
-//     HostedCluster resource itself
-//  2. The hypershift image specified in the release payload indicated by the
-//     HostedCluster's release field
-//  3. The hypershift-operator's own image for release versions 4.9 and 4.10
-//  4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
-//     version 4.8
-//
-// If no image can be found according to these rules, an error is returned.
-func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
-	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
-		return val, nil
-	}
-	releaseInfo, err := releaseProvider.Lookup(ctx, HCControlPlaneReleaseImage(hc), pullSecret)
-	if err != nil {
-		return "", err
-	}
-	version, err := semver.Parse(releaseInfo.Version())
-	if err != nil {
-		return "", err
-	}
-	if controlplaneoperatoroverrides.IsOverridesEnabled() {
-		overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), version.String())
-		if overrideImage != "" {
-			return overrideImage, nil
-		}
-	}
-
-	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
-		return hypershiftImage, nil
-	}
-
-	if version.Minor < 9 {
-		return "", fmt.Errorf("unsupported release image with version %s", version.String())
-	}
-	return hypershiftOperatorImage, nil
-}
-
-// GetControlPlaneOperatorImageLabels resolves the appropriate control plane
-// operator image labels based on the following order of precedence (from most
-// to least preferred):
-//
-//  1. The labels specified by the ControlPlaneOperatorImageLabelsAnnotation on the
-//     HostedCluster resource itself
-//  2. The image labels in the medata of the image as resolved by GetControlPlaneOperatorImage
-func GetControlPlaneOperatorImageLabels(ctx context.Context, hc *hyperv1.HostedCluster, controlPlaneOperatorImage string, pullSecret []byte, imageMetadataProvider ImageMetadataProvider) (map[string]string, error) {
-	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageLabelsAnnotation]; ok {
-		annotatedLabels := map[string]string{}
-		rawLabels := strings.Split(val, ",")
-		for i, rawLabel := range rawLabels {
-			parts := strings.Split(rawLabel, "=")
-			if len(parts) != 2 {
-				return nil, fmt.Errorf("hosted cluster %s/%s annotation %d malformed: label %s not in key=value form", hc.Namespace, hc.Name, i, rawLabel)
-			}
-			annotatedLabels[parts[0]] = parts[1]
-		}
-		return annotatedLabels, nil
-	}
-
-	controlPlaneOperatorImageMetadata, err := imageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
-	}
-
-	return ImageLabels(controlPlaneOperatorImageMetadata), nil
 }
 
 // EnableIfCustomKubeconfig returns true if the hosted control plane has a custom kubeconfig defined

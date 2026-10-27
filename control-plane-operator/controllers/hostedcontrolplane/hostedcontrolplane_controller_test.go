@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,7 +20,9 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	endpointresolverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/endpoint_resolver"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
@@ -35,8 +38,11 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
@@ -45,7 +51,6 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -53,8 +58,10 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/smithy-go"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -82,9 +89,548 @@ import (
 	"github.com/docker/distribution"
 	"github.com/go-logr/zapr"
 	"github.com/opencontainers/go-digest"
+	"github.com/prometheus/client_golang/prometheus"
+	prometheustestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 )
+
+func TestReconcileEtcdCerts(t *testing.T) {
+	t.Parallel()
+
+	writeErr := fmt.Errorf("client secret write failed")
+	shards := &hyperv1.ManagedEtcdSpec{Shards: []hyperv1.ManagedEtcdShardSpec{{Name: "events"}, {Name: "leases"}}}
+	tests := []struct {
+		name              string
+		managementType    hyperv1.EtcdManagementType
+		managed           *hyperv1.ManagedEtcdSpec
+		existingResources bool
+		writeErr          error
+	}{
+		{
+			name:           "When Managed etcd has a nil managed spec, it should generate all native PKI resources",
+			managementType: hyperv1.Managed,
+		},
+		{
+			name:           "When Managed etcd has a default managed spec, it should generate all native PKI resources",
+			managementType: hyperv1.Managed,
+			managed:        &hyperv1.ManagedEtcdSpec{},
+		},
+		{
+			name:           "When Managed etcd has shards, it should generate default and per-shard PKI resources",
+			managementType: hyperv1.Managed,
+			managed:        shards,
+		},
+		{
+			name:           "When the Managed client secret write fails, it should return the wrapped error",
+			managementType: hyperv1.Managed,
+			writeErr:       writeErr,
+		},
+		{
+			name:           "When Unmanaged etcd has no PKI resources, it should leave all native PKI resources absent",
+			managementType: hyperv1.Unmanaged,
+		},
+		{
+			name:              "When Unmanaged etcd has existing PKI resources, it should leave their data and metadata unchanged",
+			managementType:    hyperv1.Unmanaged,
+			existingResources: true,
+		},
+		{
+			name:           "When Unmanaged etcd retains managed shard settings, it should leave default and shard PKI resources absent",
+			managementType: hyperv1.Unmanaged,
+			managed:        shards,
+		},
+		{
+			name:              "When Unmanaged etcd retains managed shard PKI resources, it should leave all data and metadata unchanged",
+			managementType:    hyperv1.Unmanaged,
+			managed:           shards,
+			existingResources: true,
+		},
+		{
+			name: "When the etcd management type is unspecified, it should leave all native PKI resources absent",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp := newEtcdTestHCP(tc.managementType)
+			hcp.Spec.Etcd.Managed = tc.managed
+			p := &pki.PKIParams{OwnerRef: config.OwnerRefFrom(hcp)}
+			type pkiResource struct {
+				object client.Object
+				keys   []string
+			}
+			resources := []pkiResource{
+				{manifests.EtcdSignerSecret(hcp.Namespace), []string{certs.CASignerCertMapKey, certs.CASignerKeyMapKey}},
+				{manifests.EtcdSignerCAConfigMap(hcp.Namespace), []string{"ca.crt"}},
+				{manifests.EtcdClientSecret(hcp.Namespace), []string{pki.EtcdClientCrtKey, pki.EtcdClientKeyKey}},
+				{manifests.EtcdServerSecret(hcp.Namespace), []string{pki.EtcdServerCrtKey, pki.EtcdServerKeyKey}},
+				{manifests.EtcdPeerSecret(hcp.Namespace), []string{pki.EtcdPeerCrtKey, pki.EtcdPeerKeyKey}},
+				{manifests.EtcdMetricsSignerSecret(hcp.Namespace), []string{certs.CASignerCertMapKey, certs.CASignerKeyMapKey}},
+				{manifests.EtcdMetricsSignerCAConfigMap(hcp.Namespace), []string{"ca.crt"}},
+				{manifests.EtcdMetricsClientSecret(hcp.Namespace), []string{pki.EtcdClientCrtKey, pki.EtcdClientKeyKey}},
+			}
+			if tc.managed != nil {
+				for _, shard := range tc.managed.Shards {
+					shardName := "etcd-" + shard.Name
+					resources = append(resources,
+						pkiResource{manifests.EtcdShardServerSecret(hcp.Namespace, shardName), []string{pki.EtcdServerCrtKey, pki.EtcdServerKeyKey}},
+						pkiResource{manifests.EtcdShardPeerSecret(hcp.Namespace, shardName), []string{pki.EtcdPeerCrtKey, pki.EtcdPeerKeyKey}},
+					)
+				}
+			}
+			var objects []client.Object
+			if tc.existingResources {
+				for _, resource := range resources {
+					obj := resource.object
+					obj.SetLabels(map[string]string{"external-provider": "supplied"})
+					obj.SetAnnotations(map[string]string{"external-provider": "supplied metadata"})
+					obj.SetFinalizers([]string{"external-provider/preserve"})
+					obj.SetOwnerReferences([]metav1.OwnerReference{{APIVersion: "v1", Kind: "Secret", Name: "external-owner", UID: "external-owner-uid"}})
+					switch obj := obj.(type) {
+					case *corev1.Secret:
+						obj.Type = corev1.SecretTypeOpaque
+						obj.Immutable = ptr.To(true)
+						obj.Data = map[string][]byte{"external-provider": []byte("supplied metadata")}
+						for _, key := range resource.keys {
+							obj.Data[key] = []byte("supplied " + obj.Name + " " + key)
+						}
+					case *corev1.ConfigMap:
+						obj.Immutable = ptr.To(true)
+						obj.Data = map[string]string{"ca.crt": "supplied CA", "external-provider": "supplied metadata"}
+						obj.BinaryData = map[string][]byte{"external-provider": []byte("supplied binary data")}
+					}
+					objects = append(objects, obj)
+				}
+			}
+			r, operations := newEtcdTestReconciler(hcp, tc.writeErr, objects...)
+			var before []client.Object
+			if tc.existingResources {
+				for _, resource := range resources {
+					g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(resource.object), resource.object)).To(Succeed())
+					before = append(before, resource.object.DeepCopyObject().(client.Object))
+				}
+			}
+			*operations = etcdTestOperations{}
+
+			err := r.reconcileEtcdCerts(t.Context(), hcp, p, r.createOrUpdate(hcp))
+			if tc.writeErr != nil {
+				g.Expect(err).To(MatchError("failed to reconcile etcd client secret: client secret write failed"))
+				g.Expect(err).To(MatchError(tc.writeErr), "it should preserve the underlying error")
+				g.Expect(operations.createOrUpdateCalls).To(Equal(3))
+				g.Expect(operations.writes).To(HaveLen(3))
+				target := manifests.EtcdClientSecret(hcp.Namespace)
+				g.Expect(apierrors.IsNotFound(r.Client.Get(t.Context(), client.ObjectKeyFromObject(target), target))).To(BeTrue())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			if tc.managementType != hyperv1.Managed {
+				g.Expect(operations.createOrUpdateCalls).To(BeZero(), "native PKI must not invoke CreateOrUpdate for unmanaged etcd")
+				g.Expect(operations.reads).To(BeZero(), "native PKI must not read managed PKI resources for unmanaged etcd")
+				g.Expect(operations.writes).To(BeEmpty())
+			} else {
+				g.Expect(operations.createOrUpdateCalls).To(Equal(len(resources)))
+				g.Expect(operations.writes).To(HaveLen(len(resources)))
+			}
+			for i, resource := range resources {
+				obj := resource.object
+				err := r.Client.Get(t.Context(), client.ObjectKeyFromObject(obj), obj)
+				if tc.managementType != hyperv1.Managed {
+					if tc.existingResources {
+						g.Expect(err).NotTo(HaveOccurred())
+						g.Expect(obj).To(Equal(before[i]), "it should preserve %s", obj.GetName())
+					} else {
+						g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "it should not create %s", obj.GetName())
+					}
+					continue
+				}
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(client.ObjectKeyFromObject(operations.writes[i])).To(Equal(client.ObjectKeyFromObject(obj)))
+				g.Expect(obj.GetOwnerReferences()).To(Equal([]metav1.OwnerReference{*config.ControllerOwnerRef(hcp)}))
+				for _, key := range resource.keys {
+					switch obj := obj.(type) {
+					case *corev1.Secret:
+						g.Expect(obj.Data[key]).NotTo(BeEmpty(), "%s should contain %s", obj.Name, key)
+					case *corev1.ConfigMap:
+						g.Expect(obj.Data[key]).NotTo(BeEmpty(), "%s should contain %s", obj.Name, key)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestReconcileUnmanagedEtcd(t *testing.T) {
+	t.Parallel()
+
+	newSource := func(hcp *hyperv1.HostedControlPlane) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:   hcp.Namespace,
+				Name:        hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name,
+				Labels:      map[string]string{"external-provider": "supplied"},
+				Annotations: map[string]string{"external-provider": "supplied metadata"},
+			},
+			Type: corev1.SecretTypeTLS,
+			Data: map[string][]byte{
+				pki.EtcdClientCrtKey: []byte("supplied certificate"),
+				pki.EtcdClientKeyKey: []byte("supplied key"),
+				"etcd-client-ca.crt": []byte("supplied CA"),
+				"external-provider":  []byte("supplied metadata"),
+			},
+		}
+	}
+	t.Run("When supplied credentials change or disappear, it should copy updates and preserve the last valid target", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hcp := newEtcdTestHCP(hyperv1.Unmanaged)
+		source := newSource(hcp)
+		r, operations := newEtcdTestReconciler(hcp, nil, source)
+		createOrUpdate := r.createOrUpdate(hcp)
+		target := manifests.EtcdClientSecret(hcp.Namespace)
+		reconcileAndCheck := func(expectedWrites int, expectedError string) {
+			t.Helper()
+			*operations = etcdTestOperations{}
+			err := r.reconcileUnmanagedEtcd(t.Context(), hcp, createOrUpdate)
+			if expectedError != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(expectedError)))
+				g.Expect(operations.createOrUpdateCalls).To(BeZero())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(operations.createOrUpdateCalls).To(Equal(1))
+			}
+			g.Expect(operations.writes).To(HaveLen(expectedWrites))
+			for _, write := range operations.writes {
+				g.Expect(write).To(BeAssignableToTypeOf(&corev1.Secret{}))
+				g.Expect(client.ObjectKeyFromObject(write)).To(Equal(client.ObjectKeyFromObject(target)))
+				g.Expect(write.(*corev1.Secret).Data).To(Equal(source.Data))
+			}
+			g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(target), target)).To(Succeed())
+			g.Expect(target.Data).To(Equal(source.Data))
+			g.Expect(target.Type).To(Equal(corev1.SecretTypeOpaque))
+			g.Expect(target.OwnerReferences).To(Equal([]metav1.OwnerReference{*config.ControllerOwnerRef(hcp)}))
+		}
+
+		g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+		beforeSource := source.DeepCopy()
+		reconcileAndCheck(1, "")
+		g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+		g.Expect(source).To(Equal(beforeSource))
+
+		beforeTarget := target.DeepCopy()
+		reconcileAndCheck(0, "")
+		g.Expect(target).To(Equal(beforeTarget))
+
+		source.Data[pki.EtcdClientCrtKey] = []byte("replacement certificate")
+		source.Data[pki.EtcdClientKeyKey] = []byte("replacement key")
+		source.Data["etcd-client-ca.crt"] = []byte("replacement CA")
+		g.Expect(r.Client.Update(t.Context(), source)).To(Succeed())
+		beforeSource = source.DeepCopy()
+		reconcileAndCheck(1, "")
+		beforeTarget = target.DeepCopy()
+		reconcileAndCheck(0, "")
+		g.Expect(target).To(Equal(beforeTarget))
+		g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+		g.Expect(source).To(Equal(beforeSource))
+
+		beforeTarget = target.DeepCopy()
+		g.Expect(r.Client.Delete(t.Context(), source)).To(Succeed())
+		reconcileAndCheck(0, "failed to get etcd client cert")
+		g.Expect(target).To(Equal(beforeTarget))
+	})
+
+	tests := []struct {
+		name          string
+		mutate        func(*hyperv1.HostedControlPlane, *corev1.Secret)
+		missingSource bool
+		expectedError string
+	}{
+		{
+			name: "When unmanaged metadata is missing, it should return an error without touching the target",
+			mutate: func(hcp *hyperv1.HostedControlPlane, _ *corev1.Secret) {
+				hcp.Spec.Etcd.Unmanaged = nil
+			},
+			expectedError: "etcd metadata not specified for unmanaged deployment",
+		},
+		{
+			name: "When the endpoint is missing, it should return an error without touching the target",
+			mutate: func(hcp *hyperv1.HostedControlPlane, _ *corev1.Secret) {
+				hcp.Spec.Etcd.Unmanaged.Endpoint = ""
+			},
+			expectedError: "etcd metadata not specified for unmanaged deployment",
+		},
+		{
+			name: "When the source secret name is missing, it should return an error without touching the target",
+			mutate: func(hcp *hyperv1.HostedControlPlane, _ *corev1.Secret) {
+				hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name = ""
+			},
+			expectedError: "etcd metadata not specified for unmanaged deployment",
+		},
+		{
+			name:          "When the source secret is missing, it should return an error without touching the target",
+			missingSource: true,
+			expectedError: "failed to get etcd client cert external-etcd-credentials",
+		},
+		{
+			name: "When the client certificate key is missing, it should return an error without touching the target",
+			mutate: func(_ *hyperv1.HostedControlPlane, source *corev1.Secret) {
+				delete(source.Data, pki.EtcdClientCrtKey)
+			},
+			expectedError: "etcd secret external-etcd-credentials does not have client cert",
+		},
+		{
+			name: "When the client private key is missing, it should return an error without touching the target",
+			mutate: func(_ *hyperv1.HostedControlPlane, source *corev1.Secret) {
+				delete(source.Data, pki.EtcdClientKeyKey)
+			},
+			expectedError: "etcd secret external-etcd-credentials does not have client key",
+		},
+		{
+			name: "When the client CA key is missing, it should return an error without touching the target",
+			mutate: func(_ *hyperv1.HostedControlPlane, source *corev1.Secret) {
+				delete(source.Data, "etcd-client-ca.crt")
+			},
+			expectedError: "etcd secret external-etcd-credentials does not have client ca",
+		},
+		{
+			name: "When the source secret data is nil, it should return an error without touching the target",
+			mutate: func(_ *hyperv1.HostedControlPlane, source *corev1.Secret) {
+				source.Data = nil
+			},
+			expectedError: "etcd secret external-etcd-credentials does not have client cert",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, existingTarget := range []bool{false, true} {
+				name := "When the target is absent, it should leave it absent"
+				if existingTarget {
+					name = "When the target exists, it should preserve its data and metadata"
+				}
+				t.Run(name, func(t *testing.T) {
+					g := NewGomegaWithT(t)
+					hcp := newEtcdTestHCP(hyperv1.Unmanaged)
+					source := newSource(hcp)
+					if tc.mutate != nil {
+						tc.mutate(hcp, source)
+					}
+					var objects []client.Object
+					if !tc.missingSource {
+						objects = append(objects, source)
+					}
+					target := manifests.EtcdClientSecret(hcp.Namespace)
+					if existingTarget {
+						target.Type = corev1.SecretTypeTLS
+						target.Data = map[string][]byte{
+							pki.EtcdClientCrtKey: []byte("last valid certificate"),
+							pki.EtcdClientKeyKey: []byte("last valid key"),
+							"etcd-client-ca.crt": []byte("last valid CA"),
+							"external-provider":  []byte("last valid metadata"),
+						}
+						target.Labels = map[string]string{"external-provider": "supplied"}
+						target.Annotations = map[string]string{"external-provider": "supplied metadata"}
+						target.OwnerReferences = []metav1.OwnerReference{*config.ControllerOwnerRef(hcp)}
+						objects = append(objects, target)
+					}
+					r, operations := newEtcdTestReconciler(hcp, nil, objects...)
+					if existingTarget {
+						g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(target), target)).To(Succeed())
+					}
+					beforeTarget := target.DeepCopy()
+					if !tc.missingSource {
+						g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+					}
+					beforeSource := source.DeepCopy()
+					*operations = etcdTestOperations{}
+
+					err := r.reconcileUnmanagedEtcd(t.Context(), hcp, r.createOrUpdate(hcp))
+					g.Expect(err).To(MatchError(ContainSubstring(tc.expectedError)))
+					if tc.missingSource {
+						g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "it should preserve the source read error")
+					}
+					g.Expect(operations.createOrUpdateCalls).To(BeZero())
+					g.Expect(operations.writes).To(BeEmpty())
+					err = r.Client.Get(t.Context(), client.ObjectKeyFromObject(target), target)
+					if existingTarget {
+						g.Expect(err).NotTo(HaveOccurred())
+						g.Expect(target).To(Equal(beforeTarget))
+					} else {
+						g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+					}
+					if !tc.missingSource {
+						g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+						g.Expect(source).To(Equal(beforeSource))
+					}
+				})
+			}
+		})
+	}
+	t.Run("When the target secret update fails, it should return the error and preserve the last valid credentials", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hcp := newEtcdTestHCP(hyperv1.Unmanaged)
+		source := newSource(hcp)
+		target := manifests.EtcdClientSecret(hcp.Namespace)
+		target.Type = corev1.SecretTypeOpaque
+		target.OwnerReferences = []metav1.OwnerReference{*config.ControllerOwnerRef(hcp)}
+		target.Data = map[string][]byte{
+			pki.EtcdClientCrtKey: []byte("last valid certificate"),
+			pki.EtcdClientKeyKey: []byte("last valid key"),
+			"etcd-client-ca.crt": []byte("last valid CA"),
+		}
+		writeErr := fmt.Errorf("client secret update failed")
+		r, operations := newEtcdTestReconciler(hcp, writeErr, source, target)
+		g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(target), target)).To(Succeed())
+		g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+		beforeTarget := target.DeepCopy()
+		beforeSource := source.DeepCopy()
+
+		err := r.reconcileUnmanagedEtcd(t.Context(), hcp, r.createOrUpdate(hcp))
+		g.Expect(err).To(MatchError(writeErr))
+		g.Expect(operations.createOrUpdateCalls).To(Equal(1))
+		g.Expect(operations.writes).To(HaveLen(1))
+		g.Expect(client.ObjectKeyFromObject(operations.writes[0])).To(Equal(client.ObjectKeyFromObject(target)))
+		g.Expect(operations.writes[0].(*corev1.Secret).Data).To(Equal(source.Data))
+		g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(target), target)).To(Succeed())
+		g.Expect(target).To(Equal(beforeTarget))
+		g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+		g.Expect(source).To(Equal(beforeSource))
+	})
+
+	t.Run("When all required keys are present with empty values, it should copy them without content validation", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hcp := newEtcdTestHCP(hyperv1.Unmanaged)
+		source := newSource(hcp)
+		source.Data = map[string][]byte{pki.EtcdClientCrtKey: nil, pki.EtcdClientKeyKey: {}, "etcd-client-ca.crt": nil}
+		r, operations := newEtcdTestReconciler(hcp, nil, source)
+		g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+		beforeSource := source.DeepCopy()
+		*operations = etcdTestOperations{}
+		g.Expect(r.reconcileUnmanagedEtcd(t.Context(), hcp, r.createOrUpdate(hcp))).To(Succeed())
+		g.Expect(operations.createOrUpdateCalls).To(Equal(1))
+		g.Expect(operations.writes).To(HaveLen(1))
+		target := manifests.EtcdClientSecret(hcp.Namespace)
+		g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(target), target)).To(Succeed())
+		g.Expect(target.Data).To(Equal(source.Data))
+		g.Expect(target.Type).To(Equal(corev1.SecretTypeOpaque))
+		g.Expect(target.OwnerReferences).To(Equal([]metav1.OwnerReference{*config.ControllerOwnerRef(hcp)}))
+		g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(source), source)).To(Succeed())
+		g.Expect(source).To(Equal(beforeSource))
+	})
+}
+
+func TestReconcileCPOV2(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When PKI reconciliation is disabled, it should still copy supplied unmanaged etcd credentials", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hcp := newEtcdTestHCP(hyperv1.Unmanaged)
+		hcp.Annotations = map[string]string{hyperv1.DisablePKIReconciliationAnnotation: "true"}
+		source := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name},
+			Data: map[string][]byte{
+				pki.EtcdClientCrtKey: []byte("supplied certificate"),
+				pki.EtcdClientKeyKey: []byte("supplied key"),
+				"etcd-client-ca.crt": []byte("supplied CA"),
+			},
+		}
+		// Stop after credential copying to avoid reconciling unrelated components.
+		stopErr := fmt.Errorf("stop after unmanaged etcd reconciliation")
+		metricsConfigKey := client.ObjectKeyFromObject(metrics.SREMetricsSetConfigurationConfigMap(hcp.Namespace))
+		r := &HostedControlPlaneReconciler{
+			MetricsSet: metrics.MetricsSetSRE,
+			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(source).WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*corev1.ConfigMap); ok && key == metricsConfigKey {
+						return stopErr
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+			}).Build(),
+		}
+		r.setup(upsert.New(false).CreateOrUpdate)
+
+		err := r.reconcileCPOV2(t.Context(), hcp, infra.InfrastructureStatus{}, nil, nil)
+		g.Expect(err).To(MatchError(stopErr))
+		target := manifests.EtcdClientSecret(hcp.Namespace)
+		g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(target), target)).To(Succeed())
+		g.Expect(target.Data).To(Equal(source.Data))
+		g.Expect(target.Type).To(Equal(corev1.SecretTypeOpaque))
+		g.Expect(target.OwnerReferences).To(Equal([]metav1.OwnerReference{*config.ControllerOwnerRef(hcp)}))
+	})
+
+	t.Run("When PKI reconciliation is disabled, it should still require unmanaged etcd credentials", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		hcp := newEtcdTestHCP(hyperv1.Unmanaged)
+		hcp.Annotations = map[string]string{hyperv1.DisablePKIReconciliationAnnotation: "true"}
+		r, _ := newEtcdTestReconciler(hcp, nil)
+
+		err := r.reconcileCPOV2(t.Context(), hcp, infra.InfrastructureStatus{}, nil, nil)
+		g.Expect(err).To(MatchError(ContainSubstring("failed to reconcile etcd: failed to get etcd client cert external-etcd-credentials")))
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	})
+}
+
+func newEtcdTestHCP(managementType hyperv1.EtcdManagementType) *hyperv1.HostedControlPlane {
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "clusters-test", Name: "test", UID: "test-hcp-uid"},
+		Spec:       hyperv1.HostedControlPlaneSpec{Etcd: hyperv1.EtcdSpec{ManagementType: managementType}},
+	}
+	if managementType == hyperv1.Unmanaged {
+		hcp.Spec.Etcd.Unmanaged = &hyperv1.UnmanagedEtcdSpec{
+			Endpoint: "https://external-etcd.clusters-test.svc:2379",
+			TLS:      hyperv1.EtcdTLSConfig{ClientSecret: corev1.LocalObjectReference{Name: "external-etcd-credentials"}},
+		}
+	}
+	return hcp
+}
+
+type etcdTestOperations struct {
+	createOrUpdateCalls int
+	reads               int
+	writes              []client.Object
+}
+
+func newEtcdTestReconciler(hcp *hyperv1.HostedControlPlane, writeErr error, objects ...client.Object) (*HostedControlPlaneReconciler, *etcdTestOperations) {
+	operations := &etcdTestOperations{}
+	targetKey := client.ObjectKeyFromObject(manifests.EtcdClientSecret(hcp.Namespace))
+	record := func(obj client.Object) error {
+		operations.writes = append(operations.writes, obj.DeepCopyObject().(client.Object))
+		if _, ok := obj.(*corev1.Secret); ok && client.ObjectKeyFromObject(obj) == targetKey {
+			return writeErr
+		}
+		return nil
+	}
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithInterceptorFuncs(interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			operations.reads++
+			return c.Get(ctx, key, obj, opts...)
+		},
+		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			if err := record(obj); err != nil {
+				return err
+			}
+			return c.Create(ctx, obj, opts...)
+		},
+		Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			if err := record(obj); err != nil {
+				return err
+			}
+			return c.Update(ctx, obj, opts...)
+		},
+		Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+			if err := record(obj); err != nil {
+				return err
+			}
+			return c.Patch(ctx, obj, patch, opts...)
+		},
+	}).Build()
+	r := &HostedControlPlaneReconciler{Client: c}
+	createOrUpdate := upsert.New(false).CreateOrUpdate
+	r.setup(func(ctx context.Context, c client.Client, obj client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+		operations.createOrUpdateCalls++
+		return createOrUpdate(ctx, c, obj, mutate)
+	})
+	return r, operations
+}
 
 func TestReconcileKubeadminPassword(t *testing.T) {
 	t.Parallel()
@@ -168,6 +714,136 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 					g.Expect(err).NotTo(HaveOccurred())
 				}
 			}
+		})
+	}
+}
+
+func TestReconcileCombinedPullSecret(t *testing.T) {
+	t.Parallel()
+
+	validPullSecret := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"}}}`)
+	mergedData := []byte(`{"auths":{"registry.redhat.io":{"auth":"dXNlcjpwYXNz"},"custom.io":{"auth":"Y3VzdG9t"}}}`)
+	targetNamespace := "test-ns"
+
+	tests := []struct {
+		name             string
+		existingObjects  []client.Object
+		interceptorFuncs *interceptor.Funcs
+		expectErr        bool
+		errContains      string
+		expectedData     []byte
+	}{
+		{
+			name: "When combined-pull-secret is absent, it should create it from pull-secret",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+			},
+			expectedData: validPullSecret,
+		},
+		{
+			name: "When combined-pull-secret already has data, it should preserve it",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: targetNamespace},
+					Type:       corev1.SecretTypeDockerConfigJson,
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: mergedData},
+				},
+			},
+			expectedData: mergedData,
+		},
+		{
+			name: "When combined-pull-secret exists with empty data, it should seed from pull-secret",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: targetNamespace},
+					Type:       corev1.SecretTypeDockerConfigJson,
+					Data:       map[string][]byte{},
+				},
+			},
+			expectedData: validPullSecret,
+		},
+		{
+			name:        "When pull-secret is missing, it should return an error",
+			expectErr:   true,
+			errContains: "failed to get pull-secret",
+		},
+		{
+			name: "When pull-secret is missing .dockerconfigjson key, it should return an error",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{},
+				},
+			},
+			expectErr:   true,
+			errContains: ".dockerconfigjson",
+		},
+		{
+			name: "When createOrUpdate fails for combined-pull-secret, it should return an error",
+			existingObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: targetNamespace},
+					Data:       map[string][]byte{corev1.DockerConfigJsonKey: validPullSecret},
+				},
+			},
+			interceptorFuncs: &interceptor.Funcs{
+				Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+					if s, ok := obj.(*corev1.Secret); ok && s.Name == "combined-pull-secret" {
+						return fmt.Errorf("forbidden")
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			},
+			expectErr:   true,
+			errContains: "failed to reconcile combined-pull-secret",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: targetNamespace,
+				},
+			}
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.existingObjects...)
+			if tc.interceptorFuncs != nil {
+				builder = builder.WithInterceptorFuncs(*tc.interceptorFuncs)
+			}
+			fakeClient := builder.Build()
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(t.Context()),
+			}
+
+			err := r.reconcileCombinedPullSecret(t.Context(), hcp, controllerutil.CreateOrUpdate)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.errContains))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			combinedSecret := common.CombinedPullSecret(targetNamespace)
+			g.Expect(fakeClient.Get(t.Context(), client.ObjectKeyFromObject(combinedSecret), combinedSecret)).To(Succeed())
+			g.Expect(combinedSecret.Type).To(Equal(corev1.SecretTypeDockerConfigJson))
+			g.Expect(combinedSecret.Data[corev1.DockerConfigJsonKey]).To(Equal(tc.expectedData))
 		})
 	}
 }
@@ -682,7 +1358,10 @@ func TestEventHandling(t *testing.T) {
 	t.Parallel()
 
 	hcp := sampleHCP(t)
-	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"},
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{}`)},
+	}
 	etcdEncryptionKey := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "etcd-encryption-key"},
 		Data:       map[string][]byte{"key": []byte("very-secret")},
@@ -786,6 +1465,85 @@ func TestEventHandling(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileFailsWhenCombinedPullSecretCreateFails(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	hcp := sampleHCP(t)
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"},
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{}`)},
+	}
+	etcdEncryptionKey := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "etcd-encryption-key"},
+		Data:       map[string][]byte{"key": []byte("very-secret")},
+	}
+	fakeNodeTuningOperator := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "node-tuning-operator",
+			Namespace: "bar",
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "None",
+		},
+	}
+	fakeNodeTuningOperatorTLS := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "node-tuning-operator-tls"},
+		Data:       map[string][]byte{"key": []byte("very-secret")},
+	}
+
+	c := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcp, pullSecret, etcdEncryptionKey, fakeNodeTuningOperator, fakeNodeTuningOperatorTLS).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if s, ok := obj.(*corev1.Secret); ok && s.Name == "combined-pull-secret" {
+					return fmt.Errorf("forbidden")
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	readyInfraStatus := infra.InfrastructureStatus{
+		APIHost:          "foo",
+		APIPort:          1,
+		OAuthHost:        "foo",
+		OAuthPort:        1,
+		KonnectivityHost: "foo",
+		KonnectivityPort: 1,
+	}
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().Return(map[string]string{"registry": "override"}).AnyTimes()
+	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+	mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")).AnyTimes()
+
+	r := &HostedControlPlaneReconciler{
+		Client:                        c,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
+		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
+		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
+		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
+			return readyInfraStatus, nil
+		},
+		SetDefaultSecurityContext: false,
+		ec2Client:                 mockEC2,
+	}
+	r.setup(controllerutil.CreateOrUpdate)
+
+	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(hcp)})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to reconcile combined pull secret"))
 }
 
 type createTrackingClient struct {
@@ -1248,6 +2006,14 @@ func TestControlPlaneComponents(t *testing.T) {
 				ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
 			},
 		}
+		// Satisfy component preconditions so gated components (e.g. the
+		// cluster-storage-operator, which gates on ConfigOperatorReconciliationSucceeded)
+		// render their full manifest set for fixture comparison.
+		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+			Type:   string(hyperv1.ConfigOperatorReconciliationSucceeded),
+			Status: metav1.ConditionTrue,
+			Reason: hyperv1.AsExpectedReason,
+		})
 		if tt.platformType != nil {
 			hcp.Spec.Platform.Type = *tt.platformType
 			if *tt.platformType == hyperv1.IBMCloudPlatform {
@@ -1593,8 +2359,15 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 			corev1.DockerConfigJsonKey: []byte(`{}`),
 		},
 	}
+	combinedPullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "combined-pull-secret", Namespace: "hcp-namespace"},
+		Type:       corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{}`),
+		},
+	}
 
-	fakeComponents = append(fakeComponents, pullSecret.DeepCopy())
+	fakeComponents = append(fakeComponents, pullSecret.DeepCopy(), combinedPullSecret.DeepCopy())
 
 	return fakeComponents
 }
@@ -4753,6 +5526,227 @@ func TestReconcileDeletion(t *testing.T) {
 	}
 }
 
+func TestReconcileDeletionAWSEndpointServices(t *testing.T) {
+	const hoFinalizer = "hypershift.openshift.io/hypershift-operator-finalizer"
+
+	newEndpointService := func(name string, deletionTimestamp *metav1.Time, finalizers ...string) *hyperv1.AWSEndpointService {
+		return &hyperv1.AWSEndpointService{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              name,
+				Namespace:         "test-ns",
+				DeletionTimestamp: deletionTimestamp,
+				Finalizers:        finalizers,
+			},
+		}
+	}
+
+	tests := []struct {
+		name              string
+		platformType      hyperv1.PlatformType
+		conditions        []metav1.Condition
+		endpointServices  []*hyperv1.AWSEndpointService
+		listErr           bool
+		deleteErr         bool
+		wantErr           bool
+		wantRequeue       bool
+		wantFinalizerKept bool
+		wantDeletionOn    map[string]bool
+	}{
+		{
+			name:              "When there are no AWSEndpointServices, it should remove the HCP finalizer",
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+		},
+		{
+			name: "When an AWSEndpointService is not being deleted, it should delete it and requeue",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer, hoFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+			wantDeletionOn:    map[string]bool{"private-router": true},
+		},
+		{
+			name: "When an AWSEndpointService still has the CPO finalizer within the timeout, it should wait",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+		},
+		{
+			name: "When an AWSEndpointService only has the hypershift-operator finalizer, it should not wait for it",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), hoFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+		},
+		{
+			name: "When the CPO finalizer is still present after the timeout, it should proceed with deletion",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", ptr.To(metav1.NewTime(time.Now().Add(-11*time.Minute))), awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+		},
+		{
+			name: "When ValidAWSIdentityProvider is False, it should skip AWSEndpointService cleanup",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidIdentityProvider},
+			},
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+			wantDeletionOn:    map[string]bool{"private-router": false},
+		},
+		{
+			name: "When ValidAWSIdentityProvider is Unknown, it should still delete AWSEndpointServices",
+			conditions: []metav1.Condition{
+				{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionUnknown, Reason: hyperv1.StatusUnknownReason},
+			},
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+			wantDeletionOn:    map[string]bool{"private-router": true},
+		},
+		{
+			name: "When there are multiple AWSEndpointServices and one is still pending, it should wait",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("ep-a", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), hoFinalizer),
+				newEndpointService("ep-b", ptr.To(metav1.NewTime(time.Now().Add(-1*time.Minute))), awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       true,
+			wantFinalizerKept: true,
+		},
+		{
+			name:         "When the platform is not AWS, it should not touch AWSEndpointServices",
+			platformType: hyperv1.NonePlatform,
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			wantRequeue:       false,
+			wantFinalizerKept: false,
+			wantDeletionOn:    map[string]bool{"private-router": false},
+		},
+		{
+			name: "When listing AWSEndpointServices fails, it should return an error and keep the finalizer",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			listErr:           true,
+			wantErr:           true,
+			wantFinalizerKept: true,
+		},
+		{
+			name: "When deleting an AWSEndpointService fails, it should return an error and keep the finalizer",
+			endpointServices: []*hyperv1.AWSEndpointService{
+				newEndpointService("private-router", nil, awsEndpointServiceCPOFinalizer),
+			},
+			deleteErr:         true,
+			wantErr:           true,
+			wantFinalizerKept: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			platformSpec := hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{},
+			}
+			if tt.platformType != "" {
+				platformSpec = hyperv1.PlatformSpec{Type: tt.platformType}
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  "test-ns",
+					Finalizers: []string{finalizer},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID:  "test-infra",
+					Platform: platformSpec,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					Conditions: tt.conditions,
+				},
+			}
+
+			objects := []client.Object{hcp}
+			for _, ep := range tt.endpointServices {
+				objects = append(objects, ep)
+			}
+
+			clientBuilder := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{})
+			if tt.listErr {
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+						if _, ok := list.(*hyperv1.AWSEndpointServiceList); ok {
+							return fmt.Errorf("simulated list error")
+						}
+						return c.List(ctx, list, opts...)
+					},
+				})
+			}
+			if tt.deleteErr {
+				clientBuilder = clientBuilder.WithInterceptorFuncs(interceptor.Funcs{
+					Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						if _, ok := obj.(*hyperv1.AWSEndpointService); ok {
+							return fmt.Errorf("simulated delete error")
+						}
+						return c.Delete(ctx, obj, opts...)
+					},
+				})
+			}
+			fakeClient := clientBuilder.Build()
+
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+			// Re-read from fake client so the object has a ResourceVersion.
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.Log.WithName("test"),
+			}
+
+			result, err := r.reconcileDeletion(ctx, hcp)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tt.wantRequeue {
+				g.Expect(result.RequeueAfter).To(Equal(awsEndpointServiceDeletionRequeueInterval))
+			} else {
+				g.Expect(result.RequeueAfter).To(BeZero())
+			}
+
+			updated := &hyperv1.HostedControlPlane{}
+			g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+			g.Expect(controllerutil.ContainsFinalizer(updated, finalizer)).To(Equal(tt.wantFinalizerKept))
+
+			for name, wantDeleting := range tt.wantDeletionOn {
+				ep := &hyperv1.AWSEndpointService{}
+				g.Expect(fakeClient.Get(ctx, client.ObjectKey{Namespace: "test-ns", Name: name}, ep)).To(Succeed())
+				g.Expect(!ep.DeletionTimestamp.IsZero()).To(Equal(wantDeleting), "AWSEndpointService %s deletion state", name)
+			}
+		})
+	}
+}
+
 func TestReconcileDefaultSecurityGroup(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -5078,6 +6072,208 @@ func TestReconcileDefaultSecurityGroup_GenerationConflict(t *testing.T) {
 		"platform status should not be patched when generation changed underneath us")
 }
 
+func TestKASHealthCheckURL(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		ingressPoint string
+		port         int
+		wantURL      string
+	}{
+		{
+			name:         "When the ingress point is raw IPv6, it should bracket the address",
+			ingressPoint: "2001:db8::1",
+			port:         6443,
+			wantURL:      "https://[2001:db8::1]:6443/healthz?verbose",
+		},
+		{
+			name:         "When the ingress point is IPv4, it should preserve the address",
+			ingressPoint: "192.0.2.1",
+			port:         6443,
+			wantURL:      "https://192.0.2.1:6443/healthz?verbose",
+		},
+		{
+			name:         "When the ingress point is DNS, it should preserve the hostname",
+			ingressPoint: "api.example.test",
+			port:         6443,
+			wantURL:      "https://api.example.test:6443/healthz?verbose",
+		},
+		{
+			name:         "When the port is different, it should preserve the selected port",
+			ingressPoint: "2001:db8::1",
+			port:         443,
+			wantURL:      "https://[2001:db8::1]:443/healthz?verbose",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			endpoint := kasHealthCheckURL(test.ingressPoint, test.port)
+			g.Expect(endpoint).To(Equal(test.wantURL), "health URL for host %q and port %d", test.ingressPoint, test.port)
+		})
+	}
+	g := NewWithT(t)
+	_, err := http.NewRequestWithContext(t.Context(), http.MethodGet, kasHealthCheckURL("2001:db8::1", 6443), nil)
+	g.Expect(err).ToNot(HaveOccurred(), "raw IPv6 health URL must create an HTTP request")
+}
+
+func TestReconcileGCPWorkerFirewallRules(t *testing.T) {
+	t.Run("When the platform is not GCP, it should be a no-op and set no condition", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns", Generation: 1},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				InfraID:  "test-infra",
+				Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{}},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hcp).
+			WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+			Build()
+		ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+		r := &HostedControlPlaneReconciler{Client: fakeClient, Log: ctrl.Log.WithName("test")}
+		g.Expect(r.reconcileGCPWorkerFirewallRules(ctx, hcp)).To(Succeed())
+
+		updated := &hyperv1.HostedControlPlane{}
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.GCPFirewallRulesReady))).To(BeNil())
+	})
+
+	t.Run("When WIF credentials are unavailable, it should degrade gracefully without an aggregate error", func(t *testing.T) {
+		g := NewWithT(t)
+		// Ensure no WIF credentials are visible to the manager in this env.
+		t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-ns", Generation: 1},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				InfraID: "test-infra",
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.GCPPlatform,
+					GCP: &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network: hyperv1.GCPResourceReference{Name: "test-infra-network"},
+						},
+					},
+				},
+				Networking: hyperv1.ClusterNetworking{NetworkType: hyperv1.OVNKubernetes},
+			},
+		}
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hcp).
+			WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+			Build()
+		ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+
+		r := &HostedControlPlaneReconciler{Client: fakeClient, Log: ctrl.Log.WithName("test")}
+		// No aggregate error: the reconcile must not be wedged.
+		g.Expect(r.reconcileGCPWorkerFirewallRules(ctx, hcp)).To(Succeed())
+
+		updated := &hyperv1.HostedControlPlane{}
+		g.Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(hcp), updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.GCPFirewallRulesReady))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.Reason).To(Equal(hyperv1.GCPFirewallWaitingForCredentials))
+		g.Expect(cond.ObservedGeneration).To(Equal(int64(1)))
+	})
+}
+
+func TestGCPFirewallSkipOnWIFUnavailableReason(t *testing.T) {
+	t.Run("When the provisioned marker was never persisted, it should return a non-empty reason", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).ToNot(BeEmpty())
+	})
+
+	t.Run("When the provisioned marker is set, it should return an empty reason so the finalizer is retained", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation: "true"},
+			},
+		}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).To(BeEmpty())
+	})
+
+	t.Run("When a stale status condition exists but the provisioned marker is absent, it should still skip (status is not durable evidence)", func(t *testing.T) {
+		g := NewWithT(t)
+		// A prior converged condition does not prove a rule currently exists: the
+		// marker is the only durable, pre-mutation evidence. Marker absent => skip.
+		hcp := &hyperv1.HostedControlPlane{
+			Status: hyperv1.HostedControlPlaneStatus{
+				Conditions: []metav1.Condition{{
+					Type:   string(hyperv1.GCPFirewallRulesReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				}},
+			},
+		}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).ToNot(BeEmpty())
+	})
+
+	t.Run("When the manual skip annotation is set, it should return a non-empty reason even with the provisioned marker set", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					hyperv1.GCPFirewallSkipDeletionAnnotation:              "true",
+					hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation: "true",
+				},
+			},
+		}
+
+		g.Expect(gcpFirewallSkipOnWIFUnavailableReason(hcp)).ToNot(BeEmpty())
+	})
+}
+
+func TestMarkGCPFirewallProvisioned(t *testing.T) {
+	newHCP := func(annotations map[string]string) *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "hcp",
+				Namespace:   "ns",
+				Annotations: annotations,
+			},
+		}
+	}
+
+	t.Run("When the marker is absent, it persists the annotation", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHCP(nil)
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp).Build()
+		r := &HostedControlPlaneReconciler{Client: c}
+
+		g.Expect(r.markGCPFirewallProvisioningAttempted(t.Context(), hcp)).To(Succeed())
+		g.Expect(hcp.Annotations).To(HaveKeyWithValue(hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation, "true"))
+
+		persisted := &hyperv1.HostedControlPlane{}
+		g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(hcp), persisted)).To(Succeed())
+		g.Expect(persisted.Annotations).To(HaveKeyWithValue(hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation, "true"))
+	})
+
+	t.Run("When the marker is already set, it is a no-op", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHCP(map[string]string{hyperv1.GCPFirewallRuleProvisioningAttemptedAnnotation: "true"})
+		// No client is needed since no patch should be issued; a nil client would
+		// panic if the function tried to patch.
+		r := &HostedControlPlaneReconciler{}
+
+		g.Expect(r.markGCPFirewallProvisioningAttempted(t.Context(), hcp)).To(Succeed())
+	})
+}
+
 func TestHealthCheckKASEndpoint(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -5127,7 +6323,11 @@ func TestHealthCheckKASEndpoint(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			server := httptest.NewTLSServer(tt.handler)
+			requests := make(chan *http.Request, 1)
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests <- r
+				tt.handler(w, r)
+			}))
 			defer server.Close()
 
 			host, portStr, err := net.SplitHostPort(server.Listener.Addr().String())
@@ -5142,7 +6342,15 @@ func TestHealthCheckKASEndpoint(t *testing.T) {
 				cancel()
 			}
 
-			err = healthCheckKASEndpoint(ctx, host, port)
+			err = healthCheckKASEndpoint(ctx, host, port, nil)
+			if !tt.cancelCtx {
+				var request *http.Request
+				g.Expect(requests).To(Receive(&request), "health handler must receive a request")
+				g.Expect(request.Method).To(Equal(http.MethodGet), "health request must use GET")
+				g.Expect(request.Host).To(Equal(server.Listener.Addr().String()), "health request must retain the selected authority")
+				g.Expect(request.URL.Path).To(Equal("/healthz"), "health request must use the health endpoint")
+				g.Expect(request.URL.RawQuery).To(Equal("verbose"), "health request must ask for failed-check details")
+			}
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 				if tt.errSubstr != "" {
@@ -5156,7 +6364,7 @@ func TestHealthCheckKASEndpoint(t *testing.T) {
 
 	t.Run("When the ingress point contains invalid characters, it should return a request creation error", func(t *testing.T) {
 		g := NewWithT(t)
-		err := healthCheckKASEndpoint(t.Context(), "host\x7f", 443)
+		err := healthCheckKASEndpoint(t.Context(), "host\x7f", 443, nil)
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("invalid control character"))
 	})
@@ -5332,7 +6540,397 @@ func TestValidateAzureKMSConfig(t *testing.T) {
 }
 
 // Compile-time assertion that fakeVersionImageMetadataProvider satisfies the interface.
-var _ util.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
+var _ imageregistry.ImageMetadataProvider = &fakeVersionImageMetadataProvider{}
 
 // Compile-time assertion for clock interface used by tests.
 var _ clock.Clock = &testingclock.FakeClock{}
+
+func TestHealthCheckKASEndpointMetrics(t *testing.T) {
+	t.Run("When KAS endpoint returns 200, it should set available to 1 and record duration", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		m := newTestKASHealthMetrics(t)
+		host, port := parseHostPort(t, server)
+
+		err := healthCheckKASEndpoint(t.Context(), host, port, m)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(prometheustestutil.ToFloat64(m.Available)).To(Equal(float64(1)))
+		g.Expect(prometheustestutil.CollectAndCount(m.RequestDuration)).To(Equal(1))
+	})
+
+	t.Run("When KAS endpoint returns 503, it should set available to 0", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer server.Close()
+
+		m := newTestKASHealthMetrics(t)
+		host, port := parseHostPort(t, server)
+
+		err := healthCheckKASEndpoint(t.Context(), host, port, m)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(prometheustestutil.ToFloat64(m.Available)).To(Equal(float64(0)))
+		g.Expect(prometheustestutil.CollectAndCount(m.RequestDuration)).To(Equal(1))
+	})
+
+	t.Run("When KAS endpoint is unreachable, it should set available to 0", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		m := newTestKASHealthMetrics(t)
+
+		err := healthCheckKASEndpoint(t.Context(), "192.0.2.1", 1, m)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(prometheustestutil.ToFloat64(m.Available)).To(Equal(float64(0)))
+		g.Expect(prometheustestutil.CollectAndCount(m.RequestDuration)).To(Equal(1))
+	})
+
+	t.Run("When metrics is nil, it should not panic", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		host, port := parseHostPort(t, server)
+		err := healthCheckKASEndpoint(t.Context(), host, port, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+	})
+}
+
+func newTestKASHealthMetrics(t *testing.T) *kas.KASHealthMetrics {
+	t.Helper()
+	return kas.NewKASHealthMetrics(prometheus.NewRegistry())
+}
+
+func parseHostPort(t *testing.T, server *httptest.Server) (string, int) {
+	t.Helper()
+	u, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse server URL: %v", err)
+	}
+	host := u.Hostname()
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
+	return host, port
+}
+
+// kmsAPIError returns a smithy API error matching AWS KMS error conventions.
+func kmsAPIError(code, message string) error {
+	return &smithy.GenericAPIError{Code: code, Message: message}
+}
+
+func TestValidateAWSKMSConfig(t *testing.T) {
+	baseHCP := func() *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "hcp",
+				Namespace:  "hcp-namespace",
+				Generation: 1,
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+				},
+				SecretEncryption: &hyperv1.SecretEncryptionSpec{
+					Type: hyperv1.KMS,
+					KMS: &hyperv1.KMSSpec{
+						Provider: hyperv1.AWS,
+						AWS: &hyperv1.AWSKMSSpec{
+							Region: "us-east-1",
+							ActiveKey: hyperv1.AWSKMSKeyEntry{
+								ARN: "arn:aws:kms:us-east-1:123456789:key/test-key-id",
+							},
+							Auth: hyperv1.AWSKMSAuthSpec{
+								AWSKMSRoleARN: "arn:aws:iam::123456789:role/kms-role",
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	awsSession := aws.Config{
+		Region:      "us-east-1",
+		Credentials: credentials.NewStaticCredentialsProvider("AKID", "SECRET", ""),
+	}
+
+	tests := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		nilAWSSession     bool
+		getGuestToken     func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error)
+		kmsEncryptResult  func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error)
+		assumeRoleResult  func(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error)
+		expectedStatus    metav1.ConditionStatus
+		expectedReason    string
+		expectMsgContains string
+		conditionExpected bool
+	}{
+		{
+			name: "When KMS is not configured, it should set condition Unknown",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "hcp", Namespace: "ns", Generation: 1},
+				Spec:       hyperv1.HostedControlPlaneSpec{},
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionUnknown,
+			expectedReason:    hyperv1.StatusUnknownReason,
+			expectMsgContains: "AWS KMS is not configured",
+		},
+		{
+			name: "When KMS region is empty, it should set condition False",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := baseHCP()
+				hcp.Spec.SecretEncryption.KMS.AWS.Region = ""
+				return hcp
+			}(),
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.InvalidConfigurationReason,
+			expectMsgContains: "AWS KMS region is not configured",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS key is not found, it should report NotFoundException",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("NotFoundException", "key not found")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "NotFoundException",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS key is disabled, it should report DisabledException",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: x509: certificate signed by unknown authority")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("DisabledException", "key is disabled")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "DisabledException",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS key is pending deletion, it should report KeyUnavailableException",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("KeyUnavailableException", "key pending deletion")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "KeyUnavailableException",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS key is in invalid state, it should report KMSInvalidStateException",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("KMSInvalidStateException", "key in invalid state")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "KMSInvalidStateException",
+		},
+		{
+			name: "When guest cluster is unavailable and CPO lacks direct KMS access, it should report Unknown with informative message",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("AccessDeniedException", "access denied")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionUnknown,
+			expectedReason:    hyperv1.StatusUnknownReason,
+			expectMsgContains: "guest cluster API is unavailable",
+		},
+		{
+			name: "When guest cluster is unavailable but KMS key is accessible directly, it should report Unknown about incomplete validation",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return &kms.EncryptOutput{}, nil
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionUnknown,
+			expectedReason:    hyperv1.StatusUnknownReason,
+			expectMsgContains: "KMS key is accessible",
+		},
+		{
+			name: "When full chain succeeds, it should report True",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "test-token", nil
+			},
+			assumeRoleResult: func(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error) {
+				creds := aws.Credentials{
+					AccessKeyID:     "ASSUMED_AKID",
+					SecretAccessKey: "ASSUMED_SECRET",
+					SessionToken:    "ASSUMED_TOKEN",
+				}
+				return &creds, nil
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return &kms.EncryptOutput{}, nil
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionTrue,
+			expectedReason:    hyperv1.AsExpectedReason,
+			expectMsgContains: hyperv1.AllIsWellMessage,
+		},
+		{
+			name: "When role assumption fails, it should report False with InvalidIAMRole",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "test-token", nil
+			},
+			assumeRoleResult: func(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error) {
+				return nil, kmsAPIError("AccessDeniedException", "cannot assume role")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.InvalidIAMRoleReason,
+			expectMsgContains: "failed to assume role web identity",
+		},
+		{
+			name: "When full chain encrypt fails, it should report False with AWSError",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "test-token", nil
+			},
+			assumeRoleResult: func(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error) {
+				creds := aws.Credentials{
+					AccessKeyID:     "ASSUMED_AKID",
+					SecretAccessKey: "ASSUMED_SECRET",
+					SessionToken:    "ASSUMED_TOKEN",
+				}
+				return &creds, nil
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("AccessDeniedException", "no kms:Encrypt permission")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "failed to encrypt data using KMS",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS key has wrong usage type, it should report InvalidKeyUsageException",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("InvalidKeyUsageException", "key usage is SIGN_VERIFY")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionFalse,
+			expectedReason:    hyperv1.AWSErrorReason,
+			expectMsgContains: "InvalidKeyUsageException",
+		},
+		{
+			name: "When guest cluster is unavailable and KMS returns unexpected error, it should report Unknown",
+			hcp:  baseHCP(),
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			kmsEncryptResult: func(ctx context.Context, params *kms.EncryptInput, optFns ...func(*kms.Options)) (*kms.EncryptOutput, error) {
+				return nil, kmsAPIError("ThrottlingException", "rate exceeded")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionUnknown,
+			expectedReason:    hyperv1.StatusUnknownReason,
+			expectMsgContains: "ThrottlingException",
+		},
+		{
+			name:          "When guest cluster is unavailable and AWS session is nil, it should report Unknown",
+			hcp:           baseHCP(),
+			nilAWSSession: true,
+			getGuestToken: func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+				return "", fmt.Errorf("failed to create guest client: EOF")
+			},
+			conditionExpected: true,
+			expectedStatus:    metav1.ConditionUnknown,
+			expectedReason:    hyperv1.StatusUnknownReason,
+			expectMsgContains: "no AWS session is configured",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := ctrl.LoggerInto(t.Context(), ctrl.Log.WithName("test"))
+
+			mockCtrl := gomock.NewController(t)
+			mockKMS := awsapi.NewMockKMSAPI(mockCtrl)
+
+			if tc.kmsEncryptResult != nil {
+				mockKMS.EXPECT().Encrypt(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(tc.kmsEncryptResult).AnyTimes()
+			}
+
+			var sessionPtr *aws.Config
+			if !tc.nilAWSSession {
+				sessionPtr = &awsSession
+			}
+
+			r := &HostedControlPlaneReconciler{
+				awsSession: sessionPtr,
+				newKMSClient: func(cfg aws.Config, optFns ...func(*kms.Options)) awsapi.KMSAPI {
+					return mockKMS
+				},
+			}
+
+			if tc.getGuestToken != nil {
+				r.getGuestToken = tc.getGuestToken
+			}
+			if tc.assumeRoleResult != nil {
+				r.assumeRoleWithWebIdentity = tc.assumeRoleResult
+			}
+
+			r.validateAWSKMSConfig(ctx, tc.hcp)
+
+			cond := meta.FindStatusCondition(tc.hcp.Status.Conditions, string(hyperv1.ValidAWSKMSConfig))
+			if tc.conditionExpected {
+				g.Expect(cond).ToNot(BeNil(), "ValidAWSKMSConfig condition should be set")
+				g.Expect(cond.Status).To(Equal(tc.expectedStatus), "condition status mismatch")
+				if tc.expectedReason != "" {
+					g.Expect(cond.Reason).To(Equal(tc.expectedReason), "condition reason mismatch")
+				}
+				if tc.expectMsgContains != "" {
+					g.Expect(cond.Message).To(ContainSubstring(tc.expectMsgContains), "condition message should contain expected substring")
+				}
+			} else {
+				g.Expect(cond).To(BeNil(), "ValidAWSKMSConfig condition should not be set")
+			}
+		})
+	}
+}

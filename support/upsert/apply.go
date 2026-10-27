@@ -139,6 +139,10 @@ func (p *applyProvider) update(ctx context.Context, c crclient.Client, obj crcli
 		storedHash = existingAnnotations[DesiredStateHashAnnotation]
 	}
 
+	var original runtime.Object
+	if p.loopDetector != nil {
+		original = existing.DeepCopyObject()
+	}
 	preserveOriginalMetadata(existing, obj)
 
 	needsUpdate := false
@@ -192,12 +196,15 @@ func (p *applyProvider) update(ctx context.Context, c crclient.Client, obj crcli
 		}
 	}
 
+	var requested runtime.Object
 	if p.loopDetector != nil {
-		p.loopDetector.recordActualUpdate(existing, obj, key)
+		requested = obj.DeepCopyObject()
 	}
-
 	if err := c.Update(ctx, obj); err != nil {
 		return controllerutil.OperationResultNone, err
+	}
+	if p.loopDetector != nil {
+		p.loopDetector.recordActualUpdate(original, requested, key)
 	}
 
 	return controllerutil.OperationResultUpdated, nil

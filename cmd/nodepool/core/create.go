@@ -63,9 +63,16 @@ type NodePoolPlatformCompleter interface {
 	Complete(context.Context, *CreateNodePoolOptions) (PlatformOptions, error)
 }
 
-func (o *CreateNodePoolOptions) CreateRunFunc(platformOpts PlatformOptions) func(cmd *cobra.Command, args []string) error {
+func (o *CreateNodePoolOptions) CreateRunFunc(platformOpts PlatformOptions, clientProvider *util.ClientProvider) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		if err := o.CreateNodePool(cmd.Context(), platformOpts); err != nil {
+		if clientProvider == nil || clientProvider.ControllerRuntimeClient == nil {
+			return fmt.Errorf("controller-runtime client provider is not configured")
+		}
+		client, err := clientProvider.ControllerRuntimeClientFor("")
+		if err != nil {
+			return err
+		}
+		if err := o.CreateNodePool(cmd.Context(), platformOpts, client); err != nil {
 			log.Log.Error(err, "Failed to create nodepool")
 			return err
 		}
@@ -74,6 +81,9 @@ func (o *CreateNodePoolOptions) CreateRunFunc(platformOpts PlatformOptions) func
 }
 
 func (o *CreateNodePoolOptions) Validate(ctx context.Context, c crclient.Client) error {
+	if c == nil {
+		return fmt.Errorf("management-cluster client is required")
+	}
 	// Validate HostedCluster payload can support the NodePool CPU type
 	if err := validateHostedClusterPayloadSupportsNodePoolCPUArch(ctx, c, o.ClusterName, o.Namespace, o.Arch); err != nil {
 		return err
@@ -86,12 +96,11 @@ func (o *CreateNodePoolOptions) Validate(ctx context.Context, c crclient.Client)
 	return nil
 }
 
-func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts PlatformOptions) error {
-	client, err := util.GetClient()
-	if err != nil {
-		return err
+func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts PlatformOptions, client crclient.Client) error {
+	if client == nil {
+		return fmt.Errorf("management-cluster client is required")
 	}
-
+	var err error
 	if err = o.Validate(ctx, client); err != nil {
 		return err
 	}

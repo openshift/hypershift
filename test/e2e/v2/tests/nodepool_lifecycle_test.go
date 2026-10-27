@@ -26,8 +26,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npconst "github.com/openshift/hypershift/pkg/nodepool"
+	"github.com/openshift/hypershift/pkg/manifests"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
@@ -45,6 +45,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/yaml"
@@ -68,6 +70,8 @@ func RegisterNodePoolLifecycleTests(getTestCtx internal.TestContextGetter) {
 	NodePoolNTOPerformanceProfileTest(getTestCtx)
 	NodePoolAutoRepairTest(getTestCtx)
 	NodePoolDiskEncryptionTest(getTestCtx)
+	NodePoolIPForwardingTest(getTestCtx)
+	RegisterPredictableRolloutTests(getTestCtx)
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
@@ -721,7 +725,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
-						npconst.KubeletConfigConfigMapLabel: "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
 						hyperv1.NodePoolLabel:               np.Name,
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
@@ -746,13 +750,13 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				},
 				func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
 					if diff := cmp.Diff(map[string]string{
-						npconst.KubeletConfigConfigMapLabel: cm.Labels[npconst.KubeletConfigConfigMapLabel],
+						hyperv1.KubeletConfigConfigMapLabel: cm.Labels[hyperv1.KubeletConfigConfigMapLabel],
 						hyperv1.NodePoolLabel:               cm.Labels[hyperv1.NodePoolLabel],
-						npconst.NTOMirroredConfigLabel:      cm.Labels[npconst.NTOMirroredConfigLabel],
+						hyperv1.NTOMirroredConfigLabel:      cm.Labels[hyperv1.NTOMirroredConfigLabel],
 					}, map[string]string{
-						npconst.KubeletConfigConfigMapLabel: "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
 						hyperv1.NodePoolLabel:               np.Name,
-						npconst.NTOMirroredConfigLabel:      "true",
+						hyperv1.NTOMirroredConfigLabel:      "true",
 					}); diff != "" {
 						return false, fmt.Sprintf("incorrect labels: %v", diff), nil
 					}
@@ -775,7 +779,7 @@ func NodePoolMirrorConfigsTest(getTestCtx internal.TestContextGetter) {
 				list := &corev1.ConfigMapList{}
 				err := hcClient.List(ctx, list, crclient.InNamespace(configManagedNamespace),
 					crclient.MatchingLabels(map[string]string{
-						npconst.KubeletConfigConfigMapLabel: "true",
+						hyperv1.KubeletConfigConfigMapLabel: "true",
 						hyperv1.NodePoolLabel:               np.Name,
 					}))
 				configMaps := make([]*corev1.ConfigMap, len(list.Items))
@@ -1262,6 +1266,96 @@ func NodePoolDiskEncryptionTest(getTestCtx internal.TestContextGetter) {
 		// in the control plane namespace. This requires importing CAPI Azure types
 		// (capiazure.AzureMachineList) and verifying DiskEncryptionSetID on each machine.
 	})
+}
+
+// NodePoolIPForwardingTest verifies that an Azure NodePool created with
+// spec.platform.azure.ipForwarding set to AllowAllAddresses propagates the setting all the way to
+// the generated AzureMachineTemplate and the AzureMachines cloned from it, and that a NodePool
+// which never asked for IP forwarding does not get it.
+func NodePoolIPForwardingTest(getTestCtx internal.TestContextGetter) {
+	It("should create a NodePool with Azure IP forwarding set to AllowAllAddresses and verify it is applied", Label("nodepool-ip-forwarding"), func() {
+		testCtx := getTestCtx()
+
+		testCtx.SkipIfNotPlatform(hyperv1.AzurePlatform)
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred())
+
+		hcClient, err := testCtx.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred())
+
+		ctx := testCtx.Context
+
+		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
+		Expect(defaultNP.Spec.Platform.Azure).NotTo(BeNil(), "default NodePool should have an Azure platform")
+
+		var oneReplica int32 = 1
+		np := buildTestNodePool(defaultNP, "ip-forward", func(pool *hyperv1.NodePool) {
+			pool.Spec.Replicas = &oneReplica
+			pool.Spec.Platform.Azure.IPForwarding = hyperv1.AzureIPForwardingAllowAllAddresses
+		})
+
+		err = testCtx.MgmtClient.Create(ctx, np)
+		Expect(err).NotTo(HaveOccurred(), "failed to create NodePool %s", np.Name)
+		GinkgoWriter.Printf("Created IP forwarding NodePool %s\n", np.Name)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
+
+		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
+
+		By("verifying the ipForwarding field survived admission")
+		createdNP := &hyperv1.NodePool{}
+		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), createdNP)).To(Succeed())
+		Expect(createdNP.Spec.Platform.Azure).NotTo(BeNil())
+		Expect(createdNP.Spec.Platform.Azure.IPForwarding).To(Equal(hyperv1.AzureIPForwardingAllowAllAddresses))
+
+		By("verifying the generated AzureMachineTemplate enables IP forwarding")
+		Expect(azureMachineTemplateForNodePool(ctx, testCtx.MgmtClient, testCtx.ControlPlaneNamespace, np.Name).
+			Spec.Template.Spec.EnableIPForwarding).
+			To(BeTrue(), "AzureMachineTemplate for NodePool %s should enable IP forwarding", np.Name)
+
+		By("verifying the AzureMachines cloned from that template enable IP forwarding")
+		azureMachines := &capiazure.AzureMachineList{}
+		Expect(testCtx.MgmtClient.List(ctx, azureMachines,
+			crclient.InNamespace(testCtx.ControlPlaneNamespace),
+			crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: np.Name})).To(Succeed())
+		Expect(azureMachines.Items).NotTo(BeEmpty(), "expected at least one AzureMachine for NodePool %s", np.Name)
+		inspected := 0
+		for _, machine := range azureMachines.Items {
+			Expect(machine.Spec.EnableIPForwarding).To(BeTrue(),
+				"AzureMachine %s should enable IP forwarding", machine.Name)
+			inspected++
+		}
+		Expect(inspected).To(BeNumerically(">", 0), "no AzureMachines were inspected")
+
+		By("verifying the default NodePool, which does not set ipForwarding, is unaffected")
+		Expect(defaultNP.Spec.Platform.Azure.IPForwarding).To(BeEmpty(),
+			"default NodePool should not have ipForwarding set")
+		Expect(azureMachineTemplateForNodePool(ctx, testCtx.MgmtClient, testCtx.ControlPlaneNamespace, defaultNP.Name).
+			Spec.Template.Spec.EnableIPForwarding).
+			To(BeFalse(), "opting one NodePool in must not enable IP forwarding on NodePool %s", defaultNP.Name)
+	})
+}
+
+// azureMachineTemplateForNodePool returns the AzureMachineTemplate currently referenced by the
+// MachineDeployment backing the named NodePool. The template name is a content hash and therefore
+// cannot be predicted, so it is resolved through the MachineDeployment's infrastructure reference.
+func azureMachineTemplateForNodePool(ctx context.Context, client crclient.Client, controlPlaneNamespace, nodePoolName string) *capiazure.AzureMachineTemplate {
+	GinkgoHelper()
+
+	md := &capiv1.MachineDeployment{}
+	Expect(client.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: nodePoolName}, md)).To(Succeed(),
+		"failed to get MachineDeployment for NodePool %s", nodePoolName)
+
+	templateName := md.Spec.Template.Spec.InfrastructureRef.Name
+	Expect(templateName).NotTo(BeEmpty(), "MachineDeployment %s should reference an infrastructure template", nodePoolName)
+
+	template := &capiazure.AzureMachineTemplate{}
+	Expect(client.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: templateName}, template)).To(Succeed(),
+		"failed to get AzureMachineTemplate %s", templateName)
+
+	return template
 }
 
 // Helper functions

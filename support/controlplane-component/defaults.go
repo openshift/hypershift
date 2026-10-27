@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/podspec"
@@ -237,7 +238,7 @@ func (c *controlPlaneWorkload[T]) setAnnotations(podTemplate *corev1.PodTemplate
 		podTemplate.Annotations = map[string]string{}
 	}
 
-	podTemplate.Annotations[hyperv1.ReleaseImageAnnotation] = util.HCPControlPlaneReleaseImage(hcp)
+	podTemplate.Annotations[hyperv1.ReleaseImageAnnotation] = imageregistry.HCPControlPlaneReleaseImage(hcp)
 	if restartDate, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
 		podTemplate.Annotations[hyperv1.RestartDateAnnotation] = restartDate
 	}
@@ -716,7 +717,7 @@ func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageP
 		} else if key == "cluster-version-operator" {
 			// fallback to hcp releaseImage if "cluster-version-operator" image is not available.
 			// This could happen for example in local dev environments if the "OPERATE_ON_RELEASE_IMAGE" env variable is not set.
-			containers[i].Image = util.HCPControlPlaneReleaseImage(hcp)
+			containers[i].Image = imageregistry.HCPControlPlaneReleaseImage(hcp)
 		} else if key == karpenterutil.KarpenterProviderAWSImageName {
 			// fallback to hardcoded aws image if karpenter image is not available in payload yet.
 			containers[i].Image = karpenterassets.DefaultKarpenterProviderAWSImage

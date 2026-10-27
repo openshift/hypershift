@@ -3,6 +3,8 @@ package gcp
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/openshift/hypershift/support/testutil"
@@ -120,6 +122,11 @@ func TestCLIFlow(t *testing.T) {
 				t.Fatalf("failed to update nodepool: %v", err)
 			}
 
+			// Verify zone is set in NodePool spec
+			g := NewGomegaWithT(t)
+			g.Expect(nodePool.Spec.Platform.GCP).NotTo(BeNil(), "GCP platform should be set")
+			g.Expect(nodePool.Spec.Platform.GCP.Zone).NotTo(BeEmpty(), "Zone should be set in NodePool")
+
 			// Compare with fixture
 			testutil.CompareWithFixture(t, nodePool.Spec.Platform.GCP)
 		})
@@ -191,6 +198,7 @@ func TestUpdateNodePool(t *testing.T) {
 		opts := &RawGCPNodePoolCreateOptions{
 			GCPNodePoolCreateOptions: &GCPNodePoolCreateOptions{
 				BootDiskSize: -1,
+				Zone:         "us-central1-a",
 			},
 		}
 
@@ -200,6 +208,25 @@ func TestUpdateNodePool(t *testing.T) {
 		}
 
 		expectedError := "boot disk size cannot be negative: -1"
+		if err.Error() != expectedError {
+			t.Errorf("expected error %q, got %q", expectedError, err.Error())
+		}
+	})
+
+	t.Run("When zone is missing, validation should reject it", func(t *testing.T) {
+		ctx := t.Context()
+		opts := &RawGCPNodePoolCreateOptions{
+			GCPNodePoolCreateOptions: &GCPNodePoolCreateOptions{
+				Zone: "",
+			},
+		}
+
+		_, err := opts.Validate(ctx, nil)
+		if err == nil {
+			t.Fatal("expected error for missing zone")
+		}
+
+		expectedError := `required flag(s) "zone" not set`
 		if err.Error() != expectedError {
 			t.Errorf("expected error %q, got %q", expectedError, err.Error())
 		}

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -18,19 +20,24 @@ import (
 	aws "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	crdassets "github.com/openshift/hypershift/cmd/install/assets/crds"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/metrics"
 
+	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/set"
 
@@ -626,11 +633,11 @@ func TestCRDIncludeFilter(t *testing.T) {
 			expect: true,
 		},
 		{
-			name:   "When path contains external-dns and ExternalDNSProvider is aws (doesn't use CRD source), it should be excluded",
+			name:   "When path contains external-dns and ExternalDNSProvider is aws (uses CRD source), it should be included",
 			opts:   Options{ExternalDNSProvider: "aws"},
 			path:   "external-dns/dnsendpoints.externaldns.k8s.io.yaml",
 			crd:    defaultCRD(),
-			expect: false,
+			expect: true,
 		},
 		{
 			name:   "When path contains external-dns and ExternalDNSProvider is empty, it should be excluded",
@@ -660,13 +667,13 @@ func TestSetupCRDs(t *testing.T) {
 		expectError  bool
 	}{
 		{
-			name: "When is TechPreviewNoUpgrade it should have a single nodepool CRD with the TechPreviewNoUpgrade annotation",
+			name: "When TechPreviewNoUpgrade is enabled, it should include preview CRDs",
 			inputOptions: Options{
 				TechPreviewNoUpgrade: true,
 			},
 		},
 		{
-			name:         "When is NOT TechPreviewNoUpgrade it should have a single nodepool CRD with the default annotation",
+			name:         "When TechPreviewNoUpgrade is disabled, it should include default CRDs",
 			inputOptions: Options{},
 		},
 		{
@@ -685,6 +692,12 @@ func TestSetupCRDs(t *testing.T) {
 			name: "When PlatformOptions is set to AWS,Azure, only AWS & Azure CAPI CRDs should be present",
 			inputOptions: Options{
 				PlatformsToInstall: []string{"aws", "azure"},
+			},
+		},
+		{
+			name: "When PlatformOptions is set to OpenStack, it should include the OpenStack CAPI CRDs",
+			inputOptions: Options{
+				PlatformsToInstall: []string{"openstack"},
 			},
 		},
 		{
@@ -711,10 +724,17 @@ func TestSetupCRDs(t *testing.T) {
 			crds, err := setupCRDs(t.Context(), nil, tc.inputOptions, &corev1.Namespace{}, &corev1.Service{})
 			g.Expect(err).ToNot(HaveOccurred())
 			nodePoolCRDS := make([]crclient.Object, 0)
+			clusterCRDs := map[string][]*apiextensionsv1.CustomResourceDefinition{
+				"hostedclusters.hypershift.openshift.io":      nil,
+				"hostedcontrolplanes.hypershift.openshift.io": nil,
+			}
 			var machineDeploymentCRD crclient.Object
 			var awsEndpointServicesCRD crclient.Object
 			var dnsEndpointCRD crclient.Object
 			for _, crd := range crds {
+				if _, ok := clusterCRDs[crd.GetName()]; ok {
+					clusterCRDs[crd.GetName()] = append(clusterCRDs[crd.GetName()], crd.(*apiextensionsv1.CustomResourceDefinition))
+				}
 				if crd.GetName() == "nodepools.hypershift.openshift.io" {
 					nodePoolCRDS = append(nodePoolCRDS, crd)
 				}
@@ -731,6 +751,25 @@ func TestSetupCRDs(t *testing.T) {
 
 			// Smoke test to ensure that CRDs that should apply for any feature gate are present.
 			g.Expect(machineDeploymentCRD).ToNot(BeNil())
+
+			// Component route labels must only be exposed by the preview installation.
+			for crdName, matchingCRDs := range clusterCRDs {
+				g.Expect(matchingCRDs).To(HaveLen(1), "Expected exactly one %s CRD", crdName)
+				var schema *apiextensionsv1.JSONSchemaProps
+				for _, version := range matchingCRDs[0].Spec.Versions {
+					if version.Name == "v1beta1" && version.Served {
+						g.Expect(version.Schema).ToNot(BeNil(), "Expected a schema for %s v1beta1", crdName)
+						schema = version.Schema.OpenAPIV3Schema
+						break
+					}
+				}
+				g.Expect(schema).ToNot(BeNil(), "Expected a served v1beta1 schema for %s", crdName)
+				componentRoutes := schema.Properties["spec"].Properties["configuration"].Properties["ingress"].Properties["componentRoutes"]
+				g.Expect(componentRoutes.Items).ToNot(BeNil(), "Expected componentRoutes items for %s", crdName)
+				g.Expect(componentRoutes.Items.Schema).ToNot(BeNil(), "Expected a componentRoutes item schema for %s", crdName)
+				_, hasLabels := componentRoutes.Items.Schema.Properties["labels"]
+				g.Expect(hasLabels).To(Equal(tc.inputOptions.TechPreviewNoUpgrade), "Unexpected component route labels availability for %s", crdName)
+			}
 
 			// Validate the feature set specific CRDs are applied.
 			g.Expect(nodePoolCRDS).To(HaveLen(1))
@@ -900,6 +939,54 @@ func TestRenderHyperShiftOperator_RenderSensitive(t *testing.T) {
 	})
 }
 
+func TestRenderHyperShiftOperator(t *testing.T) {
+	g := NewGomegaWithT(t)
+	pullSecretFile := filepath.Join(t.TempDir(), "pull-secret.json")
+	g.Expect(os.WriteFile(pullSecretFile, []byte(`{"auths":{}}`), 0o600)).To(Succeed())
+	var buf bytes.Buffer
+	opts := NewInstallOptionsWithDefaults()
+	opts.PrivatePlatform = string(hyperv1.NonePlatform)
+	opts.ExternalDNSProvider = "aws"
+	opts.ExternalDNSRoleARN = "arn:aws:iam::123456789012:role/external-dns"
+	opts.ExternalDNSDomainFilter = "example.com"
+	opts.AWSRoleCredentialSource = aws.CredentialSourceWebIdentity
+	opts.PullSecretFile = pullSecretFile
+	opts.ClientProvider = &cmdutil.ClientProvider{
+		ControllerRuntimeClient: func(_ string) (crclient.Client, error) {
+			return nil, fmt.Errorf("client intentionally unavailable")
+		},
+	}
+	opts.Format = RenderFormatYaml
+	opts.OutputTypes = string(OutputResources)
+	opts.RenderSensitive = true
+
+	g.Expect(RenderHyperShiftOperator(t.Context(), &buf, &opts)).To(Succeed())
+	g.Expect(buf.Len()).To(BeNumerically(">", 0))
+}
+
+func TestInstallHyperShiftOperator(t *testing.T) {
+	t.Run("When no client provider is supplied, it should use default kubeconfig resolution", func(t *testing.T) {
+		g := NewWithT(t)
+		kubeconfig := filepath.Join(t.TempDir(), "invalid-kubeconfig")
+		g.Expect(os.WriteFile(kubeconfig, []byte("not a kubeconfig"), 0o600)).To(Succeed())
+		t.Setenv("KUBECONFIG", kubeconfig)
+
+		opts := NewInstallOptionsWithDefaults()
+		opts.ClientProvider = nil
+		err := InstallHyperShiftOperator(t.Context(), io.Discard, opts)
+		g.Expect(err).To(MatchError(ContainSubstring("unable to get kubernetes config")))
+	})
+
+	t.Run("When the supplied client provider is incomplete, it should return a configuration error", func(t *testing.T) {
+		g := NewWithT(t)
+		opts := NewInstallOptionsWithDefaults()
+		opts.ClientProvider = &cmdutil.ClientProvider{}
+
+		err := InstallHyperShiftOperator(t.Context(), io.Discard, opts)
+		g.Expect(err).To(MatchError("controller-runtime client provider is not configured"))
+	})
+}
+
 func TestRenderOutputsScope(t *testing.T) {
 	baseOpts := Options{
 		PrivatePlatform: string(hyperv1.NonePlatform),
@@ -1058,6 +1145,73 @@ func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
 				g.Expect(hasSharedIngressClusterRole).To(BeFalse(), "expected shared ingress ClusterRole to not be present")
 				g.Expect(hasSharedIngressClusterRoleBinding).To(BeFalse(), "expected shared ingress ClusterRoleBinding to not be present")
 			}
+		})
+	}
+}
+
+func TestHyperShiftOperatorPodDisruptionBudget(t *testing.T) {
+	// The PDB must be emitted for every install regardless of the effective
+	// operator replica count, and must use maxUnavailable:1 so the default
+	// two-replica deployment keeps one pod available without blocking drains
+	// when the operator runs with one replica.
+	tests := []struct {
+		name             string
+		opts             Options
+		expectedReplicas int32
+	}{
+		{
+			name:             "default (webhooks enabled, 2 replicas)",
+			opts:             Options{PrivatePlatform: string(hyperv1.NonePlatform)},
+			expectedReplicas: 2,
+		},
+		{
+			name: "single replica (webhooks disabled)",
+			opts: Options{
+				PrivatePlatform:              string(hyperv1.NonePlatform),
+				DisableCAPIConversionWebhook: true,
+			},
+			expectedReplicas: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			tc.opts.ApplyDefaults()
+			_, objects, err := hyperShiftOperatorManifests(t.Context(), nil, tc.opts)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			var (
+				operatorDeployment *appsv1.Deployment
+				pdb                *policyv1.PodDisruptionBudget
+			)
+			for _, obj := range objects {
+				switch obj := obj.(type) {
+				case *appsv1.Deployment:
+					if obj.Name == assets.HypershiftOperatorName {
+						operatorDeployment = obj
+					}
+				case *policyv1.PodDisruptionBudget:
+					pdb = obj
+				}
+			}
+			g.Expect(operatorDeployment).ToNot(BeNil(), "expected a Deployment for the operator")
+			g.Expect(operatorDeployment.Spec.Replicas).ToNot(BeNil())
+			g.Expect(*operatorDeployment.Spec.Replicas).To(Equal(tc.expectedReplicas))
+			g.Expect(pdb).ToNot(BeNil(), "expected a PodDisruptionBudget for the operator")
+			g.Expect(pdb.Name).To(Equal(assets.HypershiftOperatorName))
+			g.Expect(pdb.Spec.MinAvailable).To(BeNil(), "should use maxUnavailable, not minAvailable")
+			g.Expect(pdb.Spec.MaxUnavailable).ToNot(BeNil())
+			g.Expect(pdb.Spec.MaxUnavailable.IntValue()).To(Equal(1))
+			g.Expect(pdb.Spec.Selector.MatchLabels).To(HaveKeyWithValue("name", assets.HypershiftOperatorName))
+			g.Expect(pdb.Namespace).To(Equal(operatorDeployment.Namespace),
+				"PDB and Deployment must be in the same namespace")
+			for k, v := range pdb.Spec.Selector.MatchLabels {
+				g.Expect(operatorDeployment.Spec.Template.Labels).To(HaveKeyWithValue(k, v),
+					"PDB selector must match Deployment pod template labels")
+			}
+			g.Expect(pdb.Spec.UnhealthyPodEvictionPolicy).ToNot(BeNil())
+			g.Expect(*pdb.Spec.UnhealthyPodEvictionPolicy).To(Equal(policyv1.AlwaysAllow))
 		})
 	}
 }
@@ -2087,7 +2241,8 @@ func TestSetupExternalDNS(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
-			objects, err := setupExternalDNS(context.Background(), tc.opts, ns)
+			client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
+			objects, err := setupExternalDNS(t.Context(), tc.opts, ns, client)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(len(objects)).To(BeNumerically(">=", tc.minResourceCount))
 
@@ -2108,6 +2263,90 @@ func TestSetupExternalDNS(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When the client is unavailable, it should still generate external DNS resources", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+		objects, err := setupExternalDNS(t.Context(), Options{ExternalDNSProvider: "aws"}, ns, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(objects).NotTo(BeEmpty())
+	})
+
+	t.Run("When rendering without a management client, it should not resolve the configured provider", func(t *testing.T) {
+		g := NewWithT(t)
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+		proxy := &configv1.Proxy{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+			Status:     configv1.ProxyStatus{HTTPProxy: "http://proxy.example.com:8080"},
+		}
+		proxyClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(proxy).Build()
+		clientProviderCalls := 0
+		opts := Options{
+			ExternalDNSProvider: "aws",
+			ClientProvider: &cmdutil.ClientProvider{
+				ControllerRuntimeClient: func(string) (crclient.Client, error) {
+					clientProviderCalls++
+					return proxyClient, nil
+				},
+			},
+		}
+
+		objects, err := setupExternalDNS(t.Context(), opts, ns, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(clientProviderCalls).To(Equal(0))
+		deployment := findExternalDNSDeployment(objects)
+		g.Expect(deployment).NotTo(BeNil())
+		for _, env := range deployment.Spec.Template.Spec.Containers[0].Env {
+			g.Expect(env.Name).NotTo(Equal("HTTP_PROXY"))
+		}
+	})
+
+	t.Run("When proxy lookup fails, it should continue without proxy settings", func(t *testing.T) {
+		g := NewWithT(t)
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectKey, _ crclient.Object, _ ...crclient.GetOption) error {
+				return errors.New("proxy lookup failed")
+			},
+		}).Build()
+		objects, err := setupExternalDNS(t.Context(), Options{ExternalDNSProvider: "aws"}, ns, client)
+		g.Expect(err).NotTo(HaveOccurred())
+		deployment := findExternalDNSDeployment(objects)
+		g.Expect(deployment).NotTo(BeNil())
+		for _, env := range deployment.Spec.Template.Spec.Containers[0].Env {
+			g.Expect(env.Name).NotTo(Equal("HTTP_PROXY"))
+		}
+	})
+
+	t.Run("When the proxy API is unavailable, it should continue without a proxy", func(t *testing.T) {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(_ context.Context, _ crclient.WithWatch, _ crclient.ObjectKey, _ crclient.Object, _ ...crclient.GetOption) error {
+				return &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "config.openshift.io", Kind: "Proxy"}}
+			},
+		}).Build()
+		objects, err := setupExternalDNS(t.Context(), Options{ExternalDNSProvider: "aws"}, ns, client)
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		NewWithT(t).Expect(objects).NotTo(BeEmpty())
+	})
+
+	t.Run("When the proxy exists, it should continue generating external DNS resources", func(t *testing.T) {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "hypershift"}}
+		proxy := &configv1.Proxy{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+		client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(proxy).Build()
+		objects, err := setupExternalDNS(t.Context(), Options{ExternalDNSProvider: "aws"}, ns, client)
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
+		NewWithT(t).Expect(objects).NotTo(BeEmpty())
+	})
+}
+
+func findExternalDNSDeployment(objects []crclient.Object) *appsv1.Deployment {
+	for _, object := range objects {
+		if deployment, ok := object.(*appsv1.Deployment); ok {
+			return deployment
+		}
+	}
+	return nil
 }
 
 func TestValidateImageConfig(t *testing.T) {

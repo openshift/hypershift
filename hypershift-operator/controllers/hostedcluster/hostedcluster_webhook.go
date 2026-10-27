@@ -6,8 +6,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/supportedversion"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -117,7 +117,7 @@ func (defaulter *nodePoolDefaulter) Default(ctx context.Context, np *hyperv1.Nod
 }
 
 // SetupWebhookWithManager sets up HostedCluster webhooks.
-func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.RegistryClientImageMetadataProvider, logger logr.Logger) error {
+func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *imageregistry.RegistryClientImageMetadataProvider, logger logr.Logger) error {
 	err := ctrl.NewWebhookManagedBy(mgr, &hyperv1.HostedCluster{}).
 		WithDefaulter(&hostedClusterDefaulter{}).
 		WithValidator(&hostedClusterValidator{}).

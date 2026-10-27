@@ -15,9 +15,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"github.com/openshift/hypershift/test/e2e/util/dump"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
 
@@ -29,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/clientcmd"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -49,13 +51,17 @@ func TestCreateCluster(t *testing.T) {
 		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 		clusterOpts.NodePoolReplicas = 1
 	}
-	if !e2eutil.IsLessThan(e2eutil.Version418) {
+	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version418) {
 		clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
 	}
 
-	if globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform {
+	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version421) && (globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform) {
 		// Configure Ingress Operator with custom endpointPublishingStrategy before cluster creation
+		originalBeforeApply := clusterOpts.BeforeApply
 		clusterOpts.BeforeApply = func(o crclient.Object) {
+			if originalBeforeApply != nil {
+				originalBeforeApply(o)
+			}
 			switch hc := o.(type) {
 			case *hyperv1.HostedCluster:
 				if hc.Spec.OperatorConfiguration == nil {
@@ -75,8 +81,24 @@ func TestCreateCluster(t *testing.T) {
 		}
 	}
 
-	clusterOpts.PodsLabels = map[string]string{
-		"hypershift-e2e-test-label": "test",
+	if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version419) {
+		clusterOpts.PodsLabels = map[string]string{
+			"hypershift-e2e-test-label": "test",
+		}
+	}
+	if e2eutil.IsLessThan(e2eutil.Version417) {
+		// nodeVolumeDetachTimeout was added to the NodePool API in 4.17.
+		// Do not send it to older release-branch CRDs, even though the main
+		// test binary includes the field in its NodePool type.
+		originalBeforeApply := clusterOpts.BeforeApply
+		clusterOpts.BeforeApply = func(o crclient.Object) {
+			if originalBeforeApply != nil {
+				originalBeforeApply(o)
+			}
+			if nodePool, ok := o.(*hyperv1.NodePool); ok {
+				nodePool.Spec.NodeVolumeDetachTimeout = nil
+			}
+		}
 	}
 	clusterOpts.Tolerations = []string{"key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule"}
 
@@ -108,14 +130,24 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomTolerations(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureAppLabel(t, ctx, mgtClient, hostedCluster)
-		e2eutil.EnsureFeatureGateStatus(t, ctx, guestClient)
-		e2eutil.EnsureCAPIFinalizers(t, ctx, mgtClient, hostedCluster)
+		if globalOpts.Platform != hyperv1.AWSPlatform {
+			e2eutil.EnsureFeatureGateStatus(t, ctx, guestClient)
+			e2eutil.EnsureCAPIFinalizers(t, ctx, mgtClient, hostedCluster)
+		}
 
 		// ensure KAS DNS name is configured with a KAS Serving cert
 		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster, clusterOpts)
-		e2eutil.EnsureDefaultSecurityGroupTags(t, ctx, mgtClient, hostedCluster, clusterOpts)
 
 		if globalOpts.Platform == hyperv1.AzurePlatform {
+			t.Run("[Feature:AzureMachineDiagnostics] VerifyAzureMachineDiagnostics", func(t *testing.T) {
+				artifacts := globalOpts.ArtifactDir
+				if artifacts == "" {
+					artifacts = t.TempDir()
+				}
+				if err := dump.VerifyAzureMachineDiagnostics(ctx, mgtClient, hostedCluster, clusterOpts.AzurePlatform.CredentialsFile, artifacts, clusterOpts.Kubeconfig); err != nil {
+					t.Fatal(err)
+				}
+			})
 			// WI webhook must run before AllowedCIDRs. AllowedCIDRs blocks and restores
 			// all KAS traffic; the webhook sidecar (FailurePolicy: Ignore) may not be
 			// ready during recovery, silently skipping mutation on pods created in that window.
@@ -124,6 +156,9 @@ func TestCreateCluster(t *testing.T) {
 		}
 
 		e2eutil.EnsureMetricsForwarderWorking(t, ctx, mgtClient, hostedCluster)
+		if globalOpts.Platform != hyperv1.AWSPlatform {
+			e2eutil.ValidateCPOMetrics(t, ctx, mgtClient, hostedCluster)
+		}
 
 		// Verify CPO override image if TEST_CPO_OVERRIDE=1 is set
 		if os.Getenv("TEST_CPO_OVERRIDE") == "1" {
@@ -136,13 +171,6 @@ func TestCreateCluster(t *testing.T) {
 			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, guestClient, hostedCluster)
 		}
 
-		e2eutil.EnsureAWSCCMWithCustomizations(t, ctx, &e2eutil.AWSCCMTestConfig{
-			MgtClient:     mgtClient,
-			GuestClient:   guestClient,
-			HostedCluster: hostedCluster,
-			AWSCredsFile:  clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile,
-			Platform:      globalOpts.Platform,
-		})
 	}).WithAssetReader(content.ReadFile).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
 }

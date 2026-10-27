@@ -7,8 +7,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/podspec"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -54,8 +54,8 @@ func TestAdaptKubeconfig(t *testing.T) {
 			validate: func(t *testing.T, secret *corev1.Secret, err error) {
 				g := NewWithT(t)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(secret.Data).To(HaveKey(podspec.KubeconfigKey))
-				g.Expect(secret.Data[podspec.KubeconfigKey]).ToNot(BeEmpty())
+				g.Expect(secret.Data).To(HaveKey(config.KubeconfigKey))
+				g.Expect(secret.Data[config.KubeconfigKey]).ToNot(BeEmpty())
 			},
 		},
 		{
@@ -86,7 +86,7 @@ func TestAdaptKubeconfig(t *testing.T) {
 				g := NewWithT(t)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(secret.Data).ToNot(BeNil())
-				g.Expect(secret.Data).To(HaveKey(podspec.KubeconfigKey))
+				g.Expect(secret.Data).To(HaveKey(config.KubeconfigKey))
 			},
 		},
 		{

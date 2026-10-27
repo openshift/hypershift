@@ -73,6 +73,32 @@ func TestTLSArgs(t *testing.T) {
 			},
 		},
 		{
+			name: "When Custom profile contains groups, it should omit curve preferences from shared TLS args",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Groups:        []configv1.TLSGroup{configv1.TLSGroupX25519, configv1.TLSGroupSecP256r1},
+					},
+				},
+			},
+			expectedArgs: []string{"--tls-min-version=VersionTLS12"},
+		},
+		{
+			name: "When Custom profile contains an unknown group, it should leave group validation to the caller",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Groups:        []configv1.TLSGroup{"unknown"},
+					},
+				},
+			},
+			expectedArgs: []string{"--tls-min-version=VersionTLS12"},
+		},
+		{
 			name: "When TLS profile is Custom with nil Custom field, it should return error",
 			profile: &configv1.TLSSecurityProfile{
 				Type: configv1.TLSProfileCustomType,

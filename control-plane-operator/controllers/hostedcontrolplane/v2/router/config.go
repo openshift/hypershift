@@ -9,6 +9,7 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -113,8 +114,8 @@ func generateRouterConfig(routeList *routev1.RouteList, svcsNameToIP map[string]
 		}
 		switch route.Name {
 		case manifests.KubeAPIServerInternalRoute("").Name,
-			manifests.KubeAPIServerExternalPublicRoute("").Name,
-			manifests.KubeAPIServerExternalPrivateRoute("").Name:
+			cpomanifests.KubeAPIServerExternalPublicRoute("").Name,
+			cpomanifests.KubeAPIServerExternalPrivateRoute("").Name:
 			p.HasKubeAPI = true
 			p.KASSVCPort = config.KASSVCPort
 			p.KASDestinationServiceIP = svcsNameToIP["kube-apiserver"]
@@ -123,9 +124,9 @@ func generateRouterConfig(routeList *routev1.RouteList, svcsNameToIP map[string]
 			p.Backends = append(p.Backends, backendDesc{Name: "ignition", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 443})
 		case manifests.KonnectivityServerRoute("").Name:
 			p.Backends = append(p.Backends, backendDesc{Name: "konnectivity", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 8091})
-		case manifests.OauthServerExternalPrivateRoute("").Name:
+		case cpomanifests.OauthServerExternalPrivateRoute("").Name:
 			p.Backends = append(p.Backends, backendDesc{Name: "oauth_private", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 6443})
-		case manifests.OauthServerExternalPublicRoute("").Name:
+		case cpomanifests.OauthServerExternalPublicRoute("").Name:
 			p.Backends = append(p.Backends, backendDesc{Name: "oauth", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 6443})
 		case manifests.OauthServerInternalRoute("").Name:
 			p.Backends = append(p.Backends, backendDesc{Name: "oauth_internal", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 6443})

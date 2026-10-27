@@ -5,7 +5,7 @@ version: v1beta1
 tests:
   onCreate:
   # --- Azure authentication configuration validation ---
-  - name: Azure German cloud should be selectable
+  - name: Azure German cloud should accept a maximum-length braced subnetID
     initial: |
       apiVersion: hypershift.openshift.io/v1beta1
       kind: HostedCluster
@@ -19,7 +19,7 @@ tests:
             location: germanywestcentral
             resourceGroupName: test-rg
             vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
-            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subnetID: "/subscriptions/{12345678-1234-5678-9012-123456789012}/resourceGroups/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr/providers/Microsoft.Network/virtualNetworks/vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/subnets/ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
             subscriptionID: "12345678-1234-5678-9012-123456789012"
             securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
             tenantID: "87654321-4321-8765-2109-876543210987"
@@ -66,6 +66,195 @@ tests:
           servicePublishingStrategy:
             type: Route
             route: {}
+
+  - name: When Azure HostedCluster subnetID has a non-UUID subscription it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            cloud: AzurePublicCloud
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/not-a-uuid/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "the subscriptionId in the subnetID must be a valid UUID"
+
+  - name: When Azure HostedCluster subnetID has an opening UUID brace without a closing brace it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            cloud: AzurePublicCloud
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/{12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "the subscriptionId in the subnetID must be a valid UUID"
+
+  - name: When Azure HostedCluster subnetID has a closing UUID brace without an opening brace it should fail
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            cloud: AzurePublicCloud
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/12345678-1234-5678-9012-123456789012}/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "the subscriptionId in the subnetID must be a valid UUID"
 
   - name: Azure Bleu cloud should be selectable
     initial: |
@@ -1710,6 +1899,267 @@ tests:
 
 
   onUpdate:
+  # --- Azure subnet UUID ratcheting ---
+  - name: When an invalid Azure HostedCluster subnetID changes it should fail
+    initialCRDPatches:
+      # Remove immutability before the UUID validation so the invalid legacy
+      # value can be created and the update can exercise the restored UUID rule.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/azure/properties/subnetID/x-kubernetes-validations/8
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/azure/properties/subnetID/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            cloud: AzurePublicCloud
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/not-a-uuid/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            cloud: AzurePublicCloud
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/still-not-a-uuid/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expectedError: "the subscriptionId in the subnetID must be a valid UUID"
+
+  - name: When updating an unrelated Azure field while an old invalid subnetID is unchanged it should pass
+    initialCRDPatches:
+      # Remove the UUID validation so the initial object can be created with a
+      # legacy value that the current CRD now rejects.
+      - op: remove
+        path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties/platform/properties/azure/properties/subnetID/x-kubernetes-validations/1
+    initial: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            cloud: AzurePublicCloud
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/not-a-uuid/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      spec:
+        dns:
+          baseDomain: example.com
+        platform:
+          type: Azure
+          azure:
+            cloud: AzureUSGovernmentCloud
+            location: eastus
+            resourceGroupName: test-rg
+            vnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
+            subnetID: "/subscriptions/not-a-uuid/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"
+            subscriptionID: "12345678-1234-5678-9012-123456789012"
+            securityGroupID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg"
+            tenantID: "87654321-4321-8765-2109-876543210987"
+            azureAuthenticationConfig:
+              azureAuthenticationConfigType: WorkloadIdentities
+              workloadIdentities:
+                imageRegistry:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                ingress:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                file:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                disk:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                nodePoolManagement:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                cloudProvider:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+                network:
+                  clientID: "12345678-1234-5678-9012-123456789012"
+        pullSecret:
+          name: secret
+        release:
+          image: quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: key
+          type: aescbc
+        services:
+        - service: APIServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: OAuthServer
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Konnectivity
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+        - service: Ignition
+          servicePublishingStrategy:
+            type: Route
+            route: {}
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+
   # --- Azure Swift private networking immutability ---
   - name: When Private.Type changes from PrivateLink to Swift it should fail
     initial: |

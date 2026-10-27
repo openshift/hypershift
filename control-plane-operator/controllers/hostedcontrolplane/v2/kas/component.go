@@ -121,6 +121,12 @@ func NewComponent() component.ControlPlaneComponent {
 			component.ReconcileExisting(),
 		).
 		WithManifestAdapter(
+			"gcp-workload-identity-federation-webhook-kubeconfig.yaml",
+			component.EnableForPlatform(hyperv1.GCPPlatform),
+			component.WithAdaptFunction(adaptGCPWorkloadIdentityFederationWebhookKubeconfigSecret),
+			component.ReconcileExisting(),
+		).
+		WithManifestAdapter(
 			"azure-kms-secretprovider.yaml",
 			component.WithAdaptFunction(kms.AdaptAzureSecretProvider),
 			component.WithPredicate(enableAzureKMSSecretProvider),

@@ -78,10 +78,11 @@ var backupRestorePlatforms = map[hyperv1.PlatformType]backupRestorePlatformConfi
 		postRestoreHook: func(testCtx *internal.TestContext) error {
 			awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
 			fixOpts := &backuprestore.FixDrOidcIamOptions{
-				HCName:       testCtx.ClusterName,
-				HCNamespace:  testCtx.ClusterNamespace,
-				AWSCredsFile: awsCredsFile,
-				Timeout:      backuprestore.OIDCTimeout,
+				HCName:         testCtx.ClusterName,
+				HCNamespace:    testCtx.ClusterNamespace,
+				KubeconfigPath: testCtx.KubeconfigPath,
+				AWSCredsFile:   awsCredsFile,
+				Timeout:        backuprestore.OIDCTimeout,
 			}
 			return backuprestore.RunFixDrOidcIam(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, fixOpts)
 		},
@@ -200,8 +201,26 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 			err = backuprestore.WaitForBackupStorageLocationAvailable(testCtx, testCtx.ClusterName)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Create schedule first to test parallel execution of backup and schedule and
-			// to speed up the test execution.
+			By("Creating backup")
+			backupName = oadp.GenerateBackupName(
+				testCtx.ClusterName,
+				testCtx.ClusterNamespace,
+			)
+			backupOpts := &backuprestore.OADPBackupOptions{
+				Name:              backupName,
+				HCName:            testCtx.ClusterName,
+				HCNamespace:       testCtx.ClusterNamespace,
+				StorageLocation:   testCtx.ClusterName,
+				IncludeNamespaces: platformCfg.additionalNamespaces,
+				SnapshotMoveData:  ptr.To(true),
+			}
+			err = backuprestore.RunOADPBackup(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, backupOpts)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Waiting for backup to complete")
+			err = backuprestore.WaitForBackupCompletion(testCtx, backupName)
+			Expect(err).NotTo(HaveOccurred())
+
 			By("Creating schedule")
 			scheduleName = oadp.GenerateScheduleName(testCtx.ClusterName, testCtx.ClusterNamespace)
 			scheduleOpts := &backuprestore.OADPScheduleOptions{
@@ -223,26 +242,6 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:BackupRestore] Backu
 					GinkgoWriter.Printf("Failed to delete schedule %s during cleanup: %v\n", scheduleName, err)
 				}
 			})
-
-			By("Creating backup")
-			backupName = oadp.GenerateBackupName(
-				testCtx.ClusterName,
-				testCtx.ClusterNamespace,
-			)
-			backupOpts := &backuprestore.OADPBackupOptions{
-				Name:              backupName,
-				HCName:            testCtx.ClusterName,
-				HCNamespace:       testCtx.ClusterNamespace,
-				StorageLocation:   testCtx.ClusterName,
-				IncludeNamespaces: platformCfg.additionalNamespaces,
-				SnapshotMoveData:  ptr.To(true),
-			}
-			err = backuprestore.RunOADPBackup(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, backupOpts)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Waiting for backup to complete")
-			err = backuprestore.WaitForBackupCompletion(testCtx, backupName)
-			Expect(err).NotTo(HaveOccurred())
 
 			By("Waiting for schedule to create a backup")
 			err = backuprestore.WaitForScheduleBackupCreated(testCtx, scheduleName)
@@ -612,9 +611,8 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 		// function captures logs before that window closes.
 		It("should have etcd-init container logs showing successful snapshot restore", func() {
 			By("Polling for etcd-init container completion and verifying restore logs")
-			restConfig, err := util.GetConfig()
-			Expect(err).NotTo(HaveOccurred(), "failed to get REST config for pod log access")
-			kubeClient, err := kubernetes.NewForConfig(restConfig)
+			Expect(testCtx.MgmtRESTConfig).NotTo(BeNil(), "management REST config should be set on test context")
+			kubeClient, err := kubernetes.NewForConfig(testCtx.MgmtRESTConfig)
 			Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset")
 
 			err = backuprestore.WaitForEtcdInitAndVerifyLogs(testCtx.Context, GinkgoLogr.WithName("etcd-init"), kubeClient, testCtx.ControlPlaneNamespace)
@@ -651,5 +649,180 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:EtcdSnapshot] Backup
 			Expect(err).NotTo(HaveOccurred(), "all etcd members should form a single cluster after restore")
 		})
 
+	})
+})
+
+var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:CrossClusterRestore] CrossClusterRestore", Label("cross-cluster-restore"), Ordered, Serial, func() {
+
+	var (
+		platformCfg                   backupRestorePlatformConfig
+		sourceCtx                     *internal.TestContext
+		targetCtx                     *internal.TestContext
+		targetExternalDNSNeedsRestore bool
+		backupName                    string
+		expectedConditions            []util.Condition
+	)
+
+	BeforeAll(func() {
+		ctx := internal.GetTestContext()
+		Expect(ctx).NotTo(BeNil(), "suite test context should be initialized")
+
+		sourceKubeconfig := internal.GetEnvVarValue("KUBECONFIG_SOURCE")
+		targetKubeconfig := internal.GetEnvVarValue("KUBECONFIG_TARGET")
+		Expect(sourceKubeconfig).NotTo(BeEmpty(), "KUBECONFIG_SOURCE must point to the source management cluster")
+		Expect(targetKubeconfig).NotTo(BeEmpty(), "KUBECONFIG_TARGET must point to the target management cluster")
+
+		var err error
+		sourceCtx, err = internal.SetupTestContextFromKubeconfig(ctx.Context, sourceKubeconfig)
+		Expect(err).NotTo(HaveOccurred(), "failed to initialize source management context")
+		targetCtx, err = internal.SetupTestContextFromKubeconfig(ctx.Context, targetKubeconfig)
+		Expect(err).NotTo(HaveOccurred(), "failed to initialize target management context")
+		// Compare booleans so a failure does not print either management API host.
+		Expect(sourceCtx.MgmtRESTConfig.Host != targetCtx.MgmtRESTConfig.Host).To(BeTrue(), "source and target kubeconfigs must point to different management clusters")
+
+		hostedCluster, err := sourceCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred(), "source HostedCluster should be available before backup")
+		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+			Skip(fmt.Sprintf("Cross-cluster restore is currently supported only on AWS, got %s", hostedCluster.Spec.Platform.Type))
+		}
+		_, err = targetCtx.GetHostedCluster()
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "target management cluster should not contain the HostedCluster before restore")
+		cfg, supported := backupRestorePlatforms[hostedCluster.Spec.Platform.Type]
+		if !supported {
+			Skip(fmt.Sprintf("Backup/restore test not supported on platform %s", hostedCluster.Spec.Platform.Type))
+		}
+		platformCfg = cfg
+		// Cleanup registered in BeforeAll runs after the entire ordered restore flow.
+		DeferCleanup(func() {
+			if !targetExternalDNSNeedsRestore {
+				return
+			}
+			if err := backuprestore.ScaleUpExternalDNS(targetCtx); err != nil {
+				GinkgoLogr.WithName("cleanup").Error(err, "failed to restore target ExternalDNS")
+			}
+		})
+	})
+
+	Context(ContextPreBackupControlPlane, func() {
+		It("should have control plane healthy before backup", func() {
+			validateBeforeEach(sourceCtx)
+			expectedConditions = validatePreBackupControlPlane(sourceCtx, platformCfg.excludeWorkloads)
+		})
+	})
+
+	Context(ContextBackup, func() {
+		It("should create backup successfully", func() {
+			validateBeforeEach(sourceCtx)
+			By("Waiting for BackupStorageLocation to be Available")
+			err := backuprestore.WaitForBackupStorageLocationAvailable(sourceCtx, sourceCtx.ClusterName)
+			Expect(err).NotTo(HaveOccurred(), "source BackupStorageLocation should be Available before backup")
+
+			By("Creating backup")
+			backupName = oadp.GenerateBackupName(
+				sourceCtx.ClusterName,
+				sourceCtx.ClusterNamespace,
+			)
+			backupOpts := &backuprestore.OADPBackupOptions{
+				KubeconfigPath:    sourceCtx.KubeconfigPath,
+				Name:              backupName,
+				HCName:            sourceCtx.ClusterName,
+				HCNamespace:       sourceCtx.ClusterNamespace,
+				StorageLocation:   sourceCtx.ClusterName,
+				IncludeNamespaces: platformCfg.additionalNamespaces,
+				SnapshotMoveData:  ptr.To(true),
+			}
+			err = backuprestore.RunOADPBackup(sourceCtx.Context, GinkgoLogr.WithName("backup-restore"), sourceCtx.ArtifactDir, backupOpts)
+			Expect(err).NotTo(HaveOccurred(), "source HostedCluster backup should be created")
+
+			By("Waiting for backup to complete")
+			err = backuprestore.WaitForBackupCompletion(sourceCtx, backupName)
+			Expect(err).NotTo(HaveOccurred(), "source HostedCluster backup should complete before teardown")
+		})
+	})
+
+	Context(ContextPostBackupControlPlane, func() {
+		It("should have control plane healthy after backup", func() {
+			err := internal.WaitForControlPlaneDeploymentsReadiness(sourceCtx, 5*time.Minute, platformCfg.excludeWorkloads)
+			Expect(err).NotTo(HaveOccurred(), "source control plane Deployments should remain ready after backup")
+			err = internal.WaitForControlPlaneStatefulSetsReadiness(sourceCtx, 5*time.Minute, platformCfg.excludeWorkloads)
+			Expect(err).NotTo(HaveOccurred(), "source control plane StatefulSets should remain ready after backup")
+		})
+	})
+
+	Context(ContextBreakControlPlane, func() {
+		It("should stop target ExternalDNS", func() {
+			By("Scaling the target ExternalDNS Deployment to zero")
+			// Scaling can patch replicas and then fail while waiting for pods to stop.
+			targetExternalDNSNeedsRestore = true
+			err := backuprestore.ScaleDownExternalDNS(targetCtx)
+			Expect(err).NotTo(HaveOccurred(), "target ExternalDNS should stop before source teardown")
+		})
+
+		It("should stop source ExternalDNS", func() {
+			// CI uses a dedicated source manager and tears it down after this test. Keep its
+			// ExternalDNS stopped even on failure, so it cannot reclaim the target's DNS names.
+			By("Scaling the source ExternalDNS Deployment to zero")
+			err := backuprestore.ScaleDownExternalDNS(sourceCtx)
+			Expect(err).NotTo(HaveOccurred(), "source ExternalDNS should stop before the HostedCluster is broken")
+		})
+
+		It("should break the source HostedCluster while preserving machines", func() {
+			By("Breaking the source HostedCluster while preserving machines")
+			err := backuprestore.BreakHostedClusterPreservingMachines(sourceCtx, GinkgoLogr.WithName("cleanup"))
+			Expect(err).NotTo(HaveOccurred(), "source HostedCluster resources should be removed while preserving machines")
+		})
+	})
+
+	Context(ContextRestore, func() {
+		It("should restore from backup successfully", func() {
+			validateBeforeEach(targetCtx)
+			By("Waiting for the target BackupStorageLocation to be Available")
+			err := backuprestore.WaitForBackupStorageLocationAvailable(targetCtx, targetCtx.ClusterName)
+			Expect(err).NotTo(HaveOccurred(), "target BackupStorageLocation should be Available before restore")
+
+			By("Creating Restore")
+			restoreName := oadp.GenerateRestoreName(targetCtx.ClusterName, targetCtx.ClusterNamespace)
+			restoreOpts := &backuprestore.OADPRestoreOptions{
+				KubeconfigPath:    targetCtx.KubeconfigPath,
+				Name:              restoreName,
+				FromBackup:        backupName,
+				HCName:            targetCtx.ClusterName,
+				HCNamespace:       targetCtx.ClusterNamespace,
+				IncludeNamespaces: platformCfg.additionalNamespaces,
+			}
+			executeRestore(targetCtx, restoreOpts, platformCfg.postRestoreHook)
+		})
+	})
+
+	Context(ContextPostRestoreControlPlane, func() {
+		It("should admit target Routes before starting target ExternalDNS", func() {
+			hostedCluster, err := targetCtx.GetHostedCluster()
+			if err != nil {
+				Fail(fmt.Sprintf("restored HostedCluster should be available for Route admission checks (API reason: %s; error type: %T)",
+					apierrors.ReasonForError(err), err))
+			}
+			endpoints, err := backuprestore.PublicServiceRouteEndpoints(hostedCluster)
+			Expect(err).NotTo(HaveOccurred(), "public service Route endpoints should be configured")
+
+			By("Waiting for public service Routes to be admitted by the target router")
+			Eventually(func(g Gomega) {
+				for _, endpoint := range endpoints {
+					g.Expect(backuprestore.VerifyPublicServiceRouteAdmission(targetCtx, endpoint)).To(Succeed(),
+						"restored %s service Route should retain its configured hostname and be admitted", endpoint.Service)
+				}
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.RestoreTimeout).Should(Succeed(), "target public service Routes should be admitted with their configured hostnames before ExternalDNS restarts")
+
+			// This makes ExternalDNS start reconciling the retained DNS names from scratch and avoids using a stale cache
+			// that only expires after 1 hour (see --txt-cache-interval in HypershiftOperator assets).
+			By("Scaling the target ExternalDNS Deployment to one ready pod")
+			err = backuprestore.ScaleUpExternalDNS(targetCtx)
+			Expect(err).NotTo(HaveOccurred(), "target ExternalDNS should become ready after public service Routes are admitted")
+			targetExternalDNSNeedsRestore = false
+		})
+
+		It("should have control plane healthy after restore", func() {
+			validateBeforeEach(targetCtx)
+			validatePostRestoreControlPlane(targetCtx, platformCfg.excludeWorkloads, expectedConditions, false)
+		})
 	})
 })
