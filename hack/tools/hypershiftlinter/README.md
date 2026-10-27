@@ -48,7 +48,7 @@ The plugin ships 9 analyzers, scoped so each rule only fires where it applies.
 | `vacuouspass`       | Flags vacuously-passing tests that iterate a collection without asserting it is non-empty.        |
 | `ipv6url`           | Detects `fmt.Sprintf` URL patterns that break with IPv6; use `net.JoinHostPort` instead.          |
 | `sippyannotation`   | Requires the correct Sippy/Jira `[Feature:X]` annotations on Ginkgo `Describe` blocks.            |
-| `e2eutilallowlist`  | Restricts `test/e2e/v2` to an allowlist of approved symbols from `test/e2e/util`.                 |
+| `e2eutilallowlist`  | Denies legacy `test/e2e/util` references in v2 outside the per-file, per-scope baseline. |
 
 ### HostedCluster and HostedControlPlane status patching (repo-wide, see [CNTRLPLANE-3532](https://redhat.atlassian.net/browse/CNTRLPLANE-3532))
 
@@ -74,6 +74,21 @@ Relevant Makefile targets:
 
 Each analyzer has [`analysistest`](https://pkg.go.dev/golang.org/x/tools/go/analysis/analysistest)-based
 unit tests with good/bad `testdata/` fixtures.
+
+## Legacy E2E utility migration exceptions
+
+`e2eutilallowlist` prevents new v2 dependencies on `test/e2e/util` and its
+subpackages so the v2 framework can become independent of legacy test utilities.
+Existing dependencies have exceptions in `allowlist.go` to allow incremental
+migration. Each entry matches an identifier (including types, constants, fields,
+and methods) in one file and scope: a function, `Type.Method`, or Ginkgo callback.
+Ordinary closures inherit their scope; specs and hooks have separate scopes.
+The check reports unused exceptions so migrations must remove them.
+
+When this check flags new code, use an existing v2 helper or implement the needed
+behavior in `test/e2e/v2/util`. Migrate legacy dependencies there as needed and
+remove their exceptions once unused. Do not expand the allowlist to accommodate
+new code.
 
 ## Status-writing enforcement and migration exceptions
 

@@ -15984,22 +15984,20 @@ This architectural change has several implications for migration:
 | Reporting | Ad-hoc (single failure → 4-5 reported failures) | Structured JUnit, one entry per `It` (Sippy/CR compatible) |
 | Build tag | `e2e` | `e2ev2` (or `e2ev2 && backuprestore`) |
 
-## Refactoring Shared Helpers (Prerequisite)
+## Migrating Shared Helpers (Prerequisite)
 
-Before porting a test, check if it calls shared helper functions in `test/e2e/util/`. Many helpers were originally written to accept `*testing.T`, not `testing.TB`. Since Ginkgo's `GinkgoTB()` returns `testing.TB`, these helpers cannot be called directly from v2 tests.
+Before porting a test, check if it calls shared helper functions in `test/e2e/util/`. V2 code must not reference `test/e2e/util` or its subpackages: the `e2eutilallowlist` analyzer denies new references, and only a per-file, per-scope baseline in `hack/tools/hypershiftlinter/analyzers/e2eutilallowlist/allowlist.go` covers references that existed when the rule was introduced.
 
 Recommended workflow:
 
 1. Identify all shared helpers your test calls (e.g., `util.EnsureNoCrashingPods`, `util.EnsureNodeCountMatchesNodePoolReplicas`)
-2. Check each helper's signature - does it take `*testing.T` or `testing.TB`?
-3. If it takes `*testing.T`, refactor the helper to accept `testing.TB` in a separate PR
-4. Then port the test
+2. Move the behavior into `test/e2e/v2/util`, using v2 packages and Ginkgo-native assertions
+3. Port the test against the v2 helper
 
-!!! info "Example: Lifecycle Test Helper Refactoring"
-    PR openshift/hypershift#8527 widened 12 shared helpers from `*testing.T` to `testing.TB` as part of migrating the lifecycle tests. This pattern ensures helpers work with both v1 (`*testing.T`) and v2 (`GinkgoTB()`) tests during the transition period.
+Do not widen a legacy helper's signature just so v2 code can call it. Remove the corresponding entry from `allowlist.go` as each caller migrates.
 
 !!! warning "Helpers that call `t.Run()` need deeper refactoring"
-    Widening `*testing.T` to `testing.TB` is not sufficient for helpers that call `t.Run()` internally. The `testing.TB` interface does not include the `Run()` method, so these helpers will fail to compile after the signature change. You must restructure such helpers to remove the internal `t.Run()` calls -- for example, by having the helper return results that the caller asserts in separate `It` blocks, or by splitting the helper into smaller functions that do not need subtests.
+    Ginkgo's `GinkgoTB()` does not implement `Run()`, so a helper that calls `t.Run()` internally cannot be reused from v2. Restructure helpers moved into `test/e2e/v2/util` to drop internal `t.Run()` calls -- for example, by having the helper return results that the caller asserts in separate `It` blocks, or by splitting the helper into smaller functions that do not need subtests.
 
 ## Porting Step-by-Step
 

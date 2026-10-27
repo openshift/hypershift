@@ -282,6 +282,10 @@ When adding new test areas:
 3. Flag any new patterns in PR reviews so the working group can discuss and ratify them.
 4. Update this AGENTS.md once patterns are agreed upon by the working group.
 
+### 21. Legacy E2E Utilities
+
+V2 code must not reference `test/e2e/util` or its subpackages. The `e2eutilallowlist` analyzer enforces this against a per-file, per-scope baseline in `hack/tools/hypershiftlinter/analyzers/e2eutilallowlist/allowlist.go`; do not expand the baseline for new code. Implement the behavior in `test/e2e/v2/util` instead, and remove the corresponding entry when an existing caller migrates.
+
 ## Gotchas
 
 - `backuprestore/` tests use `Ordered, Serial` Ginkgo decorators and require the combined `e2ev2,backuprestore` build tag. They produce a separate binary (`bin/test-backuprestore`).
