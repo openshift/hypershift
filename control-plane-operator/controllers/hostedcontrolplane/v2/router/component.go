@@ -15,6 +15,8 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -63,7 +65,7 @@ func routerPredicate(cpContext component.WorkloadContext) (bool, error) {
 		return false, nil
 	}
 	if azureutil.IsAroHCPByHCP(cpContext.HCP) {
-		if err := ensureHCPRouterRoutesExist(cpContext); err != nil {
+		if err := ensureHCPRouterBackendsReady(cpContext); err != nil {
 			return false, err
 		}
 	}
@@ -73,7 +75,7 @@ func routerPredicate(cpContext component.WorkloadContext) (bool, error) {
 // TODO: introduce live reloading like in shared proxy so the router config
 // is updated when routes change after the initial reconcile.
 
-func ensureHCPRouterRoutesExist(cpContext component.WorkloadContext) error {
+func ensureHCPRouterBackendsReady(cpContext component.WorkloadContext) error {
 	expected := aroExpectedHCPRouterRouteNames(cpContext.HCP)
 	if len(expected) == 0 {
 		return nil
@@ -99,6 +101,27 @@ func ensureHCPRouterRoutesExist(cpContext component.WorkloadContext) error {
 	if len(missing) > 0 {
 		return fmt.Errorf("waiting for HCP router routes: %s", strings.Join(missing, ", "))
 	}
+
+	// Verify that each expected route's backend Service has a ClusterIP assigned.
+	// Without this gate the router ConfigMap would contain an empty destination IP,
+	// causing a rolling update once the ClusterIP arrives -- during a window where
+	// pods are susceptible to Azure CNI DHCP timeouts.
+	var missingIPs []string
+	for _, name := range expected {
+		route := routesByName[name]
+		svc := &corev1.Service{}
+		key := client.ObjectKey{Name: route.Spec.To.Name, Namespace: cpContext.HCP.Namespace}
+		if err := cpContext.Client.Get(cpContext, key, svc); err != nil {
+			return fmt.Errorf("failed to get service %s for route %s: %w", route.Spec.To.Name, route.Name, err)
+		}
+		if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+			missingIPs = append(missingIPs, route.Spec.To.Name)
+		}
+	}
+	if len(missingIPs) > 0 {
+		return fmt.Errorf("waiting for ClusterIP on services: %s", strings.Join(missingIPs, ", "))
+	}
+
 	return nil
 }
 
