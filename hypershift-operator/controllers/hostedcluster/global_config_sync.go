@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/configrefs"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/k8sutil"
 
 	corev1 "k8s.io/api/core/v1"
@@ -42,6 +44,16 @@ func globalConfigMapTracked(configMap *corev1.ConfigMap, hc *hyperv1.HostedClust
 func (reconciler *HostedClusterReconciler) cleanupGlobalConfigMaps(ctx context.Context, hc *hyperv1.HostedCluster, controlPlaneNamespace string, desired sets.Set[string]) error {
 	if hc.UID == "" || controlPlaneNamespace == "" || controlPlaneNamespace == hc.Namespace {
 		return fmt.Errorf("global config cleanup requires a HostedCluster UID and a separate control plane namespace")
+	}
+	desired = desired.Clone()
+	desired.Insert(controlplaneoperator.UserCABundle(controlPlaneNamespace).Name)
+	hcp := &hyperv1.HostedControlPlane{}
+	if err := reconciler.Get(ctx, client.ObjectKey{Namespace: controlPlaneNamespace, Name: hc.Name}, hcp); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get persisted HostedControlPlane configuration: %w", err)
+		}
+	} else if hcp.Spec.Configuration != nil {
+		desired.Insert(configrefs.ConfigMapRefs(hcp.Spec.Configuration)...)
 	}
 	var copies corev1.ConfigMapList
 	if err := reconciler.List(ctx, &copies, client.InNamespace(controlPlaneNamespace), client.MatchingLabels{globalConfigCopyLabel: "true"}); err != nil {

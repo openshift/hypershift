@@ -97,8 +97,8 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 		{name: "When another section still references a shared copy, it should retain that copy", configs: []*hyperv1.ClusterConfiguration{shared, {Image: shared.Image}}, sourceNames: []string{"ca-a"}, want: []string{"ca-a"}},
 		{name: "When the last shared reference is removed, it should remove the tracked copy", configs: []*hyperv1.ClusterConfiguration{shared, {Image: shared.Image}, nil}, sourceNames: []string{"ca-a"}},
 		{name: "When every supported section references ConfigMaps, it should sync the entire union", configs: []*hyperv1.ClusterConfiguration{fullUnion}, sourceNames: []string{"api-ca", "oauth-metadata", "oidc-ca", "image-ca", "idp-ca", "proxy-ca", "scheduler-policy"}, want: []string{"api-ca", "oauth-metadata", "oidc-ca", "image-ca", "idp-ca", "proxy-ca", "scheduler-policy"}},
-		{name: "When an active destination is untracked, it should sync without granting cleanup authority", configs: []*hyperv1.ClusterConfiguration{globalConfigTestProxy("ca-a")}, sourceNames: []string{"ca-a"}, legacy: true, want: []string{"ca-a"}},
-		{name: "When an untracked copy becomes obsolete, it should retain that legacy copy", configs: []*hyperv1.ClusterConfiguration{globalConfigTestProxy("ca-a"), nil}, sourceNames: []string{"ca-a"}, legacy: true, want: []string{"ca-a"}},
+		{name: "When an active legacy destination matches the cluster, it should acquire tracking", configs: []*hyperv1.ClusterConfiguration{globalConfigTestProxy("ca-a")}, sourceNames: []string{"ca-a"}, legacy: true, want: []string{"ca-a"}},
+		{name: "When an adopted legacy copy becomes obsolete, it should prune that copy", configs: []*hyperv1.ClusterConfiguration{globalConfigTestProxy("ca-a"), nil}, sourceNames: []string{"ca-a"}, legacy: true},
 		{name: "When configuration is initially nil, it should succeed without active sync", configs: []*hyperv1.ClusterConfiguration{nil}},
 		{name: "When source contents and metadata are nil, it should copy nil fields and add only destination tracking", configs: []*hyperv1.ClusterConfiguration{globalConfigTestProxy("ca-a")}, sourceNames: []string{"ca-a"}, nilFields: true, want: []string{"ca-a"}},
 		{name: "When an existing tracked destination needs an update, it should retain tracking and refresh all fields", configs: []*hyperv1.ClusterConfiguration{globalConfigTestProxy("ca-a")}, sourceNames: []string{"ca-a"}, tracked: true, want: []string{"ca-a"}},
@@ -119,7 +119,10 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 				objects = append(objects, source)
 			}
 			if testCase.legacy {
-				objects = append(objects, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: globalConfigTestNamespace, Name: "ca-a"}})
+				legacy := globalConfigTestCopy("ca-a")
+				legacy.Labels = nil
+				delete(legacy.Annotations, globalConfigOwnerUIDAnnotation)
+				objects = append(objects, legacy)
 			}
 			if testCase.tracked {
 				objects = append(objects, globalConfigTestCopy("ca-a"))
@@ -165,7 +168,7 @@ func TestReconcileGlobalConfigSync(t *testing.T) {
 			actual := sets.New[string]()
 			for _, destination := range destinations.Items {
 				actual.Insert(destination.Name)
-				if globalConfigMapTracked(&destination, hc) == testCase.legacy {
+				if !globalConfigMapTracked(&destination, hc) {
 					t.Fatalf("unexpected tracking state for %s", destination.Name)
 				}
 				var source corev1.ConfigMap
@@ -496,8 +499,12 @@ func testReconcileGlobalConfigSyncErrors(t *testing.T) {
 		{name: "When destination provenance is partial, it should reject adoption", mutate: func(_, destination *corev1.ConfigMap, _ *hyperv1.HostedCluster) {
 			delete(destination.Annotations, globalConfigOwnerUIDAnnotation)
 		}, wantPrefix: "failed to reconcile referenced config map"},
-		{name: "When destination UID belongs to an old instance, it should reject adoption", mutate: func(_, destination *corev1.ConfigMap, _ *hyperv1.HostedCluster) {
-			destination.Annotations[globalConfigOwnerUIDAnnotation] = "old-instance"
+		{name: "When an existing destination has no cluster identity, it should reject adoption", mutate: func(_, destination *corev1.ConfigMap, _ *hyperv1.HostedCluster) {
+			destination.Labels = nil
+			destination.Annotations = nil
+		}, wantPrefix: "failed to reconcile referenced config map"},
+		{name: "When destination UID is empty, it should reject adoption", mutate: func(_, destination *corev1.ConfigMap, _ *hyperv1.HostedCluster) {
+			destination.Annotations[globalConfigOwnerUIDAnnotation] = ""
 		}, wantPrefix: "failed to reconcile referenced config map"},
 		{name: "When an untracked destination names another cluster, it should reject adoption", mutate: func(_, destination *corev1.ConfigMap, _ *hyperv1.HostedCluster) {
 			destination.Labels = nil
@@ -691,9 +698,12 @@ func testReconcileGlobalConfigSyncSecrets(t *testing.T) {
 func testReconcileGlobalConfigSyncAPIServer(t *testing.T) {
 	t.Helper()
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
-		t.Skip("KUBEBUILDER_ASSETS is required for API-server Immutable and delete-precondition regressions")
+		t.Fatal("KUBEBUILDER_ASSETS is required for API-server Immutable and delete-precondition regressions; run make test or make test-shard")
 	}
-	testEnv := &envtest.Environment{}
+	testEnv := &envtest.Environment{
+		CRDDirectoryPaths:     []string{"../../../cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-Hypershift-Default.crd.yaml"},
+		ErrorIfCRDPathMissing: true,
+	}
 	config, err := testEnv.Start()
 	if err != nil {
 		t.Fatal(err)
