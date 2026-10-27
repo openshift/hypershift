@@ -125,3 +125,55 @@ func TestReconcileGlobalConfigSyncAdoption(t *testing.T) {
 		})
 	}
 }
+
+func TestGlobalConfigMapTracking(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name      string
+		mutate    func(*corev1.ConfigMap)
+		wantTrack bool
+		wantError bool
+	}{
+		{name: "When provenance matches, it should preserve tracking", wantTrack: true},
+		{name: "When the destination is new, it should enable tracking", mutate: func(configMap *corev1.ConfigMap) {
+			configMap.ResourceVersion, configMap.Labels, configMap.Annotations = "", nil, nil
+		}, wantTrack: true},
+		{name: "When an active copy belongs to an old instance, it should enable tracking", mutate: func(configMap *corev1.ConfigMap) {
+			configMap.Annotations[globalConfigOwnerUIDAnnotation] = "previous-instance"
+		}, wantTrack: true},
+		{name: "When an active legacy copy matches, it should enable tracking", mutate: func(configMap *corev1.ConfigMap) {
+			configMap.Labels = nil
+			delete(configMap.Annotations, globalConfigOwnerUIDAnnotation)
+		}, wantTrack: true},
+		{name: "When the destination is reserved, it should not enable tracking", mutate: func(configMap *corev1.ConfigMap) {
+			configMap.Name = "user-ca-bundle"
+		}},
+		{name: "When an existing destination has no logical identity, it should reject tracking", mutate: func(configMap *corev1.ConfigMap) {
+			configMap.Labels, configMap.Annotations = nil, nil
+		}, wantError: true},
+		{name: "When the logical cluster differs, it should reject tracking", mutate: func(configMap *corev1.ConfigMap) {
+			configMap.Annotations[k8sutil.HostedClusterAnnotation] = "clusters/other"
+		}, wantError: true},
+		{name: "When tracking provenance is partial, it should reject tracking", mutate: func(configMap *corev1.ConfigMap) {
+			delete(configMap.Annotations, globalConfigOwnerUIDAnnotation)
+		}, wantError: true},
+		{name: "When the owner UID is empty, it should reject tracking", mutate: func(configMap *corev1.ConfigMap) {
+			configMap.Annotations[globalConfigOwnerUIDAnnotation] = ""
+		}, wantError: true},
+		{name: "When another ownerReference exists, it should reject tracking", mutate: func(configMap *corev1.ConfigMap) {
+			configMap.OwnerReferences = []metav1.OwnerReference{{APIVersion: "v1", Kind: "ConfigMap", Name: "other", UID: "other"}}
+		}, wantError: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			configMap := globalConfigTestCopy("ca-a")
+			if testCase.mutate != nil {
+				testCase.mutate(configMap)
+			}
+			track, err := globalConfigMapTracking(configMap, globalConfigTestHostedCluster())
+			if track != testCase.wantTrack || (err != nil) != testCase.wantError {
+				t.Fatalf("tracking=%v error=%v; want tracking=%v error=%v", track, err, testCase.wantTrack, testCase.wantError)
+			}
+		})
+	}
+}
