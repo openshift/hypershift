@@ -165,6 +165,29 @@ func componentSupportsTLSConfig(ctx context.Context, mgmtClient crclient.Client,
 	return false, fmt.Errorf("container %s not found in %s deployment", containerName, deploymentName)
 }
 
+func verifyIntermediateTLSConnectivityAfterDowngrade(
+	ctx context.Context,
+	mgmtClient crclient.Client,
+	namespace string,
+	component controlPlaneTLSComponent,
+	previousUID *string,
+	waitForRestart func(string) string,
+	verifyConnectivity func([]tlsVersionExpectation),
+) error {
+	supported, err := componentSupportsTLSConfig(ctx, mgmtClient, namespace, component)
+	if err != nil {
+		return err
+	}
+	if supported {
+		*previousUID = waitForRestart(*previousUID)
+	}
+	verifyConnectivity([]tlsVersionExpectation{
+		{opensslFlag: "tls1_2", expectedProtocol: "tlsv1.2"},
+		{opensslFlag: "tls1_3", expectedProtocol: "tlsv1.3"},
+	})
+	return nil
+}
+
 func requireDefaultOrIntermediateTLSProfile(hostedCluster *hyperv1.HostedCluster) {
 	hasProfile := hostedCluster.Spec.Configuration != nil &&
 		hostedCluster.Spec.Configuration.APIServer != nil &&
@@ -541,6 +564,20 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 		var kasPodUIDBeforeMutation string
 		var konnectivityPodUIDBeforeMutation string
 
+		verifyIntermediateConnectivityAfterDowngrade := func(component controlPlaneTLSComponent, previousUID *string) {
+			GinkgoHelper()
+			err := verifyIntermediateTLSConnectivityAfterDowngrade(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, component, previousUID,
+				func(previousUID string) string {
+					newUID := waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, component.podAppLabel, previousUID)
+					GinkgoWriter.Printf("New %s pod UID after downgrade to Intermediate profile: %s\n", component.name, newUID)
+					return newUID
+				},
+				func(expectations []tlsVersionExpectation) {
+					verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig, component, expectations)
+				})
+			Expect(err).NotTo(HaveOccurred(), "failed to check %s TLS configuration support before downgrade restart wait in namespace %s", component.name, tc.ControlPlaneNamespace)
+		}
+
 		BeforeAll(func() {
 			tc = getTestCtx()
 
@@ -849,57 +886,18 @@ func VerifyPKIOperatorTLSConfigTest(getTestCtx internal.TestContextGetter) {
 
 		It("control-plane-pki-operator should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
 			requireModernProfileCleared(tc)
-
-			supported, err := componentSupportsTLSConfig(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, pkiOperatorTLSComponent)
-			Expect(err).NotTo(HaveOccurred(), "failed to check %s TLS configuration support before downgrade restart wait in namespace %s", pkiOperatorTLSComponent.name, tc.ControlPlaneNamespace)
-			if supported {
-				pkiPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
-					pkiOperatorTLSComponent.podAppLabel, pkiPodUIDBeforeMutation)
-				GinkgoWriter.Printf("New PKI operator pod UID after downgrade to Intermediate profile: %s\n", pkiPodUIDBeforeMutation)
-			}
-
-			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
-				pkiOperatorTLSComponent, []tlsVersionExpectation{
-					{opensslFlag: "tls1_2", expectedProtocol: "tlsv1.2"},
-					{opensslFlag: "tls1_3", expectedProtocol: "tlsv1.3"},
-				})
+			verifyIntermediateConnectivityAfterDowngrade(pkiOperatorTLSComponent, &pkiPodUIDBeforeMutation)
 		})
 
 		It("aws-pod-identity-webhook should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
 			hostedCluster := requireModernProfileCleared(tc)
 			skipIfComponentNotApplicable(awsPodIdentityWebhookTLSComponent, hostedCluster)
-
-			supported, err := componentSupportsTLSConfig(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, awsPodIdentityWebhookTLSComponent)
-			Expect(err).NotTo(HaveOccurred(), "failed to check %s TLS configuration support before downgrade restart wait in namespace %s", awsPodIdentityWebhookTLSComponent.name, tc.ControlPlaneNamespace)
-			if supported {
-				kasPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
-					awsPodIdentityWebhookTLSComponent.podAppLabel, kasPodUIDBeforeMutation)
-				GinkgoWriter.Printf("New kube-apiserver pod UID after downgrade to Intermediate profile: %s\n", kasPodUIDBeforeMutation)
-			}
-
-			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
-				awsPodIdentityWebhookTLSComponent, []tlsVersionExpectation{
-					{opensslFlag: "tls1_2", expectedProtocol: "tlsv1.2"},
-					{opensslFlag: "tls1_3", expectedProtocol: "tlsv1.3"},
-				})
+			verifyIntermediateConnectivityAfterDowngrade(awsPodIdentityWebhookTLSComponent, &kasPodUIDBeforeMutation)
 		})
 
 		It("konnectivity-server should accept both TLS 1.2 and TLS 1.3 connections after downgrade to Intermediate profile", func() {
 			requireModernProfileCleared(tc)
-
-			supported, err := componentSupportsTLSConfig(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace, konnectivityServerTLSComponent)
-			Expect(err).NotTo(HaveOccurred(), "failed to check %s TLS configuration support before downgrade restart wait in namespace %s", konnectivityServerTLSComponent.name, tc.ControlPlaneNamespace)
-			if supported {
-				konnectivityPodUIDBeforeMutation = waitForAppPodRestart(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace,
-					konnectivityServerTLSComponent.podAppLabel, konnectivityPodUIDBeforeMutation)
-				GinkgoWriter.Printf("New konnectivity-server (kube-apiserver) pod UID after downgrade to Intermediate profile: %s\n", konnectivityPodUIDBeforeMutation)
-			}
-
-			verifyComponentTLSConnectivity(tc.Context, tc, tc.MgmtClient, mgmtKubeClient, mgmtRestConfig,
-				konnectivityServerTLSComponent, []tlsVersionExpectation{
-					{opensslFlag: "tls1_2", expectedProtocol: "tlsv1.2"},
-					{opensslFlag: "tls1_3", expectedProtocol: "tlsv1.3"},
-				})
+			verifyIntermediateConnectivityAfterDowngrade(konnectivityServerTLSComponent, &konnectivityPodUIDBeforeMutation)
 		})
 
 		AfterAll(func() {
