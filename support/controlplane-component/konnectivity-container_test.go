@@ -9,6 +9,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 )
@@ -232,6 +234,68 @@ func TestBuildContainerPreferIPv4(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildContainerResolveFromManagementClusterDNS(t *testing.T) {
+	tests := []struct {
+		name      string
+		value     *bool
+		expectArg bool
+	}{
+		{
+			name:      "When management cluster DNS fallback is enabled, it should include the corresponding argument",
+			value:     ptr.To(true),
+			expectArg: true,
+		},
+		{
+			name: "When management cluster DNS fallback is not configured, it should omit the corresponding argument",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			opts := KonnectivityContainerOptions{
+				Mode: HTTPS,
+				HTTPSOptions: HTTPSOptions{
+					ResolveFromManagementClusterDNS: tt.value,
+				},
+			}
+
+			container := opts.buildContainer(&hyperv1.HostedControlPlane{}, "test-image:latest", nil)
+
+			if tt.expectArg {
+				g.Expect(container.Args).To(ContainElement("--resolve-from-management-cluster-dns=true"))
+			} else {
+				g.Expect(container.Args).NotTo(ContainElement("--resolve-from-management-cluster-dns=true"))
+			}
+		})
+	}
+}
+
+func TestBuildContainerProxyConfig(t *testing.T) {
+	g := NewGomegaWithT(t)
+	hcp := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{
+				Proxy: &configv1.ProxySpec{
+					HTTPProxy:  "http://proxy.example.com:3128",
+					HTTPSProxy: "https://proxy.example.com:3129",
+					NoProxy:    "issuer.example.com",
+				},
+			},
+		},
+	}
+	opts := KonnectivityContainerOptions{Mode: HTTPS}
+
+	container := opts.buildContainer(hcp, "test-image:latest", nil)
+
+	g.Expect(container.Args).To(ContainElements(
+		"--http-proxy", "http://proxy.example.com:3128",
+		"--https-proxy", "https://proxy.example.com:3129",
+		"--no-proxy",
+	))
+	g.Expect(container.Args).To(ContainElement(ContainSubstring("issuer.example.com")))
 }
 
 func TestIsSingleStackIPv4(t *testing.T) {

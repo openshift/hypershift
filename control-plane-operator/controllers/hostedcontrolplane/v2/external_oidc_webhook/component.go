@@ -1,0 +1,80 @@
+package extoidc
+
+import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
+	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/reconcilerpolicy"
+
+	"k8s.io/utils/ptr"
+)
+
+const (
+	ComponentName             = "external-oidc-webhook"
+	httpKonnectivityProxyPort = 8092
+)
+
+var _ component.ComponentOptions = &externalOIDCWebhook{}
+
+type externalOIDCWebhook struct {
+}
+
+// IsRequestServing implements [controlplanecomponent.ComponentOptions].
+func (e *externalOIDCWebhook) IsRequestServing() bool {
+	return false
+}
+
+// MultiZoneSpread implements [controlplanecomponent.ComponentOptions].
+func (e *externalOIDCWebhook) MultiZoneSpread() bool {
+	return true
+}
+
+// NeedsManagementKASAccess implements [controlplanecomponent.ComponentOptions].
+func (e *externalOIDCWebhook) NeedsManagementKASAccess() bool {
+	return false
+}
+
+func NewComponent() component.ControlPlaneComponent {
+	return component.NewDeploymentComponent(ComponentName, &externalOIDCWebhook{}).
+		WithAdaptFunction(adaptDeployment).
+		WithPredicate(predicate).
+		WithManifestAdapter(
+			"ca-cert.yaml",
+			component.WithAdaptFunction(adaptCACertSecret),
+			component.DisableIfAnnotationExist(hyperv1.DisablePKIReconciliationAnnotation),
+			component.ReconcileExisting(),
+		).
+		WithManifestAdapter(
+			"serving-cert.yaml",
+			component.WithAdaptFunction(adaptServingCertSecret),
+			component.DisableIfAnnotationExist(hyperv1.DisablePKIReconciliationAnnotation),
+			component.ReconcileExisting(),
+		).
+		WithManifestAdapter(
+			"auth-config.yaml",
+			component.WithAdaptFunction(adaptAuthConfig),
+		).
+		WithManifestAdapter(
+			"pdb.yaml",
+			component.AdaptPodDisruptionBudget(),
+		).
+		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
+			Mode: component.Dual,
+			Socks5Options: component.Socks5Options{
+				ResolveFromGuestClusterDNS:      ptr.To(true),
+				ResolveFromManagementClusterDNS: ptr.To(true),
+			},
+			HTTPSOptions: component.HTTPSOptions{
+				ServingPort:                     httpKonnectivityProxyPort,
+				ConnectDirectlyToCloudAPIs:      ptr.To(true),
+				ResolveFromManagementClusterDNS: ptr.To(true),
+			},
+		}).
+		Build()
+}
+
+func predicate(cpContext component.WorkloadContext) (bool, error) {
+	return reconcilerpolicy.HCPExternalOIDCEnabled(cpContext.HCP) &&
+		len(cpContext.HCP.Spec.Configuration.Authentication.OIDCProviders) > 0 &&
+		featuregates.Gate().Enabled(featuregates.ExternalOIDCAsWebhook), nil
+}
