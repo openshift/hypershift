@@ -697,7 +697,7 @@ type HostedClusterSpec struct {
 	// default managementType is Managed. Once set, the managementType cannot be
 	// changed.
 	//
-	// +kubebuilder:default={managementType: "Managed", managed: {storage: {type: "PersistentVolume", persistentVolume: {size: "8Gi"}}}}
+	// +kubebuilder:default={managementType: "Managed", managed: {storage: {type: "PersistentVolume", persistentVolume: {size: "32Gi"}}}}
 	// +required
 	// +immutable
 	Etcd EtcdSpec `json:"etcd"`
@@ -2186,7 +2186,7 @@ const (
 	PersistentVolumeEtcdStorage ManagedEtcdStorageType = "PersistentVolume"
 )
 
-var DefaultPersistentVolumeEtcdStorageSize resource.Quantity = resource.MustParse("8Gi")
+var DefaultPersistentVolumeEtcdStorageSize resource.Quantity = resource.MustParse("32Gi")
 
 // ManagedEtcdStorageSpec describes the storage configuration for etcd data.
 type ManagedEtcdStorageSpec struct {
@@ -2235,10 +2235,10 @@ type PersistentVolumeEtcdStorageSpec struct {
 	StorageClassName *string `json:"storageClassName,omitempty"`
 
 	// size is the minimum size of the data volume for each etcd member.
-	// Default is 8Gi.
+	// Default is 32Gi.
 	// This field is immutable
 	// +optional
-	// +kubebuilder:default="8Gi"
+	// +kubebuilder:default="32Gi"
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Etcd PV storage size is immutable"
 	Size *resource.Quantity `json:"size,omitempty"`
