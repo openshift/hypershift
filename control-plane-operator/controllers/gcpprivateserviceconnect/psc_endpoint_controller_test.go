@@ -1679,6 +1679,8 @@ func TestReconcileHCPDeletion(t *testing.T) {
 		name             string
 		clientFactory    func(*testing.T) func(context.Context) (*compute.Service, error)
 		pscPatchConflict bool
+		hcpConditions    []metav1.Condition
+		deletionAge      time.Duration
 		expectError      bool
 		expectRequeue    time.Duration
 		expectHCDeleted  bool
@@ -1717,6 +1719,32 @@ func TestReconcileHCPDeletion(t *testing.T) {
 			},
 			expectError: true,
 		},
+		{
+			name:            "When the HCP reports invalid GCP workload identity, it should skip GCP cleanup and remove PSC and HCP finalizers",
+			clientFactory:   unexpectedGCPClientFactory,
+			hcpConditions:   []metav1.Condition{gcpCredentialCondition(hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionFalse)},
+			expectHCDeleted: true,
+		},
+		{
+			name:            "When the HCP reports invalid GCP credentials, it should skip GCP cleanup and remove PSC and HCP finalizers",
+			clientFactory:   unexpectedGCPClientFactory,
+			hcpConditions:   []metav1.Condition{gcpCredentialCondition(hyperv1.ValidGCPCredentials, metav1.ConditionFalse)},
+			expectHCDeleted: true,
+		},
+		{
+			name: "When GCP workload identity is Unknown and cleanup fails, it should retain PSC and HCP finalizers",
+			clientFactory: func(t *testing.T) func(context.Context) (*compute.Service, error) {
+				return testGCPClientFactory(t, http.StatusInternalServerError, "")
+			},
+			hcpConditions: []metav1.Condition{gcpCredentialCondition(hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionUnknown)},
+			expectError:   true,
+		},
+		{
+			name:            "When HCP deletion has exceeded the cleanup timeout, it should skip GCP cleanup and remove PSC and HCP finalizers",
+			clientFactory:   unexpectedGCPClientFactory,
+			deletionAge:     pscCleanupDeletionTimeout + time.Minute,
+			expectHCDeleted: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1724,6 +1752,10 @@ func TestReconcileHCPDeletion(t *testing.T) {
 			scheme := newGCPPSCTestScheme(t)
 			psc := newTestGCPPSC("test-psc", "test-ns", true)
 			hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{hcpGCPPSCFinalizerName})
+			hcp.Status.Conditions = tt.hcpConditions
+			if tt.deletionAge > 0 {
+				hcp.DeletionTimestamp = &metav1.Time{Time: time.Now().Add(-tt.deletionAge)}
+			}
 			clientBuilder := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp)
 			if tt.pscPatchConflict {
 				conflictErr := apierrors.NewConflict(hyperv1.Resource("gcpprivateserviceconnects"), psc.Name, errors.New("conflict"))
@@ -2208,7 +2240,11 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 		// clientFactory injects the GCP client; nil means none is needed (orphan path).
 		clientFactory func(*testing.T) func(context.Context) (*compute.Service, error)
 		// patchConflict makes PSC finalizer patches return a conflict error.
-		patchConflict           bool
+		patchConflict bool
+		// hcpConditions are set on the owning HCP's status.
+		hcpConditions []metav1.Condition
+		// deletionAge backdates the PSC CR's deletionTimestamp.
+		deletionAge             time.Duration
 		expectErr               bool
 		expectRequeueAfter      time.Duration
 		expectFinalizerRetained bool
@@ -2250,6 +2286,20 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 			expectRequeueAfter:      time.Second,
 			expectFinalizerRetained: true,
 		},
+		{
+			name:               "When the HCP reports invalid GCP credentials, it should skip GCP cleanup and remove the finalizer",
+			builderInitialized: true,
+			createHCP:          true,
+			clientFactory:      unexpectedGCPClientFactory,
+			hcpConditions:      []metav1.Condition{gcpCredentialCondition(hyperv1.ValidGCPCredentials, metav1.ConditionFalse)},
+		},
+		{
+			name:               "When PSC deletion has exceeded the cleanup timeout, it should skip GCP cleanup and remove the finalizer",
+			builderInitialized: true,
+			createHCP:          true,
+			clientFactory:      unexpectedGCPClientFactory,
+			deletionAge:        pscCleanupDeletionTimeout + time.Minute,
+		},
 	}
 
 	for _, tt := range tests {
@@ -2258,13 +2308,13 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 			psc := newTestGCPPSC("test-psc", "test-ns", false)
 			psc.Finalizers = []string{pscEndpointFinalizer, "other-finalizer"}
 			psc.Status.EndpointIP = "10.0.0.10"
-			now := metav1.Now()
-			psc.DeletionTimestamp = &now
+			psc.DeletionTimestamp = &metav1.Time{Time: time.Now().Add(-tt.deletionAge)}
 
 			var hcp *hyperv1.HostedControlPlane
 			objs := []client.Object{psc}
 			if tt.createHCP {
 				hcp = newTestGCPHCP("test-hcp", "test-ns")
+				hcp.Status.Conditions = tt.hcpConditions
 				objs = append(objs, hcp)
 			}
 
@@ -2319,6 +2369,72 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 					"HCP must still exist after PSC cleanup")
 				assert.True(t, updatedHCP.DeletionTimestamp.IsZero(),
 					"HCP must not be marked for deletion by PSC cleanup")
+			}
+		})
+	}
+}
+
+func TestPSCCleanupSkipReason(t *testing.T) {
+	tests := []struct {
+		name           string
+		conditions     []metav1.Condition
+		deletionAge    time.Duration
+		noDeletion     bool
+		expectContains string
+	}{
+		{
+			name: "When credentials are valid and deletion just started, it should not skip cleanup",
+			conditions: []metav1.Condition{
+				gcpCredentialCondition(hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionTrue),
+				gcpCredentialCondition(hyperv1.ValidGCPCredentials, metav1.ConditionTrue),
+			},
+		},
+		{
+			name:       "When there is no deletion timestamp, it should not skip cleanup",
+			noDeletion: true,
+		},
+		{
+			name:           "When GCP workload identity is False, it should skip cleanup",
+			conditions:     []metav1.Condition{gcpCredentialCondition(hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionFalse)},
+			expectContains: string(hyperv1.ValidGCPWorkloadIdentity),
+		},
+		{
+			name:           "When GCP credentials are False, it should skip cleanup",
+			conditions:     []metav1.Condition{gcpCredentialCondition(hyperv1.ValidGCPCredentials, metav1.ConditionFalse)},
+			expectContains: string(hyperv1.ValidGCPCredentials),
+		},
+		{
+			name: "When GCP credential conditions are Unknown, it should not skip cleanup",
+			conditions: []metav1.Condition{
+				gcpCredentialCondition(hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionUnknown),
+				gcpCredentialCondition(hyperv1.ValidGCPCredentials, metav1.ConditionUnknown),
+			},
+		},
+		{
+			name:        "When deletion is younger than the cleanup timeout, it should not skip cleanup",
+			deletionAge: pscCleanupDeletionTimeout - time.Minute,
+		},
+		{
+			name:           "When deletion is older than the cleanup timeout, it should skip cleanup",
+			deletionAge:    pscCleanupDeletionTimeout + time.Minute,
+			expectContains: "timed out",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hcp := newTestGCPHCP("test-hcp", "test-ns")
+			hcp.Status.Conditions = tt.conditions
+			var deletionStart *metav1.Time
+			if !tt.noDeletion {
+				deletionStart = &metav1.Time{Time: time.Now().Add(-tt.deletionAge)}
+			}
+
+			reason := pscCleanupSkipReason(hcp, deletionStart)
+			if tt.expectContains == "" {
+				assert.Empty(t, reason)
+			} else {
+				assert.Contains(t, reason, tt.expectContains)
 			}
 		})
 	}
@@ -2556,6 +2672,26 @@ func newReadyServiceAttachmentPSC(name, namespace string) *hyperv1.GCPPrivateSer
 		Status: metav1.ConditionTrue,
 	}}
 	return psc
+}
+
+// unexpectedGCPClientFactory fails the test if cleanup tries to build a GCP client.
+func unexpectedGCPClientFactory(t *testing.T) func(context.Context) (*compute.Service, error) {
+	return func(context.Context) (*compute.Service, error) {
+		t.Error("GCP client should not be created when cleanup is skipped")
+		return nil, errors.New("unexpected GCP client creation")
+	}
+}
+
+// gcpCredentialCondition builds a GCP credential condition as set by the CPO health check.
+func gcpCredentialCondition(condType hyperv1.ConditionType, status metav1.ConditionStatus) metav1.Condition {
+	reason := hyperv1.AsExpectedReason
+	switch status {
+	case metav1.ConditionFalse:
+		reason = hyperv1.InvalidIdentityProvider
+	case metav1.ConditionUnknown:
+		reason = hyperv1.StatusUnknownReason
+	}
+	return metav1.Condition{Type: string(condType), Status: status, Reason: reason}
 }
 
 func successfulGCPClientFactory(t *testing.T) func(context.Context) (*compute.Service, error) {
