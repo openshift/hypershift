@@ -1966,27 +1966,61 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			},
 		},
 		{
+			// Exercises the realistic CAPI v1beta2 condition shapes.
+			// Provider-specific terminal reasons (InstanceTerminated,
+			// InstanceProvisionFailed) live on InfrastructureReady while
+			// Ready carries a generic summary with step-counter messages.
+			// CAPI-owned reasons (NodeStartupTimeout, MachineHasFailure,
+			// WaitingForInfrastructure) appear only on Ready.
 			name:         "When 10 of 20 machines are not ready with different reasons it should aggregate correctly",
 			platformType: hyperv1.AWSPlatform,
 			machinesGenerator: func() []client.Object {
-				machines := make([]client.Object, 20)
-				// Use real CAPI v1beta1 and AWS CAPA reasons with realistic messages.
-				failureReasons := []struct {
-					reason  string
-					message string
-				}{
-					{capiv1.NodeStartupTimeoutV1Beta1Reason, "Node failed to report NodeReady condition within 20m0s"},
-					{capiv1.NodeStartupTimeoutV1Beta1Reason, "Node failed to report NodeReady condition within 20m0s"},
-					{capiv1.MachineHasFailureV1Beta1Reason, "Machine has FailureReason: InsufficientCapacity"},
-					{capiv1.MachineHasFailureV1Beta1Reason, "Machine has FailureMessage: i-0abc123def456 is in terminated state"},
-					{"InstanceTerminated", "i-0abc123def456 instance is in terminated state"},
-					{"InstanceTerminated", "i-0def456abc789 instance is in terminated state"},
-					{"InstanceProvisionFailed", "failed to create instance: InsufficientInstanceCapacity: We currently do not have sufficient capacity in the Availability Zone you requested"},
-					{"InstanceProvisionFailed", "failed to create instance: Unsupported: The requested configuration is currently not supported"},
-					{capiv1.WaitingForInfrastructureFallbackV1Beta1Reason, ""},
-					{capiv1.WaitingForInfrastructureFallbackV1Beta1Reason, ""},
+				type machineFailure struct {
+					readyReason      string
+					readyMessage     string
+					infraReason      string // if set, adds InfrastructureReady condition
+					infraMessage     string
+					infraStepCounter bool // true → infraMessage is a step-counter
 				}
-				for i := range 10 {
+				failures := []machineFailure{
+					// CAPI-owned reasons — no InfrastructureReady
+					{readyReason: capiv1.NodeStartupTimeoutV1Beta1Reason, readyMessage: "Node failed to report NodeReady condition within 20m0s"},
+					{readyReason: capiv1.NodeStartupTimeoutV1Beta1Reason, readyMessage: "Node failed to report NodeReady condition within 20m0s"},
+					{readyReason: capiv1.MachineHasFailureV1Beta1Reason, readyMessage: "Machine has FailureReason: InsufficientCapacity"},
+					{readyReason: capiv1.MachineHasFailureV1Beta1Reason, readyMessage: "Machine has FailureMessage: i-0abc123def456 is in terminated state"},
+					// CAPA provider reasons — InfrastructureReady carries
+					// the real reason; Ready has step-counter summary
+					// (matches real CAPA v2.13 + CAPI v1.13 output).
+					{readyReason: "NotReady", readyMessage: "3 of 5 completed", infraReason: "InstanceTerminated", infraMessage: "i-0abc123def456 instance is in terminated state"},
+					{readyReason: "NotReady", readyMessage: "3 of 5 completed", infraReason: "InstanceTerminated", infraMessage: "i-0def456abc789 instance is in terminated state"},
+					{readyReason: "NotReady", readyMessage: "3 of 5 completed", infraReason: "InstanceProvisionFailed", infraMessage: "3 of 5 completed", infraStepCounter: true},
+					{readyReason: "NotReady", readyMessage: "3 of 5 completed", infraReason: "InstanceProvisionFailed", infraMessage: "failed to create instance: Unsupported: The requested configuration is currently not supported"},
+					// Transient — no InfrastructureReady
+					{readyReason: capiv1.WaitingForInfrastructureFallbackV1Beta1Reason, readyMessage: ""},
+					{readyReason: capiv1.WaitingForInfrastructureFallbackV1Beta1Reason, readyMessage: ""},
+				}
+				machines := make([]client.Object, 20)
+				for i, f := range failures {
+					conditions := []metav1.Condition{
+						{
+							Type:    capiv1.ReadyCondition,
+							Status:  metav1.ConditionFalse,
+							Reason:  f.readyReason,
+							Message: f.readyMessage,
+						},
+						{
+							Type:   capiv1.MachineNodeHealthyCondition,
+							Status: metav1.ConditionTrue,
+						},
+					}
+					if f.infraReason != "" {
+						conditions = append(conditions, metav1.Condition{
+							Type:    capiv1.InfrastructureReadyCondition,
+							Status:  metav1.ConditionFalse,
+							Reason:  f.infraReason,
+							Message: f.infraMessage,
+						})
+					}
 					machines[i] = &capiv1.Machine{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      fmt.Sprintf("failing-node-%d", i),
@@ -1995,20 +2029,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 								nodePoolAnnotation: "myns/np-name",
 							},
 						},
-						Status: capiv1.MachineStatus{
-							Conditions: []metav1.Condition{
-								{
-									Type:    capiv1.ReadyCondition,
-									Status:  metav1.ConditionFalse,
-									Reason:  failureReasons[i].reason,
-									Message: failureReasons[i].message,
-								},
-								{
-									Type:   capiv1.MachineNodeHealthyCondition,
-									Status: metav1.ConditionTrue,
-								},
-							},
-						},
+						Status: capiv1.MachineStatus{Conditions: conditions},
 					}
 				}
 				for i := range 10 {
@@ -2044,7 +2065,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 					"Machine failing-node-0: NodeStartupTimeout: Node failed to report NodeReady condition within 20m0s",
 					"Machine failing-node-2: MachineHasFailure: Machine has FailureReason: InsufficientCapacity",
 					"Machine failing-node-4: InstanceTerminated: i-0abc123def456 instance is in terminated state",
-					"Machine failing-node-6: InstanceProvisionFailed: failed to create instance: InsufficientInstanceCapacity",
+					"Machine failing-node-7: InstanceProvisionFailed: failed to create instance: Unsupported",
 					"Machine failing-node-8: WaitingForInfrastructure",
 				},
 			},
@@ -2129,6 +2150,158 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 				Status:   corev1.ConditionFalse,
 				Reason:   hyperv1.NodePoolInfrastructureFailureReason,
 				Messages: []string{"1 of 1 machines are not ready", "Machine node1: InstanceProvisionFailed: failed to create instance: some API error"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			// Reproduces CAPI v1beta2 + CAPA v2.13 condition shape:
+			// InfrastructureReady carries the provider reason but CAPI's
+			// SetSummary/WithStepCounter produces a step-counter message
+			// on both conditions; Ready has a generic reason.
+			// Before the fix this fell back to Ready's reason ("NotReady")
+			// and the terminal classification never fired.
+			name:         "When AWS InfrastructureReady has terminal reason with step-counter message it should still detect InfrastructureFailure",
+			platformType: hyperv1.AWSPlatform,
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "NotReady",
+									Message: "1 of 2 completed",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "InstanceProvisionFailed",
+									Message: "1 of 2 completed",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   hyperv1.NodePoolInfrastructureFailureReason,
+				Messages: []string{"1 of 1 machines are not ready", "Machine node1: InstanceProvisionFailed"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			// Same CAPI v1beta2 shape but InfrastructureReady has a real
+			// error message — verify the message is used for display.
+			name:         "When AWS InfrastructureReady has terminal reason with real error message it should use InfrastructureReady message",
+			platformType: hyperv1.AWSPlatform,
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "NotReady",
+									Message: "1 of 2 completed",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "InstanceProvisionFailed",
+									Message: "failed to create instance: InsufficientInstanceCapacity",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   hyperv1.NodePoolInfrastructureFailureReason,
+				Messages: []string{"1 of 1 machines are not ready", "Machine node1: InstanceProvisionFailed: failed to create instance: InsufficientInstanceCapacity"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			// InfrastructureReady has step-counter message but Ready has a
+			// real error message — verify the reason comes from
+			// InfrastructureReady and the message from Ready.
+			name:         "When AWS InfrastructureReady has step-counter message but Ready has real message it should use infra reason with Ready message",
+			platformType: hyperv1.AWSPlatform,
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "NotReady",
+									Message: "failed to provision: quota exceeded",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "InstanceProvisionFailed",
+									Message: "1 of 2 completed",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   hyperv1.NodePoolInfrastructureFailureReason,
+				Messages: []string{"1 of 1 machines are not ready", "Machine node1: InstanceProvisionFailed: failed to provision: quota exceeded"},
 			},
 			expectedAllNodes: &testCondition{
 				Status:   corev1.ConditionTrue,
@@ -2263,6 +2436,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			platformType: hyperv1.AWSPlatform,
 			machinesGenerator: func() []client.Object {
 				return []client.Object{
+					// Transient: waiting for infrastructure, no InfrastructureReady yet.
 					&capiv1.Machine{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "node1",
@@ -2286,6 +2460,8 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 					},
+					// Terminal: CAPI v1beta2 shape — InfrastructureReady
+					// carries provider reason, Ready has generic summary.
 					&capiv1.Machine{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "node2",
@@ -2298,6 +2474,12 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							Conditions: []metav1.Condition{
 								{
 									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "NotReady",
+									Message: "1 of 2 completed",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
 									Status:  metav1.ConditionFalse,
 									Reason:  "InstanceProvisionFailed",
 									Message: "failed to create instance",
