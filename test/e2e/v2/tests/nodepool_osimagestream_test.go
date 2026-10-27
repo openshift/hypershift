@@ -27,8 +27,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
+	hyperutil "github.com/openshift/hypershift/support/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -601,6 +605,20 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 
 		ctx := testCtx.Context
 
+		pullSecret, err := hyperutil.GetPullSecretBytes(ctx, testCtx.MgmtClient, hc)
+		Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster pull secret")
+		previousVersion, err := resolveReleaseImageVersion(ctx, previousImage, pullSecret)
+		Expect(err).NotTo(HaveOccurred(), "unable to resolve E2E_PREVIOUS_RELEASE_IMAGE %s", previousImage)
+		latestVersion, err := resolveReleaseImageVersion(ctx, latestImage, pullSecret)
+		Expect(err).NotTo(HaveOccurred(), "unable to resolve E2E_LATEST_RELEASE_IMAGE %s", latestImage)
+		// Skip when latest is not strictly newer: the waiter compares status.version
+		// to the target, so it cannot prove a rollout when the version string is
+		// unchanged (a re-pin of the same version with a different payload). Re-pins
+		// are covered by the condition-based lifecycle tests.
+		if !latestVersion.GT(previousVersion) {
+			Skip(fmt.Sprintf("E2E_LATEST_RELEASE_IMAGE (%s) must be newer than E2E_PREVIOUS_RELEASE_IMAGE (%s); no upgrade to verify", latestVersion, previousVersion))
+		}
+
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
@@ -631,22 +649,9 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 			obj.Spec.Release.Image = latestImage
 		})).To(Succeed(), "failed to update NodePool release image")
 
-		// Wait for upgrade to complete
-		upgradeTimeout := nodePoolUpgradeTimeout(hc.Spec.Platform.Type)
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
-			func(ctx context.Context) (*hyperv1.NodePool, error) {
-				pool := &hyperv1.NodePool{}
-				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
-				return pool, err
-			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
-					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
-					Status: metav1.ConditionFalse,
-				}),
-			},
-			e2eutil.WithTimeout(upgradeTimeout),
-		)
+		// Wait for the controller to observe the spec update and complete the upgrade.
+		g := NewWithT(GinkgoTB())
+		v2util.WaitForNodePoolVersion(g, ctx, testCtx.MgmtClient, crclient.ObjectKeyFromObject(np), latestVersion, nodePoolUpgradeTimeout(hc.Spec.Platform.Type), 15*time.Second)
 
 		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
@@ -654,12 +659,8 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 		// The RHEL version is dictated by the release version. After upgrading
 		// to OCP 5.0+, nodes get rhel-10 boot images and the stream updates
 		// accordingly. Only an explicit spec.osImageStream pin overrides this.
-		upgradedNP := &hyperv1.NodePool{}
-		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), upgradedNP)).To(Succeed())
-		upgradedVersion, err := semver.ParseTolerant(upgradedNP.Status.Version)
-		Expect(err).NotTo(HaveOccurred(), "failed to parse upgraded NodePool version %q", upgradedNP.Status.Version)
 		expectedStream := hyperv1.OSImageStreamRHEL9
-		if upgradedVersion.Major >= 5 {
+		if latestVersion.Major >= 5 {
 			expectedStream = hyperv1.OSImageStreamRHEL10
 		}
 
@@ -683,12 +684,112 @@ func NodePoolOSImageStreamUpgradeVerificationTest(getTestCtx internal.TestContex
 	})
 }
 
-// NodePoolOSImageStreamCrossMajorUpgradeTest creates a NodePool at OCP 4.23
-// (the last version with OSStreams as TechPreview), upgrades it to 5.0+, and
-// verifies that the default osImageStream switches from rhel-9 to rhel-10 and
-// that nodes run RHCOS 10 with crun-only runtime handlers post-upgrade.
+// crossMajorReleases holds the configured previous and latest release inputs
+// for a cross-major OSImageStream spec.
+type crossMajorReleases struct {
+	previousImage string
+	latestImage   string
+	previous      semver.Version
+	latest        semver.Version
+}
+
+// resolveCrossMajorReleases resolves the configured previous and latest release
+// versions and reports a skip reason when they cannot exercise a 4.x -> 5.x+
+// upgrade.
+//
+// The check is derived from the configured images rather than observed NodePool
+// state so a misconfigured job skips before creating any resources, while a
+// NodePool that reports an unexpected version remains a test failure.
+func resolveCrossMajorReleases(ctx context.Context, hc *hyperv1.HostedCluster, pullSecret []byte) (crossMajorReleases, string, error) {
+	previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
+	latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
+	if previousImage == "" || latestImage == "" {
+		return crossMajorReleases{}, "E2E_PREVIOUS_RELEASE_IMAGE and E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests", nil
+	}
+
+	releases := crossMajorReleases{previousImage: previousImage, latestImage: latestImage}
+	previous, err := resolveReleaseImageVersion(ctx, previousImage, pullSecret)
+	if err != nil {
+		return crossMajorReleases{}, "", fmt.Errorf("failed to resolve E2E_PREVIOUS_RELEASE_IMAGE %s: %w", previousImage, err)
+	}
+	if previous.Major != 4 {
+		return crossMajorReleases{}, fmt.Sprintf("4.x to 5.x+ upgrade test requires E2E_PREVIOUS_RELEASE_IMAGE to be OCP 4.x, got %s", previous), nil
+	}
+	releases.previous = previous
+
+	latest, err := resolveReleaseImageVersion(ctx, latestImage, pullSecret)
+	if err != nil {
+		return crossMajorReleases{}, "", fmt.Errorf("failed to resolve E2E_LATEST_RELEASE_IMAGE %s: %w", latestImage, err)
+	}
+	if latest.Major < 5 {
+		return crossMajorReleases{}, fmt.Sprintf("4.x to 5.x+ upgrade test requires E2E_LATEST_RELEASE_IMAGE to be OCP 5.x+, got %s", latest), nil
+	}
+	if hc.Status.Version != nil && hc.Status.Version.Desired.Version != "" {
+		hcVersion, err := semver.ParseTolerant(hc.Status.Version.Desired.Version)
+		if err != nil {
+			return crossMajorReleases{}, "", fmt.Errorf("failed to parse HostedCluster version %q: %w", hc.Status.Version.Desired.Version, err)
+		}
+		if err := supportedversion.ValidateVersionSkew(&hcVersion, &latest); err != nil {
+			return crossMajorReleases{}, fmt.Sprintf("HostedCluster version %s cannot run the latest release %s: %v", hcVersion, latest, err), nil
+		}
+	}
+	releases.latest = latest
+	return releases, "", nil
+}
+
+// resolveReleaseImageVersion resolves the OCP version of a release image using
+// the supplied pull secret.
+//
+// RegistryClientProvider pulls directly from the registry and does not honor
+// registry override/ICSP mirroring. A job running behind a proxy would need a
+// provider that resolves overrides.
+func resolveReleaseImageVersion(ctx context.Context, image string, pullSecret []byte) (semver.Version, error) {
+	provider := releaseinfo.RegistryClientProvider{}
+	lookupCtx, cancel := context.WithTimeout(ctx, releaseImageLookupTimeout)
+	defer cancel()
+	release, err := provider.Lookup(lookupCtx, image, pullSecret)
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("failed to look up release image: %w", err)
+	}
+	version, err := semver.ParseTolerant(release.Version())
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("failed to parse release image version %q: %w", release.Version(), err)
+	}
+	return version, nil
+}
+
+const (
+	// nodePoolVersionSettleTimeout bounds the wait for NodePool status.version to
+	// catch up with a NodePool whose nodes are already Ready. The
+	// MachineDeployment-complete signal normally lags readiness by a reconcile or
+	// two, so this does not need the full upgrade budget.
+	nodePoolVersionSettleTimeout = 10 * time.Minute
+
+	// releaseImageLookupTimeout bounds registry metadata reads. TestContext.Context
+	// has no deadline of its own, so an unresponsive registry would otherwise
+	// block before the error handling runs. Match the operator's one-minute
+	// lookup budget.
+	releaseImageLookupTimeout = 1 * time.Minute
+)
+
+// nodePoolVersionSettleTimeoutFor returns the post-Ready settle budget for the
+// platform. Azure and KubeVirt provision and reconcile more slowly, so they get
+// a larger window while staying inside the per-spec upgrade budget.
+func nodePoolVersionSettleTimeoutFor(platform hyperv1.PlatformType) time.Duration {
+	switch platform {
+	case hyperv1.AzurePlatform, hyperv1.KubevirtPlatform:
+		return 20 * time.Minute
+	default:
+		return nodePoolVersionSettleTimeout
+	}
+}
+
+// NodePoolOSImageStreamCrossMajorUpgradeTest creates a NodePool at the
+// configured 4.x previous release, upgrades it to 5.x+, and verifies that the
+// default osImageStream switches from rhel-9 to rhel-10 and that nodes run
+// RHCOS 10 with crun-only runtime handlers post-upgrade.
 func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("When a NodePool at OCP 4.23 is upgraded to 5.0+, it should switch to rhel-10 by default", func() {
+	It("When a NodePool at the configured 4.x previous release is upgraded to 5.x+, it should switch to rhel-10 by default", func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -696,18 +797,23 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 		hcClient, err := testCtx.GetHostedClusterClient(hc)
 		Expect(err).NotTo(HaveOccurred())
 
-		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
-		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
-		if previousImage == "" || latestImage == "" {
-			Skip("E2E_PREVIOUS_RELEASE_IMAGE and E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
-		}
-
 		ctx := testCtx.Context
+
+		pullSecret, err := hyperutil.GetPullSecretBytes(ctx, testCtx.MgmtClient, hc)
+		Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster pull secret")
+		releases, skipReason, err := resolveCrossMajorReleases(ctx, hc, pullSecret)
+		Expect(err).NotTo(HaveOccurred(), "unable to resolve configured release images")
+		if skipReason != "" {
+			Skip(skipReason)
+		}
+		previousImage := releases.previousImage
+		latestImage := releases.latestImage
+		g := NewWithT(GinkgoTB())
 
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
-		By("creating a NodePool at the previous release (4.23)")
+		By(fmt.Sprintf("creating a NodePool at the previous release %s", releases.previous))
 		var oneReplica int32 = 1
 		np := buildTestNodePool(defaultNP, "osstream-xmajor", func(pool *hyperv1.NodePool) {
 			pool.Spec.Replicas = &oneReplica
@@ -729,13 +835,8 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 
 		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
-		By("validating pre-upgrade NodePool version is OCP 4.x")
-		preUpgradeNP := &hyperv1.NodePool{}
-		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), preUpgradeNP)).To(Succeed())
-		preUpgradeVersion, err := semver.ParseTolerant(preUpgradeNP.Status.Version)
-		Expect(err).NotTo(HaveOccurred(), "failed to parse pre-upgrade NodePool version %q", preUpgradeNP.Status.Version)
-		Expect(preUpgradeVersion.Major).To(BeNumerically("<", uint64(5)),
-			"E2E_PREVIOUS_RELEASE_IMAGE must be OCP 4.x for cross-major upgrade test, got %s", preUpgradeVersion)
+		By("validating pre-upgrade NodePool version matches the configured previous release")
+		v2util.WaitForNodePoolVersion(g, ctx, testCtx.MgmtClient, crclient.ObjectKeyFromObject(np), releases.previous, nodePoolVersionSettleTimeoutFor(hc.Spec.Platform.Type), 15*time.Second)
 
 		By("verifying pre-upgrade nodes run RHCOS 9 with runc+crun")
 		verifyNodeOSMatchesStream(testCtx, np, hyperv1.OSImageStreamRHEL9)
@@ -761,31 +862,10 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 			obj.Spec.Release.Image = latestImage
 		})).To(Succeed(), "failed to update NodePool release image")
 
-		upgradeTimeout := nodePoolUpgradeTimeout(hc.Spec.Platform.Type)
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
-			func(ctx context.Context) (*hyperv1.NodePool, error) {
-				pool := &hyperv1.NodePool{}
-				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
-				return pool, err
-			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
-					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
-					Status: metav1.ConditionFalse,
-				}),
-			},
-			e2eutil.WithTimeout(upgradeTimeout),
-		)
+		By("validating post-upgrade NodePool version matches the configured latest release")
+		v2util.WaitForNodePoolVersion(g, ctx, testCtx.MgmtClient, crclient.ObjectKeyFromObject(np), releases.latest, nodePoolUpgradeTimeout(hc.Spec.Platform.Type), 15*time.Second)
 
 		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
-
-		By("validating post-upgrade NodePool version is OCP 5.x")
-		postUpgradeNP := &hyperv1.NodePool{}
-		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), postUpgradeNP)).To(Succeed())
-		postUpgradeVersion, err := semver.ParseTolerant(postUpgradeNP.Status.Version)
-		Expect(err).NotTo(HaveOccurred(), "failed to parse post-upgrade NodePool version %q", postUpgradeNP.Status.Version)
-		Expect(postUpgradeVersion.Major).To(BeNumerically(">=", uint64(5)),
-			"E2E_LATEST_RELEASE_IMAGE must be OCP 5.x+ for cross-major upgrade test, got %s", postUpgradeVersion)
 
 		By("verifying post-upgrade nodes switched to RHCOS 10 with crun only")
 		verifyNodeOSMatchesStream(testCtx, np, hyperv1.OSImageStreamRHEL10)
@@ -808,12 +888,12 @@ func NodePoolOSImageStreamCrossMajorUpgradeTest(getTestCtx internal.TestContextG
 	})
 }
 
-// NodePoolOSImageStreamPinnedRHEL9UpgradeTest creates a NodePool at OCP 4.23
-// with osImageStream explicitly pinned to rhel-9, upgrades it to 5.0+, and
-// verifies that the pin overrides the default change — nodes remain on RHEL-9
-// with runc+crun runtime handlers post-upgrade.
+// NodePoolOSImageStreamPinnedRHEL9UpgradeTest creates a NodePool at the
+// configured 4.x previous release with osImageStream explicitly pinned to
+// rhel-9, upgrades it to 5.x+, and verifies that the pin overrides the default
+// change — nodes remain on RHEL-9 with runc+crun runtime handlers post-upgrade.
 func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContextGetter) {
-	It("When a NodePool pinned to rhel-9 is upgraded from 4.23 to 5.0+, it should remain on RHEL-9", func() {
+	It("When a NodePool pinned to rhel-9 is upgraded from the configured 4.x previous release to 5.x+, it should remain on RHEL-9", func() {
 		testCtx := getTestCtx()
 
 		hc, err := testCtx.GetHostedCluster()
@@ -821,18 +901,23 @@ func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContext
 		hcClient, err := testCtx.GetHostedClusterClient(hc)
 		Expect(err).NotTo(HaveOccurred())
 
-		previousImage := internal.GetEnvVarValue("E2E_PREVIOUS_RELEASE_IMAGE")
-		latestImage := internal.GetEnvVarValue("E2E_LATEST_RELEASE_IMAGE")
-		if previousImage == "" || latestImage == "" {
-			Skip("E2E_PREVIOUS_RELEASE_IMAGE and E2E_LATEST_RELEASE_IMAGE must be set for upgrade tests")
-		}
-
 		ctx := testCtx.Context
+
+		pullSecret, err := hyperutil.GetPullSecretBytes(ctx, testCtx.MgmtClient, hc)
+		Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster pull secret")
+		releases, skipReason, err := resolveCrossMajorReleases(ctx, hc, pullSecret)
+		Expect(err).NotTo(HaveOccurred(), "unable to resolve configured release images")
+		if skipReason != "" {
+			Skip(skipReason)
+		}
+		previousImage := releases.previousImage
+		latestImage := releases.latestImage
+		g := NewWithT(GinkgoTB())
 
 		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
 		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
 
-		By("creating a NodePool at 4.23 pinned to rhel-9")
+		By(fmt.Sprintf("creating a NodePool at %s pinned to rhel-9", releases.previous))
 		var oneReplica int32 = 1
 		np := buildTestNodePool(defaultNP, "osstream-pin9", func(pool *hyperv1.NodePool) {
 			pool.Spec.Replicas = &oneReplica
@@ -857,13 +942,8 @@ func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContext
 
 		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
 
-		By("validating pre-upgrade NodePool version is OCP 4.x")
-		preUpgradeNP := &hyperv1.NodePool{}
-		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), preUpgradeNP)).To(Succeed())
-		preUpgradeVersion, err := semver.ParseTolerant(preUpgradeNP.Status.Version)
-		Expect(err).NotTo(HaveOccurred(), "failed to parse pre-upgrade NodePool version %q", preUpgradeNP.Status.Version)
-		Expect(preUpgradeVersion.Major).To(BeNumerically("<", uint64(5)),
-			"E2E_PREVIOUS_RELEASE_IMAGE must be OCP 4.x for cross-major upgrade test, got %s", preUpgradeVersion)
+		By("validating pre-upgrade NodePool version matches the configured previous release")
+		v2util.WaitForNodePoolVersion(g, ctx, testCtx.MgmtClient, crclient.ObjectKeyFromObject(np), releases.previous, nodePoolVersionSettleTimeoutFor(hc.Spec.Platform.Type), 15*time.Second)
 
 		By("verifying pre-upgrade nodes run RHCOS 9")
 		verifyNodeOSMatchesStream(testCtx, np, hyperv1.OSImageStreamRHEL9)
@@ -889,31 +969,10 @@ func NodePoolOSImageStreamPinnedRHEL9UpgradeTest(getTestCtx internal.TestContext
 			obj.Spec.Release.Image = latestImage
 		})).To(Succeed(), "failed to update NodePool release image")
 
-		upgradeTimeout := nodePoolUpgradeTimeout(hc.Spec.Platform.Type)
-		e2eutil.EventuallyObject(GinkgoTB(), ctx, fmt.Sprintf("NodePool %s/%s to complete the upgrade", np.Namespace, np.Name),
-			func(ctx context.Context) (*hyperv1.NodePool, error) {
-				pool := &hyperv1.NodePool{}
-				err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), pool)
-				return pool, err
-			},
-			[]e2eutil.Predicate[*hyperv1.NodePool]{
-				e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
-					Type:   hyperv1.NodePoolUpdatingVersionConditionType,
-					Status: metav1.ConditionFalse,
-				}),
-			},
-			e2eutil.WithTimeout(upgradeTimeout),
-		)
+		By("validating post-upgrade NodePool version matches the configured latest release")
+		v2util.WaitForNodePoolVersion(g, ctx, testCtx.MgmtClient, crclient.ObjectKeyFromObject(np), releases.latest, nodePoolUpgradeTimeout(hc.Spec.Platform.Type), 15*time.Second)
 
 		e2eutil.WaitForReadyNodesByNodePool(GinkgoTB(), ctx, hcClient, np, hc.Spec.Platform.Type)
-
-		By("validating post-upgrade NodePool version is OCP 5.x")
-		postUpgradeNP := &hyperv1.NodePool{}
-		Expect(testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), postUpgradeNP)).To(Succeed())
-		postUpgradeVersion, err := semver.ParseTolerant(postUpgradeNP.Status.Version)
-		Expect(err).NotTo(HaveOccurred(), "failed to parse post-upgrade NodePool version %q", postUpgradeNP.Status.Version)
-		Expect(postUpgradeVersion.Major).To(BeNumerically(">=", uint64(5)),
-			"E2E_LATEST_RELEASE_IMAGE must be OCP 5.x+ for cross-major upgrade test, got %s", postUpgradeVersion)
 
 		By("verifying post-upgrade nodes remain on RHCOS 9 (pin overrides default change)")
 		verifyNodeOSMatchesStream(testCtx, np, hyperv1.OSImageStreamRHEL9)
