@@ -171,6 +171,7 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		// clear the flags so the render pass doesn't reject them alongside InfrastructureJSON
 		opts.AzurePlatform.AssignServicePrincipalRoles = false
 		opts.AzurePlatform.AssignCustomHCPRoles = false
+		opts.AzurePlatform.KarpenterClientID = ""
 
 		opts.InfrastructureJSON = infraFile
 		return renderCreate(ctx, &opts.RawCreateOptions, &opts.AzurePlatform, manifestsFile, renderLogFile, createLogFile, clientProvider)
