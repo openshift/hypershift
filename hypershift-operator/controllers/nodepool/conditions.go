@@ -828,9 +828,24 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 				//		status: "False"
 				//		type: Ready
 				var mapReason, mapMessage string
-				if infraReadyCond != nil && infraReadyCond.Status != metav1.ConditionTrue && !isSetupCounterCondMessage.MatchString(infraReadyCond.Message) {
+				if infraReadyCond != nil && infraReadyCond.Status != metav1.ConditionTrue {
+					// Always use InfrastructureReady reason for classification —
+					// this is where provider-specific failure reasons live
+					// (e.g. InstanceProvisionFailed). The Ready summary condition
+					// often carries a generic reason that hides the actual
+					// provider error, especially when CAPI uses SetSummary with
+					// step-counter options.
 					mapReason = infraReadyCond.Reason
-					mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", machine.Name, infraReadyCond.Reason, infraReadyCond.Message)
+					// For the display message, prefer InfrastructureReady's
+					// message unless it's a step-counter; fall back to Ready's
+					// message.
+					if !isSetupCounterCondMessage.MatchString(infraReadyCond.Message) {
+						mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", machine.Name, infraReadyCond.Reason, infraReadyCond.Message)
+					} else if readyCond.Message != "" && !isSetupCounterCondMessage.MatchString(readyCond.Message) {
+						mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", machine.Name, infraReadyCond.Reason, readyCond.Message)
+					} else {
+						mapMessage = fmt.Sprintf("Machine %s: %s\n", machine.Name, infraReadyCond.Reason)
+					}
 				} else {
 					mapReason = readyCond.Reason
 					if readyCond.Message != "" && !isSetupCounterCondMessage.MatchString(readyCond.Message) {
@@ -880,6 +895,13 @@ var terminalInfraReasons = map[hyperv1.PlatformType]map[string]bool{
 		"InstanceProvisionFailed": true, // CAPA: failed to provision instance
 	},
 	hyperv1.AzurePlatform: {
+		// NOTE: CAPZ currently emits the generic "Failed" reason for VM
+		// provisioning errors instead of "VMProvisionFailed". The constant
+		// exists in CAPZ's API but is unused by controllers as of v1.26.
+		// Upstream fix: https://github.com/kubernetes-sigs/cluster-api-provider-azure/pull/6737
+		// This entry will activate once the CAPZ vendor is bumped with
+		// that fix. Using the generic "Failed" reason here would
+		// over-classify transient errors (throttling, capacity) as terminal.
 		"VMProvisionFailed": true, // CAPZ: failed to provision VM
 	},
 	hyperv1.IBMCloudPlatform: {
