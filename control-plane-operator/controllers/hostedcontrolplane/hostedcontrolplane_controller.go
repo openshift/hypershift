@@ -126,6 +126,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
@@ -175,6 +176,7 @@ const (
 
 type HostedControlPlaneReconciler struct {
 	client.Client
+	Recorder record.EventRecorder
 
 	GVKAccessChecker component.GVKAccessChecker
 
@@ -383,7 +385,7 @@ type eventHandler struct {
 
 func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, restMapper meta.RESTMapper) []eventHandler {
 	handlers := []eventHandler{
-		{obj: &corev1.Event{}, handler: handler.EnqueueRequestsFromMapFunc(r.hostedControlPlaneInNamespace)},
+		{obj: &corev1.Event{}, handler: handler.EnqueueRequestsFromMapFunc(r.requestsForEvent)},
 		{obj: &corev1.ConfigMap{}, handler: handler.EnqueueRequestsFromMapFunc(r.hostedControlPlaneInNamespace)},
 		{obj: &corev1.Service{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &appsv1.Deployment{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
@@ -806,6 +808,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Perform the hosted control plane reconciliation
 	result, err := r.update(ctx, hostedControlPlane, releaseImage)
 	if err != nil {
+		r.recordReconciliationFailure(hostedControlPlane, err)
 		return ctrl.Result{}, fmt.Errorf("failed to update control plane: %w", err)
 	}
 
