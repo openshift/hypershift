@@ -18,7 +18,6 @@ package tests
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"time"
 
