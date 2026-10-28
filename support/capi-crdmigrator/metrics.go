@@ -24,6 +24,11 @@ var (
 		"Number of CAPI CRDs that have completed storage version migration.",
 		nil, nil,
 	)
+	capiMigrationCollectorSuccessDesc = prometheus.NewDesc(
+		"hypershift_capi_migration_collector_success",
+		"Whether the CAPI migration metrics collector was able to collect metrics successfully. 1 for success, 0 for failure.",
+		nil, nil,
+	)
 )
 
 type migrationMetricsCollector struct {
@@ -41,6 +46,7 @@ func RegisterMigrationMetrics(c client.Reader, namespace string) {
 func (c *migrationMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- capiMigrationTotalCRDsDesc
 	ch <- capiMigrationMigratedCRDsDesc
+	ch <- capiMigrationCollectorSuccessDesc
 }
 
 func (c *migrationMetricsCollector) Collect(ch chan<- prometheus.Metric) {
@@ -52,20 +58,24 @@ func (c *migrationMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		Name:      StatusConfigMapName,
 	}, cm); err != nil {
 		log.V(4).Info("Failed to get migration status ConfigMap for metrics", "error", err)
+		ch <- prometheus.MustNewConstMetric(capiMigrationCollectorSuccessDesc, prometheus.GaugeValue, 0)
 		return
 	}
 
 	data, ok := cm.Data[statusDataKey]
 	if !ok {
+		ch <- prometheus.MustNewConstMetric(capiMigrationCollectorSuccessDesc, prometheus.GaugeValue, 0)
 		return
 	}
 
 	var status CAPIMigrationStatus
 	if err := json.Unmarshal([]byte(data), &status); err != nil {
 		log.Error(err, "Failed to unmarshal migration status for metrics")
+		ch <- prometheus.MustNewConstMetric(capiMigrationCollectorSuccessDesc, prometheus.GaugeValue, 0)
 		return
 	}
 
 	ch <- prometheus.MustNewConstMetric(capiMigrationTotalCRDsDesc, prometheus.GaugeValue, float64(status.TotalCRDs))
 	ch <- prometheus.MustNewConstMetric(capiMigrationMigratedCRDsDesc, prometheus.GaugeValue, float64(status.MigratedCRDs))
+	ch <- prometheus.MustNewConstMetric(capiMigrationCollectorSuccessDesc, prometheus.GaugeValue, 1)
 }
