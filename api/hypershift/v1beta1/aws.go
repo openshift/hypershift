@@ -1332,6 +1332,7 @@ type AWSManagedDNSDelegationSpec struct {
 // to form the zone domain name.
 // Delegation (ACME CNAME + NS records) is configured separately via the
 // delegation field.
+// +kubebuilder:validation:XValidation:rule="has(oldSelf.delegation) == has(self.delegation)",message="delegation cannot be added or removed after creation"
 type AWSManagedDNSSpec struct {
 	// ingressDomainPrefix is the subdomain prefix for the managed ingress DNS zones.
 	// The zone is created as {ingressDomainPrefix}.{clusterBaseDomain}, where
@@ -1355,7 +1356,9 @@ type AWSManagedDNSSpec struct {
 	// public ingress zone and handles NS delegation based on the nsDelegationMode.
 	// When absent, only zones are created and the consuming platform handles
 	// delegation and certificate management.
+	// delegation can only be set at cluster creation and is immutable.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="delegation is immutable"
 	Delegation AWSManagedDNSDelegationSpec `json:"delegation,omitzero"`
 }
 
