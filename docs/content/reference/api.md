@@ -2122,7 +2122,8 @@ AWSManagedDNSDelegationSpec
 When set, the ControlPlaneOperator creates an ACME DNS01 challenge CNAME in the
 public ingress zone and handles NS delegation based on the nsDelegationMode.
 When absent, only zones are created and the consuming platform handles
-delegation and certificate management.</p>
+delegation and certificate management.
+delegation can only be set at cluster creation and is immutable.</p>
 </td>
 </tr>
 </tbody>
