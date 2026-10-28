@@ -63,8 +63,8 @@ require (
 	github.com/onsi/gomega v1.42.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/openshift/api v0.0.0-20260922100147-3a6e03c5a473
-	github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8
+	github.com/openshift/api v0.0.0-20261028095540-9af1f7b4730c
+	github.com/openshift/client-go v0.0.0-20261026141621-1f34fe8dc069
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
 	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
@@ -308,9 +308,6 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.21.1 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 )
-
-// Prevent root-only client and library dependencies from raising the selected API compatibility pin.
-exclude github.com/openshift/api v0.0.0-20260930220732-5588d747a72b
 
 replace github.com/openshift/hypershift/api => ./api
 
