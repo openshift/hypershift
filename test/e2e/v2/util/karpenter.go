@@ -251,12 +251,10 @@ func CreateKarpenterNodePoolAndWorkload(
 	g.Expect(hcClient.Create(ctx, nodePool)).To(Succeed())
 	if !skipCleanup {
 		ginkgo.DeferCleanup(func() {
-			if err := hcClient.Delete(ctx, nodePool); err != nil {
-				if apierrors.IsNotFound(err) {
-					return
-				}
+			if err := hcClient.Delete(ctx, nodePool); err != nil && !apierrors.IsNotFound(err) {
 				Expect(err).NotTo(HaveOccurred(), "cleanup: failed to delete NodePool %s", nodePool.Name)
 			}
+			// A missing NodePool does not imply its nodes have finished terminating.
 			waitForNodeCountByLabels(Default, ctx, hcClient, platform, 0, nodeLabels)
 		})
 	}
