@@ -9618,12 +9618,51 @@ spec:
 
                                 Annotations are applied per-key — existing annotations set by other
                                 controllers are preserved. HyperShift does not validate annotation
-                                values — correctness is the user's responsibility, same as setting
-                                annotations on any Kubernetes Service.
+                                value semantics — correctness is the user's responsibility, same as
+                                setting annotations on any Kubernetes Service.
+                                Only keys starting with a known load balancer provider prefix are
+                                accepted: metallb.io/, metallb.universe.tf/,
+                                service.beta.kubernetes.io/aws-load-balancer-eip,
+                                service.beta.kubernetes.io/aws-load-balancer-subnet,
+                                service.beta.kubernetes.io/aws-load-balancer-target-group,
+                                service.beta.kubernetes.io/azure-load-balancer-ipv,
+                                service.beta.kubernetes.io/azure-load-balancer-resource-group,
+                                networking.gke.io/, cis.f5.com/, lbipam.cilium.io/ and
+                                loadbalancer.openstack.org/. The networking.gke.io/load-balancer-type
+                                annotation is not allowed because it controls whether the load
+                                balancer is internal or external. Annotation keys are limited to 317
+                                characters. The name segment must start and end with an alphanumeric
+                                character and is limited to 63 characters.
+                                Values are limited to 253 characters.
                                 Minimum 1, maximum 10 annotations per service.
                               maxProperties: 10
                               minProperties: 1
                               type: object
+                              x-kubernetes-validations:
+                              - message: serviceAnnotations keys must start with a
+                                  known load balancer provider prefix (e.g. metallb.io/,
+                                  service.beta.kubernetes.io/aws-load-balancer-eip,
+                                  lbipam.cilium.io/); networking.gke.io/load-balancer-type
+                                  is not allowed; see the field description for the
+                                  full list
+                                rule: self.all(k, k.startsWith('metallb.io/') || k.startsWith('metallb.universe.tf/')
+                                  || k.startsWith('service.beta.kubernetes.io/aws-load-balancer-eip')
+                                  || k.startsWith('service.beta.kubernetes.io/aws-load-balancer-subnet')
+                                  || k.startsWith('service.beta.kubernetes.io/aws-load-balancer-target-group')
+                                  || k.startsWith('service.beta.kubernetes.io/azure-load-balancer-ipv')
+                                  || k.startsWith('service.beta.kubernetes.io/azure-load-balancer-resource-group')
+                                  || (k.startsWith('networking.gke.io/') && k != 'networking.gke.io/load-balancer-type')
+                                  || k.startsWith('cis.f5.com/') || k.startsWith('lbipam.cilium.io/')
+                                  || k.startsWith('loadbalancer.openstack.org/'))
+                              - message: annotation keys must be at most 317 characters
+                                rule: self.all(k, size(k) <= 317)
+                              - message: 'annotation keys must be valid qualified
+                                  names: an optional DNS subdomain prefix followed
+                                  by ''/'', then a name of at most 63 characters starting
+                                  and ending with an alphanumeric character'
+                                rule: self.all(k, k.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\\/)?[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$'))
+                              - message: annotation values must be at most 253 characters
+                                rule: self.all(k, size(self[k]) <= 253)
                           type: object
                         nodePort:
                           description: nodePort configures exposing a service using
