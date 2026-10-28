@@ -237,6 +237,19 @@ func TestCreateCluster(t *testing.T) {
 				"--ovn-kubernetes-mtu=1400",
 			},
 		},
+		{
+			name: "When managed DNS is enabled, it should not set the public and private zone IDs",
+			args: []string{
+				"--name=example",
+				"--sts-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--iam-json=" + iamFile,
+				"--role-arn=fakeRoleARN",
+				"--pull-secret=" + pullSecretFile,
+				"--render-sensitive",
+				"--managed-dns",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)

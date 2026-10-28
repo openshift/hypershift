@@ -316,6 +316,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		cluster.Spec.Platform.AWS.AdditionalAllowedPrincipals = append(cluster.Spec.Platform.AWS.AdditionalAllowedPrincipals,
 			o.iamInfo.SharedControlPlaneRoleARN)
 	}
+	clearManagedDNSZoneIDs(cluster)
 
 	switch {
 	case o.infra.SecureProxyAddr != "":
@@ -401,6 +402,20 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	}
 
 	return nil
+}
+
+// clearManagedDNSZoneIDs unsets the spec.dns zone IDs taken from the infra
+// output when managed DNS is enabled. managedDNS creates the ingress zones and
+// the API rejects the zone IDs alongside it. Shared VPC clusters keep the VPC
+// owner's private zone, since no private ingress zone is created.
+func clearManagedDNSZoneIDs(cluster *hyperv1.HostedCluster) {
+	if cluster.Spec.Platform.AWS.ManagedDNS.IngressDomainPrefix == "" {
+		return
+	}
+	cluster.Spec.DNS.PublicZoneID = ""
+	if cluster.Spec.Platform.AWS.SharedVPC == nil {
+		cluster.Spec.DNS.PrivateZoneID = ""
+	}
 }
 
 func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
