@@ -4398,6 +4398,7 @@ spec:
                               public ingress zone and handles NS delegation based on the nsDelegationMode.
                               When absent, only zones are created and the consuming platform handles
                               delegation and certificate management.
+                              delegation can only be set at cluster creation and is immutable.
                             properties:
                               nsDelegationMode:
                                 description: |-
@@ -4413,6 +4414,9 @@ spec:
                             required:
                             - nsDelegationMode
                             type: object
+                            x-kubernetes-validations:
+                            - message: delegation is immutable
+                              rule: self == oldSelf
                           ingressDomainPrefix:
                             description: |-
                               ingressDomainPrefix is the subdomain prefix for the managed ingress DNS zones.
@@ -4438,6 +4442,9 @@ spec:
                         required:
                         - ingressDomainPrefix
                         type: object
+                        x-kubernetes-validations:
+                        - message: delegation cannot be added or removed after creation
+                          rule: has(oldSelf.delegation) == has(self.delegation)
                       multiArch:
                         default: false
                         description: |-
