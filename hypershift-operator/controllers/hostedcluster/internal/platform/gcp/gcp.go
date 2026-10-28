@@ -517,7 +517,7 @@ func ComputeGCPCredentialConditions(hc *hyperv1.HostedCluster, hcp *hyperv1.Host
 				ObservedGeneration: hc.Generation,
 			}
 			if known {
-				fresh.Reason = "UnsupportedControlPlaneVersion"
+				fresh.Reason = hyperv1.UnsupportedControlPlaneVersionReason
 				fresh.Message = "Runtime GCP credential validation requires control plane version 5.1 or later"
 			}
 		} else if hcpCond == nil || hcpCond.Status == metav1.ConditionUnknown {
