@@ -22,6 +22,8 @@ import (
 	"github.com/go-logr/logr"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -45,6 +47,7 @@ type DefragController struct {
 	etcdClient         etcdcli.EtcdClient
 	numDefragFailures  int
 	defragWaitDuration time.Duration
+	clusterHealth      func(context.Context) (bool, string, error)
 }
 
 type defragTicker struct {
@@ -114,6 +117,17 @@ https://github.com/openshift/cluster-etcd-operator/tree/master/pkg/etcdcli
 
 */
 
+func (r *DefragController) checkClusterHealth(ctx context.Context) (bool, string, error) {
+	if r.clusterHealth != nil {
+		return r.clusterHealth(ctx)
+	}
+	memberHealth, err := r.etcdClient.MemberHealth(ctx)
+	if err != nil {
+		return false, "", err
+	}
+	return etcdcli.IsClusterHealthy(memberHealth), memberHealth.Status(), nil
+}
+
 func (r *DefragController) runDefrag(ctx context.Context) error {
 	// Do not defrag if any of the cluster members are unhealthy.
 	members, err := r.etcdClient.MemberList(ctx)
@@ -131,14 +145,14 @@ func (r *DefragController) runDefrag(ctx context.Context) error {
 		}
 	}
 
-	memberHealth, err := r.etcdClient.MemberHealth(ctx)
+	healthy, healthStatus, err := r.checkClusterHealth(ctx)
 	if err != nil {
 		return err
 	}
 
-	if !etcdcli.IsClusterHealthy(memberHealth) {
-		r.log.Error(err, "Cluster is unhealthy", "status", memberHealth.Status())
-		return fmt.Errorf("cluster is unhealthy, status: %s", memberHealth.Status())
+	if !healthy {
+		r.log.Error(err, "Cluster is unhealthy", "status", healthStatus)
+		return fmt.Errorf("cluster is unhealthy, status: %s", healthStatus)
 	}
 
 	// filter out learner members since they don't support the defragment API call
@@ -190,10 +204,11 @@ func (r *DefragController) runDefrag(ctx context.Context) error {
 			fragmentedPercentage := checkFragmentationPercentage(status.DbSize, status.DbSizeInUse)
 			r.log.Info("Member is over defrag threshold", "name", member.Name, "URL", member.ClientURLs[0], "fragmentation percentage", fragmentedPercentage, "DBSize on disk", status.DbSize, "DBSize in use", status.DbSizeInUse, "leader", status.Leader)
 			if _, err := r.etcdClient.Defragment(ctx, member); err != nil {
-				// Defrag can timeout if defragmentation takes longer than etcdcli.DefragDialTimeout.
 				r.log.Error(err, "DefragController Defragment Failed", "member", member.Name, "ID", member.ID)
-				errMsg := fmt.Sprintf("failed defrag on member: %s, memberID: %x: %v", member.Name, member.ID, err)
-				errs = append(errs, fmt.Errorf("%s", errMsg))
+				errs = append(errs, fmt.Errorf("failed defrag on member: %s, memberID: %x: %w", member.Name, member.ID, err))
+				if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || grpcstatus.Code(err) == codes.DeadlineExceeded || grpcstatus.Code(err) == codes.Canceled {
+					break
+				}
 				continue
 			}
 
@@ -211,13 +226,13 @@ func (r *DefragController) runDefrag(ctx context.Context) error {
 					r.log.Info("Sleeping to allow cluster to recover before defragging next member", "waiting", r.defragWaitDuration)
 					time.Sleep(r.defragWaitDuration)
 
-					memberHealth, err := r.etcdClient.MemberHealth(ctx)
+					healthy, healthStatus, err := r.checkClusterHealth(ctx)
 					if err != nil {
 						r.log.Error(err, "Failed checking member health")
 						return false, nil
 					}
-					if !etcdcli.IsClusterHealthy(memberHealth) {
-						r.log.Info("Cluster member is unhealthy", "member status", memberHealth.Status())
+					if !healthy {
+						r.log.Info("Cluster member is unhealthy", "member status", healthStatus)
 						return false, nil
 					}
 					return true, nil
