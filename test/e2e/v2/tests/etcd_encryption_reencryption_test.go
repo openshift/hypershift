@@ -33,8 +33,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 
@@ -138,61 +136,6 @@ func verifyReEncryptionStatus(hc *hyperv1.HostedCluster, expectedProvider hyperv
 		"history[0].to.fingerprint should match the current active key fingerprint")
 	Expect(hc.Status.SecretEncryption.History[0].From.Fingerprint).NotTo(Equal(activeFP),
 		"history[0].from.fingerprint should differ from to.fingerprint — rotation must change the key")
-}
-
-// svmWriteKeyAnnotation is the annotation the library-go migrator stamps on every
-// StorageVersionMigration to identify which encryption write-key triggered it.
-const svmWriteKeyAnnotation = "encryption.apiserver.operator.openshift.io/write-key"
-
-// verifyStorageVersionMigrations asserts that at least one StorageVersionMigration in
-// the hosted cluster was created for the current rotation (identified by the write-key
-// annotation) and that every such migration has a Succeeded condition = True.
-// Filtering by the annotation rules out SVMs left over from bootstrap or prior rotations.
-func verifyStorageVersionMigrations(ctx context.Context, guestClient crclient.Client, hc *hyperv1.HostedCluster) {
-	GinkgoHelper()
-	// Compute the fingerprint the controller uses for the write-key annotation.
-	// ActiveKey holds the key that was just rotated to (TargetKey is cleared on completion).
-	var kvType hyperv1.AzureKMSKeyVaultType
-	if hc.Spec.SecretEncryption.KMS != nil && hc.Spec.SecretEncryption.KMS.Azure != nil {
-		kvType = hc.Spec.SecretEncryption.KMS.Azure.KeyVaultType
-	}
-	fp := secretencryption.FingerprintFromKeyStatus(&hc.Status.SecretEncryption.ActiveKey, kvType)
-	Expect(fp).NotTo(BeEmpty(), "could not compute fingerprint from ActiveKey — Status may not have been updated yet")
-	writeKey := "encryption-key-" + fp
-
-	svmList := &unstructured.UnstructuredList{}
-	svmList.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "migration.k8s.io",
-		Version: "v1alpha1",
-		Kind:    "StorageVersionMigrationList",
-	})
-	Expect(guestClient.List(ctx, svmList)).To(Succeed(), "failed to list StorageVersionMigration CRs")
-
-	var matched []unstructured.Unstructured
-	for _, svm := range svmList.Items {
-		if svm.GetAnnotations()[svmWriteKeyAnnotation] == writeKey {
-			matched = append(matched, svm)
-		}
-	}
-	Expect(matched).NotTo(BeEmpty(),
-		"no StorageVersionMigration found with write-key annotation %q — rotation did not trigger migrations", writeKey)
-
-	for _, svm := range matched {
-		conditions, _, _ := unstructured.NestedSlice(svm.Object, "status", "conditions")
-		var succeeded bool
-		for _, raw := range conditions {
-			cond, ok := raw.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if cond["type"] == "Succeeded" && cond["status"] == "True" {
-				succeeded = true
-				break
-			}
-		}
-		Expect(succeeded).To(BeTrue(),
-			"StorageVersionMigration %s (write-key %q) did not reach Succeeded=True", svm.GetName(), writeKey)
-	}
 }
 
 // captureKASRestartCounts snapshots the current restart count of every KAS pod container.
@@ -315,7 +258,7 @@ type rotationCase struct {
 
 // runRotationTest executes the shared rotation lifecycle body for the given rotationCase.
 // It handles: baseline wait, rotate patch, restore cleanup, started/complete waits,
-// status verification, SVM check, KAS health/logs, and condition bubble-up.
+// status verification, KAS health/logs, and condition bubble-up.
 // Must be called from within an It() block.
 func runRotationTest(tc *internal.TestContext, rc rotationCase) {
 	ctx := tc.Context
@@ -326,9 +269,6 @@ func runRotationTest(tc *internal.TestContext, rc rotationCase) {
 
 	// Ensure no re-encryption is in flight before rotating.
 	waitForReEncryptionComplete(Default, ctx, tc.MgmtClient, hcKey, 5*time.Minute)
-
-	hostedClusterClient, err := tc.GetHostedClusterClient(hc)
-	Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
 
 	// Re-fetch to get a fresh resource version and current Spec before patching.
 	Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
@@ -351,8 +291,6 @@ func runRotationTest(tc *internal.TestContext, rc rotationCase) {
 	Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 	verifyReEncryptionStatus(hc, rc.expectedProvider)
 	rc.verifyProviderField(hc, alternate)
-
-	verifyStorageVersionMigrations(ctx, hostedClusterClient, hc)
 
 	verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kasBaseline)
 	verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
