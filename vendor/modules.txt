@@ -2668,7 +2668,7 @@ sigs.k8s.io/cluster-api/util/conditions/deprecated/v1beta1
 sigs.k8s.io/cluster-api/util/conversion
 sigs.k8s.io/cluster-api/util/labels/format
 sigs.k8s.io/cluster-api/util/patch
-# sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0 => ./pkg/capi/aws
+# sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.1 => ./pkg/capi/aws
 ## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2
 sigs.k8s.io/cluster-api-provider-aws/v2/capicore/api/core/v1beta1
