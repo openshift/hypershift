@@ -10,10 +10,12 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ipamv1alpha1 "sigs.k8s.io/cluster-api/api/ipam/v1alpha1"
+	capiconversion "sigs.k8s.io/cluster-api/core/webhooks/conversion"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -142,18 +144,70 @@ func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *imageregis
 	// to convert between corev1.ObjectReference and ContractVersionedObjectReference.
 	// Without this, Cluster spec/status conversion fails and MachineDeployment controller
 	// sees an empty Cluster status, never creates MachineSets or Machines.
-	capiv1beta1.SetAPIVersionGetter(func(gk schema.GroupKind) (string, error) {
-		versions := mgr.GetScheme().VersionsForGroupKind(gk)
-		if len(versions) == 0 {
-			return "", fmt.Errorf("no versions registered for GroupKind %s", gk)
-		}
-		return gk.WithVersion(versions[0].Version).GroupVersion().String(), nil
-	})
+	capiconversion.SetAPIVersionGetter(capiAPIVersionGetter(mgr.GetScheme()))
 
 	// Register conversion webhook handler for CRD version conversions (HyperShift and CAPI types)
-	mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme(), conversion.NewRegistry()))
+	registry, err := newCAPIConversionRegistry(mgr.GetScheme())
+	if err != nil {
+		return err
+	}
+	mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme(), registry))
 
 	return nil
+}
+
+func capiAPIVersionGetter(scheme *runtime.Scheme) func(context.Context, schema.GroupKind) (string, error) {
+	return func(_ context.Context, groupKind schema.GroupKind) (string, error) {
+		// Preserve the manager scheme's registration priority, not a sorted API version.
+		// Installed CRDs must serve that first version, including provider references;
+		// TestNewCAPIConversionRegistry checks this against the embedded CRDs.
+		versions := scheme.VersionsForGroupKind(groupKind)
+		if len(versions) == 0 {
+			return "", fmt.Errorf("no versions registered for GroupKind %s", groupKind)
+		}
+		return groupKind.WithVersion(versions[0].Version).GroupVersion().String(), nil
+	}
+}
+
+func newCAPIConversionRegistry(scheme *runtime.Scheme) (conversion.Registry, error) {
+	// Converter factories need only type registrations. Keep their required IPAM
+	// alpha spoke private so constructing a registry cannot change the manager's
+	// advertised versions or registration priority for served beta references.
+	converterScheme := runtime.NewScheme()
+	for groupVersionKind := range scheme.AllKnownTypes() {
+		object, err := scheme.New(groupVersionKind)
+		if err != nil {
+			return nil, fmt.Errorf("unable to copy conversion type %s: %w", groupVersionKind, err)
+		}
+		converterScheme.AddKnownTypeWithName(groupVersionKind, object)
+	}
+	if err := ipamv1alpha1.AddToScheme(converterScheme); err != nil {
+		return nil, fmt.Errorf("unable to register CAPI IPAM conversion types: %w", err)
+	}
+	registry := conversion.NewRegistry()
+	for groupKind, newConverter := range map[schema.GroupKind]func(*runtime.Scheme) (conversion.Converter, error){
+		{Group: "cluster.x-k8s.io", Kind: "Cluster"}:                          capiconversion.Cluster,
+		{Group: "cluster.x-k8s.io", Kind: "ClusterClass"}:                     capiconversion.ClusterClass,
+		{Group: "cluster.x-k8s.io", Kind: "Machine"}:                          capiconversion.Machine,
+		{Group: "cluster.x-k8s.io", Kind: "MachineSet"}:                       capiconversion.MachineSet,
+		{Group: "cluster.x-k8s.io", Kind: "MachineDeployment"}:                capiconversion.MachineDeployment,
+		{Group: "cluster.x-k8s.io", Kind: "MachinePool"}:                      capiconversion.MachinePool,
+		{Group: "cluster.x-k8s.io", Kind: "MachineHealthCheck"}:               capiconversion.MachineHealthCheck,
+		{Group: "cluster.x-k8s.io", Kind: "MachineDrainRule"}:                 capiconversion.MachineDrainRule,
+		{Group: "ipam.cluster.x-k8s.io", Kind: "IPAddress"}:                   capiconversion.IPAddress,
+		{Group: "ipam.cluster.x-k8s.io", Kind: "IPAddressClaim"}:              capiconversion.IPAddressClaim,
+		{Group: "addons.cluster.x-k8s.io", Kind: "ClusterResourceSet"}:        capiconversion.ClusterResourceSet,
+		{Group: "addons.cluster.x-k8s.io", Kind: "ClusterResourceSetBinding"}: capiconversion.ClusterResourceSetBinding,
+	} {
+		converter, err := newConverter(converterScheme)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create CAPI conversion for %s: %w", groupKind, err)
+		}
+		if err := registry.RegisterConverter(groupKind, converter); err != nil {
+			return nil, fmt.Errorf("unable to register CAPI conversion for %s: %w", groupKind, err)
+		}
+	}
+	return registry, nil
 }
 
 type hostedClusterValidator struct{}
