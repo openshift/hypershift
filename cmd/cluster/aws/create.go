@@ -316,6 +316,15 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		cluster.Spec.Platform.AWS.AdditionalAllowedPrincipals = append(cluster.Spec.Platform.AWS.AdditionalAllowedPrincipals,
 			o.iamInfo.SharedControlPlaneRoleARN)
 	}
+	if o.ManagedDNS {
+		// managedDNS creates the ingress zones, so the zone IDs from the infra
+		// output must not be set; the API rejects them. Shared VPC clusters keep
+		// the VPC owner's private zone, since no private ingress zone is created.
+		cluster.Spec.DNS.PublicZoneID = ""
+		if cluster.Spec.Platform.AWS.SharedVPC == nil {
+			cluster.Spec.DNS.PrivateZoneID = ""
+		}
+	}
 
 	switch {
 	case o.infra.SecureProxyAddr != "":

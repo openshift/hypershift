@@ -7588,24 +7588,15 @@ spec:
             - services
             type: object
             x-kubernetes-validations:
-            - message: spec.services in body should have at least 4 items or 3 for
-                IBMCloud
-              rule: 'self.platform.type == ''IBMCloud'' ? size(self.services) >= 3
-                : size(self.services) >= 4'
-            - message: Services is immutable. Changes might result in unpredictable
-                and disruptive behavior.
-              rule: 'self.platform.type != "IBMCloud" ? self.services == oldSelf.services
-                : true'
-            - message: Azure managed platform (ARO HCP) requires OAuthServer to use
-                Route
-              rule: self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("")
-                == "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer"
-                && s.servicePublishingStrategy.type == "Route")
-            - message: Self-managed Azure requires OAuthServer to use Route or LoadBalancer
-              rule: self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("")
-                != "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer"
-                && (s.servicePublishingStrategy.type == "Route" || s.servicePublishingStrategy.type
-                == "LoadBalancer"))
+            - message: disableMultiNetwork can only be set to true when networkType
+                is 'Other'
+              rule: '!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator)
+                || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork)
+                || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork
+                || self.networking.networkType == ''Other'''
+            - message: ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes
+              rule: self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration)
+                || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)
             - message: Azure platform requires Konnectivity to use Route service publishing
                 strategy
               rule: 'self.platform.type == "Azure" ? self.services.exists(s, s.service
@@ -7624,15 +7615,15 @@ spec:
                 && has(self.configuration.apiServer.servingCerts.namedCertificates)
                 && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert,
                 has(cert.names) && cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))'
-            - message: disableMultiNetwork can only be set to true when networkType
-                is 'Other'
-              rule: '!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator)
-                || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork)
-                || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork
-                || self.networking.networkType == ''Other'''
-            - message: ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes
-              rule: self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration)
-                || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)
+            - message: spec.services in body should have at least 4 items or 3 for
+                IBMCloud
+              rule: 'self.platform.type == ''IBMCloud'' ? size(self.services) >= 3
+                : size(self.services) >= 4'
+            - message: Self-managed Azure requires OAuthServer to use Route or LoadBalancer
+              rule: self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("")
+                != "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer"
+                && (s.servicePublishingStrategy.type == "Route" || s.servicePublishingStrategy.type
+                == "LoadBalancer"))
             - message: secretEncryption cannot be removed once configured
               rule: '!has(oldSelf.secretEncryption) || has(self.secretEncryption)'
             - message: initialKMSKeyARN can only be set when the HostedCluster is
@@ -7649,6 +7640,15 @@ spec:
                 || !has(self.platform.aws) || self.operatorConfiguration.csiDriverOperator.aws.initialKMSKeyARN.split('':'').size()
                 < 4 || self.operatorConfiguration.csiDriverOperator.aws.initialKMSKeyARN.split('':'')[3]
                 == self.platform.aws.region'
+            - message: Azure managed platform (ARO HCP) requires OAuthServer to use
+                Route
+              rule: self.platform.type != "Azure" || self.platform.?azure.azureAuthenticationConfig.azureAuthenticationConfigType.orValue("")
+                == "WorkloadIdentities" || self.services.exists(s, s.service == "OAuthServer"
+                && s.servicePublishingStrategy.type == "Route")
+            - message: Services is immutable. Changes might result in unpredictable
+                and disruptive behavior.
+              rule: 'self.platform.type != "IBMCloud" ? self.services == oldSelf.services
+                : true'
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:
