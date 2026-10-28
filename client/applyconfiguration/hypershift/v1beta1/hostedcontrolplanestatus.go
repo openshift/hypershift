@@ -44,6 +44,7 @@ type HostedControlPlaneStatusApplyConfiguration struct {
 	NodeCount                      *int                                                      `json:"nodeCount,omitempty"`
 	AutoNode                       *AutoNodeStatusApplyConfiguration                         `json:"autoNode,omitempty"`
 	Configuration                  *ConfigurationStatusApplyConfiguration                    `json:"configuration,omitempty"`
+	OperatorConfiguration          *OperatorConfigurationStatusApplyConfiguration            `json:"operatorConfiguration,omitempty"`
 	SecretEncryption               *SecretEncryptionStatusApplyConfiguration                 `json:"secretEncryption,omitempty"`
 	Initialization                 *HostedControlPlaneInitializationStatusApplyConfiguration `json:"initialization,omitempty"`
 }
@@ -200,6 +201,14 @@ func (b *HostedControlPlaneStatusApplyConfiguration) WithAutoNode(value *AutoNod
 // If called multiple times, the Configuration field is set to the value of the last call.
 func (b *HostedControlPlaneStatusApplyConfiguration) WithConfiguration(value *ConfigurationStatusApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
 	b.Configuration = value
+	return b
+}
+
+// WithOperatorConfiguration sets the OperatorConfiguration field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OperatorConfiguration field is set to the value of the last call.
+func (b *HostedControlPlaneStatusApplyConfiguration) WithOperatorConfiguration(value *OperatorConfigurationStatusApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
+	b.OperatorConfiguration = value
 	return b
 }
 

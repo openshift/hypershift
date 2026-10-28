@@ -409,6 +409,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.OpenStackPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OperatorConfiguration"):
 		return &hypershiftv1beta1.OperatorConfigurationApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OperatorConfigurationStatus"):
+		return &hypershiftv1beta1.OperatorConfigurationStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OSImageStreamReference"):
 		return &hypershiftv1beta1.OSImageStreamReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OVNIPv4Config"):

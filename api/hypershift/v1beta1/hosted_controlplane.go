@@ -428,12 +428,52 @@ type HostedControlPlaneStatus struct {
 	// +optional
 	Configuration *ConfigurationStatus `json:"configuration,omitempty"`
 
+	// operatorConfiguration reports which settings from spec.operatorConfiguration the
+	// reconciling control plane operator understands. It lets a newer HyperShift operator
+	// detect settings that an older control plane operator silently ignores.
+	// +optional
+	OperatorConfiguration OperatorConfigurationStatus `json:"operatorConfiguration,omitzero"`
+
 	// secretEncryption tracks the state of secret encryption key rotation and re-encryption.
 	// +optional
 	SecretEncryption SecretEncryptionStatus `json:"secretEncryption,omitzero"`
 	// initialization contains fields that track the status of the initialization of the HostedControlPlane.
 	// +optional
 	Initialization HostedControlPlaneInitializationStatus `json:"initialization,omitzero"`
+}
+
+// OperatorConfigurationStatus reports how the reconciling control plane operator
+// interpreted spec.operatorConfiguration.
+//
+// A control plane operator only deserializes the spec fields its own build knows about;
+// the API server serves settings added in later releases, but they are dropped on decode
+// and silently ignored. Echoing back the settings that survived that decode lets the
+// HyperShift operator name the settings a lagging control plane operator does not honor,
+// without either side needing per-field knowledge of the other.
+// +kubebuilder:validation:MinProperties=1
+type OperatorConfigurationStatus struct {
+	// observedGeneration is the HostedControlPlane generation whose
+	// spec.operatorConfiguration produced honoredFields. A value lower than
+	// metadata.generation means the control plane operator has not yet observed the
+	// latest spec, so honoredFields is stale.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=9007199254740992
+	ObservedGeneration int64 `json:"observedGeneration,omitempty,omitzero"`
+
+	// honoredFields lists the dot-separated paths of the settings that are both set in
+	// spec.operatorConfiguration and understood by the reconciling control plane operator,
+	// relative to spec.operatorConfiguration and sorted lexically
+	// (for example "kubeAPIServer.eventTTLMinutes"). It is empty when no settings are
+	// configured. A setting that is set in the spec but absent from this list is not in
+	// effect.
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=200
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=253
+	HonoredFields []string `json:"honoredFields,omitempty"`
 }
 
 // HostedControlPlaneInitializationStatus provides observations of the HostedControlPlane initialization process.

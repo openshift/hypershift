@@ -49695,6 +49695,22 @@ A failure here often means a software bug or a non-stable cluster.</p>
 <td><p>KubeVirtNodesLiveMigratable indicates if all nodes (VirtualMachines) of the kubevirt
 hosted cluster can be live migrated without experiencing a node restart</p>
 </td>
+</tr><tr><td><p>&#34;OperatorConfigurationHonored&#34;</p></td>
+<td><p>OperatorConfigurationHonored indicates whether every setting configured under
+spec.operatorConfiguration is actually in effect on the hosted control plane.
+It is intentionally generic so that one condition covers the whole stanza and
+every setting added to it; the message names the specific settings at issue.</p>
+<p>A control plane operator older than the HyperShift operator accepts and persists
+a setting it predates, then ignores it. This condition is how that is reported.</p>
+<p><strong>True</strong> (reason AsExpected) means no setting is configured, or every configured
+setting is honored by the reconciling control plane operator.
+<strong>False</strong> (reason OperatorConfigurationNotHonored) means at least one configured
+setting is not in effect, and the message names them.
+<strong>Unknown</strong> (reason UnsupportedControlPlaneVersion or StatusUnknown) means whether
+the configured settings are honored could not be determined, because the control
+plane operator predates this reporting, its version is unknown, or it has not yet
+observed the current spec.</p>
+</td>
 </tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
 desired platform are valid.
@@ -54502,6 +54518,22 @@ ConfigurationStatus
 <td>
 <em>(Optional)</em>
 <p>configuration contains the cluster configuration status of the HostedCluster</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>operatorConfiguration,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfigurationStatus">
+OperatorConfigurationStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>operatorConfiguration reports which settings from spec.operatorConfiguration the
+reconciling control plane operator understands. It lets a newer HyperShift operator
+detect settings that an older control plane operator silently ignores.</p>
 </td>
 </tr>
 <tr>
@@ -59532,6 +59564,62 @@ CSIDriverOperatorSpec
 <p>csiDriverOperator configures the CSI drivers of the hosted cluster.
 Settings are grouped by platform.</p>
 <p>When omitted, the CSI drivers use their default configuration.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OperatorConfigurationStatus { #hypershift.openshift.io/v1beta1.OperatorConfigurationStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>OperatorConfigurationStatus reports how the reconciling control plane operator
+interpreted spec.operatorConfiguration.</p>
+<p>A control plane operator only deserializes the spec fields its own build knows about;
+the API server serves settings added in later releases, but they are dropped on decode
+and silently ignored. Echoing back the settings that survived that decode lets the
+HyperShift operator name the settings a lagging control plane operator does not honor,
+without either side needing per-field knowledge of the other.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>observedGeneration,omitempty,omitzero</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>observedGeneration is the HostedControlPlane generation whose
+spec.operatorConfiguration produced honoredFields. A value lower than
+metadata.generation means the control plane operator has not yet observed the
+latest spec, so honoredFields is stale.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>honoredFields</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>honoredFields lists the dot-separated paths of the settings that are both set in
+spec.operatorConfiguration and understood by the reconciling control plane operator,
+relative to spec.operatorConfiguration and sorted lexically
+(for example &ldquo;kubeAPIServer.eventTTLMinutes&rdquo;). It is empty when no settings are
+configured. A setting that is set in the spec but absent from this list is not in
+effect.</p>
 </td>
 </tr>
 </tbody>
@@ -71437,6 +71525,54 @@ The NodePool controller automatically validates version compatibility and report
 - When upgrading HostedClusters, verify that all NodePools remain within the supported version skew window
 - If a NodePool becomes incompatible, upgrade it to a compatible version as soon as operationally feasible
 - When creating new NodePools, the CLI will enforce compatibility checks to prevent misconfiguration
+
+### operatorConfiguration Settings and HO/CPO Skew
+
+The HO and the CPO are released on separate cadences, so a management cluster can run an
+HO that is newer than the CPO reconciling a given HostedControlPlane. In that window the
+API server accepts and persists a `HostedCluster.spec.operatorConfiguration` setting that
+the CPO predates, mirrors it onto the HostedControlPlane, and the CPO drops it when it
+decodes the spec. The setting is not in effect, but the cluster stays `Available` and
+nothing is `Degraded`.
+
+The `OperatorConfigurationHonored` condition on the HostedCluster reports this. It is
+generic: one condition covers the whole `operatorConfiguration` stanza and every setting
+added to it, and the message names the settings at issue.
+
+| Status | Reason | Meaning |
+|---|---|---|
+| `True` | `AsExpected` | Nothing is configured, or every configured setting is in effect. |
+| `False` | `OperatorConfigurationNotHonored` | At least one configured setting is not in effect. The message names them. |
+| `Unknown` | `UnsupportedControlPlaneVersion` | The CPO is too old to report which settings it honors, so this cannot be established. |
+| `Unknown` | `StatusUnknown` | The CPO version is not reported yet, or the CPO has not yet observed the current spec. |
+
+```shell
+oc get hostedcluster -n clusters example \
+  -o jsonpath='{.status.conditions[?(@.type=="OperatorConfigurationHonored")]}'
+```
+
+**How it works.** The CPO publishes, on
+`HostedControlPlane.status.operatorConfiguration.honoredFields`, the paths of the settings
+that survived decoding into its own build's types. That list is therefore exactly the set
+of settings it understands. The HO compares it against the settings configured in the
+spec and names the difference. Neither side needs per-field knowledge of the other, so
+settings added in future releases are covered automatically.
+
+**Behavior during an upgrade.** The condition does not flap through a routine control
+plane upgrade: an upgrade bumps the HostedControlPlane generation without changing any
+setting, and the condition only reacts when a configured setting is actually missing from
+what the CPO reports.
+
+**Resolution.** Upgrade the control plane to a release whose CPO supports the setting. The
+value is preserved throughout and takes effect on upgrade; the condition clears on its
+own. No reconfiguration is needed.
+
+!!! note
+
+        A CPO released before this reporting mechanism existed cannot report anything, so
+        the condition is `Unknown` for those versions rather than naming settings. Settings
+        that shipped alongside the mechanism carry a recorded minimum CPO version and are
+        still named in that window.
 
 
 ---

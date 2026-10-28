@@ -90,6 +90,7 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/operatorconfig"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/statuspatching"
@@ -627,6 +628,35 @@ func (r *HostedControlPlaneReconciler) reconcileDeprecatedConfigurationStatus(ho
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 }
 
+// reconcileOperatorConfigurationStatus echoes back the settings this control plane
+// operator understood from spec.operatorConfiguration, so that a newer HyperShift
+// operator can tell which settings a lagging control plane operator silently ignores.
+//
+// The echo works because the API server serves settings added after this build, but
+// they are dropped when the spec is decoded into this build's types. Re-encoding what
+// survived therefore yields exactly the settings that are in effect, without this
+// operator needing to know which settings exist in later releases.
+func (r *HostedControlPlaneReconciler) reconcileOperatorConfigurationStatus(hostedControlPlane *hyperv1.HostedControlPlane) {
+	honoredFields, err := operatorconfig.FieldPaths(hostedControlPlane.Spec.OperatorConfiguration)
+	if err != nil {
+		// Reporting nothing leaves the HyperShift operator reporting Unknown, which is
+		// correct here: we cannot establish what is honored.
+		r.Log.Error(err, "failed to determine honored operatorConfiguration settings")
+		return
+	}
+	if !operatorconfig.Reportable(honoredFields) {
+		// Reporting a truncated list would be read as settings having been dropped.
+		r.Log.Info("not reporting honored operatorConfiguration settings: too many settings configured",
+			"count", len(honoredFields), "max", operatorconfig.MaxHonoredFields)
+		return
+	}
+
+	hostedControlPlane.Status.OperatorConfiguration = hyperv1.OperatorConfigurationStatus{
+		ObservedGeneration: hostedControlPlane.Generation,
+		HonoredFields:      honoredFields,
+	}
+}
+
 func (r *HostedControlPlaneReconciler) reconcileDegradedStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
 	condition := metav1.Condition{
 		Type:               string(hyperv1.HostedControlPlaneDegraded),
@@ -729,6 +759,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	r.reconcileDeprecatedConfigurationStatus(hostedControlPlane)
+	r.reconcileOperatorConfigurationStatus(hostedControlPlane)
 
 	if err := r.reconcileDegradedStatus(ctx, hostedControlPlane); err != nil {
 		return ctrl.Result{}, err

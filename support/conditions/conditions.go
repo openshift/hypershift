@@ -3,6 +3,7 @@ package conditions
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/operatorconfig"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -107,6 +108,16 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 
 	if hostedCluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
 		conditions[hyperv1.UnmanagedEtcdAvailable] = metav1.ConditionTrue
+	}
+
+	// A control plane operator that predates honoredFields reporting cannot say which
+	// operatorConfiguration settings it honors, so the condition is legitimately Unknown
+	// there. With nothing configured there is nothing to establish and it is True.
+	supportsHonoredFields, honoredFieldsKnown := operatorconfig.SupportsHonoredFieldsReporting(hostedCluster.Status.ControlPlaneVersion.Desired.Version)
+	if hostedCluster.Spec.OperatorConfiguration == nil || (honoredFieldsKnown && supportsHonoredFields) {
+		conditions[hyperv1.OperatorConfigurationHonored] = metav1.ConditionTrue
+	} else {
+		conditions[hyperv1.OperatorConfigurationHonored] = metav1.ConditionUnknown
 	}
 
 	kasExternalHostname := netutil.ServiceExternalDNSHostnameByHC(hostedCluster, hyperv1.APIServer)
