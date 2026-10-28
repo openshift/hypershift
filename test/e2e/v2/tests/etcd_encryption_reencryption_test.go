@@ -26,7 +26,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	secretencryption "github.com/openshift/hypershift/support/secretencryption"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	corev1 "k8s.io/api/core/v1"
@@ -192,12 +191,8 @@ func verifyKASHealth(g Gomega, ctx context.Context, mgmtClient crclient.Client, 
 // of every KAS pod for "no matching prefix found" decryption errors. Checking previous
 // containers catches errors that occurred during pod restarts mid-rotation; a larger
 // TailLines guards against errors scrolling past the tail during the up-to-25-min window.
-func verifyKASLogsNoDecryptionErrors(ctx context.Context, controlPlaneNamespace string) {
+func verifyKASLogsNoDecryptionErrors(ctx context.Context, mgmtKubeClient kubernetes.Interface, controlPlaneNamespace string) {
 	GinkgoHelper()
-	mgmtRestConfig, err := e2eutil.GetConfig()
-	Expect(err).NotTo(HaveOccurred(), "failed to get management cluster REST config")
-	mgmtKubeClient, err := kubernetes.NewForConfig(mgmtRestConfig)
-	Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes clientset")
 
 	kasPods, err := mgmtKubeClient.CoreV1().Pods(controlPlaneNamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app=kube-apiserver",
@@ -292,7 +287,9 @@ func runRotationTest(tc *internal.TestContext, rc rotationCase) {
 	rc.verifyProviderField(hc, alternate)
 
 	verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kasBaseline)
-	verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
+	mgmtKubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
+	Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes clientset")
+	verifyKASLogsNoDecryptionErrors(ctx, mgmtKubeClient, tc.ControlPlaneNamespace)
 
 	Eventually(func(g Gomega) {
 		verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
@@ -485,7 +482,9 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				"second history entry should also be Completed")
 
 			verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas2Baseline)
-			verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
+			mgmtKubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
+			Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes clientset")
+			verifyKASLogsNoDecryptionErrors(ctx, mgmtKubeClient, tc.ControlPlaneNamespace)
 
 			Eventually(func(g Gomega) {
 				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
