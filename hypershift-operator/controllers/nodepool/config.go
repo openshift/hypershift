@@ -13,11 +13,13 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	kvnetwork "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -56,6 +58,7 @@ type ConfigGenerator struct {
 	// This field is intentionally outside rolloutConfig because it does not
 	// participate in the config hash that drives rollouts.
 	resolvedRHELStreamForBootImage string
+	endpointConfigKnown            bool
 	*rolloutConfig
 }
 
@@ -101,7 +104,7 @@ type rolloutConfig struct {
 }
 
 // NewConfigGenerator is the contract to create a new ConfigGenerator.
-func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string, controlPlaneNamespace string, resolvedRHELStream string) (*ConfigGenerator, error) {
+func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyConfig haproxy.Config, controlPlaneNamespace string, resolvedRHELStream string) (*ConfigGenerator, error) {
 	if client == nil {
 		return nil, fmt.Errorf("client can't be nil")
 	}
@@ -143,9 +146,12 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		}
 	}
 
-	endpointConfig, err := endpointConfigString(ctx, client, hostedCluster)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve the API server endpoint config: %w", err)
+	endpointConfig := haproxyConfig.Endpoint
+	if endpointConfig == "" {
+		endpointConfig, err = EndpointConfigString(ctx, client, hostedCluster)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve the API server endpoint config: %w", err)
+		}
 	}
 
 	cg := &ConfigGenerator{
@@ -154,12 +160,13 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		nodePool:                       nodePool,
 		controlplaneNamespace:          controlPlaneNamespace,
 		resolvedRHELStreamForBootImage: resolvedRHELStream,
+		endpointConfigKnown:            haproxyConfig.Endpoint != "",
 		rolloutConfig: &rolloutConfig{
 			releaseImage:        releaseImage,
 			pullSecretName:      hostedCluster.Spec.PullSecret.Name,
 			globalConfig:        globalConfig,
 			rolloutGlobalConfig: rolloutGlobalConfig,
-			haproxyRawConfig:    haproxyRawConfig,
+			haproxyRawConfig:    haproxyConfig.Raw,
 			endpointConfig:      endpointConfig,
 			rhelStream:          rhelStream,
 		},
@@ -593,32 +600,30 @@ func (cg *ConfigGenerator) GetCloudConfigHash(ctx context.Context) (string, erro
 	return supportutil.HashConfigMapData(cm.Data), nil
 }
 
-// endpointConfigString returns a stable string encoding the connectivity-
+// EndpointConfigString returns a stable string encoding the connectivity-
 // affecting HAProxy inputs. Changes here trigger a rollout; management-side
 // image reference changes do not. Because this feeds RolloutHash(), an
 // endpoint that cannot be resolved returns an error so the reconcile fails
 // and retries, rather than silently computing a different hash: a transient
 // lookup failure would otherwise trigger a phantom rollout that reverts
 // when the lookup recovers.
-func endpointConfigString(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster) (string, error) {
-	var parts []string
-	parts = append(parts, fmt.Sprintf("private=%v", netutil.IsPrivateHC(hcluster)))
-	if hcluster.Spec.Networking.APIServer != nil {
-		if hcluster.Spec.Networking.APIServer.AdvertiseAddress != nil {
-			parts = append(parts, "addr="+*hcluster.Spec.Networking.APIServer.AdvertiseAddress)
-		}
-		if hcluster.Spec.Networking.APIServer.Port != nil {
-			parts = append(parts, fmt.Sprintf("port=%d", *hcluster.Spec.Networking.APIServer.Port))
-		}
-	}
+func EndpointConfigString(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster) (string, error) {
 	server, err := resolvedAPIServerEndpoint(ctx, c, hcluster)
 	if err != nil {
 		return "", err
 	}
-	if server != "" {
-		parts = append(parts, "server="+server)
+	return haproxy.EndpointConfigString(hcluster, server), nil
+}
+
+// IsAPIEndpointApplied reports whether all workers have completed the requested endpoint cutover.
+func IsAPIEndpointApplied(np *hyperv1.NodePool, endpoint string) bool {
+	// InPlace updates HAProxy but does not rewrite existing kubelet kubeconfigs;
+	// those workers can still depend on the private endpoint after the update.
+	if np.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+		return false
 	}
-	return strings.Join(parts, ","), nil
+	return endpoint != "" && np.Annotations[config.NodePoolAPIEndpointAnnotation] == endpoint &&
+		np.Annotations[nodePoolAnnotationInProgressRolloutConfig] == ""
 }
 
 // resolvedAPIServerEndpoint returns the resolved API server address that

@@ -337,7 +337,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		_, hcpErr := createOrUpdate(ctx, r.Client, hcp, func() error {
 			// Skip cert annotation resolution during pull secret recovery — it requires
 			// the pull secret to resolve the CPO image, which is unavailable here.
-			return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+			return r.reconcileHostedControlPlane(ctx, hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
 				func() (map[string]string, error) { return nil, nil })
 		})
 		if hcpErr != nil {
@@ -1510,7 +1510,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+		return r.reconcileHostedControlPlane(ctx, hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),

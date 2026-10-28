@@ -1457,6 +1457,23 @@ func TestReconcileAPIServerService(t *testing.T) {
 			},
 		},
 		{
+			name:           "When a LoadBalancer cluster has not completed endpoint cutover, it should retain the private service",
+			endpointAccess: hyperv1.Public,
+			apiPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					Hostname: hostname,
+				},
+			},
+			existingObjects: []client.Object{
+				manifests.KubeAPIServerPrivateService(targetNamespace),
+			},
+			expectedServices: []corev1.Service{
+				kasPublicService(withLoadBalancerSourceRanges),
+				*manifests.KubeAPIServerPrivateService(targetNamespace),
+			},
+		},
+		{
 			name:           "When public cluster uses Route, it should create ClusterIP service and routes",
 			endpointAccess: hyperv1.Public,
 			apiPublishingStrategy: hyperv1.ServicePublishingStrategy{

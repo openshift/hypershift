@@ -2925,6 +2925,7 @@ func TestSetMachineDeploymentFailureDomain(t *testing.T) {
 }
 
 func TestPropagateVersionAndTemplate(t *testing.T) {
+	testAPIEndpointAdoption(t)
 	testCases := []struct {
 		name                    string
 		currentBootstrapName    string
@@ -3516,6 +3517,7 @@ func TestPropagateVersionAndTemplateToMachineSet(t *testing.T) {
 }
 
 func TestReconcileMachineDeploymentStatus(t *testing.T) {
+	testAPIEndpointCutover(t)
 	testReconcileStatusAfterReversion(t, hyperv1.UpgradeTypeReplace)
 	testReconcileStatusWithoutBootstrap(t, hyperv1.UpgradeTypeReplace)
 

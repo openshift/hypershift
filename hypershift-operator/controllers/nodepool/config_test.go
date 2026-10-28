@@ -14,6 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -69,6 +70,7 @@ var coreConfigMaps = []crclient.Object{
 }
 
 func TestNewConfigGenerator(t *testing.T) {
+	testConfigGeneratorEndpointSnapshot(t)
 	machineConfig := `
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
@@ -491,7 +493,7 @@ spec:
 					resolvedStream = s
 				}
 			}
-			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test", resolvedStream)
+			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, haproxy.Config{}, "test-test", resolvedStream)
 			if tc.error != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.error.Error()))
@@ -3100,7 +3102,7 @@ users:
 			}
 			client := builder.Build()
 
-			config, err := endpointConfigString(t.Context(), client, tc.hcluster)
+			config, err := EndpointConfigString(t.Context(), client, tc.hcluster)
 			if tc.expectedErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErr))

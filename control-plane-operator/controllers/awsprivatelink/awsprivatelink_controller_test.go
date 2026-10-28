@@ -698,13 +698,14 @@ func TestReconcileDeletion(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name            string
-		awsEndpointSvc  *hyperv1.AWSEndpointService
-		extraObjects    []crclient.Object
-		setupMocks      func(ctrl *gomock.Controller) *MockawsClientProvider
-		expectError     bool
-		expectFinalizer bool
-		expectRequeue   bool
+		name                string
+		awsEndpointSvc      *hyperv1.AWSEndpointService
+		extraObjects        []crclient.Object
+		setupMocks          func(ctrl *gomock.Controller) *MockawsClientProvider
+		expectError         bool
+		expectFinalizer     bool
+		expectRequeue       bool
+		remainingFinalizers []string
 	}{
 		{
 			name: "When all AWS resources are cleaned up successfully, it should remove the finalizer",
@@ -782,13 +783,13 @@ func TestReconcileDeletion(t *testing.T) {
 			expectFinalizer: false,
 		},
 		{
-			name: "When HCP exists after restart, it should initialize clients and complete deletion",
+			name: "When CPO restarts with a public HCP, it should initialize clients and finish cleanup without removing the HO finalizer",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:              "private-router",
+					Name:              "kube-apiserver-private",
 					Namespace:         "clusters-test",
 					DeletionTimestamp: &now,
-					Finalizers:        []string{finalizer},
+					Finalizers:        []string{finalizer, "hypershift.openshift.io/hypershift-operator-finalizer"},
 				},
 				Status: hyperv1.AWSEndpointServiceStatus{
 					EndpointID:      "vpce-12345",
@@ -805,7 +806,11 @@ func TestReconcileDeletion(t *testing.T) {
 					},
 					Spec: hyperv1.HostedControlPlaneSpec{
 						Platform: hyperv1.PlatformSpec{
-							AWS: &hyperv1.AWSPlatformSpec{},
+							Type: hyperv1.AWSPlatform,
+							AWS: &hyperv1.AWSPlatformSpec{
+								EndpointAccess: hyperv1.Public,
+								ManagedDNS:     hyperv1.AWSManagedDNSSpec{IngressDomainPrefix: "in"},
+							},
 						},
 					},
 				},
@@ -826,9 +831,13 @@ func TestReconcileDeletion(t *testing.T) {
 				mockEC2.EXPECT().RevokeSecurityGroupIngress(gomock.Any(), gomock.Any()).Return(&ec2v2.RevokeSecurityGroupIngressOutput{}, nil)
 				mockEC2.EXPECT().RevokeSecurityGroupEgress(gomock.Any(), gomock.Any()).Return(&ec2v2.RevokeSecurityGroupEgressOutput{}, nil)
 				mockEC2.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(&ec2v2.DeleteSecurityGroupOutput{}, nil)
-				// Best-effort initialization: HCP exists, so initializeWithHCP is called.
-				mockBuilder.EXPECT().initializeWithHCP(gomock.Any(), gomock.Any())
-				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+				// A fresh controller must recover its AWS configuration from the public HCP before cleanup.
+				gomock.InOrder(
+					mockBuilder.EXPECT().initializeWithHCP(gomock.Any(), gomock.Cond(func(hcp *hyperv1.HostedControlPlane) bool {
+						return hcp.Spec.Platform.Type == hyperv1.AWSPlatform && hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.Public && hcp.DeletionTimestamp.IsZero()
+					})),
+					mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil),
+				)
 				mockRoute53.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any()).Return(
 					&route53sdk.ListResourceRecordSetsOutput{
 						ResourceRecordSets: []route53types.ResourceRecordSet{{
@@ -844,8 +853,9 @@ func TestReconcileDeletion(t *testing.T) {
 					&route53sdk.ChangeResourceRecordSetsOutput{}, nil)
 				return mockBuilder
 			},
-			expectError:     false,
-			expectFinalizer: false,
+			expectError:         false,
+			expectFinalizer:     false,
+			remainingFinalizers: []string{"hypershift.openshift.io/hypershift-operator-finalizer"},
 		},
 		{
 			name: "When VPC endpoint deletion fails, it should return error and preserve the finalizer",
@@ -1159,6 +1169,14 @@ func TestReconcileDeletion(t *testing.T) {
 			if tc.expectFinalizer {
 				g.Expect(getErr).ToNot(HaveOccurred(), "object should still exist when finalizer is preserved")
 				g.Expect(controllerutil.ContainsFinalizer(updatedService, finalizer)).To(BeTrue())
+			} else if len(tc.remainingFinalizers) > 0 {
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(updatedService.Finalizers).To(ConsistOf(tc.remainingFinalizers))
+				// Further reconciles must neither repeat AWS deletion nor remove another controller's finalizer.
+				_, err = reconciler.Reconcile(ctx, req)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(fakeClient.Get(ctx, req.NamespacedName, updatedService)).To(Succeed())
+				g.Expect(updatedService.Finalizers).To(ConsistOf(tc.remainingFinalizers))
 			} else {
 				// Object was deleted after finalizer removal — this confirms the
 				// finalizer was successfully removed.
@@ -2758,6 +2776,9 @@ func TestDeleteLocalZoneCleanup(t *testing.T) {
 			},
 		},
 	}
+	deletingHCP := managedHCP.DeepCopy()
+	now := metav1.Now()
+	deletingHCP.DeletionTimestamp = &now
 
 	tests := []struct {
 		name           string
@@ -2789,12 +2810,21 @@ func TestDeleteLocalZoneCleanup(t *testing.T) {
 			setupMock: func(m *awsapi.MockROUTE53API) {},
 		},
 		{
-			name: "When the cluster manages the local zone, it should delete it using DNSZoneID",
+			name: "When an endpoint is removed from a live cluster, it should preserve the shared local zone",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-private", Namespace: "clusters-test"},
+				Status:     hyperv1.AWSEndpointServiceStatus{DNSZoneID: "ZLOCAL"},
+			},
+			hcp:       managedHCP,
+			setupMock: func(m *awsapi.MockROUTE53API) {},
+		},
+		{
+			name: "When the HCP is being deleted, it should delete its managed local zone using DNSZoneID",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{Name: "private-router", Namespace: "clusters-test"},
 				Status:     hyperv1.AWSEndpointServiceStatus{DNSZoneID: "ZLOCAL"},
 			},
-			hcp: managedHCP,
+			hcp: deletingHCP,
 			setupMock: func(m *awsapi.MockROUTE53API) {
 				m.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any(), gomock.Any()).Return(
 					&route53sdk.ListResourceRecordSetsOutput{ResourceRecordSets: []route53types.ResourceRecordSet{}}, nil,

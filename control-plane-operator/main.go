@@ -571,7 +571,7 @@ func NewStartCommand() *cobra.Command {
 }
 
 func setupPrivatePlatformControllers(ctx context.Context, mgr ctrl.Manager, hcp *hyperv1.HostedControlPlane, namespace string, enableCIDebugOutput bool, mgmtClusterCaps *capabilities.ManagementClusterCapabilities) {
-	if !netutil.IsPrivateHCP(hcp) || !mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
+	if !privatePlatformControllersNeeded(hcp, mgmtClusterCaps) {
 		return
 	}
 
@@ -583,6 +583,11 @@ func setupPrivatePlatformControllers(ctx context.Context, mgr ctrl.Manager, hcp 
 	case hyperv1.AzurePlatform:
 		setupAzurePrivateControllers(ctx, mgr, hcp, namespace, enableCIDebugOutput)
 	}
+}
+
+func privatePlatformControllersNeeded(hcp *hyperv1.HostedControlPlane, caps capabilities.CapabiltyChecker) bool {
+	// AWS finalizers must also run after a restart during a private-to-public cutover.
+	return caps.Has(capabilities.CapabilityRoute) && (netutil.IsPrivateHCP(hcp) || hcp.Spec.Platform.Type == hyperv1.AWSPlatform)
 }
 
 func setupAWSPrivateControllers(ctx context.Context, mgr ctrl.Manager, namespace string, enableCIDebugOutput bool) {

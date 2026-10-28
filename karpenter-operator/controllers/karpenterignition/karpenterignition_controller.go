@@ -638,7 +638,7 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 		ReleaseProvider:         r.ReleaseProvider,
 		ImageMetadataProvider:   r.ImageMetadataProvider,
 	}
-	haproxyRawConfig, err := haproxyClient.GenerateHAProxyRawConfig(ctx, hostedCluster, controlPlaneNamespace)
+	haproxyConfig, err := haproxyClient.GenerateConfig(ctx, hostedCluster, controlPlaneNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
@@ -648,7 +648,7 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyConfig, controlPlaneNamespace, resolvedRHELStream)
 }
 
 // hostedClusterFromHCP creates a barebones in-memory HostedCluster from a HostedControlPlane.

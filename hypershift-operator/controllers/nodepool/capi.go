@@ -10,6 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -669,6 +670,10 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 	if machineDeployment.Annotations == nil {
 		machineDeployment.Annotations = make(map[string]string)
 	}
+	currentPayload := extractHashFromSecretName(ptr.Deref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "")) == c.Hash()
+	if currentPayload && c.endpointConfigKnown {
+		machineDeployment.Annotations[config.NodePoolAPIEndpointAnnotation] = c.endpointConfig
+	}
 	machineDeployment.Annotations[nodePoolAnnotationTargetRolloutConfig] = c.RolloutHash()
 
 	// Infrastructure template: compared against the MachineDeployment's current
@@ -783,6 +788,9 @@ func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Lo
 	if MachineDeploymentComplete(machineDeployment, machineSets.Items) {
 		if nodePool.Annotations == nil {
 			nodePool.Annotations = make(map[string]string)
+		}
+		if endpoint := machineDeployment.Annotations[config.NodePoolAPIEndpointAnnotation]; endpoint != "" {
+			nodePool.Annotations[config.NodePoolAPIEndpointAnnotation] = endpoint
 		}
 
 		versionUpdated := false

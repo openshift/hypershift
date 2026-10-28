@@ -244,7 +244,8 @@ func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1
 		}
 	}
 
-	if serviceStrategy.Type == hyperv1.Route {
+	switch serviceStrategy.Type {
+	case hyperv1.Route:
 		externalPublicRoute := cpomanifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
 		externalPrivateRoute := cpomanifests.KubeAPIServerExternalPrivateRoute(hcp.Namespace)
 		hostname := ""
@@ -286,15 +287,42 @@ func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile apiserver internal route %s: %w", internalRoute.Name, err)
 		}
-	} else if serviceStrategy.Type == hyperv1.LoadBalancer && netutil.IsPrivateHCP(hcp) {
+	case hyperv1.LoadBalancer:
 		apiServerPrivateService := manifests.KubeAPIServerPrivateService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
-			return kas.ReconcilePrivateService(apiServerPrivateService, hcp, p.OwnerReference)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile API server private service: %w", err)
+		if netutil.IsPrivateHCP(hcp) {
+			if _, err := createOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
+				return kas.ReconcilePrivateService(apiServerPrivateService, hcp, p.OwnerReference)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile API server private service: %w", err)
+			}
+		} else {
+			return r.deletePrivateAPIServerService(ctx, hcp, apiServerService)
 		}
 	}
 
+	return nil
+}
+
+func (r *Reconciler) deletePrivateAPIServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane, publicService *corev1.Service) error {
+	// HO authorizes cleanup only after the workers have switched to the public endpoint.
+	if hcp.Annotations[config.PrivateAPIServerCleanupAnnotation] == "" || len(publicService.Status.LoadBalancer.Ingress) == 0 {
+		return nil
+	}
+	privateService := manifests.KubeAPIServerPrivateService(hcp.Namespace)
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		endpointService := &hyperv1.AWSEndpointService{}
+		endpointService.Name = privateService.Name
+		endpointService.Namespace = hcp.Namespace
+		// AWS cannot delete an NLB while an endpoint service still references it.
+		if exists, err := k8sutil.DeleteIfNeeded(ctx, r.Client, endpointService); err != nil {
+			return fmt.Errorf("failed to delete API server endpoint service: %w", err)
+		} else if exists {
+			return nil
+		}
+	}
+	if _, err := k8sutil.DeleteIfNeeded(ctx, r.Client, privateService); err != nil {
+		return fmt.Errorf("failed to delete API server private service: %w", err)
+	}
 	return nil
 }
 

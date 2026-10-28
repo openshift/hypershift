@@ -1750,7 +1750,7 @@ func (r *HostedClusterReconciler) reconcileCoreHCPChain(
 
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+		return r.reconcileHostedControlPlane(ctx, hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
