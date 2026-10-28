@@ -13991,8 +13991,22 @@ Immutable during TechPreview — set at creation, cannot be changed.
 Becomes mutable at GA when the Day 2 sidecar mechanism is in place.</p>
 <p>Annotations are applied per-key — existing annotations set by other
 controllers are preserved. HyperShift does not validate annotation
-values — correctness is the user&rsquo;s responsibility, same as setting
-annotations on any Kubernetes Service.
+value semantics — correctness is the user&rsquo;s responsibility, same as
+setting annotations on any Kubernetes Service.
+Only keys starting with a known load balancer provider prefix are
+accepted: metallb.io/, metallb.universe.tf/,
+service.beta.kubernetes.io/aws-load-balancer-eip,
+service.beta.kubernetes.io/aws-load-balancer-subnet,
+service.beta.kubernetes.io/aws-load-balancer-target-group,
+service.beta.kubernetes.io/azure-load-balancer-ipv,
+service.beta.kubernetes.io/azure-load-balancer-resource-group,
+networking.gke.io/, cis.f5.com/, lbipam.cilium.io/ and
+loadbalancer.openstack.org/. The networking.gke.io/load-balancer-type
+annotation is not allowed because it controls whether the load
+balancer is internal or external. Annotation keys are limited to 317
+characters. The name segment must start and end with an alphanumeric
+character and is limited to 63 characters.
+Values are limited to 253 characters.
 Minimum 1, maximum 10 annotations per service.</p>
 </td>
 </tr>
