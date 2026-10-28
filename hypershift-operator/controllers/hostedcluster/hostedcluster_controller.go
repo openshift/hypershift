@@ -144,6 +144,7 @@ const (
 	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
 	defaultToControlPlaneV2Label                               = "io.openshift.hypershift.control-plane-operator.v2-isdefault"
+	controlPlaneOperatorSupportsDeterministicLBLabel           = "io.openshift.hypershift.control-plane-operator-supports-deterministic-lb"
 
 	apiOpenShiftComLabelPrefix = "api.openshift.com/"
 
@@ -1579,6 +1580,27 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	defaultToControlPlaneV2 := true
 	if controlPlaneOperatorImageLabels != nil {
 		_, defaultToControlPlaneV2 = controlPlaneOperatorImageLabels[defaultToControlPlaneV2Label]
+	}
+
+	// Version-skew detection: the HC may ask for deterministic LB fields the
+	// CPO image predates. This is informational and non-blocking: the fields are
+	// ignored until the image is upgraded, and the condition clears by itself
+	// once the label shows up.
+	if controlPlaneOperatorImageLabelsResolved {
+		report.execute("DeterministicLBIPSupport", nonCritical, func() error {
+			// Not using statuspatching.PatchStatusCondition here on purpose: it
+			// re-fetches the HostedCluster, which would drop in-memory spec
+			// mutations made earlier in this reconcile (e.g. the KMS role ARN
+			// dereferenced from a Secret). Writing only on an actual change keeps
+			// the steady state free of status writes.
+			if !meta.SetStatusCondition(&hcluster.Status.Conditions, deterministicLBIPSupportedCondition(hcluster, controlPlaneOperatorImageLabels)) {
+				return nil
+			}
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return fmt.Errorf("failed to update %s condition: %w", hyperv1.DeterministicLBIPSupported, err)
+			}
+			return nil
+		})
 	}
 
 	// Phase 7: Core HCP chain — sequential (HCP → InfraCR → CAPI Cluster).
@@ -3410,6 +3432,47 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1
 		}
 	}
 	return nil
+}
+
+// hcUsesLBIPFields returns true if the APIServer service in the HC spec has
+// serviceAnnotations or loadBalancerClass set. Used for version-skew detection:
+// if the HC uses these fields but the CPO image does not support them, the
+// fields are silently ignored. Only the APIServer service is wired through to
+// the KAS Services, so the other service types are unaffected by the skew.
+func hcUsesLBIPFields(hc *hyperv1.HostedCluster) bool {
+	for _, mapping := range hc.Spec.Services {
+		if mapping.Service != hyperv1.APIServer || mapping.ServicePublishingStrategy.LoadBalancer == nil {
+			continue
+		}
+		if len(mapping.ServicePublishingStrategy.LoadBalancer.ServiceAnnotations) > 0 ||
+			mapping.ServicePublishingStrategy.LoadBalancer.LoadBalancerClass != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// deterministicLBIPSupportedCondition reports whether the control plane operator
+// image honors the deterministic LB fields configured on the HostedCluster. It is
+// True when the image advertises support or when the HC does not use the fields.
+func deterministicLBIPSupportedCondition(hc *hyperv1.HostedCluster, controlPlaneOperatorImageLabels map[string]string) metav1.Condition {
+	condition := metav1.Condition{
+		Type:               string(hyperv1.DeterministicLBIPSupported),
+		ObservedGeneration: hc.Generation,
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            "The control plane operator supports deterministic load balancer IP configuration",
+	}
+
+	_, supportsDeterministicLB := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsDeterministicLBLabel]
+	if supportsDeterministicLB || !hcUsesLBIPFields(hc) {
+		return condition
+	}
+
+	condition.Status = metav1.ConditionFalse
+	condition.Reason = hyperv1.UnsupportedControlPlaneOperatorReason
+	condition.Message = "HostedCluster specifies serviceAnnotations or loadBalancerClass but the control plane operator image does not support deterministic LB IP management; upgrade the control plane release image"
+	return condition
 }
 
 // reconcileCLISecrets makes sure the secrets that were created by the cli, and are safe to be deleted with the
