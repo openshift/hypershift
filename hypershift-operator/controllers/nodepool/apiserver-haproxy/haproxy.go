@@ -14,6 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	mcfgutil "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/machineconfig"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
@@ -36,7 +37,6 @@ import (
 
 	"github.com/clarketm/json"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/net/http/httpproxy"
 )
 
@@ -329,7 +329,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 			}
 			fileBytes = out
 		}
-		files = append(files, fileFromBytes(file.name, file.mode, fileBytes))
+		files = append(files, mcfgutil.FileFromBytes(file.name, file.mode, fileBytes))
 	}
 	config.Storage.Files = files
 	config.Systemd.Units = []ignitionapi.Unit{
@@ -527,23 +527,6 @@ func generateKubernetesDefaultProxyPod(image string, listenAddr string, proxyAdd
 			return nil, err
 		}
 		return out.Bytes(), nil
-	}
-}
-
-// fileFromBytes creates an ignition-config file with the given contents.
-// copied from openshift-installer
-func fileFromBytes(path string, mode int, contents []byte) ignitionapi.File {
-	return ignitionapi.File{
-		Node: ignitionapi.Node{
-			Path:      path,
-			Overwrite: ptr.To(true),
-		},
-		FileEmbedded1: ignitionapi.FileEmbedded1{
-			Mode: &mode,
-			Contents: ignitionapi.Resource{
-				Source: ptr.To(dataurl.EncodeBytes(contents)),
-			},
-		},
 	}
 }
 

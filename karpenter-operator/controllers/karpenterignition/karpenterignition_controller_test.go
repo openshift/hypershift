@@ -13,6 +13,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
@@ -20,6 +21,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
+	supportutil "github.com/openshift/hypershift/support/util"
 	fakeimagemetadataprovider "github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -2446,4 +2448,181 @@ func TestReconcileTaintConfigMap(t *testing.T) {
 		g.Expect(ok).To(BeTrue())
 		g.Expect(taint["key"]).To(Equal(karpenterutil.KarpenterBaseTaints[0].Key))
 	})
+}
+
+func TestKarpenterIgnitionReconciler_ReconcileNodeClassToken(t *testing.T) {
+	g := NewWithT(t)
+	scheme := api.Scheme
+	ctx := log.IntoContext(t.Context(), testr.New(t))
+
+	mockCtrl := gomock.NewController(t)
+	mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+	mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), "release-4.21", gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.21.0"), nil).AnyTimes()
+	mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), "release-4.22", gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.22.0"), nil).AnyTimes()
+
+	fakeImageMetadataProvider := &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+		Result: &dockerv1client.DockerImageConfig{
+			Config: &docker10.DockerConfig{
+				Labels: map[string]string{},
+			},
+		},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: testNamespace,
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ReleaseImage: "release-4.21",
+			InfraID:      "test-infra",
+			ClusterID:    "test-cluster-id",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					Region:         "us-east-1",
+					EndpointAccess: hyperv1.Private,
+				},
+			},
+			Networking: hyperv1.ClusterNetworking{
+				ServiceNetwork: []hyperv1.ServiceNetworkEntry{
+					{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")},
+				},
+			},
+			PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			Version: "4.20.0",
+			VersionStatus: &hyperv1.ClusterVersionStatus{
+				Desired: configv1.Release{Version: "4.20.0", Image: "release-4.21"},
+				History: []configv1.UpdateHistory{
+					{
+						State:   configv1.CompletedUpdate,
+						Version: "4.20.0",
+						Image:   "release-4.21",
+					},
+				},
+			},
+		},
+	}
+
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: testNamespace},
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`),
+		},
+	}
+	ignitionServerCACert := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "ignition-server-ca-cert", Namespace: testNamespace},
+		Data: map[string][]byte{
+			"tls.crt": []byte("fake-ca-cert"),
+		},
+	}
+
+	taintManifest, err := karpenterutil.KarpenterTaintConfigManifest()
+	g.Expect(err).ToNot(HaveOccurred())
+	taintConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: karpenterutil.KarpenterTaintConfigMapName, Namespace: testNamespace},
+		Data:       map[string]string{nodepool.TokenSecretConfigKey: taintManifest},
+	}
+
+	coreConfigs := make([]client.Object, 0, 3)
+	for i := 1; i <= 3; i++ {
+		coreConfigs = append(coreConfigs, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("core-ignition-config-%d", i),
+				Namespace: testNamespace,
+				Labels:    map[string]string{"hypershift.openshift.io/core-ignition-config": "true"},
+			},
+		})
+	}
+
+	nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNodeClassName,
+			Annotations: map[string]string{
+				openshiftEC2NodeClassAnnotationCurrentConfigVersion: "initial-config-version",
+			},
+		},
+		Status: hyperkarpenterv1.OpenshiftEC2NodeClassStatus{Version: "4.20.0"},
+	}
+
+	managementObjects := append([]client.Object{hcp, pullSecret, ignitionServerCACert, taintConfigMap}, coreConfigs...)
+	fakeManagementClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(managementObjects...).
+		Build()
+	fakeGuestClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(nodeClass).
+		WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+		Build()
+
+	r := &KarpenterIgnitionReconciler{
+		ManagementClient:        fakeManagementClient,
+		GuestClient:             fakeGuestClient,
+		ReleaseProvider:         mockedReleaseProvider,
+		ImageMetadataProvider:   fakeImageMetadataProvider,
+		HypershiftOperatorImage: "test-hypershift-operator-image",
+		Namespace:               testNamespace,
+		CreateOrUpdateProvider:  upsert.New(false),
+	}
+
+	hostedCluster, err := hostedClusterFromHCP(hcp, testIgnitionEndpoint)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(fakeGuestClient.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+
+	err = r.reconcileNodeClassToken(ctx, hcp, hostedCluster, nodeClass, "release-4.21")
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(fakeGuestClient.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+	g.Expect(nodeClass.Annotations).To(HaveKeyWithValue(
+		nodepool.CRIODefaultUlimitsPreserveAnnotation,
+		"true",
+	))
+
+	tokenPrefix := "token-" + karpenterutil.KarpenterNodePoolName(nodeClass) + "-"
+	tokenSecretNames := func() map[string]struct{} {
+		secretList := &corev1.SecretList{}
+		g.Expect(fakeManagementClient.List(ctx, secretList, client.InNamespace(testNamespace))).To(Succeed())
+		names := map[string]struct{}{}
+		for _, secret := range secretList.Items {
+			if strings.HasPrefix(secret.Name, tokenPrefix) {
+				names[secret.Name] = struct{}{}
+			}
+		}
+		return names
+	}
+	before := tokenSecretNames()
+	g.Expect(before).ToNot(BeEmpty())
+
+	nodeClass.Status.Version = "4.21.0"
+	g.Expect(fakeGuestClient.Status().Update(ctx, nodeClass)).To(Succeed())
+	g.Expect(fakeGuestClient.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+
+	err = r.reconcileNodeClassToken(ctx, hcp, hostedCluster, nodeClass, "release-4.22")
+	g.Expect(err).ToNot(HaveOccurred())
+
+	secretList := &corev1.SecretList{}
+	g.Expect(fakeManagementClient.List(ctx, secretList, client.InNamespace(testNamespace))).To(Succeed())
+
+	var newTokenSecret *corev1.Secret
+	for i := range secretList.Items {
+		secret := &secretList.Items[i]
+		if !strings.HasPrefix(secret.Name, tokenPrefix) {
+			continue
+		}
+		if _, existed := before[secret.Name]; !existed {
+			newTokenSecret = secret
+			break
+		}
+	}
+	g.Expect(newTokenSecret).ToNot(BeNil(), "expected a new token secret after the 4.21 -> 4.22 upgrade")
+
+	config, err := supportutil.DecodeAndDecompress(newTokenSecret.Data[nodepool.TokenSecretConfigKey])
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(config.String()).To(ContainSubstring("/etc/crio/crio.conf.d/01-ctrcfg-defaultUlimits"))
 }

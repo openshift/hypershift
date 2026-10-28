@@ -295,20 +295,8 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 
 	np := r.createInMemoryNodePool(hcp, openshiftEC2NodeClass, releaseImage)
 
-	cg, err := r.buildConfigGenerator(ctx, hostedCluster, np, hcp.Namespace)
-	if err != nil {
-		return fmt.Errorf("failed to build config generator: %w", err)
-	}
-
-	token, err := nodepool.NewToken(ctx, cg, &nodepool.CPOCapabilities{
-		DecompressAndDecodeConfig: true,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create token: %w", err)
-	}
-
 	// Populate the in-memory NodePool annotations and status from the stored nodeclass
-	// state so that Token.isOutdated() can correctly detect config/version changes.
+	// state before generating config so config generation sees the current version.
 	// On first reconcile (no stored state), leave annotations absent so isOutdated()
 	// returns true and creates the initial secrets.
 	currentConfigVersion := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationCurrentConfigVersion]
@@ -321,6 +309,25 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 		if openshiftEC2NodeClass.Status.Version != "" {
 			np.Status.Version = openshiftEC2NodeClass.Status.Version
 		}
+	}
+	if openshiftEC2NodeClass.GetAnnotations()[nodepool.CRIODefaultUlimitsPreserveAnnotation] == "true" {
+		np.Annotations[nodepool.CRIODefaultUlimitsPreserveAnnotation] = "true"
+	}
+
+	cg, err := r.buildConfigGenerator(ctx, hostedCluster, np, hcp.Namespace)
+	if err != nil {
+		return fmt.Errorf("failed to build config generator: %w", err)
+	}
+
+	// Persist the one-way CRI-O ulimits preserve marker on the nodeclass so later
+	// upgrades keep seeing it even though this NodePool only exists in memory.
+	nodepool.MarkCRIODefaultUlimitsPreserved(np, cg.Version())
+
+	token, err := nodepool.NewToken(ctx, cg, &nodepool.CPOCapabilities{
+		DecompressAndDecodeConfig: true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create token: %w", err)
 	}
 
 	// Set the deployed bootstrap hash so effectiveSecrets() can maintain the
@@ -345,9 +352,11 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 	versionChanged := cg.Version() != openshiftEC2NodeClass.Status.Version
 	rolloutConfigChanged := currentRolloutConfig != "" && currentRolloutConfig != cg.RolloutHashWithoutVersion()
 	shouldSeedAnnotation := currentRolloutConfig == "" && currentConfigVersion != ""
+	preserveCRIODefaultUlimits := np.Annotations[nodepool.CRIODefaultUlimitsPreserveAnnotation] == "true"
+	preserveChanged := preserveCRIODefaultUlimits && openshiftEC2NodeClass.GetAnnotations()[nodepool.CRIODefaultUlimitsPreserveAnnotation] != "true"
 
-	if versionChanged || rolloutConfigChanged || shouldSeedAnnotation {
-		if err := r.updateConfigAnnotations(ctx, openshiftEC2NodeClass, hashToRecord, cg.RolloutHashWithoutVersion()); err != nil {
+	if versionChanged || rolloutConfigChanged || shouldSeedAnnotation || preserveChanged {
+		if err := r.updateConfigAnnotations(ctx, openshiftEC2NodeClass, hashToRecord, cg.RolloutHashWithoutVersion(), preserveCRIODefaultUlimits); err != nil {
 			return err
 		}
 		log.Info("Updated config version annotation", "oldVersion", currentConfigVersion, "newVersion", hashToRecord)
@@ -732,13 +741,16 @@ func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane, ignitionEndpoint stri
 	return hc, nil
 }
 
-func (r *KarpenterIgnitionReconciler) updateConfigAnnotations(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, configVersion, rolloutConfig string) error {
+func (r *KarpenterIgnitionReconciler) updateConfigAnnotations(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, configVersion, rolloutConfig string, preserveCRIODefaultUlimits bool) error {
 	original := openshiftEC2NodeClass.DeepCopy()
 	if openshiftEC2NodeClass.Annotations == nil {
 		openshiftEC2NodeClass.Annotations = make(map[string]string)
 	}
 	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = configVersion
 	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentRolloutConfig] = rolloutConfig
+	if preserveCRIODefaultUlimits {
+		openshiftEC2NodeClass.Annotations[nodepool.CRIODefaultUlimitsPreserveAnnotation] = "true"
+	}
 	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("failed to update config annotations on OpenshiftEC2NodeClass: %w", err)
 	}
