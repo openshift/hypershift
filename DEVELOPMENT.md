@@ -237,7 +237,7 @@ make verify-capi-decoupling   # Check the invariants below without a full CI run
 
 Because each provider is a separate module reached through `replace`, `go build ./...` in the root module compiles only the provider subpackages something imports — a broken `exp/api` package stays invisible until CRD generation. It also means the localized `capicore` types and the upstream CAPI types they were copied from are **distinct Go types**: code merged from upstream that names `clusterv1beta1` or `capiv1` where a file already uses `capicore` will not compile, and the error does not say why.
 
-`make verify-capi-decoupling` (`hack/verify-capi-decoupling.sh`) checks this in seconds: no provider module may require or import `sigs.k8s.io/cluster-api`, every subpackage of every provider module must build, and the packages that consume `capicore` types must vet. It runs in `verify-parallel` and `verify-ci`; run it locally after **any merge or rebase onto main that touched provider types**, which is where the alias mismatch usually arrives from.
+`make verify-capi-decoupling` (`hack/verify-capi-decoupling.sh`) checks this in seconds: no provider module may require or import `sigs.k8s.io/cluster-api`, every subpackage of every provider module must build, and the packages that consume `capicore` types must vet. It runs after `verify-capi-sync` in `verify-serial-targets`, invoked by `verify` and `verify-ci`; run it locally after **any merge or rebase onto main that touched provider types**, which is where the alias mismatch usually arrives from.
 
 The sync process (`hack/capi-sync-provider.sh`) for each provider:
 1. Downloads the upstream module into the Go module cache via `go mod download`
