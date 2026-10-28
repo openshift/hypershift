@@ -1562,7 +1562,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdCerts(ctx context.Context, h
 
 	etcdPeerSecret := manifests.EtcdPeerSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, etcdPeerSecret, func() error {
-		return pki.ReconcileEtcdPeerSecret(etcdPeerSecret, etcdSignerSecret, p.OwnerRef)
+		return pki.ReconcileEtcdPeerSecret(etcdPeerSecret, etcdSignerSecret, p.OwnerRef, etcdv2.Replicas(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd peer secret: %w", err)
 	}
@@ -1604,7 +1604,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdCerts(ctx context.Context, h
 
 			shardPeerSecret := manifests.EtcdShardPeerSecret(hcp.Namespace, shardName)
 			if _, err := createOrUpdate(ctx, r, shardPeerSecret, func() error {
-				return pki.ReconcileEtcdShardPeerSecret(shardPeerSecret, etcdSignerSecret, p.OwnerRef, shardName)
+				return pki.ReconcileEtcdShardPeerSecret(shardPeerSecret, etcdSignerSecret, p.OwnerRef, shardName, shard.Replicas)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile etcd shard %s peer secret: %w", shardName, err)
 			}
