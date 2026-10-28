@@ -1,5 +1,5 @@
 /*
-Copyright 2025 The Kubernetes Authors.
+Copyright 2022 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta2
-
-func (*IPAddress) Hub()      {}
-func (*IPAddressClaim) Hub() {}
+// Package v1alpha1 contains API Schema definitions for the exp v1alpha1 IPAM API.
+// +k8s:conversion-gen=sigs.k8s.io/cluster-api/api/ipam/v1beta2
+//
+// Deprecated: This package is deprecated and is going to be removed when support for v1beta1 will be dropped.
+package v1alpha1
