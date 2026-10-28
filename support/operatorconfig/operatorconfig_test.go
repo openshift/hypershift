@@ -8,6 +8,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+
+	"github.com/blang/semver"
 )
 
 func TestFieldPaths(t *testing.T) {
@@ -98,32 +100,32 @@ func TestFieldPaths(t *testing.T) {
 			g.Expect(paths).To(Equal(tc.expected))
 		})
 	}
-}
 
-// TestFieldPathsIsStableAcrossBuilds asserts the property the whole mechanism rests on:
-// a build that does not know a setting drops it on decode, so re-encoding what survived
-// yields exactly the settings that build understands. An older control plane operator is
-// simulated by decoding a spec that carries an unknown setting into a struct without it.
-func TestFieldPathsIsStableAcrossBuilds(t *testing.T) {
-	g := NewWithT(t)
+	// The property the whole mechanism rests on: a build that does not know a setting
+	// drops it on decode, so re-encoding what survived yields exactly the settings that
+	// build understands. An older control plane operator is simulated by decoding a spec
+	// that carries an unknown setting into a struct without it.
+	t.Run("When the same spec is seen by builds that disagree on which settings exist, it should report what each build understands", func(t *testing.T) {
+		g := NewWithT(t)
 
-	// What a newer HyperShift operator mirrors onto the HostedControlPlane.
-	newer := &hyperv1.OperatorConfiguration{
-		KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
-			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
-		},
-	}
-	configured, err := FieldPaths(newer)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(configured).To(Equal([]string{"kubeAPIServer.logLevel"}))
+		// What a newer HyperShift operator mirrors onto the HostedControlPlane.
+		newer := &hyperv1.OperatorConfiguration{
+			KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
+				ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+			},
+		}
+		configured, err := FieldPaths(newer)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(configured).To(Equal([]string{"kubeAPIServer.logLevel"}))
 
-	// The same spec as seen by a build whose types also know the setting.
-	honored, err := FieldPaths(newer.DeepCopy())
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(Unhonored(configured, honored)).To(BeEmpty(), "a build that knows every setting should honor every setting")
+		// The same spec as seen by a build whose types also know the setting.
+		honored, err := FieldPaths(newer.DeepCopy())
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(Unhonored(configured, honored)).To(BeEmpty(), "a build that knows every setting should honor every setting")
 
-	// The same spec as seen by a build that drops the setting.
-	g.Expect(Unhonored(configured, nil)).To(Equal([]string{"kubeAPIServer.logLevel"}))
+		// The same spec as seen by a build that drops the setting.
+		g.Expect(Unhonored(configured, nil)).To(Equal([]string{"kubeAPIServer.logLevel"}))
+	})
 }
 
 func TestUnhonored(t *testing.T) {
@@ -318,14 +320,79 @@ func TestUnhonoredBefore(t *testing.T) {
 	}
 }
 
-// TestPreReportingFieldFloorsAreClosed guards the invariant that the per-setting floors
-// are a closed, shrinking set. An entry is only meaningful for a setting that shipped no
-// later than honoredFields reporting itself; a setting introduced after that is reported
-// generically by every control plane operator that honors it.
-func TestPreReportingFieldFloorsAreClosed(t *testing.T) {
-	g := NewWithT(t)
-	for path, floor := range preReportingFieldFloors {
-		g.Expect(meetsFloor(honoredFieldsReportingMinVersion, floor)).To(BeTrue(),
-			"setting %q was introduced after honoredFields reporting, so it is reported generically and must not have a floor entry", path)
+func TestMeetsFloor(t *testing.T) {
+	testCases := []struct {
+		name     string
+		version  string
+		floor    string
+		expected bool
+	}{
+		{
+			name:     "When the version is the floor, it should meet it",
+			version:  "5.1.0",
+			floor:    "5.1.0",
+			expected: true,
+		},
+		{
+			name:     "When the version is a z-stream of the floor minor, it should meet it",
+			version:  "5.1.7",
+			floor:    "5.1.0",
+			expected: true,
+		},
+		{
+			name:     "When the version is a prerelease of the floor minor, it should meet it",
+			version:  "5.1.0-0.nightly-2026-10-20-123456",
+			floor:    "5.1.0",
+			expected: true,
+		},
+		{
+			name:     "When the version is a z-stream below the floor patch, it should still meet it",
+			version:  "5.1.0",
+			floor:    "5.1.4",
+			expected: true,
+		},
+		{
+			name:     "When the version is an earlier minor of the same major, it should not meet the floor",
+			version:  "5.0.3",
+			floor:    "5.1.0",
+			expected: false,
+		},
+		{
+			name:     "When the version is a later minor of the same major, it should meet the floor",
+			version:  "5.2.0",
+			floor:    "5.1.0",
+			expected: true,
+		},
+		{
+			name:     "When the version is an earlier major, it should not meet the floor",
+			version:  "4.19.12",
+			floor:    "5.1.0",
+			expected: false,
+		},
+		{
+			name:     "When the version is a later major with a lower minor, it should meet the floor",
+			version:  "6.0.0",
+			floor:    "5.1.0",
+			expected: true,
+		},
 	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(meetsFloor(semver.MustParse(tc.version), semver.MustParse(tc.floor))).To(Equal(tc.expected))
+		})
+	}
+
+	// The per-setting floors are a closed, shrinking set. An entry is only meaningful
+	// for a setting that shipped no later than honoredFields reporting itself; a setting
+	// introduced after that is reported generically by every control plane operator that
+	// honors it.
+	t.Run("When a setting has a recorded floor, that floor should not postdate honoredFields reporting", func(t *testing.T) {
+		g := NewWithT(t)
+		for path, floor := range preReportingFieldFloors {
+			g.Expect(meetsFloor(honoredFieldsReportingMinVersion, floor)).To(BeTrue(),
+				"setting %q was introduced after honoredFields reporting, so it is reported generically and must not have a floor entry", path)
+		}
+	})
 }
