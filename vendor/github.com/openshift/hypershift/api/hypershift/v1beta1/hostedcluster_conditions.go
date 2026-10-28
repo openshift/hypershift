@@ -305,6 +305,24 @@ const (
 	// keeps serving and the HostedCluster does not become degraded.
 	// The condition is absent when no defaultCertificate is configured.
 	IngressDefaultCertificateSynced ConditionType = "IngressDefaultCertificateSynced"
+
+	// OperatorConfigurationHonored indicates whether every setting configured under
+	// spec.operatorConfiguration is actually in effect on the hosted control plane.
+	// It is intentionally generic so that one condition covers the whole stanza and
+	// every setting added to it; the message names the specific settings at issue.
+	//
+	// A control plane operator older than the HyperShift operator accepts and persists
+	// a setting it predates, then ignores it. This condition is how that is reported.
+	//
+	// **True** (reason AsExpected) means no setting is configured, or every configured
+	// setting is honored by the reconciling control plane operator.
+	// **False** (reason OperatorConfigurationNotHonored) means at least one configured
+	// setting is not in effect, and the message names them.
+	// **Unknown** (reason UnsupportedControlPlaneVersion or StatusUnknown) means whether
+	// the configured settings are honored could not be determined, because the control
+	// plane operator predates this reporting, its version is unknown, or it has not yet
+	// observed the current spec.
+	OperatorConfigurationHonored ConditionType = "OperatorConfigurationHonored"
 )
 
 // Reasons for PublicEndpointExposed condition.
@@ -341,11 +359,19 @@ const (
 	// imply the mechanism is currently driving configuration, since a non-deprecated
 	// field may take precedence over it.
 	DeprecatedConfigurationInUseReason = "DeprecatedConfigurationInUse"
-	NotFoundReason                     = "NotFound"
-	WaitingForAvailableReason          = "WaitingForAvailable"
-	SecretNotFoundReason               = "SecretNotFound"
-	WaitingForGracePeriodReason        = "WaitingForGracePeriod"
-	BlockedReason                      = "Blocked"
+	// OperatorConfigurationNotHonoredReason is used with the OperatorConfigurationHonored
+	// condition when at least one setting configured under spec.operatorConfiguration is
+	// not in effect because the reconciling control plane operator does not support it.
+	OperatorConfigurationNotHonoredReason = "OperatorConfigurationNotHonored"
+	// UnsupportedControlPlaneVersionReason is used when the reconciling control plane
+	// operator is too old to report the information a condition is derived from, so the
+	// condition cannot be evaluated.
+	UnsupportedControlPlaneVersionReason = "UnsupportedControlPlaneVersion"
+	NotFoundReason                       = "NotFound"
+	WaitingForAvailableReason            = "WaitingForAvailable"
+	SecretNotFoundReason                 = "SecretNotFound"
+	WaitingForGracePeriodReason          = "WaitingForGracePeriod"
+	BlockedReason                        = "Blocked"
 
 	InfraStatusFailureReason           = "InfraStatusFailure"
 	WaitingOnInfrastructureReadyReason = "WaitingOnInfrastructureReady"
