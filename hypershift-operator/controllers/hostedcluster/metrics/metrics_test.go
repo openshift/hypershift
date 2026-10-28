@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -1820,5 +1821,452 @@ func TestCollectFailureConditionCounts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestClusterDeletionCleansUpFailureReasonTrackingState(t *testing.T) {
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:             "hc",
+			Namespace:        "any",
+			CreationTimestamp: metav1.Time{Time: now},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+		},
+	}
+
+	// Create a CPC in the HC's control plane namespace so per-CPC episode
+	// tracking populates lastSourceAvailableStatus.
+	cpc := &hyperv1.ControlPlaneComponent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd",
+			Namespace: "any-hc",
+		},
+		Status: hyperv1.ControlPlaneComponentStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: "AsExpected",
+				},
+			},
+		},
+	}
+
+	clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, cpc).Build()
+
+	collector := createHostedClustersMetricsCollector(c, clk).(*hostedClustersMetricsCollector)
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(collector)
+
+	// First gather: establish tracking state for the cluster.
+	result1, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("first gather failed: %v", err)
+	}
+
+	// Verify failure reason metrics are emitted for the cluster.
+	failureMetric := findMetricValue(&result1, hcmetrics.InstallationFailureReasonTotalMetricName)
+	if failureMetric == nil {
+		t.Fatal("expected installation_failure_reason_total metric to be emitted, but it was not found")
+	}
+
+	// Verify tracking state exists.
+	ck := clusterKey{namespace: "any", name: "hc"}
+	if _, exists := collector.failureReasonCounts[ck]; !exists {
+		t.Fatal("expected failureReasonCounts to contain the cluster key after first collect")
+	}
+	if len(collector.lastSourceAvailableStatus) == 0 {
+		t.Fatal("expected lastSourceAvailableStatus to be populated after first collect")
+	}
+
+	// Delete the cluster.
+	if err := c.Delete(context.Background(), hcluster); err != nil {
+		t.Fatalf("failed to delete hcluster: %v", err)
+	}
+
+	// Second gather: verify cleanup.
+	result2, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("second gather failed: %v", err)
+	}
+
+	// Verify no failure reason metrics are emitted for the deleted cluster.
+	failureMetric2 := findMetricValue(&result2, hcmetrics.InstallationFailureReasonTotalMetricName)
+	if failureMetric2 != nil {
+		t.Errorf("expected no installation_failure_reason_total metrics after cluster deletion, but found %d series", len(failureMetric2.Metric))
+	}
+
+	// Verify tracking state is cleaned up.
+	if _, exists := collector.failureReasonCounts[ck]; exists {
+		t.Error("expected failureReasonCounts to be cleaned up after cluster deletion")
+	}
+	for sk := range collector.lastSourceAvailableStatus {
+		if sk.cluster == ck {
+			t.Errorf("expected lastSourceAvailableStatus for cluster %v to be cleaned up, but found source %q", ck, sk.source)
+		}
+	}
+}
+
+// getFailureReasonCount extracts the counter value for a specific reason from gathered metrics.
+func getFailureReasonCount(result []*dto.MetricFamily, reason string) float64 {
+	mf := findMetricValue(&result, hcmetrics.InstallationFailureReasonTotalMetricName)
+	if mf == nil {
+		return 0
+	}
+	for _, m := range mf.Metric {
+		for _, lp := range m.Label {
+			if lp.GetName() == "reason" && lp.GetValue() == reason {
+				if m.Counter != nil {
+					return m.Counter.GetValue()
+				}
+			}
+		}
+	}
+	return 0
+}
+
+func TestHCConditionEpisodeRouteNotAdmitted(t *testing.T) {
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:             "hc",
+			Namespace:        "any",
+			CreationTimestamp: metav1.Time{Time: now},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+		},
+	}
+
+	clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).
+		WithStatusSubresource(hcluster).
+		WithObjects(hcluster).Build()
+	collector := createHostedClustersMetricsCollector(c, clk).(*hostedClustersMetricsCollector)
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(collector)
+
+	// Collect 1: baseline with no conditions → all counters 0.
+	result, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 1 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonRouteNotAdmitted); got != 0 {
+		t.Errorf("after baseline: RouteNotAdmitted = %v, want 0", got)
+	}
+
+	// Set InfrastructureReady=False with Reason=RouteNotAdmitted.
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.InfrastructureReady),
+		Status: metav1.ConditionFalse,
+		Reason: hyperv1.ReasonRouteNotAdmitted,
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+
+	// Collect 2: transition from healthy → failure → increment.
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 2 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonRouteNotAdmitted); got != 1 {
+		t.Errorf("after transition to failure: RouteNotAdmitted = %v, want 1", got)
+	}
+
+	// Collect 3: same ongoing failure → no re-increment.
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 3 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonRouteNotAdmitted); got != 1 {
+		t.Errorf("during ongoing failure: RouteNotAdmitted = %v, want 1", got)
+	}
+
+	// Recover: set InfrastructureReady=True.
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.InfrastructureReady),
+		Status: metav1.ConditionTrue,
+		Reason: "AsExpected",
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 4 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonRouteNotAdmitted); got != 1 {
+		t.Errorf("after recovery: RouteNotAdmitted = %v, want 1", got)
+	}
+
+	// Recurrence: fail again → new episode, counter = 2.
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.InfrastructureReady),
+		Status: metav1.ConditionFalse,
+		Reason: hyperv1.ReasonRouteNotAdmitted,
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 5 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonRouteNotAdmitted); got != 2 {
+		t.Errorf("after recurrence: RouteNotAdmitted = %v, want 2", got)
+	}
+}
+
+func TestHCConditionEpisodeClusterVersionFailing(t *testing.T) {
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:             "hc",
+			Namespace:        "any",
+			CreationTimestamp: metav1.Time{Time: now},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+		},
+	}
+
+	clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).
+		WithStatusSubresource(hcluster).
+		WithObjects(hcluster).Build()
+	collector := createHostedClustersMetricsCollector(c, clk).(*hostedClustersMetricsCollector)
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(collector)
+
+	// Collect 1: baseline → 0.
+	result, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 1 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonClusterVersionFailing); got != 0 {
+		t.Errorf("after baseline: ClusterVersionFailing = %v, want 0", got)
+	}
+
+	// Set ClusterVersionSucceeding=False (inverted from HCP ClusterVersionFailing).
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.ClusterVersionSucceeding),
+		Status: metav1.ConditionFalse,
+		Reason: "FromClusterVersion",
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+
+	// Collect 2: transition → increment.
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 2 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonClusterVersionFailing); got != 1 {
+		t.Errorf("after transition to failure: ClusterVersionFailing = %v, want 1", got)
+	}
+
+	// Collect 3: ongoing → no re-increment.
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 3 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonClusterVersionFailing); got != 1 {
+		t.Errorf("during ongoing failure: ClusterVersionFailing = %v, want 1", got)
+	}
+
+	// Recover: ClusterVersionSucceeding=True.
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.ClusterVersionSucceeding),
+		Status: metav1.ConditionTrue,
+		Reason: "AsExpected",
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 4 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonClusterVersionFailing); got != 1 {
+		t.Errorf("after recovery: ClusterVersionFailing = %v, want 1", got)
+	}
+
+	// Recurrence: fail again → counter = 2.
+	meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+		Type:   string(hyperv1.ClusterVersionSucceeding),
+		Status: metav1.ConditionFalse,
+		Reason: "FromClusterVersion",
+	})
+	if err := c.Status().Update(context.Background(), hcluster); err != nil {
+		t.Fatalf("status update failed: %v", err)
+	}
+	result, err = reg.Gather()
+	if err != nil {
+		t.Fatalf("gather 5 failed: %v", err)
+	}
+	if got := getFailureReasonCount(result, hyperv1.ReasonClusterVersionFailing); got != 2 {
+		t.Errorf("after recurrence: ClusterVersionFailing = %v, want 2", got)
+	}
+}
+
+func TestCollectInstallationStageMetricValues(t *testing.T) {
+	testCases := []struct {
+		name          string
+		installation  *hyperv1.InstallationStatus
+		activeStage   string
+		expectPresent bool
+	}{
+		{
+			name: "When stage is Initializing it should report 1 for Initializing and 0 for others",
+			installation: &hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageInitializing,
+			},
+			activeStage:   string(hyperv1.InstallationStageInitializing),
+			expectPresent: true,
+		},
+		{
+			name: "When stage is ControlPlaneProvisioning it should report 1 for that stage",
+			installation: &hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageControlPlaneProvisioning,
+			},
+			activeStage:   string(hyperv1.InstallationStageControlPlaneProvisioning),
+			expectPresent: true,
+		},
+		{
+			name: "When stage is InstallationComplete it should report 1 for that stage",
+			installation: &hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageInstallationComplete,
+			},
+			activeStage:   string(hyperv1.InstallationStageInstallationComplete),
+			expectPresent: true,
+		},
+		{
+			name:          "When installation is nil it should report 0 for all stages",
+			installation:  nil,
+			activeStage:   "",
+			expectPresent: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:             "hc",
+					Namespace:        "any",
+					CreationTimestamp: metav1.Time{Time: now},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+					Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Installation: tc.installation,
+				},
+			}
+
+			clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build()
+
+			reg := prometheus.NewPedanticRegistry()
+			reg.MustRegister(createHostedClustersMetricsCollector(c, clk))
+
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			stageMetric := findMetricValue(&result, hcmetrics.InstallationStageMetricName)
+			if !tc.expectPresent {
+				if stageMetric != nil {
+					t.Errorf("expected no installation_stage metric, but found one")
+				}
+				return
+			}
+			if stageMetric == nil {
+				t.Fatal("expected installation_stage metric to be emitted, but it was not found")
+			}
+
+			// Verify we get exactly len(knownInstallationStages) series.
+			if len(stageMetric.Metric) != len(knownInstallationStages) {
+				t.Errorf("expected %d stage series, got %d", len(knownInstallationStages), len(stageMetric.Metric))
+			}
+
+			// Check that exactly one series has value 1.0 (the active stage) and all others are 0.0.
+			for _, m := range stageMetric.Metric {
+				var stageLabel string
+				for _, lp := range m.Label {
+					if lp.GetName() == "stage" {
+						stageLabel = lp.GetValue()
+					}
+				}
+				if stageLabel == tc.activeStage && tc.activeStage != "" {
+					if m.Gauge.GetValue() != 1.0 {
+						t.Errorf("expected stage %q to have value 1.0, got %v", stageLabel, m.Gauge.GetValue())
+					}
+				} else {
+					if m.Gauge.GetValue() != 0.0 {
+						t.Errorf("expected stage %q to have value 0.0, got %v", stageLabel, m.Gauge.GetValue())
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestClusterDeletionCleansUpInstallationStageMetric(t *testing.T) {
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:             "hc",
+			Namespace:        "any",
+			CreationTimestamp: metav1.Time{Time: now},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+		},
+		Status: hyperv1.HostedClusterStatus{
+			Installation: &hyperv1.InstallationStatus{
+				Stage: hyperv1.InstallationStageControlPlaneProvisioning,
+			},
+		},
+	}
+
+	clk := clocktesting.NewFakeClock(now.Add(10 * time.Minute))
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build()
+
+	collector := createHostedClustersMetricsCollector(c, clk).(*hostedClustersMetricsCollector)
+	reg := prometheus.NewPedanticRegistry()
+	reg.MustRegister(collector)
+
+	// First gather: verify installation stage metric is emitted.
+	result1, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("first gather failed: %v", err)
+	}
+	stageMetric := findMetricValue(&result1, hcmetrics.InstallationStageMetricName)
+	if stageMetric == nil {
+		t.Fatal("expected installation_stage metric to be emitted, but it was not found")
+	}
+
+	// Delete the cluster.
+	if err := c.Delete(context.Background(), hcluster); err != nil {
+		t.Fatalf("failed to delete hcluster: %v", err)
+	}
+
+	// Second gather: verify no installation stage metrics for the deleted cluster.
+	result2, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("second gather failed: %v", err)
+	}
+	stageMetric2 := findMetricValue(&result2, hcmetrics.InstallationStageMetricName)
+	if stageMetric2 != nil {
+		t.Errorf("expected no installation_stage metrics after cluster deletion, but found %d series", len(stageMetric2.Metric))
 	}
 }

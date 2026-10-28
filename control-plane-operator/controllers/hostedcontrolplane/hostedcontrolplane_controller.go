@@ -736,7 +736,12 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	r.reconcileInfrastructureStatusCondition(ctx, hostedControlPlane)
 	r.reconcileExternalDNSStatusCondition(ctx, hostedControlPlane)
-	r.reconcileAvailabilityAndReadyStatus(ctx, hostedControlPlane)
+
+	// Compute CPC availability once and share the result between availability
+	// status and installation stage tracking to avoid redundant API calls.
+	componentsMsg, componentCount, componentsErr := r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
+	r.reconcileAvailabilityAndReadyStatus(ctx, hostedControlPlane, componentsMsg, componentsErr)
+	reconcileInstallationStage(hostedControlPlane, componentsMsg, componentsErr, componentCount)
 
 	// Admin Kubeconfig
 	kubeconfig := manifests.KASAdminKubeconfigSecret(hostedControlPlane.Namespace, hostedControlPlane.Spec.KubeConfig)
@@ -859,10 +864,21 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 		if len(infraStatus.Message) > 0 {
 			message = infraStatus.Message
 		}
+		reason := hyperv1.WaitingOnInfrastructureReadyReason
+		if infraStatus.RouteNotAdmitted {
+			reason = hyperv1.ReasonRouteNotAdmitted
+			if infraStatus.RouteNotAdmittedMsg != "" {
+				if len(message) > 0 {
+					message = message + "; " + infraStatus.RouteNotAdmittedMsg
+				} else {
+					message = infraStatus.RouteNotAdmittedMsg
+				}
+			}
+		}
 		newCondition = metav1.Condition{
 			Type:    string(hyperv1.InfrastructureReady),
 			Status:  metav1.ConditionFalse,
-			Reason:  hyperv1.WaitingOnInfrastructureReadyReason,
+			Reason:  reason,
 			Message: message,
 		}
 		r.Log.Info("Infrastructure is not yet ready")
@@ -903,15 +919,18 @@ func (r *HostedControlPlaneReconciler) reconcileExternalDNSStatusCondition(ctx c
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 }
 
-func (r *HostedControlPlaneReconciler) reconcileAvailabilityAndReadyStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) {
+func (r *HostedControlPlaneReconciler) reconcileAvailabilityAndReadyStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, componentsMsg string, componentsErr error) {
 	healthCheckErr := r.healthCheckKASLoadBalancers(ctx, hostedControlPlane)
 
-	var componentsNotAvailableMsg string
-	var componentsErr error
+	componentsNotAvailableMsg := componentsMsg
+	effectiveComponentsErr := componentsErr
 	availableCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
 	alreadyAvailable := availableCondition != nil && availableCondition.Status == metav1.ConditionTrue
-	if !alreadyAvailable || healthCheckErr != nil {
-		componentsNotAvailableMsg, componentsErr = r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
+	if alreadyAvailable && healthCheckErr == nil {
+		// When already available and health check passes, skip component check
+		// to avoid unnecessary status churn.
+		componentsNotAvailableMsg = ""
+		effectiveComponentsErr = nil
 	}
 
 	ready, condition := reconcileAvailabilityStatus(
@@ -919,7 +938,7 @@ func (r *HostedControlPlaneReconciler) reconcileAvailabilityAndReadyStatus(ctx c
 		hostedControlPlane.Status.KubeConfig != nil,
 		healthCheckErr,
 		componentsNotAvailableMsg,
-		componentsErr,
+		effectiveComponentsErr,
 		hostedControlPlane.Generation,
 	)
 	hostedControlPlane.Status.Ready = ready
@@ -1037,6 +1056,54 @@ func reconcileAvailabilityStatus(
 		Message:            message,
 		ObservedGeneration: generation,
 	}
+}
+
+// reconcileInstallationStage evaluates conditions already computed during
+// reconciliation to determine the current installation stage. It enforces
+// forward-only transitions using SetInstallationStage.
+//
+// componentsMsg and componentsErr are the pre-computed results from
+// controlPlaneComponentsAvailable. componentCount is the number of CPCs found.
+func reconcileInstallationStage(hcp *hyperv1.HostedControlPlane, componentsMsg string, componentsErr error, componentCount int) {
+	now := metav1.Now()
+
+	// Ensure the Installation struct is allocated.
+	if hcp.Status.Installation == nil {
+		hcp.Status.Installation = &hyperv1.InstallationStatus{}
+	}
+
+	// Backfill: if stage is empty and the HCP is already available, jump to complete.
+	availableCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
+	if hcp.Status.Installation.Stage == "" && availableCondition != nil && availableCondition.Status == metav1.ConditionTrue {
+		hyperv1.SetInstallationStage(hcp.Status.Installation, hyperv1.InstallationStageInstallationComplete, now)
+		return
+	}
+
+	// Evaluate triggers in order from latest to earliest stage.
+	cvaCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionAvailable))
+	if cvaCondition != nil && cvaCondition.Status == metav1.ConditionTrue {
+		hyperv1.SetInstallationStage(hcp.Status.Installation, hyperv1.InstallationStageInstallationComplete, now)
+		return
+	}
+
+	if hcp.Status.KubeConfig != nil {
+		hyperv1.SetInstallationStage(hcp.Status.Installation, hyperv1.InstallationStageWaitingForOperators, now)
+		return
+	}
+
+	// All CPCs available (no error and empty message) → waiting for kubeconfig.
+	if componentsErr == nil && componentsMsg == "" {
+		hyperv1.SetInstallationStage(hcp.Status.Installation, hyperv1.InstallationStageWaitingForKubeconfig, now)
+		return
+	}
+
+	// At least one CPC exists → control plane is provisioning.
+	if componentCount > 0 {
+		hyperv1.SetInstallationStage(hcp.Status.Installation, hyperv1.InstallationStageControlPlaneProvisioning, now)
+		return
+	}
+
+	hyperv1.SetInstallationStage(hcp.Status.Installation, hyperv1.InstallationStageInitializing, now)
 }
 
 // healthCheckKASLoadBalancers performs a health check on the KubeAPI server /healthz endpoint using the public and private load balancers hostnames directly
@@ -1178,31 +1245,54 @@ func parseFailingHealthChecks(body io.Reader) []string {
 // controlPlaneComponentsAvailable checks that all ControlPlaneComponents in the namespace
 // have their Available condition set to True.
 // Returns an empty string if all components are available, otherwise returns a message describing
-// which components are not yet available.
-func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+// which components are not yet available. The third return value is the total number of CPCs found.
+func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, int, error) {
 	componentsList := &hyperv1.ControlPlaneComponentList{}
 	if err := r.Client.List(ctx, componentsList, client.InNamespace(hcp.Namespace)); err != nil {
-		return "", fmt.Errorf("failed to list control plane components: %w", err)
+		return "", 0, fmt.Errorf("failed to list control plane components: %w", err)
 	}
 
 	// If there are no components yet, return a message indicating they haven't been created
 	if len(componentsList.Items) == 0 {
-		return "Control plane components have not been created yet", nil
+		return "Control plane components have not been created yet", 0, nil
 	}
 
 	var notAvailable []string
+	var firstFailureName, firstFailureReason, firstFailureMessage string
+	sort.Slice(componentsList.Items, func(i, j int) bool {
+		return componentsList.Items[i].Name < componentsList.Items[j].Name
+	})
 	for _, component := range componentsList.Items {
 		availableCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
 		if availableCondition == nil || availableCondition.Status != metav1.ConditionTrue {
 			notAvailable = append(notAvailable, component.Name)
+			if firstFailureName == "" && availableCondition != nil {
+				firstFailureName = component.Name
+				firstFailureReason = availableCondition.Reason
+				firstFailureMessage = availableCondition.Message
+			}
 		}
 	}
 
 	if len(notAvailable) > 0 {
-		return fmt.Sprintf("Waiting for components to be available: %s", strings.Join(notAvailable, ", ")), nil
+		noun := "components"
+		if len(notAvailable) == 1 {
+			noun = "component"
+		}
+		msg := fmt.Sprintf("%d %s unavailable", len(notAvailable), noun)
+		if firstFailureName != "" {
+			detail := firstFailureReason
+			if firstFailureMessage != "" {
+				detail += ": " + firstFailureMessage
+			}
+			msg += fmt.Sprintf(". First failure: %s — %s", firstFailureName, detail)
+		} else {
+			msg += fmt.Sprintf(": %s", strings.Join(notAvailable, ", "))
+		}
+		return msg, len(componentsList.Items), nil
 	}
 
-	return "", nil
+	return "", len(componentsList.Items), nil
 }
 
 func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
