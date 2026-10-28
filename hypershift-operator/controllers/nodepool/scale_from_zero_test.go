@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -26,11 +27,13 @@ import (
 )
 
 type mockProvider struct {
-	info *instancetype.InstanceTypeInfo
-	err  error
+	info          *instancetype.InstanceTypeInfo
+	err           error
+	instanceTypes []string
 }
 
-func (m *mockProvider) GetInstanceTypeInfo(_ context.Context, _ string) (*instancetype.InstanceTypeInfo, error) {
+func (m *mockProvider) GetInstanceTypeInfo(_ context.Context, instanceType string) (*instancetype.InstanceTypeInfo, error) {
+	m.instanceTypes = append(m.instanceTypes, instanceType)
 	return m.info, m.err
 }
 
@@ -38,6 +41,7 @@ type schedulingMetadataClient struct {
 	client.Client
 	getErr   error
 	patchErr error
+	patches  []map[string]interface{}
 }
 
 func (c *schedulingMetadataClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
@@ -48,6 +52,15 @@ func (c *schedulingMetadataClient) Get(ctx context.Context, key client.ObjectKey
 }
 
 func (c *schedulingMetadataClient) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+	data, err := patch.Data(obj)
+	if err != nil {
+		return err
+	}
+	var fields map[string]interface{}
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	c.patches = append(c.patches, fields)
 	if c.patchErr != nil {
 		return c.patchErr
 	}
@@ -55,6 +68,7 @@ func (c *schedulingMetadataClient) Patch(ctx context.Context, obj client.Object,
 }
 
 func TestReconcileScaleFromZeroAnnotations(t *testing.T) {
+	t.Run("When capacity sources change, it should persist compatible metadata without rolling out workers", testScaleFromZeroCapacityTransitions)
 	tests := []struct {
 		name             string
 		upgradeType      hyperv1.UpgradeType
@@ -106,6 +120,7 @@ func TestReconcileScaleFromZeroAnnotations(t *testing.T) {
 			}
 			objectMeta := metav1.ObjectMeta{Name: np.Name, Namespace: metadata.Namespace, Annotations: map[string]string{
 				labelsKey: "stale=old", taintsKey: "stale=old:NoSchedule", cpuKey: "1", memoryKey: "1024", gpuKey: "2", "custom.io/keep": "preserved",
+				capiCPUKey: "1", capiMemoryKey: "1024Mi", capiGPUCountKey: "2", capiGPUTypeKey: "nvidia.com/gpu",
 			}}
 			machineTemplate := capiv1.MachineTemplateSpec{Spec: capiv1.MachineSpec{
 				Version: "4.22.15", InfrastructureRef: capiv1.ContractVersionedObjectReference{Name: template.GetName()},
@@ -139,7 +154,7 @@ func TestReconcileScaleFromZeroAnnotations(t *testing.T) {
 			g.Expect(actual.GetAnnotations()).To(HaveKeyWithValue(labelsKey, "kubernetes.io/arch=arm64,topology.kubernetes.io/zone=eu-central-1b,workload=workload"))
 			g.Expect(actual.GetAnnotations()).To(HaveKeyWithValue(taintsKey, "dedicated=workload:NoSchedule"))
 			g.Expect(actual.GetAnnotations()).To(HaveKeyWithValue("custom.io/keep", "preserved"))
-			for _, key := range []string{cpuKey, memoryKey, gpuKey} {
+			for _, key := range []string{cpuKey, memoryKey, gpuKey, capiCPUKey, capiMemoryKey, capiGPUCountKey, capiGPUTypeKey} {
 				g.Expect(actual.GetAnnotations()).ToNot(HaveKey(key), "stale capacity must be removed when native capacity is available or no provider remains")
 			}
 			switch actual := actual.(type) {
