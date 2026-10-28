@@ -4384,6 +4384,55 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 	}
 }
 
+func TestReconcileOperatorConfigurationStatus(t *testing.T) {
+	testCases := []struct {
+		name                  string
+		hcp                   *hyperv1.HostedControlPlane
+		expectedHonoredFields []string
+		expectedGeneration    int64
+	}{
+		{
+			name: "When no operatorConfiguration is set, it should report the observed generation and no honored settings",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Generation: 3},
+			},
+			expectedHonoredFields: nil,
+			expectedGeneration:    3,
+		},
+		{
+			name: "When operatorConfiguration settings are set, it should report them as honored",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Generation: 7},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
+							ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+						},
+						Etcd: hyperv1.EtcdOperatorSpec{
+							ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+						},
+					},
+				},
+			},
+			expectedHonoredFields: []string{"etcd.logLevel", "kubeAPIServer.logLevel"},
+			expectedGeneration:    7,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			r := &HostedControlPlaneReconciler{Log: ctrl.LoggerFrom(t.Context())}
+			r.reconcileOperatorConfigurationStatus(tc.hcp)
+
+			g.Expect(tc.hcp.Status.OperatorConfiguration.ObservedGeneration).To(Equal(tc.expectedGeneration))
+			g.Expect(tc.hcp.Status.OperatorConfiguration.HonoredFields).To(Equal(tc.expectedHonoredFields))
+		})
+	}
+
+}
+
 func TestReconcileDegradedStatus(t *testing.T) {
 	testNamespace := "test-namespace"
 
