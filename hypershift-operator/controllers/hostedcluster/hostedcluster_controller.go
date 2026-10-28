@@ -69,6 +69,7 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/oidc"
+	"github.com/openshift/hypershift/support/operatorconfig"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -923,6 +924,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Aggregate deprecated-configuration warnings from the HostedCluster and the HCP.
 	r.reconcileDeprecatedConfigurationStatus(hcluster, hcp)
 
+	// Report operatorConfiguration settings the reconciling CPO does not honor.
+	r.reconcileOperatorConfigurationHonoredStatus(hcluster, hcp)
+
 	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
 		hcluster.Status.Platform = hcp.Status.Platform
@@ -1726,6 +1730,148 @@ func (r *HostedClusterReconciler) reconcileDeprecatedConfigurationStatus(hcluste
 		condition.Message = "No deprecated configuration is in use"
 	}
 	meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+}
+
+// maxNamedUnhonoredFields bounds how many settings a condition message names, so that
+// a large configuration cannot produce an unreadable message or approach the API
+// server's limit on condition message length.
+const maxNamedUnhonoredFields = 10
+
+// reconcileOperatorConfigurationHonoredStatus reports, on the generic
+// OperatorConfigurationHonored condition, whether every setting configured under
+// spec.operatorConfiguration is actually in effect.
+//
+// A control plane operator older than the HyperShift operator drops settings it
+// predates when it decodes the HostedControlPlane spec, and ignores them without
+// surfacing anything. Two sources close that gap, in order of precision:
+//
+//   - The settings the control plane operator echoed back on
+//     status.operatorConfiguration.honoredFields. This covers every setting generically,
+//     including ones added after this code was written, but only a control plane
+//     operator new enough to report at all can be read this way.
+//   - For settings that predate that reporting, a recorded minimum version per setting.
+//
+// Neither source can see a setting the HyperShift operator itself predates: a setting
+// the installed CRD accepts but this build does not know about is dropped here too, and
+// is not reported.
+func (r *HostedClusterReconciler) reconcileOperatorConfigurationHonoredStatus(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) {
+	condition := metav1.Condition{
+		Type:               string(hyperv1.OperatorConfigurationHonored),
+		ObservedGeneration: hcluster.Generation,
+	}
+	// version is only known once the HostedControlPlane has been read; notHonored is
+	// never called before then.
+	var version string
+	honored := func(message string) {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.AsExpectedReason
+		condition.Message = message
+	}
+	undetermined := func(reason, message string) {
+		condition.Status = metav1.ConditionUnknown
+		condition.Reason = reason
+		condition.Message = message
+	}
+	// notHonored is only reachable once version is known to be a usable version, so the
+	// message never names an empty one.
+	notHonored := func(unhonored []string) {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.OperatorConfigurationNotHonoredReason
+		condition.Message = fmt.Sprintf(
+			"%s %s not in effect: control plane operator version %s does not support %s. %s will take effect once the control plane is upgraded to a version that does.",
+			describeSettings(unhonored), pluralize(unhonored, "is", "are"), version,
+			pluralize(unhonored, "it", "them"), pluralize(unhonored, "It", "They"))
+	}
+	defer func() { meta.SetStatusCondition(&hcluster.Status.Conditions, condition) }()
+
+	if hcp == nil {
+		// Stay quiet for the common case of a cluster that configures nothing and whose
+		// HCP has not been created yet.
+		if hcluster.Spec.OperatorConfiguration == nil {
+			honored("No operatorConfiguration settings are configured")
+		} else {
+			undetermined(hyperv1.StatusUnknownReason, "The hosted control plane is not found")
+		}
+		return
+	}
+
+	// Evaluate against the HostedControlPlane spec rather than the HostedCluster spec:
+	// it is the input the control plane operator actually reconciles, so the two sides
+	// of the comparison describe the same generation of the user's intent. A
+	// HostedCluster edit not yet mirrored down is picked up on the next reconcile.
+	configured, err := operatorconfig.FieldPaths(hcp.Spec.OperatorConfiguration)
+	if err != nil {
+		undetermined(hyperv1.StatusUnknownReason, fmt.Sprintf("Failed to evaluate the configured operatorConfiguration settings: %v", err))
+		return
+	}
+	if len(configured) == 0 {
+		honored("No operatorConfiguration settings are configured")
+		return
+	}
+
+	version = hcp.Status.ControlPlaneVersion.Desired.Version
+
+	// Settings that predate honoredFields reporting, and so can only be judged from the
+	// control plane operator's version. Checked first because this is conclusive even
+	// when the control plane operator reports nothing at all.
+	if unhonored := operatorconfig.UnhonoredBefore(configured, version); len(unhonored) > 0 {
+		notHonored(unhonored)
+		return
+	}
+
+	switch supported, known := operatorconfig.SupportsHonoredFieldsReporting(version); {
+	case !known:
+		undetermined(hyperv1.StatusUnknownReason, "The control plane operator version is not reported yet, so whether the configured operatorConfiguration settings are in effect is unknown")
+		return
+	case !supported:
+		undetermined(hyperv1.UnsupportedControlPlaneVersionReason, fmt.Sprintf(
+			"Control plane operator version %s does not report which operatorConfiguration settings it honors, so whether the configured settings are in effect is unknown", version))
+		return
+	}
+
+	reported := hcp.Status.OperatorConfiguration
+	if reported.ObservedGeneration == 0 {
+		undetermined(hyperv1.StatusUnknownReason, "The control plane operator has not reported which operatorConfiguration settings it honors yet")
+		return
+	}
+
+	unhonored := operatorconfig.Unhonored(configured, reported.HonoredFields)
+	if len(unhonored) == 0 {
+		// Nothing to warn about, whether or not the report is current. Not gating this
+		// on the report being current is what keeps the condition from flapping through
+		// an ordinary control plane upgrade, which bumps the generation without
+		// changing any setting.
+		honored("All operatorConfiguration settings are honored")
+		return
+	}
+	if reported.ObservedGeneration != hcp.Generation {
+		// A discrepancy against a report for an earlier generation is expected right
+		// after a setting changes; the control plane operator has simply not caught up.
+		undetermined(hyperv1.StatusUnknownReason, fmt.Sprintf(
+			"The control plane operator has not observed generation %d of the hosted control plane yet, so it is unknown whether %s %s in effect",
+			hcp.Generation, describeSettings(unhonored), pluralize(unhonored, "is", "are")))
+		return
+	}
+	notHonored(unhonored)
+}
+
+// describeSettings renders setting paths for a condition message, naming at most
+// maxNamedUnhonoredFields of them.
+func describeSettings(paths []string) string {
+	named := paths
+	suffix := ""
+	if len(named) > maxNamedUnhonoredFields {
+		suffix = fmt.Sprintf(" and %d more", len(named)-maxNamedUnhonoredFields)
+		named = named[:maxNamedUnhonoredFields]
+	}
+	return fmt.Sprintf("operatorConfiguration %s %s%s", pluralize(paths, "setting", "settings"), strings.Join(named, ", "), suffix)
+}
+
+func pluralize[T any](items []T, singular, plural string) string {
+	if len(items) == 1 {
+		return singular
+	}
+	return plural
 }
 
 // reconcileCoreHCPChain reconciles the core HCP chain: reconcile the HCP object,

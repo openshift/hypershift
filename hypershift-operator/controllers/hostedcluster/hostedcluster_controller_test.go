@@ -42,6 +42,7 @@ import (
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/operatorconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
@@ -9616,6 +9617,196 @@ func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
 			g.Expect(cond.ObservedGeneration).To(Equal(hcluster.Generation))
 		})
 	}
+}
+
+func TestReconcileOperatorConfigurationHonoredStatus(t *testing.T) {
+	// logLevel is used as the configured setting throughout: it is a real
+	// operatorConfiguration field with no recorded version floor, so what the condition
+	// says about it comes purely from the generic honoredFields comparison.
+	logLevelConfig := &hyperv1.OperatorConfiguration{
+		KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
+			ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+		},
+	}
+	// eventTTLMinutes is the one setting with a recorded floor, covering control plane
+	// operators too old to report honoredFields at all.
+	eventTTLPath := "kubeAPIServer.eventTTLMinutes"
+
+	// hcpWith builds a HostedControlPlane at the given generation whose control plane
+	// operator reports version and the given honored settings.
+	hcpWith := func(generation int64, config *hyperv1.OperatorConfiguration, version string, observedGeneration int64, honored []string) *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Generation: generation},
+			Spec:       hyperv1.HostedControlPlaneSpec{OperatorConfiguration: config},
+			Status: hyperv1.HostedControlPlaneStatus{
+				ControlPlaneVersion: hyperv1.ControlPlaneVersionStatus{
+					Desired: configv1.Release{Version: version},
+				},
+				OperatorConfiguration: hyperv1.OperatorConfigurationStatus{
+					ObservedGeneration: observedGeneration,
+					HonoredFields:      honored,
+				},
+			},
+		}
+	}
+
+	testCases := []struct {
+		name                   string
+		hclusterConfig         *hyperv1.OperatorConfiguration
+		hcp                    *hyperv1.HostedControlPlane
+		expectedStatus         metav1.ConditionStatus
+		expectedReason         string
+		expectedMessageSubstrs []string
+	}{
+		{
+			name:           "When nothing is configured and the HCP is not found yet, it should set the condition to True",
+			hclusterConfig: nil,
+			hcp:            nil,
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:           "When settings are configured and the HCP is not found yet, it should set the condition to Unknown",
+			hclusterConfig: logLevelConfig,
+			hcp:            nil,
+			expectedStatus: metav1.ConditionUnknown,
+			expectedReason: hyperv1.StatusUnknownReason,
+		},
+		{
+			name:           "When nothing is configured, it should set the condition to True without consulting the control plane operator",
+			hclusterConfig: nil,
+			hcp:            hcpWith(1, nil, "", 0, nil),
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:           "When every configured setting is honored, it should set the condition to True",
+			hclusterConfig: logLevelConfig,
+			hcp:            hcpWith(4, logLevelConfig, "5.1.0", 4, []string{"kubeAPIServer.logLevel"}),
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:                   "When a configured setting is absent from the honored settings, it should set the condition to False and name it",
+			hclusterConfig:         logLevelConfig,
+			hcp:                    hcpWith(4, logLevelConfig, "5.1.0", 4, nil),
+			expectedStatus:         metav1.ConditionFalse,
+			expectedReason:         hyperv1.OperatorConfigurationNotHonoredReason,
+			expectedMessageSubstrs: []string{"kubeAPIServer.logLevel", "5.1.0", "not in effect"},
+		},
+		{
+			name:                   "When the control plane operator has not observed the latest spec and a setting looks unhonored, it should set the condition to Unknown rather than raise a false alarm",
+			hclusterConfig:         logLevelConfig,
+			hcp:                    hcpWith(5, logLevelConfig, "5.1.0", 4, nil),
+			expectedStatus:         metav1.ConditionUnknown,
+			expectedReason:         hyperv1.StatusUnknownReason,
+			expectedMessageSubstrs: []string{"has not observed generation 5"},
+		},
+		{
+			name:           "When the control plane operator has not observed the latest spec but every setting is honored, it should stay True so an upgrade does not flap the condition",
+			hclusterConfig: logLevelConfig,
+			hcp:            hcpWith(5, logLevelConfig, "5.1.0", 4, []string{"kubeAPIServer.logLevel"}),
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:                   "When the control plane operator predates honoredFields reporting, it should set the condition to Unknown",
+			hclusterConfig:         logLevelConfig,
+			hcp:                    hcpWith(4, logLevelConfig, "5.0.3", 0, nil),
+			expectedStatus:         metav1.ConditionUnknown,
+			expectedReason:         hyperv1.UnsupportedControlPlaneVersionReason,
+			expectedMessageSubstrs: []string{"5.0.3", "does not report"},
+		},
+		{
+			name:           "When the control plane operator version is not reported yet, it should set the condition to Unknown",
+			hclusterConfig: logLevelConfig,
+			hcp:            hcpWith(4, logLevelConfig, "", 0, nil),
+			expectedStatus: metav1.ConditionUnknown,
+			expectedReason: hyperv1.StatusUnknownReason,
+		},
+		{
+			name:           "When the control plane operator supports reporting but has not reported yet, it should set the condition to Unknown",
+			hclusterConfig: logLevelConfig,
+			hcp:            hcpWith(4, logLevelConfig, "5.1.0", 0, nil),
+			expectedStatus: metav1.ConditionUnknown,
+			expectedReason: hyperv1.StatusUnknownReason,
+		},
+		{
+			name:           "When several settings are configured and all are honored, it should set the condition to True",
+			hclusterConfig: logLevelConfig,
+			hcp: hcpWith(4, &hyperv1.OperatorConfiguration{
+				KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
+					ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+				},
+				Etcd: hyperv1.EtcdOperatorSpec{
+					ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+				},
+			}, "5.1.0", 4, []string{"etcd.logLevel", "kubeAPIServer.logLevel"}),
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:           "When only some configured settings are honored, it should name just the unhonored ones",
+			hclusterConfig: logLevelConfig,
+			hcp: hcpWith(4, &hyperv1.OperatorConfiguration{
+				KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
+					ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+				},
+				Etcd: hyperv1.EtcdOperatorSpec{
+					ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+				},
+			}, "5.1.0", 4, []string{"etcd.logLevel"}),
+			expectedStatus:         metav1.ConditionFalse,
+			expectedReason:         hyperv1.OperatorConfigurationNotHonoredReason,
+			expectedMessageSubstrs: []string{"kubeAPIServer.logLevel"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: 9},
+				Spec:       hyperv1.HostedClusterSpec{OperatorConfiguration: tc.hclusterConfig},
+			}
+			r := &HostedClusterReconciler{}
+			r.reconcileOperatorConfigurationHonoredStatus(hcluster, tc.hcp)
+
+			cond := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.OperatorConfigurationHonored))
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Status).To(Equal(tc.expectedStatus))
+			g.Expect(cond.Reason).To(Equal(tc.expectedReason))
+			g.Expect(cond.ObservedGeneration).To(Equal(hcluster.Generation))
+			for _, substr := range tc.expectedMessageSubstrs {
+				g.Expect(cond.Message).To(ContainSubstring(substr))
+			}
+			if tc.expectedStatus == metav1.ConditionFalse {
+				g.Expect(cond.Message).ToNot(ContainSubstring("etcd.logLevel"),
+					"honored settings should not be named as unhonored")
+			}
+		})
+	}
+
+	// The version floor is the only thing that can name a setting against a control
+	// plane operator too old to report honoredFields, which is exactly the skew window
+	// that motivated this condition. It is exercised through the honoredFields list
+	// being absent, as it would be from such an operator.
+	t.Run("When a setting with a recorded version floor runs on a control plane operator below that floor, it should set the condition to False and name it", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Stand in for the eventTTLMinutes field, which is gated and may not be
+		// compiled into every build: drive the comparison from the path directly.
+		configured, err := operatorconfig.FieldPaths(&hyperv1.OperatorConfiguration{
+			KubeAPIServer: hyperv1.KubeAPIServerOperatorSpec{
+				ComponentLogLevelSpec: hyperv1.ComponentLogLevelSpec{LogLevel: hyperv1.Debug},
+			},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(operatorconfig.UnhonoredBefore(append(configured, eventTTLPath), "5.0.3")).To(
+			Equal([]string{eventTTLPath}),
+			"a pre-reporting control plane operator should still have the floored setting named")
+	})
 }
 
 func TestReconcilePullSecretSync(t *testing.T) {
