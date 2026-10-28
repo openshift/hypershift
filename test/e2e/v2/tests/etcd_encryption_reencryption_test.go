@@ -294,14 +294,10 @@ func verifyKASLogsNoDecryptionErrors(ctx context.Context, controlPlaneNamespace 
 	}
 }
 
-// rotationCase parameterizes a single key-rotation lifecycle test. The shared
-// test body (runSingleRotationTest) runs the common assertions; only the
-// per-provider skip guard, key accessors, and provider-field verification differ.
+// rotationCase parameterizes the provider-specific parts of a key-rotation lifecycle test.
+// The shared test body (runRotationTest) runs the common assertions; only the per-provider
+// skip guard, key accessors, and provider-field verification differ.
 type rotationCase struct {
-	// contextLabel is the Ginkgo Context description, e.g. "[Feature:AWSKMSReencryption] AWS KMS Key Rotation".
-	contextLabel string
-	// itLabel is the Ginkgo It description.
-	itLabel string
 	// expectedProvider is the SecretEncryptionProvider expected in Status after rotation.
 	expectedProvider hyperv1.SecretEncryptionProvider
 	// applies returns (true, "") when this case should run, or (false, skipReason) to skip.
@@ -317,67 +313,53 @@ type rotationCase struct {
 	verifyProviderField func(hc *hyperv1.HostedCluster, alternate string)
 }
 
-// runSingleRotationTest registers a single-rotation lifecycle test for the given rotationCase.
+// runRotationTest executes the shared rotation lifecycle body for the given rotationCase.
 // It handles: baseline wait, rotate patch, restore cleanup, started/complete waits,
 // status verification, SVM check, KAS health/logs, and condition bubble-up.
-func runSingleRotationTest(getTestCtx internal.TestContextGetter, rc rotationCase) {
-	Context(rc.contextLabel, func() {
-		BeforeEach(func() {
-			tc := getTestCtx()
-			hc, err := tc.GetHostedCluster()
-			Expect(err).NotTo(HaveOccurred())
-			ok, reason := rc.applies(hc)
-			if !ok {
-				Skip(reason)
-			}
-		})
+// Must be called from within an It() block.
+func runRotationTest(tc *internal.TestContext, rc rotationCase) {
+	ctx := tc.Context
+	hcKey := crclient.ObjectKey{Namespace: tc.ClusterNamespace, Name: tc.ClusterName}
 
-		It(rc.itLabel, Label(internal.InformingLabel), func() {
-			tc := getTestCtx()
-			ctx := tc.Context
-			hcKey := crclient.ObjectKey{Namespace: tc.ClusterNamespace, Name: tc.ClusterName}
+	hc := &hyperv1.HostedCluster{}
+	Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 
-			hc := &hyperv1.HostedCluster{}
-			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
+	// Ensure no re-encryption is in flight before rotating.
+	waitForReEncryptionComplete(Default, ctx, tc.MgmtClient, hcKey, 5*time.Minute)
 
-			// Ensure no re-encryption is in flight before rotating.
-			waitForReEncryptionComplete(Default, ctx, tc.MgmtClient, hcKey, 5*time.Minute)
+	hostedClusterClient, err := tc.GetHostedClusterClient(hc)
+	Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
 
-			hostedClusterClient, err := tc.GetHostedClusterClient(hc)
-			Expect(err).NotTo(HaveOccurred(), "failed to get hosted cluster client")
+	// Re-fetch to get a fresh resource version and current Spec before patching.
+	Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
 
-			// Re-fetch to get a fresh resource version and current Spec before patching.
-			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
+	alternate, err := rc.prepare(ctx, tc)
+	Expect(err).NotTo(HaveOccurred(), "failed to prepare rotation")
 
-			alternate, err := rc.prepare(ctx, tc)
-			Expect(err).NotTo(HaveOccurred(), "failed to prepare rotation")
-
-			original := rc.getActiveKey(hc)
-			DeferCleanup(func() {
-				rotateAndWait(tc.Context, tc, hcKey, func(hc *hyperv1.HostedCluster) {
-					rc.setActiveKey(hc, original)
-				})
-			})
-
-			kasBaseline := captureKASRestartCounts(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
-			rotateAndWait(ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
-				rc.setActiveKey(hc, alternate)
-			})
-
-			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
-			verifyReEncryptionStatus(hc, rc.expectedProvider)
-			rc.verifyProviderField(hc, alternate)
-
-			verifyStorageVersionMigrations(ctx, hostedClusterClient, hc)
-
-			verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kasBaseline)
-			verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
-
-			Eventually(func(g Gomega) {
-				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
-			}, 2*time.Minute, 10*time.Second).Should(Succeed())
+	original := rc.getActiveKey(hc)
+	DeferCleanup(func() {
+		rotateAndWait(tc.Context, tc, hcKey, func(hc *hyperv1.HostedCluster) {
+			rc.setActiveKey(hc, original)
 		})
 	})
+
+	kasBaseline := captureKASRestartCounts(ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
+	rotateAndWait(ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
+		rc.setActiveKey(hc, alternate)
+	})
+
+	Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
+	verifyReEncryptionStatus(hc, rc.expectedProvider)
+	rc.verifyProviderField(hc, alternate)
+
+	verifyStorageVersionMigrations(ctx, hostedClusterClient, hc)
+
+	verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kasBaseline)
+	verifyKASLogsNoDecryptionErrors(ctx, tc.ControlPlaneNamespace)
+
+	Eventually(func(g Gomega) {
+		verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
+	}, 2*time.Minute, 10*time.Second).Should(Succeed())
 }
 
 // rotateAndWait applies mutate to the HostedCluster spec, then waits for re-encryption
@@ -403,9 +385,7 @@ func rotateAndWait(ctx context.Context, tc *internal.TestContext, hcKey crclient
 
 // AWSKMSKeyRotationTest validates the re-encryption lifecycle after rotating the AWS KMS active key.
 func AWSKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
-	runSingleRotationTest(getTestCtx, rotationCase{
-		contextLabel:     "[Feature:AWSKMSReencryption] AWS KMS Key Rotation",
-		itLabel:          "should re-encrypt all etcd data after active key rotation",
+	rc := rotationCase{
 		expectedProvider: hyperv1.SecretEncryptionProviderAWS,
 		applies: func(hc *hyperv1.HostedCluster) (bool, string) {
 			if hc.Spec.Platform.Type != hyperv1.AWSPlatform ||
@@ -432,6 +412,20 @@ func AWSKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			Expect(hc.Status.SecretEncryption.ActiveKey.AWS.ARN).To(Equal(alternate),
 				"activeKey ARN should match the alternate key")
 		},
+	}
+	Context("[Feature:AWSKMSReencryption] AWS KMS Key Rotation", func() {
+		BeforeEach(func() {
+			tc := getTestCtx()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			ok, reason := rc.applies(hc)
+			if !ok {
+				Skip(reason)
+			}
+		})
+		It("should re-encrypt all etcd data after active key rotation", Label(internal.InformingLabel), func() {
+			runRotationTest(getTestCtx(), rc)
+		})
 	})
 }
 
@@ -453,9 +447,7 @@ func azureKMSRotationApplies(hc *hyperv1.HostedCluster) (bool, string) {
 
 // AzureKMSKeyRotationTest validates the re-encryption lifecycle after rotating the Azure KMS key version.
 func AzureKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
-	runSingleRotationTest(getTestCtx, rotationCase{
-		contextLabel:     "[Feature:AzureKMSReencryption] Azure KMS Key Rotation",
-		itLabel:          "should re-encrypt all etcd data after key version rotation",
+	rc := rotationCase{
 		expectedProvider: hyperv1.SecretEncryptionProviderAzure,
 		applies:          azureKMSRotationApplies,
 		prepare: func(_ context.Context, _ *internal.TestContext) (string, error) {
@@ -471,6 +463,20 @@ func AzureKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			Expect(hc.Status.SecretEncryption.ActiveKey.Azure.KeyVersion).To(Equal(alternate),
 				"activeKey keyVersion should match the alternate version")
 		},
+	}
+	Context("[Feature:AzureKMSReencryption] Azure KMS Key Rotation", func() {
+		BeforeEach(func() {
+			tc := getTestCtx()
+			hc, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred())
+			ok, reason := rc.applies(hc)
+			if !ok {
+				Skip(reason)
+			}
+		})
+		It("should re-encrypt all etcd data after key version rotation", Label(internal.InformingLabel), func() {
+			runRotationTest(getTestCtx(), rc)
+		})
 	})
 }
 
