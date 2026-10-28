@@ -21,6 +21,8 @@ func TestRun(t *testing.T) {
 		"a/externallegacy/internal_test.go|TestValidateErrors",
 		"a/externallegacy/internal_test.go|TestWorker_Run",
 		"a/reversecross/external_test.go|TestValidateErrors",
+		"a/bothlegacy/internal_test.go|TestValidate",
+		"a/bothlegacy/external_test.go|TestValidateErrors",
 		// Explicit exceptions must take precedence over baseline accounting.
 		"a/exception/production_test.go|TestWorker_Run",
 		"a/externalexception/internal_test.go|TestWorker_Run",
@@ -37,6 +39,7 @@ func TestRun(t *testing.T) {
 			"a/split",
 			"a/ambiguous",
 			"a/external",
+			"a/unexportedreceiver",
 			"a/identity",
 			"a/legacy",
 			"a/legacyambiguous",
@@ -111,6 +114,13 @@ func TestRun(t *testing.T) {
 	})
 	t.Run("When a new test reuses a removed baseline path and name, it should still report the violation", func(t *testing.T) {
 		analysistest.Run(t, testdata, Analyzer, "support/util")
+	})
+	t.Run("When internal and external split tests are both baselined, it should report no diagnostics", func(t *testing.T) {
+		g := NewWithT(t)
+		results := analysistest.Run(t, testdata, Analyzer, "a/bothlegacy")
+		for _, result := range results {
+			g.Expect(result.Diagnostics).To(BeEmpty())
+		}
 	})
 	t.Run("When internal tests have explicit exceptions, it should allow an external canonical test and report remaining duplicates", func(t *testing.T) {
 		analysistest.Run(t, testdata, Analyzer, "a/externalexception")

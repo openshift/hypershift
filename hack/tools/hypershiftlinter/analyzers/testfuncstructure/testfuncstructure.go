@@ -677,7 +677,7 @@ func reportGroup(pass *analysis.Pass, tests []*testFunction) {
 	// test is baselined and the internal canonical test is new, the internal
 	// pass cannot see the conflict. Report it on the new internal declaration
 	// so changed-line filtering evaluates the declaration that introduced it.
-	if primary != nil && primary.imported && !primary.suppressed {
+	if primary != nil && primary.imported && !primary.suppressed && !isLegacyException(pass, primary) {
 		for _, test := range tests {
 			if test.imported || !isLegacyException(pass, test) {
 				continue

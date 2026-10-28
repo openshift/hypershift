@@ -4,7 +4,7 @@ import "k8s.io/apimachinery/pkg/util/sets"
 
 // legacyExceptions contains exact pre-existing test declarations that do not
 // satisfy TESTING.md. Remove an entry when the corresponding test is migrated.
-// Refreshed against main at 43bbac68e4b28539ae44e6ce4e82eb13518c2b05.
+// Validated against main at 364a78f3d7001048a72e7c1c894c040bc7a43c04.
 var legacyExceptions = sets.Set[string]{
 	"api/util/ipnet/ipnet_test.go|TestUnmarshal":                                                                                                                                                                  {},
 	"cmd/cluster/agent/create_test.go|TestCreateCluster":                                                                                                                                                          {},
