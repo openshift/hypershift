@@ -90,3 +90,9 @@ groups:
 
   - record: cluster_name:hypershift_nodepools_available_replicas:sum
     expr: sum by(cluster_name, exported_namespace) (max by(name, exported_namespace, platform, cluster_name) (hypershift_nodepools_available_replicas))
+
+  - record: platform:hypershift_capi_migration_total_crds:max
+    expr: max(hypershift_capi_migration_total_crds)
+
+  - record: platform:hypershift_capi_migration_migrated_crds:max
+    expr: max(hypershift_capi_migration_migrated_crds)

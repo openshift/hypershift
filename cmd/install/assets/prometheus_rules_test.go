@@ -35,7 +35,7 @@ func TestPrometheusRuleSpec(t *testing.T) {
 				group := spec.Groups[0]
 
 				// Verify we have the expected number of rules
-				g.Expect(group.Rules).To(HaveLen(16), "should contain all expected recording rules")
+				g.Expect(group.Rules).To(HaveLen(18), "should contain all expected recording rules")
 
 				// Check specific recording rules exist
 				ruleNames := make([]string, len(group.Rules))
@@ -62,6 +62,8 @@ func TestPrometheusRuleSpec(t *testing.T) {
 					"platform:hypershift_nodepools:max",
 					"cluster_name:hypershift_nodepools_size:sum",
 					"cluster_name:hypershift_nodepools_available_replicas:sum",
+					"platform:hypershift_capi_migration_total_crds:max",
+					"platform:hypershift_capi_migration_migrated_crds:max",
 				}
 
 				for _, expectedRule := range expectedRules {
@@ -158,6 +160,30 @@ func TestPrometheusRuleSpec(t *testing.T) {
 
 				for _, expectedRule := range clusterRules {
 					g.Expect(ruleNames).To(ContainElement(expectedRule), "should contain cluster aggregation rule: %s", expectedRule)
+				}
+			},
+		},
+		"When prometheusRuleSpec is called, it should have CAPI migration telemetry rules": {
+			testCase: func(g *GomegaWithT) {
+				spec := prometheusRuleSpec()
+				group := spec.Groups[0]
+
+				migrationRules := map[string]string{
+					"platform:hypershift_capi_migration_total_crds:max":    "hypershift_capi_migration_total_crds",
+					"platform:hypershift_capi_migration_migrated_crds:max": "hypershift_capi_migration_migrated_crds",
+				}
+
+				for expectedRecord, expectedMetric := range migrationRules {
+					var found *prometheusoperatorv1.Rule
+					for _, rule := range group.Rules {
+						if rule.Record == expectedRecord {
+							found = &rule
+							break
+						}
+					}
+					g.Expect(found).ToNot(BeNil(), "should find CAPI migration rule: %s", expectedRecord)
+					g.Expect(found.Expr.String()).To(ContainSubstring(expectedMetric), "rule %s should reference metric %s", expectedRecord, expectedMetric)
+					g.Expect(found.Expr.String()).To(ContainSubstring("max("), "rule %s should use max aggregation", expectedRecord)
 				}
 			},
 		},
