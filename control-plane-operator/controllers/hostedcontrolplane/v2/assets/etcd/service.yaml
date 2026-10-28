@@ -5,7 +5,6 @@ metadata:
     app: etcd
   name: etcd-client
 spec:
-  clusterIP: None
   ports:
   - name: etcd-client
     port: 2379
