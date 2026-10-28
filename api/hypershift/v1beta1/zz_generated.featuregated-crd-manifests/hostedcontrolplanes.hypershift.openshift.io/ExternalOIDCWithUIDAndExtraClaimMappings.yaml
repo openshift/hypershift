@@ -1442,6 +1442,14 @@ spec:
                         type: array
                         x-kubernetes-list-type: atomic
                     type: object
+                    x-kubernetes-validations:
+                    - fieldPath: .serviceAccountIssuer
+                      message: serviceAccountIssuer is ignored by HyperShift; set
+                        spec.issuerURL instead and leave this field unset
+                      optionalOldSelf: true
+                      rule: '!has(self.serviceAccountIssuer) || self.serviceAccountIssuer
+                        == '''' || (oldSelf.hasValue() && has(oldSelf.value().serviceAccountIssuer)
+                        && self.serviceAccountIssuer == oldSelf.value().serviceAccountIssuer)'
                   featureGate:
                     description: featureGate holds cluster-wide information about
                       feature gates.
