@@ -8383,6 +8383,40 @@ spec:
                   This is populated after the infrastructure is ready.
                 maxLength: 255
                 type: string
+              operatorConfiguration:
+                description: |-
+                  operatorConfiguration reports which settings from spec.operatorConfiguration the
+                  reconciling control plane operator understands. It lets a newer HyperShift operator
+                  detect settings that an older control plane operator silently ignores.
+                minProperties: 1
+                properties:
+                  honoredFields:
+                    description: |-
+                      honoredFields lists the dot-separated paths of the settings that are both set in
+                      spec.operatorConfiguration and understood by the reconciling control plane operator,
+                      relative to spec.operatorConfiguration and sorted lexically
+                      (for example "kubeAPIServer.eventTTLMinutes"). It is empty when no settings are
+                      configured. A setting that is set in the spec but absent from this list is not in
+                      effect.
+                    items:
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    maxItems: 200
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  observedGeneration:
+                    description: |-
+                      observedGeneration is the HostedControlPlane generation whose
+                      spec.operatorConfiguration produced honoredFields. A value lower than
+                      metadata.generation means the control plane operator has not yet observed the
+                      latest spec, so honoredFields is stale.
+                    format: int64
+                    maximum: 9007199254740992
+                    minimum: 1
+                    type: integer
+                type: object
               platform:
                 description: platform contains platform-specific status of the HostedCluster
                 properties:
