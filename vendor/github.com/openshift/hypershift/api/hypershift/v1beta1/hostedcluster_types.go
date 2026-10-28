@@ -3029,6 +3029,7 @@ type OperatorConfiguration struct {
 	// The current default log level is Normal.
 	// +optional
 	// +openshift:enable:FeatureGate=HCPUserFacingOperatorLogs
+	// +openshift:enable:FeatureGate=KubeAPIServerEventTTL
 	KubeAPIServer KubeAPIServerOperatorSpec `json:"kubeAPIServer,omitzero"`
 
 	// etcd configures the etcd component.
