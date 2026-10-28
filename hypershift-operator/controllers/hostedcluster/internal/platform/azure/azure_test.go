@@ -1180,3 +1180,73 @@ func TestHasDeletionFailedCondition(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileAzureClusterNodeOutboundLB(t *testing.T) {
+	// NodeOutboundLB makes CAPZ attach every worker NIC to the named Load Balancer backend pool.
+	// CAPZ builds that backend pool ID by string construction and never checks it resolves
+	// (networkinterfaces.Spec.Parameters), so pointing it at a Load Balancer or pool that was never
+	// provisioned makes ARM reject the NIC with InvalidResourceReference and the node never joins.
+	// Under UserDefinedRouting no egress Load Balancer is provisioned, so it must be left unset.
+	const infraID = "my-infra-ID"
+
+	testCases := []struct {
+		name                   string
+		outboundType           hyperv1.AzureOutboundType
+		expectedNodeOutboundLB *capiazure.LoadBalancerSpec
+	}{
+		{
+			name:                   "When outboundType is unset it should set NodeOutboundLB",
+			expectedNodeOutboundLB: &capiazure.LoadBalancerSpec{Name: infraID, BackendPool: capiazure.BackendPool{Name: infraID}},
+		},
+		{
+			name:                   "When outboundType is LoadBalancer it should set NodeOutboundLB",
+			outboundType:           hyperv1.AzureOutboundTypeLoadBalancer,
+			expectedNodeOutboundLB: &capiazure.LoadBalancerSpec{Name: infraID, BackendPool: capiazure.BackendPool{Name: infraID}},
+		},
+		{
+			name:                   "When outboundType is UserDefinedRouting it should leave NodeOutboundLB unset",
+			outboundType:           hyperv1.AzureOutboundTypeUserDefinedRouting,
+			expectedNodeOutboundLB: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hc", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: infraID,
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Location:          "eastus",
+							ResourceGroupName: "my-resource-group",
+							SubscriptionID:    "my-subscription-id",
+							VnetID:            "/subscriptions/my-subscription-id/resourceGroups/my-vnet-rg/providers/Microsoft.Network/virtualNetworks/my-vnet",
+							OutboundType:      tc.outboundType,
+						},
+					},
+				},
+			}
+
+			// Seed NodeOutboundLB so the UserDefinedRouting case proves the field is actively cleared
+			// rather than merely left alone on an object that happened to start empty.
+			azureCluster := &capiazure.AzureCluster{
+				Spec: capiazure.AzureClusterSpec{
+					NetworkSpec: capiazure.NetworkSpec{
+						NodeOutboundLB: &capiazure.LoadBalancerSpec{Name: "stale", BackendPool: capiazure.BackendPool{Name: "stale"}},
+					},
+				},
+			}
+			azureClusterIdentity := &capiazure.AzureClusterIdentity{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-identity", Namespace: "test-namespace"},
+			}
+
+			err := reconcileAzureCluster(azureCluster, hcluster, hyperv1.APIEndpoint{Host: "api.example.com", Port: 6443}, azureClusterIdentity, "")
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(azureCluster.Spec.NetworkSpec.NodeOutboundLB).To(Equal(tc.expectedNodeOutboundLB))
+		})
+	}
+}

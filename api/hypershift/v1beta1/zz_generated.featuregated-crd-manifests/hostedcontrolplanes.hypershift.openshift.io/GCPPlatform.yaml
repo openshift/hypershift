@@ -5565,6 +5565,26 @@ spec:
                         x-kubernetes-validations:
                         - message: Location is immutable
                           rule: self == oldSelf
+                      outboundType:
+                        description: |-
+                          outboundType specifies how worker node traffic leaving the cluster reaches the internet.
+                          - LoadBalancer: egress uses the cluster Load Balancer's outbound rule. Worker NICs are attached
+                            to that Load Balancer's backend pool.
+                          - UserDefinedRouting: the cluster owner provisions no egress infrastructure. Worker NICs are not
+                            attached to any Load Balancer backend pool, and the subnets must already route egress through
+                            the customer's own mechanism (NAT gateway, virtual appliance, or similar) before the cluster is
+                            created. Nodes will fail to pull images and reach the control plane if that routing is absent.
+                          Outbound SNAT on the cluster Load Balancer is disabled for both values, so a Service of type
+                          LoadBalancer never becomes an egress path.
+                          When omitted, behavior matches LoadBalancer.
+                          This field is immutable once set: the Load Balancer's outbound rule is created with the
+                          cluster's infrastructure and no component reconciles it afterwards, so switching between
+                          LoadBalancer and UserDefinedRouting on an existing cluster cannot change the egress path.
+                          UserDefinedRouting cannot be adopted on a cluster that was created without outboundType set.
+                        enum:
+                        - LoadBalancer
+                        - UserDefinedRouting
+                        type: string
                       private:
                         description: |-
                           private configures private connectivity to the hosted cluster's API server.
@@ -5818,6 +5838,15 @@ spec:
                       rule: '!has(self.private) || self.private.type != ''PrivateLink''
                         || self.azureAuthenticationConfig.azureAuthenticationConfigType
                         != ''WorkloadIdentities'' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)'
+                    - message: outboundType cannot be removed once set
+                      rule: '!has(oldSelf.outboundType) || has(self.outboundType)'
+                    - message: outboundType is immutable once set
+                      rule: '!has(self.outboundType) || !has(oldSelf.outboundType)
+                        || self.outboundType == oldSelf.outboundType'
+                    - message: outboundType cannot be set to UserDefinedRouting on
+                        an existing cluster that was created without it
+                      rule: 'has(self.outboundType) && !has(oldSelf.outboundType)
+                        ? self.outboundType == ''LoadBalancer'' : true'
                   gcp:
                     description: gcp specifies configuration for clusters running
                       on Google Cloud Platform.

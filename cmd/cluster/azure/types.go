@@ -34,6 +34,7 @@ type RawCreateOptions struct {
 	EndpointAccessPrivateAdditionalAllowedSubscriptions []string
 	OAuthPublishingStrategy                             string
 	AutoNode                                            bool
+	OutboundType                                        string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }

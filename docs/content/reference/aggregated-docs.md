@@ -47273,6 +47273,30 @@ nodes keep their original setting.</p>
 </tr>
 </tbody>
 </table>
+###AzureOutboundType { #hypershift.openshift.io/v1beta1.AzureOutboundType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzureOutboundType specifies the outbound connectivity method for worker nodes.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;LoadBalancer&#34;</p></td>
+<td><p>AzureOutboundTypeLoadBalancer uses an Azure Load Balancer with outbound rules for egress.</p>
+</td>
+</tr><tr><td><p>&#34;UserDefinedRouting&#34;</p></td>
+<td><p>AzureOutboundTypeUserDefinedRouting delegates outbound connectivity to the customer&rsquo;s egress mechanism.
+Worker NICs are not attached to any Load Balancer backend pool when this type is set.</p>
+</td>
+</tr></tbody>
+</table>
 ###AzurePlatformSpec { #hypershift.openshift.io/v1beta1.AzurePlatformSpec }
 <p>
 (<em>Appears on:</em>
@@ -47472,6 +47496,33 @@ This field is required when topology is Private or PublicAndPrivate, and must
 not be set when topology is Public.
 Once set at cluster creation, this field cannot be removed, and it cannot be
 added to an existing cluster that was created without it.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>outboundType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureOutboundType">
+AzureOutboundType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>outboundType specifies how worker node traffic leaving the cluster reaches the internet.
+- LoadBalancer: egress uses the cluster Load Balancer&rsquo;s outbound rule. Worker NICs are attached
+to that Load Balancer&rsquo;s backend pool.
+- UserDefinedRouting: the cluster owner provisions no egress infrastructure. Worker NICs are not
+attached to any Load Balancer backend pool, and the subnets must already route egress through
+the customer&rsquo;s own mechanism (NAT gateway, virtual appliance, or similar) before the cluster is
+created. Nodes will fail to pull images and reach the control plane if that routing is absent.
+Outbound SNAT on the cluster Load Balancer is disabled for both values, so a Service of type
+LoadBalancer never becomes an egress path.
+When omitted, behavior matches LoadBalancer.
+This field is immutable once set: the Load Balancer&rsquo;s outbound rule is created with the
+cluster&rsquo;s infrastructure and no component reconciles it afterwards, so switching between
+LoadBalancer and UserDefinedRouting on an existing cluster cannot change the egress path.
+UserDefinedRouting cannot be adopted on a cluster that was created without outboundType set.</p>
 </td>
 </tr>
 </tbody>
