@@ -3881,8 +3881,15 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 }
 
 func TestNodePoolReconciler_Reconcile(t *testing.T) {
-	for _, upgradeType := range []hyperv1.UpgradeType{hyperv1.UpgradeTypeReplace, hyperv1.UpgradeTypeInPlace} {
-		t.Run(fmt.Sprintf("When %s workload persistence fails, it should preserve previous Ready and persist earlier conditions", upgradeType), func(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		upgradeType hyperv1.UpgradeType
+	}{
+		{name: "When Replace workload persistence fails, it should preserve previous Ready and persist earlier conditions", upgradeType: hyperv1.UpgradeTypeReplace},
+		{name: "When InPlace workload persistence fails, it should preserve previous Ready and persist earlier conditions", upgradeType: hyperv1.UpgradeTypeInPlace},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			upgradeType := testCase.upgradeType
 			g := NewWithT(t)
 			injectedErr := errors.New("injected workload persistence failure")
 			const (
@@ -4055,10 +4062,10 @@ kind: Config`)},
 			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
 				Version: "4.18.0",
 				Components: map[string]string{
-					haproxy.HAProxyRouterImageName: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234",
+					"haproxy-router": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234",
 				},
 				CanonicalComponents: map[string]string{
-					haproxy.HAProxyRouterImageName: "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234",
+					"haproxy-router": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234",
 				},
 			}
 			r := &NodePoolReconciler{
