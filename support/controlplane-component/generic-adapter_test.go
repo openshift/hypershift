@@ -8,6 +8,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/upsert"
 
 	corev1 "k8s.io/api/core/v1"
@@ -303,8 +305,23 @@ func TestNewGenericControllerConfigAdapter(t *testing.T) {
 	adapter := NewGenericControllerConfigAdapter("0.0.0.0:8443", "tcp4")
 	g.Expect(adapter).ToNot(BeNil())
 
+	// NewGenericControllerConfigAdapter depends on the existence of
+	// a config map holding the active feature gates for the hosted
+	// cluster, create a client with one.
+	client := fake.NewClientBuilder().
+		WithScheme(testScheme()).
+		WithObjects(
+			&corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: config.FeatureGateConfigMapName},
+				Data:       map[string]string{config.FeatureGateConfigKey: "{}"},
+			},
+		).
+		Build()
+
 	cm := &corev1.ConfigMap{}
 	ctx := WorkloadContext{
+		Client:                   client,
+		UserReleaseImageProvider: testutil.FakeImageProvider(),
 		HCP: &hyperv1.HostedControlPlane{
 			Spec: hyperv1.HostedControlPlaneSpec{
 				Configuration: &hyperv1.ClusterConfiguration{},
@@ -317,4 +334,5 @@ func TestNewGenericControllerConfigAdapter(t *testing.T) {
 	g.Expect(cm.Data).To(HaveKey("config.yaml"))
 	g.Expect(cm.Data["config.yaml"]).To(ContainSubstring("bindAddress: 0.0.0.0:8443"))
 	g.Expect(cm.Data["config.yaml"]).To(ContainSubstring("bindNetwork: tcp4"))
+	g.Expect(cm.Data["config.yaml"]).To(Not(ContainSubstring("curvePreferences:")))
 }
