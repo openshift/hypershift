@@ -1318,6 +1318,9 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 
 func TestCAPIReconcile(t *testing.T) {
 	t.Parallel()
+	t.Run("When reconciling CAPI, it should propagate the global pull secret managed label", func(t *testing.T) {
+		testGlobalPSManagedLabelOnMachines(t, false)
+	})
 	maxUnavailable := intstr.FromInt(0)
 	maxSurge := intstr.FromInt(1)
 	// This is the generated name by machineTemplateBuilders.
@@ -2831,7 +2834,8 @@ func testCAPIReconcileConditionErrorPaths(t *testing.T) {
 	}
 }
 
-func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
+func testGlobalPSManagedLabelOnMachines(t *testing.T, directWorkloadReconcile bool) {
+	t.Helper()
 	t.Parallel()
 	maxUnavailable := intstr.FromInt(0)
 	maxSurge := intstr.FromInt(1)
@@ -3153,6 +3157,9 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		if (tt.reconcile != nil) != directWorkloadReconcile {
+			continue
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
@@ -3218,14 +3225,30 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 	}
 }
 
-// TestReconcileSelectorDropsStaleLabels is a regression test for a runaway Machine-creation
+func TestCAPI_ReconcileMachineDeployment(t *testing.T) {
+	t.Run("When a MachineDeployment selector has stale labels, it should drop them and retain template labels", func(t *testing.T) {
+		testReconcileSelectorDropsStaleLabels(t, hyperv1.UpgradeTypeReplace)
+	})
+	t.Run("When reconciling a MachineDeployment, it should propagate the global pull secret managed label", func(t *testing.T) {
+		testGlobalPSManagedLabelOnMachines(t, true)
+	})
+}
+
+func TestCAPI_ReconcileMachineSet(t *testing.T) {
+	t.Run("When a MachineSet selector has stale labels, it should drop them and retain template labels", func(t *testing.T) {
+		testReconcileSelectorDropsStaleLabels(t, hyperv1.UpgradeTypeInPlace)
+	})
+}
+
+// testReconcileSelectorDropsStaleLabels is a regression test for a runaway Machine-creation
 // bug: the MachineDeployment/MachineSet selector used to be mutated in place across reconciles
 // while the template labels were reassigned from scratch. When resourcesName changed (e.g. after
 // an infraID change) the selector kept the old key that the template no longer carried, so the
 // selector matched zero Machines and the MachineSet controller created Machines without bound.
 // The builders now rebuild the selector deterministically; this test asserts a pre-existing stale
 // key is dropped and the selector stays a strict subset of the template labels.
-func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
+func testReconcileSelectorDropsStaleLabels(t *testing.T, upgradeType hyperv1.UpgradeType) {
+	t.Helper()
 	t.Parallel()
 
 	const (
@@ -3301,8 +3324,7 @@ func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
 		}
 	}
 
-	t.Run("MachineDeployment", func(t *testing.T) {
-		t.Parallel()
+	if upgradeType == hyperv1.UpgradeTypeReplace {
 		g := NewWithT(t)
 		capi := newCAPI(g)
 
@@ -3319,10 +3341,7 @@ func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
 		_, err := capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to reconcile MachineDeployment while removing stale selector labels")
 		assertSubset(g, md.Spec.Selector.MatchLabels, md.Spec.Template.Labels)
-	})
-
-	t.Run("MachineSet", func(t *testing.T) {
-		t.Parallel()
+	} else {
 		g := NewWithT(t)
 		capi := newCAPI(g)
 
@@ -3338,7 +3357,7 @@ func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
 		_, err := capi.reconcileMachineSet(t.Context(), ms, kvTemplate)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to reconcile MachineSet while removing stale selector labels")
 		assertSubset(g, ms.Spec.Selector.MatchLabels, ms.Spec.Template.Labels)
-	})
+	}
 }
 
 func TestPause(t *testing.T) {

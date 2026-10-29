@@ -426,7 +426,8 @@ func TestGetNodePoolNamespacedName(t *testing.T) {
 	}
 }
 
-func TestNodepoolDeletionDoesntRequireHCluster(t *testing.T) {
+func testNodePoolDeletionDoesntRequireHCluster(t *testing.T) {
+	t.Helper()
 	t.Parallel()
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
@@ -3881,6 +3882,14 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 }
 
 func TestNodePoolReconciler_Reconcile(t *testing.T) {
+	t.Run("When reconciling scheduling metadata, it should preserve scheduling and retry behavior", testReconcileScheduling)
+	t.Run("When deleting a NodePool without a HostedCluster, it should complete deletion", testNodePoolDeletionDoesntRequireHCluster)
+	t.Run("When reconciling a NodePool, it should record tracing span attributes", testNodePoolReconcileTracingSpanAttributes)
+	t.Run("When the NodePool is missing, it should skip the tracing span", testNodePoolReconcileTracingNotFoundSkipsSpan)
+	t.Run("When reconciliation fails, it should record the tracing error", testNodePoolReconcileTracingRecordsError)
+	t.Run("When deleting a NodePool, it should record deletion in the tracing span", testNodePoolReconcileTracingDeletingNodePool)
+	t.Run("When a traceparent is present, it should link the tracing span", testNodePoolReconcileTracingSpanLinkFromTraceparent)
+
 	for _, testCase := range []struct {
 		name        string
 		upgradeType hyperv1.UpgradeType
