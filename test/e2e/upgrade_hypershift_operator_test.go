@@ -23,10 +23,6 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	hostedClusterUpgradeTestLabel = "hypershift.openshift.io/upgrade-test"
-)
-
 // TestUpgradeHyperShiftOperator validates that a HyperShift Operator upgrade won't unnecessarily cause a node rollout.
 // The test must be triggered via the flag upgrade.run-tests
 func TestUpgradeHyperShiftOperator(t *testing.T) {
@@ -66,18 +62,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 		clusterOpts.NodePoolReplicas = 1
 	}
 
-	clusterOpts.BeforeApply = func(o crclient.Object) {
-		switch obj := o.(type) {
-		case *hyperv1.HostedCluster:
-
-			// Add a label to identify the HostedCluster for upgrade tests in case they're leaked
-			// and need to be cleaned up.
-			if obj.Labels == nil {
-				obj.Labels = make(map[string]string)
-			}
-			obj.Labels[hostedClusterUpgradeTestLabel] = "true"
-		}
-	}
+	clusterOpts.BeforeApply = labelOperatorUpgradeHostedCluster
 
 	operatorImage, err := e2eutil.GetHyperShiftOperatorImage(ctx, client, globalOpts.HOInstallationOptions)
 	g.Expect(err).ToNot(gomega.HaveOccurred(), "Getting HyperShiftOperator image shouldn't return errors")

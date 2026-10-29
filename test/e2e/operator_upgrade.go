@@ -15,10 +15,21 @@ import (
 )
 
 const (
+	hostedClusterUpgradeTestLabel          = "hypershift.openshift.io/upgrade-test"
 	nodePoolAnnotationCurrentConfig        = "hypershift.openshift.io/nodePoolCurrentConfig"
 	nodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 	machineDeploymentRevisionAnnotation    = "machinedeployment.clusters.x-k8s.io/revision"
 )
+
+func labelOperatorUpgradeHostedCluster(object crclient.Object) {
+	switch cluster := object.(type) {
+	case *hyperv1.HostedCluster:
+		if cluster.Labels == nil {
+			cluster.Labels = make(map[string]string)
+		}
+		cluster.Labels[hostedClusterUpgradeTestLabel] = "true"
+	}
+}
 
 func listOperatorUpgradeWorkloads(ctx context.Context, client crclient.Client, namespace string, useV1Beta1 bool) (map[string]*unstructured.Unstructured, error) {
 	version := "v1beta2"
@@ -52,24 +63,8 @@ func initialNodePoolComplete(nodePool *hyperv1.NodePool, workloads map[string]*u
 			return fmt.Errorf("NodePool %s has no %s", nodePool.Name, annotation)
 		}
 	}
-	for _, conditionType := range []string{hyperv1.NodePoolReadyConditionType, hyperv1.NodePoolUpdatingVersionConditionType, hyperv1.NodePoolUpdatingConfigConditionType, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType} {
-		found := false
-		for _, condition := range nodePool.Status.Conditions {
-			if condition.Type != conditionType {
-				continue
-			}
-			want := "False"
-			if conditionType == hyperv1.NodePoolReadyConditionType {
-				want = "True"
-			}
-			if string(condition.Status) != want || condition.ObservedGeneration < nodePool.Generation {
-				return fmt.Errorf("NodePool %s condition %s has not completed generation %d", nodePool.Name, conditionType, nodePool.Generation)
-			}
-			found = true
-		}
-		if !found {
-			return fmt.Errorf("NodePool %s has no %s condition", nodePool.Name, conditionType)
-		}
+	if err := initialNodePoolConditionsComplete(nodePool); err != nil {
+		return err
 	}
 	version, _, _ := unstructured.NestedString(deployment.Object, "spec", "template", "spec", "version")
 	bootstrap, _, _ := unstructured.NestedString(deployment.Object, "spec", "template", "spec", "bootstrap", "dataSecretName")
@@ -118,6 +113,29 @@ func initialNodePoolComplete(nodePool *hyperv1.NodePool, workloads map[string]*u
 	}
 	if ownedSets != 1 {
 		return fmt.Errorf("MachineDeployment %s should have exactly one initial MachineSet, got %d", deployment.GetName(), ownedSets)
+	}
+	return nil
+}
+
+func initialNodePoolConditionsComplete(nodePool *hyperv1.NodePool) error {
+	for _, conditionType := range []string{hyperv1.NodePoolReadyConditionType, hyperv1.NodePoolUpdatingVersionConditionType, hyperv1.NodePoolUpdatingConfigConditionType, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType} {
+		found := false
+		for _, condition := range nodePool.Status.Conditions {
+			if condition.Type != conditionType {
+				continue
+			}
+			want := "False"
+			if conditionType == hyperv1.NodePoolReadyConditionType {
+				want = "True"
+			}
+			if string(condition.Status) != want || condition.ObservedGeneration < nodePool.Generation {
+				return fmt.Errorf("NodePool %s condition %s has not completed generation %d", nodePool.Name, conditionType, nodePool.Generation)
+			}
+			found = true
+		}
+		if !found {
+			return fmt.Errorf("NodePool %s has no %s condition", nodePool.Name, conditionType)
+		}
 	}
 	return nil
 }
