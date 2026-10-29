@@ -47,6 +47,15 @@ const (
 	// historical restarts can cross the threshold from a single transient
 	// restart - a known limitation of the signal.
 	EtcdFailingRestartThreshold int32 = 5
+
+	// EtcdUnreadyDwellThreshold is how long an etcd pod may remain unready
+	// (Ready=False) before it is classified as failing regardless of restart
+	// count.
+	//
+	// Container-creation failures may never advance RestartCount, so a member
+	// stuck in such a state would otherwise stay unavailable indefinitely.
+	// The threshold is well above normal bootstrap time.
+	EtcdUnreadyDwellThreshold = 15 * time.Minute
 )
 
 type options struct {
@@ -566,6 +575,30 @@ func classifyEtcdPods(ctx context.Context, pods []corev1.Pod) (failingPods []cor
 				"pod", crclient.ObjectKeyFromObject(&pod).String())
 			failingPods = append(failingPods, pod)
 			nodeUnreachable = true
+			continue
+		}
+
+		// Sustained unreadiness classifies the pod as failing regardless of
+		// restart count.
+		//
+		// Container-creation failures may never advance RestartCount, so the
+		// restart check below would never fire for them.
+		//
+		// Mirrors the controller's findFailingEtcdPod so the job cannot
+		// disagree with the trigger that launched it.
+		unreadyBeyondDwell := false
+		for _, cond := range pod.Status.Conditions {
+			if cond.Type == corev1.PodReady &&
+				cond.Status == corev1.ConditionFalse &&
+				time.Since(cond.LastTransitionTime.Time) > EtcdUnreadyDwellThreshold {
+				unreadyBeyondDwell = true
+				break
+			}
+		}
+		if unreadyBeyondDwell {
+			log.Info("pod has been unready beyond dwell threshold",
+				"pod", crclient.ObjectKeyFromObject(&pod).String())
+			failingPods = append(failingPods, pod)
 			continue
 		}
 

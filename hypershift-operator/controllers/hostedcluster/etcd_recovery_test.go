@@ -2,6 +2,7 @@ package hostedcluster
 
 import (
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -584,6 +585,111 @@ func TestFindFailingEtcdPod(t *testing.T) {
 			expectFound: false,
 		},
 		{
+			// A member stuck in a container-creation failure may never advance
+			// RestartCount; sustained unreadiness must recover it.
+			name:      "When one etcd pod has been unready beyond the dwell threshold, it should return that pod",
+			namespace: "clusters-test",
+			pods: []crclient.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-0", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-1", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:         "etcd",
+								State:        corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CreateContainerError"}},
+								RestartCount: 1,
+							},
+						},
+						Conditions: []corev1.PodCondition{
+							{
+								Type:               corev1.PodReady,
+								Status:             corev1.ConditionFalse,
+								LastTransitionTime: metav1.NewTime(time.Now().Add(-20 * time.Minute)),
+							},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-2", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+			},
+			expectFound:  true,
+			expectedName: "etcd-1",
+		},
+		{
+			name:      "When an etcd pod has been unready for less than the dwell threshold, it should not detect it as failing",
+			namespace: "clusters-test",
+			pods: []crclient.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-0", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-1", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:         "etcd",
+								State:        corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CreateContainerError"}},
+								RestartCount: 1,
+							},
+						},
+						Conditions: []corev1.PodCondition{
+							{
+								Type:               corev1.PodReady,
+								Status:             corev1.ConditionFalse,
+								LastTransitionTime: metav1.NewTime(time.Now().Add(-5 * time.Minute)),
+							},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-2", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+			},
+			expectFound: false,
+		},
+		{
 			name:      "When etcd pod has DisruptionTarget with different reason, it should not detect it as failing",
 			namespace: "clusters-test",
 			pods: []crclient.Object{
@@ -720,6 +826,7 @@ func TestFindFailingEtcdPod(t *testing.T) {
 
 			r := &HostedClusterReconciler{
 				Client: fakeClient,
+				now:    metav1.Now,
 			}
 
 			log := zap.New(zap.UseDevMode(true))

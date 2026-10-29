@@ -228,6 +228,26 @@ func (r *HostedClusterReconciler) findFailingEtcdPod(ctx context.Context, log lo
 			}
 		}
 
+		// Check how long the pod has been unready.
+		//
+		// A member whose container repeatedly fails to create may never
+		// advance RestartCount, so the restart threshold below would never
+		// fire for it. Sustained unreadiness recovers it before another
+		// member failure can cause quorum loss.
+		//
+		// Measured per episode from the pod Ready condition's
+		// lastTransitionTime. Shared with the recovery job's classifyEtcdPods.
+		for _, cond := range pod.Status.Conditions {
+			if cond.Type == corev1.PodReady &&
+				cond.Status == corev1.ConditionFalse &&
+				r.now().Sub(cond.LastTransitionTime.Time) > etcdrecovery.EtcdUnreadyDwellThreshold {
+				log.Info("detected etcd pod unready beyond dwell threshold",
+					"name", pod.Name, "namespace", pod.Namespace,
+					"unreadySince", cond.LastTransitionTime.Time.String())
+				return &pod, nil
+			}
+		}
+
 		// Existing check: pod is crash-looping on a reachable node.
 		// Require sustained failure (>= EtcdFailingRestartThreshold restarts,
 		// shared with the recovery job's classifyEtcdPods) rather than a single
