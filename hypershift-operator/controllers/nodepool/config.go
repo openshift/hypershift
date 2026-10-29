@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -56,17 +57,21 @@ type ConfigGenerator struct {
 	// This field is intentionally outside rolloutConfig because it does not
 	// participate in the config hash that drives rollouts.
 	resolvedRHELStreamForBootImage string
+	// renderedTrustBundleHash is computed from the same source snapshot as rollout hashes.
+	// It validates the exact aggregate passed to the MCO, including bundle removal.
+	renderedTrustBundleHash string
 	*rolloutConfig
 }
 
 // rolloutConfig is the canonical source for input that produces a unique hash id and causes a NodePool rollout.
 // This can be grouped by two categories of input based on how it's consumed by the MCO:
-// - Some fields from spec like hostedCluster.Spec.Config, pullSecretName, additionalTrustBundleName...
+// - Some fields from spec like hostedCluster.Spec.Config, pullSecretName, additionalTrustBundleHash, proxyTrustedCAHash...
 // - The mcoRawConfig, which is an MCO consumable version of NodePool.spec.config, tuneConfig and any hypershift core machineConfig.
 type rolloutConfig struct {
 	releaseImage              *releaseinfo.ReleaseImage
 	pullSecretName            string
-	additionalTrustBundleName string
+	additionalTrustBundleHash string
+	proxyTrustedCAHash        string
 	// globalConfig represents input from hostedCluster.spec.config that requires a NodePool rollout.
 	globalConfig string
 	// rolloutGlobalConfig is the global config derived only from user-set spec fields
@@ -101,7 +106,9 @@ type rolloutConfig struct {
 }
 
 // NewConfigGenerator is the contract to create a new ConfigGenerator.
-func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string, controlPlaneNamespace string, resolvedRHELStream string) (*ConfigGenerator, error) {
+// cpoHasRenderedTrustBundleValidation indicates whether the CPO has the rendered-trust-bundle-validation
+// label; when false, trust bundle content hash validation is skipped to avoid breaking older CPO versions.
+func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string, controlPlaneNamespace string, resolvedRHELStream string, cpoHasRenderedTrustBundleValidation bool) (*ConfigGenerator, error) {
 	if client == nil {
 		return nil, fmt.Errorf("client can't be nil")
 	}
@@ -165,8 +172,17 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		},
 	}
 
-	if hostedCluster.Spec.AdditionalTrustBundle != nil {
-		cg.rolloutConfig.additionalTrustBundleName = hostedCluster.Spec.AdditionalTrustBundle.Name
+	additionalTrustBundleHash, proxyTrustedCAHash, err := rolloutTrustBundleHashes(ctx, client, hostedCluster)
+	if err != nil {
+		return nil, err
+	}
+	cg.rolloutConfig.additionalTrustBundleHash = additionalTrustBundleHash
+	cg.rolloutConfig.proxyTrustedCAHash = proxyTrustedCAHash
+	if cpoHasRenderedTrustBundleValidation {
+		cg.renderedTrustBundleHash, err = renderedTrustBundleHash(ctx, client, hostedCluster, additionalTrustBundleHash, proxyTrustedCAHash)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	mcoRawConfig, rolloutMcoRawConfig, err := cg.generateMCORawConfig(ctx, hostedCluster.Spec.Capabilities)
@@ -190,11 +206,10 @@ func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 	return supportutil.CompressAndEncode([]byte(cg.mcoRawConfig))
 }
 
-// Hash returns a unique hash id for any NodePool API input that requires a NodePool rollout, i.e. the rolloutConfig struct.
-// TODO(alberto): hash the struct directly instead of the string representation field by field.
-// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
+// Hash identifies a rendered payload. RolloutHash, not this full hash, decides
+// whether workers need a rollout.
 func (cg *ConfigGenerator) Hash() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig + cg.rhelStream)
+	return cg.hashAtVersion(CurrentConfigHashVersion)
 }
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
@@ -202,7 +217,125 @@ func (cg *ConfigGenerator) Hash() string {
 // TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) HashWithoutVersion() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName + cg.rhelStream)
+	return cg.hashWithoutVersionAtVersion(CurrentConfigHashVersion)
+}
+
+func (cg *ConfigGenerator) hashAtVersion(version string) string {
+	switch version {
+	case ConfigHashVersionV1:
+		atbName := additionalTrustBundleName(cg.hostedCluster)
+		return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + atbName + cg.globalConfig + cg.rhelStream)
+	case ConfigHashVersionV2:
+		return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleHash + cg.proxyTrustedCAHash + cg.globalConfig + cg.rhelStream)
+	default:
+		return cg.hashAtVersion(CurrentConfigHashVersion)
+	}
+}
+
+func (cg *ConfigGenerator) hashWithoutVersionAtVersion(version string) string {
+	switch version {
+	case ConfigHashVersionV1:
+		atbName := additionalTrustBundleName(cg.hostedCluster)
+		return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + atbName + cg.rhelStream)
+	case ConfigHashVersionV2:
+		return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleHash + cg.proxyTrustedCAHash + cg.rhelStream)
+	default:
+		return cg.hashWithoutVersionAtVersion(CurrentConfigHashVersion)
+	}
+}
+
+func additionalTrustBundleName(hc *hyperv1.HostedCluster) string {
+	if hc != nil && hc.Spec.AdditionalTrustBundle != nil {
+		return hc.Spec.AdditionalTrustBundle.Name
+	}
+	return ""
+}
+
+// TrustBundleConfigError indicates a HostedCluster-referenced trust-bundle ConfigMap
+// (additionalTrustBundle or proxy.trustedCA) is missing or malformed. Callers should
+// surface this as ValidMachineConfig=False and soft-fail reconcile so transient
+// ConfigMap delete/recreate windows do not hard-fail the NodePool reconcile loop.
+type TrustBundleConfigError struct {
+	err error
+}
+
+func (e *TrustBundleConfigError) Error() string {
+	return e.err.Error()
+}
+
+func (e *TrustBundleConfigError) Unwrap() error {
+	return e.err
+}
+
+func rolloutTrustBundleHashes(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster) (additionalTrustBundleHash, proxyTrustedCAHash string, err error) {
+	if hc.Spec.AdditionalTrustBundle != nil {
+		additionalTrustBundleHash, err = configMapCABundleHash(ctx, c, hc.Namespace, hc.Spec.AdditionalTrustBundle.Name)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Proxy != nil && hc.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+		proxyTrustedCAHash, err = configMapCABundleHash(ctx, c, hc.Namespace, hc.Spec.Configuration.Proxy.TrustedCA.Name)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	return additionalTrustBundleHash, proxyTrustedCAHash, nil
+}
+
+// getConfigMapWithCABundle fetches a ConfigMap that must contain certs.UserCABundleMapKey.
+// Used by both rollout content hashing and getAdditionalTrustBundle.
+func getConfigMapWithCABundle(ctx context.Context, c client.Client, namespace, name string) (*corev1.ConfigMap, error) {
+	cm := &corev1.ConfigMap{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, cm); err != nil {
+		return nil, err
+	}
+	if _, ok := cm.Data[certs.UserCABundleMapKey]; !ok {
+		return nil, fmt.Errorf("ConfigMap %s/%s missing %q key", namespace, name, certs.UserCABundleMapKey)
+	}
+	return cm, nil
+}
+
+func configMapCABundleHash(ctx context.Context, c client.Client, namespace, name string) (string, error) {
+	cm, err := getConfigMapWithCABundle(ctx, c, namespace, name)
+	if err != nil {
+		return "", &TrustBundleConfigError{err: fmt.Errorf("cannot get ConfigMap %s/%s: %w", namespace, name, err)}
+	}
+	return supportutil.HashSimple(cm.Data[certs.UserCABundleMapKey]), nil
+}
+
+func renderedTrustBundleHash(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, additionalHash, proxyHash string) (string, error) {
+	refs := []struct{ name, hash string }{{additionalTrustBundleName(hc), additionalHash}}
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Proxy != nil {
+		refs = append(refs, struct{ name, hash string }{hc.Spec.Configuration.Proxy.TrustedCA.Name, proxyHash})
+	}
+	var bundle string
+	for _, ref := range refs {
+		if ref.name == "" {
+			continue
+		}
+		cm, err := getConfigMapWithCABundle(ctx, c, hc.Namespace, ref.name)
+		if err != nil {
+			return "", &TrustBundleConfigError{err: err}
+		}
+		data := cm.Data[certs.UserCABundleMapKey]
+		if supportutil.HashSimple(data) != ref.hash {
+			return "", &TrustBundleConfigError{err: fmt.Errorf("ConfigMap %s/%s changed while computing trust bundle hashes; retrying", hc.Namespace, ref.name)}
+		}
+		// Match CPO's additional-then-proxy concatenation, including duplicate refs.
+		bundle += data
+	}
+	return supportutil.HashSimple(bundle), nil
+}
+
+func hostedClusterReferencesConfigMap(hc *hyperv1.HostedCluster, configMapName string) bool {
+	if hc.Spec.AdditionalTrustBundle != nil && hc.Spec.AdditionalTrustBundle.Name == configMapName {
+		return true
+	}
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Proxy != nil && hc.Spec.Configuration.Proxy.TrustedCA.Name == configMapName {
+		return true
+	}
+	return false
 }
 
 // RolloutHash returns a hash derived only from spec-driven inputs that require node replacement.
@@ -210,14 +343,14 @@ func (cg *ConfigGenerator) HashWithoutVersion() string {
 // are excluded, so they do not trigger Replace or InPlace rollouts. Endpoint-affecting
 // connectivity changes (Public/Private, API server address/port) are included.
 func (cg *ConfigGenerator) RolloutHash() string {
-	return supportutil.HashSimple(cg.rolloutMcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.rolloutGlobalConfig + cg.rhelStream + cg.endpointConfig)
+	return supportutil.HashSimple(cg.rolloutMcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleHash + cg.proxyTrustedCAHash + cg.rolloutGlobalConfig + cg.rhelStream + cg.endpointConfig)
 }
 
 // RolloutHashWithoutVersion is like RolloutHash but excludes the release version.
 // Used to detect config-only changes for the UpdatingConfig condition,
 // separate from version changes which have their own condition.
 func (cg *ConfigGenerator) RolloutHashWithoutVersion() string {
-	return supportutil.HashSimple(cg.rolloutMcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName + cg.rolloutGlobalConfig + cg.rhelStream + cg.endpointConfig)
+	return supportutil.HashSimple(cg.rolloutMcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleHash + cg.proxyTrustedCAHash + cg.rolloutGlobalConfig + cg.rhelStream + cg.endpointConfig)
 }
 
 func (cg *ConfigGenerator) Version() string {

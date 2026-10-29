@@ -3005,7 +3005,7 @@ func TestPropagateVersionAndTemplate(t *testing.T) {
 		rc := &rolloutConfig{
 			rolloutMcoRawConfig:       "user-config",
 			pullSecretName:            "pull",
-			additionalTrustBundleName: "trust",
+			additionalTrustBundleHash: "trust",
 			rolloutGlobalConfig:       "global",
 			mcoRawConfig:              "old-haproxy\n---\nuser-config",
 			haproxyRawConfig:          "old-haproxy",
@@ -3241,7 +3241,7 @@ func TestPropagateVersionAndTemplateToMachineSet(t *testing.T) {
 		rc := &rolloutConfig{
 			rolloutMcoRawConfig:       "user-config",
 			pullSecretName:            "pull",
-			additionalTrustBundleName: "trust",
+			additionalTrustBundleHash: "trust",
 			rolloutGlobalConfig:       "global",
 			mcoRawConfig:              "old-haproxy\n---\nuser-config",
 			haproxyRawConfig:          "old-haproxy",
@@ -3869,7 +3869,7 @@ func TestReconcileMachineSetStatus(t *testing.T) {
 		rc := &rolloutConfig{
 			rolloutMcoRawConfig:       "user-config",
 			pullSecretName:            "pull",
-			additionalTrustBundleName: "trust",
+			additionalTrustBundleHash: "trust",
 			rolloutGlobalConfig:       "global",
 			mcoRawConfig:              "old-haproxy\n---\nuser-config",
 			haproxyRawConfig:          "old-haproxy",

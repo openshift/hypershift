@@ -709,7 +709,8 @@ func TestTokenReconcile(t *testing.T) {
 				ignitionServerCACert,
 			},
 			cpoCapabilities: &CPOCapabilities{
-				DecompressAndDecodeConfig: true,
+				DecompressAndDecodeConfig:     true,
+				RenderedTrustBundleValidation: true,
 			},
 		},
 		{
@@ -771,7 +772,8 @@ func TestTokenReconcile(t *testing.T) {
 				ignitionServerCACert,
 			},
 			cpoCapabilities: &CPOCapabilities{
-				DecompressAndDecodeConfig: true,
+				DecompressAndDecodeConfig:     true,
+				RenderedTrustBundleValidation: true,
 			},
 		},
 	}
@@ -839,6 +841,7 @@ func TestTokenReconcile(t *testing.T) {
 			g.Expect(gotTokenSecret.Data[TokenSecretPullSecretHashKey]).To(Equal(expectedPullSecretHash))
 			g.Expect(gotTokenSecret.Data[TokenSecretAdditionalTrustBundleKey]).To(Equal(expectedAdditionalTrustBundleHash))
 			g.Expect(gotTokenSecret.Data[TokenSecretHCConfigurationHashKey]).To(Equal([]byte(expectedGlobalConfig)))
+			g.Expect(gotTokenSecret.Data[TokenSecretProxyTrustedCAHashKey]).To(Equal([]byte(tc.configGenerator.proxyTrustedCAHash)))
 
 			// Validate the os-stream key is set to the resolved RHEL stream.
 			g.Expect(gotTokenSecret.Data[TokenSecretOSStreamKey]).To(Equal([]byte(tc.configGenerator.resolvedRHELStreamForBootImage)))
@@ -936,7 +939,7 @@ func TestTokenUserDataSecret(t *testing.T) {
 							},
 						},
 						pullSecretName:            "test-pull-secret",
-						additionalTrustBundleName: "test-trust-bundle",
+						additionalTrustBundleHash: "test-trust-bundle-hash",
 						globalConfig:              "test-global-config",
 						mcoRawConfig:              "test-mco-raw-config",
 					},
@@ -1373,6 +1376,72 @@ func TestSetKarpenterAMILabels(t *testing.T) {
 			if _, ok := tc.expectedLabels[armKey]; !ok {
 				g.Expect(tc.userDataSecret.Labels).NotTo(HaveKey(armKey))
 			}
+		})
+	}
+}
+
+func testReconcileTokenSecretProxyTrustedCAHash(t *testing.T) {
+	testCases := []struct {
+		name               string
+		proxyTrustedCAHash string
+	}{
+		{
+			name:               "When ConfigGenerator.proxyTrustedCAHash is set, it should write it to the token Secret",
+			proxyTrustedCAHash: "proxy-trusted-ca-hash-value",
+		},
+		{
+			name:               "When ConfigGenerator.proxyTrustedCAHash is empty, it should write an empty value to the token Secret",
+			proxyTrustedCAHash: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			token := &Token{
+				ConfigGenerator: &ConfigGenerator{
+					hostedCluster: &hyperv1.HostedCluster{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-hc",
+							Namespace: "test-namespace",
+						},
+					},
+					nodePool: &hyperv1.NodePool{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-nodepool",
+						},
+						Spec: hyperv1.NodePoolSpec{
+							Management: hyperv1.NodePoolManagement{
+								UpgradeType: hyperv1.UpgradeTypeReplace,
+							},
+						},
+					},
+					rolloutConfig: &rolloutConfig{
+						proxyTrustedCAHash: tc.proxyTrustedCAHash,
+						releaseImage: &releaseinfo.ReleaseImage{
+							ImageStream: &imageapi.ImageStream{
+								ObjectMeta: metav1.ObjectMeta{
+									Name: "4.17",
+								},
+							},
+						},
+					},
+				},
+				cpoCapabilities:    &CPOCapabilities{DecompressAndDecodeConfig: true},
+				proxyTrustedCAHash: []byte(tc.proxyTrustedCAHash),
+			}
+
+			tokenSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "token-test",
+					Namespace: "test-namespace",
+				},
+			}
+
+			err := token.reconcileTokenSecret(tokenSecret)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(tokenSecret.Data[TokenSecretProxyTrustedCAHashKey]).To(Equal([]byte(tc.proxyTrustedCAHash)))
 		})
 	}
 }

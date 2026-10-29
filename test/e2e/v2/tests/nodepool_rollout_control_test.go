@@ -46,7 +46,7 @@ import (
 )
 
 const (
-	nodePoolCurrentRolloutConfigAnnotation = "hypershift.openshift.io/nodePoolCurrentRolloutConfig"
+	nodePoolCurrentRolloutConfigAnnotation = "hypershift.openshift.io/nodePoolCurrentRolloutConfigV2"
 	nodePoolCurrentConfigAnnotation        = "hypershift.openshift.io/nodePoolCurrentConfig"
 )
 
