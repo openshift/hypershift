@@ -24,7 +24,7 @@ The following guidelines will help ensure a smooth contribution process for both
 ## Creating a Pull Request
 1. **For small changes** (under 200 lines): Create your change and submit a pull request directly.
 
-2. **For larger changes** (200+ lines): Get feedback on your approach first by opening a GitHub issue or posting in the #project-hypershift Slack channel. This prevents situations where large changes get declined after significant work.
+2. **For larger changes** (200+ lines): Get feedback on your approach first by opening a GitHub issue or posting in the #forum-ocp-hypershift Slack channel. This prevents situations where large changes get declined after significant work.
 
 3. **Write a clear PR title**: Prefix with your Jira ticket number (e.g., "OCPBUGS-12345: Fix memory leak in controller"). See [example PR](https://github.com/openshift/hypershift/pull/2233).
 
