@@ -46,87 +46,99 @@ artifacts/
 
 ## `artifacts/e2e-v2-gke/`
 
-The workflow runs 13 explicit steps. Each step directory contains `build-log.txt`, `finished.json`, and `sidecar-logs.json`. Steps with additional artifacts are noted below.
+The workflow provisions a GKE management cluster, installs the HyperShift
+operator, and then uses the v2 lifecycle binaries (`create-guests`, `run-tests`,
+`dump-guests`, `destroy-guests`) to create the GCP guest clusters, run the test
+suite against them, and tear them down. Cluster names and variants come from the
+resolved `TestPlan`; the default GCP plan creates one cluster for the `default`
+variant.
+
+Each step directory contains `build-log.txt`, `finished.json`, and
+`sidecar-logs.json`. Steps with additional artifacts are noted below.
 
 ```
 e2e-v2-gke/
+├── hypershift-gcp-wif-auth/  # writes WIF credential config to SHARED_DIR
 ├── ipi-install-rbac/  # grants image-puller RBAC to the CI pod
-├── hypershift-gcp-gke-prerequisites/  # installs CRDs (prometheus-operator, Route, DNSEndpoint)
 ├── hypershift-gcp-gke-provision/  # creates ephemeral GCP projects, GKE Autopilot cluster
+├── hypershift-gcp-gke-prerequisites/  # installs CRDs (prometheus-operator, Route, DNSEndpoint)
 ├── hypershift-install/  # installs HyperShift operator with GCP support
 ├── hypershift-gcp-control-plane-setup/  # creates operator GCP SA, configures WIF for PSC and ExternalDNS
 ├── hypershift-gcp-hosted-cluster-setup/  # generates RSA keypair, creates WIF pool/SAs, HC network
-├── create-hostedcluster/  # runs `hypershift create cluster gcp`
+├── hypershift-resolve-nodepool-releases/  # resolves n-1..n-4 release images for NodePool skew tests
+├── hypershift-write-test-plan/  # optionally writes a test plan to SHARED_DIR
+├── hypershift-gcp-create-guests/  # runs `create-guests`; creates guest clusters, waits for Available and rollout
 │   └── artifacts/
-│       └── junit_hosted_cluster.xml
-├── tests/  # runs Ginkgo v2 test suite
+│       └── junit_hosted_cluster_<hc-name>.xml   # one per cluster
+├── tests/  # runs `run-tests`, one `test-e2e-v2` process per TestGroup
 │   └── artifacts/
-│       └── junit_report.xml
-├── dump/  # runs `hypershift dump cluster`, collects cluster state
+│       └── junit_<test-group>.xml               # one per TestGroup
+├── dump/  # runs `dump-guests`; `hypershift dump cluster` per cluster
 │   └── artifacts/
-│       ├── hypershift-dump.tar
-│       ├── aggregated-discovery-api.yaml
-│       ├── aggregated-discovery-apis.yaml
-│       ├── event-filter.html
-│       ├── timestamp
-│       ├── cluster-scoped-resources/
-│       │   └── core/
-│       │       └── nodes/
-│       │           └── <node-name>.yaml
-│       ├── hostedcluster-<hc-name>/  # guest cluster dump (worker node logs + all guest namespaces)
-│       │   ├── aggregated-discovery-api.yaml
-│       │   ├── aggregated-discovery-apis.yaml
-│       │   ├── event-filter.html
-│       │   ├── timestamp
-│       │   ├── worker.nodes.log      # journal logs from worker nodes
-│       │   ├── cluster-scoped-resources/
-│       │   └── namespaces/           # guest namespaces (kube-system, openshift-*, etc.)
-│       └── namespaces/
-│           ├── clusters/
-│           │   ├── core/
-│           │   │   └── configmaps/
-│           │   └── hypershift.openshift.io/
-│           │       ├── hostedclusters/
-│           │       └── nodepools/
-│           ├── clusters-<hc-name>/
-│           │   ├── apps/
-│           │   │   ├── deployments/
-│           │   │   ├── replicasets/
-│           │   │   └── statefulsets/
-│           │   ├── batch/
-│           │   ├── cluster.x-k8s.io/
-│           │   │   ├── clusters/
-│           │   │   ├── machinedeployments/
-│           │   │   ├── machines/
-│           │   │   └── machinesets/
-│           │   ├── core/
-│           │   │   ├── configmaps/
-│           │   │   ├── endpoints/
-│           │   │   ├── events/
-│           │   │   ├── persistentvolumeclaims/
-│           │   │   ├── pods/
-│           │   │   │   └── logs/     # one log file per container
-│           │   │   └── services/
-│           │   ├── hypershift.openshift.io/
-│           │   │   ├── controlplanecomponents/
-│           │   │   └── hostedcontrolplanes/
-│           │   ├── monitoring.coreos.com/
-│           │   ├── networking.k8s.io/
-│           │   ├── policy/
-│           │   └── route.openshift.io/
-│           └── hypershift/
-│               ├── apps/
-│               │   ├── deployments/
-│               │   └── replicasets/
-│               ├── core/
-│               │   ├── configmaps/
-│               │   ├── endpoints/
-│               │   ├── events/
-│               │   ├── pods/
-│               │   └── services/
-│               └── monitoring.coreos.com/
-│                   ├── podmonitors/
-│                   └── servicemonitors/
+│       └── <hc-name>/                           # one directory per cluster
+│           ├── hypershift-dump.tar.gz
+│           ├── aggregated-discovery-api.yaml
+│           ├── aggregated-discovery-apis.yaml
+│           ├── event-filter.html
+│           ├── timestamp
+│           ├── cluster-scoped-resources/
+│           │   └── core/
+│           │       └── nodes/
+│           │           └── <node-name>.yaml
+│           ├── hostedcluster-<hc-name>/  # guest cluster dump (worker node logs + all guest namespaces)
+│           │   ├── aggregated-discovery-api.yaml
+│           │   ├── aggregated-discovery-apis.yaml
+│           │   ├── event-filter.html
+│           │   ├── timestamp
+│           │   ├── worker.nodes.log      # journal logs from worker nodes
+│           │   ├── cluster-scoped-resources/
+│           │   └── namespaces/           # guest namespaces (kube-system, openshift-*, etc.)
+│           └── namespaces/
+│               ├── clusters/
+│               │   ├── core/
+│               │   │   └── configmaps/
+│               │   └── hypershift.openshift.io/
+│               │       ├── hostedclusters/
+│               │       └── nodepools/
+│               ├── clusters-<hc-name>/
+│               │   ├── apps/
+│               │   │   ├── deployments/
+│               │   │   ├── replicasets/
+│               │   │   └── statefulsets/
+│               │   ├── batch/
+│               │   ├── cluster.x-k8s.io/
+│               │   │   ├── clusters/
+│               │   │   ├── machinedeployments/
+│               │   │   ├── machines/
+│               │   │   └── machinesets/
+│               │   ├── core/
+│               │   │   ├── configmaps/
+│               │   │   ├── endpoints/
+│               │   │   ├── events/
+│               │   │   ├── persistentvolumeclaims/
+│               │   │   ├── pods/
+│               │   │   │   └── logs/     # one log file per container
+│               │   │   └── services/
+│               │   ├── hypershift.openshift.io/
+│               │   │   ├── controlplanecomponents/
+│               │   │   └── hostedcontrolplanes/
+│               │   ├── monitoring.coreos.com/
+│               │   ├── networking.k8s.io/
+│               │   ├── policy/
+│               │   └── route.openshift.io/
+│               └── hypershift/
+│                   ├── apps/
+│                   │   ├── deployments/
+│                   │   └── replicasets/
+│                   ├── core/
+│                   │   ├── configmaps/
+│                   │   ├── endpoints/
+│                   │   ├── events/
+│                   │   ├── pods/
+│                   │   └── services/
+│                   └── monitoring.coreos.com/
+│                       ├── podmonitors/
+│                       └── servicemonitors/
 ├── hypershift-k8sgpt/  # K8sGPT AI-powered analysis per namespace
 │   └── artifacts/
 │       ├── hostedcluster/
@@ -141,8 +153,8 @@ e2e-v2-gke/
 ├── hypershift-debug/  # generates quick-access debug links
 │   └── artifacts/
 │       └── custom-link-tools.html
-├── hypershift-gcp-gke-deprovision/  # deletes hosted-cluster and control-plane GCP projects
-└── destroy/  # runs `hypershift destroy cluster gcp`
+├── destroy-guests/  # runs `destroy-guests`; `hypershift destroy cluster gcp` per cluster
+└── hypershift-gcp-gke-deprovision/  # deletes hosted-cluster and control-plane GCP projects
 ```
 
 ## Quick Navigation Index
@@ -151,31 +163,31 @@ e2e-v2-gke/
 
 | What you're looking for | Path |
 |-------------------------|------|
-| Guest cluster dump | `artifacts/e2e-v2-gke/dump/artifacts/hostedcluster-<hc-name>/` |
-| Guest cluster namespaces | `artifacts/e2e-v2-gke/dump/artifacts/hostedcluster-<hc-name>/namespaces/` |
-| Worker node logs | `artifacts/e2e-v2-gke/dump/artifacts/hostedcluster-<hc-name>/worker.nodes.log` |
-| Control plane pod logs | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/core/pods/logs/` |
-| HostedCluster CR | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters/hypershift.openshift.io/hostedclusters/` |
-| NodePool CR | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters/hypershift.openshift.io/nodepools/` |
-| HostedControlPlane CR | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/hypershift.openshift.io/hostedcontrolplanes/` |
-| Control plane pods | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/core/pods/` |
-| Control plane deployments | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/apps/deployments/` |
-| CAPI machines | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/clusters-<hc-name>/cluster.x-k8s.io/machines/` |
-| HyperShift operator pods | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/hypershift/core/pods/` |
-| HyperShift operator deployments | `artifacts/e2e-v2-gke/dump/artifacts/namespaces/hypershift/apps/deployments/` |
+| Guest cluster dump | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/hostedcluster-<hc-name>/` |
+| Guest cluster namespaces | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/hostedcluster-<hc-name>/namespaces/` |
+| Worker node logs | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/hostedcluster-<hc-name>/worker.nodes.log` |
+| Control plane pod logs | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/clusters-<hc-name>/core/pods/logs/` |
+| HostedCluster CR | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/clusters/hypershift.openshift.io/hostedclusters/` |
+| NodePool CR | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/clusters/hypershift.openshift.io/nodepools/` |
+| HostedControlPlane CR | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/clusters-<hc-name>/hypershift.openshift.io/hostedcontrolplanes/` |
+| Control plane pods | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/clusters-<hc-name>/core/pods/` |
+| Control plane deployments | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/clusters-<hc-name>/apps/deployments/` |
+| CAPI machines | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/clusters-<hc-name>/cluster.x-k8s.io/machines/` |
+| HyperShift operator pods | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/hypershift/core/pods/` |
+| HyperShift operator deployments | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/hypershift/apps/deployments/` |
 | K8sGPT analysis (control plane) | `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/clusters-<hc-name>/result.json` |
 | K8sGPT analysis (operator) | `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/hypershift/result.json` |
-| Cluster creation result | `artifacts/e2e-v2-gke/create-hostedcluster/artifacts/junit_hosted_cluster.xml` |
-| Test results | `artifacts/e2e-v2-gke/tests/artifacts/junit_report.xml` |
+| Cluster creation result | `artifacts/e2e-v2-gke/hypershift-gcp-create-guests/artifacts/junit_hosted_cluster_<hc-name>.xml` |
+| Test results | `artifacts/e2e-v2-gke/tests/artifacts/junit_<test-group>.xml` |
 
-> `<hc-name>` is the HostedCluster name (e.g. `gcp-hc-2e2dd848`), making the full namespace `clusters-<hc-name>`. The actual value is visible in the `artifacts/e2e-v2-gke/dump/artifacts/namespaces/` directory listing.
+> `<hc-name>` is the HostedCluster name, derived from `PROW_JOB_ID` and the cluster variant (e.g. `default-2e2dd848` for the `default` variant), making the full control plane namespace `clusters-<hc-name>`. The actual value is visible in the `artifacts/e2e-v2-gke/dump/artifacts/` directory listing.
 
 ## Test Results
 
 | File | Description |
 |------|-------------|
-| `artifacts/e2e-v2-gke/create-hostedcluster/artifacts/junit_hosted_cluster.xml` | Cluster creation result |
-| `artifacts/e2e-v2-gke/tests/artifacts/junit_report.xml` | Full Ginkgo v2 test results |
+| `artifacts/e2e-v2-gke/hypershift-gcp-create-guests/artifacts/junit_hosted_cluster_<hc-name>.xml` | Per-cluster creation and version-rollout result |
+| `artifacts/e2e-v2-gke/tests/artifacts/junit_<test-group>.xml` | Ginkgo v2 results for one `TestGroup` (the default GCP plan has a single group, `default`) |
 | `artifacts/junit_operator.xml` | CI operator-level results |
 
 ## K8sGPT Analysis
