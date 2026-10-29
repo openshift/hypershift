@@ -14,6 +14,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -410,13 +411,16 @@ func TestHcpRouterRouteReady(t *testing.T) {
 	}
 }
 
-func TestEnsureHCPRouterRoutesExist(t *testing.T) {
+func TestEnsureHCPRouterBackendsReady(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := routev1.Install(scheme); err != nil {
 		t.Fatalf("install Route scheme: %v", err)
 	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("install corev1 scheme: %v", err)
+	}
 
-	readyRoute := func(name string) *routev1.Route {
+	readyRoute := func(name, svcName string) *routev1.Route {
 		return &routev1.Route{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
@@ -424,28 +428,49 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 			},
 			Spec: routev1.RouteSpec{
 				Host: name + ".example.com",
+				To: routev1.RouteTargetReference{
+					Kind: "Service",
+					Name: svcName,
+				},
+			},
+		}
+	}
+
+	readyService := func(name string) *corev1.Service {
+		return &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "test-ns",
+			},
+			Spec: corev1.ServiceSpec{
+				ClusterIP: "10.0.0.1",
 			},
 		}
 	}
 
 	tests := []struct {
-		name        string
-		hcp         *hyperv1.HostedControlPlane
-		setupEnv    func(t *testing.T)
-		routes      []runtime.Object
-		expectedErr string
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		setupEnv       func(t *testing.T)
+		objects        []runtime.Object
+		expectedErr    string
+		substringMatch bool
 	}{
 		{
-			name: "When all base routes are present and ready, it should succeed",
+			name: "When all base routes are present and ready with ClusterIPs, it should succeed",
 			hcp:  aroHCP(),
 			setupEnv: func(t *testing.T) {
 				azureutil.SetAsAroHCPTest(t)
 			},
-			routes: []runtime.Object{
-				readyRoute("kube-apiserver-internal"),
-				readyRoute("konnectivity-server"),
-				readyRoute("oauth-internal"),
-				readyRoute("ignition-server"),
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
+				readyRoute("ignition-server", "ignition-server-proxy"),
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
+				readyService("ignition-server-proxy"),
 			},
 		},
 		{
@@ -454,10 +479,13 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 			setupEnv: func(t *testing.T) {
 				azureutil.SetAsAroHCPTest(t)
 			},
-			routes: []runtime.Object{
-				readyRoute("kube-apiserver-internal"),
-				readyRoute("konnectivity-server"),
-				readyRoute("oauth-internal"),
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
 			},
 			expectedErr: "waiting for HCP router routes: ignition-server",
 		},
@@ -467,16 +495,19 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 			setupEnv: func(t *testing.T) {
 				azureutil.SetAsAroHCPTest(t)
 			},
-			routes: []runtime.Object{
-				readyRoute("kube-apiserver-internal"),
-				readyRoute("konnectivity-server"),
-				readyRoute("oauth-internal"),
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
 				&routev1.Route{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "ignition-server",
 						Namespace: "test-ns",
 					},
 				},
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
 			},
 			expectedErr: "waiting for HCP router routes: ignition-server",
 		},
@@ -486,8 +517,103 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 			setupEnv: func(t *testing.T) {
 				azureutil.SetAsAroHCPTest(t)
 			},
-			routes:      []runtime.Object{},
+			objects:     []runtime.Object{},
 			expectedErr: "waiting for HCP router routes: kube-apiserver-internal, konnectivity-server, ignition-server, oauth-internal",
+		},
+		{
+			name: "When ignition-server-proxy service has no ClusterIP, it should return an error",
+			hcp:  aroHCP(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
+				readyRoute("ignition-server", "ignition-server-proxy"),
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "ignition-server-proxy",
+						Namespace: "test-ns",
+					},
+					Spec: corev1.ServiceSpec{
+						ClusterIP: "",
+					},
+				},
+			},
+			expectedErr: "waiting for ClusterIP on services: ignition-server-proxy",
+		},
+		{
+			name: "When a service has ClusterIP=None (headless), it should return an error",
+			hcp:  aroHCP(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
+				readyRoute("ignition-server", "ignition-server-proxy"),
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "ignition-server-proxy",
+						Namespace: "test-ns",
+					},
+					Spec: corev1.ServiceSpec{
+						ClusterIP: "None",
+					},
+				},
+			},
+			expectedErr: "waiting for ClusterIP on services: ignition-server-proxy",
+		},
+		{
+			name: "When a route's backend service does not exist, it should return an error",
+			hcp:  aroHCP(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
+				readyRoute("ignition-server", "ignition-server-proxy"),
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
+			},
+			expectedErr:    "failed to get service ignition-server-proxy for route ignition-server",
+			substringMatch: true,
+		},
+		{
+			name: "When an extra route outside expected set has no ClusterIP, it should still succeed",
+			hcp:  aroHCP(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
+				readyRoute("ignition-server", "ignition-server-proxy"),
+				readyRoute("extra-route", "extra-service"),
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
+				readyService("ignition-server-proxy"),
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "extra-service",
+						Namespace: "test-ns",
+					},
+					Spec: corev1.ServiceSpec{},
+				},
+			},
 		},
 	}
 	for _, tc := range tests {
@@ -498,16 +624,18 @@ func TestEnsureHCPRouterRoutesExist(t *testing.T) {
 			}
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithRuntimeObjects(tc.routes...).
+				WithRuntimeObjects(tc.objects...).
 				Build()
 			cpContext := component.WorkloadContext{
 				Context: context.Background(),
 				Client:  fakeClient,
 				HCP:     tc.hcp,
 			}
-			err := ensureHCPRouterRoutesExist(cpContext)
+			err := ensureHCPRouterBackendsReady(cpContext)
 			if tc.expectedErr == "" {
 				g.Expect(err).ToNot(HaveOccurred())
+			} else if tc.substringMatch {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedErr)))
 			} else {
 				g.Expect(err).To(MatchError(tc.expectedErr))
 			}
@@ -520,8 +648,11 @@ func TestRouterPredicate(t *testing.T) {
 	if err := routev1.Install(scheme); err != nil {
 		t.Fatalf("install Route scheme: %v", err)
 	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("install corev1 scheme: %v", err)
+	}
 
-	readyRoute := func(name string) *routev1.Route {
+	readyRoute := func(name, svcName string) *routev1.Route {
 		return &routev1.Route{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
@@ -529,6 +660,22 @@ func TestRouterPredicate(t *testing.T) {
 			},
 			Spec: routev1.RouteSpec{
 				Host: name + ".example.com",
+				To: routev1.RouteTargetReference{
+					Kind: "Service",
+					Name: svcName,
+				},
+			},
+		}
+	}
+
+	readyService := func(name string) *corev1.Service {
+		return &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "test-ns",
+			},
+			Spec: corev1.ServiceSpec{
+				ClusterIP: "10.0.0.1",
 			},
 		}
 	}
@@ -537,7 +684,7 @@ func TestRouterPredicate(t *testing.T) {
 		name      string
 		hcp       *hyperv1.HostedControlPlane
 		setupEnv  func(t *testing.T)
-		routes    []runtime.Object
+		objects   []runtime.Object
 		expected  bool
 		expectErr bool
 	}{
@@ -553,16 +700,20 @@ func TestRouterPredicate(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When ARO HCP has all routes ready, it should return true",
+			name: "When ARO HCP has all routes ready and services have ClusterIPs, it should return true",
 			hcp:  aroHCP(),
 			setupEnv: func(t *testing.T) {
 				azureutil.SetAsAroHCPTest(t)
 			},
-			routes: []runtime.Object{
-				readyRoute("kube-apiserver-internal"),
-				readyRoute("konnectivity-server"),
-				readyRoute("oauth-internal"),
-				readyRoute("ignition-server"),
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
+				readyRoute("ignition-server", "ignition-server-proxy"),
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
+				readyService("ignition-server-proxy"),
 			},
 			expected: true,
 		},
@@ -572,7 +723,32 @@ func TestRouterPredicate(t *testing.T) {
 			setupEnv: func(t *testing.T) {
 				azureutil.SetAsAroHCPTest(t)
 			},
-			routes:    []runtime.Object{},
+			objects:   []runtime.Object{},
+			expected:  false,
+			expectErr: true,
+		},
+		{
+			name: "When the ARO HCP backend service has no ClusterIP, it should return false with an error",
+			hcp:  aroHCP(),
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+			objects: []runtime.Object{
+				readyRoute("kube-apiserver-internal", "kube-apiserver"),
+				readyRoute("konnectivity-server", "konnectivity-server"),
+				readyRoute("oauth-internal", "oauth"),
+				readyRoute("ignition-server", "ignition-server-proxy"),
+				readyService("kube-apiserver"),
+				readyService("konnectivity-server"),
+				readyService("oauth"),
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "ignition-server-proxy",
+						Namespace: "test-ns",
+					},
+					Spec: corev1.ServiceSpec{},
+				},
+			},
 			expected:  false,
 			expectErr: true,
 		},
@@ -602,7 +778,7 @@ func TestRouterPredicate(t *testing.T) {
 			}
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithRuntimeObjects(tc.routes...).
+				WithRuntimeObjects(tc.objects...).
 				Build()
 			cpContext := component.WorkloadContext{
 				Context: context.Background(),
