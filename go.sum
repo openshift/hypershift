@@ -584,12 +584,12 @@ github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJw
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
 github.com/opencontainers/selinux v1.13.0 h1:Zza88GWezyT7RLql12URvoxsbLfjFx988+LGaWfbL84=
 github.com/opencontainers/selinux v1.13.0/go.mod h1:XxWTed+A/s5NNq4GmYScVy+9jzXhGBVEOAyucdRUY8s=
-github.com/openshift/api v0.0.0-20260922100147-3a6e03c5a473 h1:/sDj4rzzTkN8i3Vug/+PxIjp1duKft9GdnhK5hb/yRk=
-github.com/openshift/api v0.0.0-20260922100147-3a6e03c5a473/go.mod h1:k6qH5QOVa5GDln2VVm8Jz4NV3Z7R2SATHFLwGS6Wh3M=
+github.com/openshift/api v0.0.0-20261028095540-9af1f7b4730c h1:htIaa9XrrcLWrDZIhIbSHA3GBjRbirC+0BVwHRhPrFI=
+github.com/openshift/api v0.0.0-20261028095540-9af1f7b4730c/go.mod h1:2oI3aXQFDjjl7l4xA9ZPSkB+l+lyfWLg7P2sWg9yEvM=
 github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417 h1:b4vLxDvDmwESkz21ezCxIZOLRE8zk68gDjn4P4gvtbo=
 github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417/go.mod h1:K2x7H8k8k07WechkBHQ+sOr+6gPAkwILzVc7hYzODfY=
-github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8 h1:yHA+77VmVlO0aBdZLmocC3EBYNza0B+Hwu+8hmkjj2k=
-github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8/go.mod h1:VVl1SGimADe2vlYahxxxI87JOom7MPAiZqIDDhkedBU=
+github.com/openshift/client-go v0.0.0-20261026141621-1f34fe8dc069 h1:vo9ZhSR8VBNz2NkkI3ZCCAIW4kAedAN/aDW4WAQAcBY=
+github.com/openshift/client-go v0.0.0-20261026141621-1f34fe8dc069/go.mod h1:RV0r6eBQ57WE9EyuY9rMmAYm0YtohgZNDb2fJ0TPyaU=
 github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3 h1:cr5nU1+O8sEvZHpAAk1mTTGu3NMbgj0dC2cFxFjwmzw=
 github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3/go.mod h1:WHi2cToOBZyHQea0Yq3qVnOQRl6OMTGBPJMi0c4/GS8=
 github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675 h1:hPFyXtaR42wqKKGMVP4G7M2vmp5iBxBqKetMguh4Td0=
