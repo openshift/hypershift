@@ -2,8 +2,10 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
@@ -16,6 +18,9 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	"github.com/onsi/gomega"
 )
 
 func TestLabelOperatorUpgradeHostedCluster(t *testing.T) {
@@ -239,6 +244,104 @@ func TestListOperatorUpgradeWorkloads(t *testing.T) {
 			}
 			if _, err := listOperatorUpgradeWorkloads(context.Background(), client, "empty", version == "v1beta1"); err == nil {
 				t.Fatal("empty namespace should fail capture")
+			}
+		})
+	}
+}
+
+func TestCaptureInitialOperatorUpgradeState(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name       string
+		useV1Beta1 bool
+		mutation   string
+		wantError  bool
+	}{
+		{name: "When v1beta2 workloads converge, it should capture their validated state"},
+		{name: "When v1beta1 workloads converge, it should capture their validated state", useV1Beta1: true},
+		{name: "When no NodePools exist, it should reject capture", mutation: "missing", wantError: true},
+		{name: "When listing fails, it should reject capture", mutation: "list error", wantError: true},
+		{name: "When a workload is missing, it should reject capture", mutation: "missing machine", wantError: true},
+		{name: "When extra workloads exist, it should reject capture", mutation: "extra machine", wantError: true},
+		{name: "When config is stale, it should retry and retain only the successful polling state", mutation: "retry"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			scheme := runtime.NewScheme()
+			if err := hyperv1.AddToScheme(scheme); err != nil {
+				t.Fatal(err)
+			}
+			pool := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: "clusters", Generation: 1, Annotations: map[string]string{nodePoolAnnotationCurrentConfig: "config", nodePoolAnnotationCurrentConfigVersion: "payload"}}, Spec: hyperv1.NodePoolSpec{Replicas: ptr.To[int32](1)}, Status: hyperv1.NodePoolStatus{Version: "4.21.0"}}
+			for _, conditionType := range []string{hyperv1.NodePoolReadyConditionType, hyperv1.NodePoolUpdatingVersionConditionType, hyperv1.NodePoolUpdatingConfigConditionType, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType} {
+				status := corev1.ConditionFalse
+				if conditionType == hyperv1.NodePoolReadyConditionType {
+					status = corev1.ConditionTrue
+				}
+				pool.Status.Conditions = append(pool.Status.Conditions, hyperv1.NodePoolCondition{Type: conditionType, Status: status, ObservedGeneration: 1})
+			}
+			version := "v1beta2"
+			if testCase.useV1Beta1 {
+				version = "v1beta1"
+			}
+			objects := []crclient.Object{}
+			if testCase.mutation != "missing" {
+				objects = append(objects, pool)
+			}
+			for _, kind := range []string{"MachineDeployment", "MachineSet", "Machine"} {
+				scheme.AddKnownTypeWithName(schema.GroupVersionKind{Group: "cluster.x-k8s.io", Version: version, Kind: kind + "List"}, &unstructured.UnstructuredList{})
+				object := operatorUpgradeTestDeployment()
+				object.SetAPIVersion("cluster.x-k8s.io/" + version)
+				object.SetKind(kind)
+				if kind == "MachineSet" {
+					object.SetOwnerReferences([]metav1.OwnerReference{{UID: "original"}})
+				}
+				if kind != "Machine" || testCase.mutation != "missing machine" {
+					objects = append(objects, object)
+				}
+				if kind == "Machine" && testCase.mutation == "extra machine" {
+					extra := object.DeepCopy()
+					extra.SetName("extra")
+					objects = append(objects, extra)
+				}
+			}
+			poolLists := 0
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).WithInterceptorFuncs(interceptor.Funcs{
+				List: func(ctx context.Context, client crclient.WithWatch, list crclient.ObjectList, options ...crclient.ListOption) error {
+					if testCase.mutation == "list error" {
+						return fmt.Errorf("list unavailable")
+					}
+					if err := client.List(ctx, list, options...); err != nil {
+						return err
+					}
+					if pools, ok := list.(*hyperv1.NodePoolList); ok {
+						poolLists++
+						if testCase.mutation == "retry" && poolLists != 2 {
+							pools.Items[0].Annotations[nodePoolAnnotationCurrentConfigVersion] = "unconverged"
+						}
+					}
+					return nil
+				},
+			}).Build()
+			var baseline map[string]*hyperv1.NodePool
+			var workloads map[string]*unstructured.Unstructured
+			capture := func() error {
+				var err error
+				baseline, workloads, err = captureInitialOperatorUpgradeState(ctx, client, "clusters", "clusters", testCase.useV1Beta1)
+				return err
+			}
+			if testCase.wantError {
+				if err := capture(); err == nil || baseline != nil || workloads != nil {
+					t.Fatalf("failed capture should not return a baseline: %v", err)
+				}
+				return
+			}
+			gomega.NewWithT(t).Eventually(capture, time.Second, time.Millisecond).Should(gomega.Succeed())
+			if len(baseline) != 1 || len(workloads) != 3 || baseline["workers"].Annotations[nodePoolAnnotationCurrentConfigVersion] != "payload" {
+				t.Fatal("capture should retain exactly the validated state")
+			}
+			if testCase.mutation == "retry" && poolLists != 2 {
+				t.Fatalf("capture should stop listing after the successful poll, got %d lists", poolLists)
 			}
 		})
 	}

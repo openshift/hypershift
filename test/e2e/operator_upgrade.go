@@ -140,6 +140,34 @@ func initialNodePoolConditionsComplete(nodePool *hyperv1.NodePool) error {
 	return nil
 }
 
+func captureInitialOperatorUpgradeState(ctx context.Context, client crclient.Client, namespace, controlPlaneNamespace string, useV1Beta1 bool) (map[string]*hyperv1.NodePool, map[string]*unstructured.Unstructured, error) {
+	nodePools := &hyperv1.NodePoolList{}
+	if err := client.List(ctx, nodePools, crclient.InNamespace(namespace)); err != nil {
+		return nil, nil, err
+	}
+	if len(nodePools.Items) == 0 {
+		return nil, nil, fmt.Errorf("no NodePools found")
+	}
+	workloads, err := listOperatorUpgradeWorkloads(ctx, client, controlPlaneNamespace, useV1Beta1)
+	if err != nil {
+		return nil, nil, err
+	}
+	baseline := make(map[string]*hyperv1.NodePool, len(nodePools.Items))
+	expectedWorkloads := 2 * len(nodePools.Items)
+	for index := range nodePools.Items {
+		nodePool := &nodePools.Items[index]
+		if err := initialNodePoolComplete(nodePool, workloads, useV1Beta1); err != nil {
+			return nil, nil, err
+		}
+		baseline[nodePool.Name] = nodePool
+		expectedWorkloads += int(*nodePool.Spec.Replicas)
+	}
+	if len(workloads) != expectedWorkloads {
+		return nil, nil, fmt.Errorf("expected one MachineDeployment and MachineSet per NodePool plus desired Machines, got %d workloads instead of %d", len(workloads), expectedWorkloads)
+	}
+	return baseline, workloads, nil
+}
+
 func operatorUpgradeWorkloadUnchanged(before, after *unstructured.Unstructured) error {
 	if before.GetDeletionTimestamp() != nil || after.GetDeletionTimestamp() != nil {
 		return fmt.Errorf("%s %s is terminating", before.GetKind(), before.GetName())
