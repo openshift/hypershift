@@ -96,7 +96,7 @@ test/e2e/v2/
 
 ## Scope
 
-Azure self-managed is the reference implementation used throughout these docs. The framework is platform-agnostic — AWS, GCP HCP, and other platforms will follow the same patterns by implementing the `PlatformConfig` interface.
+Azure self-managed is the reference implementation used throughout these docs. The framework is platform-agnostic and already runs on AWS and GCP as well: every platform implements the `PlatformConfig` interface with its own configuration and cluster variants.
 
 ## Framework Conventions
 
