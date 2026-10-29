@@ -352,6 +352,9 @@ hypershift-api: workspace-sync $(CONTROLLER_GEN) $(CODE_GEN)
 	# Remove SelfManagedHA CRDs
 	rm -rf cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/hostedclusters-SelfManagedHA-*.yaml
 	rm -rf cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-SelfManagedHA-*.yaml
+	
+	# HyperShift doesn't have a notion of CustomNoUpgrade, so remove any CustomNoUpgrade CRDs.
+	rm -rf cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/*-CustomNoUpgrade.crd.yaml
 
 	# Generate additional CRDs.
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/scheduling/..." output:crd:artifacts:config=cmd/install/assets/crds/hypershift-operator
