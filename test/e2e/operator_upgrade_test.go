@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -13,8 +14,63 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+func TestLabelOperatorUpgradeHostedCluster(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name   string
+		object crclient.Object
+		want   map[string]string
+	}{
+		{name: "When a HostedCluster has no labels, it should add the upgrade label", object: &hyperv1.HostedCluster{}, want: map[string]string{hostedClusterUpgradeTestLabel: "true"}},
+		{name: "When a HostedCluster has labels, it should preserve them and set the upgrade label", object: &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"existing": "value", hostedClusterUpgradeTestLabel: "false"}}}, want: map[string]string{"existing": "value", hostedClusterUpgradeTestLabel: "true"}},
+		{name: "When the object is not a HostedCluster, it should leave labels unchanged", object: &hyperv1.NodePool{}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			labelOperatorUpgradeHostedCluster(testCase.object)
+			if !reflect.DeepEqual(testCase.object.GetLabels(), testCase.want) {
+				t.Errorf("got labels %v, want %v", testCase.object.GetLabels(), testCase.want)
+			}
+		})
+	}
+}
+
+func TestInitialNodePoolConditionsComplete(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name      string
+		mutate    func(*hyperv1.NodePool)
+		wantError bool
+	}{
+		{name: "When all conditions have completed, it should accept the NodePool"},
+		{name: "When conditions are missing, it should wait", mutate: func(pool *hyperv1.NodePool) { pool.Status.Conditions = nil }, wantError: true},
+		{name: "When Ready is false, it should wait", mutate: func(pool *hyperv1.NodePool) { pool.Status.Conditions[0].Status = corev1.ConditionFalse }, wantError: true},
+		{name: "When an updating condition is true, it should wait", mutate: func(pool *hyperv1.NodePool) { pool.Status.Conditions[1].Status = corev1.ConditionTrue }, wantError: true},
+		{name: "When a condition is stale, it should wait", mutate: func(pool *hyperv1.NodePool) { pool.Status.Conditions[0].ObservedGeneration = 0 }, wantError: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			pool := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "workers", Generation: 1}}
+			for _, conditionType := range []string{hyperv1.NodePoolReadyConditionType, hyperv1.NodePoolUpdatingVersionConditionType, hyperv1.NodePoolUpdatingConfigConditionType, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType} {
+				status := corev1.ConditionFalse
+				if conditionType == hyperv1.NodePoolReadyConditionType {
+					status = corev1.ConditionTrue
+				}
+				pool.Status.Conditions = append(pool.Status.Conditions, hyperv1.NodePoolCondition{Type: conditionType, Status: status, ObservedGeneration: 1})
+			}
+			if testCase.mutate != nil {
+				testCase.mutate(pool)
+			}
+			if err := initialNodePoolConditionsComplete(pool); (err != nil) != testCase.wantError {
+				t.Errorf("got error %v, wantError %t", err, testCase.wantError)
+			}
+		})
+	}
+}
 
 func TestInitialNodePoolComplete(t *testing.T) {
 	t.Parallel()
