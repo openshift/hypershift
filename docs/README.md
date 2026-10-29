@@ -13,6 +13,18 @@ The site configuration lives in `mkdocs.yml`. Zensical still uses the MkDocs
 configuration format; once Zensical ships a migration tool for its native TOML
 config, we will switch over.
 
+## Lifecycle diagrams
+
+The `startup-*.mmd` files in `content/images/cluster-lifecycle/` are the editable
+sources for the startup roadmap diagrams. Their SVGs were rendered with Mermaid
+11.17.2 using the configuration in each source file. Regenerate the corresponding
+SVG when changing a source. The exported width and height are twice the viewBox
+size, giving the site viewer room to zoom while keeping SVG text sharp. Preserve
+the viewBox and its aspect ratio when setting those intrinsic dimensions.
+
+Use ordinary Markdown images to enable the site's GLightbox viewer. Wrapping an
+image in a separate link bypasses that integration.
+
 ## Managing Python dependencies
 
 Dependencies are declared in `pyproject.toml` and locked with
@@ -37,4 +49,3 @@ for supply chain security. This is what
    ```bash
    uv run --frozen zensical build --strict
    ```
-

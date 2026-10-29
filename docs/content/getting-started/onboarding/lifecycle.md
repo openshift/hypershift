@@ -1,5 +1,9 @@
 # Cluster Lifecycle and Control Plane
 
+The [hosted cluster startup roadmap](../../reference/cluster-startup-roadmap.md)
+describes startup dependencies, readiness checks, and the resources to inspect
+when a HostedCluster has not finished starting.
+
 ---
 
 ## HostedCluster Lifecycle
@@ -87,25 +91,16 @@ graph LR
 
 ### Deletion
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant HO as HyperShift Operator
-    participant CAPI as ClusterAPI
-    participant Cloud as Cloud Provider
+The HO requests NodePool deletion, then CAPI Cluster deletion. CAPI waits for
+worker descendants before deleting the referenced HCP. The CPO handles HCP
+cleanup, coordinating with HCCO when guest cloud-resource cleanup is enabled.
+HO waits for the CAPI Cluster to disappear before removing the HCP namespace.
+For an AWS CLI destroy, the CLI keeps the HostedCluster present until its
+remaining infrastructure cleanup finishes.
 
-    User->>HO: Delete HostedCluster
-    HO->>CAPI: Deletes Machines, MachineDeployments
-    CAPI->>Cloud: Terminates instances
-    HO->>HO: Deletes HCP, waits for CPO cleanup
-    HO->>Cloud: Cleans up cloud resources<br/>(LBs, DNS, SGs, endpoints)
-    HO->>HO: Cleans up cluster-wide RBAC
-    HO->>HO: Removes finalizer
-    Note over HO: Supports grace period via<br/>hypershift.openshift.io/destroy-grace-period
-```
-
-!!! tip "Explore yourself"
-    The deletion flow starts at `r.delete()` (~line 501 in `hostedcluster_controller.go`). Notice the `CloudResourcesDestroyed` and `HostedClusterDestroyed` conditions.
+Follow the [AWS teardown roadmap](../../reference/cluster-teardown-roadmap.md)
+for the deletion gates, controller ownership, finalizer recovery, and cleanup
+verification.
 
 ---
 
@@ -156,30 +151,12 @@ flowchart TD
 
 ### Component Dependencies
 
-```mermaid
-graph TD
-    PKI[PKI Operator] --> |no deps| READY1((Ready))
-    ETCD[etcd] --> |no deps| READY2((Ready))
-    FG[FeatureGate Generator] --> |no deps| READY3((Ready))
-    ROUTER[Router] --> |no deps| READY4((Ready))
-
-    READY2 --> KAS[kube-apiserver]
-    READY3 --> KAS
-
-    KAS --> |implicit dependency| KCM[kube-controller-manager]
-    KAS --> |implicit dependency| SCHED[kube-scheduler]
-    KAS --> |implicit dependency| OAPI[openshift-apiserver]
-    KAS --> |implicit dependency| CVO[CVO]
-    KAS --> |implicit dependency| ALL["All other<br/>components (~30)"]
-
-    style PKI fill:#c8e6c9
-    style ETCD fill:#c8e6c9
-    style FG fill:#c8e6c9
-    style ROUTER fill:#c8e6c9
-    style KAS fill:#ffcc80
-```
-
-KAS is an implicit dependency for all components **except**: etcd, featuregate-generator, control-plane-operator, cluster-api, capi-provider, karpenter, and router.
+Components reconcile when their dependencies are ready; their registration
+order does not determine startup order. Most components wait for kube-apiserver.
+See [Foundation components](../../reference/cluster-startup-roadmap.md#p3-foundation-components)
+for the dependency graph and exceptions, and
+[Control-plane convergence](../../reference/cluster-startup-roadmap.md#p5-control-plane-convergence)
+for dependency conditions and diagnostic checks.
 
 ### Status Propagation
 
