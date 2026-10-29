@@ -17,14 +17,19 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // ScaleDownConfigApplyConfiguration represents a declarative configuration of the ScaleDownConfig type for use
 // with apply.
 type ScaleDownConfigApplyConfiguration struct {
-	DelayAfterAddSeconds        *int32 `json:"delayAfterAddSeconds,omitempty"`
-	DelayAfterDeleteSeconds     *int32 `json:"delayAfterDeleteSeconds,omitempty"`
-	DelayAfterFailureSeconds    *int32 `json:"delayAfterFailureSeconds,omitempty"`
-	UnneededDurationSeconds     *int32 `json:"unneededDurationSeconds,omitempty"`
-	UtilizationThresholdPercent *int32 `json:"utilizationThresholdPercent,omitempty"`
+	DelayAfterAddSeconds        *int32                                               `json:"delayAfterAddSeconds,omitempty"`
+	DelayAfterDeleteSeconds     *int32                                               `json:"delayAfterDeleteSeconds,omitempty"`
+	DelayAfterFailureSeconds    *int32                                               `json:"delayAfterFailureSeconds,omitempty"`
+	UnneededDurationSeconds     *int32                                               `json:"unneededDurationSeconds,omitempty"`
+	UtilizationThresholdPercent *int32                                               `json:"utilizationThresholdPercent,omitempty"`
+	CordonNodeBeforeTerminating *hypershiftv1beta1.CordonNodeBeforeTerminatingPolicy `json:"cordonNodeBeforeTerminating,omitempty"`
 }
 
 // ScaleDownConfigApplyConfiguration constructs a declarative configuration of the ScaleDownConfig type for use with
@@ -70,5 +75,13 @@ func (b *ScaleDownConfigApplyConfiguration) WithUnneededDurationSeconds(value in
 // If called multiple times, the UtilizationThresholdPercent field is set to the value of the last call.
 func (b *ScaleDownConfigApplyConfiguration) WithUtilizationThresholdPercent(value int32) *ScaleDownConfigApplyConfiguration {
 	b.UtilizationThresholdPercent = &value
+	return b
+}
+
+// WithCordonNodeBeforeTerminating sets the CordonNodeBeforeTerminating field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the CordonNodeBeforeTerminating field is set to the value of the last call.
+func (b *ScaleDownConfigApplyConfiguration) WithCordonNodeBeforeTerminating(value hypershiftv1beta1.CordonNodeBeforeTerminatingPolicy) *ScaleDownConfigApplyConfiguration {
+	b.CordonNodeBeforeTerminating = &value
 	return b
 }

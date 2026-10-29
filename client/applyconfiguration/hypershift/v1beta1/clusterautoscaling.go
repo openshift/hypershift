@@ -24,17 +24,23 @@ import (
 // ClusterAutoscalingApplyConfiguration represents a declarative configuration of the ClusterAutoscaling type for use
 // with apply.
 type ClusterAutoscalingApplyConfiguration struct {
-	Scaling                       *hypershiftv1beta1.ScalingType     `json:"scaling,omitempty"`
-	ScaleDown                     *ScaleDownConfigApplyConfiguration `json:"scaleDown,omitempty"`
-	BalancingIgnoredLabels        []string                           `json:"balancingIgnoredLabels,omitempty"`
-	MaxNodesTotal                 *int32                             `json:"maxNodesTotal,omitempty"`
-	MaxPodGracePeriod             *int32                             `json:"maxPodGracePeriod,omitempty"`
-	MaxNodeProvisionTime          *string                            `json:"maxNodeProvisionTime,omitempty"`
-	MaxFreeDifferenceRatioPercent *int32                             `json:"maxFreeDifferenceRatioPercent,omitempty"`
-	PodPriorityThreshold          *int32                             `json:"podPriorityThreshold,omitempty"`
-	Expanders                     []hypershiftv1beta1.ExpanderString `json:"expanders,omitempty"`
-	KubeClientQPS                 *int32                             `json:"kubeClientQPS,omitempty"`
-	KubeClientBurst               *int32                             `json:"kubeClientBurst,omitempty"`
+	Scaling                       *hypershiftv1beta1.ScalingType                     `json:"scaling,omitempty"`
+	ScaleDown                     *ScaleDownConfigApplyConfiguration                 `json:"scaleDown,omitempty"`
+	BalancingIgnoredLabels        []string                                           `json:"balancingIgnoredLabels,omitempty"`
+	MaxNodesTotal                 *int32                                             `json:"maxNodesTotal,omitempty"`
+	MaxPodGracePeriod             *int32                                             `json:"maxPodGracePeriod,omitempty"`
+	MaxNodeProvisionTime          *string                                            `json:"maxNodeProvisionTime,omitempty"`
+	MaxFreeDifferenceRatioPercent *int32                                             `json:"maxFreeDifferenceRatioPercent,omitempty"`
+	PodPriorityThreshold          *int32                                             `json:"podPriorityThreshold,omitempty"`
+	Expanders                     []hypershiftv1beta1.ExpanderString                 `json:"expanders,omitempty"`
+	KubeClientQPS                 *int32                                             `json:"kubeClientQPS,omitempty"`
+	KubeClientBurst               *int32                                             `json:"kubeClientBurst,omitempty"`
+	LocalStorageScaleDown         *hypershiftv1beta1.LocalStorageScaleDownPolicy     `json:"localStorageScaleDown,omitempty"`
+	SimilarNodeGroupBalancing     *hypershiftv1beta1.SimilarNodeGroupBalancingPolicy `json:"similarNodeGroupBalancing,omitempty"`
+	DaemonSetUtilization          *hypershiftv1beta1.DaemonSetUtilizationPolicy      `json:"daemonSetUtilization,omitempty"`
+	ResourceLimits                *ResourceLimitsApplyConfiguration                  `json:"resourceLimits,omitempty"`
+	ScaleUp                       *ScaleUpConfigApplyConfiguration                   `json:"scaleUp,omitempty"`
+	LogVerbosity                  *int32                                             `json:"logVerbosity,omitempty"`
 }
 
 // ClusterAutoscalingApplyConfiguration constructs a declarative configuration of the ClusterAutoscaling type for use with
@@ -132,5 +138,53 @@ func (b *ClusterAutoscalingApplyConfiguration) WithKubeClientQPS(value int32) *C
 // If called multiple times, the KubeClientBurst field is set to the value of the last call.
 func (b *ClusterAutoscalingApplyConfiguration) WithKubeClientBurst(value int32) *ClusterAutoscalingApplyConfiguration {
 	b.KubeClientBurst = &value
+	return b
+}
+
+// WithLocalStorageScaleDown sets the LocalStorageScaleDown field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the LocalStorageScaleDown field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithLocalStorageScaleDown(value hypershiftv1beta1.LocalStorageScaleDownPolicy) *ClusterAutoscalingApplyConfiguration {
+	b.LocalStorageScaleDown = &value
+	return b
+}
+
+// WithSimilarNodeGroupBalancing sets the SimilarNodeGroupBalancing field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the SimilarNodeGroupBalancing field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithSimilarNodeGroupBalancing(value hypershiftv1beta1.SimilarNodeGroupBalancingPolicy) *ClusterAutoscalingApplyConfiguration {
+	b.SimilarNodeGroupBalancing = &value
+	return b
+}
+
+// WithDaemonSetUtilization sets the DaemonSetUtilization field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the DaemonSetUtilization field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithDaemonSetUtilization(value hypershiftv1beta1.DaemonSetUtilizationPolicy) *ClusterAutoscalingApplyConfiguration {
+	b.DaemonSetUtilization = &value
+	return b
+}
+
+// WithResourceLimits sets the ResourceLimits field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ResourceLimits field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithResourceLimits(value *ResourceLimitsApplyConfiguration) *ClusterAutoscalingApplyConfiguration {
+	b.ResourceLimits = value
+	return b
+}
+
+// WithScaleUp sets the ScaleUp field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ScaleUp field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithScaleUp(value *ScaleUpConfigApplyConfiguration) *ClusterAutoscalingApplyConfiguration {
+	b.ScaleUp = value
+	return b
+}
+
+// WithLogVerbosity sets the LogVerbosity field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the LogVerbosity field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithLogVerbosity(value int32) *ClusterAutoscalingApplyConfiguration {
+	b.LogVerbosity = &value
 	return b
 }
