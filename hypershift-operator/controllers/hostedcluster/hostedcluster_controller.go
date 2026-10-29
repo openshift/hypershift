@@ -3201,6 +3201,11 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 // "quay.io=quay.io/cache" turns ".../cache/repo" into ".../cache/cache/repo"). The hypershift
 // operator's own image is left alone as well; it is the image this process is already running
 // from, not an image the HostedCluster asked to have mirrored.
+//
+// For the same reason an annotation that already names a mirror is left alone. Setting the
+// annotation to a mirrored image was the workaround for the CPO not being mirrored at all,
+// so HostedClusters carrying one predate this behavior and must keep resolving to the same
+// image after the operator is upgraded.
 func resolveControlPlaneOperatorImage(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithRegistryOverrides, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
 	image, source, err := imageregistry.GetControlPlaneOperatorImageWithSource(ctx, hcluster, releaseProvider, hypershiftOperatorImage, pullSecret)
 	if err != nil {
@@ -3208,7 +3213,11 @@ func resolveControlPlaneOperatorImage(ctx context.Context, hcluster *hyperv1.Hos
 	}
 	switch source {
 	case imageregistry.CPOImageSourceAnnotation, imageregistry.CPOImageSourceOverrideTable:
-		return registryoverride.Replace(image, releaseProvider.GetRegistryOverrides()), nil
+		registryOverrides := releaseProvider.GetRegistryOverrides()
+		if registryoverride.HasMirroredPrefix(image, registryOverrides) {
+			return image, nil
+		}
+		return registryoverride.Replace(image, registryOverrides), nil
 	default:
 		return image, nil
 	}

@@ -169,6 +169,93 @@ func TestReplace_DoesNotMutateOverrides(t *testing.T) {
 	}
 }
 
+func TestHasMirroredPrefix(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		image     string
+		overrides map[string]string
+		want      bool
+	}{
+		{
+			name:      "When nil overrides are provided, it should report not mirrored",
+			image:     "quay.io/openshift-release-dev/ocp-release@sha256:abc",
+			overrides: nil,
+			want:      false,
+		},
+		{
+			name:      "When the image is empty, it should report not mirrored",
+			image:     "",
+			overrides: map[string]string{"quay.io": "quay.io/cache"},
+			want:      false,
+		},
+		{
+			name:      "When the image sits under a destination that matches its own source, it should report mirrored",
+			image:     "quay.io/cache/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest",
+			overrides: map[string]string{"quay.io": "quay.io/cache"},
+			want:      true,
+		},
+		{
+			name:      "When the image is exactly a destination, it should report mirrored",
+			image:     "quay.io/cache",
+			overrides: map[string]string{"quay.io": "quay.io/cache"},
+			want:      true,
+		},
+		{
+			name:      "When the image is the canonical source, it should report not mirrored",
+			image:     "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest",
+			overrides: map[string]string{"quay.io": "quay.io/cache"},
+			want:      false,
+		},
+		{
+			name:      "When the image only shares a destination prefix without a separator, it should report not mirrored",
+			image:     "quay.io/cache-team/cpo:latest",
+			overrides: map[string]string{"quay.io": "quay.io/cache"},
+			want:      false,
+		},
+		{
+			name:      "When the image matches a destination across a digest separator, it should report mirrored",
+			image:     "arohcpocpdev.azurecr.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc",
+			overrides: map[string]string{"quay.io/openshift-release-dev/ocp-v4.0-art-dev": "arohcpocpdev.azurecr.io/openshift-release-dev/ocp-v4.0-art-dev"},
+			want:      true,
+		},
+		{
+			name:  "When only one of several destinations matches, it should report mirrored",
+			image: "arohcpocpdev.azurecr.io/quay-cache/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest",
+			overrides: map[string]string{
+				"quay.io/openshift-release-dev":                       "arohcpocpdev.azurecr.io/openshift-release-dev",
+				"quay.io/redhat-user-workloads/crt-redhat-acm-tenant": "arohcpocpdev.azurecr.io/quay-cache/redhat-user-workloads/crt-redhat-acm-tenant",
+			},
+			want: true,
+		},
+		{
+			name:      "When every destination is disjoint from the image, it should report not mirrored",
+			image:     "quay.io/openshift-release-dev/ocp-release@sha256:abc",
+			overrides: map[string]string{"quay.io/openshift-release-dev": "arohcpocpdev.azurecr.io/openshift-release-dev"},
+			want:      false,
+		},
+		{
+			name:  "When a destination is empty, it should skip it",
+			image: "quay.io/openshift-release-dev/ocp-release@sha256:abc",
+			overrides: map[string]string{
+				"registry.redhat.io": "",
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := HasMirroredPrefix(tc.image, tc.overrides)
+			if got != tc.want {
+				t.Errorf("HasMirroredPrefix(%q, %v) = %v, want %v", tc.image, tc.overrides, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestReplace_IsNotIdempotent pins down that Replace is single-pass: when an override
 // destination is itself matched by a source prefix, applying Replace twice rewrites the
 // image twice. Callers must therefore only pass images that have not been rewritten

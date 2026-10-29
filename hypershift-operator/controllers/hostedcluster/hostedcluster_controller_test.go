@@ -9884,6 +9884,15 @@ func TestResolveControlPlaneOperatorImage(t *testing.T) {
 			expectedImage: cachedCPOOverrideImage,
 		},
 		{
+			// Annotating an already mirrored image was the workaround for the CPO not
+			// being mirrored at all, so such HostedClusters must keep resolving to the
+			// same image once the operator starts applying the overrides itself.
+			name:          "When the annotation already names a mirrored image and the override destination matches its own source, it should return the image unchanged",
+			annotation:    cachedCPOOverrideImage,
+			overrides:     overlappingOverrides,
+			expectedImage: cachedCPOOverrideImage,
+		},
+		{
 			name:            "When the CPO image comes from the override table and the override destination matches its own source, it should rewrite the image only once",
 			enableOverrides: true,
 			overrides:       overlappingOverrides,
