@@ -1,6 +1,7 @@
 package kas
 
 import (
+	"net"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -19,6 +20,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
+	"k8s.io/component-base/featuregate"
+	fgtesting "k8s.io/component-base/featuregate/testing"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -200,168 +204,276 @@ func TestGenerateKubeConfigWithServingCerts_WhenClientCertIsMissing(t *testing.T
 	g.Expect(err.Error()).To(ContainSubstring("failed to get client cert secret"))
 }
 
-func TestAdaptBootstrapKubeconfigSecret(t *testing.T) {
-	const namespace = "test-ns"
+func TestBootstrapKubeconfigURL(t *testing.T) {
+	ipv4ServiceCIDR := ipnet.IPNet(net.IPNet{IP: net.ParseIP("10.96.0.0"), Mask: net.CIDRMask(12, 32)})
+	ipv6ServiceCIDR := ipnet.IPNet(net.IPNet{IP: net.ParseIP("fd02::"), Mask: net.CIDRMask(112, 128)})
 
-	rootCAPEM := []byte("-----BEGIN CERTIFICATE-----\nROOTCA\n-----END CERTIFICATE-----\n")
-	clientCertPEM := []byte("-----BEGIN CERTIFICATE-----\nCLIENT\n-----END CERTIFICATE-----\n")
-	clientKeyPEM := []byte("-----BEGIN RSA PRIVATE KEY-----\nKEY\n-----END RSA PRIVATE KEY-----\n")
-
-	baseObjects := func() []corev1.Secret {
-		return []corev1.Secret{
-			{
-				ObjectMeta: metav1.ObjectMeta{Name: "root-ca", Namespace: namespace},
-				Data:       map[string][]byte{certs.CASignerCertMapKey: rootCAPEM},
-			},
-			{
-				ObjectMeta: metav1.ObjectMeta{Name: "kas-bootstrap-client", Namespace: namespace},
-				Data:       map[string][]byte{corev1.TLSCertKey: clientCertPEM, corev1.TLSPrivateKeyKey: clientKeyPEM},
-			},
-		}
+	infraStatus := infra.InfrastructureStatus{
+		APIHost: "1.2.3.4",
+		APIPort: config.KASSVCPort,
 	}
 
-	int32Ptr := func(v int32) *int32 { return &v }
-	strPtr := func(v string) *string { return &v }
-
 	testCases := []struct {
-		name             string
-		featureSet       string
-		platformType     hyperv1.PlatformType
-		endpointAccess   hyperv1.AWSEndpointAccessType
-		apiServerPort    *int32
-		advertiseAddress *string
-		serviceNetwork   string
-		expectedServer   string
+		name         string
+		hcp          *hyperv1.HostedControlPlane
+		featureGates []featuregate.Feature
+		want         string
 	}{
 		{
-			name:           "When gate is OFF on Agent platform, it should use external URL",
-			featureSet:     string(configv1.Default),
-			platformType:   hyperv1.AgentPlatform,
-			expectedServer: "https://api.test.example.com:6443",
+			name: "When the platform is AWS public and gate is disabled, it should return the external LB URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			want: "https://1.2.3.4:6443",
 		},
 		{
-			name:           "When gate is ON on Agent platform, it should use advertise address",
-			featureSet:     string(configv1.TechPreviewNoUpgrade),
-			platformType:   hyperv1.AgentPlatform,
-			expectedServer: "https://" + config.DefaultAdvertiseIPv4Address + ":6443",
+			name: "When the platform is AWS public and gate is enabled, it should return the HAProxy URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://172.20.0.1:6443",
 		},
 		{
-			name:           "When gate is ON on None platform, it should use advertise address",
-			featureSet:     string(configv1.TechPreviewNoUpgrade),
-			platformType:   hyperv1.NonePlatform,
-			expectedServer: "https://" + config.DefaultAdvertiseIPv4Address + ":6443",
+			name: "When the platform is AWS private, it should return the internal URL regardless of gate",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Private},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://api.test.hypershift.local:6443",
 		},
 		{
-			name:           "When gate is ON on KubeVirt platform, it should use advertise address",
-			featureSet:     string(configv1.TechPreviewNoUpgrade),
-			platformType:   hyperv1.KubevirtPlatform,
-			expectedServer: "https://" + config.DefaultAdvertiseIPv4Address + ":6443",
+			name: "When the platform is Agent and gate is enabled, it should return the HAProxy URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AgentPlatform},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://172.20.0.1:6443",
 		},
 		{
-			name:           "When gate is ON on OpenStack platform, it should use advertise address",
-			featureSet:     string(configv1.TechPreviewNoUpgrade),
-			platformType:   hyperv1.OpenStackPlatform,
-			expectedServer: "https://" + config.DefaultAdvertiseIPv4Address + ":6443",
+			name: "When the platform is Agent and gate is disabled, it should return the external LB URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AgentPlatform},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			want: "https://1.2.3.4:6443",
 		},
 		{
-			name:           "When gate is ON on AWS platform, it should use external URL",
-			featureSet:     string(configv1.TechPreviewNoUpgrade),
-			platformType:   hyperv1.AWSPlatform,
-			endpointAccess: hyperv1.Public,
-			expectedServer: "https://api.test.example.com:6443",
+			name: "When the platform is None and gate is enabled, it should return the HAProxy URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.NonePlatform},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://172.20.0.1:6443",
 		},
 		{
-			name:           "When gate is ON on Azure platform, it should use external URL",
-			featureSet:     string(configv1.TechPreviewNoUpgrade),
-			platformType:   hyperv1.AzurePlatform,
-			expectedServer: "https://api.test.example.com:6443",
+			name: "When the platform is KubeVirt and gate is enabled, it should return the HAProxy URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://172.20.0.1:6443",
 		},
 		{
-			name:           "When gate is ON on GCP platform, it should use external URL",
-			featureSet:     string(configv1.TechPreviewNoUpgrade),
-			platformType:   hyperv1.GCPPlatform,
-			expectedServer: "https://api.test.example.com:6443",
+			name: "When the platform is Agent with an IPv6 service network and gate is enabled, it should return the IPv6 HAProxy URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AgentPlatform},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv6ServiceCIDR}},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://[fd00::1]:6443",
 		},
 		{
-			name:           "When gate is ON with apiServer.port 443 on Agent platform, it should use port 443",
-			featureSet:     string(configv1.TechPreviewNoUpgrade),
-			platformType:   hyperv1.AgentPlatform,
-			apiServerPort:  int32Ptr(443),
-			expectedServer: "https://" + config.DefaultAdvertiseIPv4Address + ":443",
+			name: "When the platform is Agent with a custom advertise address and gate is enabled, it should use the custom address",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AgentPlatform},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+						APIServer: &hyperv1.APIServerNetworking{
+							AdvertiseAddress: ptr.To("10.0.0.99"),
+						},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://10.0.0.99:6443",
 		},
 		{
-			name:           "When gate is ON with IPv6 service network, it should use IPv6 advertise address",
-			featureSet:     string(configv1.TechPreviewNoUpgrade),
-			platformType:   hyperv1.AgentPlatform,
-			serviceNetwork: "fd01::/112",
-			expectedServer: "https://[" + config.DefaultAdvertiseIPv6Address + "]:6443",
+			name: "When the platform is GCP PublicAndPrivate and gate is enabled, it should return the internal URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+						GCP:  &hyperv1.GCPPlatformSpec{EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://api.test.hypershift.local:6443",
 		},
 		{
-			name:             "When gate is ON with custom advertise address, it should use custom address",
-			featureSet:       string(configv1.TechPreviewNoUpgrade),
-			platformType:     hyperv1.AgentPlatform,
-			advertiseAddress: strPtr("10.0.0.1"),
-			expectedServer:   "https://10.0.0.1:6443",
+			name: "When the platform is GCP Private, it should return the internal URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+						GCP:  &hyperv1.GCPPlatformSpec{EndpointAccess: hyperv1.GCPEndpointAccessPrivate},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://api.test.hypershift.local:6443",
+		},
+		{
+			name: "When the platform is Azure public and gate is disabled, it should return the external LB URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublic,
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			want: "https://1.2.3.4:6443",
+		},
+		{
+			name: "When the platform is Azure public and gate is enabled, it should return the HAProxy URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublic,
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://172.20.0.1:6443",
+		},
+		{
+			name: "When the platform is Azure Private, it should return the internal URL",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPrivate,
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://api.test.hypershift.local:6443",
+		},
+		{
+			name: "When gate is enabled with custom apiServer port, it should use HAProxy frontend port not infraStatus port",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: ipv4ServiceCIDR}},
+						APIServer: &hyperv1.APIServerNetworking{
+							Port: ptr.To(int32(443)),
+						},
+					},
+				},
+			},
+			featureGates: []featuregate.Feature{featuregates.KubeletHAProxyRouting},
+			want:         "https://172.20.0.1:443",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			for _, fg := range tc.featureGates {
+				fgtesting.SetFeatureGateDuringTest(t, featuregates.Gate(), fg, true)
+			}
 			g := NewWithT(t)
-			featuregates.ConfigureFeatureSet(tc.featureSet)
-			t.Cleanup(func() { featuregates.ConfigureFeatureSet(string(configv1.Default)) })
-
-			serviceNet := "10.96.0.0/12"
-			if tc.serviceNetwork != "" {
-				serviceNet = tc.serviceNetwork
-			}
-
-			hcp := &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: namespace},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: tc.platformType,
-					},
-					Networking: hyperv1.ClusterNetworking{
-						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR(serviceNet)}},
-					},
-				},
-			}
-			if tc.apiServerPort != nil || tc.advertiseAddress != nil {
-				hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{
-					Port:             tc.apiServerPort,
-					AdvertiseAddress: tc.advertiseAddress,
-				}
-			}
-			if tc.platformType == hyperv1.AWSPlatform {
-				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
-					EndpointAccess: tc.endpointAccess,
-				}
-			}
-
-			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
-			for _, obj := range baseObjects() {
-				o := obj
-				clientBuilder.WithObjects(&o)
-			}
-
-			cpContext := controlplanecomponent.WorkloadContext{
-				Context: t.Context(),
-				HCP:     hcp,
-				Client:  clientBuilder.Build(),
-				InfraStatus: infra.InfrastructureStatus{
-					APIHost: "api.test.example.com",
-					APIPort: 6443,
-				},
-			}
-
-			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "bootstrap-kubeconfig", Namespace: namespace}}
-			err := adaptBootstrapKubeconfigSecret(cpContext, secret)
-			g.Expect(err).ToNot(HaveOccurred())
-
-			kubeconfig, err := clientcmd.Load(secret.Data[KubeconfigKey])
-			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(kubeconfig.Clusters["cluster"].Server).To(Equal(tc.expectedServer))
+			g.Expect(bootstrapKubeconfigURL(tc.hcp, infraStatus)).To(Equal(tc.want))
 		})
 	}
 }

@@ -70,9 +70,10 @@ const (
 	// alpha: v0.1.84
 	AWSManagedDNS featuregate.Feature = "AWSManagedDNS"
 
-	// KubeletHAProxyRouting gates the kubelet-through-HAProxy routing change on bare-metal
-	// public clusters (Agent/None/KubeVirt/OpenStack platforms). When enabled, the bootstrap
-	// kubeconfig points kubelet at the HAProxy advertise address instead of the KAS LB IP.
+	// KubeletHAProxyRouting gates the kubelet-through-HAProxy routing change on all public
+	// HCPs. When enabled, the bootstrap kubeconfig points kubelet at the node-local HAProxy
+	// advertise address instead of the KAS LB address, so a Day 2 LB IP change does not
+	// strand nodes. Private clusters keep using internal DNS and are unaffected.
 	// Registered here for HYPERSHIFT_FEATURESET propagation and Day 2 transition work
 	// (CNTRLPLANE-4799/4800). Runtime gate check is in CPO's adaptBootstrapKubeconfigSecret.
 	// owner: @jparrill

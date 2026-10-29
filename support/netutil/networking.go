@@ -65,17 +65,6 @@ func HAProxyFrontendPort(hcp *hyperv1.HostedControlPlane) int32 {
 	return 6443
 }
 
-// UsesNodeLocalKASProxy returns true for platforms where the node-local HAProxy
-// kube-apiserver-proxy static pod is deployed on worker nodes.
-func UsesNodeLocalKASProxy(hcp *hyperv1.HostedControlPlane) bool {
-	switch hcp.Spec.Platform.Type {
-	case hyperv1.AgentPlatform, hyperv1.NonePlatform, hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform:
-		return true
-	default:
-		return false
-	}
-}
-
 // KASPodPort will retrieve the port the kube-apiserver binds on locally in the pod.
 // This comes from hcp.Spec.Networking.APIServer.Port if set and != 443 or defaults to 6443.
 func KASPodPort(hcp *hyperv1.HostedControlPlane) int32 {

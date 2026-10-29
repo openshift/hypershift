@@ -441,6 +441,7 @@ func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string
 			"k8s-app": name,
 		}
 		pod.Spec.HostNetwork = true
+		pod.Spec.DNSPolicy = corev1.DNSDefault
 		pod.Spec.PriorityClassName = "system-node-critical"
 		pod.Spec.Volumes = []corev1.Volume{
 			{

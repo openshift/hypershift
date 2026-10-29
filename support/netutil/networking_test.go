@@ -179,35 +179,6 @@ func TestHAProxyFrontendPort(t *testing.T) {
 	}
 }
 
-func TestUsesNodeLocalKASProxy(t *testing.T) {
-	tests := []struct {
-		name         string
-		platformType hyperv1.PlatformType
-		want         bool
-	}{
-		{name: "When platform is Agent, it should return true", platformType: hyperv1.AgentPlatform, want: true},
-		{name: "When platform is None, it should return true", platformType: hyperv1.NonePlatform, want: true},
-		{name: "When platform is KubeVirt, it should return true", platformType: hyperv1.KubevirtPlatform, want: true},
-		{name: "When platform is OpenStack, it should return true", platformType: hyperv1.OpenStackPlatform, want: true},
-		{name: "When platform is AWS, it should return false", platformType: hyperv1.AWSPlatform, want: false},
-		{name: "When platform is Azure, it should return false", platformType: hyperv1.AzurePlatform, want: false},
-		{name: "When platform is GCP, it should return false", platformType: hyperv1.GCPPlatform, want: false},
-		{name: "When platform is IBMCloud, it should return false", platformType: hyperv1.IBMCloudPlatform, want: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			hcp := &hyperv1.HostedControlPlane{
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{Type: tt.platformType},
-				},
-			}
-			if got := UsesNodeLocalKASProxy(hcp); got != tt.want {
-				t.Errorf("UsesNodeLocalKASProxy() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestIsMultusDisabled(t *testing.T) {
 	tests := []struct {
 		name     string
