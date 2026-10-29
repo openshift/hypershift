@@ -7,6 +7,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
@@ -228,13 +229,16 @@ func (r *HostedClusterReconciler) findFailingEtcdPod(ctx context.Context, log lo
 		}
 
 		// Existing check: pod is crash-looping on a reachable node.
-		// Require sustained failure (>= 5 restarts) rather than a single
-		// transient restart, which recovery would only make worse. The
-		// Waiting reason is deliberately not restricted, as sustained
-		// start-failure loops may never report CrashLoopBackOff.
+		// Require sustained failure (>= EtcdFailingRestartThreshold restarts,
+		// shared with the recovery job's classifyEtcdPods) rather than a single
+		// transient restart, which recovery would only make worse. The Waiting
+		// reason is deliberately not restricted, as sustained start-failure
+		// loops may never report CrashLoopBackOff. Known limitation:
+		// RestartCount is lifetime-cumulative, so a member with historical
+		// restarts can cross the threshold from a single transient restart.
 		for _, containerStatus := range pod.Status.ContainerStatuses {
 			if containerStatus.State.Waiting != nil &&
-				containerStatus.RestartCount >= 5 &&
+				containerStatus.RestartCount >= etcdrecovery.EtcdFailingRestartThreshold &&
 				containerStatus.Name == "etcd" {
 				log.Info("detected etcd failing pod", "name", pod.Name, "namespace", pod.Namespace, "restartCount", containerStatus.RestartCount)
 				return &pod, nil

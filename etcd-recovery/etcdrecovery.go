@@ -37,6 +37,16 @@ const (
 	defaultEtcdClientTimeout = 5 * time.Second
 	defaultDialTimeout       = 3 * time.Second
 	healthyClusterWait       = 5 * time.Minute
+
+	// EtcdFailingRestartThreshold is the minimum cumulative container restart
+	// count for an etcd container in a Waiting state to be classified as
+	// failing. It is shared by the hostedcluster controller (recovery trigger,
+	// findFailingEtcdPod) and the recovery job (member selection,
+	// classifyEtcdPods) so the two can never disagree. Note that RestartCount
+	// is lifetime-cumulative per container instance, so a member with
+	// historical restarts can cross the threshold from a single transient
+	// restart - a known limitation of the signal.
+	EtcdFailingRestartThreshold int32 = 5
 )
 
 type options struct {
@@ -563,7 +573,7 @@ func classifyEtcdPods(ctx context.Context, pods []corev1.Pod) (failingPods []cor
 			if containerStatus.Name != "etcd" {
 				continue
 			}
-			if containerStatus.State.Waiting != nil && containerStatus.RestartCount > 0 {
+			if containerStatus.State.Waiting != nil && containerStatus.RestartCount >= EtcdFailingRestartThreshold {
 				log.Info("pod is unhealthy", "pod", crclient.ObjectKeyFromObject(&pod).String())
 				failingPods = append(failingPods, pod)
 			} else {

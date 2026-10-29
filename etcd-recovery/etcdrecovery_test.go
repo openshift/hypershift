@@ -143,6 +143,44 @@ func TestClassifyEtcdPods(t *testing.T) {
 			expectedNodeUnreachable: false,
 		},
 		{
+			// A single transient restart (e.g. during initial member formation)
+			// must not classify the pod as failing: the restart threshold is
+			// shared with the controller's recovery trigger.
+			name: "When one pod restarted once and is Waiting, it should not detect it as failing",
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd-0", Namespace: "test-ns"},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd-1", Namespace: "test-ns"},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:         "etcd",
+								State:        corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "RunContainerError"}},
+								RestartCount: 1,
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd-2", Namespace: "test-ns"},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+			},
+			expectedFailingPodNames: nil,
+			expectedNodeUnreachable: false,
+		},
+		{
 			name: "When one pod is crash-looping, it should return that pod as failing",
 			pods: []corev1.Pod{
 				{

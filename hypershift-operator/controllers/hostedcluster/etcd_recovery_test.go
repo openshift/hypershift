@@ -487,6 +487,57 @@ func TestFindFailingEtcdPod(t *testing.T) {
 			expectedName: "etcd-1",
 		},
 		{
+			// Documents a known limitation: RestartCount is lifetime-cumulative,
+			// so 4 historical restarts plus a single transient restart crosses
+			// the threshold even though the current episode is one restart.
+			name:      "When etcd pod has cumulative restarts from prior episodes plus a transient restart, it should return that pod",
+			namespace: "clusters-test",
+			pods: []crclient.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-0", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-1", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:         "etcd",
+								State:        corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+								RestartCount: 5,
+								LastTerminationState: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{ExitCode: 1},
+								},
+							},
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "etcd-2", Namespace: "clusters-test",
+						Labels: map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{Name: "etcd", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}, RestartCount: 0},
+						},
+					},
+				},
+			},
+			expectFound:  true,
+			expectedName: "etcd-1",
+		},
+		{
 			name:      "When etcd pod is in CrashLoopBackOff with fewer than 5 restarts, it should not detect it as failing",
 			namespace: "clusters-test",
 			pods: []crclient.Object{
