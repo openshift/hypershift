@@ -117,6 +117,8 @@ spec:
           value: quay.io/openshift/origin-tools:latest
         - name: VOLUME_DATA_SOURCE_VALIDATOR_IMAGE
           value: quay.io/openshift/origin-volume-data-source-validator:latest
+        - name: VOLUME_DEVICE_EXPORTER_IMAGE
+          value: quay.io/openshift/origin-csi-volume-device-exporter:latest
         image: cluster-storage-operator
         imagePullPolicy: IfNotPresent
         name: cluster-storage-operator
