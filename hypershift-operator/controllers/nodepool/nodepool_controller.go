@@ -1378,10 +1378,19 @@ func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodeP
 		return "", err
 	}
 
+	// Resolve the CPO image from the NodePool's release so that CP-only upgrades
+	// don't change the ignition config. An empty value makes HAProxy fall back to
+	// the HostedCluster's CPO image.
+	nodePoolCPOImage, err := imageregistry.GetControlPlaneOperatorImageForRelease(hcluster, releaseImage, useCanonicalImages)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve control-plane-operator image for NodePool release: %w", err)
+	}
+
 	haProxy := haproxy.HAProxy{
 		Client:                  r.Client,
 		HAProxyImage:            haProxyImage,
 		HypershiftOperatorImage: r.HypershiftOperatorImage,
+		NodePoolCPOImage:        nodePoolCPOImage,
 		ReleaseProvider:         r.ReleaseProvider,
 		ImageMetadataProvider:   r.ImageMetadataProvider,
 	}
