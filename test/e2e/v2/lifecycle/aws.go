@@ -123,6 +123,11 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 	}
 	oneInitialReplica := 1
 
+	var kmsKeyARNArgs []string
+	if kmsKeyARN := os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN"); kmsKeyARN != "" {
+		kmsKeyARNArgs = append(kmsKeyARNArgs, "--kms-key-arn="+kmsKeyARN)
+	}
+
 	// The storage-kms test runs on the public cluster and requires the cluster
 	// to be created with a KMS key. HYPERSHIFT_STORAGE_KMS_KEY_ALIAS carries a
 	// pre-provisioned CI KMS key alias (e.g. alias/hypershift-ci), resolved here
@@ -229,17 +234,16 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 				"--image-content-sources="+filepath.Join(a.sharedDir, "mirror-registry-ics.yaml"),
 			),
 		},
-	}
-
-	// Only include kms-reencryption when a KMS key ARN is configured.
-	// e2e rotation coverage is KMS-only; without an ARN there are no rotation
-	// tests to run so the dedicated cluster would be created for nothing.
-	if kmsKeyARN := os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN"); kmsKeyARN != "" {
-		specs = append(specs, ClusterSpec{
+		{
+			// Dedicated cluster for etcd KMS re-encryption tests. When
+			// HYPERSHIFT_ETCD_KMS_KEY_ARN is set, the cluster is created with
+			// --kms-key-arn so AWSKMSKeyRotationTest can rotate keys. When the
+			// variable is unset the cluster is created without KMS encryption and
+			// the rotation tests skip themselves via applies().
 			Variant:     "kms-reencryption",
 			DestroyArgs: destroyArgs,
-			CreateArgs:  clusterArgs("--kms-key-arn=" + kmsKeyARN),
-		})
+			CreateArgs:  clusterArgs(kmsKeyARNArgs...),
+		},
 	}
 
 	return specs
@@ -305,46 +309,39 @@ func (a *AWSPlatformConfig) DefaultTestPlan() TestPlan {
 }
 
 func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
-	parallel := []TestGroup{
-		{
-			Name:        "managed-dns",
-			Variant:     "managed-dns",
-			LabelFilter: "hosted-cluster-managed-dns",
-		},
-		{
-			Name:        "karpenter",
-			Variant:     "karpenter",
-			LabelFilter: "karpenter",
-		},
-		// TODO: It might be possible to decompose the karpenter upgrade test
-		// into pre and post upgrade specs which communicate with a well defined
-		// IPC protocol, like the pre step serializing observations which the
-		// post step can use. Then we can compose the regular upgrade test here
-		// instead of duplicating upgrade logic inside the karpenter test.
-		{
-			Name:        "karpenter-upgrade",
-			Variant:     "karpenter-upgrade",
-			LabelFilter: "karpenter-upgrade",
-		},
-		{
-			Name:        "image-mirroring",
-			Variant:     "image-mirroring",
-			LabelFilter: "image-mirroring",
-		},
-	}
-
-	// kms-reencryption is only scheduled when a KMS key ARN is available —
-	// it must match the ClusterSpecs() conditional above.
-	if os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN") != "" {
-		parallel = append(parallel, TestGroup{
-			Name:        "kms-reencryption",
-			Variant:     "kms-reencryption",
-			LabelFilter: "etcd-encryption-reencryption",
-		})
-	}
-
 	return TestMatrix{
-		Parallel: parallel,
+		Parallel: []TestGroup{
+			{
+				Name:        "managed-dns",
+				Variant:     "managed-dns",
+				LabelFilter: "hosted-cluster-managed-dns",
+			},
+			{
+				Name:        "karpenter",
+				Variant:     "karpenter",
+				LabelFilter: "karpenter",
+			},
+			// TODO: It might be possible to decompose the karpenter upgrade test
+			// into pre and post upgrade specs which communicate with a well defined
+			// IPC protocol, like the pre step serializing observations which the
+			// post step can use. Then we can compose the regular upgrade test here
+			// instead of duplicating upgrade logic inside the karpenter test.
+			{
+				Name:        "karpenter-upgrade",
+				Variant:     "karpenter-upgrade",
+				LabelFilter: "karpenter-upgrade",
+			},
+			{
+				Name:        "image-mirroring",
+				Variant:     "image-mirroring",
+				LabelFilter: "image-mirroring",
+			},
+			{
+				Name:        "kms-reencryption",
+				Variant:     "kms-reencryption",
+				LabelFilter: "etcd-encryption-reencryption",
+			},
+		},
 		Sequential: []SequentialGroup{
 			{
 				Name: "public",
