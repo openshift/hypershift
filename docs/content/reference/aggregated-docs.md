@@ -10674,6 +10674,34 @@ hypershift create infra azure \
 
 For role scopes, see Self-Managed Azure Infrastructure. For existing network resources, see Create Azure Infrastructure Separately.
 
+#### Use an Existing Karpenter Identity
+
+`--karpenter-client-id` on the `hypershift` CLI selects an existing federated identity. It does not create the identity, configure federation, or change how other components authenticate.
+
+The identity must already have a federated credential for the **hosted cluster's OIDC issuer**, subject `system:serviceaccount:kube-system:karpenter`, and audience `openshift`. The hosted cluster must use the corresponding service account signing key.
+
+When creating workload identities above, omit `--enable-karpenter` if you do not want to create an additional Karpenter identity. Use the following infrastructure command to select the existing identity:
+
+```bash
+export KARPENTER_CLIENT_ID="<existing-identity-client-id>"
+
+hypershift create infra azure \
+    --name "${CLUSTER_NAME}" \
+    --infra-id "${INFRA_ID}" \
+    --azure-creds "${AZURE_CREDS}" \
+    --base-domain "${BASE_DOMAIN}" \
+    --location "${LOCATION}" \
+    --workload-identities-file workload-identities.json \
+    --karpenter-client-id "${KARPENTER_CLIENT_ID}" \
+    --assign-identity-roles \
+    --dns-zone-rg-name "${PERSISTENT_RG_NAME}" \
+    --output-file infra-output.yaml
+```
+
+A nonempty `--karpenter-client-id` overrides the ID in the workload identities file. For managed Azure/ARO HCP, use `--managed-identities-file` and `--data-plane-identities-file` instead of `--workload-identities-file`. Do not add `karpenterClientID` to the managed identities file.
+
+Then use the cluster command below with `--infra-json infra-output.yaml` and `--auto-node`, without `--karpenter-client-id`. The infrastructure output carries the selected client ID. Cluster creation rejects a client-ID override with `--infra-json`; to change the identity, configure it during infrastructure creation and assign its roles there.
+
 ### Create the HostedCluster
 
 Enable AutoNode with `--auto-node`:
