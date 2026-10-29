@@ -9819,6 +9819,22 @@ func TestResolveControlPlaneOperatorImage(t *testing.T) {
 	overlappingOverrides := map[string]string{"quay.io": "quay.io/cache"}
 	cachedCPOOverrideImage := "quay.io/cache" + strings.TrimPrefix(cpoOverrideImage, "quay.io")
 
+	// identityOverrides pairs a no-op entry for the whole registry with a real mirror
+	// for one repository under it. The no-op entry rewrites nothing, so it must not make
+	// images under that registry look mirrored and bypass the more specific entry.
+	identityOverrides := map[string]string{
+		"quay.io":     "quay.io",
+		cpoSourceRepo: cpoMirrorRepo,
+	}
+
+	// mirroredIntoSourceOverrides sends a different registry into quay.io while still
+	// mirroring the CPO repository out of it. quay.io being a destination says nothing
+	// about whether a quay.io image has been mirrored, so the CPO entry must still win.
+	mirroredIntoSourceOverrides := map[string]string{
+		"registry.redhat.io": "quay.io",
+		cpoSourceRepo:        cpoMirrorRepo,
+	}
+
 	testCases := []struct {
 		name            string
 		annotation      string
@@ -9893,10 +9909,16 @@ func TestResolveControlPlaneOperatorImage(t *testing.T) {
 			expectedImage: cachedCPOOverrideImage,
 		},
 		{
-			name:            "When the CPO image comes from the override table and the override destination matches its own source, it should rewrite the image only once",
-			enableOverrides: true,
-			overrides:       overlappingOverrides,
-			expectedImage:   cachedCPOOverrideImage,
+			name:          "When an identity override covers the registry of an annotated CPO image, it should still apply the more specific override",
+			annotation:    cpoOverrideImage,
+			overrides:     identityOverrides,
+			expectedImage: mirroredCPOImage,
+		},
+		{
+			name:          "When another registry is mirrored into the registry of an annotated CPO image, it should still apply the more specific override",
+			annotation:    cpoOverrideImage,
+			overrides:     mirroredIntoSourceOverrides,
+			expectedImage: mirroredCPOImage,
 		},
 		{
 			name:          "When the release payload ships no CPO image, it should return the hypershift operator image unchanged",
