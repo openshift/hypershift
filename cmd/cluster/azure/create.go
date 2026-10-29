@@ -106,7 +106,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", util.OIDCIssuerURLDescription)
 	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", util.SATokenIssuerKeyPathDescription)
 	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, util.DNSZoneRGNameDescription)
-	flags.BoolVar(&opts.AutoNode, "auto-node", opts.AutoNode, "If true, this flag indicates the Hosted Cluster will support the AutoNode feature.")
+	flags.BoolVar(&opts.AutoNode, "auto-node", opts.AutoNode, util.AutoNodeDescription)
 	flags.StringVar(&opts.KarpenterClientID, "karpenter-client-id", opts.KarpenterClientID, util.KarpenterClientIDDescription)
 }
 
@@ -150,7 +150,7 @@ func BindProductFlags(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	// OAuth publishing strategy
 	flags.StringVar(&opts.OAuthPublishingStrategy, "oauth-publishing-strategy", "Route", "Publishing strategy for the OAuth server (Route or LoadBalancer)")
 
-	flags.BoolVar(&opts.AutoNode, "auto-node", opts.AutoNode, "If true, this flag indicates the Hosted Cluster will support AutoNode feature.")
+	flags.BoolVar(&opts.AutoNode, "auto-node", opts.AutoNode, util.AutoNodeDescription)
 
 	// Private connectivity flags
 	bindEndpointAccessFlags(opts, flags)
