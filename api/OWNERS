@@ -7,6 +7,6 @@ filters:
     labels:
     - area/api
   # Dependency-only authority for Chai's event-bound Dependabot workflow.
-  '^(go\.(mod|sum)|vendor/.*)$':
+  '^(go\.(mod|sum)|vendor/(modules\.txt|[^/]+/.+))$':
     approvers:
     - redhat-chai-bot
