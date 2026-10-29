@@ -404,6 +404,37 @@ func imageMirroringRunningState() *corev1.ContainerState {
 	return &corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}
 }
 
+func TestImageMirroringClassifyContainer(t *testing.T) {
+	status := func(state *corev1.ContainerState) *corev1.ContainerStatus {
+		return &corev1.ContainerStatus{Name: imageMirroringWorkloadContainer, State: *state}
+	}
+	tests := []struct {
+		name   string
+		status *corev1.ContainerStatus
+		want   imageMirroringContainerOutcome
+	}{
+		{name: "When there is no status, it should be pending", status: nil, want: imageMirroringContainerPending},
+		{name: "When the status has no state, it should be pending", status: &corev1.ContainerStatus{}, want: imageMirroringContainerPending},
+		{name: "When the container is creating, it should be pending", status: status(imageMirroringWaitingState("ContainerCreating", "")), want: imageMirroringContainerPending},
+		{name: "When the image pull fails, it should be a pull failure", status: status(imageMirroringWaitingState("ErrImagePull", "")), want: imageMirroringContainerPullFailed},
+		{name: "When the image pull backs off, it should be a pull failure", status: status(imageMirroringWaitingState("ImagePullBackOff", "")), want: imageMirroringContainerPullFailed},
+		{name: "When the image name is invalid, it should be an image rejection", status: status(imageMirroringWaitingState("InvalidImageName", "")), want: imageMirroringContainerImageRejected},
+		{name: "When the pull policy forbids pulling a missing image, it should be an image rejection", status: status(imageMirroringWaitingState("ErrImageNeverPull", "")), want: imageMirroringContainerImageRejected},
+		{name: "When the container config cannot be created, it should be a create failure", status: status(imageMirroringWaitingState("CreateContainerConfigError", "")), want: imageMirroringContainerCreateFailed},
+		{name: "When the container cannot be created, it should be a create failure", status: status(imageMirroringWaitingState("CreateContainerError", "")), want: imageMirroringContainerCreateFailed},
+		{name: "When the container is running, it should be running", status: status(imageMirroringRunningState()), want: imageMirroringContainerRunning},
+		{name: "When the container exited 0, it should have succeeded", status: status(imageMirroringTerminatedState(0)), want: imageMirroringContainerSucceeded},
+		{name: "When the container exited nonzero, it should have failed", status: status(imageMirroringTerminatedState(2)), want: imageMirroringContainerFailed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := imageMirroringClassifyContainer(tt.status); got != tt.want {
+				t.Fatalf("got %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestImageMirroringCheckPulledPod(t *testing.T) {
 	unschedulable := imageMirroringTestPod(corev1.PodPending, nil)
 	unschedulable.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: "Unschedulable", Message: "0/1 nodes are available"}}

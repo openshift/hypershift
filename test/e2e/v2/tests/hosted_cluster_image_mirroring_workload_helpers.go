@@ -278,8 +278,63 @@ func imageMirroringPodSummary(pod *corev1.Pod) string {
 	return summary
 }
 
+// imageMirroringContainerOutcome is what the workload container state says
+// about the image pull and the container run. The pod predicates decide which
+// outcomes are done, keep polling, or terminal.
+type imageMirroringContainerOutcome int
+
+const (
+	// imageMirroringContainerPending: no status yet, or a waiting reason that
+	// can still progress (e.g. ContainerCreating).
+	imageMirroringContainerPending imageMirroringContainerOutcome = iota
+	// imageMirroringContainerPullFailed: the runtime could not pull the image
+	// (ErrImagePull, ImagePullBackOff); the kubelet keeps retrying.
+	imageMirroringContainerPullFailed
+	// imageMirroringContainerImageRejected: the kubelet refuses the image
+	// reference itself without pulling (InvalidImageName, ErrImageNeverPull).
+	imageMirroringContainerImageRejected
+	// imageMirroringContainerCreateFailed: the image is present, but the
+	// container cannot be created (CreateContainerConfigError,
+	// CreateContainerError).
+	imageMirroringContainerCreateFailed
+	// imageMirroringContainerRunning: the container is running.
+	imageMirroringContainerRunning
+	// imageMirroringContainerSucceeded: the container exited with code 0.
+	imageMirroringContainerSucceeded
+	// imageMirroringContainerFailed: the container exited with a nonzero code.
+	imageMirroringContainerFailed
+)
+
+// imageMirroringClassifyContainer maps a container status to its outcome. A
+// nil status is pending.
+func imageMirroringClassifyContainer(status *corev1.ContainerStatus) imageMirroringContainerOutcome {
+	switch {
+	case status == nil:
+		return imageMirroringContainerPending
+	case status.State.Waiting != nil:
+		switch status.State.Waiting.Reason {
+		case "ErrImagePull", "ImagePullBackOff":
+			return imageMirroringContainerPullFailed
+		case "InvalidImageName", "ErrImageNeverPull":
+			return imageMirroringContainerImageRejected
+		case "CreateContainerConfigError", "CreateContainerError":
+			return imageMirroringContainerCreateFailed
+		}
+		return imageMirroringContainerPending
+	case status.State.Terminated != nil:
+		if status.State.Terminated.ExitCode != 0 {
+			return imageMirroringContainerFailed
+		}
+		return imageMirroringContainerSucceeded
+	case status.State.Running != nil:
+		return imageMirroringContainerRunning
+	}
+	return imageMirroringContainerPending
+}
+
 // imageMirroringCheckPulledPod is done when the one-shot container exited 0
-// and the pod Succeeded. Failures that retries cannot fix are terminal errors.
+// and the pod Succeeded. Failures that retries cannot fix are terminal errors;
+// pull failures keep polling, because the kubelet retries them.
 func imageMirroringCheckPulledPod(pod *corev1.Pod) (bool, string, error) {
 	if pod == nil {
 		return false, "", fmt.Errorf("pod must not be nil")
@@ -288,21 +343,10 @@ func imageMirroringCheckPulledPod(pod *corev1.Pod) (bool, string, error) {
 	if pod.Status.Phase == corev1.PodFailed {
 		return false, "", fmt.Errorf("%s", summary)
 	}
-	status := imageMirroringContainerStatus(pod)
-	if status == nil {
-		return false, summary, nil
-	}
-	if waiting := status.State.Waiting; waiting != nil {
-		switch waiting.Reason {
-		case "CreateContainerConfigError", "CreateContainerError", "InvalidImageName", "ErrImageNeverPull":
-			return false, "", fmt.Errorf("%s", summary)
-		}
-		return false, summary, nil
-	}
-	if terminated := status.State.Terminated; terminated != nil {
-		if terminated.ExitCode != 0 {
-			return false, "", fmt.Errorf("%s", summary)
-		}
+	switch imageMirroringClassifyContainer(imageMirroringContainerStatus(pod)) {
+	case imageMirroringContainerImageRejected, imageMirroringContainerCreateFailed, imageMirroringContainerFailed:
+		return false, "", fmt.Errorf("%s", summary)
+	case imageMirroringContainerSucceeded:
 		if pod.Status.Phase == corev1.PodSucceeded {
 			return true, summary, nil
 		}
