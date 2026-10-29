@@ -69,7 +69,7 @@ e2e-v2-gke/
 ├── hypershift-write-test-plan/  # optionally writes a test plan to SHARED_DIR
 ├── hypershift-gcp-create-guests/  # runs `create-guests`; creates guest clusters, waits for Available and rollout
 │   └── artifacts/
-│       └── junit_hosted_cluster_<hc-name>.xml   # one per cluster
+│       └── junit_hosted_cluster_<hc-name>.xml   # version-rollout result, per cluster reaching rollout
 ├── tests/  # runs `run-tests`, one `test-e2e-v2` process per TestGroup
 │   └── artifacts/
 │       └── junit_<test-group>.xml               # one per TestGroup
@@ -177,16 +177,18 @@ e2e-v2-gke/
 | HyperShift operator deployments | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/hypershift/apps/deployments/` |
 | K8sGPT analysis (control plane) | `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/clusters-<hc-name>/result.json` |
 | K8sGPT analysis (operator) | `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/hypershift/result.json` |
-| Cluster creation result | `artifacts/e2e-v2-gke/hypershift-gcp-create-guests/artifacts/junit_hosted_cluster_<hc-name>.xml` |
+| Cluster version-rollout result | `artifacts/e2e-v2-gke/hypershift-gcp-create-guests/artifacts/junit_hosted_cluster_<hc-name>.xml` |
 | Test results | `artifacts/e2e-v2-gke/tests/artifacts/junit_<test-group>.xml` |
 
-> `<hc-name>` is the HostedCluster name, derived from `PROW_JOB_ID` and the cluster variant (e.g. `default-2e2dd848` for the `default` variant), making the full control plane namespace `clusters-<hc-name>`. The actual value is visible in the `artifacts/e2e-v2-gke/dump/artifacts/` directory listing.
+> `<hc-name>` is the HostedCluster name, derived from `PROW_JOB_ID` and the cluster variant (e.g. `default-2e2dd848ab` for the `default` variant), making the full control plane namespace `clusters-<hc-name>`. The actual value is visible in the `artifacts/e2e-v2-gke/dump/artifacts/` directory listing.
+>
+> `create-guests` writes `junit_hosted_cluster_<hc-name>.xml` only once a cluster reaches the version-rollout phase; cluster creation or availability failures are reported in the step log instead.
 
 ## Test Results
 
 | File | Description |
 |------|-------------|
-| `artifacts/e2e-v2-gke/hypershift-gcp-create-guests/artifacts/junit_hosted_cluster_<hc-name>.xml` | Per-cluster creation and version-rollout result |
+| `artifacts/e2e-v2-gke/hypershift-gcp-create-guests/artifacts/junit_hosted_cluster_<hc-name>.xml` | Per-cluster version-rollout result; emitted only after the cluster becomes Available, so creation and availability failures appear in the step log instead |
 | `artifacts/e2e-v2-gke/tests/artifacts/junit_<test-group>.xml` | Ginkgo v2 results for one `TestGroup` (the default GCP plan has a single group, `default`) |
 | `artifacts/junit_operator.xml` | CI operator-level results |
 

@@ -59,7 +59,7 @@ once, then multiple specs verify different aspects of the restore). Without `Ord
 
 | Label | Effect |
 |-------|--------|
-| **`lifecycle`** | Marks tests that mutate cluster state (upgrades, nodepool scaling, etcd chaos, global pull secret, OS image stream, autoscaling, platform-specific lifecycle). The `run-tests` orchestrator filters these out of read-only compliance runs and runs lifecycle tests on dedicated clusters via specific label filters. |
+| **`lifecycle`** | Marks tests that mutate cluster state (upgrades, nodepool scaling, etcd chaos, global pull secret, OS image stream, autoscaling, platform-specific lifecycle). The `run-tests` orchestrator filters these out of read-only compliance runs and generally runs lifecycle tests on dedicated clusters via specific label filters; a platform may opt a specific lifecycle spec into its default group instead (for example, GCP includes `gcp-worker-firewall` in its default group). |
 | **`Informing`** | The custom [`InformingAwareFailHandler`][fail-handler] converts failures on specs with this label into skips. The test appears as "skipped" in JUnit XML rather than "failed", so it doesn't block the CI job. Used for tests validating optional or in-progress features (e.g., metrics forwarding, custom labels/tolerations). |
 | **Feature/platform labels** (e.g., `self-managed-azure-public`, `nodepool-autoscaling`, `control-plane-upgrade`) | Control which specs run in which `test-e2e-v2` process. The [`run-tests` orchestrator][run-tests] passes `--ginkgo.label-filter` expressions from the [`TestMatrix`][azure-platform]. The default Azure plan intentionally reuses `hosted-cluster-health` and `control-plane-workloads` in the post-upgrade health step, so those specs run again after upgrade. |
 
