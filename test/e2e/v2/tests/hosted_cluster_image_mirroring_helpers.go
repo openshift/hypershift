@@ -9,11 +9,13 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/test/e2e/v2/util/mirrorregistry"
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,6 +26,11 @@ const (
 	imageMirroringIgnitionName = "ignition-config-40-image-content-source"
 	imageMirroringWorkerLabel  = "machineconfiguration.openshift.io/role"
 	imageMirroringCoreLabel    = "hypershift.openshift.io/core-ignition-config"
+
+	// imageMirroringVirtualSource is the fixture source repository that only
+	// exists on the mirror: its ".invalid" host never resolves (RFC 2606), so a
+	// successful pull from it can only have been served by an IDMS mirror.
+	imageMirroringVirtualSource = "mirror-source.hypershift-e2e.invalid/libpod/registry"
 )
 
 // imageMirroringConfigured reports whether the HC opted into image mirroring
@@ -31,6 +38,29 @@ const (
 // configuration is checked strictly by imageMirroringExpected.
 func imageMirroringConfigured(hc *hyperv1.HostedCluster, routeFound bool) bool {
 	return hc != nil && len(hc.Spec.ImageContentSources) > 0 && routeFound
+}
+
+// imageMirroringLoadSetup reads the mirror fixture Route from the management
+// cluster and validates the HC image-mirroring setup against it. It returns
+// configured=false and no error when the HC has no imageContentSources or the
+// Route does not exist, so the caller can skip. A Route read error other than
+// NotFound, or an invalid setup once both are present, is returned as an error
+// so the caller fails instead of skipping.
+func imageMirroringLoadSetup(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster) (bool, []hyperv1.ImageContentSource, string, error) {
+	key := crclient.ObjectKey{Namespace: mirrorregistry.DefaultNamespace, Name: mirrorregistry.DefaultName}
+	route := &routev1.Route{}
+	err := client.Get(ctx, key, route)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return false, nil, "", fmt.Errorf("read mirror fixture Route %s: %w", key, err)
+	}
+	if !imageMirroringConfigured(hc, err == nil) {
+		return false, nil, "", nil
+	}
+	expected, err := imageMirroringExpected(hc, route)
+	if err != nil {
+		return false, nil, "", err
+	}
+	return true, expected, route.Spec.Host, nil
 }
 
 // Expectations come only from a validated snapshot of HC input, never from a
@@ -58,7 +88,7 @@ func imageMirroringExpected(hc *hyperv1.HostedCluster, route *routev1.Route) ([]
 	if route == nil || strings.TrimSpace(route.Spec.Host) == "" {
 		return nil, fmt.Errorf("mirror fixture Route has an empty host")
 	}
-	for _, source := range []string{"quay.io/libpod/registry", "mirror-source.hypershift-e2e.invalid/libpod/registry"} {
+	for _, source := range []string{"quay.io/libpod/registry", imageMirroringVirtualSource} {
 		found := false
 		for _, entry := range expected {
 			if entry.Source != source {

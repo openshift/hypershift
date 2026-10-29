@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/test/e2e/v2/util/mirrorregistry"
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -145,6 +146,70 @@ func TestImageMirroringConfigured(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := imageMirroringConfigured(tt.hc, tt.routeFound); got != tt.want {
 				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestImageMirroringLoadSetup(t *testing.T) {
+	sentinel := errors.New("API unavailable")
+	fixtureRoute := imageMirroringTestRoute.DeepCopy()
+	fixtureRoute.Namespace, fixtureRoute.Name = mirrorregistry.DefaultNamespace, mirrorregistry.DefaultName
+	otherRoute := fixtureRoute.DeepCopy()
+	otherRoute.Namespace = "other"
+	invalid := imageMirroringTestHC.DeepCopy()
+	invalid.Spec.ImageContentSources = invalid.Spec.ImageContentSources[:1]
+	for _, tt := range []struct {
+		name           string
+		hc             *hyperv1.HostedCluster
+		objects        []crclient.Object
+		failure        error
+		wantConfigured bool
+		wantErr        string
+	}{
+		{name: "When the HC has imageContentSources and the fixture Route exists, it should return the validated setup", hc: imageMirroringTestHC, objects: []crclient.Object{fixtureRoute}, wantConfigured: true},
+		{name: "When the fixture Route does not exist, it should report not configured without error so the spec skips", hc: imageMirroringTestHC},
+		{name: "When only a Route in another namespace exists, it should report not configured without error", hc: imageMirroringTestHC, objects: []crclient.Object{otherRoute}},
+		{name: "When the HC has no imageContentSources, it should report not configured without error so the spec skips", hc: &hyperv1.HostedCluster{}, objects: []crclient.Object{fixtureRoute}},
+		{name: "When the Route read fails, it should return the error so the spec fails instead of skipping", hc: imageMirroringTestHC, failure: sentinel, wantErr: "API unavailable"},
+		{name: "When the setup is present but invalid, it should return the error so the spec fails", hc: invalid, objects: []crclient.Object{fixtureRoute}, wantErr: "mirror-source"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			if err := routev1.Install(scheme); err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.WithValue(t.Context(), imageMirroringContextKey{}, "spec context")
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.objects...).WithInterceptorFuncs(interceptor.Funcs{Get: func(got context.Context, c crclient.WithWatch, key crclient.ObjectKey, o crclient.Object, opts ...crclient.GetOption) error {
+				if got != ctx || key != (crclient.ObjectKey{Namespace: mirrorregistry.DefaultNamespace, Name: mirrorregistry.DefaultName}) {
+					t.Fatalf("wrong context or key: %v", key)
+				}
+				if tt.failure != nil {
+					return tt.failure
+				}
+				return c.Get(got, key, o, opts...)
+			}}).Build()
+			configured, expected, routeHost, err := imageMirroringLoadSetup(ctx, client, tt.hc)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || configured {
+					t.Fatalf("expected error containing %q, got configured=%v err=%v", tt.wantErr, configured, err)
+				}
+				if tt.failure != nil && !errors.Is(err, tt.failure) {
+					t.Fatalf("lost API error: %v", err)
+				}
+				return
+			}
+			if err != nil || configured != tt.wantConfigured {
+				t.Fatalf("got configured=%v err=%v, want configured=%v", configured, err, tt.wantConfigured)
+			}
+			if !tt.wantConfigured {
+				if expected != nil || routeHost != "" {
+					t.Fatalf("unconfigured setup returned data: %+v %q", expected, routeHost)
+				}
+				return
+			}
+			if !reflect.DeepEqual(expected, tt.hc.Spec.ImageContentSources) || routeHost != fixtureRoute.Spec.Host {
+				t.Fatalf("got %+v %q", expected, routeHost)
 			}
 		})
 	}
