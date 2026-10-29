@@ -2,12 +2,15 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"reflect"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -51,6 +54,12 @@ func listOperatorUpgradeWorkloads(ctx context.Context, client crclient.Client, n
 		}
 	}
 	return workloads, nil
+}
+
+func isRetryableOperatorUpgradeListError(err error) bool {
+	var networkError net.Error
+	return apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) || apierrors.IsTooManyRequests(err) ||
+		apierrors.IsServiceUnavailable(err) || apierrors.IsInternalError(err) || errors.As(err, &networkError)
 }
 
 func initialNodePoolComplete(nodePool *hyperv1.NodePool, workloads map[string]*unstructured.Unstructured, useV1Beta1 bool) error {

@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"net"
 	"reflect"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -244,6 +246,8 @@ func TestListOperatorUpgradeWorkloads(t *testing.T) {
 			}
 			if _, err := listOperatorUpgradeWorkloads(context.Background(), client, "empty", version == "v1beta1"); err == nil {
 				t.Fatal("empty namespace should fail capture")
+			} else if isRetryableOperatorUpgradeListError(err) {
+				t.Fatalf("missing workloads must not be retried: %v", err)
 			}
 		})
 	}
@@ -342,6 +346,39 @@ func TestCaptureInitialOperatorUpgradeState(t *testing.T) {
 			}
 			if testCase.mutation == "retry" && poolLists != 2 {
 				t.Fatalf("capture should stop listing after the successful poll, got %d lists", poolLists)
+			}
+		})
+	}
+}
+
+func TestIsRetryableOperatorUpgradeListError(t *testing.T) {
+	t.Parallel()
+	resource := schema.GroupResource{Group: "cluster.x-k8s.io", Resource: "machines"}
+	for _, testCase := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "When the API request times out, it should retry", err: apierrors.NewTimeoutError("timeout", 1), want: true},
+		{name: "When the server times out, it should retry", err: apierrors.NewServerTimeout(resource, "list", 1), want: true},
+		{name: "When requests are throttled, it should retry", err: apierrors.NewTooManyRequests("throttled", 1), want: true},
+		{name: "When the API is unavailable, it should retry", err: apierrors.NewServiceUnavailable("unavailable"), want: true},
+		{name: "When the API has an internal error, it should retry", err: apierrors.NewInternalError(fmt.Errorf("internal")), want: true},
+		{name: "When the network fails, it should retry", err: &net.OpError{Op: "read", Net: "tcp", Err: fmt.Errorf("connection reset")}, want: true},
+		{name: "When access is forbidden, it should fail", err: apierrors.NewForbidden(resource, "", fmt.Errorf("denied"))},
+		{name: "When authentication fails, it should fail", err: apierrors.NewUnauthorized("denied")},
+		{name: "When a resource is not found, it should fail", err: apierrors.NewNotFound(resource, "worker")},
+		{name: "When workloads are missing, it should fail", err: fmt.Errorf("no Machine found in namespace clusters")},
+		{name: "When no error occurred, it should not retry"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			err := testCase.err
+			if err != nil {
+				err = fmt.Errorf("listing Machine: %w", err)
+			}
+			if got := isRetryableOperatorUpgradeListError(err); got != testCase.want {
+				t.Errorf("got retryable %t, want %t for %v", got, testCase.want, err)
 			}
 		})
 	}

@@ -196,7 +196,11 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 
 				postUpgradeWorkloads, err := listOperatorUpgradeWorkloads(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
 				if err != nil {
-					gomega.StopTrying(fmt.Sprintf("Error listing MachineDeployments: %v", err)).Now()
+					if isRetryableOperatorUpgradeListError(err) {
+						t.Logf("Transient error listing CAPI workloads: %v", err)
+						gomega.TryAgainAfter(time.Second).Wrap(err).Now()
+					}
+					gomega.StopTrying("Error listing CAPI workloads").Wrap(err).Now()
 				}
 
 				if len(postUpgradeWorkloads) != len(workloads) {
