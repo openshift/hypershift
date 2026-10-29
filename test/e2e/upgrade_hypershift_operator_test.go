@@ -107,54 +107,13 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 
 			hcpNameSpace = manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 			g.Eventually(func() error {
-				currentNodePools := &hyperv1.NodePoolList{}
-				if err := mgmtClient.List(ctx, currentNodePools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
-					return err
-				}
-				if len(currentNodePools.Items) == 0 {
-					return fmt.Errorf("no NodePools found")
-				}
-				currentWorkloads, err := listOperatorUpgradeWorkloads(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
+				currentNodePools, currentWorkloads, err := captureInitialOperatorUpgradeState(ctx, mgmtClient, hostedCluster.Namespace, hcpNameSpace, useCAPIv1Beta1)
 				if err != nil {
 					return err
 				}
-				for index := range currentNodePools.Items {
-					nodePool := &currentNodePools.Items[index]
-					if err := initialNodePoolComplete(nodePool, currentWorkloads, useCAPIv1Beta1); err != nil {
-						return err
-					}
-				}
-				expectedWorkloads := 2 * len(currentNodePools.Items)
-				for index := range currentNodePools.Items {
-					expectedWorkloads += int(*currentNodePools.Items[index].Spec.Replicas)
-				}
-				if len(currentWorkloads) != expectedWorkloads {
-					return fmt.Errorf("expected one MachineDeployment and MachineSet per NodePool plus desired Machines, got %d workloads instead of %d", len(currentWorkloads), expectedWorkloads)
-				}
+				nodePoolsMap, workloads = currentNodePools, currentWorkloads
 				return nil
 			}, "10m", "1s").Should(gomega.Succeed(), "Initial NodePool reconciliation should complete before capturing invariants")
-
-			nodepools := &hyperv1.NodePoolList{}
-			err = mgmtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace))
-
-			g.Expect(err).ToNot(gomega.HaveOccurred(), "Listing nodepools in namespace %s shouldn't return errors",
-				hostedCluster.Namespace)
-			g.Expect(nodepools.Items).ToNot(gomega.BeEmpty(), "Should find NodePools in namespace %s",
-				hostedCluster.Namespace)
-
-			nodePoolsMap = make(map[string]*hyperv1.NodePool, len(nodepools.Items))
-			t.Logf("Found %d NodePools", len(nodepools.Items))
-			for i := range nodepools.Items {
-				t.Logf("Found NodePool %s", nodepools.Items[i].Name)
-				nodePoolsMap[nodepools.Items[i].Name] = &nodepools.Items[i]
-			}
-
-			workloads, err = listOperatorUpgradeWorkloads(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			for index := range nodepools.Items {
-				nodePool := &nodepools.Items[index]
-				g.Expect(initialNodePoolComplete(nodePool, workloads, useCAPIv1Beta1)).To(gomega.Succeed())
-			}
 
 			t.Log("Capturing bootstrap chain state before operator upgrade")
 			preUpgradeBootstrapState, err = captureBootstrapChain(ctx, mgmtClient, hcpNameSpace, nodePoolsMap, useCAPIv1Beta1)
