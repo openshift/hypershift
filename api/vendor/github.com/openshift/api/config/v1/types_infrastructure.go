@@ -71,6 +71,22 @@ type InfrastructureSpec struct {
 	// +kubebuilder:validation:Enum=HighlyAvailable;SingleReplica
 	// +optional
 	ControlPlaneTopology TopologyMode `json:"controlPlaneTopology,omitempty"`
+
+	// infrastructureTopology expresses the desired topology for infrastructure
+	// services that do not run on control plane nodes, indicating how
+	// infrastructure workloads are distributed across nodes.
+	//
+	// When omitted, no topology transition override has been expressed.
+	// Once populated, the field represents the desired topology state.
+	//
+	// When the value differs from status.infrastructureTopology, the cluster
+	// evaluates whether the requested transition can proceed. Not all
+	// transitions may be permitted.
+	//
+	// +openshift:enable:FeatureGate=MutableTopology
+	// +kubebuilder:validation:Enum=HighlyAvailable;SingleReplica
+	// +optional
+	InfrastructureTopology TopologyMode `json:"infrastructureTopology,omitempty"`
 }
 
 // InfrastructureStatus describes the infrastructure the cluster is leveraging.
@@ -116,13 +132,13 @@ type InfrastructureStatus struct {
 	// The default is 'HighlyAvailable', which represents the behavior operators have in a "normal" cluster.
 	// The 'SingleReplica' mode will be used in single-node deployments
 	// and the operators should not configure the operand for highly-available operation
+	// The 'DualReplica' mode is used in two-node deployments with fencing.
 	// The 'External' mode indicates that the control plane is hosted externally to the cluster and that
 	// its components are not visible within the cluster.
 	// The 'HighlyAvailableArbiter' mode indicates that the control plane will consist of 2 control-plane nodes
 	// that run conventional services and 1 smaller sized arbiter node that runs a bare minimum of services to maintain quorum.
 	// +kubebuilder:default=HighlyAvailable
-	// +openshift:validation:FeatureGateAwareEnum:featureGate="",enum=HighlyAvailable;HighlyAvailableArbiter;SingleReplica;External
-	// +openshift:validation:FeatureGateAwareEnum:featureGate=DualReplica,enum=HighlyAvailable;HighlyAvailableArbiter;SingleReplica;DualReplica;External
+	// +kubebuilder:validation:Enum=HighlyAvailable;HighlyAvailableArbiter;SingleReplica;DualReplica;External
 	// +optional
 	ControlPlaneTopology TopologyMode `json:"controlPlaneTopology"`
 
@@ -137,6 +153,16 @@ type InfrastructureStatus struct {
 	// +kubebuilder:validation:Enum=HighlyAvailable;SingleReplica
 	// +optional
 	InfrastructureTopology TopologyMode `json:"infrastructureTopology,omitempty"`
+
+	// topologyTransitionStatus reports evaluations of supported topology transitions
+	// and the status of a requested transition, if any.
+	// It is optional and is omitted until the topology controller reports transition status.
+	// A transition is requested through spec.controlPlaneTopology. The controller
+	// reports completion only after both topologies reach that transition's target
+	// and post-transition checks pass; reaching the target topology alone is not completion.
+	// +openshift:enable:FeatureGate=MutableTopology
+	// +optional
+	TopologyTransitionStatus TopologyTransitionStatus `json:"topologyTransitionStatus,omitzero"`
 
 	// cpuPartitioning expresses if CPU partitioning is a currently enabled feature in the cluster.
 	// CPU Partitioning means that this cluster can support partitioning workloads to specific CPU Sets.
