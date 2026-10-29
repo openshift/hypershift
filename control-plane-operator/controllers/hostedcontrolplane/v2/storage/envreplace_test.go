@@ -238,6 +238,18 @@ func TestSetOperatorImageReferences(t *testing.T) {
 			},
 		},
 		{
+			name: "When VOLUME_DEVICE_EXPORTER_IMAGE is set, it should use userReleaseImageProvider as a data plane ref",
+			releaseImages: map[string]string{
+				"csi-volume-device-exporter": "release-registry.io/csi-volume-device-exporter:v1",
+			},
+			userReleaseImages: map[string]string{
+				"csi-volume-device-exporter": "user-registry.io/csi-volume-device-exporter:v1",
+			},
+			expectedValues: map[string]string{
+				"VOLUME_DEVICE_EXPORTER_IMAGE": "user-registry.io/csi-volume-device-exporter:v1",
+			},
+		},
+		{
 			name: "When env var ends with _CONTROL_PLANE_IMAGE (GCP_PD_DRIVER_CONTROL_PLANE_IMAGE), it should use releaseImageProvider, not userReleaseImageProvider",
 			releaseImages: map[string]string{
 				"gcp-pd-csi-driver": "release-registry.io/gcp-pd-csi-driver:v1",
