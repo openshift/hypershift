@@ -152,11 +152,11 @@ func (c *CAPI) Reconcile(ctx context.Context) (*CAPIResult, error) {
 				template)
 			return reconcileErr
 		})
-		result.Conditions = append(result.Conditions, conditions...)
 		if err != nil {
 			return result, fmt.Errorf("failed to reconcile MachineSet %q: %w",
 				client.ObjectKeyFromObject(ms).String(), err)
 		}
+		result.Conditions = append(result.Conditions, conditions...)
 		log.Info("Reconciled MachineSet", "result", operationResult)
 	}
 
@@ -172,11 +172,11 @@ func (c *CAPI) Reconcile(ctx context.Context) (*CAPIResult, error) {
 				template)
 			return reconcileErr
 		})
-		result.Conditions = append(result.Conditions, conditions...)
 		if err != nil {
 			return result, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
 				client.ObjectKeyFromObject(md).String(), err)
 		}
+		result.Conditions = append(result.Conditions, conditions...)
 		log.Info("Reconciled MachineDeployment", "result", operationResult)
 	}
 

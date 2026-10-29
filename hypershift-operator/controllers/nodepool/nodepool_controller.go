@@ -365,6 +365,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		r.reachedIgnitionEndpointCondition,
 		r.machineAndNodeConditions,
 		r.validPlatformConfigCondition,
+		// TODO(alberto): consider moving here:
+		// NodePoolUpdatingPlatformMachineTemplateConditionType,
+		// NodePoolAutorepairEnabledConditionType.
 	}
 	for _, f := range signalConditions {
 		result, err := f(ctx, nodePool, hcluster)

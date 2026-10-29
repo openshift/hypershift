@@ -2591,7 +2591,7 @@ func testCAPIReconcileConditionErrorPaths(t *testing.T) {
 			},
 		},
 		{
-			name:        "When MachineDeployment persistence fails after status reconciliation, it should return the accumulated conditions",
+			name:        "When MachineDeployment persistence fails after status reconciliation, it should return only pre-workload conditions",
 			upgradeType: hyperv1.UpgradeTypeReplace,
 			interceptors: interceptor.Funcs{
 				Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
@@ -2603,11 +2603,10 @@ func testCAPIReconcileConditionErrorPaths(t *testing.T) {
 			},
 			expectedTypes: []string{
 				hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
-				hyperv1.NodePoolReadyConditionType,
 			},
 		},
 		{
-			name:        "When MachineSet persistence fails after status reconciliation, it should return the accumulated conditions",
+			name:        "When MachineSet persistence fails after status reconciliation, it should return only pre-workload conditions",
 			upgradeType: hyperv1.UpgradeTypeInPlace,
 			interceptors: interceptor.Funcs{
 				Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
@@ -2619,7 +2618,6 @@ func testCAPIReconcileConditionErrorPaths(t *testing.T) {
 			},
 			expectedTypes: []string{
 				hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
-				hyperv1.NodePoolReadyConditionType,
 			},
 		},
 		{
@@ -2629,6 +2627,23 @@ func testCAPIReconcileConditionErrorPaths(t *testing.T) {
 			interceptors: interceptor.Funcs{
 				Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
 					if mhc, ok := obj.(*capiv1.MachineHealthCheck); ok && mhc.Name == "test-nodepool" {
+						return injectedErr
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			},
+			expectedTypes: []string{
+				hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+				hyperv1.NodePoolReadyConditionType,
+			},
+		},
+		{
+			name:        "When MachineHealthCheck creation fails after MachineSet persistence, it should preserve readiness",
+			upgradeType: hyperv1.UpgradeTypeInPlace,
+			autoRepair:  true,
+			interceptors: interceptor.Funcs{
+				Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+					if _, ok := obj.(*capiv1.MachineHealthCheck); ok {
 						return injectedErr
 					}
 					return c.Create(ctx, obj, opts...)

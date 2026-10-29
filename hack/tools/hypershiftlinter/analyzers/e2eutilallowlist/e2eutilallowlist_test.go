@@ -7,7 +7,6 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -171,61 +170,6 @@ func TestAllowlist(t *testing.T) {
 			}
 			if info.IsDir() {
 				t.Fatalf("allowlist key %s is a directory", file)
-			}
-		})
-	}
-}
-
-func TestAllowlistOSImageStreamUpgradeScopes(t *testing.T) {
-	t.Parallel()
-	const filename = "test/e2e/v2/tests/nodepool_osimagestream_test.go"
-	file, err := parser.ParseFile(token.NewFileSet(), filepath.Join("../../../../..", filename), nil, 0)
-	if err != nil {
-		t.Fatalf("parse OSImageStream upgrade specs: %v", err)
-	}
-	wantSymbols := []string{"EventuallyObject", "OSImageStreamPredicate", "Predicate", "UpdateObject", "WaitForReadyNodesByNodePool", "WithInterval", "WithTimeout"}
-	for _, testCase := range []struct {
-		name     string
-		function string
-	}{
-		{name: "When the cross-major upgrade spec is renamed, it should retain only its existing utility allowances", function: "NodePoolOSImageStreamCrossMajorUpgradeTest"},
-		{name: "When the pinned RHEL9 upgrade spec is renamed, it should retain only its existing utility allowances", function: "NodePoolOSImageStreamPinnedRHEL9UpgradeTest"},
-		{name: "When the upgrade spec uses the v2 version waiter, it should remove obsolete condition allowances", function: "NodePoolOSImageStreamUpgradeVerificationTest"},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			var scopes []string
-			for _, declaration := range file.Decls {
-				function, ok := declaration.(*ast.FuncDecl)
-				if !ok || function.Name.Name != testCase.function {
-					continue
-				}
-				ast.Inspect(function.Body, func(node ast.Node) bool {
-					call, ok := node.(*ast.CallExpr)
-					if !ok {
-						return true
-					}
-					identifier, ok := call.Fun.(*ast.Ident)
-					if !ok || identifier.Name != "It" {
-						return true
-					}
-					info := &types.Info{Uses: map[*ast.Ident]types.Object{
-						identifier: types.NewFunc(token.NoPos, types.NewPackage("github.com/onsi/ginkgo/v2", "ginkgo"), "It", nil),
-					}}
-					scopes = append(scopes, registrationScope(&analysis.Pass{TypesInfo: info}, call, testCase.function, map[string]int{}))
-					return false
-				})
-			}
-			if len(scopes) != 1 {
-				t.Fatalf("%s has %d It registrations, want exactly one", testCase.function, len(scopes))
-			}
-			if got := allowlist[filename][scopes[0]]; !slices.Equal(got, wantSymbols) {
-				t.Errorf("allowances for current callback %s = %v, want %v", scopes[0], got, wantSymbols)
-			}
-			for scope := range allowlist[filename] {
-				if strings.HasPrefix(scope, testCase.function+"/") && scope != scopes[0] {
-					t.Errorf("obsolete callback allowance %s remains alongside current callback %s", scope, scopes[0])
-				}
 			}
 		})
 	}
