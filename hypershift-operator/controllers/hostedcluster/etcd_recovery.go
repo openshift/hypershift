@@ -7,9 +7,9 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/pkg/manifests"
 	pkgetcdrecovery "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
