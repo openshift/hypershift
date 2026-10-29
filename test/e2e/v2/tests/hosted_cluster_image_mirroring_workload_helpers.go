@@ -253,12 +253,17 @@ func imageMirroringContainerStatus(pod *corev1.Pod) *corev1.ContainerStatus {
 	return nil
 }
 
-// imageMirroringPodSummary renders the pod state used in predicate reasons.
+// imageMirroringPodSummary renders the pod state used in predicate reasons,
+// including the pod-level reason and message (e.g. an eviction), which can be
+// the only explanation for a Failed pod without container statuses.
 func imageMirroringPodSummary(pod *corev1.Pod) string {
 	if pod == nil {
 		return "pod <nil>"
 	}
 	summary := fmt.Sprintf("pod %s/%s phase=%q", pod.Namespace, pod.Name, pod.Status.Phase)
+	if pod.Status.Reason != "" || pod.Status.Message != "" {
+		summary += fmt.Sprintf(" reason=%q message=%q", pod.Status.Reason, pod.Status.Message)
+	}
 	for _, cond := range pod.Status.Conditions {
 		if cond.Type == corev1.PodScheduled && cond.Status != corev1.ConditionTrue {
 			summary += fmt.Sprintf(" unscheduled=%s: %s", cond.Reason, cond.Message)

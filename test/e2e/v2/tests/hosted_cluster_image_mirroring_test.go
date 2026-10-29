@@ -144,7 +144,8 @@ func RegisterHostedClusterImageMirroringTests(getTestCtx internal.TestContextGet
 		Expect(hostedClient.Get(tc.Context, crclient.ObjectKey{Name: pulled.Spec.NodeName}, node)).To(Succeed(), "read node %s", pulled.Spec.NodeName)
 		platformDigest, err := imageMirroringPlatformDigest(manifestList, listDigest, node.Status.NodeInfo.OperatingSystem, node.Status.NodeInfo.Architecture)
 		Expect(err).NotTo(HaveOccurred(), "select the manifest for node %s", node.Name)
-		Expect(imageMirroringCheckImageID(pulled, []string{platformDigest, listDigest})).To(Succeed())
+		Expect(imageMirroringCheckImageID(pulled, []string{platformDigest, listDigest})).To(Succeed(),
+			"pod %s/%s on node %s must report one of the mirror digests %v", pulled.Namespace, pulled.Name, node.Name, []string{platformDigest, listDigest})
 	})
 }
 

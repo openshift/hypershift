@@ -3,6 +3,7 @@
 package tests
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -11,6 +12,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -205,9 +207,27 @@ func TestImageMirroringHTTPClient(t *testing.T) {
 }
 
 func TestImageMirroringFetchManifest(t *testing.T) {
-	const path = "/v2/mirror-source.hypershift-e2e.invalid/libpod/registry/manifests/" + imageMirroringTestListDigest
+	const (
+		manifestsPath = "/manifests/" + imageMirroringTestListDigest
+		path          = "/v2/" + imageMirroringVirtualSource + manifestsPath
+		oversizePath  = "/v2/libpod/oversize" + manifestsPath
+		blockingPath  = "/v2/libpod/blocking" + manifestsPath
+	)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != path {
+		switch r.URL.Path {
+		case path:
+		case oversizePath:
+			_, _ = w.Write([]byte(strings.Repeat("x", imageMirroringManifestMaxBytes+1)))
+			return
+		case blockingPath:
+			// Hold the response until the client goes away; the bound only
+			// keeps a broken test from hanging the server shutdown.
+			select {
+			case <-r.Context().Done():
+			case <-time.After(imageMirroringHTTPClientTimeout):
+			}
+			return
+		default:
 			http.Error(w, `{"errors":[{"code":"MANIFEST_UNKNOWN"}]}`, http.StatusNotFound)
 			return
 		}
@@ -226,14 +246,18 @@ func TestImageMirroringFetchManifest(t *testing.T) {
 	host := strings.TrimPrefix(server.URL, "https://")
 
 	tests := []struct {
-		name       string
-		ca         []byte
-		repository string
-		wantErr    string
+		name        string
+		ca          []byte
+		repository  string
+		cancelAfter time.Duration
+		wantErr     string
+		wantErrIs   error
 	}{
 		{name: "When the mirror serves the list with the trusted CA, it should return the exact body", ca: caOf(server), repository: imageMirroringVirtualSource},
 		{name: "When the manifest is unknown, it should return the status and body", ca: caOf(server), repository: "libpod/other", wantErr: "status 404"},
 		{name: "When the server certificate is not signed by the trust bundle, it should return a TLS error", ca: imageMirroringTestUnrelatedCA(t), repository: imageMirroringVirtualSource, wantErr: "certificate"},
+		{name: "When the response exceeds the size limit, it should reject it", ca: caOf(server), repository: "libpod/oversize", wantErr: "manifest exceeds"},
+		{name: "When the context is canceled while waiting for the response, it should return the cancellation without waiting for the client timeout", ca: caOf(server), repository: "libpod/blocking", cancelAfter: 100 * time.Millisecond, wantErr: "context canceled", wantErrIs: context.Canceled},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -241,10 +265,25 @@ func TestImageMirroringFetchManifest(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			body, err := imageMirroringFetchManifest(t.Context(), client, host, tt.repository, imageMirroringTestListDigest)
+			ctx := t.Context()
+			if tt.cancelAfter > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				timer := time.AfterFunc(tt.cancelAfter, cancel)
+				defer timer.Stop()
+				defer cancel()
+			}
+			start := time.Now()
+			body, err := imageMirroringFetchManifest(ctx, client, host, tt.repository, imageMirroringTestListDigest)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+				}
+				if tt.wantErrIs != nil && !errors.Is(err, tt.wantErrIs) {
+					t.Fatalf("expected error wrapping %v, got %v", tt.wantErrIs, err)
+				}
+				if elapsed := time.Since(start); elapsed >= client.Timeout {
+					t.Fatalf("expected the error before the client timeout %s, got it after %s", client.Timeout, elapsed)
 				}
 				return
 			}
@@ -440,6 +479,9 @@ func TestImageMirroringCheckPulledPod(t *testing.T) {
 	unschedulable.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: "Unschedulable", Message: "0/1 nodes are available"}}
 	otherContainer := imageMirroringTestPod(corev1.PodPending, nil)
 	otherContainer.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "other", State: *imageMirroringTerminatedState(0)}}
+	evicted := imageMirroringTestPod(corev1.PodFailed, nil)
+	evicted.Status.Reason = "Evicted"
+	evicted.Status.Message = "The node was low on resource: ephemeral-storage."
 
 	tests := []struct {
 		name       string
@@ -461,6 +503,7 @@ func TestImageMirroringCheckPulledPod(t *testing.T) {
 		{name: "When the image name is invalid, it should fail terminally", pod: imageMirroringTestPod(corev1.PodPending, imageMirroringWaitingState("InvalidImageName", "")), wantErr: "InvalidImageName"},
 		{name: "When the container exits non-zero, it should fail terminally", pod: imageMirroringTestPod(corev1.PodRunning, imageMirroringTerminatedState(2)), wantErr: "exitCode=2"},
 		{name: "When the pod Failed, it should fail terminally", pod: imageMirroringTestPod(corev1.PodFailed, nil), wantErr: "Failed"},
+		{name: "When the pod Failed with a pod-level reason, it should fail terminally and report it", pod: evicted, wantErr: `reason="Evicted"`},
 		{name: "When the pod is nil, it should fail terminally", pod: nil, wantErr: "nil"},
 	}
 	for _, tt := range tests {
@@ -479,21 +522,64 @@ func TestImageMirroringCheckPulledPod(t *testing.T) {
 	}
 }
 
-func TestImageMirroringPodState(t *testing.T) {
-	t.Run("When the pod is nil, it should not panic and report no container status", func(t *testing.T) {
-		if got := imageMirroringContainerStatus(nil); got != nil {
-			t.Fatalf("expected nil status, got %+v", got)
-		}
-		if got := imageMirroringPodSummary(nil); !strings.Contains(got, "<nil>") {
-			t.Fatalf("expected a nil pod summary, got %q", got)
-		}
-	})
-	t.Run("When the workload container has a status, it should return that status", func(t *testing.T) {
-		pod := imageMirroringTestPod(corev1.PodRunning, imageMirroringRunningState())
-		if got := imageMirroringContainerStatus(pod); got == nil || got.Name != imageMirroringWorkloadContainer {
-			t.Fatalf("expected the %q status, got %+v", imageMirroringWorkloadContainer, got)
-		}
-	})
+func TestImageMirroringContainerStatus(t *testing.T) {
+	otherContainer := imageMirroringTestPod(corev1.PodPending, nil)
+	otherContainer.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "other"}}
+	tests := []struct {
+		name string
+		pod  *corev1.Pod
+		want bool
+	}{
+		{name: "When the pod is nil, it should return nil", pod: nil},
+		{name: "When the pod has no container statuses, it should return nil", pod: imageMirroringTestPod(corev1.PodPending, nil)},
+		{name: "When only another container has a status, it should return nil", pod: otherContainer},
+		{name: "When the workload container has a status, it should return that status", pod: imageMirroringTestPod(corev1.PodRunning, imageMirroringRunningState()), want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := imageMirroringContainerStatus(tt.pod)
+			if tt.want != (got != nil) || (got != nil && got.Name != imageMirroringWorkloadContainer) {
+				t.Fatalf("got %+v, want status for %q: %v", got, imageMirroringWorkloadContainer, tt.want)
+			}
+		})
+	}
+}
+
+func TestImageMirroringPodSummary(t *testing.T) {
+	evicted := imageMirroringTestPod(corev1.PodFailed, nil)
+	evicted.Status.Reason = "Evicted"
+	evicted.Status.Message = "The node was low on resource: ephemeral-storage."
+	unschedulable := imageMirroringTestPod(corev1.PodPending, nil)
+	unschedulable.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: "Unschedulable", Message: "0/1 nodes are available"}}
+	tests := []struct {
+		name    string
+		pod     *corev1.Pod
+		want    []string
+		notWant []string
+	}{
+		{name: "When the pod is nil, it should not panic and say so", pod: nil, want: []string{"pod <nil>"}},
+		{name: "When the pod has a pod-level reason and message, it should include both", pod: evicted, want: []string{`phase="Failed"`, `reason="Evicted"`, `message="The node was low on resource: ephemeral-storage."`, "has no status"}},
+		{name: "When the pod has no pod-level reason or message, it should leave them out", pod: imageMirroringTestPod(corev1.PodPending, nil), want: []string{"e2e-image-mirroring-x/pod", `phase="Pending"`}, notWant: []string{"reason=", "message="}},
+		{name: "When the pod is unschedulable, it should include the scheduling reason", pod: unschedulable, want: []string{"unscheduled=Unschedulable: 0/1 nodes are available"}},
+		{name: "When the container is waiting, it should include the waiting reason and message", pod: imageMirroringTestPod(corev1.PodPending, imageMirroringWaitingState("ErrImagePull", "no such host")), want: []string{"waiting=ErrImagePull: no such host"}},
+		{name: "When the container terminated, it should include the exit code", pod: imageMirroringTestPod(corev1.PodRunning, imageMirroringTerminatedState(2)), want: []string{"terminated=Completed exitCode=2"}},
+		{name: "When the container is running, it should say so", pod: imageMirroringTestPod(corev1.PodRunning, imageMirroringRunningState()), want: []string{" running"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := imageMirroringPodSummary(tt.pod)
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Fatalf("summary %q does not contain %q", got, want)
+				}
+			}
+			for _, notWant := range tt.notWant {
+				if strings.Contains(got, notWant) {
+					t.Fatalf("summary %q contains %q", got, notWant)
+				}
+			}
+		})
+	}
 }
 
 func TestImageMirroringCheckImageID(t *testing.T) {
