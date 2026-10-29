@@ -132,13 +132,13 @@ type InfrastructureStatus struct {
 	// The default is 'HighlyAvailable', which represents the behavior operators have in a "normal" cluster.
 	// The 'SingleReplica' mode will be used in single-node deployments
 	// and the operators should not configure the operand for highly-available operation
+	// The 'DualReplica' mode is used in two-node deployments with fencing.
 	// The 'External' mode indicates that the control plane is hosted externally to the cluster and that
 	// its components are not visible within the cluster.
 	// The 'HighlyAvailableArbiter' mode indicates that the control plane will consist of 2 control-plane nodes
 	// that run conventional services and 1 smaller sized arbiter node that runs a bare minimum of services to maintain quorum.
 	// +kubebuilder:default=HighlyAvailable
-	// +openshift:validation:FeatureGateAwareEnum:featureGate="",enum=HighlyAvailable;HighlyAvailableArbiter;SingleReplica;External
-	// +openshift:validation:FeatureGateAwareEnum:featureGate=DualReplica,enum=HighlyAvailable;HighlyAvailableArbiter;SingleReplica;DualReplica;External
+	// +kubebuilder:validation:Enum=HighlyAvailable;HighlyAvailableArbiter;SingleReplica;DualReplica;External
 	// +optional
 	ControlPlaneTopology TopologyMode `json:"controlPlaneTopology"`
 
