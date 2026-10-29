@@ -1,0 +1,17 @@
+---
+config:
+  theme: default
+  look: classic
+  htmlLabels: false
+  markdownAutoWrap: false
+  fontFamily: Arial, sans-serif
+  flowchart:
+    htmlLabels: false
+    wrappingWidth: 500
+---
+flowchart LR
+    ETCD["managed etcd"] --> KAS["kube-apiserver"]
+    FG["featuregate-generator"] --> KAS
+    KAS --> REST["all components with the implicit KAS dependency"]
+    IGN["ignition-server"] --> ROUTER["router"]
+    IGN --> PROXY["ignition-server proxy"]

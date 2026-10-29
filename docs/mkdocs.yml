@@ -11,7 +11,8 @@ plugins:
     touchNavigation: true
     loop: false
     effect: zoom
-    width: 100%
+    # Let zoomed images expand to their intrinsic size.
+    width: auto
     height: auto
     zoomable: true
     draggable: true
@@ -402,6 +403,11 @@ nav:
     - 'Adding E2E Tests': reference/ho-release-gating/extending-tests.md
     - 'Extending to Other Services': reference/ho-release-gating/extending-services.md
     - 'Operations and Troubleshooting': reference/ho-release-gating/troubleshooting.md
+  - 'Hosted cluster startup roadmap':
+    - 'Overview': reference/cluster-startup-roadmap.md
+    - 'AWS startup debugging examples': reference/cluster-startup-aws-observation.md
+    - 'AWS creation and deletion observations': reference/cluster-startup-aws-repeat.md
+    - 'AWS teardown roadmap': reference/cluster-teardown-roadmap.md
   - "Infrastructure":
     - reference/infrastructure/index.md
     - "AWS": reference/infrastructure/aws.md
