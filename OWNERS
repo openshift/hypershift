@@ -2,15 +2,11 @@ filters:
   ".*":
     approvers:
     - core-approvers
+    - redhat-chai-bot
     reviewers:
     - core-reviewers
     emeritus_approvers:
     - davidvossel
-  # Chai's dedicated Dependabot workflow owns only dependency updates.
-  # api/OWNERS supplies the equivalent grant below its no_parent_owners boundary.
-  '^(go\.(mod|sum)|hack/tools/go\.(mod|sum)|(hack/tools/)?vendor/(modules\.txt|[^/]+/.+))$':
-    approvers:
-    - redhat-chai-bot
   "^openshift-hypershift-.*":
     approvers:
     - ci-operator-config-approvers

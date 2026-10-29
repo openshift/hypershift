@@ -1,12 +1,7 @@
 options:
   no_parent_owners: true
-filters:
-  ".*":
-    approvers:
-    - api-approvers
-    labels:
-    - area/api
-  # Dependency-only authority for Chai's event-bound Dependabot workflow.
-  '^(go\.(mod|sum)|vendor/(modules\.txt|[^/]+/.+))$':
-    approvers:
-    - redhat-chai-bot
+approvers:
+- api-approvers
+- redhat-chai-bot
+labels:
+- area/api

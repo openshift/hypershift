@@ -1,25 +1,4 @@
-# Keep inherited human permissions when isolating this scope from Chai.
-# Prow must not collapse this OWNERS scope into a root dependency approval.
-options:
-  no_parent_owners: true
-filters:
-  ".*":
-    approvers:
-    - e2e-approvers
-    - core-approvers
-    reviewers:
-    - e2e-approvers
-    - core-reviewers
-  ".*gcp.*":
-    reviewers:
-    - gcp-reviewers
-  ".*kubevirt.*":
-    approvers:
-    - kubevirt-approvers
-    reviewers:
-    - kubevirt-reviewers
-  ".*openstack.*":
-    approvers:
-    - openstack-approvers
-    reviewers:
-    - openstack-reviewers
+approvers:
+- e2e-approvers
+reviewers:
+- e2e-approvers
