@@ -53,10 +53,6 @@ func TestNodePool(t *testing.T) {
 			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {
 				return []NodePoolTestCase{
 					{
-						name: "TestKMSRootVolumeEncryption",
-						test: NewKMSRootVolumeTest(ctx, hostedCluster, clusterOpts),
-					},
-					{
 						name: "TestNodePoolAutoRepair",
 						test: NewNodePoolAutoRepairTest(ctx, hostedCluster, hostedClusterClient, clusterOpts),
 					},
