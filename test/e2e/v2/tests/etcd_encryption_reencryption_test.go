@@ -396,7 +396,7 @@ func AzureKMSKeyRotationTest(getTestCtx internal.TestContextGetter) {
 	rc := rotationCase{
 		expectedProvider: hyperv1.SecretEncryptionProviderAzure,
 		applies:          azureKMSRotationApplies,
-		alternate: internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE"),
+		alternate:        internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE"),
 		getActiveKey: func(hc *hyperv1.HostedCluster) string {
 			return hc.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion
 		},
