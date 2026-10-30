@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/powervs/v1beta2"
 	ibmcapicore "sigs.k8s.io/cluster-api-provider-ibmcloud/capicore/api/core/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"

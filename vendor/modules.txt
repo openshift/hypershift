@@ -2679,9 +2679,10 @@ sigs.k8s.io/cluster-api-provider-azure/util/azure
 ## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1
 sigs.k8s.io/cluster-api-provider-gcp/capicore/api/core/v1beta1
-# sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1 => ./pkg/capi/ibmcloud
+# sigs.k8s.io/cluster-api-provider-ibmcloud v0.14.0 => ./pkg/capi/ibmcloud
 ## explicit; go 1.25.7
-sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
+sigs.k8s.io/cluster-api-provider-ibmcloud/api/powervs/v1beta2
+sigs.k8s.io/cluster-api-provider-ibmcloud/api/vpc/v1beta2
 sigs.k8s.io/cluster-api-provider-ibmcloud/capicore/api/core/v1beta1
 # sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2 => ./pkg/capi/kubevirt
 ## explicit; go 1.25.7

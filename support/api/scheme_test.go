@@ -11,7 +11,27 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
+
+func TestSchemeRegistration(t *testing.T) {
+	t.Run("When IBM kinds are registered, it should preserve v1beta2 GVKs without registering other versions", func(t *testing.T) {
+		for _, kind := range []string{"IBMVPCCluster", "IBMVPCClusterTemplate", "IBMVPCMachine", "IBMVPCMachineTemplate", "IBMPowerVSCluster", "IBMPowerVSClusterTemplate", "IBMPowerVSImage", "IBMPowerVSMachine", "IBMPowerVSMachineTemplate"} {
+			for _, scheme := range []*runtime.Scheme{Scheme, AllMonitoringScheme} {
+				gvk := schema.GroupVersionKind{Group: "infrastructure.cluster.x-k8s.io", Version: "v1beta2", Kind: kind}
+				if _, err := scheme.New(gvk); err != nil {
+					t.Fatal(err)
+				}
+				for _, version := range []string{"v1beta1", "v1beta3"} {
+					gvk.Version = version
+					if scheme.Recognizes(gvk) {
+						t.Errorf("unexpected registered GVK: %s", gvk)
+					}
+				}
+			}
+		}
+	})
+}
 
 func TestEncode(t *testing.T) {
 	tests := []struct {

@@ -38,6 +38,7 @@
     {"pattern": "cmd/install/assets/crds/cluster-api-provider-kubevirt/**", "group": "Vendor", "why": "marked as generated"},
     {"pattern": "cmd/install/assets/crds/cluster-api-provider-openstack/**", "group": "Vendor", "why": "marked as generated"},
     {"pattern": "cmd/install/assets/crds/external-dns/**", "group": "Vendor", "why": "marked as generated"},
+    {"pattern": "hack/tools/capi-crd-compat/testdata/**", "group": "Vendor", "why": "marked as generated"},
     {"pattern": "cmd/infra/aws/delegating_client.go", "group": "Vendor", "why": "marked as generated"},
     {"pattern": "hack/tools/deadcode-report/testdata/reachability/generated.go", "group": "Vendor", "why": "marked as generated"},
     {"pattern": "hack/tools/hypershiftlinter/analyzers/testfuncstructure/testdata/src/a/good/generated.go", "group": "Vendor", "why": "marked as generated"},

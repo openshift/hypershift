@@ -190,6 +190,7 @@ verify-parallel-targets: verify-codespell verify-codecov verify-api-deps verify-
 # Run target checks sequentially after preparation.
 .PHONY: verify-serial-targets
 verify-serial-targets:
+	$(MAKE) test-capi-crd-compat
 	# Sync regenerates provider sources that decoupling builds and lint reads.
 	$(MAKE) verify-capi-sync
 	$(MAKE) verify-capi-decoupling
@@ -390,8 +391,13 @@ cluster-api-provider-gcp: $(CONTROLLER_GEN)
 	$(CAPI_CRD_GEN) $(DIR)/cmd/install/assets/crds/cluster-api-provider-gcp $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="sigs.k8s.io/cluster-api-provider-gcp/..."
 
 .PHONY: cluster-api-provider-ibmcloud
-cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
-	$(CAPI_CRD_GEN) $(DIR)/cmd/install/assets/crds/cluster-api-provider-ibmcloud $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="sigs.k8s.io/cluster-api-provider-ibmcloud/..."
+CAPI_CRD_COMPAT := $(abspath $(TOOLS_BIN_DIR)/capi-crd-compat)
+IBM_CAPI_COMPAT := $(DIR)/hack/capi-compat/ibmcloud/compatibility.yaml
+$(CAPI_CRD_COMPAT): $(wildcard $(TOOLS_DIR)/capi-crd-compat/*.go) $(TOOLS_DIR)/go.mod
+	cd $(TOOLS_DIR); $(GO) build -o $(CAPI_CRD_COMPAT) ./capi-crd-compat
+
+cluster-api-provider-ibmcloud: $(CONTROLLER_GEN) $(CAPI_CRD_COMPAT) $(IBM_CAPI_COMPAT)
+	$(CAPI_CRD_GEN) --compat-tool $(CAPI_CRD_COMPAT) --compat-config $(IBM_CAPI_COMPAT) $(DIR)/cmd/install/assets/crds/cluster-api-provider-ibmcloud $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="sigs.k8s.io/cluster-api-provider-ibmcloud/..."
 
 .PHONY: cluster-api-provider-kubevirt
 cluster-api-provider-kubevirt: $(CONTROLLER_GEN)
@@ -452,11 +458,15 @@ setup-envtest: $(SETUP_ENVTEST) ## Setup envtest binaries (etcd, kube-apiserver)
 NUM_CORES := $(shell getconf _NPROCESSORS_ONLN || echo 1)
 GO_TEST_FLAGS ?= -race
 
-test: generate test-e2ev2-unit
+test: generate test-e2ev2-unit test-capi-crd-compat
 	@echo "Running tests with $(NUM_CORES) parallel jobs..."
 	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
 .PHONY: test-e2ev2-unit
+.PHONY: test-capi-crd-compat
+test-capi-crd-compat:
+	cd $(TOOLS_DIR) && $(GO) test $(GO_TEST_FLAGS) -count=1 ./capi-crd-compat/...
+
 test-e2ev2-unit:
 	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m ./test/e2e/v2/internal ./test/e2e/v2/cmd/run-tests
 	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m -run '^(TestComponentSupportsTLSConfig|TestVerifyIntermediateTLSConnectivityAfterDowngrade|TestImageMirroring.*)$$' ./test/e2e/v2/tests
@@ -827,7 +837,7 @@ test-commit-layout: $(PYTHON_VENV_STAMP) ## Test the restructure-commits layout 
 
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*,./pkg/capi/*,./hack/capi-vendor/*"
+	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./hack/tools/capi-crd-compat/testdata/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*,./pkg/capi/*,./hack/capi-vendor/*"
 
 .PHONY: verify-api-deps
 verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependency allowlist and shared requirements/replacements.
