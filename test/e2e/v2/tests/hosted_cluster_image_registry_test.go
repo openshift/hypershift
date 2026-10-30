@@ -102,12 +102,14 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred())
 
 			secret := &corev1.Secret{}
-			Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: "openshift-image-registry",
-				Name:      "installer-cloud-credentials",
-			}, secret)).To(Succeed())
-			Expect(secret.Data).NotTo(BeEmpty(),
-				"installer-cloud-credentials secret should have data")
+			Eventually(func(g Gomega) {
+				g.Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{
+					Namespace: "openshift-image-registry",
+					Name:      "installer-cloud-credentials",
+				}, secret)).To(Succeed(), "failed to get installer-cloud-credentials secret")
+				g.Expect(secret.Data).NotTo(BeEmpty(),
+					"installer-cloud-credentials secret should have data")
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
 		It("should have storage configured in the registry config", func() {
@@ -117,29 +119,35 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 			Expect(err).NotTo(HaveOccurred())
 
 			config := &imageregistryv1.Config{}
-			Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, config)).To(Succeed())
+			Eventually(func(g Gomega) {
+				g.Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, config)).To(Succeed(),
+					"failed to get image registry Config")
 
-			storage := config.Spec.Storage
-			hasStorage := storage.S3 != nil ||
-				storage.GCS != nil ||
-				storage.Azure != nil ||
-				storage.Swift != nil ||
-				storage.PVC != nil ||
-				storage.IBMCOS != nil ||
-				storage.OSS != nil ||
-				storage.EmptyDir != nil
-			Expect(hasStorage).To(BeTrue(),
-				"image registry Config should have at least one storage backend configured")
+				storage := config.Spec.Storage
+				hasStorage := storage.S3 != nil ||
+					storage.GCS != nil ||
+					storage.Azure != nil ||
+					storage.Swift != nil ||
+					storage.PVC != nil ||
+					storage.IBMCOS != nil ||
+					storage.OSS != nil ||
+					storage.EmptyDir != nil
+				g.Expect(hasStorage).To(BeTrue(),
+					"image registry Config should have at least one storage backend configured")
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
 		It("should have a ready cluster-image-registry-operator deployment", func() {
-			deployment := &appsv1.Deployment{}
-			Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
-				Namespace: tc.ControlPlaneNamespace,
-				Name:      "cluster-image-registry-operator",
-			}, deployment)).To(Succeed())
-			Expect(deployment.Status.ReadyReplicas).To(BeNumerically(">=", 1),
-				"cluster-image-registry-operator deployment should have at least one ready replica")
+			By("waiting for the cluster-image-registry-operator deployment to have a ready replica")
+			Eventually(func(g Gomega) {
+				deployment := &appsv1.Deployment{}
+				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+					Namespace: tc.ControlPlaneNamespace,
+					Name:      "cluster-image-registry-operator",
+				}, deployment)).To(Succeed(), "failed to get cluster-image-registry-operator deployment")
+				g.Expect(deployment.Status.ReadyReplicas).To(BeNumerically(">=", 1),
+					"cluster-image-registry-operator deployment should have at least one ready replica")
+			}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
 		Context("on GCP clusters", func() {
@@ -166,11 +174,14 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 				Expect(err).NotTo(HaveOccurred())
 
 				config := &imageregistryv1.Config{}
-				Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, config)).To(Succeed())
-				Expect(config.Spec.Storage.GCS).NotTo(BeNil(),
-					"image registry Config should use GCS storage on GCP clusters")
-				Expect(config.Spec.Storage.GCS.Bucket).NotTo(BeEmpty(),
-					"GCS storage bucket name should not be empty")
+				Eventually(func(g Gomega) {
+					g.Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{Name: "cluster"}, config)).To(Succeed(),
+						"failed to get image registry Config")
+					g.Expect(config.Spec.Storage.GCS).NotTo(BeNil(),
+						"image registry Config should use GCS storage on GCP clusters")
+					g.Expect(config.Spec.Storage.GCS.Bucket).NotTo(BeEmpty(),
+						"GCS storage bucket name should not be empty")
+				}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 			})
 
 			It("should have valid WIF credentials in installer-cloud-credentials", func() {
@@ -180,15 +191,17 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 				Expect(err).NotTo(HaveOccurred())
 
 				secret := &corev1.Secret{}
-				Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{
-					Namespace: "openshift-image-registry",
-					Name:      "installer-cloud-credentials",
-				}, secret)).To(Succeed())
+				Eventually(func(g Gomega) {
+					g.Expect(hostedClusterClient.Get(tc.Context, crclient.ObjectKey{
+						Namespace: "openshift-image-registry",
+						Name:      "installer-cloud-credentials",
+					}, secret)).To(Succeed(), "failed to get installer-cloud-credentials secret")
 
-				credData, ok := secret.Data["service_account.json"]
-				Expect(ok).To(BeTrue(),
-					"installer-cloud-credentials should contain key service_account.json")
-				verifyExternalAccountCred(credData, "service_account.json", imageRegistryEmail)
+					credData, ok := secret.Data["service_account.json"]
+					g.Expect(ok).To(BeTrue(),
+						"installer-cloud-credentials should contain key service_account.json")
+					verifyExternalAccountCred(g, credData, "service_account.json", imageRegistryEmail)
+				}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 			})
 
 		})
@@ -283,14 +296,14 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 
 // verifyExternalAccountCred asserts that credData is valid JSON for a GCP external_account
 // credential and that its service_account_impersonation_url references expectedEmail.
-func verifyExternalAccountCred(credData []byte, key, expectedEmail string) {
+func verifyExternalAccountCred(g Gomega, credData []byte, key, expectedEmail string) {
 	GinkgoHelper()
 	var cred gcputil.ExternalAccountCredential
-	Expect(json.Unmarshal(credData, &cred)).To(Succeed(),
+	g.Expect(json.Unmarshal(credData, &cred)).To(Succeed(),
 		"%s should be valid JSON", key)
-	Expect(cred.Type).To(Equal("external_account"),
+	g.Expect(cred.Type).To(Equal("external_account"),
 		"credential type should be external_account")
-	Expect(cred.ServiceAccountImpersonationURL).To(ContainSubstring(expectedEmail),
+	g.Expect(cred.ServiceAccountImpersonationURL).To(ContainSubstring(expectedEmail),
 		"service_account_impersonation_url should reference the imageRegistry GSA email %s", expectedEmail)
 }
 
