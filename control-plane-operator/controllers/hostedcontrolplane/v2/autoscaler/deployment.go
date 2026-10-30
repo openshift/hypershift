@@ -120,15 +120,6 @@ func autoscalerArgs(options *hyperv1.ClusterAutoscaling, platformType hyperv1.Pl
 		args = append(args, ExpendablePodsPriorityCutoffArg.Value(*options.PodPriorityThreshold))
 	}
 
-	if options.KubeClientQPS != nil {
-		// Upstream --kube-client-qps is a float; convert from the int32 API field.
-		args = append(args, KubeClientQPSArg.Value(float32(*options.KubeClientQPS)))
-	}
-
-	if options.KubeClientBurst != 0 {
-		args = append(args, KubeClientBurstArg.Value(options.KubeClientBurst))
-	}
-
 	for _, ignoredLabel := range options.BalancingIgnoredLabels {
 		args = append(args, BalancingIgnoreLabelArg.Value(ignoredLabel))
 	}
@@ -221,6 +212,16 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if image, ok := cpContext.HCP.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
 			c.Image = image
+		}
+
+		for i, arg := range c.Args {
+			switch {
+			case strings.HasPrefix(arg, KubeClientQPSArg.String()+"=") && hcp.Spec.Autoscaling.KubeClientQPS != nil:
+				// Upstream --kube-client-qps is a float; convert from the int32 API field.
+				c.Args[i] = KubeClientQPSArg.Value(float32(*hcp.Spec.Autoscaling.KubeClientQPS))
+			case strings.HasPrefix(arg, KubeClientBurstArg.String()+"=") && hcp.Spec.Autoscaling.KubeClientBurst != 0:
+				c.Args[i] = KubeClientBurstArg.Value(hcp.Spec.Autoscaling.KubeClientBurst)
+			}
 		}
 
 		// TODO if the options for the cluster autoscaler continues to grow, we should take inspiration
