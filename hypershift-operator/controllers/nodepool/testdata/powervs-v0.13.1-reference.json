@@ -1,0 +1,1 @@
+{"name":"workers-15278e44","spec":{"template":{"spec":{"serviceInstanceID":"service","imageRef":{"name":"rhcos-4-18"},"systemType":"s1122","processorType":"Shared","processors":"0.5","memoryGiB":32,"network":{}}}}}

@@ -806,6 +806,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 
 func TestMachineTemplateBuilders(t *testing.T) {
 	t.Parallel()
+	t.Run("When PowerVS templates are generated, it should preserve baseline serialization and rollout names", testPowerVSMachineTemplateCompatibility)
 	RunTestMachineTemplateBuilders(t, false)
 }
 

@@ -1,5 +1,5 @@
 /*
-Copyright 2021 The Kubernetes Authors.
+Copyright 2022 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,6 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1beta1 contains the v1beta1 API implementation.
-// +k8s:conversion-gen=sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
-package v1beta1
+// Package v1beta2 contains the IBMPowerVS v1beta2 API implementation.
+// +k8s:conversion-gen=sigs.k8s.io/cluster-api-provider-ibmcloud/api/powervs/v1beta3
+// +kubebuilder:object:generate=true
+// +groupName=infrastructure.cluster.x-k8s.io
+//
+// Deprecated: This package is deprecated and is going to be removed when support for v1beta2 will be dropped.
+package v1beta2
