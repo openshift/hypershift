@@ -124,7 +124,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-gcp v1.13.1
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
-	sigs.k8s.io/cluster-api-provider-openstack v0.14.8
+	sigs.k8s.io/cluster-api-provider-openstack v0.15.0
 	sigs.k8s.io/cluster-api/api v1.14.3
 	sigs.k8s.io/controller-runtime v0.25.0
 	sigs.k8s.io/karpenter v1.13.0
@@ -287,7 +287,7 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
-	golang.org/x/tools v0.49.0 // indirect
+	golang.org/x/tools v0.49.0
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect

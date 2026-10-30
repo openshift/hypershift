@@ -50,6 +50,13 @@ var capiCRDNames = []string{
 	"clusterresourcesets.addons.cluster.x-k8s.io",
 }
 
+var capoConversionCRDNames = []string{
+	"openstackclusters.infrastructure.cluster.x-k8s.io",
+	"openstackclustertemplates.infrastructure.cluster.x-k8s.io",
+	"openstackmachines.infrastructure.cluster.x-k8s.io",
+	"openstackmachinetemplates.infrastructure.cluster.x-k8s.io",
+}
+
 // CAPICRDNames returns the list of CAPI CRDs.
 func CAPICRDNames() []string {
 	return slices.Clone(capiCRDNames)
@@ -65,6 +72,9 @@ func CAPICRDOverridesWithStorageVersion(storageVersion string) map[string]CAPICR
 	overrides := make(map[string]CAPICRDOverrideEntry, len(capiCRDNames))
 	for _, name := range capiCRDNames {
 		overrides[name] = CAPICRDOverrideEntry{StorageVersion: storageVersion, NeedsConversion: true}
+	}
+	for _, name := range capoConversionCRDNames {
+		overrides[name] = CAPICRDOverrideEntry{StorageVersion: "v1beta2", NeedsConversion: true}
 	}
 	return overrides
 }
@@ -97,10 +107,10 @@ var capiResources = map[string]string{
 	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachines.yaml":                               "v1beta1",
 	"cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremachinetemplates.yaml":                       "v1beta1",
 	"cluster-api-provider-openstack/openstack.k-orc.cloud_images.yaml":                                            "v1alpha1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclustertemplates.yaml":               "v1beta1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclusters.yaml":                       "v1beta1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachines.yaml":                       "v1beta1",
-	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachinetemplates.yaml":               "v1beta1",
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclustertemplates.yaml":               "v1beta2",
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclusters.yaml":                       "v1beta2",
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachines.yaml":                       "v1beta2",
+	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackmachinetemplates.yaml":               "v1beta2",
 	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackfloatingippools.yaml":                "v1alpha1",
 	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackclusteridentities.yaml":              "v1alpha1",
 	"cluster-api-provider-openstack/infrastructure.cluster.x-k8s.io_openstackservers.yaml":                        "v1alpha1",

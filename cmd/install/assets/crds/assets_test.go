@@ -12,7 +12,7 @@ func TestCAPICRDOverridesWithStorageVersion(t *testing.T) {
 	t.Run("When requesting v1beta1 overrides, it should return all CRDs with v1beta1 storage", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		overrides := CAPICRDOverridesWithStorageVersion("v1beta1")
-		g.Expect(overrides).To(HaveLen(len(capiCRDNames)))
+		g.Expect(overrides).To(HaveLen(len(capiCRDNames) + len(capoConversionCRDNames)))
 		for _, name := range capiCRDNames {
 			entry, ok := overrides[name]
 			g.Expect(ok).To(BeTrue(), "missing CRD %s", name)
@@ -24,7 +24,7 @@ func TestCAPICRDOverridesWithStorageVersion(t *testing.T) {
 	t.Run("When requesting v1beta2 overrides, it should return all CRDs with v1beta2 storage", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		overrides := CAPICRDOverridesWithStorageVersion("v1beta2")
-		g.Expect(overrides).To(HaveLen(len(capiCRDNames)))
+		g.Expect(overrides).To(HaveLen(len(capiCRDNames) + len(capoConversionCRDNames)))
 		for _, name := range capiCRDNames {
 			entry, ok := overrides[name]
 			g.Expect(ok).To(BeTrue(), "missing CRD %s", name)
@@ -43,6 +43,29 @@ func TestCAPICRDOverridesWithStorageVersion(t *testing.T) {
 }
 
 func TestCustomResourceDefinitionsStorageVersion(t *testing.T) {
+	t.Run("When either core storage version is selected, it should keep CAPO beta2 storage and both versions served", func(t *testing.T) {
+		for _, coreVersion := range []string{"v1beta1", "v1beta2"} {
+			for _, name := range capoConversionCRDNames {
+				entry := CAPICRDOverridesWithStorageVersion(coreVersion)[name]
+				if entry.StorageVersion != "v1beta2" || !entry.NeedsConversion {
+					t.Fatalf("invalid CAPO override for %s: %#v", name, entry)
+				}
+			}
+			for _, object := range CustomResourceDefinitions(coreVersion, func(_ string, _ *apiextensionsv1.CustomResourceDefinition) bool { return true }, nil) {
+				crd := object.(*apiextensionsv1.CustomResourceDefinition)
+				for _, name := range capoConversionCRDNames {
+					if crd.Name != name {
+						continue
+					}
+					for _, version := range crd.Spec.Versions {
+						if !version.Served || version.Storage != (version.Name == "v1beta2") {
+							t.Fatalf("invalid CAPO version %s/%s", name, version.Name)
+						}
+					}
+				}
+			}
+		}
+	})
 	t.Run("When selecting v1beta2 storage version, it should set v1beta2 as storage and v1beta1 as non-storage", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		capiNames := make(map[string]bool, len(capiCRDNames))
@@ -133,7 +156,7 @@ func TestGetCustomResourceDefinition(t *testing.T) {
 		{
 			name:    "When loading OpenStackCluster, it should preserve identity types and controller status",
 			file:    "infrastructure.cluster.x-k8s.io_openstackclusters.yaml",
-			version: "v1beta1",
+			version: "v1beta2",
 			properties: [][]string{
 				{"spec", "identityRef", "type"},
 				{"status", "conditions"},
@@ -143,7 +166,7 @@ func TestGetCustomResourceDefinition(t *testing.T) {
 		{
 			name:    "When loading OpenStackMachine, it should preserve identity types and controller initialization",
 			file:    "infrastructure.cluster.x-k8s.io_openstackmachines.yaml",
-			version: "v1beta1",
+			version: "v1beta2",
 			properties: [][]string{
 				{"spec", "identityRef", "type"},
 				{"status", "initialization", "provisioned"},
@@ -155,8 +178,12 @@ func TestGetCustomResourceDefinition(t *testing.T) {
 			g := NewGomegaWithT(t)
 			crd := getCustomResourceDefinition(CRDS, "cluster-api-provider-openstack/"+tc.file, CAPICRDOverrides())
 			g.Expect(crd.Labels).To(HaveKeyWithValue(capiLabel, tc.version))
-			g.Expect(crd.Spec.Versions).To(HaveLen(1))
 			version := crd.Spec.Versions[0]
+			for _, candidate := range crd.Spec.Versions {
+				if candidate.Storage {
+					version = candidate
+				}
+			}
 			g.Expect(version.Name).To(Equal(tc.version))
 			g.Expect(version.Served).To(BeTrue())
 			g.Expect(version.Storage).To(BeTrue())

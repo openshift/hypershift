@@ -1596,6 +1596,7 @@ golang.org/x/time/rate
 # golang.org/x/tools v0.49.0
 ## explicit; go 1.25.0
 golang.org/x/tools/cover
+golang.org/x/tools/go/ast/astutil
 golang.org/x/tools/go/ast/edge
 golang.org/x/tools/go/ast/inspector
 golang.org/x/tools/go/gcexportdata
@@ -2688,11 +2689,13 @@ sigs.k8s.io/cluster-api-provider-ibmcloud/capicore/api/core/v1beta1
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
 sigs.k8s.io/cluster-api-provider-kubevirt/capicore/api/core/v1beta2
 sigs.k8s.io/cluster-api-provider-kubevirt/capicore/errors
-# sigs.k8s.io/cluster-api-provider-openstack v0.14.8 => ./pkg/capi/openstack
+# sigs.k8s.io/cluster-api-provider-openstack v0.15.0 => ./pkg/capi/openstack
 ## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1
 sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1
+sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2
 sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta1
+sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta2
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/optional
 # sigs.k8s.io/cluster-api/api v1.14.3

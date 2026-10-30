@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -410,6 +411,11 @@ func (o *Options) validateMiscConfig() []error {
 		if !ValidPlatforms.Has(platformToCheck) {
 			errs = append(errs, fmt.Errorf("not a valid platform type: %s", platform))
 		}
+	}
+	if o.DisableCAPIConversionWebhook && (len(o.PlatformsToInstall) == 0 || slices.ContainsFunc(o.PlatformsToInstall, func(platform string) bool {
+		return strings.EqualFold(platform, "OpenStack")
+	})) {
+		errs = append(errs, fmt.Errorf("--disable-capi-conversion-webhook cannot be used when installing OpenStack CRDs"))
 	}
 	if len(o.ImagePullPolicy) > 0 {
 		normalized := strings.ToLower(o.ImagePullPolicy)
@@ -1076,6 +1082,9 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 					if override, ok := capiOverrides[crd.Name]; ok && override.NeedsConversion {
 						needsConversion = true
 						conversionReviewVersions = []string{"v1beta1", "v1beta2"}
+						if crd.Spec.Group == "infrastructure.cluster.x-k8s.io" {
+							conversionReviewVersions = []string{"v1", "v1beta1"}
+						}
 					}
 				}
 
