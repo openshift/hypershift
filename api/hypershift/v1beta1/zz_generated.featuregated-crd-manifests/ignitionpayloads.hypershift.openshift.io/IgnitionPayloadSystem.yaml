@@ -1,0 +1,500 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    feature-gate.release.openshift.io/IgnitionPayloadSystem: "true"
+  name: ignitionpayloads.hypershift.openshift.io
+spec:
+  group: hypershift.openshift.io
+  names:
+    kind: IgnitionPayload
+    listKind: IgnitionPayloadList
+    plural: ignitionpayloads
+    shortNames:
+    - ignpayload
+    singular: ignitionpayload
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.current.rolloutGeneration
+      name: RolloutGeneration
+      type: integer
+    - jsonPath: .status.conditions[?(@.type=="PayloadGenerated")].status
+      name: Generated
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="IgnitionReached")].status
+      name: Reached
+      type: string
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          IgnitionPayload requests an Ignition payload for booting nodes. spec describes the
+          inputs used to generate the payload, and status reports the generated payloads and
+          rollout progress.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec describes the inputs used to generate the payload.
+            properties:
+              additionalRolloutInputs:
+                description: |-
+                  additionalRolloutInputs is an opaque, consumer-authored summary of rollout-relevant inputs
+                  that are not otherwise captured by the referenced ConfigMaps. It is folded into the rollout
+                  hash only (never into configHash), so setting or changing it advances rolloutGeneration and
+                  rolls running nodes, while the payload bytes (and configHash) are unaffected. Use it to roll
+                  running nodes for a change the rollout hash would otherwise miss — typically an input that
+                  lives in a managementConfigMaps ConfigMap (which on its own only refreshes the payload for new
+                  nodes) but must also roll existing nodes, e.g. the API server endpoint identity (access mode,
+                  advertise address, port) carried in the apiserver-HAProxy config. It stays out of configHash
+                  so configHash remains the payload's byte identity. Must be printable ASCII with no whitespace
+                  so the rollout hash stays deterministic. When omitted, no out-of-band input contributes to the
+                  rollout hash.
+                maxLength: 1024
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: additionalRolloutInputs must contain only printable ASCII
+                    characters and no whitespace, so the rollout hash stays deterministic
+                  rule: self.matches('^[!-~]*$')
+              additionalTrustBundle:
+                description: |-
+                  additionalTrustBundle optionally references a ConfigMap in the IgnitionPayload's namespace
+                  holding additional CA certificates for booting nodes to trust. The CA bundle is
+                  read from the "ca-bundle.crt" key, PEM-encoded. When omitted, no additional
+                  trust bundle is embedded in the payload.
+                properties:
+                  name:
+                    description: |-
+                      name is the name of a ConfigMap in the same namespace as this resource. It must
+                      be a valid DNS-1123 subdomain: at most 253 characters, consisting of lowercase
+                      alphanumeric characters, hyphens, and periods. Each period-separated segment must
+                      start and end with an alphanumeric character.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: name must consist only of lowercase alphanumeric characters,
+                        hyphens, and periods. Each period-separated segment must start
+                        and end with an alphanumeric character.
+                      rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                required:
+                - name
+                type: object
+              managementConfigMaps:
+                description: |-
+                  managementConfigMaps lists ConfigMaps in the IgnitionPayload's namespace whose
+                  contents are management-side only (e.g. the apiserver-HAProxy config). Each
+                  referenced ConfigMap provides its content under the "config" key as multi-document
+                  YAML of MachineConfig manifests; a ConfigMap missing that key contributes nothing.
+                  Names must be unique (enforced as a map keyed by name) and must not also appear in
+                  rolloutConfigMaps. A change to any listed ConfigMap refreshes the generated payload
+                  bytes WITHOUT advancing rolloutGeneration, so it does not trigger a node rollout.
+                  When omitted, no management-only ConfigMaps contribute to the payload. At least 1
+                  and at most 100 entries.
+                items:
+                  description: |-
+                    ConfigMapReference references a ConfigMap by name.
+                    The ConfigMap must exist in the same namespace as the referencing resource.
+                  properties:
+                    name:
+                      description: |-
+                        name is the name of a ConfigMap in the same namespace as this resource. It must
+                        be a valid DNS-1123 subdomain: at most 253 characters, consisting of lowercase
+                        alphanumeric characters, hyphens, and periods. Each period-separated segment must
+                        start and end with an alphanumeric character.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: name must consist only of lowercase alphanumeric
+                          characters, hyphens, and periods. Each period-separated
+                          segment must start and end with an alphanumeric character.
+                        rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                  required:
+                  - name
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              osImageStream:
+                description: |-
+                  osImageStream selects the RHEL OS stream the payload targets. Valid values are
+                  "rhel-9" (RHEL 9 boot images) and "rhel-10" (RHEL 10 boot images). When omitted,
+                  the stream defaults to the one implied by the release version (rhel-9 for OCP < 5.0,
+                  rhel-10 for OCP >= 5.0). rhel-9 is the legacy stream and is expected to be retired
+                  as supported releases move to RHEL 10. If the generator does not support the selected
+                  stream, it does not render a payload and reports PayloadGenerated=False.
+                properties:
+                  name:
+                    description: name is a required reference to an OSImageStream.
+                      Valid values are "rhel-9" and "rhel-10".
+                    enum:
+                    - rhel-9
+                    - rhel-10
+                    type: string
+                required:
+                - name
+                type: object
+              pullSecret:
+                description: |-
+                  pullSecret references the pull-secret Secret in the IgnitionPayload's namespace
+                  (conventionally named "pull-secret") that the generator reads to fetch the release
+                  image and embed in the generated payload. This field is required and immutable:
+                  change the pull secret in place (via the global pull secret mechanism) rather than
+                  updating this reference, so it never triggers a node rollout.
+                properties:
+                  name:
+                    description: |-
+                      name is the name of the Secret. It must be a valid DNS-1123 subdomain: at most
+                      253 characters, consisting of lowercase alphanumeric characters, hyphens, and periods.
+                      Each period-separated segment must start and end with an alphanumeric character.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: name must consist only of lowercase alphanumeric characters,
+                        hyphens, and periods. Each period-separated segment must start
+                        and end with an alphanumeric character.
+                      rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: pullSecret is immutable; update the pull secret in place
+                    via the global pull secret mechanism
+                  rule: self == oldSelf
+              releaseImage:
+                description: |-
+                  releaseImage is the pullspec of the OCP release whose machine-config-server
+                  binaries render the payload. It is resolved to an immutable digest before the
+                  payload is generated. This field is required.
+                maxLength: 253
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: releaseImage must start with a word character (letters,
+                    digits, or underscores) and contain no whitespace
+                  rule: self.matches('^(\\w+\\S+)$')
+              retiredRolloutGeneration:
+                description: |-
+                  retiredRolloutGeneration releases the previous payload early. At most two payloads
+                  are retained — current and previous — and a new rollout always evicts the old
+                  previous regardless of this field. Set it to the highest rolloutGeneration whose
+                  nodes have all been replaced to free previous before the next rollout; the current
+                  payload is always kept. It only ever increases. Minimum 1.
+                format: int64
+                minimum: 1
+                type: integer
+              rolloutConfigMaps:
+                description: |-
+                  rolloutConfigMaps lists ConfigMaps in the IgnitionPayload's namespace whose
+                  contents are rollout-relevant (user, core, and NTO machine configs). Each referenced
+                  ConfigMap provides its content under the "config" key as multi-document YAML of
+                  MachineConfig manifests; a ConfigMap missing that key contributes nothing. Names
+                  must be unique (enforced as a map keyed by name) and must not also appear in
+                  managementConfigMaps. A change to any listed ConfigMap feeds the rollout hash and
+                  can therefore trigger a node rollout. When omitted, no rollout-relevant ConfigMaps
+                  contribute to the payload. At least 1 and at most 100 entries.
+                items:
+                  description: |-
+                    ConfigMapReference references a ConfigMap by name.
+                    The ConfigMap must exist in the same namespace as the referencing resource.
+                  properties:
+                    name:
+                      description: |-
+                        name is the name of a ConfigMap in the same namespace as this resource. It must
+                        be a valid DNS-1123 subdomain: at most 253 characters, consisting of lowercase
+                        alphanumeric characters, hyphens, and periods. Each period-separated segment must
+                        start and end with an alphanumeric character.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                      x-kubernetes-validations:
+                      - message: name must consist only of lowercase alphanumeric
+                          characters, hyphens, and periods. Each period-separated
+                          segment must start and end with an alphanumeric character.
+                        rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                  required:
+                  - name
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              rolloutGlobalConfig:
+                description: |-
+                  rolloutGlobalConfig references an IgnitionPayload-owned ConfigMap in the
+                  IgnitionPayload's namespace holding the rollout-relevant subset of the hosted
+                  cluster's global configuration, canonicalized and authored by the consumer. The
+                  content is read from the "config" key and feeds the rollout hash; a ConfigMap
+                  missing that key contributes nothing. When omitted, no global configuration
+                  contributes to the payload.
+                properties:
+                  name:
+                    description: |-
+                      name is the name of a ConfigMap in the same namespace as this resource. It must
+                      be a valid DNS-1123 subdomain: at most 253 characters, consisting of lowercase
+                      alphanumeric characters, hyphens, and periods. Each period-separated segment must
+                      start and end with an alphanumeric character.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: name must consist only of lowercase alphanumeric characters,
+                        hyphens, and periods. Each period-separated segment must start
+                        and end with an alphanumeric character.
+                      rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                required:
+                - name
+                type: object
+            required:
+            - pullSecret
+            - releaseImage
+            type: object
+            x-kubernetes-validations:
+            - message: retiredRolloutGeneration cannot decrease or be removed
+              rule: '!has(oldSelf.retiredRolloutGeneration) || (has(self.retiredRolloutGeneration)
+                && self.retiredRolloutGeneration >= oldSelf.retiredRolloutGeneration)'
+            - message: a ConfigMap cannot be listed in both rolloutConfigMaps and
+                managementConfigMaps
+              rule: '!has(self.rolloutConfigMaps) || !has(self.managementConfigMaps)
+                || self.rolloutConfigMaps.all(r, !self.managementConfigMaps.exists(m,
+                m.name == r.name))'
+          status:
+            description: status reports the generated payloads and rollout progress.
+            minProperties: 1
+            properties:
+              conditions:
+                description: |-
+                  conditions reports generation and rollout progress. Known condition types are
+                  PayloadGenerated and IgnitionReached. PayloadGenerated is True when the payload for
+                  the current spec has been generated; its observedGeneration is the metadata.generation
+                  last processed, so it shows whether current reflects the latest spec. IgnitionReached
+                  is False after each new rollout until a node has fetched the current payload, then
+                  True. At least 1 and at most 100 entries.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              current:
+                description: |-
+                  current describes the payload for the latest validated, generated config. It is
+                  absent until the first payload has been generated.
+                properties:
+                  configHash:
+                    description: |-
+                      configHash is the payload-identity hash over the whole validated config. It is an
+                      opaque hash string: consumers compare it for equality and must not parse it.
+                      It is required and consists of 1 to 64 lowercase hexadecimal characters (0-9, a-f).
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: configHash must consist of lowercase hexadecimal characters
+                      rule: self.matches('^[0-9a-f]+$')
+                  rolloutGeneration:
+                    description: |-
+                      rolloutGeneration is a monotonically increasing counter the consumer watches to execute a
+                      rollout. It advances only when rolloutHash changes (so a management-only payload refresh does
+                      not advance it); each advance mints a new token, while a refresh re-issues the token with a
+                      fresh expiry under the same rollout identity. It is also the serving/storage identity: the
+                      PayloadStore entry, the userDataSecretName, and the node's rollout-generation header are all
+                      keyed on it, so a rolloutHash formula rebaseline — which rewrites rolloutHash without advancing
+                      this counter — never moves serving identity. Minimum 1.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  rolloutHash:
+                    description: |-
+                      rolloutHash is the hash over the rollout-relevant inputs. It is an opaque hash
+                      string: consumers compare it for equality and must not parse it.
+                      It is required and consists of 1 to 64 lowercase hexadecimal characters (0-9, a-f).
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: rolloutHash must consist of lowercase hexadecimal characters
+                      rule: self.matches('^[0-9a-f]+$')
+                  userDataSecretName:
+                    description: |-
+                      userDataSecretName is the name of the generator-authored pointer-ignition Secret in the
+                      IgnitionPayload's namespace, formatted `<ignitionpayload-name>-<rolloutGeneration>`. The
+                      consumer points its machines' bootstrap dataSecretName at it; it is a non-secret reference.
+                      That Secret embeds the per-payload endpoint (`/ignition/<name>`), the CA, a static
+                      rollout-generation header, and the bearer token; the token authenticates the fetch, lives
+                      only inside that Secret (never in the PayloadStore, which holds only payload bytes keyed by
+                      rollout identity, and never in status). Required, at most 253 characters.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - configHash
+                - rolloutGeneration
+                - rolloutHash
+                - userDataSecretName
+                type: object
+              previous:
+                description: |-
+                  previous describes the immediately prior payload, retained during a rollout so
+                  in-flight boots on the previous generation are served until they drain. It is absent when
+                  there is no prior payload (e.g. the first generation) or once the prior payload
+                  has fully drained.
+                properties:
+                  configHash:
+                    description: |-
+                      configHash is the payload-identity hash over the whole validated config. It is an
+                      opaque hash string: consumers compare it for equality and must not parse it.
+                      It is required and consists of 1 to 64 lowercase hexadecimal characters (0-9, a-f).
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: configHash must consist of lowercase hexadecimal characters
+                      rule: self.matches('^[0-9a-f]+$')
+                  rolloutGeneration:
+                    description: |-
+                      rolloutGeneration is a monotonically increasing counter the consumer watches to execute a
+                      rollout. It advances only when rolloutHash changes (so a management-only payload refresh does
+                      not advance it); each advance mints a new token, while a refresh re-issues the token with a
+                      fresh expiry under the same rollout identity. It is also the serving/storage identity: the
+                      PayloadStore entry, the userDataSecretName, and the node's rollout-generation header are all
+                      keyed on it, so a rolloutHash formula rebaseline — which rewrites rolloutHash without advancing
+                      this counter — never moves serving identity. Minimum 1.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  rolloutHash:
+                    description: |-
+                      rolloutHash is the hash over the rollout-relevant inputs. It is an opaque hash
+                      string: consumers compare it for equality and must not parse it.
+                      It is required and consists of 1 to 64 lowercase hexadecimal characters (0-9, a-f).
+                    maxLength: 64
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: rolloutHash must consist of lowercase hexadecimal characters
+                      rule: self.matches('^[0-9a-f]+$')
+                  userDataSecretName:
+                    description: |-
+                      userDataSecretName is the name of the generator-authored pointer-ignition Secret in the
+                      IgnitionPayload's namespace, formatted `<ignitionpayload-name>-<rolloutGeneration>`. The
+                      consumer points its machines' bootstrap dataSecretName at it; it is a non-secret reference.
+                      That Secret embeds the per-payload endpoint (`/ignition/<name>`), the CA, a static
+                      rollout-generation header, and the bearer token; the token authenticates the fetch, lives
+                      only inside that Secret (never in the PayloadStore, which holds only payload bytes keyed by
+                      rollout identity, and never in status). Required, at most 253 characters.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - configHash
+                - rolloutGeneration
+                - rolloutHash
+                - userDataSecretName
+                type: object
+              rolloutHashVersion:
+                description: |-
+                  rolloutHashVersion identifies the version of the formula used to compute
+                  current.rolloutHash. It is absent until the first payload has been generated. When a
+                  newer formula is adopted, current.rolloutHash is recomputed and this field is updated
+                  without advancing rolloutGeneration, so a formula change does not trigger a node
+                  rollout. When present, it must be at least 1.
+                format: int64
+                minimum: 1
+                type: integer
+            type: object
+            x-kubernetes-validations:
+            - message: previous requires current
+              rule: '!has(self.previous) || has(self.current)'
+            - message: previous.rolloutGeneration must be lower than current.rolloutGeneration
+              rule: '!has(self.previous) || !has(self.current) || self.previous.rolloutGeneration
+                < self.current.rolloutGeneration'
+            - message: current.rolloutGeneration cannot decrease and current cannot
+                be removed
+              rule: '!has(oldSelf.current) || (has(self.current) && self.current.rolloutGeneration
+                >= oldSelf.current.rolloutGeneration)'
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

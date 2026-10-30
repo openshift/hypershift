@@ -78,6 +78,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().HostedClusters().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("hostedcontrolplanes"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().HostedControlPlanes().Informer()}, nil
+	case v1beta1.SchemeGroupVersion.WithResource("ignitionpayloads"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().IgnitionPayloads().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("nodepools"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().NodePools().Informer()}, nil
 
