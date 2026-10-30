@@ -12,6 +12,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
@@ -25,6 +26,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	docker10 "github.com/openshift/api/image/docker10"
+	imagev1 "github.com/openshift/api/image/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -3292,6 +3294,278 @@ kind: Config`),
 				"expected HAProxy image %q to be present in kube-apiserver-proxy.yaml manifest", tc.expectedImage)
 		})
 	}
+}
+
+const haproxyRouterImageName = "haproxy-router"
+
+func newProxyTestReleaseImage(version string, componentImages, canonicalImages map[string]string) *releaseinfo.ReleaseImage {
+	releaseImage := &releaseinfo.ReleaseImage{
+		ImageStream: &imagev1.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: version}},
+	}
+	for name, image := range componentImages {
+		releaseImage.ImageStream.Spec.Tags = append(releaseImage.ImageStream.Spec.Tags, imagev1.TagReference{
+			Name: name,
+			From: &corev1.ObjectReference{Name: image},
+		})
+	}
+	if canonicalImages != nil {
+		releaseImage.SetCanonicalComponentImages(canonicalImages)
+	}
+	return releaseImage
+}
+
+func proxyPodImageFromRawConfig(t *testing.T, rawConfig string) string {
+	t.Helper()
+	g := NewWithT(t)
+
+	mcfg := &mcfgv1.MachineConfig{}
+	g.Expect(yaml.Unmarshal([]byte(rawConfig), mcfg)).To(Succeed())
+
+	ignitionCfg := &ignitionapi.Config{}
+	g.Expect(yaml.Unmarshal(mcfg.Spec.Config.Raw, ignitionCfg)).To(Succeed())
+
+	for _, file := range ignitionCfg.Storage.Files {
+		if file.Path != "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml" {
+			continue
+		}
+		manifest, err := dataurl.DecodeString(*file.Contents.Source)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		pod := &corev1.Pod{}
+		g.Expect(yaml.Unmarshal(manifest.Data, pod)).To(Succeed())
+
+		for _, container := range pod.Spec.Containers {
+			if container.Name == "kubernetes-default-proxy" {
+				return container.Image
+			}
+		}
+	}
+	return ""
+}
+
+func generateProxyConfig(t *testing.T, hcVersion, hcCPOImage string, hcAnnotations map[string]string, nodePoolReleaseImage *releaseinfo.ReleaseImage, nodePoolStatusVersion string) (string, error) {
+	t.Helper()
+	g := NewWithT(t)
+
+	kubeconfigSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: "clusters"},
+		Data: map[string][]byte{"kubeconfig": []byte(`apiVersion: v1
+clusters:
+- cluster:
+    server: https://kubeconfig-host:443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    user: ""
+    namespace: default
+  name: cluster
+current-context: cluster
+kind: Config`)},
+	}
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "clusters"},
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{"test":{"auth":"dGVzdDp0ZXN0"}}}`)},
+	}
+
+	c := fake.NewClientBuilder().WithObjects(kubeconfigSecret, pullSecret).Build()
+
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "clusters", Annotations: hcAnnotations},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public},
+			},
+			Networking: hyperv1.ClusterNetworking{
+				ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			},
+			PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+			Release:    hyperv1.Release{Image: "test-release:latest"},
+			Configuration: &hyperv1.ClusterConfiguration{
+				Proxy: &configv1.ProxySpec{HTTPSProxy: "https://proxy.example.com:3128"},
+			},
+		},
+		Status: hyperv1.HostedClusterStatus{
+			KubeConfig: &corev1.LocalObjectReference{Name: "kk"},
+		},
+	}
+
+	reconciler := &NodePoolReconciler{
+		Client:                  c,
+		ReleaseProvider:         &fakereleaseprovider.FakeReleaseProvider{Version: hcVersion, Components: map[string]string{"hypershift": hcCPOImage}},
+		HypershiftOperatorImage: "hypershift-operator:latest",
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+			Result: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{
+					Labels: map[string]string{
+						haproxy.ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel: "true",
+					},
+				},
+			},
+		},
+	}
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: "np", Namespace: "clusters"},
+		Status:     hyperv1.NodePoolStatus{Version: nodePoolStatusVersion},
+	}
+
+	cfg, err := reconciler.generateHAProxyRawConfig(t.Context(), nodePool, hc, nodePoolReleaseImage)
+	if err != nil {
+		return "", err
+	}
+	g.Expect(cfg).ToNot(BeEmpty())
+	return cfg, nil
+}
+
+func TestNodePoolReconciler_GenerateHAProxyRawConfig(t *testing.T) {
+	const (
+		hcCPOImage         = "registry.example.com/hc-cpo:4.17.0"
+		nodePoolCPOImage   = "registry.example.com/np-cpo:4.16.0"
+		canonicalCPOImage  = "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.16.0-hypershift"
+		mirrorCPOImage     = "mirror.example.com/ocp-v4.0-art-dev:4.16.0-hypershift"
+		annotationCPOImage = "registry.example.com/annotated-cpo:latest"
+		haproxyRouterImage = "registry.example.com/haproxy-router:4.16.0"
+	)
+
+	overrideImage := controlplaneoperatoroverrides.CPOImage(string(hyperv1.AWSPlatform), "4.17.5")
+	if overrideImage == "" {
+		t.Fatal("expected a CPO override for AWS 4.17.5 in the override fixtures")
+	}
+
+	nodePoolReleaseImage := newProxyTestReleaseImage("4.16.0", map[string]string{
+		"hypershift":           nodePoolCPOImage,
+		haproxyRouterImageName: haproxyRouterImage,
+	}, nil)
+
+	testCases := []struct {
+		name                  string
+		hcVersion             string
+		hcCPOImage            string
+		hcAnnotations         map[string]string
+		nodePoolReleaseImage  *releaseinfo.ReleaseImage
+		nodePoolStatusVersion string
+		enableOverrides       bool
+		expectedCPOImage      string
+		expectedError         string
+	}{
+		{
+			name:                  "When the NodePool and HostedCluster releases differ, it should embed the NodePool CPO image",
+			hcVersion:             "4.17.0",
+			hcCPOImage:            hcCPOImage,
+			nodePoolReleaseImage:  nodePoolReleaseImage,
+			nodePoolStatusVersion: "4.16.0",
+			expectedCPOImage:      nodePoolCPOImage,
+		},
+		{
+			name:                  "When the HostedCluster has a CPO image annotation, it should embed the annotated image",
+			hcVersion:             "4.17.0",
+			hcCPOImage:            hcCPOImage,
+			hcAnnotations:         map[string]string{hyperv1.ControlPlaneOperatorImageAnnotation: annotationCPOImage},
+			nodePoolReleaseImage:  nodePoolReleaseImage,
+			nodePoolStatusVersion: "4.16.0",
+			expectedCPOImage:      annotationCPOImage,
+		},
+		{
+			name:                  "When the NodePool release lacks the hypershift component, it should fall back to the HostedCluster CPO image",
+			hcVersion:             "4.17.0",
+			hcCPOImage:            hcCPOImage,
+			nodePoolReleaseImage:  newProxyTestReleaseImage("4.16.0", map[string]string{haproxyRouterImageName: haproxyRouterImage}, nil),
+			nodePoolStatusVersion: "4.16.0",
+			expectedCPOImage:      hcCPOImage,
+		},
+		{
+			name:                  "When overrides are enabled for the NodePool version, it should embed the override image",
+			hcVersion:             "4.17.5",
+			hcCPOImage:            hcCPOImage,
+			nodePoolReleaseImage:  newProxyTestReleaseImage("4.17.5", map[string]string{"hypershift": nodePoolCPOImage, haproxyRouterImageName: haproxyRouterImage}, nil),
+			nodePoolStatusVersion: "4.17.5",
+			enableOverrides:       true,
+			expectedCPOImage:      overrideImage,
+		},
+		{
+			name:       "When the NodePool is new and registry overrides exist, it should embed the canonical CPO image",
+			hcVersion:  "4.17.0",
+			hcCPOImage: hcCPOImage,
+			nodePoolReleaseImage: newProxyTestReleaseImage("4.16.0", map[string]string{
+				"hypershift":           mirrorCPOImage,
+				haproxyRouterImageName: "mirror.example.com/haproxy-router:4.16.0",
+			}, map[string]string{
+				"hypershift":           canonicalCPOImage,
+				haproxyRouterImageName: haproxyRouterImage,
+			}),
+			nodePoolStatusVersion: "",
+			expectedCPOImage:      canonicalCPOImage,
+		},
+		{
+			name:       "When the NodePool is stable and registry overrides exist, it should embed the overridden CPO image",
+			hcVersion:  "4.17.0",
+			hcCPOImage: hcCPOImage,
+			nodePoolReleaseImage: newProxyTestReleaseImage("4.16.0", map[string]string{
+				"hypershift":           mirrorCPOImage,
+				haproxyRouterImageName: "mirror.example.com/haproxy-router:4.16.0",
+			}, map[string]string{
+				"hypershift":           canonicalCPOImage,
+				haproxyRouterImageName: haproxyRouterImage,
+			}),
+			nodePoolStatusVersion: "4.16.0",
+			expectedCPOImage:      mirrorCPOImage,
+		},
+		{
+			name:                  "When the NodePool release lacks the haproxy-router image, it should return an error",
+			hcVersion:             "4.17.0",
+			hcCPOImage:            hcCPOImage,
+			nodePoolReleaseImage:  newProxyTestReleaseImage("4.16.0", map[string]string{"hypershift": nodePoolCPOImage}, nil),
+			nodePoolStatusVersion: "4.16.0",
+			expectedError:         "release image doesn't have any of the expected haproxy router images",
+		},
+		{
+			name:                  "When the NodePool release version is invalid, it should return an error",
+			hcVersion:             "4.17.0",
+			hcCPOImage:            hcCPOImage,
+			nodePoolReleaseImage:  newProxyTestReleaseImage("invalid", map[string]string{"hypershift": nodePoolCPOImage, haproxyRouterImageName: haproxyRouterImage}, nil),
+			nodePoolStatusVersion: "invalid",
+			expectedError:         "failed to resolve control-plane-operator image for NodePool release",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			if tc.enableOverrides {
+				t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "1")
+			} else {
+				t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "0")
+			}
+
+			cfg, err := generateProxyConfig(t, tc.hcVersion, tc.hcCPOImage, tc.hcAnnotations, tc.nodePoolReleaseImage, tc.nodePoolStatusVersion)
+			if tc.expectedError != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedError)))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(proxyPodImageFromRawConfig(t, cfg)).To(Equal(tc.expectedCPOImage))
+		})
+	}
+
+	t.Run("When the HostedCluster release changes during a CP-only upgrade, it should keep the NodePool CPO image", func(t *testing.T) {
+		g := NewWithT(t)
+
+		const nodePoolCPOImage = "registry.example.com/np-cpo:4.16.0"
+		nodePoolReleaseImage := newProxyTestReleaseImage("4.16.0", map[string]string{
+			"hypershift":           nodePoolCPOImage,
+			haproxyRouterImageName: "registry.example.com/haproxy-router:4.16.0",
+		}, nil)
+
+		beforeUpgrade, err := generateProxyConfig(t, "4.17.0", "registry.example.com/hc-cpo:4.17.0", nil, nodePoolReleaseImage, "4.16.0")
+		g.Expect(err).NotTo(HaveOccurred())
+		afterUpgrade, err := generateProxyConfig(t, "4.18.0", "registry.example.com/hc-cpo:4.18.0", nil, nodePoolReleaseImage, "4.16.0")
+		g.Expect(err).NotTo(HaveOccurred())
+
+		g.Expect(afterUpgrade).To(Equal(beforeUpgrade))
+		g.Expect(proxyPodImageFromRawConfig(t, beforeUpgrade)).To(Equal(nodePoolCPOImage))
+	})
 }
 
 func TestSupportedVersionSkewCondition(t *testing.T) {

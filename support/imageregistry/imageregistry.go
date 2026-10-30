@@ -52,21 +52,57 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	if err != nil {
 		return "", err
 	}
-	if controlplaneoperatoroverrides.IsOverridesEnabled() {
-		overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), version.String())
-		if overrideImage != "" {
-			return overrideImage, nil
-		}
-	}
 
-	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
-		return hypershiftImage, nil
+	if image := controlPlaneOperatorImageForRelease(hc, releaseInfo, version); image != "" {
+		return image, nil
 	}
 
 	if version.Minor < 9 {
 		return "", fmt.Errorf("unsupported release image with version %s", version.String())
 	}
 	return hypershiftOperatorImage, nil
+}
+
+// GetControlPlaneOperatorImageForRelease resolves the control plane operator
+// image for the given release image using the same precedence as
+// GetControlPlaneOperatorImage: the ControlPlaneOperatorImageAnnotation on the
+// HostedCluster takes precedence, followed by platform/version overrides and the
+// hypershift component of the release payload.
+//
+// Unlike GetControlPlaneOperatorImage, this function does not fall back to the
+// hypershift-operator image. It returns an empty string when the release payload
+// has no hypershift component so callers can decide which fallback applies.
+//
+// When useCanonicalImages is true, canonical (pre-registry-override) component
+// images are used, matching the behavior of images that run on data plane nodes.
+func GetControlPlaneOperatorImageForRelease(hc *hyperv1.HostedCluster, releaseInfo *releaseinfo.ReleaseImage, useCanonicalImages bool) (string, error) {
+	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
+		return val, nil
+	}
+	version, err := semver.Parse(releaseInfo.Version())
+	if err != nil {
+		return "", err
+	}
+	if controlplaneoperatoroverrides.IsOverridesEnabled() {
+		if overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), version.String()); overrideImage != "" {
+			return overrideImage, nil
+		}
+	}
+
+	componentImages := releaseInfo.ComponentImages()
+	if useCanonicalImages {
+		componentImages = releaseInfo.CanonicalComponentImages()
+	}
+	return componentImages["hypershift"], nil
+}
+
+func controlPlaneOperatorImageForRelease(hc *hyperv1.HostedCluster, releaseInfo *releaseinfo.ReleaseImage, version semver.Version) string {
+	if controlplaneoperatoroverrides.IsOverridesEnabled() {
+		if overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), version.String()); overrideImage != "" {
+			return overrideImage
+		}
+	}
+	return releaseInfo.ComponentImages()["hypershift"]
 }
 
 // GetControlPlaneOperatorImageLabels resolves the appropriate control plane
