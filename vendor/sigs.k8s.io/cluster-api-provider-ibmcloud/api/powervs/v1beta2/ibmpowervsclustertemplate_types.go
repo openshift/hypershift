@@ -28,7 +28,7 @@ type IBMPowerVSClusterTemplateSpec struct {
 }
 
 // +kubebuilder:object:root=true
-//+kubebuilder:storageversion
+// +kubebuilder:deprecatedversion
 // +kubebuilder:resource:path=ibmpowervsclustertemplates,scope=Namespaced,categories=cluster-api,shortName=ibmpowervsct
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of IBMPowerVSClusterTemplate"
 
@@ -40,7 +40,7 @@ type IBMPowerVSClusterTemplate struct {
 	Spec IBMPowerVSClusterTemplateSpec `json:"spec,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // IBMPowerVSClusterTemplateList contains a list of IBMPowerVSClusterTemplate.
 type IBMPowerVSClusterTemplateList struct {
