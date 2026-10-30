@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package v1beta2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,6 +28,7 @@ type IBMPowerVSClusterTemplateSpec struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion
 // +kubebuilder:resource:path=ibmpowervsclustertemplates,scope=Namespaced,categories=cluster-api,shortName=ibmpowervsct
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of IBMPowerVSClusterTemplate"
 
@@ -39,7 +40,7 @@ type IBMPowerVSClusterTemplate struct {
 	Spec IBMPowerVSClusterTemplateSpec `json:"spec,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // IBMPowerVSClusterTemplateList contains a list of IBMPowerVSClusterTemplate.
 type IBMPowerVSClusterTemplateList struct {
@@ -58,5 +59,5 @@ type IBMPowerVSClusterTemplateResource struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&IBMPowerVSClusterTemplate{}, &IBMPowerVSClusterTemplateList{})
+	objectTypes = append(objectTypes, &IBMPowerVSClusterTemplate{}, &IBMPowerVSClusterTemplateList{})
 }
