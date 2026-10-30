@@ -2,5 +2,6 @@ options:
   no_parent_owners: true
 approvers:
 - api-approvers
+- redhat-chai-bot
 labels:
 - area/api

@@ -2,6 +2,7 @@ filters:
   ".*":
     approvers:
     - core-approvers
+    - redhat-chai-bot
     reviewers:
     - core-reviewers
     emeritus_approvers:
