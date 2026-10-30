@@ -12,14 +12,20 @@ import (
 type fakeProvider struct {
 	calls               int
 	payload             []byte
+	lastImg             string
 	lastPullSecretHash  string
 	lastTrustBundleHash string
+	lastHCConfigHash    string
+	lastCloudConfigHash string
 }
 
 func (f *fakeProvider) GetPayload(ctx context.Context, img, cfg, pullSecretHash, trustBundleHash, hcConfigHash, osImageStream, cloudConfigHash string) ([]byte, error) {
 	f.calls++
+	f.lastImg = img
 	f.lastPullSecretHash = pullSecretHash
 	f.lastTrustBundleHash = trustBundleHash
+	f.lastHCConfigHash = hcConfigHash
+	f.lastCloudConfigHash = cloudConfigHash
 	return f.payload, nil
 }
 
