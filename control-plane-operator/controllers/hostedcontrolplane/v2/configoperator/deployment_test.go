@@ -7,9 +7,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/pdbdrain"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type fakeReleaseImageProvider struct{}
@@ -34,34 +36,92 @@ func (fakeReleaseImageProvider) ComponentImages() map[string]string {
 	return map[string]string{}
 }
 
-func TestAdaptDeploymentIBMCloudControllerSelection(t *testing.T) {
-	t.Parallel()
-	g := NewWithT(t)
+func TestHcco_AdaptDeployment(t *testing.T) {
+	tests := []struct {
+		name                      string
+		platform                  hyperv1.PlatformType
+		drainReadinessFlag        string
+		drainReadinessOptIn       bool
+		additionalPrefixes        string
+		wantDrainReadinessEnv     bool
+		wantAdditionalPrefixesEnv bool
+		wantIBMControllerOverride bool
+	}{
+		{
+			name:                      "When the platform is IBM Cloud, it should select the supported controllers",
+			platform:                  hyperv1.IBMCloudPlatform,
+			wantIBMControllerOverride: true,
+		},
+		{
+			name:                      "When drain readiness is enabled, it should pass the flag to HCCO",
+			platform:                  hyperv1.AWSPlatform,
+			drainReadinessFlag:        "1",
+			drainReadinessOptIn:       true,
+			additionalPrefixes:        "redhat-,open-cluster-management",
+			wantDrainReadinessEnv:     true,
+			wantAdditionalPrefixesEnv: true,
+		},
+		{
+			name:               "When drain readiness is disabled, it should omit the flag from HCCO",
+			platform:           hyperv1.AWSPlatform,
+			drainReadinessFlag: "0",
+			additionalPrefixes: "redhat-",
+		},
+		{
+			name:     "When drain readiness is unset, it should omit the flag from HCCO",
+			platform: hyperv1.AWSPlatform,
+		},
+	}
 
-	deployment := &appsv1.Deployment{
-		Spec: appsv1.DeploymentSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{Name: ComponentName}},
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ENABLE_NODEPOOL_DRAIN_READINESS", tt.drainReadinessFlag)
+			t.Setenv(pdbdrain.AdditionalPlatformNamespacePrefixesEnv, tt.additionalPrefixes)
+			g := NewWithT(t)
+			deployment := &appsv1.Deployment{
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{Name: ComponentName}},
+						},
+					},
 				},
-			},
-		},
-	}
-	hcp := &hyperv1.HostedControlPlane{
-		Spec: hyperv1.HostedControlPlaneSpec{
-			Platform: hyperv1.PlatformSpec{Type: hyperv1.IBMCloudPlatform},
-		},
-	}
+			}
+			hcpAnnotations := map[string]string{}
+			if tt.drainReadinessOptIn {
+				hcpAnnotations[hyperv1.NodePoolDrainReadinessAnnotation] = "true"
+			}
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Annotations: hcpAnnotations},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: tt.platform},
+				},
+			}
 
-	err := (&hcco{}).adaptDeployment(controlplanecomponent.WorkloadContext{
-		HCP:                  hcp,
-		ReleaseImageProvider: fakeReleaseImageProvider{},
-	}, deployment)
-	g.Expect(err).ToNot(HaveOccurred())
+			err := (&hcco{}).adaptDeployment(controlplanecomponent.WorkloadContext{
+				HCP:                  hcp,
+				ReleaseImageProvider: fakeReleaseImageProvider{},
+			}, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
 
-	g.Expect(deployment.Spec.Template.Spec.Containers[0].Command).To(ContainElement(
-		"--controllers=controller-manager-ca,resources,user-ca-bundle,inplaceupgrader,drainer,hcpstatus",
-	))
+			container := deployment.Spec.Template.Spec.Containers[0]
+			if tt.wantIBMControllerOverride {
+				g.Expect(container.Command).To(ContainElement(
+					"--controllers=controller-manager-ca,resources,user-ca-bundle,inplaceupgrader,drainer,hcpstatus",
+				))
+			}
+			if tt.wantDrainReadinessEnv {
+				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: "ENABLE_NODEPOOL_DRAIN_READINESS", Value: "1"}))
+			} else {
+				g.Expect(container.Env).ToNot(ContainElement(HaveField("Name", "ENABLE_NODEPOOL_DRAIN_READINESS")))
+			}
+			if tt.wantAdditionalPrefixesEnv {
+				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: pdbdrain.AdditionalPlatformNamespacePrefixesEnv, Value: tt.additionalPrefixes}))
+			} else {
+				g.Expect(container.Env).ToNot(ContainElement(HaveField("Name", pdbdrain.AdditionalPlatformNamespacePrefixesEnv)))
+			}
+		})
+	}
 }
 
 func TestIsExternalInfraKubevirt(t *testing.T) {

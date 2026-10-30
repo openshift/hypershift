@@ -54589,6 +54589,38 @@ Current condition types are: &ldquo;Available&rdquo;</p>
 </tr>
 <tr>
 <td>
+<code>nodePoolDrain</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolDrain">
+[]NodePoolDrain
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodePoolDrain reports per-NodePool drain readiness computed from guest-cluster
+PodDisruptionBudgets by the HCCO. Status-only; does not gate rollout in HyperShift.
+Carries only a state, reason, and count — never customer workload identifiers.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodePoolDrainLastProbeTime</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodePoolDrainLastProbeTime is the time of the last successful guest-cluster
+drain-readiness computation. Consumers must expire nodePoolDrain data when
+this timestamp is absent or too old, even if the up-to-date condition is True.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>ready</code></br>
 <em>
 bool
@@ -58110,6 +58142,100 @@ int64
 </td>
 </tr>
 </tbody>
+</table>
+###NodePoolDrain { #hypershift.openshift.io/v1beta1.NodePoolDrain }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>NodePoolDrain reports whether a NodePool&rsquo;s nodes can currently be drained during an upgrade.</p>
+<p>It deliberately carries NO customer workload identifiers (namespace/PDB/pod names): only a
+state, a bounded reason, and a count. Customer-facing detail is surfaced in-guest as a
+Kubernetes Event on the offending PDB. Management-cluster logs contain no workload names.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nodePoolName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>nodePoolName is the NodePool these nodes belong to, from the node label
+hypershift.openshift.io/nodePool.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>state</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolDrainState">
+NodePoolDrainState
+</a>
+</em>
+</td>
+<td>
+<p>state is Blocked when a structurally blocking customer PodDisruptionBudget would prevent
+eviction of a drain candidate Pod on this pool&rsquo;s nodes; otherwise it is Drainable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>blockingCount</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>blockingCount is the number of PodDisruptionBudgets contributing to state=Blocked.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>reason</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>reason is a bounded machine-readable reason, e.g. BlockedByPodDisruptionBudget or Drainable.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###NodePoolDrainState { #hypershift.openshift.io/v1beta1.NodePoolDrainState }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolDrain">NodePoolDrain</a>)
+</p>
+<p>
+<p>NodePoolDrainState is the observed drain state for a NodePool.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Blocked&#34;</p></td>
+<td><p>NodePoolDrainStateBlocked means a structural PDB blocker was found.</p>
+</td>
+</tr><tr><td><p>&#34;Drainable&#34;</p></td>
+<td><p>NodePoolDrainStateDrainable means no structural PDB blocker was found.</p>
+</td>
+</tr></tbody>
 </table>
 ###NodePoolManagement { #hypershift.openshift.io/v1beta1.NodePoolManagement }
 <p>

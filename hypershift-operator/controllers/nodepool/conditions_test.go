@@ -11,7 +11,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
+	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/pdbdrain"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
@@ -28,6 +30,147 @@ import (
 
 	"github.com/blang/semver"
 )
+
+func TestDrainBlockedConditionFreshness(t *testing.T) {
+	now := time.Now()
+	fresh := metav1.NewTime(now.Add(-5 * time.Minute))
+	stale := metav1.NewTime(now.Add(-30 * time.Minute))
+	future := metav1.NewTime(now.Add(2 * time.Minute))
+	for _, tc := range []struct {
+		name         string
+		probeTime    *metav1.Time
+		upToDate     metav1.ConditionStatus
+		blocked      bool
+		missingEntry bool
+		missingState bool
+		invalidState bool
+		missingHCP   bool
+		wantStatus   corev1.ConditionStatus
+		wantReason   string
+		wantRequeue  bool
+	}{
+		{name: "fresh blocked", probeTime: &fresh, upToDate: metav1.ConditionTrue, blocked: true, wantStatus: corev1.ConditionTrue, wantRequeue: true},
+		{name: "fresh drainable", probeTime: &fresh, upToDate: metav1.ConditionTrue, wantStatus: corev1.ConditionFalse, wantRequeue: true},
+		{name: "stale blocked", probeTime: &stale, upToDate: metav1.ConditionTrue, blocked: true, wantStatus: corev1.ConditionUnknown, wantReason: "Stale"},
+		{name: "missing timestamp", upToDate: metav1.ConditionTrue, blocked: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
+		{name: "future timestamp", probeTime: &future, upToDate: metav1.ConditionTrue, blocked: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
+		{name: "writer declared stale", probeTime: &fresh, upToDate: metav1.ConditionFalse, blocked: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
+		{name: "missing pool entry", probeTime: &fresh, upToDate: metav1.ConditionTrue, missingEntry: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
+		{name: "legacy result without state", probeTime: &fresh, upToDate: metav1.ConditionTrue, missingState: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
+		{name: "unsupported state", probeTime: &fresh, upToDate: metav1.ConditionTrue, invalidState: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
+		{name: "missing HCP", missingHCP: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster", Namespace: "clusters"}}
+			nodePool := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "pool-a", Namespace: "clusters"}}
+			// A previous True result must be replaced when the signal expires.
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type: hyperv1.NodePoolDrainBlockedConditionType, Status: corev1.ConditionTrue, Reason: "BlockedByPodDisruptionBudget",
+			})
+			hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+				Name: hcluster.Name, Namespace: manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name),
+			}}
+			hcp.Status.Conditions = []metav1.Condition{{
+				Type: hyperv1.HostedControlPlaneNodePoolDrainUpToDate, Status: tc.upToDate, Reason: "Test", LastTransitionTime: metav1.Now(),
+			}}
+			hcp.Status.NodePoolDrainLastProbeTime = tc.probeTime
+			if !tc.missingEntry {
+				state := hyperv1.NodePoolDrainStateDrainable
+				if tc.blocked {
+					state = hyperv1.NodePoolDrainStateBlocked
+				}
+				entry := hyperv1.NodePoolDrain{NodePoolName: nodePool.Name, State: state}
+				if tc.missingState {
+					entry.State = ""
+				}
+				if tc.invalidState {
+					entry.State = hyperv1.NodePoolDrainState("Unsupported")
+				}
+				hcp.Status.NodePoolDrain = []hyperv1.NodePoolDrain{entry}
+			}
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if !tc.missingHCP {
+				builder = builder.WithObjects(hcp)
+			}
+			r := &NodePoolReconciler{Client: builder.Build()}
+
+			result, err := r.drainBlockedCondition(t.Context(), nodePool, hcluster)
+			if err != nil {
+				t.Fatal(err)
+			}
+			condition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolDrainBlockedConditionType)
+			if condition == nil || condition.Status != tc.wantStatus || (tc.wantReason != "" && condition.Reason != tc.wantReason) {
+				t.Errorf("DrainBlocked=%+v, want status=%s reason=%s", condition, tc.wantStatus, tc.wantReason)
+			}
+			if tc.wantRequeue {
+				if result == nil || result.RequeueAfter < 9*time.Minute || result.RequeueAfter > pdbdrain.SignalMaxAge {
+					t.Errorf("requeue=%v, want expiry in about 10m", result)
+				}
+			} else if result != nil && result.RequeueAfter != 0 {
+				t.Errorf("unexpected expiry requeue: %v", result)
+			}
+		})
+	}
+}
+
+func TestDrainBlockedExpiryRequeueSurvivesEarlyValidationReturn(t *testing.T) {
+	t.Setenv("ENABLE_NODEPOOL_DRAIN_READINESS", "1")
+	probeTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster", Namespace: "clusters",
+			Annotations: map[string]string{hyperv1.NodePoolDrainReadinessAnnotation: "true"},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Release:    hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64"},
+			PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+			Platform:   hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+		},
+		// Missing ignition endpoint makes the condition loop return early.
+	}
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: "pool-a", Namespace: hcluster.Namespace},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hcluster.Name,
+			Release:     hyperv1.Release{Image: hcluster.Spec.Release.Image},
+			Platform:    hyperv1.NodePoolPlatform{Type: hyperv1.AWSPlatform},
+			Management: hyperv1.NodePoolManagement{
+				UpgradeType: hyperv1.UpgradeTypeReplace,
+				Replace:     &hyperv1.ReplaceUpgrade{Strategy: hyperv1.UpgradeStrategyOnDelete},
+			},
+		},
+	}
+	hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+		Name: hcluster.Name, Namespace: manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name),
+	}}
+	hcp.Status.Conditions = []metav1.Condition{{
+		Type: hyperv1.HostedControlPlaneNodePoolDrainUpToDate, Status: metav1.ConditionTrue,
+		Reason: hyperv1.AsExpectedReason, LastTransitionTime: metav1.Now(),
+	}}
+	hcp.Status.NodePoolDrainLastProbeTime = &probeTime
+	hcp.Status.NodePoolDrain = []hyperv1.NodePoolDrain{{NodePoolName: nodePool.Name, State: hyperv1.NodePoolDrainStateBlocked}}
+	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: hcluster.Namespace}, Data: map[string][]byte{
+		corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io":{"auth":"","email":""}}}`),
+	}}
+	r := &NodePoolReconciler{
+		Client:          fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, nodePool, hcp, pullSecret).Build(),
+		ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: "4.18.5"},
+	}
+
+	result, err := r.reconcile(t.Context(), hcluster, nodePool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RequeueAfter < 9*time.Minute || result.RequeueAfter > pdbdrain.SignalMaxAge {
+		t.Errorf("requeue=%v, want drain probe expiry in about 10m", result)
+	}
+	if c := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolDrainBlockedConditionType); c == nil || c.Status != corev1.ConditionTrue {
+		t.Errorf("DrainBlocked condition = %+v, want True", c)
+	}
+	if c := FindStatusCondition(nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable)); c == nil || c.Status != corev1.ConditionFalse {
+		t.Errorf("IgnitionEndpointAvailable condition = %+v, want False from early validation return", c)
+	}
+}
 
 func TestIgnitionEndpointAvailableCondition(t *testing.T) {
 	const ignitionHostname = "ignition-example.service.hypershift.example.com"

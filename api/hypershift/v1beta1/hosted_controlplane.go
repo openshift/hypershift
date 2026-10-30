@@ -323,6 +323,22 @@ type HostedControlPlaneStatus struct {
 	// +kubebuilder:validation:MaxItems=100
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
+	// nodePoolDrain reports per-NodePool drain readiness computed from guest-cluster
+	// PodDisruptionBudgets by the HCCO. Status-only; does not gate rollout in HyperShift.
+	// Carries only a state, reason, and count — never customer workload identifiers.
+	// +optional
+	// +listType=map
+	// +listMapKey=nodePoolName
+	// +kubebuilder:validation:MaxItems=500
+	// +kubebuilder:validation:MinItems=1
+	NodePoolDrain []NodePoolDrain `json:"nodePoolDrain,omitempty"`
+
+	// nodePoolDrainLastProbeTime is the time of the last successful guest-cluster
+	// drain-readiness computation. Consumers must expire nodePoolDrain data when
+	// this timestamp is absent or too old, even if the up-to-date condition is True.
+	// +optional
+	NodePoolDrainLastProbeTime *metav1.Time `json:"nodePoolDrainLastProbeTime,omitempty"`
+
 	// ready denotes that the HostedControlPlane API Server is ready to
 	// receive requests
 	// This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L226-L230

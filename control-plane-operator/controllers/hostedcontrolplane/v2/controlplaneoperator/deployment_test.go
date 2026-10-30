@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/pdbdrain"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,25 +81,58 @@ func TestAdaptDeploymentImageOverrides(t *testing.T) {
 	}
 }
 
-func TestAdaptDeploymentWatchListClientEnv(t *testing.T) {
+func TestAdaptDeploymentEnvPropagation(t *testing.T) {
 	testCases := []struct {
-		name          string
-		envValue      string
-		expectPresent bool
+		name                string
+		envName             string
+		envValue            string
+		drainReadinessFlag  string
+		drainReadinessOptIn bool
+		expectPresent       bool
 	}{
 		{
 			name:          "When KUBE_FEATURE_WatchListClient is set to false it should propagate the value",
+			envName:       "KUBE_FEATURE_WatchListClient",
 			envValue:      "false",
 			expectPresent: true,
 		},
 		{
 			name:          "When KUBE_FEATURE_WatchListClient is set to true it should propagate the value",
+			envName:       "KUBE_FEATURE_WatchListClient",
 			envValue:      "true",
 			expectPresent: true,
 		},
 		{
 			name:          "When KUBE_FEATURE_WatchListClient is unset it should not add the env var",
+			envName:       "KUBE_FEATURE_WatchListClient",
 			envValue:      "",
+			expectPresent: false,
+		},
+		{
+			name:                "When NodePool drain readiness is enabled it should propagate the flag to CPO",
+			envName:             "ENABLE_NODEPOOL_DRAIN_READINESS",
+			envValue:            "1",
+			drainReadinessOptIn: true,
+			expectPresent:       true,
+		},
+		{
+			name:          "When NodePool drain readiness is disabled it should omit the flag from CPO",
+			envName:       "ENABLE_NODEPOOL_DRAIN_READINESS",
+			envValue:      "0",
+			expectPresent: false,
+		},
+		{
+			name:                "When managed namespace prefixes are configured with drain readiness, it should propagate them to CPO",
+			envName:             pdbdrain.AdditionalPlatformNamespacePrefixesEnv,
+			envValue:            "redhat-,open-cluster-management",
+			drainReadinessFlag:  "1",
+			drainReadinessOptIn: true,
+			expectPresent:       true,
+		},
+		{
+			name:          "When drain readiness is disabled, it should omit managed namespace prefixes from CPO",
+			envName:       pdbdrain.AdditionalPlatformNamespacePrefixesEnv,
+			envValue:      "redhat-",
 			expectPresent: false,
 		},
 	}
@@ -107,9 +141,8 @@ func TestAdaptDeploymentWatchListClientEnv(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			if tc.envValue != "" {
-				t.Setenv("KUBE_FEATURE_WatchListClient", tc.envValue)
-			}
+			t.Setenv("ENABLE_NODEPOOL_DRAIN_READINESS", tc.drainReadinessFlag)
+			t.Setenv(tc.envName, tc.envValue)
 
 			hc := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -118,10 +151,16 @@ func TestAdaptDeploymentWatchListClientEnv(t *testing.T) {
 				},
 			}
 
+			hcpAnnotations := map[string]string{}
+			if tc.drainReadinessOptIn {
+				hcpAnnotations[hyperv1.NodePoolDrainReadinessAnnotation] = "true"
+			}
+
 			hcp := &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-cluster",
-					Namespace: "clusters-test-cluster",
+					Name:        "test-cluster",
+					Namespace:   "clusters-test-cluster",
+					Annotations: hcpAnnotations,
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: "test-infra-id",
@@ -148,14 +187,14 @@ func TestAdaptDeploymentWatchListClientEnv(t *testing.T) {
 
 			envVars := deployment.Spec.Template.Spec.Containers[0].Env
 			expectedEnvVar := corev1.EnvVar{
-				Name:  "KUBE_FEATURE_WatchListClient",
+				Name:  tc.envName,
 				Value: tc.envValue,
 			}
 
 			if tc.expectPresent {
 				g.Expect(envVars).To(ContainElement(expectedEnvVar))
 			} else {
-				g.Expect(envVars).ToNot(ContainElement(HaveField("Name", "KUBE_FEATURE_WatchListClient")))
+				g.Expect(envVars).ToNot(ContainElement(HaveField("Name", tc.envName)))
 			}
 		})
 	}

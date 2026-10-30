@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/pdbdrain"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -129,6 +130,18 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 					Value: "1",
 				},
 			)
+		}
+		if os.Getenv("ENABLE_NODEPOOL_DRAIN_READINESS") == "1" && hcp.Annotations[hyperv1.NodePoolDrainReadinessAnnotation] == "true" {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "ENABLE_NODEPOOL_DRAIN_READINESS",
+				Value: "1",
+			})
+			if prefixes := os.Getenv(pdbdrain.AdditionalPlatformNamespacePrefixesEnv); prefixes != "" {
+				c.Env = append(c.Env, corev1.EnvVar{
+					Name:  pdbdrain.AdditionalPlatformNamespacePrefixesEnv,
+					Value: prefixes,
+				})
+			}
 		}
 
 		if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {

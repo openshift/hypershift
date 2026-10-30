@@ -14,12 +14,14 @@ import (
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/pkg/manifests"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/pdbdrain"
 	"github.com/openshift/hypershift/support/reconcilerpolicy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -1223,4 +1225,102 @@ func (r *NodePoolReconciler) supportedVersionSkewCondition(ctx context.Context, 
 		ObservedGeneration: nodePool.Generation,
 	})
 	return nil, nil
+}
+
+// drainBlockedCondition copies the HCCO-computed per-NodePool drain readiness from the
+// HostedControlPlane status into a NodePool condition. It is status-only and never gates the
+// rollout; the enforcement policy lives in the consumer (e.g. Clusters Service).
+//
+// If the guest-side signal is missing or stale, the condition is set to Unknown
+// so consumers fail open. A known result schedules another reconcile at expiry.
+func (r *NodePoolReconciler) drainBlockedCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	hcp := &hyperv1.HostedControlPlane{}
+	setUnknown := func(reason, msg string) {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolDrainBlockedConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             reason,
+			Message:            msg,
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
+	if err := r.Client.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: hcluster.Name}, hcp); err != nil {
+		if apierrors.IsNotFound(err) {
+			setUnknown("Unverified", "hosted control plane is not available")
+			return nil, nil
+		}
+		setUnknown("Unverified", "hosted control plane status could not be read")
+		return &ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+	}
+
+	// Stale/unverified guest signal -> fail open.
+	if c := meta.FindStatusCondition(hcp.Status.Conditions, hyperv1.HostedControlPlaneNodePoolDrainUpToDate); c == nil || c.Status != metav1.ConditionTrue {
+		setUnknown("Unverified", "drain readiness has not been computed from the guest cluster")
+		return nil, nil
+	}
+	probeTime := hcp.Status.NodePoolDrainLastProbeTime
+	if probeTime == nil || probeTime.IsZero() {
+		setUnknown("Unverified", "drain readiness has no successful probe timestamp")
+		return nil, nil
+	}
+	// A future timestamp beyond a small allowance for clock skew is invalid. Without
+	// this bound, a bad clock could keep a stale True signal current indefinitely.
+	now := time.Now()
+	if probeTime.After(now.Add(time.Minute)) {
+		setUnknown("Unverified", "drain readiness probe timestamp is in the future")
+		return nil, nil
+	}
+	remaining := probeTime.Add(pdbdrain.SignalMaxAge).Sub(now)
+	if remaining <= 0 {
+		setUnknown("Stale", "drain readiness has not been refreshed recently")
+		return nil, nil
+	}
+
+	var entry *hyperv1.NodePoolDrain
+	for i := range hcp.Status.NodePoolDrain {
+		if hcp.Status.NodePoolDrain[i].NodePoolName == nodePool.Name {
+			entry = &hcp.Status.NodePoolDrain[i]
+			break
+		}
+	}
+	if entry == nil {
+		setUnknown("Unverified", "no drain readiness computed for this NodePool yet")
+		return nil, nil
+	}
+
+	if entry.State == "" {
+		setUnknown("Unverified", "drain readiness result has no state")
+		return nil, nil
+	}
+	if entry.State == hyperv1.NodePoolDrainStateBlocked {
+		reason := entry.Reason
+		if reason == "" {
+			reason = "BlockedByPodDisruptionBudget"
+		}
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolDrainBlockedConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             reason,
+			Message:            fmt.Sprintf("%d PodDisruptionBudget(s) would block node drain during an upgrade", ptr.Deref(entry.BlockingCount, 0)),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return &ctrl.Result{RequeueAfter: remaining}, nil
+	}
+	if entry.State != hyperv1.NodePoolDrainStateDrainable {
+		setUnknown("Unverified", "drain readiness result has an unsupported state")
+		return nil, nil
+	}
+	reason := entry.Reason
+	if reason == "" {
+		reason = "Drainable"
+	}
+
+	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolDrainBlockedConditionType,
+		Status:             corev1.ConditionFalse,
+		Reason:             reason,
+		ObservedGeneration: nodePool.Generation,
+	})
+	return &ctrl.Result{RequeueAfter: remaining}, nil
 }
