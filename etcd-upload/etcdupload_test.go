@@ -37,15 +37,12 @@ func TestNewStartCommand(t *testing.T) {
 		localCmd := NewStartCommand()
 		g.Expect(localCmd.Flags().Lookup("azure-cloud").DefValue).To(Equal("AzurePublicCloud"))
 	})
-}
 
-func TestAzureCloudFlagDefaultsFromEnvironment(t *testing.T) {
 	t.Run("When AZURE_CLOUD_NAME is set it should use it as the azure-cloud default", func(t *testing.T) {
-		t.Setenv("AZURE_CLOUD_NAME", "AzureUSGovernmentCloud")
-		cmd := NewStartCommand()
-
 		g := NewGomegaWithT(t)
-		g.Expect(cmd.Flags().Lookup("azure-cloud").DefValue).To(Equal("AzureUSGovernmentCloud"))
+		t.Setenv("AZURE_CLOUD_NAME", "AzureUSGovernmentCloud")
+		localCmd := NewStartCommand()
+		g.Expect(localCmd.Flags().Lookup("azure-cloud").DefValue).To(Equal("AzureUSGovernmentCloud"))
 	})
 }
 
