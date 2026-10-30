@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/duration"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/workqueue"
@@ -40,6 +42,7 @@ import (
 	"github.com/go-logr/logr"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/compute/v1"
+	dns "google.golang.org/api/dns/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
@@ -73,6 +76,15 @@ const (
 	labelReconciliationRequeueInterval = 30 * time.Second
 
 	managedPSCResourceLabelKeysAnnotation = "hypershift.openshift.io/gcp-psc-managed-resource-label-keys"
+
+	// hcpGCPPSCFinalizerName blocks HCP deletion until PSC resources are cleaned up.
+	// Prevents credential invalidation from orphaning GCP resources during deletion.
+	hcpGCPPSCFinalizerName = "hypershift.openshift.io/gcp-psc-cleanup"
+
+	// pscCleanupDeletionTimeout bounds how long deletion waits for PSC GCP cleanup before
+	// releasing the finalizers anyway, so a permanent GCP failure cannot block deletion
+	// forever. Matches the CPO's awsEndpointServiceDeletionTimeout.
+	pscCleanupDeletionTimeout = 10 * time.Minute
 )
 
 var dnsEndpointGVK = schema.GroupVersionKind{
@@ -101,6 +113,7 @@ type gcpClientBuilder struct {
 	initialized     bool
 	customerProject string
 	region          string
+	newClient       func(context.Context) (*compute.Service, error)
 }
 
 func (b *gcpClientBuilder) initializeWithHCP(hcp *hyperv1.HostedControlPlane) {
@@ -124,6 +137,9 @@ func (b *gcpClientBuilder) getClient(ctx context.Context) (*compute.Service, err
 	if !b.initialized {
 		return nil, errors.New("client not initialized")
 	}
+	if b.newClient != nil {
+		return b.newClient(ctx)
+	}
 
 	return InitCustomerGCPClient(ctx)
 }
@@ -133,15 +149,36 @@ type GCPPrivateServiceConnectReconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
 	gcpClientBuilder gcpClientBuilder
+
+	// dnsReconciler is overridden by unit tests to avoid requiring GCP credentials.
+	// Production reconciliation always uses reconcileDNS.
+	dnsReconciler func(context.Context, *hyperv1.GCPPrivateServiceConnect, *hyperv1.HostedControlPlane, logr.Logger) (ctrl.Result, error)
+
+	// dnsClientFactory is overridden by unit tests to inject a fake Cloud DNS client and
+	// avoid requiring GCP credentials. Production cleanup always uses newDNSClient.
+	dnsClientFactory func(context.Context) (*dns.Service, error)
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.GCPPrivateServiceConnect{}).
+		// Watch HCP to trigger reconciliation on deletion
+		Watches(
+			&hyperv1.HostedControlPlane{},
+			handler.EnqueueRequestsFromMapFunc(r.mapHCPToPSC()),
+		).
 		WithOptions(controller.Options{
-			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),
-			MaxConcurrentReconciles: 10,
+			// Prevent race conditions when multiple PSC CRs in the same namespace
+			// respond to HCP deletion simultaneously. With MaxConcurrentReconciles: 1,
+			// reconcileHCPDeletion() runs serially, preventing concurrent HCP finalizer updates.
+			MaxConcurrentReconciles: 1,
+
+			// Standard exponential backoff for transient errors
+			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](
+				3*time.Second,  // base delay
+				30*time.Second, // max delay
+			),
 		}).
 		Watches(&hyperv1.HostedControlPlane{}, handler.Funcs{UpdateFunc: r.enqueueOnAccessOrResourceLabelsChange(mgr.GetLogger())}).
 		Build(r)
@@ -180,6 +217,70 @@ func (r *GCPPrivateServiceConnectReconciler) enqueueOnAccessOrResourceLabelsChan
 	}
 }
 
+// mapHCPToPSC returns a mapper that enqueues all PSC CRs when an HCP carrying the PSC
+// cleanup finalizer is being deleted. Handles HCP deletion even when PSC CRs are gone to
+// ensure HCP finalizer removal. Other HCP updates are ignored: enqueueing on every HCP
+// status change would run a full GCP reconcile each time, and the spec changes that matter
+// are handled by enqueueOnAccessOrResourceLabelsChange.
+func (r *GCPPrivateServiceConnectReconciler) mapHCPToPSC() handler.MapFunc {
+	return func(ctx context.Context, obj client.Object) []reconcile.Request {
+		hcp := obj.(*hyperv1.HostedControlPlane)
+		log := ctrl.Log.WithName("gcp-psc-endpoint-controller").WithValues("hcp", hcp.Namespace)
+
+		// Only process deleting HCPs with our finalizer
+		// Skip HCPs that never had PSC resources to avoid unnecessary reconciliations
+		if !controllerutil.ContainsFinalizer(hcp, hcpGCPPSCFinalizerName) || hcp.DeletionTimestamp.IsZero() {
+			return nil
+		}
+
+		// List all PSC CRs in the HCP namespace
+		var pscList hyperv1.GCPPrivateServiceConnectList
+		if err := r.List(ctx, &pscList, client.InNamespace(hcp.Namespace)); err != nil {
+			log.Error(err, "Failed to list PSC CRs for HCP watch")
+			// Enqueue the synthetic request anyway so a transient list error can't
+			// strand the HCP finalizer; Reconcile re-lists with backoff.
+			return []reconcile.Request{{
+				NamespacedName: types.NamespacedName{
+					Name:      hcp.Name + "-psc",
+					Namespace: hcp.Namespace,
+				},
+			}}
+		}
+
+		// HCP deleting with no PSC CRs: enqueue a synthetic request so Reconcile can
+		// remove the orphaned HCP finalizer (PSC CRs were deleted before the HCP).
+		if len(pscList.Items) == 0 {
+			log.Info("HCP deleting with no PSC CRs - enqueueing request to remove HCP finalizer")
+			// Use HCP namespace + a known suffix as the PSC name. This assumes no real
+			// PSC CR is named "<hcp>-psc": Reconcile must get NotFound for this name so it
+			// routes into handleOrphanedHCPFinalizer and removes the orphaned HCP finalizer.
+			return []reconcile.Request{{
+				NamespacedName: types.NamespacedName{
+					Name:      hcp.Name + "-psc",
+					Namespace: hcp.Namespace,
+				},
+			}}
+		}
+
+		// Enqueue all PSC CRs for reconciliation
+		requests := make([]reconcile.Request, 0, len(pscList.Items))
+		for i := range pscList.Items {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      pscList.Items[i].Name,
+					Namespace: pscList.Items[i].Namespace,
+				},
+			})
+		}
+
+		if len(requests) > 0 {
+			log.Info("HCP deleting, enqueuing PSC CRs", "count", len(requests))
+		}
+
+		return requests
+	}
+}
+
 // Reconcile implements the main reconciliation logic for PSC endpoints
 func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.Log.WithName("gcp-psc-endpoint-controller").WithValues("gcpprivateserviceconnect", req.NamespacedName)
@@ -188,7 +289,10 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	obj := &hyperv1.GCPPrivateServiceConnect{}
 	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
 		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
+			// PSC CR not found - this could be a synthetic request from mapHCPToPSC
+			// when the HCP is deleting with no PSC CRs. Check if there's an HCP in
+			// this namespace that needs finalizer removal.
+			return r.handleOrphanedHCPFinalizer(ctx, req.Namespace, log)
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to get GCPPrivateServiceConnect: %w", err)
 	}
@@ -196,49 +300,31 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	// Don't change the cached object
 	gcpPSC := obj.DeepCopy()
 
-	// 2. Handle deletion
+	// 2. Handle PSC CR deletion
 	if !gcpPSC.DeletionTimestamp.IsZero() {
-		if !controllerutil.ContainsFinalizer(gcpPSC, pscEndpointFinalizer) {
-			// If we previously removed our finalizer, don't delete again and return early
-			return ctrl.Result{}, nil
-		}
-
-		// Try to initialize client builder for deletion if not already done.
-		// This handles the case where the controller restarts during deletion -
-		// the in-memory client builder state is lost, so we need to reinitialize from HCP.
-		if !r.gcpClientBuilder.initialized {
-			if hcp, err := r.getHostedControlPlane(ctx, gcpPSC); err == nil {
-				r.gcpClientBuilder.initializeWithHCP(hcp)
-			} else {
-				log.V(1).Info("Could not initialize client builder during deletion, HCP may be deleted", "error", err)
-			}
-		}
-
-		// Attempt cleanup using client builder (following AWS pattern)
-		customerGCPClient, err := r.gcpClientBuilder.getClient(ctx)
-		if err != nil {
-			log.Error(err, "failed to get GCP client, skipping PSC endpoint cleanup")
-		} else {
-			completed, err := r.reconcileDelete(ctx, gcpPSC, customerGCPClient, log)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
-			}
-			if !completed {
-				return ctrl.Result{RequeueAfter: pscEndpointDeletionRequeueDuration}, nil
-			}
-		}
-
-		// Always remove finalizer regardless of cleanup success (following AWS pattern)
-		if controllerutil.ContainsFinalizer(gcpPSC, pscEndpointFinalizer) {
-			controllerutil.RemoveFinalizer(gcpPSC, pscEndpointFinalizer)
-			if err := r.Update(ctx, gcpPSC); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
-			}
-		}
-		return ctrl.Result{}, nil
+		return r.handlePSCCRDeletion(ctx, gcpPSC, log)
 	}
 
-	// 3. Add finalizer only if WIF token is accessible
+	// 3. Get HCP or cleanup orphan
+	// If HCP is gone, this removes the CR finalizer and returns (nil, nil)
+	hcp, result, err := r.getHCPOrCleanupOrphan(ctx, gcpPSC, log)
+	if err != nil || !result.IsZero() {
+		return result, err
+	}
+	if hcp == nil {
+		log.Info("HCP not found, orphaned CR finalizer removed")
+		return ctrl.Result{}, nil // Early return - CR will be GC'd
+	}
+
+	// 4. Handle HCP deletion - EARLY RETURN
+	// CRITICAL: This must happen BEFORE adding the per-CR finalizer (step 5)
+	// Otherwise we create an infinite loop: remove finalizer → re-add → remove → ...
+	if !hcp.DeletionTimestamp.IsZero() {
+		return r.reconcileHCPDeletion(ctx, hcp, log)
+	}
+
+	// 5. Add per-CR finalizer only if WIF token is accessible
+	// This only runs when HCP is NOT deleting (due to early return above)
 	// The token is created by the token minter after credential secrets are ready.
 	// If we add the finalizer before the token exists, cleanup on deletion will fail.
 	if !controllerutil.ContainsFinalizer(gcpPSC, pscEndpointFinalizer) {
@@ -246,32 +332,21 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 			log.Info("WIF token not yet accessible, waiting before adding finalizer")
 			return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 		}
+		original := gcpPSC.DeepCopy()
 		controllerutil.AddFinalizer(gcpPSC, pscEndpointFinalizer)
-		return ctrl.Result{}, r.Update(ctx, gcpPSC)
-	}
-
-	// 4. Find the hosted control plane (for normal reconciliation)
-	hcp, err := r.getHostedControlPlane(ctx, gcpPSC)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get HostedControlPlane: %w", err)
-	}
-
-	// 5. Check if reconciliation is paused (following AWS pattern)
-	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
-		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
-		return ctrl.Result{RequeueAfter: duration}, nil
+		err := r.Patch(ctx, gcpPSC, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+		if apierrors.IsConflict(err) {
+			log.V(1).Info("Conflict adding CR finalizer, will retry")
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		return ctrl.Result{}, err
 	}
 
 	// 6. Initialize client builder with HCP configuration
 	r.gcpClientBuilder.initializeWithHCP(hcp)
 
-	// 7. Wait for Service Attachment to be ready
-	if !r.isServiceAttachmentReady(gcpPSC) {
-		log.Info("Waiting for Service Attachment to be ready")
-		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
-	}
-
-	// 8. Get customer GCP client using client builder
+	// 7. Construct the customer GCP client using the client builder
+	// Credentials are not authenticated here; runtime validation happens in the GCP health check.
 	customerGCPClient, err := r.gcpClientBuilder.getClient(ctx)
 	if err != nil {
 		log.Error(err, "failed to create customer GCP client")
@@ -282,16 +357,39 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	customerProject := r.gcpClientBuilder.customerProject
 	region := r.gcpClientBuilder.region
 
+	// 8. Add HCP finalizer immediately after the client is constructed, before any resource creation
+	// This ensures cleanup will run even if GCP resource provisioning fails partway through.
+	// CRITICAL: Must happen BEFORE pause check, Service Attachment check, and any GCP resource creation.
+	// If we returned early before adding this finalizer, HCP deletion wouldn't trigger cleanup.
+	if result, err := r.ensureHCPFinalizer(ctx, hcp, log); err != nil || !result.IsZero() {
+		return result, err
+	}
+
+	// 9. Check if reconciliation is paused
+	// Safe to return early here because HCP finalizer is already set above.
+	// This allows cleanup to run even if cluster is deleted while paused.
+	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
+		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
+		return ctrl.Result{RequeueAfter: duration}, nil
+	}
+
+	// 10. Wait for Service Attachment to be ready
+	// Safe to return early here because HCP finalizer is already set above
+	if !r.isServiceAttachmentReady(gcpPSC) {
+		log.Info("Waiting for Service Attachment to be ready")
+		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+	}
+
 	desiredLabels := gcputil.ResourceLabels(hcp)
 	previouslyManagedLabelKeys := gcputil.ManagedResourceLabelKeys(gcpPSC.Annotations, managedPSCResourceLabelKeysAnnotation)
 
-	// 9. Ensure IP address is reserved
+	// 11. Ensure IP address is reserved
 	result, addressLabelsReconciled, err := r.ensureIPAddress(ctx, gcpPSC, hcp, customerGCPClient, customerProject, region, desiredLabels, previouslyManagedLabelKeys, log)
 	if err != nil || !result.IsZero() {
 		return result, err
 	}
 
-	// 10. Reconcile PSC Endpoint
+	// 12. Reconcile PSC Endpoint
 	result, endpointLabelsReconciled, err := r.reconcilePSCEndpoint(ctx, gcpPSC, hcp, customerGCPClient, customerProject, region, desiredLabels, previouslyManagedLabelKeys, log)
 	if err != nil || !result.IsZero() {
 		return result, err
@@ -303,12 +401,16 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 		}
 	}
 
-	// 11. Reconcile DNS zones and records (after PSC endpoint is available)
-	if result, err := r.reconcileDNS(ctx, gcpPSC, hcp, log); err != nil || !result.IsZero() {
+	// 13. Reconcile DNS zones and records (after PSC endpoint is available)
+	dnsReconciler := r.reconcileDNS
+	if r.dnsReconciler != nil {
+		dnsReconciler = r.dnsReconciler
+	}
+	if result, err := dnsReconciler(ctx, gcpPSC, hcp, log); err != nil || !result.IsZero() {
 		return result, err
 	}
 
-	// 12. Reconcile external-dns services for private clusters with external names
+	// 14. Reconcile external-dns services for private clusters with external names
 	if result, err := r.reconcileExternalServices(ctx, gcpPSC, hcp, log); err != nil || !result.IsZero() {
 		return result, err
 	}
@@ -316,8 +418,351 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 		return ctrl.Result{RequeueAfter: labelReconciliationRequeueInterval}, nil
 	}
 
-	// 13. Requeue for drift detection - periodically check GCP resources for out-of-band changes
+	// 15. Requeue for drift detection - periodically check GCP resources for out-of-band changes
 	return ctrl.Result{RequeueAfter: driftDetectionRequeueInterval}, nil
+}
+
+// handlePSCCRDeletion handles PSC CR deletion by cleaning up GCP resources and removing finalizers.
+func (r *GCPPrivateServiceConnectReconciler) handlePSCCRDeletion(
+	ctx context.Context,
+	gcpPSC *hyperv1.GCPPrivateServiceConnect,
+	log logr.Logger,
+) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(gcpPSC, pscEndpointFinalizer) {
+		// If we previously removed our finalizer, don't delete again and return early
+		return ctrl.Result{}, nil
+	}
+
+	// Always verify the HCP exists before using the builder. Once initialized, the
+	// builder persists in memory, so after the HCP is deleted we'd otherwise reuse
+	// stale credentials — failing GCP client creation and wedging the PSC finalizer.
+	hcp, err := r.getHostedControlPlane(ctx, gcpPSC)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// HCP is gone - remove orphaned PSC finalizer to allow GC
+			log.Info("HCP not found during PSC deletion, removing orphaned finalizer")
+			original := gcpPSC.DeepCopy()
+			controllerutil.RemoveFinalizer(gcpPSC, pscEndpointFinalizer)
+			err := r.Patch(ctx, gcpPSC, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+			if apierrors.IsConflict(err) {
+				log.V(1).Info("Conflict removing orphaned finalizer, will retry")
+				return ctrl.Result{RequeueAfter: time.Second}, nil
+			}
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to remove orphaned finalizer: %w", err)
+			}
+			return ctrl.Result{}, nil
+		}
+		// Other errors (e.g., API server unavailable) - cannot proceed, will retry
+		return ctrl.Result{}, fmt.Errorf("failed to get HCP during deletion: %w", err)
+	}
+
+	if reason := pscCleanupSkipReason(hcp, gcpPSC.DeletionTimestamp); reason != "" {
+		logSkippedPSCCleanup(log, r.pscGCPResourceNames(gcpPSC, hcp), reason)
+	} else if result, err := r.cleanupPSCGCPResources(ctx, gcpPSC, hcp, log); err != nil || !result.IsZero() {
+		// Cleanup failed or is still in progress - keep finalizer and retry
+		return result, err
+	}
+
+	// Cleanup succeeded or was skipped - remove finalizer
+	if controllerutil.ContainsFinalizer(gcpPSC, pscEndpointFinalizer) {
+		original := gcpPSC.DeepCopy()
+		controllerutil.RemoveFinalizer(gcpPSC, pscEndpointFinalizer)
+		err := r.Patch(ctx, gcpPSC, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+		if apierrors.IsConflict(err) {
+			log.V(1).Info("Conflict removing finalizer, will retry")
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
+		}
+	}
+	return ctrl.Result{}, nil
+}
+
+// getHCPOrCleanupOrphan fetches the HCP owning this PSC CR.
+// If HCP is NotFound, removes orphaned CR finalizer to allow namespace GC.
+// Returns (hcp, {}, nil) if found, (nil, {}, nil) if orphaned and cleaned,
+// (nil, {RequeueAfter}, nil) on patch conflict, and (nil, {}, err) on other errors.
+func (r *GCPPrivateServiceConnectReconciler) getHCPOrCleanupOrphan(
+	ctx context.Context,
+	gcpPSC *hyperv1.GCPPrivateServiceConnect,
+	log logr.Logger,
+) (*hyperv1.HostedControlPlane, ctrl.Result, error) {
+	hcp, err := r.getHostedControlPlane(ctx, gcpPSC)
+	if err == nil {
+		return hcp, ctrl.Result{}, nil
+	}
+
+	if !apierrors.IsNotFound(err) {
+		return nil, ctrl.Result{}, err
+	}
+
+	// HCP is gone - remove orphaned per-CR finalizer
+	if controllerutil.ContainsFinalizer(gcpPSC, pscEndpointFinalizer) {
+		log.Info("HCP not found, removing orphaned CR finalizer to allow namespace GC")
+		original := gcpPSC.DeepCopy()
+		controllerutil.RemoveFinalizer(gcpPSC, pscEndpointFinalizer)
+		err := r.Patch(ctx, gcpPSC, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+		if apierrors.IsConflict(err) {
+			log.V(1).Info("Conflict removing orphaned CR finalizer, will retry")
+			return nil, ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		if err != nil {
+			return nil, ctrl.Result{}, fmt.Errorf("failed to remove orphaned finalizer: %w", err)
+		}
+	}
+
+	return nil, ctrl.Result{}, nil // HCP not found, orphan cleaned up
+}
+
+// ensureHCPFinalizer adds the HCP finalizer if not present.
+// Uses optimistic locking to handle conflicts from concurrent HCP updates.
+func (r *GCPPrivateServiceConnectReconciler) ensureHCPFinalizer(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	log logr.Logger,
+) (ctrl.Result, error) {
+	if controllerutil.ContainsFinalizer(hcp, hcpGCPPSCFinalizerName) {
+		return ctrl.Result{}, nil // Already has finalizer
+	}
+
+	original := hcp.DeepCopy()
+	controllerutil.AddFinalizer(hcp, hcpGCPPSCFinalizerName)
+
+	err := r.Patch(ctx, hcp, client.MergeFromWithOptions(
+		original,
+		client.MergeFromWithOptimisticLock{}, // Safe concurrent updates
+	))
+
+	if apierrors.IsConflict(err) {
+		log.V(1).Info("Conflict adding HCP finalizer, will retry")
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to add HCP finalizer: %w", err)
+	}
+
+	log.Info("Added HCP finalizer")
+	return ctrl.Result{}, nil
+}
+
+// removeHCPFinalizer removes the HCP finalizer after all cleanup is complete.
+// Uses optimistic locking to handle conflicts from concurrent HCP updates.
+func (r *GCPPrivateServiceConnectReconciler) removeHCPFinalizer(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	log logr.Logger,
+) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(hcp, hcpGCPPSCFinalizerName) {
+		return ctrl.Result{}, nil // Already removed
+	}
+
+	original := hcp.DeepCopy()
+	controllerutil.RemoveFinalizer(hcp, hcpGCPPSCFinalizerName)
+
+	err := r.Patch(ctx, hcp, client.MergeFromWithOptions(
+		original,
+		client.MergeFromWithOptimisticLock{}, // Safe concurrent updates
+	))
+
+	if apierrors.IsConflict(err) {
+		log.V(1).Info("Conflict removing HCP finalizer, will retry")
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to remove HCP finalizer: %w", err)
+	}
+
+	log.Info("Removed HCP finalizer")
+	return ctrl.Result{}, nil
+}
+
+// handleOrphanedHCPFinalizer handles the case where PSC CR doesn't exist but HCP might
+// need finalizer removal. This is called when we get a synthetic reconcile request from
+// mapHCPToPSC for an HCP that's deleting with no PSC CRs.
+func (r *GCPPrivateServiceConnectReconciler) handleOrphanedHCPFinalizer(
+	ctx context.Context,
+	namespace string,
+	log logr.Logger,
+) (ctrl.Result, error) {
+	// Try to get HCP in this namespace
+	var hcpList hyperv1.HostedControlPlaneList
+	if err := r.List(ctx, &hcpList, client.InNamespace(namespace)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list HCPs: %w", err)
+	}
+
+	// No HCP found - nothing to do
+	if len(hcpList.Items) == 0 {
+		log.V(1).Info("No HCP found in namespace, nothing to clean up")
+		return ctrl.Result{}, nil
+	}
+
+	// Check each HCP (should only be one per namespace)
+	for i := range hcpList.Items {
+		hcp := &hcpList.Items[i]
+
+		// Only process HCPs with our finalizer
+		if !controllerutil.ContainsFinalizer(hcp, hcpGCPPSCFinalizerName) {
+			continue
+		}
+
+		// Only process HCPs that are being deleted
+		if hcp.DeletionTimestamp.IsZero() {
+			continue
+		}
+
+		// If PSC CRs still exist, drive their cleanup directly instead of only requeuing
+		// this synthetic request: the synthetic request has no independent retry source,
+		// so passively waiting could stall HCP deletion. reconcileHCPDeletion cleans up
+		// each PSC's GCP resources, removes their finalizers, and requeues while in
+		// progress before finally removing the HCP finalizer.
+		var pscList hyperv1.GCPPrivateServiceConnectList
+		if err := r.List(ctx, &pscList, client.InNamespace(namespace)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list PSC CRs before removing HCP finalizer: %w", err)
+		}
+		if len(pscList.Items) > 0 {
+			log.Info("PSC CRs still present, running HCP deletion cleanup", "count", len(pscList.Items))
+			return r.reconcileHCPDeletion(ctx, hcp, log)
+		}
+
+		log.Info("Found deleting HCP with finalizer but no PSC CRs, removing finalizer",
+			"hcp", hcp.Name)
+
+		// Remove the HCP finalizer
+		return r.removeHCPFinalizer(ctx, hcp, log)
+	}
+
+	log.V(1).Info("No HCP requiring finalizer removal found")
+	return ctrl.Result{}, nil
+}
+
+// reconcileHCPDeletion handles cleanup when the HCP is being deleted.
+// Cleans up all PSC CRs' GCP resources and removes their finalizers before
+// allowing HCP deletion to proceed. This prevents per-CR finalizers from
+// blocking namespace deletion after the CPO pod terminates.
+func (r *GCPPrivateServiceConnectReconciler) reconcileHCPDeletion(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	log logr.Logger,
+) (ctrl.Result, error) {
+	log.Info("HCP is being deleted, cleaning up all PSC resources in namespace")
+
+	// List all PSC CRs in the namespace
+	var pscList hyperv1.GCPPrivateServiceConnectList
+	if err := r.List(ctx, &pscList, client.InNamespace(hcp.Namespace)); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list PSC CRs: %w", err)
+	}
+
+	log.Info("Found PSC CRs to clean up", "count", len(pscList.Items))
+
+	// Clean up GCP resources for all PSC CRs
+	// Note: Currently there's only 1 PSC CR per namespace, but this future-proofs
+	// for potential multi-CR scenarios. Using fail-fast (not error aggregation)
+	// since multi-CR is not a current requirement.
+	skipReason := pscCleanupSkipReason(hcp, hcp.DeletionTimestamp)
+	for i := range pscList.Items {
+		psc := &pscList.Items[i]
+		log := log.WithValues("pscCR", psc.Name)
+
+		// Delete GCP resources (forwarding rule, IP, DNS zones) unless cleanup can't succeed
+		if skipReason != "" {
+			logSkippedPSCCleanup(log, r.pscGCPResourceNames(psc, hcp), skipReason)
+		} else if result, err := r.cleanupPSCGCPResources(ctx, psc, hcp, log); err != nil || !result.IsZero() {
+			return result, err // Fail fast, retry on next reconcile
+		}
+
+		// Remove per-CR finalizer
+		if controllerutil.ContainsFinalizer(psc, pscEndpointFinalizer) {
+			original := psc.DeepCopy()
+			controllerutil.RemoveFinalizer(psc, pscEndpointFinalizer)
+			err := r.Patch(ctx, psc, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+			if apierrors.IsConflict(err) {
+				log.V(1).Info("Conflict removing CR finalizer, will retry")
+				return ctrl.Result{RequeueAfter: time.Second}, nil
+			}
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to remove CR finalizer for %s: %w", psc.Name, err)
+			}
+			log.Info("Removed CR finalizer")
+		}
+	}
+
+	log.Info("All PSC CRs processed, removing HCP finalizer")
+
+	// All cleanup succeeded or was skipped - remove HCP finalizer to allow HCP deletion
+	return r.removeHCPFinalizer(ctx, hcp, log)
+}
+
+// cleanupPSCGCPResources deletes the GCP resources backing a PSC CR. It returns a zero
+// Result and nil error only once cleanup is complete.
+func (r *GCPPrivateServiceConnectReconciler) cleanupPSCGCPResources(
+	ctx context.Context,
+	gcpPSC *hyperv1.GCPPrivateServiceConnect,
+	hcp *hyperv1.HostedControlPlane,
+	log logr.Logger,
+) (ctrl.Result, error) {
+	// Initialize the client builder from the HCP if not already initialized (no-op otherwise)
+	r.gcpClientBuilder.initializeWithHCP(hcp)
+
+	customerGCPClient, err := r.gcpClientBuilder.getClient(ctx)
+	if err != nil {
+		log.Error(err, "Failed to get GCP client for cleanup, will retry")
+		return ctrl.Result{}, fmt.Errorf("failed to get GCP client: %w", err)
+	}
+
+	completed, err := r.reconcileDelete(ctx, gcpPSC, hcp, customerGCPClient, log)
+	if err != nil {
+		log.Error(err, "Failed to clean up GCP resources, will retry")
+		return ctrl.Result{}, fmt.Errorf("failed to delete GCP resources for %s: %w", gcpPSC.Name, err)
+	}
+	if !completed {
+		log.Info("GCP resource cleanup in progress, waiting")
+		return ctrl.Result{RequeueAfter: pscEndpointDeletionRequeueDuration}, nil
+	}
+	return ctrl.Result{}, nil
+}
+
+// pscCleanupSkipReason returns a non-empty reason when PSC GCP cleanup should be abandoned
+// instead of retried, so a permanent failure cannot block deletion forever:
+//   - The HCP reports invalid GCP credentials, so cleanup cannot succeed. Only an explicit
+//     False counts; Unknown or missing still tries, since cleanup is best effort.
+//   - Cleanup has been retrying for longer than pscCleanupDeletionTimeout since deletionStart.
+func pscCleanupSkipReason(hcp *hyperv1.HostedControlPlane, deletionStart *metav1.Time) string {
+	for _, condType := range []hyperv1.ConditionType{hyperv1.ValidGCPWorkloadIdentity, hyperv1.ValidGCPCredentials} {
+		if cond := meta.FindStatusCondition(hcp.Status.Conditions, string(condType)); cond != nil && cond.Status == metav1.ConditionFalse {
+			return fmt.Sprintf("%s is False (%s)", condType, cond.Reason)
+		}
+	}
+	if deletionStart != nil {
+		if elapsed := time.Since(deletionStart.Time); elapsed > pscCleanupDeletionTimeout {
+			return fmt.Sprintf("cleanup timed out after %s", duration.ShortHumanDuration(elapsed))
+		}
+	}
+	return ""
+}
+
+// pscGCPResourceNames returns log key/values naming the GCP resources a PSC CR may own,
+// so abandoned cleanup leaves enough detail to remove leaked resources manually.
+func (r *GCPPrivateServiceConnectReconciler) pscGCPResourceNames(gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane) []any {
+	names := []any{"dnsZones", dnsZonesToDelete(gcpPSC)}
+	if hcp.Spec.Platform.GCP != nil {
+		names = append(names, "project", hcp.Spec.Platform.GCP.Project, "region", hcp.Spec.Platform.GCP.Region)
+	}
+	// The endpoint and IP names derive from the service attachment name; without it they
+	// were never created.
+	if gcpPSC.Status.ServiceAttachmentName != "" {
+		names = append(names, "forwardingRule", r.constructEndpointName(gcpPSC), "address", r.constructIPAddressName(gcpPSC))
+	}
+	return names
+}
+
+// logSkippedPSCCleanup reports abandoned PSC cleanup and the GCP resources that may be leaked.
+func logSkippedPSCCleanup(log logr.Logger, resourceNames []any, reason string) {
+	log.Error(errors.New(reason), "Skipping GCP PSC cleanup, GCP resources may be leaked; continuing deletion",
+		resourceNames...)
 }
 
 // reconcileDNS reconciles DNS zones and records after PSC endpoint is available
@@ -426,14 +871,15 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileDNS(ctx context.Context, g
 	return ctrl.Result{}, nil
 }
 
-// cleanupDNS cleans up DNS zones and DNSEndpoint using zone names stored in PSC status
-func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) error {
+// cleanupDNS cleans up DNS zones and the DNSEndpoint during deletion. The HCP is
+// passed in by the caller (already fetched on the deletion path) rather than re-fetched
+// here: a re-fetch failure while status has no zones would silently yield an empty zone
+// list and let the finalizers release while zones leak.
+func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// Clean up DNSEndpoint first (even if we don't have zone info)
-	hcp, err := r.getHostedControlPlane(ctx, gcpPSC)
-	if err == nil {
-		// Delete DNSEndpoint if it exists
+	// Clean up DNSEndpoint first (best effort, even if we don't have zone info)
+	if hcp != nil {
 		dnsEndpoint := &unstructured.Unstructured{}
 		dnsEndpoint.SetGroupVersionKind(dnsEndpointGVK)
 		dnsEndpoint.SetName(dnsEndpointName(hcp.Name))
@@ -447,8 +893,9 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 		}
 	}
 
-	// Check if we have zone information in status
-	if len(gcpPSC.Status.DNSZones) == 0 {
+	// Delete only zones recorded in status; see dnsZonesToDelete for why names aren't inferred.
+	zones := dnsZonesToDelete(gcpPSC)
+	if len(zones) == 0 {
 		return nil // No DNS zones to clean up
 	}
 
@@ -460,20 +907,20 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 	customerProject := r.gcpClientBuilder.customerProject
 
 	// Create DNS client for cleanup operations
-	svc, err := newDNSClient(ctx)
+	newDNS := newDNSClient
+	if r.dnsClientFactory != nil {
+		newDNS = r.dnsClientFactory
+	}
+	svc, err := newDNS(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create DNS client for cleanup: %w", err)
 	}
 
-	// Delete all zones (they are always managed by the operator)
+	// Delete the status-recorded zones (see dnsZonesToDelete: names are never inferred).
 	var errs []error
-	for _, zoneStatus := range gcpPSC.Status.DNSZones {
-		if zoneStatus.Name == "" {
-			continue // Skip empty zone names
-		}
-
-		if err := deleteZone(ctx, svc, customerProject, zoneStatus.Name); err != nil {
-			errs = append(errs, fmt.Errorf("failed to delete DNS zone %s: %w", zoneStatus.Name, err))
+	for _, zoneName := range zones {
+		if err := deleteZone(ctx, svc, customerProject, zoneName); err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete DNS zone %s: %w", zoneName, err))
 		}
 	}
 
@@ -482,6 +929,25 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 	}
 
 	return nil
+}
+
+// dnsZonesToDelete returns the de-duplicated, sorted zone names recorded in status.
+// Deterministic names are not inferred: they aren't unique within a shared GCP project,
+// so deleting one could remove another cluster's zone. We leak over cross-deleting.
+func dnsZonesToDelete(gcpPSC *hyperv1.GCPPrivateServiceConnect) []string {
+	names := map[string]struct{}{}
+	for _, z := range gcpPSC.Status.DNSZones {
+		if z.Name != "" {
+			names[z.Name] = struct{}{}
+		}
+	}
+
+	zones := make([]string, 0, len(names))
+	for name := range names {
+		zones = append(zones, name)
+	}
+	sort.Strings(zones)
+	return zones
 }
 
 // reconcileExternalServices creates external-dns services for private clusters with external names
@@ -821,17 +1287,24 @@ func (r *GCPPrivateServiceConnectReconciler) updateStatusFromEndpoint(ctx contex
 
 // reconcileDelete handles cleanup when the CR is being deleted.
 // For each resource: delete, check operation status/error, then verify resource is gone.
-func (r *GCPPrivateServiceConnectReconciler) reconcileDelete(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, customerGCPClient *compute.Service, log logr.Logger) (bool, error) {
+func (r *GCPPrivateServiceConnectReconciler) reconcileDelete(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, customerGCPClient *compute.Service, log logr.Logger) (bool, error) {
 	customerProject := r.gcpClientBuilder.customerProject
 	region := r.gcpClientBuilder.region
 
 	// Clean up DNS zones and records using zone names from PSC status (following AWS blocking pattern)
 	log.Info("Cleaning up DNS zones and records")
-	if dnsErr := r.cleanupDNS(ctx, gcpPSC); dnsErr != nil {
+	if dnsErr := r.cleanupDNS(ctx, gcpPSC, hcp); dnsErr != nil {
 		log.Error(dnsErr, "failed to clean up DNS zones")
 		return false, fmt.Errorf("failed to clean up DNS zones: %w", dnsErr)
 	}
 	log.Info("DNS cleanup completed successfully")
+
+	// No service attachment name means the endpoint and IP were never created
+	// (their names derive from it), so there's nothing to delete here.
+	if gcpPSC.Status.ServiceAttachmentName == "" {
+		log.Info("No service attachment name recorded, skipping endpoint/IP deletion")
+		return true, nil
+	}
 
 	// Step 1: Delete PSC endpoint (ForwardingRule)
 	endpointName := r.constructEndpointName(gcpPSC)

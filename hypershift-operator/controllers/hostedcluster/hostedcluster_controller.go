@@ -3921,6 +3921,9 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 }
 
 // deleteGCPPrivateServiceConnect loops over GCPPrivateServiceConnectList items and sends a delete request for each.
+// When a CAPI Cluster exists, it has already deleted the HCP (its ControlPlaneRef) before this runs, and the CPO PSC
+// endpoint controller's HCP finalizer has driven GCP cleanup and released the PSC CR finalizers. This step then only
+// removes any remaining PSC CRs before the control plane namespace is deleted.
 // It returns true if len(gcpPrivateServiceConnectList.Items) != 0.
 func deleteGCPPrivateServiceConnect(ctx context.Context, c client.Client, _ *hyperv1.HostedCluster, namespace string) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
@@ -3939,7 +3942,7 @@ func deleteGCPPrivateServiceConnect(ctx context.Context, c client.Client, _ *hyp
 	}
 
 	if len(gcpPrivateServiceConnectList.Items) != 0 {
-		// GCP PSC CRs may have finalizers and should not be terminated until the resources are removed
+		// GCP PSC CRs have finalizers and should not be terminated until GCP resources are removed
 		log.Info("Waiting for gcpprivateserviceconnect deletion", "controlPlaneNamespace", namespace)
 		return true, nil
 	}
