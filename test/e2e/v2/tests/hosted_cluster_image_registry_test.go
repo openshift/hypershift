@@ -109,7 +109,7 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 				}, secret)).To(Succeed(), "failed to get installer-cloud-credentials secret")
 				g.Expect(secret.Data).NotTo(BeEmpty(),
 					"installer-cloud-credentials secret should have data")
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			}).WithContext(tc.Context).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
 		It("should have storage configured in the registry config", func() {
@@ -134,7 +134,7 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 					storage.EmptyDir != nil
 				g.Expect(hasStorage).To(BeTrue(),
 					"image registry Config should have at least one storage backend configured")
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			}).WithContext(tc.Context).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
 		It("should have a ready cluster-image-registry-operator deployment", func() {
@@ -147,7 +147,7 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 				}, deployment)).To(Succeed(), "failed to get cluster-image-registry-operator deployment")
 				g.Expect(deployment.Status.ReadyReplicas).To(BeNumerically(">=", 1),
 					"cluster-image-registry-operator deployment should have at least one ready replica")
-			}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			}).WithContext(tc.Context).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
 		Context("on GCP clusters", func() {
@@ -181,7 +181,7 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 						"image registry Config should use GCS storage on GCP clusters")
 					g.Expect(config.Spec.Storage.GCS.Bucket).NotTo(BeEmpty(),
 						"GCS storage bucket name should not be empty")
-				}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+				}).WithContext(tc.Context).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 			})
 
 			It("should have valid WIF credentials in installer-cloud-credentials", func() {
@@ -201,7 +201,7 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 					g.Expect(ok).To(BeTrue(),
 						"installer-cloud-credentials should contain key service_account.json")
 					verifyExternalAccountCred(g, credData, "service_account.json", imageRegistryEmail)
-				}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+				}).WithContext(tc.Context).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 			})
 
 		})
