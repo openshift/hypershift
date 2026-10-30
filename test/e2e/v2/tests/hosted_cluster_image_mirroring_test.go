@@ -157,27 +157,34 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ImageMirroring] Host
 
 // RegisterHostedClusterImageMirroringRemovalTests registers the day-2 check that
 // removing imageContentSources empties the hosted IDMS, deletes the CPO
-// ignition ConfigMap and replaces the nodes, which then no longer redirect
-// by-digest pulls to the mirror. It mutates the HC and does not restore it, so
-// it must run as the last step on its variant.
+// ignition ConfigMap and replaces the nodes. Every replacement node must then
+// fail a by-digest pull from the mirror-only source while a direct pull of the
+// same digest from the mirror succeeds on that node. It mutates the HC and does
+// not restore it, so it must run as the last step on its variant.
 func RegisterHostedClusterImageMirroringRemovalTests(getTestCtx internal.TestContextGetter) {
 	It("should clean up mirror configuration and roll out nodes when imageContentSources is removed", func() {
 		const (
-			ignitionDeleteTimeout  = 5 * time.Minute
-			idmsEmptyTimeout       = 10 * time.Minute
-			rolloutStartTimeout    = 10 * time.Minute
-			rolloutFinishTimeout   = 30 * time.Minute
-			nodesReplacedTimeout   = 5 * time.Minute
-			pullRejectedTimeout    = 5 * time.Minute
-			nodePoolPollInterval   = 15 * time.Second
-			resourcePollInterval   = 5 * time.Second
-			nodePoolStartPollShort = 10 * time.Second
+			ignitionDeleteTimeout = 5 * time.Minute
+			idmsEmptyTimeout      = 10 * time.Minute
+			rolloutTimeout        = 30 * time.Minute
+			nodesReplacedTimeout  = 5 * time.Minute
+			pullRejectedTimeout   = 5 * time.Minute
+			mirrorPullTimeout     = 10 * time.Minute
+			nodePoolPollInterval  = 15 * time.Second
+			resourcePollInterval  = 5 * time.Second
+			nodePollInterval      = 10 * time.Second
 		)
 		tc := getTestCtx()
-		hc, expected, _ := imageMirroringSetupOrSkip(Default, tc)
+		hc, expected, routeHost := imageMirroringSetupOrSkip(Default, tc)
 		Expect(tc.ControlPlaneNamespace).NotTo(BeEmpty(), "HC %s/%s must have a control plane namespace", hc.Namespace, hc.Name)
 		digestRef, _, err := imageMirroringDigestRef(imageMirroringVirtualSource, mirrorregistry.DefaultRegistryImage)
 		Expect(err).NotTo(HaveOccurred(), "build by-digest reference")
+		// The direct mirror reference comes from the HC spec, captured before the
+		// removal, and the pinned input image, never from the fixture result.
+		mirrorHost, mirrorRepository, err := imageMirroringVirtualMirror(expected, routeHost)
+		Expect(err).NotTo(HaveOccurred(), "HC %s/%s virtual source mirror", hc.Namespace, hc.Name)
+		mirrorRef, _, err := imageMirroringDigestRef(mirrorHost+"/"+mirrorRepository, mirrorregistry.DefaultRegistryImage)
+		Expect(err).NotTo(HaveOccurred(), "build direct mirror by-digest reference")
 
 		By("verifying the pre-removal baseline")
 		configMaps, err := imageMirroringGetConfigMap(tc.Context, tc.MgmtClient, tc.ControlPlaneNamespace)
@@ -195,8 +202,10 @@ func RegisterHostedClusterImageMirroringRemovalTests(getTestCtx internal.TestCon
 			}
 		}
 		Expect(nodePools).NotTo(BeEmpty(), "HC %s/%s must have at least one NodePool", hc.Namespace, hc.Name)
+		baselineConfigs := map[string]string{}
 		for _, np := range nodePools {
 			Expect(imageMirroringCheckNodePoolBaseline(np)).To(Succeed(), "HC %s/%s baseline NodePool %s/%s", hc.Namespace, hc.Name, np.Namespace, np.Name)
+			baselineConfigs[np.Name] = np.Annotations[imageMirroringNodePoolCurrentConfigAnnotation]
 		}
 
 		// The rollout below outlives a single port-forward tunnel comfortably, so
@@ -250,38 +259,26 @@ func RegisterHostedClusterImageMirroringRemovalTests(getTestCtx internal.TestCon
 			"HC %s/%s hosted ImageDigestMirrorSet/cluster to have no mappings", hc.Namespace, hc.Name)
 		baselineClient.Close()
 
-		// All NodePools start rolling out at once, so wait for every pool to
-		// start before waiting for any pool to finish: otherwise a pool that
-		// finishes while an earlier one is still rolling would never be seen
-		// with UpdatingConfig=True.
-		By("waiting for every NodePool to start the rollout")
-		rolloutStarted := map[string]corev1.ConditionStatus{
-			hyperv1.NodePoolUpdatingConfigConditionType: corev1.ConditionTrue,
-		}
+		// The rollout may already be running, or even finished, by now, so the
+		// check relies on durable completion evidence (the current config
+		// annotation moving away from the baseline) rather than on observing
+		// UpdatingConfig=True. That also makes waiting on the pools one by one
+		// safe. The node replacement check below ties the rollout to new nodes.
+		By("waiting for every NodePool to complete the config rollout")
 		for _, np := range nodePools {
-			Eventually(func(g Gomega, ctx context.Context) {
-				current := &hyperv1.NodePool{}
-				g.Expect(tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), current)).To(Succeed(), "get NodePool %s/%s", np.Namespace, np.Name)
-				done, reason := imageMirroringCheckNodePoolConditions(current, rolloutStarted)
-				g.Expect(done).To(BeTrue(), reason)
-			}).WithContext(tc.Context).WithTimeout(rolloutStartTimeout).WithPolling(nodePoolStartPollShort).Should(Succeed(),
-				"NodePool %s/%s to begin updating config", np.Namespace, np.Name)
-		}
-		By("waiting for every NodePool to finish the rollout")
-		rolloutFinished := map[string]corev1.ConditionStatus{
-			hyperv1.NodePoolUpdatingConfigConditionType:  corev1.ConditionFalse,
-			hyperv1.NodePoolAllNodesHealthyConditionType: corev1.ConditionTrue,
-		}
-		for _, np := range nodePools {
+			baselineConfig := baselineConfigs[np.Name]
 			// One Replace node is one EC2 boot plus a drain; the shared AWS config
 			// update helper allows 25 minutes, so 30 leaves headroom.
 			Eventually(func(g Gomega, ctx context.Context) {
 				current := &hyperv1.NodePool{}
 				g.Expect(tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(np), current)).To(Succeed(), "get NodePool %s/%s", np.Namespace, np.Name)
-				done, reason := imageMirroringCheckNodePoolConditions(current, rolloutFinished)
+				done, reason, err := imageMirroringCheckNodePoolRolledOut(current, baselineConfig)
+				if err != nil {
+					StopTrying(fmt.Sprintf("check rollout of NodePool %s/%s", np.Namespace, np.Name)).Wrap(err).Now()
+				}
 				g.Expect(done).To(BeTrue(), reason)
-			}).WithContext(tc.Context).WithTimeout(rolloutFinishTimeout).WithPolling(nodePoolPollInterval).Should(Succeed(),
-				"NodePool %s/%s to finish updating config with healthy nodes", np.Namespace, np.Name)
+			}).WithContext(tc.Context).WithTimeout(rolloutTimeout).WithPolling(nodePoolPollInterval).Should(Succeed(),
+				"NodePool %s/%s to complete a config rollout with healthy nodes", np.Namespace, np.Name)
 		}
 
 		hostedClient, err := tc.GetHostedClusterClientViaPortForward(hc)
@@ -289,6 +286,7 @@ func RegisterHostedClusterImageMirroringRemovalTests(getTestCtx internal.TestCon
 		DeferCleanup(hostedClient.Close)
 
 		By("verifying that every pre-removal node was replaced")
+		var replacementNodes []string
 		for _, np := range nodePools {
 			baseline := baselineNodes[np.Name]
 			replicas := *np.Spec.Replicas
@@ -304,11 +302,16 @@ func RegisterHostedClusterImageMirroringRemovalTests(getTestCtx internal.TestCon
 					StopTrying(fmt.Sprintf("check nodes of NodePool %s/%s", np.Namespace, np.Name)).Wrap(err).Now()
 				}
 				g.Expect(done).To(BeTrue(), reason)
-			}).WithContext(tc.Context).WithTimeout(nodesReplacedTimeout).WithPolling(nodePoolStartPollShort).Should(Succeed(),
+			}).WithContext(tc.Context).WithTimeout(nodesReplacedTimeout).WithPolling(nodePollInterval).Should(Succeed(),
 				"NodePool %s/%s nodes to replace pre-removal nodes %v", np.Namespace, np.Name, sets.List(baseline))
+			list := &corev1.NodeList{}
+			Expect(hostedClient.List(tc.Context, list, crclient.MatchingLabels{hyperv1.NodePoolLabel: np.Name})).To(Succeed(), "list nodes of NodePool %s/%s", np.Namespace, np.Name)
+			names := imageMirroringPoolNodeNames(list.Items)
+			Expect(names.HasAny(sets.List(baseline)...)).To(BeFalse(), "NodePool %s/%s nodes %v must not include pre-removal nodes %v", np.Namespace, np.Name, sets.List(names), sets.List(baseline))
+			replacementNodes = append(replacementNodes, sets.List(names)...)
 		}
+		Expect(replacementNodes).NotTo(BeEmpty(), "HC %s/%s must have replacement nodes", hc.Namespace, hc.Name)
 
-		By("verifying that new nodes no longer redirect by-digest pulls to the mirror")
 		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "e2e-image-mirroring-removal-"}}
 		Expect(hostedClient.Create(tc.Context, namespace)).To(Succeed(), "create workload namespace in HC %s/%s", hc.Namespace, hc.Name)
 		DeferCleanup(func(ctx context.Context) {
@@ -316,25 +319,65 @@ func RegisterHostedClusterImageMirroringRemovalTests(getTestCtx internal.TestCon
 				Expect(err).NotTo(HaveOccurred(), "cleanup: delete namespace %s", namespace.Name)
 			}
 		})
-		pod := imageMirroringWorkloadPod(namespace.Name, "by-digest-after-removal", digestRef)
-		Expect(hostedClient.Create(tc.Context, pod)).To(Succeed(), "create pod %s/%s", pod.Namespace, pod.Name)
-		DeferCleanup(func(ctx context.Context) {
-			if err := hostedClient.Delete(ctx, pod); err != nil && !apierrors.IsNotFound(err) {
-				Expect(err).NotTo(HaveOccurred(), "cleanup: delete pod %s/%s", pod.Namespace, pod.Name)
-			}
-		})
-		// GET errors and unfinished states keep polling; a check error (the image
-		// was obtained after all) stops at once.
-		waitObjective := fmt.Sprintf("pod %s/%s (%s) to fail pulling after imageContentSources removal", pod.Namespace, pod.Name, digestRef)
-		Eventually(func(g Gomega, ctx context.Context) {
-			current := &corev1.Pod{}
-			g.Expect(hostedClient.Get(ctx, crclient.ObjectKeyFromObject(pod), current)).To(Succeed(), "get pod %s/%s", pod.Namespace, pod.Name)
-			done, reason, err := imageMirroringCheckRemovedPullRejectedPod(current)
-			if err != nil {
-				StopTrying(waitObjective).Wrap(err).Now()
-			}
-			g.Expect(done).To(BeTrue(), reason)
-		}).WithContext(tc.Context).WithTimeout(pullRejectedTimeout).WithPolling(resourcePollInterval).Should(Succeed(), waitObjective)
+		// createPinnedPod creates a workload pod bound to node, bypassing the
+		// scheduler, so that each probe exercises that node's registry config.
+		createPinnedPod := func(name, image, node string) *corev1.Pod {
+			pod := imageMirroringWorkloadPod(namespace.Name, name, image)
+			pod.Spec.NodeName = node
+			Expect(hostedClient.Create(tc.Context, pod)).To(Succeed(), "create pod %s/%s on node %s", pod.Namespace, pod.Name, node)
+			DeferCleanup(func(ctx context.Context) {
+				if err := hostedClient.Delete(ctx, pod); err != nil && !apierrors.IsNotFound(err) {
+					Expect(err).NotTo(HaveOccurred(), "cleanup: delete pod %s/%s", pod.Namespace, pod.Name)
+				}
+			})
+			return pod
+		}
+
+		// A pull failure alone could also come from an unreachable mirror behind
+		// a stale redirect, so each replacement node gets a pair of probes: the
+		// mirror-only source must fail, then a direct pull of the same digest
+		// from the mirror must succeed on the same node. The source probe runs
+		// first, so the direct pull is a real pull on a node that has never
+		// obtained the image (the node was created after the removal).
+		By("verifying that every replacement node no longer redirects by-digest pulls to the mirror")
+		sourcePods := make([]*corev1.Pod, len(replacementNodes))
+		for i, node := range replacementNodes {
+			sourcePods[i] = createPinnedPod(fmt.Sprintf("source-by-digest-%d", i), digestRef, node)
+		}
+		for i, pod := range sourcePods {
+			// GET errors and unfinished states keep polling; a check error (the
+			// image was obtained after all) stops at once.
+			waitObjective := fmt.Sprintf("pod %s/%s (%s) on node %s to fail pulling after imageContentSources removal", pod.Namespace, pod.Name, digestRef, replacementNodes[i])
+			Eventually(func(g Gomega, ctx context.Context) {
+				current := &corev1.Pod{}
+				g.Expect(hostedClient.Get(ctx, crclient.ObjectKeyFromObject(pod), current)).To(Succeed(), "get pod %s/%s", pod.Namespace, pod.Name)
+				done, reason, err := imageMirroringCheckRemovedPullRejectedPod(current)
+				if err != nil {
+					StopTrying(waitObjective).Wrap(err).Now()
+				}
+				g.Expect(done).To(BeTrue(), reason)
+			}).WithContext(tc.Context).WithTimeout(pullRejectedTimeout).WithPolling(resourcePollInterval).Should(Succeed(), waitObjective)
+		}
+
+		By("verifying that the mirror still serves the digest to every replacement node")
+		mirrorPods := make([]*corev1.Pod, len(replacementNodes))
+		for i, node := range replacementNodes {
+			mirrorPods[i] = createPinnedPod(fmt.Sprintf("mirror-by-digest-%d", i), mirrorRef, node)
+		}
+		for i, pod := range mirrorPods {
+			// GET errors and unfinished states keep polling; a check error (a
+			// failure that retries cannot fix) stops at once.
+			waitObjective := fmt.Sprintf("pod %s/%s (%s) on node %s to pull directly from the mirror and succeed", pod.Namespace, pod.Name, mirrorRef, replacementNodes[i])
+			Eventually(func(g Gomega, ctx context.Context) {
+				current := &corev1.Pod{}
+				g.Expect(hostedClient.Get(ctx, crclient.ObjectKeyFromObject(pod), current)).To(Succeed(), "get pod %s/%s", pod.Namespace, pod.Name)
+				done, reason, err := imageMirroringCheckPulledPod(current)
+				if err != nil {
+					StopTrying(waitObjective).Wrap(err).Now()
+				}
+				g.Expect(done).To(BeTrue(), reason)
+			}).WithContext(tc.Context).WithTimeout(mirrorPullTimeout).WithPolling(resourcePollInterval).Should(Succeed(), waitObjective)
+		}
 	})
 }
 

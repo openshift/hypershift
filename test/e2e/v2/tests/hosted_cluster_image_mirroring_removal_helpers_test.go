@@ -57,7 +57,11 @@ func TestImageMirroringCheckEmptyIDMS(t *testing.T) {
 func TestImageMirroringCheckNodePoolBaseline(t *testing.T) {
 	nodePool := func(change func(*hyperv1.NodePool)) *hyperv1.NodePool {
 		np := &hyperv1.NodePool{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "image-mirroring-us-east-1a"},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:   "clusters",
+				Name:        "image-mirroring-us-east-1a",
+				Annotations: map[string]string{imageMirroringNodePoolCurrentConfigAnnotation: "baseline-hash"},
+			},
 			Spec: hyperv1.NodePoolSpec{
 				Replicas:   ptr.To[int32](1),
 				Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
@@ -81,6 +85,8 @@ func TestImageMirroringCheckNodePoolBaseline(t *testing.T) {
 		{name: "When UpdatingConfig is absent, it should pass", np: nodePool(func(np *hyperv1.NodePool) { np.Status.Conditions = np.Status.Conditions[:1] })},
 		{name: "When the NodePool is nil, it should fail", wantErr: "nil"},
 		{name: "When the upgrade type is InPlace, it should fail", np: nodePool(func(np *hyperv1.NodePool) { np.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace }), wantErr: "upgradeType \"InPlace\""},
+		{name: "When the current config annotation is missing, it should fail", np: nodePool(func(np *hyperv1.NodePool) { np.Annotations = nil }), wantErr: "no hypershift.openshift.io/nodePoolCurrentConfig annotation"},
+		{name: "When the current config annotation is empty, it should fail", np: nodePool(func(np *hyperv1.NodePool) { np.Annotations[imageMirroringNodePoolCurrentConfigAnnotation] = "" }), wantErr: "no hypershift.openshift.io/nodePoolCurrentConfig annotation"},
 		{name: "When replicas are nil, it should fail", np: nodePool(func(np *hyperv1.NodePool) { np.Spec.Replicas = nil }), wantErr: "fixed replica"},
 		{name: "When replicas are zero, it should fail", np: nodePool(func(np *hyperv1.NodePool) { np.Spec.Replicas = ptr.To[int32](0) }), wantErr: "fixed replica"},
 		{name: "When AllNodesHealthy is missing, it should fail", np: nodePool(func(np *hyperv1.NodePool) { np.Status.Conditions = np.Status.Conditions[1:] }), wantErr: "no AllNodesHealthy"},
@@ -265,6 +271,60 @@ func TestImageMirroringCheckNodePoolConditions(t *testing.T) {
 			done, reason := imageMirroringCheckNodePoolConditions(tt.np, tt.want)
 			if done != tt.wantDone || !strings.Contains(reason, tt.wantReason) {
 				t.Fatalf("got %v %q, want %v containing %q", done, reason, tt.wantDone, tt.wantReason)
+			}
+		})
+	}
+}
+
+func TestImageMirroringCheckNodePoolRolledOut(t *testing.T) {
+	nodePool := func(config string, updating, healthy corev1.ConditionStatus) *hyperv1.NodePool {
+		np := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Namespace: "clusters", Name: "image-mirroring-us-east-1a"}}
+		if config != "" {
+			np.Annotations = map[string]string{imageMirroringNodePoolCurrentConfigAnnotation: config}
+		}
+		if updating != "" {
+			np.Status.Conditions = append(np.Status.Conditions, hyperv1.NodePoolCondition{Type: hyperv1.NodePoolUpdatingConfigConditionType, Status: updating})
+		}
+		if healthy != "" {
+			np.Status.Conditions = append(np.Status.Conditions, hyperv1.NodePoolCondition{Type: hyperv1.NodePoolAllNodesHealthyConditionType, Status: healthy})
+		}
+		return np
+	}
+	tests := []struct {
+		name       string
+		np         *hyperv1.NodePool
+		baseline   string
+		wantDone   bool
+		wantReason string
+		wantErr    string
+	}{
+		{name: "When the config changed and the pool is idle and healthy, it should be done without having seen UpdatingConfig=True", np: nodePool("new-hash", corev1.ConditionFalse, corev1.ConditionTrue), baseline: "baseline-hash", wantDone: true, wantReason: `completed a config rollout (hypershift.openshift.io/nodePoolCurrentConfig "baseline-hash" -> "new-hash")`},
+		{name: "When the config is still the baseline and the pool is idle, it should keep polling", np: nodePool("baseline-hash", corev1.ConditionFalse, corev1.ConditionTrue), baseline: "baseline-hash", wantReason: "has not completed a config rollout yet"},
+		{name: "When the config is still the baseline and the rollout is running, it should keep polling", np: nodePool("baseline-hash", corev1.ConditionTrue, corev1.ConditionTrue), baseline: "baseline-hash", wantReason: "has not completed a config rollout yet"},
+		{name: "When the config annotation is missing, it should keep polling", np: nodePool("", corev1.ConditionFalse, corev1.ConditionTrue), baseline: "baseline-hash", wantReason: "has not completed a config rollout yet"},
+		{name: "When the config changed but UpdatingConfig is True, it should keep polling", np: nodePool("new-hash", corev1.ConditionTrue, corev1.ConditionTrue), baseline: "baseline-hash", wantReason: "UpdatingConfig=True"},
+		{name: "When the config changed but nodes are not healthy, it should keep polling", np: nodePool("new-hash", corev1.ConditionFalse, corev1.ConditionFalse), baseline: "baseline-hash", wantReason: "AllNodesHealthy=False"},
+		{name: "When the config changed but AllNodesHealthy is missing, it should keep polling", np: nodePool("new-hash", corev1.ConditionFalse, ""), baseline: "baseline-hash", wantReason: "no AllNodesHealthy condition"},
+		{name: "When the baseline is empty, it should fail terminally", np: nodePool("new-hash", corev1.ConditionFalse, corev1.ConditionTrue), wantErr: "empty baseline"},
+		{name: "When the NodePool is nil, it should fail terminally", baseline: "baseline-hash", wantErr: "nil"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			done, reason, err := imageMirroringCheckNodePoolRolledOut(tt.np, tt.baseline)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if done != tt.wantDone {
+				t.Fatalf("done = %v, want %v (reason %q)", done, tt.wantDone, reason)
+			}
+			if !strings.Contains(reason, tt.wantReason) {
+				t.Fatalf("reason %q does not contain %q", reason, tt.wantReason)
 			}
 		})
 	}

@@ -31,14 +31,22 @@ func imageMirroringCheckEmptyIDMS(objects []*configv1.ImageDigestMirrorSet) (boo
 	return true, "ImageDigestMirrorSet/cluster has no mappings"
 }
 
+// imageMirroringNodePoolCurrentConfigAnnotation mirrors the NodePool controller
+// annotation that records the config hash of the last completed rollout. The
+// controller only updates it once a config rollout has finished.
+const imageMirroringNodePoolCurrentConfigAnnotation = "hypershift.openshift.io/nodePoolCurrentConfig"
+
 // imageMirroringCheckNodePoolBaseline verifies that a NodePool can prove a
-// removal rollout: Replace upgrades, fixed replicas, all nodes healthy and no
-// config update already in progress.
+// removal rollout: Replace upgrades, fixed replicas, a recorded current config,
+// all nodes healthy and no config update already in progress.
 func imageMirroringCheckNodePoolBaseline(np *hyperv1.NodePool) error {
 	if np == nil {
 		return fmt.Errorf("NodePool must not be nil")
 	}
 	identity := fmt.Sprintf("NodePool %s/%s", np.Namespace, np.Name)
+	if np.Annotations[imageMirroringNodePoolCurrentConfigAnnotation] == "" {
+		return fmt.Errorf("%s has no %s annotation, so a completed rollout cannot be detected", identity, imageMirroringNodePoolCurrentConfigAnnotation)
+	}
 	if np.Spec.Management.UpgradeType != hyperv1.UpgradeTypeReplace {
 		return fmt.Errorf("%s has upgradeType %q; the node replacement check requires %q", identity, np.Spec.Management.UpgradeType, hyperv1.UpgradeTypeReplace)
 	}
@@ -182,4 +190,32 @@ func imageMirroringCheckNodePoolConditions(np *hyperv1.NodePool, want map[string
 		}
 	}
 	return true, ""
+}
+
+// imageMirroringCheckNodePoolRolledOut is done when the NodePool has completed a
+// config rollout since the baseline: the current config annotation differs from
+// baselineConfig, UpdatingConfig=False and AllNodesHealthy=True. The annotation
+// only changes when a rollout finishes, so the check does not depend on ever
+// observing UpdatingConfig=True. An empty baseline is a terminal error.
+func imageMirroringCheckNodePoolRolledOut(np *hyperv1.NodePool, baselineConfig string) (bool, string, error) {
+	if np == nil {
+		return false, "", fmt.Errorf("NodePool must not be nil")
+	}
+	if baselineConfig == "" {
+		return false, "", fmt.Errorf("empty baseline %s cannot prove a completed rollout of NodePool %s/%s", imageMirroringNodePoolCurrentConfigAnnotation, np.Namespace, np.Name)
+	}
+	current := np.Annotations[imageMirroringNodePoolCurrentConfigAnnotation]
+	if current == "" || current == baselineConfig {
+		return false, fmt.Sprintf("NodePool %s/%s has not completed a config rollout yet (%s=%q, baseline %q)",
+			np.Namespace, np.Name, imageMirroringNodePoolCurrentConfigAnnotation, current, baselineConfig), nil
+	}
+	done, reason := imageMirroringCheckNodePoolConditions(np, map[string]corev1.ConditionStatus{
+		hyperv1.NodePoolUpdatingConfigConditionType:  corev1.ConditionFalse,
+		hyperv1.NodePoolAllNodesHealthyConditionType: corev1.ConditionTrue,
+	})
+	if !done {
+		return false, reason, nil
+	}
+	return true, fmt.Sprintf("NodePool %s/%s completed a config rollout (%s %q -> %q)",
+		np.Namespace, np.Name, imageMirroringNodePoolCurrentConfigAnnotation, baselineConfig, current), nil
 }
