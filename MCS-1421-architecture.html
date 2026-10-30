@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.10.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>MCS-1421: NodePool drain readiness architecture</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+<style>
+    :root {
+      color-scheme: light;
+      --ink: #172b4d;
+      --muted: #526581;
+      --line: #d8e0eb;
+      --paper: #ffffff;
+      --canvas: #f3f6fa;
+      --blue: #175cd3;
+      --blue-soft: #eaf2ff;
+      --green-soft: #e9f7ef;
+      --amber-soft: #fff4d6;
+      --red-soft: #ffeded;
+      scroll-behavior: smooth;
+    }
+    html { background: var(--canvas); color: var(--ink); }
+    body {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 48px clamp(18px, 5vw, 68px) 80px;
+      background: var(--paper);
+      box-shadow: 0 8px 40px rgba(20, 44, 80, .08);
+      font: 17px/1.68 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow-wrap: break-word;
+    }
+    h1, h2, h3 { color: #102a56; line-height: 1.25; scroll-margin-top: 20px; }
+    h1 { font-size: clamp(2rem, 4.5vw, 3rem); letter-spacing: -.035em; margin: 0 0 1.2rem; }
+    h2 { margin-top: 3rem; padding-bottom: .45rem; border-bottom: 1px solid var(--line); font-size: 1.65rem; }
+    h3 { margin-top: 1.8rem; font-size: 1.2rem; }
+    p, li { max-width: 82ch; }
+    a { color: #175cd3; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    a:hover { color: #003eaa; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    p code, li code, td code { padding: .12em .35em; border-radius: 5px; background: #eff3f8; color: #183b68; font-size: .9em; }
+    pre {
+      padding: 20px 22px;
+      overflow-x: auto;
+      border: 1px solid #263e5e;
+      border-radius: 12px;
+      background: #10233f;
+      color: #e8f0fc;
+      font-size: .88em;
+      line-height: 1.6;
+      box-shadow: 0 4px 14px rgba(16, 35, 63, .12);
+    }
+    pre code { color: inherit; background: transparent; }
+    nav#TOC {
+      margin: 2rem 0 3rem;
+      padding: 20px 26px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #f7f9fc;
+    }
+    nav#TOC::before { content: "On this page"; display: block; margin-bottom: 8px; font-weight: 750; color: #102a56; }
+    nav#TOC > ul { columns: 2; column-gap: 40px; margin: 0; padding-left: 1.2rem; }
+    nav#TOC ul ul { padding-left: 1.2rem; }
+    nav#TOC li { break-inside: avoid; margin: 4px 0; font-size: .94rem; }
+    nav#TOC a { text-decoration: none; }
+    table { width: 100%; margin: 1.2rem 0 1.8rem; border-collapse: collapse; font-size: .94rem; line-height: 1.5; }
+    th, td { padding: 11px 13px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #eaf0f8; color: #19375f; font-weight: 700; }
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    blockquote { margin: 1.3rem 0; padding: .4rem 1rem; border-left: 4px solid var(--blue); background: var(--blue-soft); }
+    .architecture { margin: 2rem 0; }
+    .diagram-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; background: #fbfcfe; }
+    .architecture svg { display: block; width: 100%; min-width: 790px; height: auto; }
+    .architecture .zone { fill: #f5f8fd; stroke: #d8e0eb; stroke-width: 2; }
+    .architecture .zone-label { fill: #526581; font: 700 13px ui-sans-serif, system-ui, sans-serif; letter-spacing: .12em; }
+    .architecture .node rect { fill: #fff; stroke: #9db2d0; stroke-width: 2; }
+    .architecture .node.accent rect { fill: #eaf2ff; stroke: #6d9ce8; }
+    .architecture .node.status rect { fill: #eef8f1; stroke: #77b88c; }
+    .architecture .node-title { fill: #17365f; font: 700 16px ui-sans-serif, system-ui, sans-serif; }
+    .architecture .node-sub { fill: #526581; font: 13px ui-sans-serif, system-ui, sans-serif; }
+    .architecture .edge { fill: none; stroke: #526581; stroke-width: 2.5; }
+    .architecture .guest-edge { stroke-dasharray: 6 5; }
+    .architecture .edge-label { fill: #405674; font: 12px ui-sans-serif, system-ui, sans-serif; }
+    .architecture .guest { fill: #fff4d6; stroke: #e0b341; stroke-width: 1.5; }
+    .architecture .guest-label { fill: #644b11; font: 700 12px ui-sans-serif, system-ui, sans-serif; }
+    .architecture .diagram-note { fill: #526581; font: 12px ui-sans-serif, system-ui, sans-serif; }
+    figcaption { color: var(--muted); font-size: .9rem; margin: .7rem .25rem; }
+    #poc-boundaries-and-validation-to-discuss + ul li { margin: .45rem 0; }
+    @media (max-width: 720px) {
+      body { padding: 28px 18px 56px; font-size: 16px; }
+      nav#TOC > ul { columns: 1; }
+      table { display: block; overflow-x: auto; }
+    }
+    @media print {
+      html { background: white; }
+      body { max-width: none; padding: 0; box-shadow: none; font-size: 11pt; }
+      nav#TOC { break-after: page; }
+      h2 { break-after: avoid; }
+      pre, figure, table { break-inside: avoid; }
+      a { color: inherit; }
+    }
+  </style>
+</head>
+<body>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#mcs-1421-nodepool-drain-readiness-architecture"
+id="toc-mcs-1421-nodepool-drain-readiness-architecture">MCS-1421:
+NodePool drain readiness architecture</a>
+<ul>
+<li><a href="#the-explanation-in-one-minute"
+id="toc-the-explanation-in-one-minute">The explanation in one
+minute</a></li>
+<li><a href="#components-and-data-path"
+id="toc-components-and-data-path">Components and data path</a></li>
+<li><a href="#status-contract-what-the-states-mean"
+id="toc-status-contract-what-the-states-mean">Status contract: what the
+states mean</a></li>
+<li><a href="#how-one-hcco-probe-decides"
+id="toc-how-one-hcco-probe-decides">How one HCCO probe decides</a></li>
+<li><a href="#reconciliation-failure-and-freshness"
+id="toc-reconciliation-failure-and-freshness">Reconciliation, failure,
+and freshness</a></li>
+<li><a href="#activation-and-rollback"
+id="toc-activation-and-rollback">Activation and rollback</a></li>
+<li><a href="#what-sres-can-observe" id="toc-what-sres-can-observe">What
+SREs can observe</a></li>
+<li><a href="#poc-boundaries-and-validation-to-discuss"
+id="toc-poc-boundaries-and-validation-to-discuss">POC boundaries and
+validation to discuss</a></li>
+<li><a href="#code-map" id="toc-code-map">Code map</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="mcs-1421-nodepool-drain-readiness-architecture">MCS-1421:
+NodePool drain readiness architecture</h1>
+<p><strong>Scope:</strong> Architecture and state contract of the
+HyperShift proof of concept on branch
+<code>mcs-1421-nodepool-drain-readiness</code> (<a
+href="https://github.com/openshift/hypershift/pull/10165">PR #10165</a>,
+implementation tip <code>e94fe91f30</code>). This note describes the
+code in this branch; fleet-side upgrade enforcement is a separate
+integration.</p>
+<h2 id="the-explanation-in-one-minute">The explanation in one
+minute</h2>
+<p>A worker upgrade eventually drains a node. Kubernetes may reject a
+Pod eviction when a PodDisruptionBudget (PDB) requires every replica to
+remain available. The upgrade can then wait for a disruption that the
+workload cannot permit. MCS-1421 adds an <strong>advisory status
+signal</strong> that identifies this structural case before a drain
+starts.</p>
+<p>The Hosted Cluster Config Operator (HCCO) already has access to the
+guest Kubernetes API. Its new <code>nodepooldrain</code> controller
+scans guest Nodes, customer PDBs, and matching Pods. It publishes a
+small per-pool result on the HostedControlPlane (HCP). The shared
+HyperShift operator reads that result and sets a
+<code>DrainBlocked</code> condition on each NodePool. This code does
+<strong>not</strong> pause an upgrade or call the eviction API. A future
+consumer can use the condition in its upgrade policy.</p>
+<p>The main distinction to explain is that there are <strong>three
+state-bearing pieces</strong>, with different meanings:</p>
+<ol type="1">
+<li>HCCO computes <code>Blocked</code> or <code>Drainable</code> for
+each pool it can identify from guest Node labels.</li>
+<li>The HCP <code>NodePoolDrainUpToDate</code> condition and probe
+timestamp say whether that computation can be trusted as current.</li>
+<li>The NodePool controller combines both into
+<code>DrainBlocked=True</code>, <code>False</code>, or
+<code>Unknown</code>.</li>
+</ol>
+<h2 id="components-and-data-path">Components and data path</h2>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Term</th>
+<th>Role in this change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HostedCluster (HC)</td>
+<td>Management-cluster API object representing a hosted cluster; carries
+the opt-in annotation.</td>
+</tr>
+<tr>
+<td>HostedControlPlane (HCP)</td>
+<td>Management-cluster API object for one hosted control plane; stores
+the probe’s compact result, timestamp, and freshness condition.</td>
+</tr>
+<tr>
+<td>NodePool</td>
+<td>Management-cluster API object for a set of worker nodes; exposes the
+final <code>DrainBlocked</code> condition.</td>
+</tr>
+<tr>
+<td>HyperShift operator (HO)</td>
+<td>Shared management-cluster operator; deploys the per-cluster
+operators and reconciles NodePool status.</td>
+</tr>
+<tr>
+<td>Control Plane Operator (CPO)</td>
+<td>Per-HCP Deployment that reconciles control-plane components and
+deploys HCCO. Its image normally comes from the OpenShift release
+payload.</td>
+</tr>
+<tr>
+<td>Hosted Cluster Config Operator (HCCO)</td>
+<td>Separate per-HCP Deployment/binary in the CPO image; has guest API
+access and runs the new probe.</td>
+</tr>
+<tr>
+<td>Guest cluster</td>
+<td>Kubernetes API containing the worker Nodes, workload Pods, and PDBs
+examined by the probe.</td>
+</tr>
+</tbody>
+</table>
+<figure class="architecture" aria-labelledby="architecture-caption">
+  <div class="diagram-scroll">
+    <svg viewBox="0 0 1120 410" role="img" aria-labelledby="diagram-title diagram-desc">
+      <title id="diagram-title">MCS-1421 component and status flow</title>
+      <desc id="diagram-desc">The HostedCluster opts in through the shared HyperShift operator. HyperShift deploys the per-cluster CPO, which deploys HCCO. HCCO reads the guest Kubernetes API and writes results to HostedControlPlane status. HyperShift reads that status and sets the NodePool condition.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+          <path d="M0,0 L10,4 L0,8 z" fill="#526581"/>
+        </marker>
+      </defs>
+      <rect class="zone" x="18" y="18" width="1084" height="365" rx="18"/>
+      <text class="zone-label" x="42" y="45">MANAGEMENT CLUSTER</text>
+
+      <g class="node">
+        <rect x="42" y="74" width="190" height="78" rx="12"/>
+        <text x="137" y="106" text-anchor="middle" class="node-title">HostedCluster</text>
+        <text x="137" y="130" text-anchor="middle" class="node-sub">per-cluster opt-in</text>
+      </g>
+      <g class="node">
+        <rect x="300" y="74" width="210" height="78" rx="12"/>
+        <text x="405" y="106" text-anchor="middle" class="node-title">HyperShift operator</text>
+        <text x="405" y="130" text-anchor="middle" class="node-sub">shared management service</text>
+      </g>
+      <g class="node">
+        <rect x="590" y="74" width="200" height="78" rx="12"/>
+        <text x="690" y="106" text-anchor="middle" class="node-title">CPO Deployment</text>
+        <text x="690" y="130" text-anchor="middle" class="node-sub">one per hosted control plane</text>
+      </g>
+      <g class="node accent">
+        <rect x="870" y="74" width="200" height="78" rx="12"/>
+        <text x="970" y="106" text-anchor="middle" class="node-title">HCCO Deployment</text>
+        <text x="970" y="130" text-anchor="middle" class="node-sub">runs the drain probe</text>
+      </g>
+
+      <path class="edge" d="M232 113 H292" marker-end="url(#arrow)"/>
+      <text class="edge-label" x="262" y="99" text-anchor="middle">opts in</text>
+      <path class="edge" d="M510 113 H582" marker-end="url(#arrow)"/>
+      <text class="edge-label" x="546" y="99" text-anchor="middle">deploys</text>
+      <path class="edge" d="M790 113 H862" marker-end="url(#arrow)"/>
+      <text class="edge-label" x="826" y="99" text-anchor="middle">starts</text>
+
+      <g class="node status">
+        <rect x="360" y="240" width="255" height="82" rx="12"/>
+        <text x="487" y="273" text-anchor="middle" class="node-title">HostedControlPlane</text>
+        <text x="487" y="298" text-anchor="middle" class="node-sub">state + freshness timestamp</text>
+      </g>
+      <g class="node status">
+        <rect x="750" y="240" width="230" height="82" rx="12"/>
+        <text x="865" y="273" text-anchor="middle" class="node-title">NodePool</text>
+        <text x="865" y="298" text-anchor="middle" class="node-sub">DrainBlocked condition</text>
+      </g>
+
+      <path class="edge" d="M912 152 C860 190 730 200 620 260" marker-end="url(#arrow)"/>
+      <text class="edge-label" x="780" y="198" text-anchor="middle">writes probe status</text>
+      <path class="edge" d="M615 281 H742" marker-end="url(#arrow)"/>
+      <text class="edge-label" x="679" y="266" text-anchor="middle">HO maps condition</text>
+
+      <rect class="guest" x="820" y="337" width="250" height="32" rx="10"/>
+      <text x="945" y="358" text-anchor="middle" class="guest-label">GUEST API · Nodes, PDBs, selected Pods</text>
+      <path class="edge guest-edge" d="M970 152 V329" marker-end="url(#arrow)"/>
+      <text class="edge-label" x="986" y="248">reads</text>
+
+      <text class="diagram-note" x="44" y="359">CPO reconciles the HCP and deploys HCCO. HCCO reads guest state; only compact readiness status crosses back.</text>
+    </svg>
+  </div>
+  <figcaption id="architecture-caption">Figure 1. Probe ownership and status propagation. Guest workload identifiers stay in the guest cluster.</figcaption>
+</figure>
+<p>This path keeps guest reads inside an existing per-cluster operator.
+Only pool names, states, reason codes, and PDB counts cross into
+HCP/NodePool status. The guest PDB Event contains the PDB name for local
+diagnosis.</p>
+<h2 id="status-contract-what-the-states-mean">Status contract: what the
+states mean</h2>
+<p>HCCO writes <code>status.nodePoolDrain[]</code> on the HCP. Each
+entry contains <code>nodePoolName</code>, a required <code>state</code>
+(<code>Blocked</code> or <code>Drainable</code>), an optional
+<code>blockingCount</code>, and an optional bounded <code>reason</code>.
+The array is keyed by pool name in the CRD. HCCO also writes
+<code>status.nodePoolDrainLastProbeTime</code> after a complete scan and
+sets HCP condition <code>NodePoolDrainUpToDate=True</code>. Entries
+exist only for pools found on guest Nodes labeled
+<code>hypershift.openshift.io/nodePool</code>; an absent entry is
+unverified, not clear.</p>
+<p>An illustrative HCP status fragment:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">status</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">nodePoolDrain</span><span class="kw">:</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">nodePoolName</span><span class="kw">:</span><span class="at"> workers-a</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">state</span><span class="kw">:</span><span class="at"> Blocked</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">blockingCount</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">reason</span><span class="kw">:</span><span class="at"> BlockedByPodDisruptionBudget</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">nodePoolDrainLastProbeTime</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;2026-10-30T12:00:00Z&quot;</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">conditions</span><span class="kw">:</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">type</span><span class="kw">:</span><span class="at"> NodePoolDrainUpToDate</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">status</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;True&quot;</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">reason</span><span class="kw">:</span><span class="at"> AsExpected</span></span></code></pre></div>
+<p>This entry in <code>status.conditions</code> describes the
+<strong>freshness of the probe</strong>, not whether
+<code>workers-a</code> is blocked:</p>
+<ul>
+<li><code>type: NodePoolDrainUpToDate</code> names the condition. It
+tells consumers whether HCCO has recently computed the per-pool results
+from the guest cluster.</li>
+<li><code>status: "True"</code> means the latest probe completed and
+HCCO published its result. <code>False</code> means the result is not
+currently verified; for example, HCCO uses
+<code>PodScanIncomplete</code> when a matching Pod list exceeds the
+safety limit and <code>GuestUnreachable</code> after guest reads have
+failed past the grace period.</li>
+<li><code>reason: AsExpected</code> is the short success reason for a
+completed probe. It does not mean every NodePool is drainable.</li>
+</ul>
+<p>To interpret <code>workers-a</code>, read its <code>state</code> in
+<code>status.nodePoolDrain[]</code>. The NodePool controller also checks
+that the probe timestamp is present and no more than 15 minutes old. So
+<code>NodePoolDrainUpToDate=True</code> by itself is not enough to treat
+an old result as current.</p>
+<p>The NodePool controller makes this translation:</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>HCP input for this pool</th>
+<th>NodePool <code>DrainBlocked</code></th>
+<th>Reason</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fresh successful probe, <code>state=Blocked</code></td>
+<td><code>True</code></td>
+<td><code>BlockedByPodDisruptionBudget</code></td>
+<td>At least one structural customer PDB applies to a drain candidate
+Pod on a node in this pool. Message contains the PDB count.</td>
+</tr>
+<tr>
+<td>Fresh successful probe, <code>state=Drainable</code></td>
+<td><code>False</code></td>
+<td><code>Drainable</code></td>
+<td>This scan found no structural PDB blocker for the pool. It does not
+guarantee that every drain will succeed.</td>
+</tr>
+<tr>
+<td>Freshness missing/false, invalid or expired timestamp, absent pool
+entry, or absent/unsupported state</td>
+<td><code>Unknown</code></td>
+<td><code>Unverified</code>, or <code>Stale</code> for an expired
+timestamp</td>
+<td>No current, interpretable result. An enforcement consumer should
+fail open.</td>
+</tr>
+<tr>
+<td>Feature disabled</td>
+<td>Condition removed</td>
+<td>—</td>
+<td>The signal is no longer offered for this cluster.</td>
+</tr>
+</tbody>
+</table>
+<p>“Fresh” requires <code>NodePoolDrainUpToDate=True</code>, a nonzero
+probe timestamp no more than 15 minutes old, and a timestamp no more
+than one minute in the future. A fresh <code>Blocked</code> or
+<code>Drainable</code> result schedules a NodePool reconcile at its
+15-minute expiry. This recheck survives early returns from later
+NodePool validation. While the NodePool controller continues
+reconciling, a stopped HCCO writer therefore cannot leave a known
+condition in place indefinitely. Older HCP status with the former
+<code>blocked</code> boolean deserializes without <code>state</code> and
+becomes <code>Unknown</code>.</p>
+<p>The NodePool condition is a projection of HCCO’s observation, not a
+separate probe. <code>True</code> means <strong>drain blocked</strong>;
+<code>False</code> means <strong>no structural blocker found</strong>.
+The state transition model is:</p>
+<pre class="text"><code>                      complete successful probe
+       Unknown --------------------------------------&gt; True or False
+         ^                                                |       |
+         | incomplete scan, stale data, missing data      |       |
+         +------------------------------------------------+-------+
+                   successful re-probe can switch True &lt;-&gt; False
+                   disabling the feature removes the condition</code></pre>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>HCP freshness and stored result</th>
+<th>NodePool transition</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Complete successful scan</td>
+<td>Write a new array and probe time; set
+<code>NodePoolDrainUpToDate=True</code>.</td>
+<td><code>True</code> or <code>False</code> according to this pool’s new
+state; <code>Unknown</code> if the pool has no entry.</td>
+</tr>
+<tr>
+<td>PDB or Pod placement changes</td>
+<td>Next watch-triggered or one-minute probe replaces the result.</td>
+<td>Can move between <code>True</code> and <code>False</code>.</td>
+</tr>
+<tr>
+<td>Pod scan exceeds the per-PDB limit</td>
+<td>Keep the old array/time; set freshness <code>False</code>
+immediately.</td>
+<td>Move to <code>Unknown</code> (<code>Unverified</code>).</td>
+</tr>
+<tr>
+<td>Guest read fails briefly</td>
+<td>Keep the old array/time and previous freshness condition.</td>
+<td>Retain a known state only while the stored time remains fresh.</td>
+</tr>
+<tr>
+<td>No successful refresh for 15 minutes</td>
+<td>HCCO eventually marks freshness <code>False</code> on read errors;
+the stored time also expires independently.</td>
+<td>Move to <code>Unknown</code> (<code>Stale</code> when age is the
+deciding check).</td>
+</tr>
+<tr>
+<td>Opt-in removed</td>
+<td>Per-cluster probe disabled; stored HCP fields may remain.</td>
+<td>Remove <code>DrainBlocked</code>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-one-hcco-probe-decides">How one HCCO probe decides</h2>
+<p>The probe deliberately targets <strong>structural</strong> blockers:
+PDBs that would allow zero voluntary disruptions even if every expected
+Pod were healthy. This reduces false alarms from short-lived PDB
+pressure, at the cost of missing some temporary drain delays.</p>
+<pre class="text"><code>1. List guest Nodes and build node name -&gt; NodePool name from the NodePool label.
+2. List guest PDBs. Skip platform namespaces and PDBs unless:
+      status.expectedPods &gt;= 1 AND status.desiredHealthy &gt;= status.expectedPods
+3. For each remaining PDB, list matching Pods in its namespace using its selector.
+4. Skip Pods that the drain would not evict; map each remaining Pod&#39;s node to a pool.
+5. Count each PDB once per affected pool, even if it matches several Pods there.
+6. Publish a sorted Blocked/Drainable entry for every pool seen in step 1.</code></pre>
+<p>The selector and Pod checks matter:</p>
+<ul>
+<li>A <code>nil</code> PDB selector matches nothing; an empty
+<code>{}</code> selector matches all Pods in that namespace.</li>
+<li>Unscheduled, completed, mirror/static, and DaemonSet-owned Pods are
+excluded because this drain path does not evict them. Pending Pods are
+also excluded as blockers because they can be evicted.</li>
+<li>For <code>unhealthyPodEvictionPolicy: AlwaysAllow</code>, an
+<strong>unready Running Pod</strong> can be evicted despite a zero
+budget, so it is excluded as a blocker. A Ready Pod remains protected by
+that PDB.</li>
+<li>Platform namespaces are excluded by default for prefixes
+<code>openshift-</code> and <code>kube-</code>, plus exact
+<code>openshift</code> and <code>kube-system</code>. The
+<code>default</code> namespace is included. A deployment can add
+prefixes with
+<code>NODEPOOL_DRAIN_ADDITIONAL_PLATFORM_NAMESPACE_PREFIXES</code>.</li>
+</ul>
+<p>For example, a one-replica workload with
+<code>minAvailable: 1</code>, one Ready Pod on a labeled worker, and PDB
+status <code>expectedPods=1, desiredHealthy=1</code> yields
+<code>Blocked</code> for that worker’s pool. If the Pod is unready and
+the PDB sets <code>AlwaysAllow</code>, the same structural PDB yields
+<code>Drainable</code> for that pool when no other blocker exists. With
+two healthy replicas and <code>minAvailable: 1</code>,
+<code>desiredHealthy &lt; expectedPods</code>, so this structural check
+does not flag the PDB. Current health or other drain failures can still
+delay eviction.</p>
+<h2 id="reconciliation-failure-and-freshness">Reconciliation, failure,
+and freshness</h2>
+<p>HCCO watches guest Nodes for create/delete and NodePool-label
+changes, and watches PDBs. Node heartbeat updates do not trigger a
+probe. Pods are read through an <strong>uncached</strong>, server-side
+filtered API reader, so there is no cluster-wide Pod informer. A
+successful probe schedules another scan after one minute; this catches
+Pod placement changes that have no Pod watch.</p>
+<p>Each matching Pod list is limited to 2,000 Pods <strong>per
+PDB</strong>. A continuation token or an over-limit list makes the
+entire scan incomplete. The controller does not publish partial
+<code>Drainable</code> results. It sets HCP
+<code>NodePoolDrainUpToDate=False</code> with reason
+<code>PodScanIncomplete</code>, clears current blocked metrics, and
+retries in one minute. The old array and timestamp remain stored, but
+the NodePool controller treats them as <code>Unknown</code> because the
+freshness condition is false.</p>
+<p>For a generic guest-read error, HCCO retains the last HCP result
+during a 15-minute grace window and returns an error for
+controller-runtime retry. Its in-memory <code>lastSuccess</code> clock
+is seeded on process start, so a startup error does not instantly mark
+the condition false. If failures continue past the grace window, HCCO
+sets <code>NodePoolDrainUpToDate=False</code> with reason
+<code>GuestUnreachable</code> and clears blocked metrics. Independently,
+the NodePool controller expires the persisted probe timestamp at 15
+minutes. This also covers a stopped or restarted writer and failures to
+publish HCP status.</p>
+<p>On a complete scan, HCCO patches the HCP array and timestamp, then
+the HCP freshness condition, using the shared optimistic status-patching
+helper. The HyperShift operator watches drain-specific HCP status
+changes, maps the HCP to its NodePools, and updates each condition. The
+HCP watcher ignores unrelated status updates. <code>Unknown</code> is
+the safe interpretation of any missing, stale, or unsupported value;
+this POC’s HyperShift code does not enforce an upgrade gate.</p>
+<h2 id="activation-and-rollback">Activation and rollback</h2>
+<p>Two controls must both be present:</p>
+<ol type="1">
+<li>Set <code>ENABLE_NODEPOOL_DRAIN_READINESS=1</code> on the shared
+HyperShift operator Deployment. This enables the capability and the HCP
+status watch.</li>
+<li>Annotate a trial HostedCluster with
+<code>hypershift.openshift.io/enable-nodepool-drain-readiness=true</code>.
+HyperShift mirrors the annotation to HCP, and CPO propagates the flag to
+that cluster’s HCCO Deployment.</li>
+</ol>
+<p>For this branch POC, the trial HostedCluster also needs
+<code>hypershift.openshift.io/control-plane-operator-image=&lt;branch-cpo-image&gt;</code>
+so its CPO/HCCO image includes the new controller; the normal CPO image
+comes from the OpenShift release payload. Removing the opt-in annotation
+disables the per-cluster probe and removes the NodePool
+<code>DrainBlocked</code> condition. Existing HCP status may remain
+stored but is no longer consumed. The change only updates status and
+operator configuration; it does not add a NodePool config-hash input or
+initiate a worker rollout.</p>
+<h2 id="what-sres-can-observe">What SREs can observe</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Surface</th>
+<th>What it shows</th>
+<th>Limitation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NodePool <code>DrainBlocked</code> condition</td>
+<td><code>True</code>, <code>False</code>, or <code>Unknown</code>,
+reason, and count-only message</td>
+<td>No PDB or Pod identifier.</td>
+</tr>
+<tr>
+<td>HCP drain status, timestamp, and
+<code>NodePoolDrainUpToDate</code></td>
+<td>Raw per-pool result and whether it is current</td>
+<td>Old array may remain after a failed scan; check freshness and
+timestamp together.</td>
+</tr>
+<tr>
+<td>Guest PDB Warning Event <code>DrainBlocked</code></td>
+<td>Newly observed PDB-to-pool block, with the PDB name and pool</td>
+<td>Transition tracking is in memory; an HCCO restart can emit it
+again.</td>
+</tr>
+<tr>
+<td><code>hypershift_nodepool_drain_blocked{namespace,nodepool}</code></td>
+<td>Sparse series with value <code>1</code> only for currently blocked
+pools</td>
+<td>Series is removed on clear or stale/incomplete scan.</td>
+</tr>
+<tr>
+<td><code>hypershift_nodepool_drain_uptodate{namespace}</code></td>
+<td><code>1</code> after success, <code>0</code> when HCCO marks
+stale/incomplete</td>
+<td>A transient read error inside the grace window retains the prior
+value; use the timestamp for age.</td>
+</tr>
+</tbody>
+</table>
+<p>For a live explanation, inspect both sides of the projection:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">kubectl</span> <span class="at">-n</span> <span class="op">&lt;</span>hcp-namespace<span class="op">&gt;</span> get hostedcontrolplane <span class="op">&lt;</span>hcp-name<span class="op">&gt;</span> -o json <span class="dt">\</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">|</span> <span class="ex">jq</span> <span class="st">&#39;{drain: .status.nodePoolDrain, probed: .status.nodePoolDrainLastProbeTime,</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="st">         freshness: [.status.conditions[]? | select(.type == &quot;NodePoolDrainUpToDate&quot;)]}&#39;</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="ex">kubectl</span> <span class="at">-n</span> <span class="op">&lt;</span>hc-namespace<span class="op">&gt;</span> get nodepool <span class="op">&lt;</span>nodepool-name<span class="op">&gt;</span> -o json <span class="dt">\</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">|</span> <span class="ex">jq</span> <span class="st">&#39;.status.conditions[]? | select(.type == &quot;DrainBlocked&quot;)&#39;</span></span></code></pre></div>
+<h2 id="poc-boundaries-and-validation-to-discuss">POC boundaries and
+validation to discuss</h2>
+<ul>
+<li>This is a prediction from PDB status and current Pod placement. PDB
+status itself can lag. The probe does not request eviction or guarantee
+that a later drain succeeds. Workload scaling, Pod movement, PDB edits,
+and other drain failures can change the outcome between probes.</li>
+<li>The 2,000-Pod bound is per PDB. A cluster with many structural PDBs
+can still cause many filtered Pod lists. Measure guest API requests,
+HCCO memory/CPU, and reconcile duration before broader enablement.</li>
+<li>The HCP status schema allows at most 500 per-pool entries. A probe
+that cannot be published must age out to <code>Unknown</code>; validate
+this limit against target fleet shapes.</li>
+<li>No alert rule, runbook, or fleet-side enforcement is shipped by this
+HyperShift POC. The downstream consumer must treat <code>Unknown</code>
+as fail open and define its own policy and override path before
+enforcement.</li>
+<li>POC precision cases should include: Ready Pod with a zero budget
+(<code>True</code>); unready Running Pod with <code>AlwaysAllow</code>
+(<code>False</code> if no other blocker);
+Pending/DaemonSet/mirror/completed Pods; a PDB with healthy disruption
+headroom; a Pod moved to another pool; an over-limit Pod list
+(<code>Unknown</code>); and lost guest access followed by timestamp
+expiry (<code>Unknown</code>). Measure false blocks and missed
+structural blockers against actual eviction outcomes in a trial
+cluster.</li>
+</ul>
+<h2 id="code-map">Code map</h2>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Concern</th>
+<th>Primary code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API types and HCP fields</td>
+<td><a
+href="api/hypershift/v1beta1/nodepooldrain_types.go"><code>api/hypershift/v1beta1/nodepooldrain_types.go</code></a>,
+<a
+href="api/hypershift/v1beta1/hosted_controlplane.go"><code>hosted_controlplane.go</code></a>,
+<a
+href="api/hypershift/v1beta1/nodepool_conditions.go"><code>nodepool_conditions.go</code></a></td>
+</tr>
+<tr>
+<td>Guest watch registration</td>
+<td><a
+href="control-plane-operator/hostedclusterconfigoperator/controllers/nodepooldrain/setup.go"><code>control-plane-operator/hostedclusterconfigoperator/controllers/nodepooldrain/setup.go</code></a></td>
+</tr>
+<tr>
+<td>Scan, HCP writes, Events, metrics</td>
+<td><a
+href="control-plane-operator/hostedclusterconfigoperator/controllers/nodepooldrain/nodepooldrain.go"><code>control-plane-operator/hostedclusterconfigoperator/controllers/nodepooldrain/nodepooldrain.go</code></a></td>
+</tr>
+<tr>
+<td>Structural and Pod eviction predicates</td>
+<td><a
+href="support/pdbdrain/pdbdrain.go"><code>support/pdbdrain/pdbdrain.go</code></a></td>
+</tr>
+<tr>
+<td>NodePool condition translation and HCP watch</td>
+<td><a
+href="hypershift-operator/controllers/nodepool/conditions.go"><code>hypershift-operator/controllers/nodepool/conditions.go</code></a>,
+<a
+href="hypershift-operator/controllers/nodepool/nodepool_controller.go"><code>nodepool_controller.go</code></a></td>
+</tr>
+<tr>
+<td>Operational enablement note</td>
+<td><a
+href="control-plane-operator/hostedclusterconfigoperator/controllers/nodepooldrain/README.md"><code>control-plane-operator/hostedclusterconfigoperator/controllers/nodepooldrain/README.md</code></a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Suggested closing line:</strong> “We added an advisory
+observation in HCCO and a freshness-aware NodePool condition. A verified
+structural PDB blocker is <code>True</code>, a verified clear scan is
+<code>False</code>, and anything we cannot verify is
+<code>Unknown</code>.”</p>
+</body>
+</html>
