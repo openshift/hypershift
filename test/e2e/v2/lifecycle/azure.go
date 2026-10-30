@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -53,7 +54,7 @@ type AzurePlatformConfig struct {
 // environment variables with CI defaults.
 func NewAzurePlatformConfig(sharedDir string) *AzurePlatformConfig {
 	cfg := &AzurePlatformConfig{
-		creds:              envOrDefault("AZURE_CREDS", defaultAzureCreds),
+		creds:              AzureCredentialsFileFromEnv(),
 		location:           envOrDefault("HYPERSHIFT_AZURE_LOCATION", defaultAzureLocation),
 		oidcIssuerURL:      envOrDefault("AZURE_OIDC_ISSUER_URL", defaultOIDCIssuerURL),
 		saTokenKeyPath:     envOrDefault("AZURE_SA_TOKEN_ISSUER_KEY_PATH", defaultSATokenKeyPath),
@@ -102,73 +103,28 @@ func NewAzurePlatformConfig(sharedDir string) *AzurePlatformConfig {
 	return cfg
 }
 
+// AzureCredentialsFileFromEnv returns the configured Azure credentials path,
+// using the self-managed E2E default when AZURE_CREDS is unset.
+func AzureCredentialsFileFromEnv() string {
+	return envOrDefault("AZURE_CREDS", defaultAzureCreds)
+}
+
 func (a *AzurePlatformConfig) Name() string { return "azure" }
 
 func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 	return "hcp-sm-azure.azure.devcluster.openshift.com"
 }
 
-func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
-	// Parse EXTRA_ARGS from environment if provided
-	var extraArgs []string
-	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
-		extraArgs = strings.Fields(envArgs)
-	}
-
-	var publicExtraArgs []string
-	if a.encryptionKeyID != "" {
-		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
-	}
-	publicExtraArgs = append(publicExtraArgs, extraArgs...)
-
-	oneInitialReplica := 1
-	twoInitialReplicas := 2
-
-	return []ClusterSpec{
-		{
-			Variant:                 "public",
-			ExtraArgs:               publicExtraArgs,
-			InitialNodePoolReplicas: &twoInitialReplicas,
-		},
-		{
-			Variant:                 "private",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs: append([]string{
-				"--endpoint-access=Private",
-				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
-			}, extraArgs...),
-		},
-		{
-			Variant:                 "oauth-lb",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               append([]string{"--oauth-publishing-strategy=LoadBalancer"}, extraArgs...),
-		},
-		{
-			Variant:                 "oauth-lb-private",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs: append([]string{
-				"--endpoint-access=Private",
-				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
-				"--oauth-publishing-strategy=LoadBalancer",
-			}, extraArgs...),
-		},
-		{
-			Variant:                 "upgrade",
-			ReleaseImage:            n1Image,
-			InitialNodePoolReplicas: &twoInitialReplicas,
-			ExtraArgs:               append([]string{"--control-plane-availability-policy=HighlyAvailable"}, extraArgs...),
-		},
-		{
-			Variant:                 "external-oidc",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               extraArgs,
-		},
-	}
-}
-
-func (a *AzurePlatformConfig) CreateArgs() []string {
-	args := []string{
+func (a *AzurePlatformConfig) ClusterSpecs(_ context.Context, releaseImage, n1Image string) []ClusterSpec {
+	destroyArgs := []string{
 		"--azure-creds=" + a.creds,
+		"--location=" + a.location,
+		"--dns-zone-rg-name=" + a.dnsZoneRG,
+	}
+
+	commonArgs := []string{
+		"--azure-creds=" + a.creds,
+		"--diagnostics-storage-account-type=Managed",
 		"--location=" + a.location,
 		"--oidc-issuer-url=" + a.oidcIssuerURL,
 		"--sa-token-issuer-private-key-path=" + a.saTokenKeyPath,
@@ -178,17 +134,86 @@ func (a *AzurePlatformConfig) CreateArgs() []string {
 	}
 
 	if a.marketplacePublisher != "" {
-		args = append(args, "--marketplace-publisher="+a.marketplacePublisher)
-		args = append(args, "--marketplace-offer="+a.marketplaceOffer)
+		commonArgs = append(commonArgs, "--marketplace-publisher="+a.marketplacePublisher)
+		commonArgs = append(commonArgs, "--marketplace-offer="+a.marketplaceOffer)
 		if a.marketplaceSKU != "" {
-			args = append(args, "--marketplace-sku="+a.marketplaceSKU)
+			commonArgs = append(commonArgs, "--marketplace-sku="+a.marketplaceSKU)
 		}
 		if a.marketplaceVersion != "" {
-			args = append(args, "--marketplace-version="+a.marketplaceVersion)
+			commonArgs = append(commonArgs, "--marketplace-version="+a.marketplaceVersion)
 		}
 	}
 
-	return args
+	// Parse EXTRA_ARGS from environment if provided
+	var extraArgs []string
+	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
+		extraArgs = strings.Fields(envArgs)
+	}
+
+	clusterArgs := func(args ...string) []string {
+		return slices.Concat(commonArgs, args, extraArgs)
+	}
+
+	var publicExtraArgs []string
+	if a.encryptionKeyID != "" {
+		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
+	}
+
+	oneInitialReplica := 1
+	twoInitialReplicas := 2
+
+	return []ClusterSpec{
+		{
+			Variant:                 "public",
+			DestroyArgs:             destroyArgs,
+			CreateArgs:              clusterArgs(publicExtraArgs...),
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			InitialNodePoolReplicas: &twoInitialReplicas,
+		},
+		{
+			Variant:                 "private",
+			DestroyArgs:             destroyArgs,
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs: clusterArgs(
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id="+a.privateNATSubnetID,
+			),
+		},
+		{
+			Variant:                 "oauth-lb",
+			DestroyArgs:             destroyArgs,
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs:              clusterArgs("--oauth-publishing-strategy=LoadBalancer"),
+		},
+		{
+			Variant:                 "oauth-lb-private",
+			DestroyArgs:             destroyArgs,
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs: clusterArgs(
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id="+a.privateNATSubnetID,
+				"--oauth-publishing-strategy=LoadBalancer",
+			),
+		},
+		{
+			Variant:                 "upgrade",
+			DestroyArgs:             destroyArgs,
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			ReleaseImage:            n1Image,
+			InitialNodePoolReplicas: &twoInitialReplicas,
+			CreateArgs:              clusterArgs("--control-plane-availability-policy=HighlyAvailable"),
+		},
+		{
+			Variant:                 "external-oidc",
+			DestroyArgs:             destroyArgs,
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs:              clusterArgs(),
+		},
+	}
 }
 
 // PreCreate deploys infrastructure that must be ready before clusters
@@ -262,7 +287,7 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 			{
 				Name:        "private",
 				Variant:     "private",
-				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance || azure-machine-diagnostics",
 			},
 			{
 				Name:        "oauth-lb-private",
@@ -277,13 +302,13 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 					{
 						Name:        "public",
 						Variant:     "public",
-						LabelFilter: "self-managed-azure-public || hosted-cluster-node-communication || hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress",
+						LabelFilter: "azure-machine-diagnostics || self-managed-azure-public || hosted-cluster-node-communication || hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress",
 						Skip:        "KAS allowed CIDRs",
 					},
 					{
 						Name:    "public-nodepool-rollouts",
 						Variant: "public",
-						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
+						LabelFilter: "azure-machine-diagnostics-bootstrap || nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
 							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-disk-encryption || " +
 							"nodepool-ip-forwarding || nodepool-osimagestream-upgrade",
 					},
@@ -369,14 +394,6 @@ func (a *AzurePlatformConfig) SetupTestEnv(sharedDir string) {
 	os.Setenv("AZURE_PRIVATE_NAT_SUBNET_ID", azurePrivateNATSubnetID)
 
 	setupExternalOIDCTestEnv(sharedDir)
-}
-
-func (a *AzurePlatformConfig) DestroyArgs() []string {
-	return []string{
-		"--azure-creds=" + a.creds,
-		"--location=" + a.location,
-		"--dns-zone-rg-name=" + a.dnsZoneRG,
-	}
 }
 
 func envOrDefault(key, defaultVal string) string {

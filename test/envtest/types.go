@@ -14,6 +14,11 @@ type SuiteSpec struct {
 	// FeatureGates is the list of featureGates that must be enabled/disabled for this test to be run.
 	FeatureGates []string `json:"featureGates"`
 
+	// CRDFeatureSet limits this suite to CRDs carrying the exact
+	// release.openshift.io/feature-set annotation. It is intended for schemas such
+	// as CustomNoUpgrade that do not have payload FeatureGate status metadata.
+	CRDFeatureSet string `json:"crdFeatureSet,omitempty"`
+
 	// Version is the version of the CRD under test in this file.
 	// When omitted, if there is a single version in the CRD, this is assumed to be the correct version.
 	Version string `json:"version,omitempty"`

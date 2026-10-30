@@ -71,6 +71,7 @@ func RegisterNodePoolLifecycleTests(getTestCtx internal.TestContextGetter) {
 	NodePoolAutoRepairTest(getTestCtx)
 	NodePoolDiskEncryptionTest(getTestCtx)
 	NodePoolIPForwardingTest(getTestCtx)
+	RegisterPredictableRolloutTests(getTestCtx)
 }
 
 var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {

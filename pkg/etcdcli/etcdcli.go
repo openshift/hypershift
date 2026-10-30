@@ -29,13 +29,16 @@ import (
 const (
 	DefaultDialTimeout   = 15 * time.Second
 	DefragDialTimeout    = 60 * time.Second
+	defragRequestTimeout = 60 * time.Second
 	DefaultClientTimeout = 30 * time.Second
 )
 
 type etcdClientGetter struct {
 	eventRecorder events.Recorder
 
-	clientPool *EtcdClientPool
+	clientPool      *EtcdClientPool
+	defragTimeout   time.Duration
+	newDefragClient func([]string, bool, ...ClientOption) (*clientv3.Client, error)
 }
 
 func NewEtcdClient(endpointsFunc func() ([]string, error), eventRecorder events.Recorder) EtcdClient {
@@ -421,9 +424,14 @@ func (g *etcdClientGetter) MemberStatus(ctx context.Context, member *etcdserverp
 }
 
 // Defragment creates a new uncached clientv3 to the given member url and calls clientv3.Client.Defragment.
+// The RPC has a 60 second timeout unless the caller expires or cancels first; client preparation is separate.
 func (g *etcdClientGetter) Defragment(ctx context.Context, member *etcdserverpb.Member) (*clientv3.DefragmentResponse, error) {
 	// no g.clientLock necessary, this always returns a new fresh client
-	cli, err := newEtcdClientWithClientOpts([]string{member.ClientURLs[0]}, false, WithDialTimeout(DefragDialTimeout))
+	newClient := g.newDefragClient
+	if newClient == nil {
+		newClient = newEtcdClientWithClientOpts
+	}
+	cli, err := newClient([]string{member.ClientURLs[0]}, false, WithDialTimeout(DefragDialTimeout))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get etcd client for defragment: %w", err)
 	}
@@ -436,6 +444,12 @@ func (g *etcdClientGetter) Defragment(ctx context.Context, member *etcdserverpb.
 		}
 	}()
 
+	timeout := g.defragTimeout
+	if timeout == 0 {
+		timeout = defragRequestTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	resp, err := cli.Defragment(ctx, member.ClientURLs[0])
 	if err != nil {
 		return nil, fmt.Errorf("error while running defragment: %w", err)

@@ -4,13 +4,46 @@ package lifecycle
 
 import (
 	"slices"
+	"strings"
 	"testing"
+
+	. "github.com/onsi/gomega"
 )
+
+func TestAzureCredentialsFileFromEnv(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		want string
+	}{
+		{
+			name: "When AZURE_CREDS is set, it should return the configured path",
+			env:  "/etc/azure/custom-credentials.json",
+			want: "/etc/azure/custom-credentials.json",
+		},
+		{
+			name: "When AZURE_CREDS is unset, it should return the self-managed Azure default",
+			want: defaultAzureCreds,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AZURE_CREDS", test.env)
+			if got := AzureCredentialsFileFromEnv(); got != test.want {
+				t.Fatalf("AzureCredentialsFileFromEnv() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
 
 func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 	t.Parallel()
 
-	specs := (&AzurePlatformConfig{}).ClusterSpecs("release-image", "n1-image")
+	specs := (&AzurePlatformConfig{
+		creds:     "/etc/hypershift-ci-jobs-self-managed-azure/credentials.json",
+		location:  "centralus",
+		dnsZoneRG: "os4-common",
+	}).ClusterSpecs(t.Context(), "release-image", "n1-image")
 	specsByVariant := make(map[string]ClusterSpec, len(specs))
 	for _, spec := range specs {
 		specsByVariant[spec.Variant] = spec
@@ -66,20 +99,36 @@ func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 			if !ok {
 				t.Fatalf("Azure variant %q was not configured", tt.variant)
 			}
+			wantDestroyArgs := []string{
+				"--azure-creds=/etc/hypershift-ci-jobs-self-managed-azure/credentials.json",
+				"--location=centralus",
+				"--dns-zone-rg-name=os4-common",
+			}
+			if !slices.Equal(spec.DestroyArgs, wantDestroyArgs) {
+				t.Errorf("Azure variant %q destroy args = %v, want %v", tt.variant, spec.DestroyArgs, wantDestroyArgs)
+			}
+			for _, arg := range spec.DestroyArgs {
+				if strings.HasPrefix(arg, "--diagnostics-") {
+					t.Fatalf("teardown cannot accept %s", arg)
+				}
+			}
 			if spec.InitialNodePoolReplicas == nil {
 				t.Fatalf("Azure variant %q has no initial replica override", tt.variant)
 			}
 			if got := *spec.InitialNodePoolReplicas; got != tt.want {
 				t.Errorf("Azure variant %q requests %d initial replicas, want %d", tt.variant, got, tt.want)
 			}
+			g := NewWithT(t)
+			g.Expect(spec.CreateArgs).To(ContainElement("--diagnostics-storage-account-type=Managed"))
+			g.Expect(spec.DumpArgs).To(Equal([]string{"--azure-creds=/etc/hypershift-ci-jobs-self-managed-azure/credentials.json"}))
 		})
 	}
 }
 
-func TestAzureOAuthLBPrivateExtraArgs(t *testing.T) {
+func TestAzureOAuthLBPrivateCreateArgs(t *testing.T) {
 	t.Parallel()
 
-	specs := (&AzurePlatformConfig{}).ClusterSpecs("release-image", "n1-image")
+	specs := (&AzurePlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
 	var spec *ClusterSpec
 	for i := range specs {
 		if specs[i].Variant == "oauth-lb-private" {
@@ -100,8 +149,34 @@ func TestAzureOAuthLBPrivateExtraArgs(t *testing.T) {
 		"--oauth-publishing-strategy=LoadBalancer",
 	}
 	for _, arg := range wantArgs {
-		if !slices.Contains(spec.ExtraArgs, arg) {
-			t.Errorf("oauth-lb-private ExtraArgs %v missing %q", spec.ExtraArgs, arg)
+		if !slices.Contains(spec.CreateArgs, arg) {
+			t.Errorf("oauth-lb-private CreateArgs %v missing %q", spec.CreateArgs, arg)
 		}
 	}
+}
+
+func TestAzurePlatformConfigTestMatrix(t *testing.T) {
+	t.Run("When the default Azure plan runs, it should select diagnostics checks on public and private clusters", func(t *testing.T) {
+		matrix := (&AzurePlatformConfig{}).TestMatrix()
+		var foundPublic, foundPrivate, foundBootstrap bool
+		for _, group := range matrix.Parallel {
+			if group.Variant == "private" && strings.Contains(group.LabelFilter, "azure-machine-diagnostics") {
+				foundPrivate = true
+			}
+		}
+		for _, lane := range matrix.Sequential {
+			for _, group := range lane.Steps {
+				if group.Variant == "public" {
+					if strings.Contains(group.LabelFilter, "azure-machine-diagnostics-bootstrap") {
+						foundBootstrap = true
+					} else if strings.Contains(group.LabelFilter, "azure-machine-diagnostics") {
+						foundPublic = true
+					}
+				}
+			}
+		}
+		if !foundPublic || !foundPrivate || !foundBootstrap {
+			t.Fatal("Azure diagnostics checks are missing from the default test matrix")
+		}
+	})
 }

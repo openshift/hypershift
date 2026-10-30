@@ -63,15 +63,15 @@ require (
 	github.com/onsi/gomega v1.42.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/openshift/api v0.0.0-20260930220732-5588d747a72b
-	github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8
+	github.com/openshift/api v0.0.0-20261028163820-1f109e9eefc7
+	github.com/openshift/client-go v0.0.0-20261026144452-41e357d76bc8
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
 	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
-	github.com/openshift/cluster-node-tuning-operator v0.0.0-20260701110644-508d51a6f2bd
+	github.com/openshift/cluster-node-tuning-operator v0.0.0-20260825115124-078cde8b7f7f
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
-	github.com/openshift/hypershift/api v0.0.0-20260224085943-34e30acde920
-	github.com/openshift/library-go v0.0.0-20261001035620-0eb5e87de1be
+	github.com/openshift/hypershift/api v0.0.0-20260824191009-a7f22d5ea3e5
+	github.com/openshift/library-go v0.0.0-20261028054900-dbcad7febe41
 	github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b
 	github.com/operator-framework/api v0.45.0
 	github.com/pkg/errors v0.9.1
@@ -118,13 +118,14 @@ require (
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	kubevirt.io/api v1.8.4
 	kubevirt.io/containerized-data-importer-api v1.65.0
-	sigs.k8s.io/cluster-api v1.13.4
-	sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0
+	sigs.k8s.io/cluster-api v1.14.3
+	sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.1
 	sigs.k8s.io/cluster-api-provider-azure v1.26.0
 	sigs.k8s.io/cluster-api-provider-gcp v1.13.1
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
 	sigs.k8s.io/cluster-api-provider-openstack v0.14.8
+	sigs.k8s.io/cluster-api/api v1.14.3
 	sigs.k8s.io/controller-runtime v0.25.0
 	sigs.k8s.io/karpenter v1.13.0
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96
@@ -222,8 +223,7 @@ require (
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.18 // indirect
-	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
-	github.com/gophercloud/gophercloud/v2 v2.12.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.23.0
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0 // indirect
@@ -273,12 +273,12 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.69.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
 	go.opentelemetry.io/otel v1.45.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.44.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.45.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.45.0
 	go.opentelemetry.io/otel/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.45.0
 	go.opentelemetry.io/otel/trace v1.45.0
-	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
+	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
@@ -289,8 +289,8 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260630182238-925bb5da69e7 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
@@ -299,8 +299,8 @@ require (
 	k8s.io/component-helpers v0.37.0 // indirect
 	k8s.io/csi-translation-lib v0.36.2 // indirect
 	k8s.io/kms v0.37.1 // indirect
-	k8s.io/kube-openapi v0.35.1 // indirect
-	k8s.io/kubelet v0.36.2 // indirect
+	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
+	k8s.io/kubelet v0.36.4 // indirect
 	k8s.io/streaming v0.37.1 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.2.4 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
@@ -310,6 +310,9 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 )
 
+// Prevent root-only client and library dependencies from raising the selected API compatibility pin.
+exclude github.com/openshift/api v0.0.0-20260930220732-5588d747a72b
+
 replace github.com/openshift/hypershift/api => ./api
 
 // Use our openshift version of karpenter instead of upstream
@@ -317,5 +320,13 @@ replace github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpen
 
 replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260721214330-2b8ed744bf1c
 
-// Temporary: NTO main requires kube-openapi v0.35.1 (fake tag that only resolves via NTO's own replace)
-replace k8s.io/kube-openapi v0.35.1 => k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288
+// CAPI provider types
+replace (
+	github.com/openshift/cluster-api-provider-agent/api => ./pkg/capi/agent
+	sigs.k8s.io/cluster-api-provider-aws/v2 => ./pkg/capi/aws
+	sigs.k8s.io/cluster-api-provider-azure => ./pkg/capi/azure
+	sigs.k8s.io/cluster-api-provider-gcp => ./pkg/capi/gcp
+	sigs.k8s.io/cluster-api-provider-ibmcloud => ./pkg/capi/ibmcloud
+	sigs.k8s.io/cluster-api-provider-kubevirt => ./pkg/capi/kubevirt
+	sigs.k8s.io/cluster-api-provider-openstack => ./pkg/capi/openstack
+)

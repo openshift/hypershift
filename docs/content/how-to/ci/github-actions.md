@@ -38,6 +38,7 @@ Pull request callers resolve their reusable workflows from `main`, while post-me
 | Caller | Reusable | Purpose |
 |--------|----------|---------|
 | `codespell.yaml` | `codespell-reusable.yaml` | Spell checking across the codebase |
+| `deadcode.yaml` | `deadcode-reusable.yaml` | Whole-program dead-code analysis; fails on any candidate |
 | `gitlint.yaml` | `gitlint-reusable.yaml` | Commit message format validation |
 | `lint.yaml` | `lint-reusable.yaml` | Go linting via `golangci-lint` |
 | `verify.yaml` | `verify-reusable.yaml` | Full verification (`make verify`) |
@@ -66,6 +67,7 @@ Pull request callers resolve their reusable workflows from `main`, while post-me
 | `cpo-container-sync.yaml` | `cpo-container-sync-reusable.yaml` | Validate CPO container image references are in sync |
 | `dependabot-commit-fix.yaml` | `dependabot-commit-fix-reusable.yaml` | Rewrite dependabot commit messages to pass gitlint |
 | `gocacheprog-test.yaml` | `gocacheprog-test-reusable.yaml` | Tests for the `contrib/ci/gocacheprog` build cache tool (path-filtered) |
+| `test-commit-layout.yaml` | `test-commit-layout-reusable.yaml` | Tests for the `skills/restructure-commits` layout tool and ownership generator (path-filtered) |
 | `validate-cpo-overrides.yaml` | — | Validate CPO override images contain the PRs claimed in the PR description |
 
 !!! note

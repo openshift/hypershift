@@ -19,7 +19,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	ibmcapicore "sigs.k8s.io/cluster-api-provider-ibmcloud/capicore/api/core/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -64,7 +64,7 @@ func (p PowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, crea
 
 		// Set the values for upper level controller
 		ibmCluster.Status.Ready = true
-		ibmCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
+		ibmCluster.Spec.ControlPlaneEndpoint = ibmcapicore.APIEndpoint{
 			Host: apiEndpoint.Host,
 			Port: apiEndpoint.Port,
 		}

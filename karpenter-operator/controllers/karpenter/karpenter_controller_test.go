@@ -32,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/logr/testr"
 	"go.uber.org/mock/gomock"
@@ -404,19 +403,13 @@ func TestKarpenterDeletion(t *testing.T) {
 
 func TestReconcileDefaultOpenshiftEC2NodeClass(t *testing.T) {
 	testCases := map[string]struct {
-		standaloneAdapter  bool
 		annotations        map[string]string
 		expectDefaultClass bool
 	}{
-		"When standalone adapter mode is enabled, it should leave default OpenshiftEC2NodeClass reconciliation to the standalone operator": {
-			standaloneAdapter:  true,
-			expectDefaultClass: false,
-		},
-		"When embedded mode is enabled, it should reconcile the default OpenshiftEC2NodeClass": {
+		"When the Karpenter E2E override is not set, it should reconcile the default OpenshiftEC2NodeClass": {
 			expectDefaultClass: true,
 		},
-		"When the Karpenter E2E override is set in embedded mode, it should skip the default OpenshiftEC2NodeClass": {
-			standaloneAdapter: false,
+		"When the Karpenter E2E override is set, it should skip the default OpenshiftEC2NodeClass": {
 			annotations: map[string]string{
 				hyperkarpenterv1.KarpenterCoreE2EOverrideAnnotation: "true",
 			},
@@ -444,22 +437,13 @@ func TestReconcileDefaultOpenshiftEC2NodeClass(t *testing.T) {
 			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 			hypershiftClient := hypershiftfake.NewSimpleClientset(hcp.DeepCopy())
 
-			// Conditionally set the fields the reconciler needs in embedded mode
-			var provider releaseinfo.Provider
-			var component controlplanecomponent.ControlPlaneComponent
-			if !tc.standaloneAdapter {
-				provider = &testReleaseProvider{}
-				component = &testKarpenterComponent{}
-			}
-
 			r := &Reconciler{
 				ManagementClient:       managementClient,
 				GuestClient:            guestClient,
 				HypershiftClient:       hypershiftClient,
 				Namespace:              namespace,
-				StandaloneAdapter:      tc.standaloneAdapter,
-				KarpenterComponent:     component,
-				ReleaseProvider:        provider,
+				KarpenterComponent:     &testKarpenterComponent{},
+				ReleaseProvider:        &testReleaseProvider{},
 				CreateOrUpdateProvider: upsert.New(false),
 			}
 
@@ -650,92 +634,4 @@ func nodeClaimWithCapacity(name, nodeName, cpus string) karpenterv1.NodeClaim {
 		},
 	}
 	return nc
-}
-
-func TestReconcileTaintConfigMap(t *testing.T) {
-	scheme := api.Scheme
-	namespace := "clusters-test"
-
-	hcp := &hyperv1.HostedControlPlane{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-hcp",
-			Namespace: namespace,
-		},
-	}
-
-	t.Run("When taint ConfigMap does not exist it should create it", func(t *testing.T) {
-		g := NewWithT(t)
-		ctx := log.IntoContext(t.Context(), testr.New(t))
-
-		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		r := &Reconciler{
-			ManagementClient:       fakeManagementClient,
-			CreateOrUpdateProvider: upsert.New(false),
-		}
-
-		err := r.reconcileTaintConfigMap(ctx, hcp)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		cm := &corev1.ConfigMap{}
-		err = fakeManagementClient.Get(ctx, client.ObjectKey{Name: karpenterutil.KarpenterTaintConfigMapName, Namespace: namespace}, cm)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(cm.Data).To(HaveKey("config"))
-		var cr map[string]interface{}
-		err = yaml.Unmarshal([]byte(cm.Data["config"]), &cr)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(cr["apiVersion"]).To(Equal("machineconfiguration.openshift.io/v1"))
-		g.Expect(cr["kind"]).To(Equal("KubeletConfig"))
-		metadata, ok := cr["metadata"].(map[string]interface{})
-		g.Expect(ok).To(BeTrue())
-		g.Expect(metadata["name"]).To(Equal(karpenterutil.KarpenterTaintConfigMapName))
-		spec, ok := cr["spec"].(map[string]interface{})
-		g.Expect(ok).To(BeTrue())
-		kubeletConfig, ok := spec["kubeletConfig"].(map[string]interface{})
-		g.Expect(ok).To(BeTrue())
-		taints, ok := kubeletConfig["registerWithTaints"].([]interface{})
-		g.Expect(ok).To(BeTrue())
-		g.Expect(taints).To(HaveLen(len(karpenterutil.KarpenterBaseTaints)))
-		taint, ok := taints[0].(map[string]interface{})
-		g.Expect(ok).To(BeTrue())
-		g.Expect(taint["key"]).To(Equal(karpenterutil.KarpenterBaseTaints[0].Key))
-		g.Expect(taint["value"]).To(Equal(karpenterutil.KarpenterBaseTaints[0].Value))
-		g.Expect(taint["effect"]).To(Equal(string(karpenterutil.KarpenterBaseTaints[0].Effect)))
-	})
-
-	t.Run("When taint ConfigMap already exists it should be idempotent", func(t *testing.T) {
-		g := NewWithT(t)
-		ctx := log.IntoContext(t.Context(), testr.New(t))
-
-		existingCM := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      karpenterutil.KarpenterTaintConfigMapName,
-				Namespace: namespace,
-			},
-			Data: map[string]string{"config": "old-data"},
-		}
-		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingCM).Build()
-		r := &Reconciler{
-			ManagementClient:       fakeManagementClient,
-			CreateOrUpdateProvider: upsert.New(false),
-		}
-
-		err := r.reconcileTaintConfigMap(ctx, hcp)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		cm := &corev1.ConfigMap{}
-		err = fakeManagementClient.Get(ctx, client.ObjectKey{Name: karpenterutil.KarpenterTaintConfigMapName, Namespace: namespace}, cm)
-		g.Expect(err).NotTo(HaveOccurred())
-		var cr map[string]interface{}
-		err = yaml.Unmarshal([]byte(cm.Data["config"]), &cr)
-		g.Expect(err).NotTo(HaveOccurred())
-		spec, ok := cr["spec"].(map[string]interface{})
-		g.Expect(ok).To(BeTrue())
-		kubeletConfig, ok := spec["kubeletConfig"].(map[string]interface{})
-		g.Expect(ok).To(BeTrue())
-		taints, ok := kubeletConfig["registerWithTaints"].([]interface{})
-		g.Expect(ok).To(BeTrue())
-		taint, ok := taints[0].(map[string]interface{})
-		g.Expect(ok).To(BeTrue())
-		g.Expect(taint["key"]).To(Equal(karpenterutil.KarpenterBaseTaints[0].Key))
-	})
 }

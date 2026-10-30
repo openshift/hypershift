@@ -1266,7 +1266,11 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>nodeLabels propagates a list of labels to Nodes, only once on creation.
+<p>nodeLabels propagates a list of labels to Nodes.
+Labels are re-synced additively whenever the desired state changes;
+labels set by other controllers (kubelet, autoscaler) are preserved.
+Removing a label from this map does NOT remove it from existing Nodes;
+only new values or key additions are propagated.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -1281,8 +1285,11 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 </td>
 <td>
 <em>(Optional)</em>
-<p>taints if specified, propagates a list of taints to Nodes, only once on creation.
-These taints are additive to the ones applied by other controllers</p>
+<p>taints if specified, propagates a list of taints to Nodes.
+Taints are re-synced whenever the desired state changes.
+These taints are additive to the ones applied by other controllers.
+Removing a taint from this list does NOT remove it from existing Nodes;
+only new taints are added and existing taint values are updated.</p>
 </td>
 </tr>
 <tr>
@@ -1544,6 +1551,56 @@ If the platform does not support LoadBalancerSourceRanges, this field may have n
 </tr>
 </tbody>
 </table>
+###AWSCSIDriverConfig { #hypershift.openshift.io/v1beta1.AWSCSIDriverConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CSIDriverOperatorSpec">CSIDriverOperatorSpec</a>)
+</p>
+<p>
+<p>AWSCSIDriverConfig specifies configuration for the AWS EBS CSI driver.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>initialKMSKeyARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>initialKMSKeyARN is the ARN of an AWS KMS key used to encrypt volumes
+created by the default StorageClass. When set, new PersistentVolumes
+provisioned by the default StorageClass are encrypted with this key
+instead of the AWS account&rsquo;s default EBS encryption key.</p>
+<p>When omitted, no KMS key is configured on the default StorageClass and
+EBS volumes are encrypted with the AWS account&rsquo;s default EBS encryption
+key.</p>
+<p>The value may be either the ARN or Alias ARN of a KMS key and must follow
+the format arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>,
+where <partition> is one of aws, aws-cn, aws-us-gov, aws-iso, aws-iso-b,
+aws-iso-e, or aws-iso-f; <region> is the AWS region; <account-id> is the
+12-digit AWS account identifier; and <key-id-or-alias> is the KMS key ID
+or alias name. The key must be in the same region as the cluster
+(spec.platform.aws.region).</p>
+<p>When set, must be between 1 and 2048 characters.</p>
+<p>This field can only be set when the HostedCluster is created and is
+immutable afterwards. Day-2 changes to storage encryption must be made
+directly on the ClusterCSIDriver resource in the hosted cluster.</p>
+<p>The IAM role in spec.platform.aws.rolesRef.storageARN must have
+kms:Decrypt, kms:GenerateDataKeyWithoutPlaintext, and kms:CreateGrant
+permissions on the specified key.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AWSCloudProviderConfig { #hypershift.openshift.io/v1beta1.AWSCloudProviderConfig }
 <p>
 (<em>Appears on:</em>
@@ -1667,6 +1724,111 @@ key.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###AWSDNSZoneStatus { #hypershift.openshift.io/v1beta1.AWSDNSZoneStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformStatus">AWSPlatformStatus</a>)
+</p>
+<p>
+<p>AWSDNSZoneStatus represents a managed Route53 DNS zone and its metadata.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>zoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>zoneID is the Route53 hosted zone ID.
+Must be 2-32 characters and a valid Route53 hosted zone ID: a leading &lsquo;Z&rsquo;
+followed by uppercase alphanumeric characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zoneType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneType">
+AWSDNSZoneType
+</a>
+</em>
+</td>
+<td>
+<p>zoneType indicates the purpose of the zone.
+Valid values are:
+&ldquo;PublicIngress&rdquo;: the public Route53 zone holding the publicly resolvable
+ingress DNS records (e.g. *.apps and the console) and ACME certificate
+validation records.
+&ldquo;PrivateIngress&rdquo;: the private Route53 zone serving VPC-internal ingress
+DNS resolution for the guest cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the DNS name of the hosted zone.
+name must be at most 253 characters in length (the maximum length of a DNS
+name) and must consist only of alphanumeric characters, hyphens, and periods.
+Each period-separated segment must start and end with an alphanumeric character.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nameServers</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nameServers are the authoritative name servers for this zone.
+Used for NS delegation when external-dns is not available.
+When omitted, there are no name servers to report: private ingress zones
+never populate this field, and a public zone has none until its delegation
+set has been resolved.
+When present, contains 1-8 unique name servers. Each name server must be at
+most 253 characters in length and must consist only of alphanumeric characters,
+hyphens, and periods, where each period-separated segment starts and ends with
+an alphanumeric character.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSDNSZoneType { #hypershift.openshift.io/v1beta1.AWSDNSZoneType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneStatus">AWSDNSZoneStatus</a>)
+</p>
+<p>
+<p>AWSDNSZoneType defines the purpose of a managed DNS zone.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;PrivateIngress&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;PublicIngress&#34;</p></td>
+<td></td>
+</tr></tbody>
 </table>
 ###AWSEndpointAccessType { #hypershift.openshift.io/v1beta1.AWSEndpointAccessType }
 <p>
@@ -1862,6 +2024,105 @@ AWSKMSAuthSpec
 </td>
 <td>
 <p>auth defines metadata about the management of credentials used to interact with AWS KMS</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSManagedDNSDelegationSpec { #hypershift.openshift.io/v1beta1.AWSManagedDNSDelegationSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSSpec">AWSManagedDNSSpec</a>)
+</p>
+<p>
+<p>AWSManagedDNSDelegationSpec configures service-side DNS delegation for
+certificate generation. When set, the ControlPlaneOperator creates an ACME
+DNS01 challenge CNAME in the public ingress zone pointing back to the parent
+zone, and handles NS delegation based on the nsDelegationMode.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nsDelegationMode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NSDelegationMode">
+NSDelegationMode
+</a>
+</em>
+</td>
+<td>
+<p>nsDelegationMode specifies how NS delegation records are created in the parent zone.
+&ldquo;ExternalDNS&rdquo;: the ControlPlaneOperator creates a DNSEndpoint CR in the control plane namespace;
+external-dns creates NS records in the parent zone.
+&ldquo;Manual&rdquo;: the consuming platform handles NS delegation using nameservers
+reported in HostedCluster status.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSManagedDNSSpec { #hypershift.openshift.io/v1beta1.AWSManagedDNSSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformSpec">AWSPlatformSpec</a>)
+</p>
+<p>
+<p>AWSManagedDNSSpec configures ControlPlaneOperator-managed Route53 DNS zones
+for ingress. When set, the ControlPlaneOperator creates public and private
+ingress Route53 zones in the customer&rsquo;s AWS account using ingressDomainPrefix
+to form the zone domain name.
+Delegation (ACME CNAME + NS records) is configured separately via the
+delegation field.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ingressDomainPrefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ingressDomainPrefix is the subdomain prefix for the managed ingress DNS zones.
+The zone is created as {ingressDomainPrefix}.{clusterBaseDomain}, where
+{clusterBaseDomain} is the cluster base domain configured via the HostedCluster
+spec.dns (baseDomainPrefix and baseDomain).
+When delegation is configured, this prefix creates a DNS delegation boundary
+that separates the ingress zone from the cluster domain, enabling ACME
+challenge CNAME delegation back to the parent zone.
+Must be 1-63 characters, consist only of lowercase alphanumeric characters or
+hyphens, and must start and end with an alphanumeric character.
+ingressDomainPrefix is immutable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>delegation,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSDelegationSpec">
+AWSManagedDNSDelegationSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delegation configures service-side DNS delegation for certificate generation.
+When set, the ControlPlaneOperator creates an ACME DNS01 challenge CNAME in the
+public ingress zone and handles NS delegation based on the nsDelegationMode.
+When absent, only zones are created and the consuming platform handles
+delegation and certificate management.</p>
 </td>
 </tr>
 </tbody>
@@ -2283,6 +2544,30 @@ before they are terminated, providing a best effort for graceful shutdown.</p>
 Supports FedRAMP/FIPS endpoints (sqs-fips prefix) and GovCloud regions.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>managedDNS,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSSpec">
+AWSManagedDNSSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>managedDNS configures managed Route53 DNS zones for this cluster.
+Managed DNS is enabled when this field is set, which requires
+ingressDomainPrefix. When enabled, the control plane operator creates and
+reconciles the cluster&rsquo;s DNS zones in the customer&rsquo;s AWS account instead of
+requiring them to be pre-created externally and passed in as zone IDs.
+For standard clusters this covers the .hypershift.local private zone and
+the public and private ingress zones. For shared VPC clusters only the
+public ingress zone is managed, since the .hypershift.local and private
+ingress zones are owned by the VPC owner.
+managedDNS can only be set at cluster creation; it cannot be added to or
+removed from an existing cluster.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSPlatformStatus { #hypershift.openshift.io/v1beta1.AWSPlatformStatus }
@@ -2313,6 +2598,22 @@ string
 <p>defaultWorkerSecurityGroupID is the ID of a security group created by
 the control plane operator. It is always added to worker machines in
 addition to any security groups specified in the NodePool.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsZones</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSDNSZoneStatus">
+[]AWSDNSZoneStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsZones contains DNS zone information for zones managed by the control plane operator.
+Contains 1-2 entries keyed by zoneType, so at most one PublicIngress zone and
+one PrivateIngress zone.</p>
 </td>
 </tr>
 </tbody>
@@ -5407,6 +5708,42 @@ When omitted, nested virtualization is not enabled (AWS default behavior).</p>
 </tr>
 </tbody>
 </table>
+###CSIDriverOperatorSpec { #hypershift.openshift.io/v1beta1.CSIDriverOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>CSIDriverOperatorSpec specifies configuration for the CSI driver operator
+running in the control plane. Platform-specific configuration is nested per platform.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>aws,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSCSIDriverConfig">
+AWSCSIDriverConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws configures the AWS EBS CSI driver.
+It can only be set when spec.platform.type is AWS.</p>
+<p>When omitted, no AWS-specific CSI driver configuration is applied and the
+default StorageClass uses the AWS account&rsquo;s default EBS encryption settings.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###Capabilities { #hypershift.openshift.io/v1beta1.Capabilities }
 <p>
 (<em>Appears on:</em>
@@ -6463,6 +6800,11 @@ created in the guest VPC</p>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
 </td>
+</tr><tr><td><p>&#34;AWSManagedDNSAvailable&#34;</p></td>
+<td><p>AWSManagedDNSAvailable indicates whether the managed DNS configuration
+has been successfully created for the hosted cluster. This condition is
+only set when spec.platform.aws.managedDNS is configured.</p>
+</td>
 </tr><tr><td><p>&#34;AutoNodeEnabled&#34;</p></td>
 <td><p>AutoNodeEnabled indicates whether AutoNode is configured and operational for this HostedCluster.
 <strong>True</strong> means AutoNode is configured in the HostedCluster spec and the Karpenter components are fully rolled out and ready.
@@ -6589,6 +6931,18 @@ created in the customer VPC</p>
 </tr><tr><td><p>&#34;GCPEndpointAvailable&#34;</p></td>
 <td><p>GCPEndpointAvailable indicates whether the GCP PSC Endpoint has been
 created in the customer VPC</p>
+</td>
+</tr><tr><td><p>&#34;GCPFirewallRulesReady&#34;</p></td>
+<td><p>GCPFirewallRulesReady indicates whether the control-plane-operator has
+reconciled the managed GCP worker firewall rule (<infra-id>-internal-cluster)
+to its desired state.
+This reconcile is best-effort: expected, recoverable states such as missing
+Workload Identity Federation credentials, insufficient IAM permissions (the
+ctrlplane-op service account is missing roles/compute.securityAdmin), an
+unresolvable project/VPC, or an ownership conflict set this condition to
+False with an actionable message but do not fail the overall HCP reconcile.
+The next periodic reconcile converges automatically once the underlying
+condition clears.</p>
 </td>
 </tr><tr><td><p>&#34;GCPPrivateServiceConnectAvailable&#34;</p></td>
 <td><p>GCPPrivateServiceConnectAvailable indicates overall PSC infrastructure availability</p>
@@ -8615,6 +8969,45 @@ For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/la
 </tr>
 <tr>
 <td>
+<code>resourceTags</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceTag">
+[]GCPResourceTag
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>resourceTags are pre-existing Google Cloud Resource Manager tags to apply to
+GCP resources created for the hosted cluster.
+Currently, tags are applied to newly provisioned persistent disks and, when the
+image registry is enabled, to its storage bucket. Other GCP resources, such as
+worker VMs and their boot disks, are not tagged.
+The set of tagged resources is subject to change over time.</p>
+<p>When omitted, no tags are applied through this setting. When specified,
+the list must contain 1 to 50 entries, and each short key must be unique
+across the list, even when the tags have different parents. A tag&rsquo;s
+parentID defaults to the HostedCluster&rsquo;s GCP project if omitted.
+Google Cloud permits at most 50 directly attached tags per resource,
+including tags attached by other actors. Coordinate with external tagging
+automation to leave sufficient capacity; admission does not reserve tag slots.</p>
+<p>The referenced tags must already exist, and the storage and imageRegistry
+service accounts must have permission to use them. Neither is checked when the
+HostedCluster is created. When a tag cannot be applied, provisioning of the
+affected disk or bucket can fail, and the error is reported in the persistent
+volume claim&rsquo;s events or the image registry operator&rsquo;s status.</p>
+<p>resourceTags can only be set when the HostedCluster is created. It cannot be
+added, removed or changed afterwards. If the configured list must change,
+the HostedCluster must be recreated.
+Resource tags require a control plane operator image that supports GCP resource
+tag propagation. When that capability is unavailable, reconciliation fails
+with a message identifying resourceTags on the ReconciliationSucceeded
+condition, and dependent component deployments are blocked until a
+supporting control plane operator image is configured.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>workloadIdentity,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig">
@@ -8937,6 +9330,75 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 </tr>
 </tbody>
 </table>
+###GCPResourceTag { #hypershift.openshift.io/v1beta1.GCPResourceTag }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPResourceTag selects a pre-existing Google Cloud Resource Manager tag by
+its parent, short key, and short value. The tag must be defined in the
+HostedCluster project or an organization before the cluster is created.
+See <a href="https://cloud.google.com/resource-manager/docs/tags/tags-overview">https://cloud.google.com/resource-manager/docs/tags/tags-overview</a>.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>parentID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>parentID is the ID of the project or organization that defines the TagKey.
+When omitted, the HostedCluster&rsquo;s GCP project is used.
+An explicit value must be the HostedCluster&rsquo;s GCP project ID or a numeric
+organization ID. A numeric value is treated as an organization ID; project
+numbers are not supported.
+An organization ID consists of 1 to 32 decimal digits and must not start with 0.
+A project ID is 6 to 30 characters long, contains only lowercase letters, digits
+and hyphens, starts with a letter and must not end with a hyphen.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>key</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>key is required and is the short name of the pre-existing Resource Manager TagKey.
+A key is 1-63 characters, begins and ends with
+an ASCII alphanumeric character, and may contain letters, digits, &lsquo;.&rsquo;,
+&lsquo;_&rsquo;, or &lsquo;-&rsquo; between them.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>value</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>value is required and is the short name of the pre-existing Resource Manager TagValue for
+key. Exactly one value for a TagKey can be attached to a resource. A value
+is 1-63 characters, begins and ends with an ASCII alphanumeric character,
+and may contain ASCII letters and digits, <code>_-.@%=+:,*#&amp;()[]{}</code>, and
+spaces between them.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###GCPServiceAccountEmail { #hypershift.openshift.io/v1beta1.GCPServiceAccountEmail }
 <p>
 (<em>Appears on:</em>
@@ -9004,6 +9466,7 @@ This GSA requires the following IAM roles:
 - roles/dns.admin (DNS Admin - for managing DNS records)
 - roles/compute.networkAdmin (Compute Network Admin - for network management)
 - roles/compute.viewer (Compute Viewer - for CCM to read instance metadata)
+- roles/compute.securityAdmin (Security Admin - for managing worker firewall rules)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
@@ -9072,6 +9535,7 @@ GCPServiceAccountEmail
 that manages GCS storage for the internal container image registry.
 This GSA requires the following IAM roles:
 - roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
+- roles/resourcemanager.tagUser (Tag User - for applying resource tags to the bucket)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
@@ -13599,6 +14063,48 @@ string
 If omitted, the value will be inferred from the corev1.Service Load balancer type .status.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>loadBalancerClass</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>loadBalancerClass sets Service.spec.loadBalancerClass to select which
+LB controller provisions the Service. Required when the management
+cluster runs multiple LB controllers (e.g., F5 for management + MetalLB
+for tenant workloads). Maps to the Kubernetes Service field directly.
+Immutable after creation — matches Kubernetes semantics.
+Must be a valid Kubernetes qualified-name: an optional lowercase DNS
+subdomain prefix followed by &lsquo;/&rsquo; and a name segment starting and ending
+with an alphanumeric character (e.g., &ldquo;example.com/my-lb-class&rdquo;).
+Maximum length is 253 characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAnnotations</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceAnnotations is a map of annotations passed through to the
+LoadBalancer Service. The user provides the exact annotations their LB
+provider expects (e.g., metallb.io/loadBalancerIPs,
+service.beta.kubernetes.io/aws-load-balancer-eip-allocations).
+Immutable during TechPreview — set at creation, cannot be changed.
+Becomes mutable at GA when the Day 2 sidecar mechanism is in place.</p>
+<p>Annotations are applied per-key — existing annotations set by other
+controllers are preserved. HyperShift does not validate annotation
+values — correctness is the user&rsquo;s responsibility, same as setting
+annotations on any Kubernetes Service.
+Minimum 1, maximum 10 annotations per service.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###LogLevel { #hypershift.openshift.io/v1beta1.LogLevel }
@@ -14357,6 +14863,27 @@ which produces significantly higher metrics volume.</p>
 <tbody><tr><td><p>&#34;Disable&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;Enable&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
+###NSDelegationMode { #hypershift.openshift.io/v1beta1.NSDelegationMode }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSManagedDNSDelegationSpec">AWSManagedDNSDelegationSpec</a>)
+</p>
+<p>
+<p>NSDelegationMode specifies how NS delegation is performed for managed DNS zones.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ExternalDNS&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Manual&#34;</p></td>
 <td></td>
 </tr></tbody>
 </table>
@@ -15160,7 +15687,11 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>nodeLabels propagates a list of labels to Nodes, only once on creation.
+<p>nodeLabels propagates a list of labels to Nodes.
+Labels are re-synced additively whenever the desired state changes;
+labels set by other controllers (kubelet, autoscaler) are preserved.
+Removing a label from this map does NOT remove it from existing Nodes;
+only new values or key additions are propagated.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -15175,8 +15706,11 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 </td>
 <td>
 <em>(Optional)</em>
-<p>taints if specified, propagates a list of taints to Nodes, only once on creation.
-These taints are additive to the ones applied by other controllers</p>
+<p>taints if specified, propagates a list of taints to Nodes.
+Taints are re-synced whenever the desired state changes.
+These taints are additive to the ones applied by other controllers.
+Removing a taint from this list does NOT remove it from existing Nodes;
+only new taints are added and existing taint values are updated.</p>
 </td>
 </tr>
 <tr>
@@ -16424,6 +16958,22 @@ Setting the logLevel field triggers a rolling restart of the component.
 When omitted, this means the user has no opinion and the platform
 chooses a reasonable default, which is subject to change over time.
 The current default log level is Normal.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>csiDriverOperator,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CSIDriverOperatorSpec">
+CSIDriverOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>csiDriverOperator configures the CSI drivers of the hosted cluster.
+Settings are grouped by platform.</p>
+<p>When omitted, the CSI drivers use their default configuration.</p>
 </td>
 </tr>
 </tbody>

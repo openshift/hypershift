@@ -23,7 +23,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	awsprivatelink "github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	hcpinternalmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
@@ -32,6 +31,7 @@ import (
 	"github.com/openshift/hypershift/pkg/manifests"
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	hcmetrics "github.com/openshift/hypershift/pkg/metrics/hostedcluster"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
@@ -50,8 +50,6 @@ import (
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 
@@ -2863,7 +2861,7 @@ func createIngressRoute53Record(t *testing.T, ctx context.Context, client crclie
 		t.Fatalf("failed to lookup Route53 hosted zone (details elided)")
 	}
 
-	err = awsprivatelink.CreateRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, routerDefaultIP, route53types.RRTypeA)
+	err = supportawsutil.CreateRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, routerDefaultIP, route53types.RRTypeA)
 	if err != nil {
 		t.Fatalf("failed to create Route53 record (details elided)")
 	}
@@ -2896,7 +2894,7 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 		t.Fatalf("failed to lookup Route53 hosted zone (details elided)")
 	}
 
-	record, err := awsprivatelink.FindRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, route53types.RRTypeA)
+	record, err := supportawsutil.FindRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, route53types.RRTypeA)
 	if err != nil {
 		t.Fatalf("failed to find Route53 record (details elided)")
 	}
@@ -2904,7 +2902,7 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 	if record == nil || len(record.ResourceRecords) == 0 {
 		t.Logf("Route53 record for HostedCluster %s not found", hostedCluster.Name)
 	} else {
-		err = awsprivatelink.DeleteRecord(ctx, route53Client, zoneID, record)
+		err = supportawsutil.DeleteRecord(ctx, route53Client, zoneID, record)
 		redactedRecord := redactAppsRecord(clusterName, baseDomain)
 		if err != nil {
 			t.Fatalf("failed to delete Route53 record %s (details elided)", redactedRecord)
@@ -3472,60 +3470,6 @@ func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, h
 		if len(podsWithoutAppLabel) > 0 {
 			t.Fatalf("expected pods [%s] to have app label set", strings.Join(podsWithoutAppLabel, ", "))
 		}
-	})
-}
-
-func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) {
-	t.Run("EnsureDefaultSecurityGroupTags", func(t *testing.T) {
-		AtLeast(t, Version420)
-		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			t.Skip("This test is only applicable for AWS platform")
-		}
-		g := NewWithT(t)
-
-		tagsPolicy := fmt.Sprintf(`{
-			"Version": "2012-10-17",
-			"Statement": [
-				{
-					"Effect": "Allow",
-					"Action": [
-						"ec2:CreateTags",
-						"ec2:DeleteTags"
-					],
-					"Resource": "arn:aws:ec2:*:*:security-group/%s"
-				}
-			]
-		}`, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
-
-		cleanup, err := PutRolePolicy(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
-		defer func() {
-			err := cleanup()
-			g.Expect(err).NotTo(HaveOccurred(), "failed to cleanup role policy for tagging default security group")
-		}()
-
-		day2TagKey := "test-day2-tag"
-		day2TagValue := "test-day2-value"
-
-		// Update the hosted cluster to add a day2 tag
-		err = UpdateObject(t, ctx, client, hostedCluster, func(object *hyperv1.HostedCluster) {
-			object.Spec.Platform.AWS.ResourceTags = append(object.Spec.Platform.AWS.ResourceTags, hyperv1.AWSClusterResourceTag{
-				Key:   day2TagKey,
-				Value: day2TagValue,
-			})
-		})
-		g.Expect(err).NotTo(HaveOccurred(), "failed to update hostedcluster with day2 tag")
-
-		// Ensure that day2 tag is correctly applied to the default security group.
-		g.Eventually(func(g Gomega) {
-			sg, err := GetDefaultSecurityGroup(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get default security group")
-
-			g.Expect(sg.Tags).To(ContainElement(ec2types.Tag{
-				Key:   aws.String(day2TagKey),
-				Value: aws.String(day2TagValue),
-			}))
-		}).WithContext(ctx).WithTimeout(time.Minute * 10).WithPolling(time.Second).Should(Succeed())
 	})
 }
 

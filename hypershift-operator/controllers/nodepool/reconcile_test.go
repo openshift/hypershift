@@ -10,6 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	"github.com/openshift/hypershift/support/api"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -49,10 +50,12 @@ func TestReconcile(t *testing.T) {
 		name        string
 		patchErr    error
 		providerErr error
+		fallback    bool
 	}{
 		{name: "When AWS supplies native capacity and the legacy provider is absent, it should persist NodePool labels and taints through the full reconcile path"},
 		{name: "When patching scheduling metadata conflicts, it should return the conflict for controller backoff", patchErr: apierrors.NewConflict(schema.GroupResource{Group: capiv1.GroupVersion.Group, Resource: "machinedeployments"}, "workers", fmt.Errorf("resource version changed"))},
 		{name: "When capacity discovery fails transiently, it should retain the thirty second retry", providerErr: fmt.Errorf("capacity API unavailable")},
+		{name: "When AWS has no native capacity, it should persist dual-key fallback without changing rollout inputs", fallback: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,7 +71,6 @@ func TestReconcile(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					PayloadArch: hyperv1.AMD64, IgnitionEndpoint: "ignition.zone-check.example:443",
-					KubeConfig: &corev1.LocalObjectReference{Name: "guest-kubeconfig"},
 				},
 			}
 			np := &hyperv1.NodePool{
@@ -87,7 +89,7 @@ func TestReconcile(t *testing.T) {
 			ca := ignitionserver.IgnitionCACertSecret("clusters-zone-check")
 			ca.Data = map[string][]byte{corev1.TLSCertKey: []byte("unit-test-ca")}
 			pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: hc.Spec.PullSecret.Name, Namespace: hc.Namespace}, Data: map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)}}
-			objects := []client.Object{hc, np, ca, pullSecret}
+			objects := []client.Object{hc, np, ca, pullSecret, withKubeconfig(hc)}
 			for _, name := range []string{"fips", "ssh", "apiserver-haproxy"} {
 				objects = append(objects, &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ca.Namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}},
@@ -116,12 +118,15 @@ func TestReconcile(t *testing.T) {
 			delete(md.Annotations, taintsKey)
 			g.Expect(c.Update(t.Context(), md)).To(Succeed())
 			patchClient.patchErr = tc.patchErr
-			if tc.providerErr != nil {
+			if tc.providerErr != nil || tc.fallback {
 				template.Status.Capacity = nil
 				g.Expect(c.Status().Update(t.Context(), template)).To(Succeed(), "remove native capacity to exercise provider failure")
-				r.InstanceTypeProvider = &mockProvider{err: tc.providerErr}
+				r.InstanceTypeProvider = &mockProvider{err: tc.providerErr, info: &instancetype.InstanceTypeInfo{VCPU: 4, MemoryMb: 16384, GPU: 1}}
 				r.ScaleFromZeroPlatform = hyperv1.AWSPlatform
 			}
+			beforeSpec := md.Spec.DeepCopy()
+			beforeNodePool := &hyperv1.NodePool{}
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(np), beforeNodePool)).To(Succeed())
 			result, err := r.Reconcile(t.Context(), request)
 			if tc.patchErr != nil {
 				g.Expect(apierrors.IsConflict(err)).To(BeTrue(), "conflicts must reach controller-runtime even after wrapping")
@@ -137,6 +142,17 @@ func TestReconcile(t *testing.T) {
 			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(md), md)).To(Succeed())
 			g.Expect(md.Annotations).To(HaveKeyWithValue(labelsKey, "kubernetes.io/arch=amd64,topology.kubernetes.io/zone=eu-central-1b,workload=workload"))
 			g.Expect(md.Annotations).To(HaveKeyWithValue(taintsKey, "dedicated=workload:NoSchedule"))
+			g.Expect(md.Spec).To(Equal(*beforeSpec))
+			currentNodePool := &hyperv1.NodePool{}
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(np), currentNodePool)).To(Succeed())
+			g.Expect(currentNodePool.Annotations[nodePoolAnnotationCurrentConfig]).To(Equal(beforeNodePool.Annotations[nodePoolAnnotationCurrentConfig]))
+			g.Expect(currentNodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(Equal(beforeNodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]))
+			if tc.fallback {
+				g.Expect(md.Annotations).To(HaveKeyWithValue(capiCPUKey, "4"))
+				g.Expect(md.Annotations).To(HaveKeyWithValue(capiMemoryKey, "16384Mi"))
+				g.Expect(md.Annotations).To(HaveKeyWithValue(capiGPUCountKey, "1"))
+				g.Expect(md.Annotations).To(HaveKeyWithValue(capiGPUTypeKey, "nvidia.com/gpu"))
+			}
 		})
 	}
 }

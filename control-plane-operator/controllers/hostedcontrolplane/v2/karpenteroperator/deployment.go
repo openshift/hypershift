@@ -30,6 +30,8 @@ const (
 	KarpenterImageAzureEnvVar = "KARPENTER_IMAGE_AZURE"
 	// TokenMinterImageEnvVar is the environment variable that sets the Token Minter image.
 	TokenMinterImageEnvVar = "TOKEN_MINTER_IMAGE"
+	// DefaultSecurityContextUIDEnvVar sets the operand pods' runAsUser and fsGroup on management clusters without SCC.
+	DefaultSecurityContextUIDEnvVar = "DEFAULT_SECURITY_CONTEXT_UID"
 )
 
 func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -190,6 +192,13 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 				Value: "1",
 			},
 		)
+	}
+
+	if cpContext.SetDefaultSecurityContext {
+		extraEnvVars = append(extraEnvVars, corev1.EnvVar{
+			Name:  DefaultSecurityContextUIDEnvVar,
+			Value: strconv.FormatInt(cpContext.DefaultSecurityContextUID, 10),
+		})
 	}
 
 	if platformType == hyperv1.AWSPlatform {

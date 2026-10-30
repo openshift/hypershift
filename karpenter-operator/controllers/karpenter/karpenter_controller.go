@@ -71,9 +71,6 @@ type Reconciler struct {
 	KarpenterComponent        controlplanecomponent.ControlPlaneComponent
 	ControlPlaneContext       controlplanecomponent.ControlPlaneContext
 	ReleaseProvider           releaseinfo.Provider
-	// StandaloneAdapter selects HyperShift responsibilities that are not owned by the standalone operator.
-	StandaloneAdapter bool
-
 	upsert.CreateOrUpdateProvider
 }
 
@@ -82,50 +79,48 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, man
 	r.GuestClient = mgr.GetClient()
 	r.CreateOrUpdateProvider = upsert.New(false)
 
+	// First install the CRDs so we can create a watch below.
+	if err := r.reconcileCRDs(ctx, true); err != nil {
+		return err
+	}
+
 	c, err := controller.New("karpenter", mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
 
-	if !r.StandaloneAdapter {
-		// Reconcile CRDs only in the embedded karpenter operator and before registering watches.
-		if err := r.reconcileCRDs(ctx, true); err != nil {
-			return err
-		}
+	// Watch CRDs guest side.
+	if err := c.Watch(source.Kind[client.Object](mgr.GetCache(), &apiextensionsv1.CustomResourceDefinition{}, handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, o client.Object) []ctrl.Request {
+			// Only watch our Karpenter CRDs
+			switch o.GetName() {
+			case "ec2nodeclasses.karpenter.k8s.aws",
+				"nodepools.karpenter.sh",
+				"nodeclaims.karpenter.sh":
+				return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: r.Namespace}}}
+			}
+			return nil
+		},
+	))); err != nil {
+		return fmt.Errorf("failed to watch CRDs: %w", err)
+	}
 
-		// Watch CRDs guest side.
-		if err := c.Watch(source.Kind[client.Object](mgr.GetCache(), &apiextensionsv1.CustomResourceDefinition{}, handler.EnqueueRequestsFromMapFunc(
-			func(ctx context.Context, o client.Object) []ctrl.Request {
-				// Only watch our Karpenter CRDs
-				switch o.GetName() {
-				case "ec2nodeclasses.karpenter.k8s.aws",
-					"nodepools.karpenter.sh",
-					"nodeclaims.karpenter.sh":
-					return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: r.Namespace}}}
-				}
+	// Watch EC2NodeClass guest side.
+	if err := c.Watch(source.Kind(mgr.GetCache(), &awskarpenterv1.EC2NodeClass{},
+		&handler.TypedEnqueueRequestForObject[*awskarpenterv1.EC2NodeClass]{})); err != nil {
+		return fmt.Errorf("failed to watch EC2NodeClass: %w", err)
+	}
+
+	// Watch the karpenter Deployment management side.
+	if err := c.Watch(source.Kind[client.Object](managementCluster.GetCache(), &appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(
+		func(ctx context.Context, o client.Object) []ctrl.Request {
+			if o.GetNamespace() != r.Namespace || o.GetName() != "karpenter" {
 				return nil
-			},
-		))); err != nil {
-			return fmt.Errorf("failed to watch CRDs: %w", err)
-		}
-
-		// Watch EC2NodeClass guest side.
-		if err := c.Watch(source.Kind(mgr.GetCache(), &awskarpenterv1.EC2NodeClass{},
-			&handler.TypedEnqueueRequestForObject[*awskarpenterv1.EC2NodeClass]{})); err != nil {
-			return fmt.Errorf("failed to watch EC2NodeClass: %w", err)
-		}
-
-		// Watch the karpenter Deployment management side.
-		if err := c.Watch(source.Kind[client.Object](managementCluster.GetCache(), &appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(
-			func(ctx context.Context, o client.Object) []ctrl.Request {
-				if o.GetNamespace() != r.Namespace || o.GetName() != "karpenter" {
-					return nil
-				}
-				return []ctrl.Request{{NamespacedName: client.ObjectKeyFromObject(o)}}
-			},
-		))); err != nil {
-			return fmt.Errorf("failed to watch Deployment: %w", err)
-		}
+			}
+			return []ctrl.Request{{NamespacedName: client.ObjectKeyFromObject(o)}}
+		},
+	))); err != nil {
+		return fmt.Errorf("failed to watch Deployment: %w", err)
 	}
 
 	namespacedPredicates := predicate.NewPredicateFuncs(func(object client.Object) bool {
@@ -249,22 +244,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	// Moved here from hypershift operator. Consumed by our ignition controller to taint our nodes
-	// on firstboot so our nodes don't get workloads on them until karpenter okays it. Centralized here
-	// so each nodeclass doesn't need its own separate taint configmap.
-	if err := r.reconcileTaintConfigMap(ctx, hcp); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile taint configmap: %w", err)
-	}
-
 	// Reconcile AutoNode status before the release image lookup so node/nodeclaim counts
 	// are always updated even if the release image lookup fails during/after a control plane upgrade.
 	if err := r.reconcileAutoNodeStatus(ctx, hcp); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile AutoNode status: %w", err)
-	}
-
-	// Standalone operator owns provider deployment, upstream CRDs, and the default NodeClass.
-	if r.StandaloneAdapter {
-		return ctrl.Result{}, nil
 	}
 
 	if hcp.Annotations[hyperkarpenterv1.KarpenterCoreE2EOverrideAnnotation] != "true" {
@@ -379,25 +362,6 @@ func sumNodeClaimVCPUs(nodeClaims []karpenterv1.NodeClaim, liveNodes map[string]
 		}
 	}
 	return int32(total)
-}
-
-// reconcileTaintConfigMap ensures the set-karpenter-taint ConfigMap exists in the HCP namespace.
-func (r *Reconciler) reconcileTaintConfigMap(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      karpenterutil.KarpenterTaintConfigMapName,
-			Namespace: hcp.Namespace,
-		},
-	}
-	_, err := r.CreateOrUpdate(ctx, r.ManagementClient, cm, func() error {
-		manifest, err := karpenterutil.KarpenterTaintConfigManifest()
-		if err != nil {
-			return fmt.Errorf("failed to generate taint config manifest: %w", err)
-		}
-		cm.Data = map[string]string{"config": manifest}
-		return nil
-	})
-	return err
 }
 
 // reconcileCRDs reconcile the Karpenter CRDs, if onlyCreate is true it uses an only write non cached client.

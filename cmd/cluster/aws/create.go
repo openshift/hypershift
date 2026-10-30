@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
@@ -62,6 +63,8 @@ type RawCreateOptions struct {
 	AutoNode                         bool
 	UseROSAManagedPolicies           bool
 	SharedRole                       bool
+	ManagedDNS                       bool
+	InitialStorageVolumesKMSKey      string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -282,6 +285,12 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			EndpointAccess: endpointAccess,
 		},
 	}
+	if o.ManagedDNS {
+		// Enables CPO-managed Route53 ingress DNS. ingressDomainPrefix is required
+		// when managedDNS is set; the CLI uses "in" as the ingress subdomain.
+		// The field is gated by the AWSManagedDNS feature gate (TechPreviewNoUpgrade).
+		cluster.Spec.Platform.AWS.ManagedDNS = hyperv1.AWSManagedDNSSpec{IngressDomainPrefix: "in"}
+	}
 	if o.AutoNode {
 		cluster.Spec.AutoNode = hyperv1.AutoNode{
 			Provisioner: hyperv1.ProvisionerConfig{
@@ -342,6 +351,17 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			},
 		}
 	}
+	if o.InitialStorageVolumesKMSKey != "" {
+		if cluster.Spec.OperatorConfiguration == nil {
+			cluster.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+		}
+		cluster.Spec.OperatorConfiguration.CSIDriverOperator = hyperv1.CSIDriverOperatorSpec{
+			AWS: hyperv1.AWSCSIDriverConfig{
+				InitialKMSKeyARN: o.InitialStorageVolumesKMSKey,
+			},
+		}
+	}
+
 	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, o.externalDNSDomain != "", false)
 	if o.externalDNSDomain != "" {
 		for i, svc := range cluster.Spec.Services {
@@ -520,6 +540,9 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, creates a cluster that does not have private subnets or NAT gateway and assigns public IPs to all instances.")
 	flags.BoolVar(&opts.UseROSAManagedPolicies, "use-rosa-managed-policies", opts.UseROSAManagedPolicies, "Use ROSA managed policies for the operator roles and worker instance profile")
 	flags.BoolVar(&opts.SharedRole, "shared-role", opts.SharedRole, "Create a single shared role with all role policies instead of individual component roles")
+	flags.BoolVar(&opts.ManagedDNS, "managed-dns", opts.ManagedDNS, "If true, enables CPO-managed Route53 ingress DNS (spec.platform.aws.managedDNS). Requires the AWSManagedDNS feature gate (TechPreviewNoUpgrade).")
+	flags.StringVar(&opts.InitialStorageVolumesKMSKey, "initial-storage-volumes-kms-key", opts.InitialStorageVolumesKMSKey, "AWS KMS key ARN or alias ARN used to encrypt the EBS volumes provisioned by the default StorageClass. Applied once at cluster creation; if omitted, EBS volumes use AWS-managed encryption.")
+
 	_ = flags.MarkDeprecated("multi-arch", "Multi-arch validation is now performed automatically based on the release image and signaled in the HostedCluster.Status.PayloadArch.")
 }
 
@@ -600,6 +623,7 @@ func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInf
 		CreateKarpenterRoleARN:       awsOpts.AutoNode,
 		UseROSAManagedPolicies:       awsOpts.UseROSAManagedPolicies,
 		SharedRole:                   awsOpts.SharedRole,
+		ManagedDNS:                   awsOpts.ManagedDNS,
 	}
 }
 
@@ -634,6 +658,32 @@ func validateAWSOptions(ctx context.Context, opts *core.CreateOptions, awsOpts *
 
 	if err := awsutil.ValidateVPCCIDR(awsOpts.VPCCIDR); err != nil {
 		return err
+	}
+
+	if err := validateInitialStorageVolumesKMSKey(awsOpts.InitialStorageVolumesKMSKey, awsOpts.Region); err != nil {
+		return err
+	}
+	return nil
+}
+
+// initialStorageVolumesKMSKeyRegex mirrors the CEL validation on
+// spec.operatorConfiguration.csiDriverOperator.aws.initialKMSKeyARN so that a
+// malformed key is rejected before Complete() provisions the VPC and IAM roles,
+// rather than only at HostedCluster admission time (after infrastructure exists).
+var initialStorageVolumesKMSKeyRegex = regexp.MustCompile(`^arn:(aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f):kms:([a-z](?:[a-z0-9]|-[a-z0-9])*):[0-9]{12}:(key|alias)/.+$`)
+
+// validateInitialStorageVolumesKMSKey checks that the KMS key ARN is well-formed
+// and in the same region as the cluster. It is a no-op when no key is set.
+func validateInitialStorageVolumesKMSKey(kmsKeyARN, region string) error {
+	if kmsKeyARN == "" {
+		return nil
+	}
+	matches := initialStorageVolumesKMSKeyRegex.FindStringSubmatch(kmsKeyARN)
+	if matches == nil {
+		return fmt.Errorf("--initial-storage-volumes-kms-key must be a valid AWS KMS key ARN in the format arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>, got %q", kmsKeyARN)
+	}
+	if keyRegion := matches[2]; region != "" && keyRegion != region {
+		return fmt.Errorf("--initial-storage-volumes-kms-key must reference a key in the cluster region %q, but the key is in region %q", region, keyRegion)
 	}
 	return nil
 }

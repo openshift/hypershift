@@ -62,6 +62,23 @@ const (
 	// alpha: v0.1.49
 	// beta: x.y.z
 	DeterministicLBIP featuregate.Feature = "DeterministicLBIP"
+
+	// AWSManagedDNS enables CPO-managed Route53 DNS zones for AWS hosted control planes.
+	// When enabled, the managedDNS field is available on AWSPlatformSpec, allowing the
+	// CPO to create and reconcile ingress DNS zones in the customer's AWS account.
+	// owner: @typeid
+	// alpha: v0.1.84
+	AWSManagedDNS featuregate.Feature = "AWSManagedDNS"
+
+	// KubeletHAProxyRouting gates the kubelet-through-HAProxy routing change on all public
+	// HCPs. When enabled, the bootstrap kubeconfig points kubelet at the node-local HAProxy
+	// advertise address instead of the KAS LB address, so a Day 2 LB IP change does not
+	// strand nodes. Private clusters keep using internal DNS and are unaffected.
+	// Registered here for HYPERSHIFT_FEATURESET propagation and Day 2 transition work
+	// (CNTRLPLANE-4799/4800). Runtime gate check is in CPO's adaptBootstrapKubeconfigSecret.
+	// owner: @jparrill
+	// alpha: v0.1.84
+	KubeletHAProxyRouting featuregate.Feature = "KubeletHAProxyRouting"
 )
 
 // Initialize new features here
@@ -76,6 +93,8 @@ var (
 	etcdShardingFeature            = featuregates.NewFeature(EtcdSharding, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	osStreamsFeature               = featuregates.NewFeature(OSStreams, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 	deterministicLBIPFeature       = featuregates.NewFeature(DeterministicLBIP, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	awsManagedDNSFeature           = featuregates.NewFeature(AWSManagedDNS, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	kubeletHAProxyRoutingFeature   = featuregates.NewFeature(KubeletHAProxyRouting, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -88,6 +107,8 @@ func init() {
 	allFeatures.AddFeature(etcdShardingFeature)
 	allFeatures.AddFeature(osStreamsFeature)
 	allFeatures.AddFeature(deterministicLBIPFeature)
+	allFeatures.AddFeature(awsManagedDNSFeature)
+	allFeatures.AddFeature(kubeletHAProxyRoutingFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))

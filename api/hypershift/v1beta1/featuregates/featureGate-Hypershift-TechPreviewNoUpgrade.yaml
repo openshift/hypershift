@@ -23,6 +23,9 @@
                         "name": "HyperShiftOnlyDynamicResourceAllocation"
                     },
                     {
+                        "name": "IngressComponentRouteLabels"
+                    },
+                    {
                         "name": "NetworkDiagnosticsConfig"
                     },
                     {
@@ -60,6 +63,12 @@
                     },
                     {
                         "name": "DeterministicLBIP"
+                    },
+                    {
+                        "name": "AWSManagedDNS"
+                    },
+                    {
+                        "name": "TLSGroupPreferences"
                     }
                 ],
                 "version": ""

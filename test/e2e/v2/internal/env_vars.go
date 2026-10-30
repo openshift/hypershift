@@ -144,6 +144,16 @@ func init() {
 		false,
 	)
 	RegisterEnvVar(
+		"KUBECONFIG_SOURCE",
+		"Management-cluster kubeconfig for the source role in a cross-cluster restore test.",
+		false,
+	)
+	RegisterEnvVar(
+		"KUBECONFIG_TARGET",
+		"Management-cluster kubeconfig for the target role in a cross-cluster restore test.",
+		false,
+	)
+	RegisterEnvVar(
 		"E2E_SHOW_ENV_HELP",
 		"When set to any non-empty value, displays environment variable help and exits without running tests.",
 		false,
@@ -229,12 +239,6 @@ func init() {
 	RegisterEnvVar(
 		"RUN_KARPENTER_TESTS",
 		"When the value is exactly \"true\", it lowers the minimum hosted-cluster version from 4.23 to 4.22.",
-		false,
-	)
-	// TODO: Should this be a capability check?
-	RegisterEnvVar(
-		"AWS_MULTI_ARCH",
-		"Enable multi-arch cluster tests on AWS",
 		false,
 	)
 }

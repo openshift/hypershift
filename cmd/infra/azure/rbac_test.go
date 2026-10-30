@@ -660,6 +660,42 @@ func TestCleanupRoleAssignments(t *testing.T) {
 	dnsZoneScope := "/subscriptions/" + subscriptionID + "/resourceGroups/" + dnsZoneRG
 	vnetRGScope := "/subscriptions/" + subscriptionID + "/resourceGroups/" + vnetRG
 
+	t.Run("When create and destroy use different scope casing, it should delete the created DNS and network assignments", func(t *testing.T) {
+		assignments := map[string]bool{}
+		mock := &mockRoleAssignmentClient{
+			getFunc: func(context.Context, string, string, *azureauth.RoleAssignmentsClientGetOptions) (azureauth.RoleAssignmentsClientGetResponse, error) {
+				return azureauth.RoleAssignmentsClientGetResponse{}, notFoundError()
+			},
+			createFunc: func(_ context.Context, scope, name string, _ azureauth.RoleAssignmentCreateParameters, _ *azureauth.RoleAssignmentsClientCreateOptions) (azureauth.RoleAssignmentsClientCreateResponse, error) {
+				assignments[strings.ToLower(scope)+"/"+name] = true
+				return azureauth.RoleAssignmentsClientCreateResponse{}, nil
+			},
+			deleteFunc: func(_ context.Context, scope, name string, _ *azureauth.RoleAssignmentsClientDeleteOptions) (azureauth.RoleAssignmentsClientDeleteResponse, error) {
+				key := strings.ToLower(scope) + "/" + name
+				if !assignments[key] {
+					return azureauth.RoleAssignmentsClientDeleteResponse{}, notFoundError()
+				}
+				delete(assignments, key)
+				return azureauth.RoleAssignmentsClientDeleteResponse{}, nil
+			},
+		}
+		manager := &RBACManager{subscriptionID: subscriptionID}
+		for _, scope := range []string{dnsZoneScope, vnetRGScope} {
+			if err := manager.assignRole(t.Context(), mock, infraID, config.Ingress, "principal", config.NetworkContributorRoleDefinitionID, strings.ToUpper(scope)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if len(assignments) != 2 {
+			t.Fatalf("expected two assignments to be created, got %d", len(assignments))
+		}
+		if err := manager.cleanupRoleAssignments(t.Context(), discardLogger(), mock, infraID, managedRG, nsgRG, vnetRG, dnsZoneRG, false); err != nil {
+			t.Fatal(err)
+		}
+		if len(assignments) != 0 {
+			t.Fatalf("cleanup missed %d assignments created with different scope casing", len(assignments))
+		}
+	})
+
 	t.Run("When all assignments exist it should delete all control plane and data plane assignments", func(t *testing.T) {
 		g := NewWithT(t)
 

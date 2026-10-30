@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/openstack"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -281,11 +282,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
 		return none.DestroyCluster(ctx, opts, client)
 	case hyperv1.AzurePlatform:
-		opts.AzurePlatform = core.AzurePlatformDestroyOptions{
-			CredentialsFile: createOpts.AzurePlatform.CredentialsFile,
-			Location:        createOpts.AzurePlatform.Location,
-		}
-		return azure.DestroyCluster(ctx, opts, client)
+		return destroyAzureCluster(ctx, opts, createOpts, client, azure.DestroyCluster)
 	case hyperv1.PowerVSPlatform:
 		opts.PowerVSPlatform = core.PowerVSPlatformDestroyOptions{
 			BaseDomain:             createOpts.BaseDomain,
@@ -307,6 +304,44 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 	default:
 		return fmt.Errorf("unsupported cluster platform %s", hc.Spec.Platform.Type)
 	}
+}
+
+func destroyAzureCluster(ctx context.Context, opts *core.DestroyOptions, createOpts *PlatformAgnosticOptions, client crclient.Client, destroy func(context.Context, *core.DestroyOptions, crclient.Client) error) error {
+	azureOpts := createOpts.AzurePlatform
+	nsgRG := azureOpts.ResourceGroupName
+	vnetRG := azureOpts.ResourceGroupName
+	if nsgRG == "" {
+		nsgRG = createOpts.Name + "-nsg-" + createOpts.InfraID
+		vnetRG = createOpts.Name + "-vnet-" + createOpts.InfraID
+	}
+	if azureOpts.NetworkSecurityGroupID != "" {
+		var err error
+		_, nsgRG, err = azureutil.GetNameAndResourceGroupFromNetworkSecurityGroupID(azureOpts.NetworkSecurityGroupID)
+		if err != nil {
+			return err
+		}
+	}
+	if azureOpts.VnetID != "" {
+		var err error
+		_, vnetRG, err = azureutil.GetVnetNameAndResourceGroupFromVnetID(azureOpts.VnetID)
+		if err != nil {
+			return err
+		}
+	}
+	var cleanupErr error
+	opts.AzurePlatform = core.AzurePlatformDestroyOptions{
+		CredentialsFile:       azureOpts.CredentialsFile,
+		Location:              azureOpts.Location,
+		ResourceGroupName:     azureOpts.ResourceGroupName,
+		DNSZoneRGName:         azureOpts.DNSZoneRGName,
+		NSGResourceGroupName:  nsgRG,
+		VnetResourceGroupName: vnetRG,
+		OnRoleAssignmentCleanupError: func(err error) {
+			cleanupErr = err
+		},
+	}
+	destroyErr := destroy(ctx, opts, client)
+	return utilerrors.NewAggregate([]error{cleanupErr, destroyErr})
 }
 
 // validateAWSGuestResourcesDeletedFunc waits for 15min or until the guest cluster resources are gone.
@@ -488,7 +523,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
-			err = dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig)
+			err = dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, nil, artifactDir, opts.Kubeconfig)
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
@@ -497,8 +532,14 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 				t.Logf("Failed to dump machine journals; this is nonfatal: %v", err)
 			}
 			return utilerrors.NewAggregate(dumpErrors)
+		case hyperv1.AzurePlatform:
+			if err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies,
+				&clusterdump.AzureDumpOptions{CredentialsFile: opts.AzurePlatform.CredentialsFile}, artifactDir, opts.Kubeconfig); err != nil {
+				return fmt.Errorf("failed to dump hosted cluster: %w", err)
+			}
+			return nil
 		default:
-			err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, artifactDir, opts.Kubeconfig)
+			err := dump.DumpHostedCluster(ctx, t, hc, isDumpingGuestCluster, noDumpGuestClusterPolicies, nil, artifactDir, opts.Kubeconfig)
 			if err != nil {
 				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}

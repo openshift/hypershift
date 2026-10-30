@@ -12,10 +12,12 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ClusterSpec describes a single cluster to create for lifecycle tests.
+// ClusterSpec describes a single cluster and its CLI arguments for lifecycle tests.
 type ClusterSpec struct {
 	Variant      string   `json:"variant"`
-	ExtraArgs    []string `json:"extraArgs,omitempty"`
+	CreateArgs   []string `json:"createArgs,omitempty"`
+	DestroyArgs  []string `json:"destroyArgs,omitempty"`
+	DumpArgs     []string `json:"dumpArgs,omitempty"`
 	ReleaseImage string   `json:"releaseImage,omitempty"` // override (empty = use default)
 
 	// InitialNodePoolReplicas overrides the default initial NodePool replica count.
@@ -168,13 +170,13 @@ type PlatformConfig interface {
 	DefaultBaseDomain() string
 
 	// ClusterSpecs returns the cluster variants this platform creates.
-	// The releaseImage and n1Image are the current and N-1 release
-	// images from the CI environment.
-	ClusterSpecs(releaseImage, n1Image string) []ClusterSpec
-
-	// CreateArgs returns platform-specific args for
-	// "hypershift create cluster <platform>".
-	CreateArgs() []string
+	//
+	// Arguments:
+	//   - ctx:          used for cancellable setup I/O (e.g. resolving a KMS key alias to an ARN).
+	//   - releaseImage: pullspec of the current release under test (a tag or digest
+	//     reference, not an OCP version string).
+	//   - n1Image:      pullspec of the N-1 release used as the upgrade starting point.
+	ClusterSpecs(ctx context.Context, releaseImage, n1Image string) []ClusterSpec
 
 	// PreCreate runs platform-specific setup before clusters are
 	// created (e.g., deploying OIDC providers that must be ready
@@ -209,10 +211,6 @@ type PlatformConfig interface {
 	// before test execution (e.g., reading subnet IDs from
 	// SHARED_DIR files).
 	SetupTestEnv(sharedDir string)
-
-	// DestroyArgs returns platform-specific args for
-	// "hypershift destroy cluster <platform>".
-	DestroyArgs() []string
 }
 
 // NewPlatformConfig creates a PlatformConfig for the given platform
@@ -228,8 +226,10 @@ func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
 			Zones:     envOrDefault("HYPERSHIFT_AWS_ZONES", "us-east-1a"),
 			ProwJobId: envOrDefault("PROW_JOB_ID", ""),
 		}, sharedDir), nil
+	case "gcp":
+		return NewGCPPlatformConfig(sharedDir)
 	default:
-		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws)", platform)
+		return nil, fmt.Errorf("unsupported platform %q (supported: azure, aws, gcp)", platform)
 	}
 }
 

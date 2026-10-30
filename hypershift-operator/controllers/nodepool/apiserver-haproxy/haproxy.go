@@ -42,8 +42,30 @@ import (
 
 const (
 	ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel = "io.openshift.hypershift.control-plane-operator-skips-haproxy"
-	HAProxyRouterImageName                                = "haproxy-router"
 )
+
+var (
+	// HAProxyImageNames lists the component image names, in preferred order,
+	// under which the release payload may publish the HAProxy image. Older
+	// and newer release payloads use different names for this component, so each
+	// name is tried in order and the first one present in the payload is used.
+	HAProxyImageNames = []string{
+		"haproxy-router-haproxy32",
+		"haproxy-router",
+	}
+)
+
+// ResolveHAProxyImage returns the HAProxy image from componentImages,
+// trying each name in HAProxyRouterImageNames in order. It only returns an
+// error when none of the known image names are present.
+func ResolveHAProxyImage(componentImages map[string]string) (string, error) {
+	for _, name := range HAProxyImageNames {
+		if image, ok := componentImages[name]; ok && image != "" {
+			return image, nil
+		}
+	}
+	return "", fmt.Errorf("release image doesn't have any of the expected haproxy router images: %v", HAProxyImageNames)
+}
 
 type HAProxy struct {
 	crclient.Client
@@ -419,6 +441,7 @@ func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string
 			"k8s-app": name,
 		}
 		pod.Spec.HostNetwork = true
+		pod.Spec.DNSPolicy = corev1.DNSDefault
 		pod.Spec.PriorityClassName = "system-node-critical"
 		pod.Spec.Volumes = []corev1.Volume{
 			{

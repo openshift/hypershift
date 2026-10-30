@@ -155,10 +155,6 @@ func checkCRDsInDir(repoRoot, dir string, repo *gogit.Repository, baseHash *plum
 			continue
 		}
 
-		if skipFeatureGateVariant(entry.Name()) {
-			continue
-		}
-
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return results, fmt.Errorf("reading file %s: %w", path, err)
@@ -301,15 +297,6 @@ func filterVersionsWithSchema(crd *apiextensionsv1.CustomResourceDefinition) *ap
 	}
 	out.Spec.Versions = filtered
 	return out
-}
-
-// skipFeatureGateVariant returns true for featuregate CRD variants that should
-// be skipped. Only the CustomNoUpgrade variant (the superset schema containing
-// all fields) is checked. Default and TechPreviewNoUpgrade variants would
-// produce false positives when fields move between featuregate levels.
-func skipFeatureGateVariant(filename string) bool {
-	return strings.HasSuffix(filename, "-Default.crd.yaml") ||
-		strings.HasSuffix(filename, "-TechPreviewNoUpgrade.crd.yaml")
 }
 
 // findRepoRoot walks up from cwd to find the .git directory.

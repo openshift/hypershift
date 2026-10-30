@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -109,9 +110,10 @@ func setupCmdContext(cmdContext context.Context) context.Context {
 }
 
 type etcdStatus struct {
-	failingPod    *string
-	missingMember *string
-	recoverable   bool
+	failingPod      *string
+	missingMember   *string
+	recoverable     bool
+	nodeUnreachable bool // true when the failing pod was evicted by the taint manager (unreachable node)
 }
 
 func (s *etcdStatus) isUnhealthy() bool {
@@ -148,6 +150,9 @@ func (s *etcdStatus) String() string {
 	}
 	if s.failingPod != nil {
 		status = append(status, fmt.Sprintf("failing pod: %s", *s.failingPod))
+	}
+	if s.nodeUnreachable {
+		status = append(status, "node unreachable")
 	}
 	if !s.recoverable {
 		status = append(status, "broken: NOT RECOVERABLE")
@@ -239,7 +244,7 @@ func runStatus(ctx context.Context, opts options) (*etcdStatus, error) {
 		return nil, err
 	}
 
-	return checkEtcdStatus(ctx, opts, eclient, kclient)
+	return checkEtcdStatus(ctx, opts, eclient, kclient, isEndpointHealthy)
 }
 
 // missingMember determines which of the 3 etcd members is missing
@@ -247,7 +252,7 @@ func runStatus(ctx context.Context, opts options) (*etcdStatus, error) {
 func missingMember(member1, member2 *etcdserverpb.Member) *string {
 	names := sets.New[string]()
 	for _, m := range []*etcdserverpb.Member{member1, member2} {
-		names.Insert(m.Name)
+		names.Insert(memberName(m))
 	}
 	for _, m := range []string{"etcd-0", "etcd-1", "etcd-2"} {
 		if !names.Has(m) {
@@ -257,7 +262,34 @@ func missingMember(member1, member2 *etcdserverpb.Member) *string {
 	return nil
 }
 
-func checkEtcdStatus(ctx context.Context, opts options, etcdClient *etcdclient.Client, k crclient.Client) (*etcdStatus, error) {
+// memberLister is the subset of the etcd client needed to fetch the cluster member list.
+type memberLister interface {
+	MemberList(ctx context.Context, opts ...etcdclient.OpOption) (*etcdclient.MemberListResponse, error)
+}
+
+// endpointHealthChecker reports whether the etcd endpoint of a member is healthy.
+type endpointHealthChecker func(ctx context.Context, opts options, name, endpointURL string) bool
+
+// memberName returns the name of an etcd member. A member that has been added to the
+// cluster but whose etcd process has not started and advertised itself yet is reported
+// by etcd without a name, so fall back to the host of its peer URL, which has the form
+// https://etcd-0.etcd-discovery.<namespace>.svc:2380
+func memberName(member *etcdserverpb.Member) string {
+	if member.Name != "" {
+		return member.Name
+	}
+	if len(member.PeerURLs) == 0 {
+		return ""
+	}
+	peerURL, err := url.Parse(member.PeerURLs[0])
+	if err != nil {
+		return ""
+	}
+	name, _, _ := strings.Cut(peerURL.Hostname(), ".")
+	return name
+}
+
+func checkEtcdStatus(ctx context.Context, opts options, etcdClient memberLister, k crclient.Client, isHealthy endpointHealthChecker) (*etcdStatus, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	result := &etcdStatus{recoverable: true}
@@ -287,11 +319,18 @@ func checkEtcdStatus(ctx context.Context, opts options, etcdClient *etcdclient.C
 	memberHealth := map[string]bool{}
 	// Determine member health by looking at their endpoint health
 	for _, member := range etcdMemberList.Members {
-		if len(member.ClientURLs) != 1 {
-			return nil, fmt.Errorf("member %s does not have an expected client URL: %v", member.Name, member.ClientURLs)
+		name := memberName(member)
+		// A member that has been added to the cluster but has not started yet advertises
+		// no client URLs. There is no endpoint to health check, so it counts as unhealthy.
+		if len(member.ClientURLs) == 0 {
+			log.Info("member has not advertised any client URL, treating it as unhealthy", "member", name)
+			memberHealth[name] = false
+			continue
 		}
-		clientURL := member.ClientURLs[0]
-		memberHealth[member.Name] = isEndpointHealthy(ctx, opts, member.Name, clientURL)
+		if len(member.ClientURLs) > 1 {
+			return nil, fmt.Errorf("member %s does not have an expected client URL: %v", name, member.ClientURLs)
+		}
+		memberHealth[name] = isHealthy(ctx, opts, name, member.ClientURLs[0])
 	}
 	result.recoverable = isRecoverableMemberHealth(ctx, memberHealth)
 	if !result.recoverable {
@@ -316,26 +355,24 @@ func checkEtcdStatus(ctx context.Context, opts options, etcdClient *etcdclient.C
 		return nil, fmt.Errorf("failed to list etcd pods: %w", err)
 	}
 
-	var failingPods []corev1.Pod
-	for _, pod := range podList.Items {
-		for _, containerStatus := range pod.Status.ContainerStatuses {
-			if containerStatus.Name != "etcd" {
-				continue
-			}
-			if containerStatus.State.Waiting != nil && containerStatus.RestartCount > 0 {
-				log.Info("pod is unhealthy", "pod", crclient.ObjectKeyFromObject(&pod).String())
-				failingPods = append(failingPods, pod)
-			} else {
-				log.Info("pod is healthy", "pod", crclient.ObjectKeyFromObject(&pod).String())
-			}
-		}
-	}
+	failingPods, nodeUnreachable := classifyEtcdPods(ctx, podList.Items)
 
 	switch len(failingPods) {
 	case 0:
 		// Expected: all pods healthy
 	case 1:
 		result.failingPod = ptr.To(failingPods[0].Name)
+		result.nodeUnreachable = nodeUnreachable
+		// Recovering deletes the failing pod's data. If a different member is also
+		// unhealthy, that would leave only one member serving and risk losing quorum,
+		// so require the failing pod to be the unhealthy member.
+		for name, healthy := range memberHealth {
+			if !healthy && name != *result.failingPod {
+				result.recoverable = false
+				log.Info("Failing pod is not the unhealthy member. Etcd cluster is not recoverable",
+					"failingPod", *result.failingPod, "unhealthyMember", name)
+			}
+		}
 	default:
 		result.recoverable = false
 		log.Info("More than one failing pod was found. Etcd cluster is not recoverable", "pods", podNames(failingPods))
@@ -381,14 +418,9 @@ func recoverEtcd(ctx context.Context, opt options, status etcdStatus) error {
 		log.Error(err, "failed to get kubernetes client")
 		return err
 	}
-	log.Info("Deleting pvc", "pvc", crclient.ObjectKeyFromObject(pvc))
-	if _, err := k8sutil.DeleteIfNeeded(ctx, kclient, pvc); err != nil {
-		log.Error(err, "failed to delete pvc", "pvc", crclient.ObjectKeyFromObject(pvc))
-	}
 
-	log.Info("Deleting pod", "pod", crclient.ObjectKeyFromObject(pod))
-	if _, err := k8sutil.DeleteIfNeeded(ctx, kclient, pod); err != nil {
-		log.Error(err, "failed to delete pod", "pod", crclient.ObjectKeyFromObject(pod))
+	if err := deleteEtcdMemberResources(ctx, kclient, pod, pvc, status.nodeUnreachable); err != nil {
+		return err
 	}
 
 	log.Info("Etcd recovery actions completed")
@@ -540,6 +572,115 @@ func etcdStatefulSet(ns string) *appsv1.StatefulSet {
 			Namespace: ns,
 		},
 	}
+}
+
+// classifyEtcdPods iterates over the given etcd pods and returns those that are failing,
+// along with whether any of them are on an unreachable node.
+//
+// A pod is considered failing if:
+// - It has been evicted by the taint manager due to an unreachable node (see isPodOnUnreachableNode), OR
+// - Its "etcd" container is in a Waiting state with RestartCount > 0 (crash-looping)
+func classifyEtcdPods(ctx context.Context, pods []corev1.Pod) (failingPods []corev1.Pod, nodeUnreachable bool) {
+	log := ctrl.LoggerFrom(ctx)
+	for _, pod := range pods {
+		// Check if the pod has been evicted by the taint manager due to an unreachable node.
+		// When a management-cluster node becomes unreachable, Kubernetes adds a
+		// node.kubernetes.io/unreachable:NoExecute taint. After the pod's toleration grace
+		// period expires (default 300s), the taint eviction controller sets a DisruptionTarget
+		// condition with reason DeletionByTaintManager and issues a delete. The delete cannot
+		// complete because the kubelet is unreachable, leaving the pod stuck in Terminating
+		// with stale Running container status.
+		//
+		// We detect this via the pod-level DisruptionTarget condition rather than reading the
+		// Node object directly. This avoids requiring a ClusterRole for node access (the
+		// recovery job runs with a namespaced Role). The ~5-minute delay before this condition
+		// appears is acceptable and even desirable: it acts as a natural debounce that prevents
+		// triggering recovery on transient node hiccups.
+		if isPodOnUnreachableNode(&pod) {
+			log.Info("pod is on unreachable node (DisruptionTarget/DeletionByTaintManager)",
+				"pod", crclient.ObjectKeyFromObject(&pod).String())
+			failingPods = append(failingPods, pod)
+			nodeUnreachable = true
+			continue
+		}
+
+		for _, containerStatus := range pod.Status.ContainerStatuses {
+			if containerStatus.Name != "etcd" {
+				continue
+			}
+			if containerStatus.State.Waiting != nil && containerStatus.RestartCount > 0 {
+				log.Info("pod is unhealthy", "pod", crclient.ObjectKeyFromObject(&pod).String())
+				failingPods = append(failingPods, pod)
+			} else {
+				log.Info("pod is healthy", "pod", crclient.ObjectKeyFromObject(&pod).String())
+			}
+		}
+	}
+	return failingPods, nodeUnreachable
+}
+
+// deleteEtcdMemberResources deletes the pod and PVC for an etcd member. When nodeUnreachable
+// is true, it force-deletes with GracePeriodSeconds=0 because a standard graceful delete hangs
+// indefinitely when the kubelet cannot acknowledge the shutdown. It calls kclient.Delete
+// directly instead of k8sutil.DeleteIfNeeded because the pod already has a DeletionTimestamp
+// set by the taint eviction controller's earlier delete attempt — DeleteIfNeeded would
+// short-circuit on the existing DeletionTimestamp and return without re-issuing the delete.
+func deleteEtcdMemberResources(ctx context.Context, kclient crclient.Client, pod *corev1.Pod, pvc *corev1.PersistentVolumeClaim, nodeUnreachable bool) error {
+	log := ctrl.LoggerFrom(ctx)
+	if nodeUnreachable {
+		// Force-delete is safe against StatefulSet split-brain because the pod is already
+		// in Terminating state (DeletionTimestamp set). The taint eviction controller
+		// issues a delete before setting the DisruptionTarget condition that brought us
+		// here, so DeletionTimestamp is guaranteed to be set. If the old node recovers,
+		// its kubelet will see DeletionTimestamp and terminate the containers before
+		// doing anything else.
+		log.Info("Node is unreachable, force-deleting pod and PVC", "pod", pod.Name)
+		forceDelete := crclient.GracePeriodSeconds(0)
+
+		log.Info("Force-deleting pvc", "pvc", crclient.ObjectKeyFromObject(pvc))
+		if err := crclient.IgnoreNotFound(kclient.Delete(ctx, pvc, forceDelete)); err != nil {
+			return fmt.Errorf("failed to force-delete pvc %s: %w", crclient.ObjectKeyFromObject(pvc), err)
+		}
+
+		log.Info("Force-deleting pod", "pod", crclient.ObjectKeyFromObject(pod))
+		if err := crclient.IgnoreNotFound(kclient.Delete(ctx, pod, forceDelete)); err != nil {
+			return fmt.Errorf("failed to force-delete pod %s: %w", crclient.ObjectKeyFromObject(pod), err)
+		}
+	} else {
+		log.Info("Deleting pvc", "pvc", crclient.ObjectKeyFromObject(pvc))
+		if _, err := k8sutil.DeleteIfNeeded(ctx, kclient, pvc); err != nil {
+			return fmt.Errorf("failed to delete pvc %s: %w", crclient.ObjectKeyFromObject(pvc), err)
+		}
+
+		log.Info("Deleting pod", "pod", crclient.ObjectKeyFromObject(pod))
+		if _, err := k8sutil.DeleteIfNeeded(ctx, kclient, pod); err != nil {
+			return fmt.Errorf("failed to delete pod %s: %w", crclient.ObjectKeyFromObject(pod), err)
+		}
+	}
+	return nil
+}
+
+// isPodOnUnreachableNode returns true if the pod has been marked for eviction by the
+// Kubernetes taint eviction controller due to a NoExecute taint (node.kubernetes.io/unreachable).
+//
+// When a node becomes unreachable, Kubernetes sets a DisruptionTarget condition on the pod
+// with reason "DeletionByTaintManager" after the pod's toleration grace period expires
+// (default 300s for the unreachable taint). This is a reliable, pod-level signal that does
+// not require reading the Node object — avoiding the need for a ClusterRole to grant
+// cluster-scoped node access to the recovery job's namespaced ServiceAccount.
+//
+// The ~5-minute delay before this condition appears is intentional: it acts as a natural
+// debounce, preventing recovery from triggering on transient node disruptions (brief network
+// blips, kubelet restarts) that resolve within the toleration window.
+func isPodOnUnreachableNode(pod *corev1.Pod) bool {
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.DisruptionTarget &&
+			cond.Status == corev1.ConditionTrue &&
+			cond.Reason == "DeletionByTaintManager" {
+			return true
+		}
+	}
+	return false
 }
 
 func podNames(pods []corev1.Pod) string {

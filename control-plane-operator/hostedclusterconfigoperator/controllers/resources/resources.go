@@ -82,6 +82,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/workqueue"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"k8s.io/utils/ptr"
 	"k8s.io/utils/set"
@@ -213,29 +214,31 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to initialize kubeClient from config: %w", err)
 	}
 
-	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
-		client:                    opts.Manager.GetClient(),
-		uncachedClient:            uncachedClient,
-		clientSet:                 clientset,
-		CreateOrUpdateProvider:    opts.TargetCreateOrUpdateProvider,
-		platformType:              opts.PlatformType,
-		rootCA:                    opts.InitialCA,
-		clusterSignerCA:           opts.ClusterSignerCA,
-		cpClient:                  opts.CPCluster.GetClient(),
-		kubevirtInfraClient:       kubevirtInfraClient,
-		hcpName:                   opts.HCPName,
-		hcpNamespace:              opts.Namespace,
-		releaseProvider:           opts.ReleaseProvider,
-		konnectivityServerAddress: opts.KonnectivityAddress,
-		konnectivityServerPort:    opts.KonnectivityPort,
-		oauthAddress:              opts.OAuthAddress,
-		oauthPort:                 opts.OAuthPort,
-		versions:                  opts.Versions,
-		operateOnReleaseImage:     opts.OperateOnReleaseImage,
-		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
-		cleanupTracker:            reconcilerpolicy.NewCleanupTracker(),
-		GetPodLogs:                getPodLogs,
-	}})
+	c, err := controller.New(ControllerName, opts.Manager, controller.Options{
+		RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](100*time.Millisecond, 2*time.Minute),
+		Reconciler: &reconciler{
+			client:                    opts.Manager.GetClient(),
+			uncachedClient:            uncachedClient,
+			clientSet:                 clientset,
+			CreateOrUpdateProvider:    opts.TargetCreateOrUpdateProvider,
+			platformType:              opts.PlatformType,
+			rootCA:                    opts.InitialCA,
+			clusterSignerCA:           opts.ClusterSignerCA,
+			cpClient:                  opts.CPCluster.GetClient(),
+			kubevirtInfraClient:       kubevirtInfraClient,
+			hcpName:                   opts.HCPName,
+			hcpNamespace:              opts.Namespace,
+			releaseProvider:           opts.ReleaseProvider,
+			konnectivityServerAddress: opts.KonnectivityAddress,
+			konnectivityServerPort:    opts.KonnectivityPort,
+			oauthAddress:              opts.OAuthAddress,
+			oauthPort:                 opts.OAuthPort,
+			versions:                  opts.Versions,
+			operateOnReleaseImage:     opts.OperateOnReleaseImage,
+			ImageMetaDataProvider:     opts.ImageMetaDataProvider,
+			cleanupTracker:            reconcilerpolicy.NewCleanupTracker(),
+			GetPodLogs:                getPodLogs,
+		}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
@@ -276,6 +279,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		&configv1.ClusterVersion{},
 		&apiregistrationv1.APIService{},
 		&operatorv1.Network{},
+		&operatorv1.OpenShiftAPIServer{},
 		&admissionregistrationv1.MutatingWebhookConfiguration{},
 		&admissionregistrationv1.ValidatingWebhookConfiguration{},
 		&prometheusoperatorv1.PrometheusRule{},
@@ -418,6 +422,18 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
 	}
 
+	controlPlaneReleaseVersion := releaseImageVersion
+	if hcp.Spec.ControlPlaneReleaseImage != nil {
+		controlPlaneReleaseImage, err := r.releaseProvider.Lookup(ctx, *hcp.Spec.ControlPlaneReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to lookup control plane release image %s: %w", *hcp.Spec.ControlPlaneReleaseImage, err)
+		}
+		controlPlaneReleaseVersion, err = semver.Parse(controlPlaneReleaseImage.Version())
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to parse control plane release image version: %w", err)
+		}
+	}
+
 	// The exception for IBMCloudPlatform is due to the fact that the IBM will include new certificates for HCCO from 4.17 version
 	if !(hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && (releaseImageVersion.Major == 4 && releaseImageVersion.Minor < 17)) {
 		// Apply new ValidatingAdmissionPolicy to restrict the modification/deletion of certain
@@ -438,6 +454,8 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 	}
 
 	log.Info("reconciling clusterversion")
+	params.FeatureSet = hcp.Spec.Configuration.GetFeatureGateSelection().FeatureSet
+	params.ControlPlaneReleaseVersion = controlPlaneReleaseVersion
 	if err := configuration.Reconcile(ctx, r.client, r.CreateOrUpdate, params, configuration.ClusterVersion); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile clusterversion: %w", err))
 	}
@@ -474,13 +492,21 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (result ctrl
 	errs = append(errs, r.reconcileStorageAndMisc(ctx, log, hcp, releaseImage)...)
 	r.cleanupLegacyResources(ctx, log, hcp, releaseImage, &errs)
 
+	log.Info("reconciling OpenShiftAPIServer encryption condition")
+	if err := oapi.ReconcileEncryptionCondition(ctx, r.client, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile OpenShiftAPIServer encryption condition: %w", err))
+	}
+
 	errs = append(errs, r.reconcilePlatformSpecificResources(ctx, log, hcp, releaseImage)...)
 
 	if result, err := r.reconcileClusterRecovery(ctx, log, hcp, errs); err != nil || result.RequeueAfter > 0 {
 		return result, utilerrors.NewAggregate(append(errs, err))
 	}
 
-	return ctrl.Result{}, utilerrors.NewAggregate(errs)
+	if aggregatedErr := utilerrors.NewAggregate(errs); aggregatedErr != nil {
+		return ctrl.Result{}, aggregatedErr
+	}
+	return ctrl.Result{RequeueAfter: 60 * time.Second}, nil
 }
 
 func (r *reconciler) reconcileStorageAndMisc(ctx context.Context, log logr.Logger, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) []error {
@@ -573,6 +599,7 @@ func (r *reconciler) reconcilePlatformSpecificResources(ctx context.Context, log
 	case hyperv1.GCPPlatform:
 		log.Info("reconciling GCP specific resources")
 		errs = append(errs, r.reconcileGCPIdentityWebhook(ctx)...)
+		errs = append(errs, r.reconcileGCPLoadBalancerServiceAnnotations(ctx, hcp)...)
 	}
 	return errs
 }
@@ -1070,9 +1097,9 @@ func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1
 	}
 	sort.Strings(componentNames)
 
-	haproxyImage, ok := releaseImage.ComponentImages()["haproxy-router"]
+	haproxyImage, ok := releaseImage.ComponentImages()["haproxy-router-haproxy32"]
 	if !ok {
-		return fmt.Errorf("haproxy-router image not found in release payload")
+		return fmt.Errorf("haproxy-router-haproxy32 image not found in release payload")
 	}
 
 	if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
@@ -3417,6 +3444,14 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 		driver := manifests.ClusterCSIDriver(driverName)
 		if _, err := r.CreateOrUpdate(ctx, r.client, driver, func() error {
 			storage.ReconcileClusterCSIDriver(driver)
+			// For AWS EBS, apply the write-once KMS key from initialKMSKeyARN.
+			if driverName == operatorv1.AWSEBSCSIDriver {
+				kmsKeyARN := ""
+				if hcp.Spec.OperatorConfiguration != nil {
+					kmsKeyARN = hcp.Spec.OperatorConfiguration.CSIDriverOperator.AWS.InitialKMSKeyARN
+				}
+				storage.ReconcileAWSEBSCSIDriverKMSKey(ctrl.LoggerFrom(ctx), driver, kmsKeyARN)
+			}
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile ClusterCSIDriver %s: %w", driver.Name, err))

@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 
@@ -88,6 +89,6 @@ func ValidateMarketplaceFlags(marketplaceFlags map[string]*string) error {
 // GenerateRoleAssignmentName generates a unique GUID based on the cluster infra ID, component, and scope; this allows us
 // to create the same GUID that we can then later regenerate to delete the role assignment.
 func GenerateRoleAssignmentName(infraID, component, scope string) string {
-	uniqueRoleName := fmt.Sprintf("%s-%s-%s", infraID, component, scope)
+	uniqueRoleName := fmt.Sprintf("%s-%s-%s", infraID, component, strings.ToLower(scope))
 	return uuid.NewSHA1(uuid.NameSpaceDNS, []byte(uniqueRoleName)).String()
 }

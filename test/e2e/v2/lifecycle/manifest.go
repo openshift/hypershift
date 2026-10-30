@@ -11,7 +11,7 @@ import (
 
 const ManifestFileName = "cluster-manifests.json"
 
-// ClusterManifest captures the identity of all clusters for a CI run.
+// ClusterManifest captures the identity and destroy arguments of all clusters for a CI run.
 // It is written to SHARED_DIR before any infrastructure is provisioned
 // so that destroy-guests can always clean up, even if the HostedCluster
 // CR was never applied to the management cluster.
@@ -19,12 +19,13 @@ type ClusterManifest struct {
 	Clusters []ClusterEntry `json:"clusters"`
 }
 
-// ClusterEntry captures the deterministic identity of a single cluster.
+// ClusterEntry captures the deterministic identity and destroy arguments of a single cluster.
 type ClusterEntry struct {
-	Variant   string `json:"variant"`
-	Name      string `json:"name"`
-	InfraID   string `json:"infraID"`
-	Namespace string `json:"namespace"`
+	Variant     string   `json:"variant"`
+	Name        string   `json:"name"`
+	InfraID     string   `json:"infraID"`
+	Namespace   string   `json:"namespace"`
+	DestroyArgs []string `json:"destroyArgs,omitempty"`
 }
 
 func WriteManifest(dir string, m *ClusterManifest) error {

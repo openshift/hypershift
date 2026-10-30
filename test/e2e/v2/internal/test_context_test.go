@@ -3,6 +3,8 @@
 package internal
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -62,5 +64,55 @@ func TestGetHostedClusterVersion(t *testing.T) {
 		}
 		_, err := tc.GetHostedClusterVersion()
 		NewWithT(t).Expect(err).To(MatchError(ContainSubstring("failed to get HostedCluster clusters/missing")))
+	})
+}
+
+func TestSetupTestContextFromKubeconfig(t *testing.T) {
+	t.Run("When kubeconfig path is empty, it should return an error", func(t *testing.T) {
+		_, err := SetupTestContextFromKubeconfig(t.Context(), "")
+		NewWithT(t).Expect(err).To(MatchError(ContainSubstring("kubeconfig path must not be empty")))
+	})
+
+	t.Run("When kubeconfig is valid, it should create a role-specific context", func(t *testing.T) {
+		t.Setenv("E2E_HOSTED_CLUSTER_NAME", "restore-cluster")
+		t.Setenv("E2E_HOSTED_CLUSTER_NAMESPACE", "clusters")
+		t.Setenv("ARTIFACT_DIR", "/tmp/e2e-artifacts")
+
+		kubeconfigPath := filepath.Join(t.TempDir(), "kubeconfig")
+		kubeconfig := `apiVersion: v1
+kind: Config
+clusters:
+- name: management
+  cluster:
+    server: https://management.example.com:6443
+users:
+- name: test-user
+  user:
+    token: test-token
+contexts:
+- name: management
+  context:
+    cluster: management
+    user: test-user
+current-context: management
+`
+		if err := os.WriteFile(kubeconfigPath, []byte(kubeconfig), 0600); err != nil {
+			t.Fatalf("failed to write kubeconfig: %v", err)
+		}
+
+		testCtx, err := SetupTestContextFromKubeconfig(t.Context(), kubeconfigPath)
+		g := NewWithT(t)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(testCtx.KubeconfigPath).To(Equal(kubeconfigPath))
+		g.Expect(testCtx.MgmtRESTConfig.Host).To(Equal("https://management.example.com:6443"))
+		g.Expect(testCtx.ClusterName).To(Equal("restore-cluster"))
+		g.Expect(testCtx.ClusterNamespace).To(Equal("clusters"))
+		g.Expect(testCtx.ControlPlaneNamespace).NotTo(BeEmpty())
+		g.Expect(testCtx.ArtifactDir).To(Equal("/tmp/e2e-artifacts"))
+
+		t.Setenv("KUBECONFIG_SOURCE", kubeconfigPath)
+		suiteTestCtx, err := SetupTestContextFromEnv(t.Context())
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(suiteTestCtx.KubeconfigPath).To(Equal(kubeconfigPath), "suite setup should use the source kubeconfig when present")
 	})
 }

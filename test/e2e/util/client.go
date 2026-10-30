@@ -33,6 +33,14 @@ func GetClient() (crclient.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
 	}
+	return GetClientForConfig(config)
+}
+
+// GetClientForConfig creates a controller-runtime client using the shared e2e scheme.
+func GetClientForConfig(config *rest.Config) (crclient.Client, error) {
+	if config == nil {
+		return nil, fmt.Errorf("unable to get kubernetes client: REST config is nil")
+	}
 	client, err := crclient.New(config, crclient.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)

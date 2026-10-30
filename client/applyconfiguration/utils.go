@@ -87,12 +87,20 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSCloudProviderConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSClusterResourceTag"):
 		return &hypershiftv1beta1.AWSClusterResourceTagApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AWSCSIDriverConfig"):
+		return &hypershiftv1beta1.AWSCSIDriverConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AWSDNSZoneStatus"):
+		return &hypershiftv1beta1.AWSDNSZoneStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSAuthSpec"):
 		return &hypershiftv1beta1.AWSKMSAuthSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSKeyEntry"):
 		return &hypershiftv1beta1.AWSKMSKeyEntryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSSpec"):
 		return &hypershiftv1beta1.AWSKMSSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AWSManagedDNSDelegationSpec"):
+		return &hypershiftv1beta1.AWSManagedDNSDelegationSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AWSManagedDNSSpec"):
+		return &hypershiftv1beta1.AWSManagedDNSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSNodePoolPlatform"):
 		return &hypershiftv1beta1.AWSNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSNodePoolResourceTag"):
@@ -179,6 +187,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ControlPlaneVersionStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("CPUOptions"):
 		return &hypershiftv1beta1.CPUOptionsApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("CSIDriverOperatorSpec"):
+		return &hypershiftv1beta1.CSIDriverOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DataPlaneManagedIdentities"):
 		return &hypershiftv1beta1.DataPlaneManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Diagnostics"):
@@ -227,6 +237,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.GCPResourceLabelApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPResourceReference"):
 		return &hypershiftv1beta1.GCPResourceReferenceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("GCPResourceTag"):
+		return &hypershiftv1beta1.GCPResourceTagApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPServiceAccountsEmails"):
 		return &hypershiftv1beta1.GCPServiceAccountsEmailsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPWorkloadIdentityConfig"):

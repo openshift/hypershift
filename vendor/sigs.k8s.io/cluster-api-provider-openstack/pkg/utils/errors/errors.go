@@ -17,11 +17,7 @@ limitations under the License.
 package capoerrors
 
 import (
-	"errors"
 	"fmt"
-	"net/http"
-
-	"github.com/gophercloud/gophercloud/v2"
 )
 
 var (
@@ -51,44 +47,10 @@ func (e noMatchesError) Is(err error) bool {
 	return err == ErrFilterMatch
 }
 
-func IsRetryable(err error) bool {
-	var errUnexpectedResponseCode gophercloud.ErrUnexpectedResponseCode
-	if errors.As(err, &errUnexpectedResponseCode) {
-		statusCode := errUnexpectedResponseCode.GetStatusCode()
-		return statusCode >= 500 && statusCode != http.StatusNotImplemented
-	}
-	return false
-}
-
-func IsNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Gophercloud is not consistent in how it returns 404 errors. Sometimes
-	// it returns a pointer to the error, sometimes it returns the error
-	// directly.
-	// Some discussion here: https://github.com/gophercloud/gophercloud/v2/issues/2279
-	var errNotFound gophercloud.ErrResourceNotFound
-	var pErrNotFound *gophercloud.ErrResourceNotFound
-	if errors.As(err, &errNotFound) || errors.As(err, &pErrNotFound) {
-		return true
-	}
-
-	return gophercloud.ResponseCodeIs(err, http.StatusNotFound)
-}
-
-func IsInvalidError(err error) bool {
-	return gophercloud.ResponseCodeIs(err, http.StatusBadRequest)
-}
-
-func IsConflict(err error) bool {
-	return gophercloud.ResponseCodeIs(err, http.StatusConflict)
-}
-
-func IsNotImplementedError(err error) bool {
-	return gophercloud.ResponseCodeIs(err, http.StatusNotImplemented)
-}
+// Gophercloud is not consistent in how it returns 404 errors. Sometimes
+// it returns a pointer to the error, sometimes it returns the error
+// directly.
+// Some discussion here: https://github.com/gophercloud/gophercloud/v2/issues/2279
 
 // The following types and constants are imported from CAPI and will be removed at some point once we
 // implement the conditions that will be required in CAPI v1beta2

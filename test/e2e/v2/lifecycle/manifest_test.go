@@ -21,6 +21,14 @@ func TestManifestRoundTrip(t *testing.T) {
 			},
 		},
 		{
+			name: "When written with destroy arguments, it should deserialize identically",
+			want: &ClusterManifest{
+				Clusters: []ClusterEntry{
+					{Variant: "public", Name: "public-abc1234567", InfraID: "public-abc1234567", Namespace: "clusters", DestroyArgs: []string{"--region=us-east-1", "--base-domain=ci.hypershift.devcluster.openshift.com"}},
+				},
+			},
+		},
+		{
 			name: "When written with multiple clusters, it should deserialize identically",
 			want: &ClusterManifest{
 				Clusters: []ClusterEntry{

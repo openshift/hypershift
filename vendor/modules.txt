@@ -898,9 +898,6 @@ github.com/googleapis/gax-go/v2/callctx
 github.com/googleapis/gax-go/v2/internal
 github.com/googleapis/gax-go/v2/internallog
 github.com/googleapis/gax-go/v2/internallog/internal
-# github.com/gophercloud/gophercloud/v2 v2.12.0
-## explicit; go 1.25.0
-github.com/gophercloud/gophercloud/v2
 # github.com/gorilla/mux v1.8.1
 ## explicit; go 1.20
 github.com/gorilla/mux
@@ -1049,16 +1046,19 @@ github.com/opencontainers/image-spec/specs-go/v1
 ## explicit; go 1.19
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/pkg/pwalkdir
-# github.com/openshift/api v0.0.0-20260930220732-5588d747a72b
+# github.com/openshift/api v0.0.0-20261028163820-1f109e9eefc7
 ## explicit; go 1.26.0
 github.com/openshift/api
 github.com/openshift/api/annotations
 github.com/openshift/api/apiextensions
+github.com/openshift/api/apiextensions/v1
 github.com/openshift/api/apiextensions/v1alpha1
 github.com/openshift/api/apiserver
 github.com/openshift/api/apiserver/v1
 github.com/openshift/api/apps
 github.com/openshift/api/apps/v1
+github.com/openshift/api/authentication
+github.com/openshift/api/authentication/v1alpha1
 github.com/openshift/api/authorization
 github.com/openshift/api/authorization/v1
 github.com/openshift/api/build
@@ -1074,6 +1074,7 @@ github.com/openshift/api/console/v1
 github.com/openshift/api/etcd
 github.com/openshift/api/etcd/v1
 github.com/openshift/api/etcd/v1alpha1
+github.com/openshift/api/features
 github.com/openshift/api/helm
 github.com/openshift/api/helm/v1beta1
 github.com/openshift/api/image
@@ -1127,7 +1128,7 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8
+# github.com/openshift/client-go v0.0.0-20261026144452-41e357d76bc8
 ## explicit; go 1.26.0
 github.com/openshift/client-go/config/applyconfigurations/config/v1
 github.com/openshift/client-go/config/applyconfigurations/config/v1alpha1
@@ -1156,16 +1157,17 @@ github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud
 github.com/openshift/cloud-credential-operator/pkg/ibmcloud
-# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
-## explicit; go 1.25
-github.com/openshift/cluster-api-provider-agent/api/v1alpha1
+# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1 => ./pkg/capi/agent
+## explicit; go 1.25.7
+github.com/openshift/cluster-api-provider-agent/api/capicore/api/core/v1beta1
+github.com/openshift/cluster-api-provider-agent/api/capicore/errors
 github.com/openshift/cluster-api-provider-agent/api/v1beta1
 # github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
 ## explicit; go 1.22.0
 github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1
 github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1beta1
-# github.com/openshift/cluster-node-tuning-operator v0.0.0-20260701110644-508d51a6f2bd
-## explicit; go 1.25.3
+# github.com/openshift/cluster-node-tuning-operator v0.0.0-20260825115124-078cde8b7f7f
+## explicit; go 1.26.0
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v1
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned
@@ -1174,7 +1176,7 @@ github.com/openshift/cluster-node-tuning-operator/pkg/performanceprofile/control
 # github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 ## explicit; go 1.12
 github.com/openshift/custom-resource-status/conditions/v1
-# github.com/openshift/hypershift/api v0.0.0-20260224085943-34e30acde920 => ./api
+# github.com/openshift/hypershift/api v0.0.0-20260824191009-a7f22d5ea3e5 => ./api
 ## explicit; go 1.26.0
 github.com/openshift/hypershift/api/auditlogpersistence
 github.com/openshift/hypershift/api/auditlogpersistence/v1alpha1
@@ -1187,7 +1189,7 @@ github.com/openshift/hypershift/api/scheduling
 github.com/openshift/hypershift/api/scheduling/v1alpha1
 github.com/openshift/hypershift/api/util/configrefs
 github.com/openshift/hypershift/api/util/ipnet
-# github.com/openshift/library-go v0.0.0-20261001035620-0eb5e87de1be
+# github.com/openshift/library-go v0.0.0-20261028054900-dbcad7febe41
 ## explicit; go 1.26.0
 github.com/openshift/library-go/pkg/apiserver/jsonpatch
 github.com/openshift/library-go/pkg/authorization/hardcodedauthorizer
@@ -1415,15 +1417,14 @@ go.opentelemetry.io/otel/semconv/v1.37.0
 go.opentelemetry.io/otel/semconv/v1.37.0/rpcconv
 go.opentelemetry.io/otel/semconv/v1.41.0
 go.opentelemetry.io/otel/semconv/v1.41.0/httpconv
-go.opentelemetry.io/otel/semconv/v1.41.0/otelconv
 go.opentelemetry.io/otel/semconv/v1.41.0/rpcconv
 go.opentelemetry.io/otel/semconv/v1.43.0
 go.opentelemetry.io/otel/semconv/v1.43.0/otelconv
-# go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.44.0
+# go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.45.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/otel/exporters/otlp/otlptrace
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/internal/tracetransform
-# go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.44.0
+# go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.45.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc
 go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal
@@ -1454,8 +1455,8 @@ go.opentelemetry.io/otel/trace
 go.opentelemetry.io/otel/trace/embedded
 go.opentelemetry.io/otel/trace/internal/telemetry
 go.opentelemetry.io/otel/trace/noop
-# go.opentelemetry.io/proto/otlp v1.10.0
-## explicit; go 1.24.0
+# go.opentelemetry.io/proto/otlp v1.11.0
+## explicit; go 1.25.0
 go.opentelemetry.io/proto/otlp/collector/trace/v1
 go.opentelemetry.io/proto/otlp/common/v1
 go.opentelemetry.io/proto/otlp/resource/v1
@@ -1634,13 +1635,13 @@ google.golang.org/api/option
 google.golang.org/api/option/internaloption
 google.golang.org/api/storage/v1
 google.golang.org/api/transport/http
-# google.golang.org/genproto/googleapis/api v0.0.0-20260630182238-925bb5da69e7
+# google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d
 ## explicit; go 1.25.0
 google.golang.org/genproto/googleapis/api
 google.golang.org/genproto/googleapis/api/annotations
 google.golang.org/genproto/googleapis/api/expr/v1alpha1
 google.golang.org/genproto/googleapis/api/httpbody
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d
 ## explicit; go 1.25.0
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
@@ -2562,8 +2563,8 @@ k8s.io/kube-aggregator/pkg/client/applyconfiguration/apiregistration/v1
 k8s.io/kube-aggregator/pkg/client/applyconfiguration/internal
 k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/scheme
 k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset/typed/apiregistration/v1
-# k8s.io/kube-openapi v0.35.1 => k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288
-## explicit; go 1.24.0
+# k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad
+## explicit; go 1.25.0
 k8s.io/kube-openapi/pkg/builder
 k8s.io/kube-openapi/pkg/builder3
 k8s.io/kube-openapi/pkg/builder3/util
@@ -2604,7 +2605,7 @@ k8s.io/kubectl/pkg/util/openapi
 k8s.io/kubectl/pkg/util/templates
 k8s.io/kubectl/pkg/util/term
 k8s.io/kubectl/pkg/validation
-# k8s.io/kubelet v0.36.2
+# k8s.io/kubelet v0.36.4
 ## explicit; go 1.26.0
 k8s.io/kubelet/config/v1beta1
 # k8s.io/pod-security-admission v0.37.0
@@ -2655,17 +2656,9 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/cluster-api v1.13.4
-## explicit; go 1.25.0
-sigs.k8s.io/cluster-api/api/addons/v1beta1
-sigs.k8s.io/cluster-api/api/addons/v1beta2
-sigs.k8s.io/cluster-api/api/core/v1beta1
-sigs.k8s.io/cluster-api/api/core/v1beta2
-sigs.k8s.io/cluster-api/api/ipam/v1beta1
-sigs.k8s.io/cluster-api/api/ipam/v1beta2
-sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3
-sigs.k8s.io/cluster-api/errors
-sigs.k8s.io/cluster-api/feature
+# sigs.k8s.io/cluster-api v1.14.3
+## explicit; go 1.26.0
+sigs.k8s.io/cluster-api/core/webhooks/conversion
 sigs.k8s.io/cluster-api/util
 sigs.k8s.io/cluster-api/util/annotations
 sigs.k8s.io/cluster-api/util/conditions
@@ -2673,35 +2666,47 @@ sigs.k8s.io/cluster-api/util/conditions/deprecated/v1beta1
 sigs.k8s.io/cluster-api/util/conversion
 sigs.k8s.io/cluster-api/util/labels/format
 sigs.k8s.io/cluster-api/util/patch
-# sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0
-## explicit; go 1.25.0
-sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta1
+# sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.1 => ./pkg/capi/aws
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2
-sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/rosa/api/v1beta2
-sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta1
-sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2
-sigs.k8s.io/cluster-api-provider-aws/v2/feature
-sigs.k8s.io/cluster-api-provider-aws/v2/iam/api/v1beta1
-# sigs.k8s.io/cluster-api-provider-azure v1.26.0
-## explicit; go 1.25.0
+sigs.k8s.io/cluster-api-provider-aws/v2/capicore/api/core/v1beta1
+# sigs.k8s.io/cluster-api-provider-azure v1.26.0 => ./pkg/capi/azure
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-azure/api/v1beta1
+sigs.k8s.io/cluster-api-provider-azure/capicore/api/core/v1beta1
 sigs.k8s.io/cluster-api-provider-azure/util/azure
-# sigs.k8s.io/cluster-api-provider-gcp v1.13.1
-## explicit; go 1.25.8
+# sigs.k8s.io/cluster-api-provider-gcp v1.13.1 => ./pkg/capi/gcp
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1
-# sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
-## explicit; go 1.24.0
-sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1
+sigs.k8s.io/cluster-api-provider-gcp/capicore/api/core/v1beta1
+# sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1 => ./pkg/capi/ibmcloud
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
-# sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
-## explicit; go 1.24.0
+sigs.k8s.io/cluster-api-provider-ibmcloud/capicore/api/core/v1beta1
+# sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2 => ./pkg/capi/kubevirt
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
-# sigs.k8s.io/cluster-api-provider-openstack v0.14.8
-## explicit; go 1.24.0
+sigs.k8s.io/cluster-api-provider-kubevirt/capicore/api/core/v1beta2
+sigs.k8s.io/cluster-api-provider-kubevirt/capicore/errors
+# sigs.k8s.io/cluster-api-provider-openstack v0.14.8 => ./pkg/capi/openstack
+## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1
 sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1
+sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta1
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/optional
+# sigs.k8s.io/cluster-api/api v1.14.3
+## explicit; go 1.26.0
+sigs.k8s.io/cluster-api/api/addons/v1beta1
+sigs.k8s.io/cluster-api/api/addons/v1beta2
+sigs.k8s.io/cluster-api/api/core/v1beta1
+sigs.k8s.io/cluster-api/api/core/v1beta2
+sigs.k8s.io/cluster-api/api/deprecated/errors
+sigs.k8s.io/cluster-api/api/ipam/v1alpha1
+sigs.k8s.io/cluster-api/api/ipam/v1beta1
+sigs.k8s.io/cluster-api/api/ipam/v1beta2
+sigs.k8s.io/cluster-api/api/runtime/v1alpha1
+sigs.k8s.io/cluster-api/api/runtime/v1beta2
 # sigs.k8s.io/controller-runtime v0.25.0
 ## explicit; go 1.26.0
 sigs.k8s.io/controller-runtime
@@ -2888,3 +2893,10 @@ sigs.k8s.io/yaml/kyaml
 # github.com/openshift/hypershift/api => ./api
 # github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260722223016-abcf7d1e3417
 # sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260721214330-2b8ed744bf1c
+# github.com/openshift/cluster-api-provider-agent/api => ./pkg/capi/agent
+# sigs.k8s.io/cluster-api-provider-aws/v2 => ./pkg/capi/aws
+# sigs.k8s.io/cluster-api-provider-azure => ./pkg/capi/azure
+# sigs.k8s.io/cluster-api-provider-gcp => ./pkg/capi/gcp
+# sigs.k8s.io/cluster-api-provider-ibmcloud => ./pkg/capi/ibmcloud
+# sigs.k8s.io/cluster-api-provider-kubevirt => ./pkg/capi/kubevirt
+# sigs.k8s.io/cluster-api-provider-openstack => ./pkg/capi/openstack

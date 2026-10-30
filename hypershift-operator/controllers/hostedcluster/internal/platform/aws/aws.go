@@ -23,7 +23,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	awscapicore "sigs.k8s.io/cluster-api-provider-aws/v2/capicore/api/core/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -441,7 +441,7 @@ func reconcileAWSCluster(awsCluster *capiaws.AWSCluster, hcluster *hyperv1.Hoste
 
 	// Set the values for upper level controller
 	awsCluster.Status.Ready = true
-	awsCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
+	awsCluster.Spec.ControlPlaneEndpoint = awscapicore.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}

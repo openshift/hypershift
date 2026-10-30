@@ -21,10 +21,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"k8s.io/utils/net"
-	"k8s.io/utils/ptr"
 )
 
 const (
@@ -743,33 +740,6 @@ func (s *SubnetSpec) IsEdgeWavelength() bool {
 	return false
 }
 
-// SetZoneInfo updates the subnets with zone information.
-func (s *SubnetSpec) SetZoneInfo(zones []types.AvailabilityZone) error {
-	zoneInfo := func(zoneName string) *types.AvailabilityZone {
-		for _, zone := range zones {
-			if aws.ToString(zone.ZoneName) == zoneName {
-				return &zone
-			}
-		}
-		return nil
-	}
-
-	zone := zoneInfo(s.AvailabilityZone)
-	if zone == nil {
-		if len(s.AvailabilityZone) > 0 {
-			return fmt.Errorf("unable to update zone information for subnet '%v' and zone '%v'", s.ID, s.AvailabilityZone)
-		}
-		return fmt.Errorf("unable to update zone information for subnet '%v'", s.ID)
-	}
-	if zone.ZoneType != nil {
-		s.ZoneType = ptr.To(ZoneType(*zone.ZoneType))
-	}
-	if zone.ParentZoneName != nil {
-		s.ParentZoneName = zone.ParentZoneName
-	}
-	return nil
-}
-
 // Subnets is a slice of Subnet.
 // +listType=map
 // +listMapKey=id
@@ -900,16 +870,6 @@ func (s Subnets) GetUniqueZones() []string {
 		}
 	}
 	return zones
-}
-
-// SetZoneInfo updates the subnets with zone information.
-func (s Subnets) SetZoneInfo(zones []types.AvailabilityZone) error {
-	for i := range s {
-		if err := s[i].SetZoneInfo(zones); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // HasPublicSubnetWavelength returns true when there are subnets in Wavelength zone.

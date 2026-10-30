@@ -19,7 +19,6 @@ package v1beta1
 import (
 	"slices"
 
-	"github.com/pkg/errors"
 	"k8s.io/utils/net"
 )
 
@@ -82,16 +81,6 @@ type NetworkTemplateSpec struct {
 	// Each port specified (e.g., 9345) creates an inbound rule where the frontend port and the backend port are the same.
 	// +optional
 	AdditionalAPIServerLBPorts []LoadBalancerPort `json:"additionalAPIServerLBPorts,omitempty"`
-}
-
-// GetSubnetTemplate returns the subnet template based on the subnet role.
-func (n *NetworkTemplateSpec) GetSubnetTemplate(role SubnetRole) (SubnetTemplateSpec, error) {
-	for _, sn := range n.Subnets {
-		if sn.Role == role {
-			return sn, nil
-		}
-	}
-	return SubnetTemplateSpec{}, errors.Errorf("no subnet template found with role %s", role)
 }
 
 // UpdateSubnetTemplate updates the subnet template based on subnet role.

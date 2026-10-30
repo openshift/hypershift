@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -25,16 +26,27 @@ type KubevirtMachineTemplateSpec struct {
 	Template KubevirtMachineTemplateResource `json:"template"`
 }
 
+// KubevirtMachineTemplateStatus defines the observed state of KubevirtMachineTemplate.
+type KubevirtMachineTemplateStatus struct {
+	// Capacity defines the resource capacity for this machine.
+	// This value is used for autoscaling from zero operations as defined in:
+	// https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20210310-opt-in-autoscaling-from-zero.md
+	// +optional
+	Capacity corev1.ResourceList `json:"capacity,omitempty"`
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=kubevirtmachinetemplates,scope=Namespaced,categories=cluster-api
 // +kubebuilder:storageversion
+// +kubebuilder:subresource:status
 
 // KubevirtMachineTemplate is the Schema for the kubevirtmachinetemplates API.
 type KubevirtMachineTemplate struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec KubevirtMachineTemplateSpec `json:"spec,omitempty"`
+	Spec   KubevirtMachineTemplateSpec   `json:"spec,omitempty"`
+	Status KubevirtMachineTemplateStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -46,9 +58,6 @@ type KubevirtMachineTemplateList struct {
 	Items           []KubevirtMachineTemplate `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&KubevirtMachineTemplate{}, &KubevirtMachineTemplateList{})
-}
 
 // KubevirtMachineTemplateResource describes the data needed to create a KubevirtMachine from a template.
 type KubevirtMachineTemplateResource struct {

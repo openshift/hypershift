@@ -61,7 +61,7 @@ func TestIsUpdatingConfig(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						nodePoolAnnotationCurrentConfig: "same",
+						nodePoolAnnotationCurrentRolloutConfig: "same",
 					},
 				},
 			},
@@ -73,12 +73,22 @@ func TestIsUpdatingConfig(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						nodePoolAnnotationCurrentConfig: "config1",
+						nodePoolAnnotationCurrentRolloutConfig: "config1",
 					},
 				},
 			},
 			target: "config2",
 			expect: true,
+		},
+		{
+			name: "it is not updating when annotation is absent",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+			},
+			target: "config1",
+			expect: false,
 		},
 	}
 
@@ -3036,7 +3046,7 @@ func TestResolveHAProxyImage(t *testing.T) {
 			name:                "When registry overrides exist and NodePool is new it should use canonical image",
 			useSharedIngress:    false,
 			componentImage:      "mirror.example.com/openshift/haproxy-router:v4.16",
-			canonicalComponents: map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			canonicalComponents: map[string]string{haproxy.HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router:v4.16"},
 			expectedImage:       "registry.test.io/openshift/haproxy-router:v4.16",
 		},
 		{
@@ -3044,7 +3054,7 @@ func TestResolveHAProxyImage(t *testing.T) {
 			nodePoolStatusVersion: "4.17.0",
 			useSharedIngress:      false,
 			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
-			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			canonicalComponents:   map[string]string{haproxy.HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router:v4.16"},
 			expectedImage:         "registry.test.io/openshift/haproxy-router:v4.16",
 		},
 		{
@@ -3055,7 +3065,7 @@ func TestResolveHAProxyImage(t *testing.T) {
 			nodePoolStatusVersion: "4.18.0",
 			useSharedIngress:      false,
 			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
-			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			canonicalComponents:   map[string]string{haproxy.HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router:v4.16"},
 			expectedImage:         "registry.test.io/openshift/haproxy-router:v4.16",
 		},
 		{
@@ -3063,7 +3073,7 @@ func TestResolveHAProxyImage(t *testing.T) {
 			nodePoolStatusVersion: "4.18.0",
 			useSharedIngress:      false,
 			componentImage:        "mirror.example.com/openshift/haproxy-router:v4.16",
-			canonicalComponents:   map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			canonicalComponents:   map[string]string{haproxy.HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router:v4.16"},
 			expectedImage:         "mirror.example.com/openshift/haproxy-router:v4.16",
 		},
 		{
@@ -3072,7 +3082,7 @@ func TestResolveHAProxyImage(t *testing.T) {
 				hyperv1.NodePoolHAProxyImageAnnotation: "mirror.example.com/custom/haproxy:latest",
 			},
 			componentImage:      "mirror.example.com/openshift/haproxy-router:v4.16",
-			canonicalComponents: map[string]string{haproxy.HAProxyRouterImageName: "registry.test.io/openshift/haproxy-router:v4.16"},
+			canonicalComponents: map[string]string{haproxy.HAProxyImageNames[0]: "registry.test.io/openshift/haproxy-router:v4.16"},
 			expectedImage:       "mirror.example.com/custom/haproxy:latest",
 		},
 	}
@@ -3178,7 +3188,7 @@ kind: Config`),
 			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
 				Version: "4.18.0",
 				Components: map[string]string{
-					haproxy.HAProxyRouterImageName: componentImage,
+					haproxy.HAProxyImageNames[0]: componentImage,
 				},
 				CanonicalComponents: tc.canonicalComponents,
 			}

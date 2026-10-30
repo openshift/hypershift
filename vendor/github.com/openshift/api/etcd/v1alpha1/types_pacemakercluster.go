@@ -476,7 +476,6 @@ const (
 // +kubebuilder:subresource:status
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/2544
 // +openshift:file-pattern=cvoRunLevel=0000_25,operatorName=etcd,operatorOrdering=01,operatorComponent=two-node-fencing
-// +openshift:enable:FeatureGate=DualReplica
 // +kubebuilder:validation:XValidation:rule="self.metadata.name == 'cluster'",message="PacemakerCluster must be named 'cluster'"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.status) || has(self.status)",message="status may not be removed once set"
 type PacemakerCluster struct {

@@ -46,10 +46,12 @@ import (
 
 const (
 	openshiftEC2NodeClassAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodeClassCurrentConfigVersion"
+	openshiftEC2NodeClassAnnotationCurrentRolloutConfig = "hypershift.openshift.io/nodeClassCurrentRolloutConfig"
 
 	// nodePoolAnnotationCurrentConfigVersion mirrors the annotation from nodepool_controller.go
 	// It's used to track the current config version for outdated token cleanup
 	nodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+	nodePoolAnnotationCurrentRolloutConfig = "hypershift.openshift.io/nodePoolCurrentRolloutConfig"
 
 	kubeletConfigFinalizer = "hypershift.openshift.io/karpenter-kubelet-config-finalizer"
 )
@@ -119,6 +121,10 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Handle deletion: clean up management-cluster ConfigMap before finalizer is removed
 	if !openshiftEC2NodeClass.DeletionTimestamp.IsZero() {
 		return r.reconcileDeletedNodeClass(ctx, hcp, openshiftEC2NodeClass)
+	}
+
+	if err := r.reconcileTaintConfigMap(ctx, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile taint configmap: %w", err)
 	}
 
 	hostedCluster, err := hostedClusterFromHCP(hcp, r.IgnitionEndpoint)
@@ -191,15 +197,16 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if err := r.reconcileNodeClassToken(ctx, hcp, hostedCluster, openshiftEC2NodeClass, releaseImage); err != nil {
 		log.Error(err, "failed to reconcile token for OpenshiftEC2NodeClass", "name", openshiftEC2NodeClass.Name)
-		// Still update version status so conditions are set even when token reconciliation fails.
-		// Re-fetch the object to get the latest resourceVersion since reconcileNodeClassToken may have patched it.
+		// Update conditions but preserve the OLD version so isOutdated() still
+		// detects the pending transition on retry. Advancing status.version here
+		// would make the next reconcile think the upgrade already completed.
 		if getErr := r.GuestClient.Get(ctx, client.ObjectKeyFromObject(openshiftEC2NodeClass), openshiftEC2NodeClass); getErr != nil {
 			log.Error(getErr, "failed to re-fetch OpenshiftEC2NodeClass after token reconciliation error")
 		} else {
-			// Re-set the skew condition on the re-fetched object since it may have been lost
-			// due to concurrent status patches from the ec2nodeclass controller.
 			setVersionSkewCondition(openshiftEC2NodeClass, skewErr)
-			if updateErr := r.updateVersionStatus(ctx, openshiftEC2NodeClass, releaseImage, version, nil); updateErr != nil {
+			oldVersion := openshiftEC2NodeClass.Status.Version
+			oldImage := openshiftEC2NodeClass.Status.ReleaseImage
+			if updateErr := r.updateVersionStatus(ctx, openshiftEC2NodeClass, oldImage, oldVersion, nil); updateErr != nil {
 				log.Error(updateErr, "failed to update version status after token reconciliation error")
 			}
 		}
@@ -256,6 +263,26 @@ func (r *KarpenterIgnitionReconciler) reconcileDeletedNodeClass(
 	return ctrl.Result{}, nil
 }
 
+// reconcileTaintConfigMap ensures the set-karpenter-taint ConfigMap exists in the HCP namespace.
+// Ignition configs reference it to taint nodes on firstboot until Karpenter okays them, see createInMemoryNodePool.
+func (r *KarpenterIgnitionReconciler) reconcileTaintConfigMap(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      karpenterutil.KarpenterTaintConfigMapName,
+			Namespace: hcp.Namespace,
+		},
+	}
+	_, err := r.CreateOrUpdate(ctx, r.ManagementClient, cm, func() error {
+		manifest, err := karpenterutil.KarpenterTaintConfigManifest()
+		if err != nil {
+			return fmt.Errorf("failed to generate taint config manifest: %w", err)
+		}
+		cm.Data = map[string]string{"config": manifest}
+		return nil
+	})
+	return err
+}
+
 // reconcileNodeClassToken reconciles the ignition token and user-data secrets for an OpenshiftEC2NodeClass.
 func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 	ctx context.Context,
@@ -280,24 +307,50 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 		return fmt.Errorf("failed to create token: %w", err)
 	}
 
-	// Get the current config version from OpenshiftEC2NodeClass to track outdated tokens
+	// Populate the in-memory NodePool annotations and status from the stored nodeclass
+	// state so that Token.isOutdated() can correctly detect config/version changes.
+	// On first reconcile (no stored state), leave annotations absent so isOutdated()
+	// returns true and creates the initial secrets.
 	currentConfigVersion := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationCurrentConfigVersion]
-	if currentConfigVersion == "" {
-		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = cg.Hash()
-	} else {
-		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
+	currentRolloutConfig := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationCurrentRolloutConfig]
+	if currentConfigVersion != "" {
+		np.Annotations[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
+		if currentRolloutConfig != "" {
+			np.Annotations[nodePoolAnnotationCurrentRolloutConfig] = currentRolloutConfig
+		}
+		if openshiftEC2NodeClass.Status.Version != "" {
+			np.Status.Version = openshiftEC2NodeClass.Status.Version
+		}
+	}
+
+	// Set the deployed bootstrap hash so effectiveSecrets() can maintain the
+	// in-progress rollout target during management-side drift, and so
+	// cleanupOutdated() avoids expiring secrets still referenced by Karpenter.
+	if currentConfigVersion != "" {
+		token.SetDeployedBootstrapHash(currentConfigVersion)
 	}
 
 	if err := token.Reconcile(ctx); err != nil {
 		return fmt.Errorf("failed to reconcile token: %w", err)
 	}
 
-	// Update the OpenshiftEC2NodeClass annotation if the config hash changed
-	if currentConfigVersion != cg.Hash() {
-		if err := r.updateConfigVersionAnnotation(ctx, openshiftEC2NodeClass, cg.Hash()); err != nil {
+	// Token.EffectiveHash() returns the hash that Reconcile() actually
+	// maintained secrets for. When only management-side content changed,
+	// this is the deployed hash; otherwise it's the current calculated hash.
+	hashToRecord := token.EffectiveHash()
+
+	// Update annotations when a spec-driven change occurred (version or rollout
+	// config changed), or on first reconcile after operator upgrade to seed the
+	// rollout annotation.
+	versionChanged := cg.Version() != openshiftEC2NodeClass.Status.Version
+	rolloutConfigChanged := currentRolloutConfig != "" && currentRolloutConfig != cg.RolloutHashWithoutVersion()
+	shouldSeedAnnotation := currentRolloutConfig == "" && currentConfigVersion != ""
+
+	if versionChanged || rolloutConfigChanged || shouldSeedAnnotation {
+		if err := r.updateConfigAnnotations(ctx, openshiftEC2NodeClass, hashToRecord, cg.RolloutHashWithoutVersion()); err != nil {
 			return err
 		}
-		log.Info("Updated config version annotation", "oldVersion", currentConfigVersion, "newVersion", cg.Hash())
+		log.Info("Updated config version annotation", "oldVersion", currentConfigVersion, "newVersion", hashToRecord)
 	}
 
 	return nil
@@ -573,14 +626,14 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 		return nil, fmt.Errorf("failed to lookup release image: %w", err)
 	}
 
-	haProxyImage, ok := releaseImage.ComponentImages()[haproxy.HAProxyRouterImageName]
-	if !ok {
-		return nil, fmt.Errorf("release image doesn't have %s image", haproxy.HAProxyRouterImageName)
+	haproxyImage, err := haproxy.ResolveHAProxyImage(releaseImage.ComponentImages())
+	if err != nil {
+		return nil, err
 	}
 
 	haproxyClient := haproxy.HAProxy{
 		Client:                  r.ManagementClient,
-		HAProxyImage:            haProxyImage,
+		HAProxyImage:            haproxyImage,
 		HypershiftOperatorImage: r.HypershiftOperatorImage,
 		ReleaseProvider:         r.ReleaseProvider,
 		ImageMetadataProvider:   r.ImageMetadataProvider,
@@ -679,14 +732,15 @@ func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane, ignitionEndpoint stri
 	return hc, nil
 }
 
-func (r *KarpenterIgnitionReconciler) updateConfigVersionAnnotation(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, newVersion string) error {
+func (r *KarpenterIgnitionReconciler) updateConfigAnnotations(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, configVersion, rolloutConfig string) error {
 	original := openshiftEC2NodeClass.DeepCopy()
 	if openshiftEC2NodeClass.Annotations == nil {
 		openshiftEC2NodeClass.Annotations = make(map[string]string)
 	}
-	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = newVersion
+	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = configVersion
+	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentRolloutConfig] = rolloutConfig
 	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
-		return fmt.Errorf("failed to update config version annotation on OpenshiftEC2NodeClass: %w", err)
+		return fmt.Errorf("failed to update config annotations on OpenshiftEC2NodeClass: %w", err)
 	}
 	return nil
 }
