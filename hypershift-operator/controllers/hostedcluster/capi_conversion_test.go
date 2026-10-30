@@ -335,6 +335,8 @@ func TestCapiAPIVersionGetter(t *testing.T) {
 	}{
 		{name: "When a core kind is registered, it should select the first registered version", groupKind: capiv1beta1.GroupVersion.WithKind("Machine").GroupKind(), expected: capiv1beta1.GroupVersion.String()},
 		{name: "When a provider kind is registered, it should resolve its API version", groupKind: schema.GroupKind{Group: "infrastructure.cluster.x-k8s.io", Kind: "AWSMachine"}, expected: "infrastructure.cluster.x-k8s.io/v1beta2"},
+		{name: "When a VPC kind is registered, it should preserve v1beta2 reference priority", groupKind: schema.GroupKind{Group: "infrastructure.cluster.x-k8s.io", Kind: "IBMVPCCluster"}, expected: "infrastructure.cluster.x-k8s.io/v1beta2"},
+		{name: "When a PowerVS kind is registered, it should preserve v1beta2 reference priority", groupKind: schema.GroupKind{Group: "infrastructure.cluster.x-k8s.io", Kind: "IBMPowerVSMachine"}, expected: "infrastructure.cluster.x-k8s.io/v1beta2"},
 		{name: "When beta2 is prioritized, it should honor scheme priority rather than sort versions", groupKind: capiv1beta1.GroupVersion.WithKind("Machine").GroupKind(), prioritizeBeta: true, expected: capiv1beta2.GroupVersion.String()},
 		{name: "When the context is canceled, it should still resolve the registered version", groupKind: capiv1beta1.GroupVersion.WithKind("Machine").GroupKind(), cancelContext: true, expected: capiv1beta1.GroupVersion.String()},
 		{name: "When the kind is unknown, it should return the existing error and no version", groupKind: schema.GroupKind{Group: "cluster.x-k8s.io", Kind: "Unknown"}, expectedError: "no versions registered for GroupKind Unknown.cluster.x-k8s.io"},
