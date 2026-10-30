@@ -14,7 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package v1beta2 contains the v1beta2 implementation of ExtensionConfig.
 package v1beta2
-
-func (*ClusterResourceSet) Hub()        {}
-func (*ClusterResourceSetBinding) Hub() {}

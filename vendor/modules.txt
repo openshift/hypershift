@@ -2656,15 +2656,9 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/cluster-api v1.13.4
-## explicit; go 1.25.0
-sigs.k8s.io/cluster-api/api/addons/v1beta1
-sigs.k8s.io/cluster-api/api/addons/v1beta2
-sigs.k8s.io/cluster-api/api/core/v1beta1
-sigs.k8s.io/cluster-api/api/core/v1beta2
-sigs.k8s.io/cluster-api/api/ipam/v1beta1
-sigs.k8s.io/cluster-api/api/ipam/v1beta2
-sigs.k8s.io/cluster-api/errors
+# sigs.k8s.io/cluster-api v1.14.3
+## explicit; go 1.26.0
+sigs.k8s.io/cluster-api/core/webhooks/conversion
 sigs.k8s.io/cluster-api/util
 sigs.k8s.io/cluster-api/util/annotations
 sigs.k8s.io/cluster-api/util/conditions
@@ -2701,6 +2695,18 @@ sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1
 sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta1
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors
 sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/optional
+# sigs.k8s.io/cluster-api/api v1.14.3
+## explicit; go 1.26.0
+sigs.k8s.io/cluster-api/api/addons/v1beta1
+sigs.k8s.io/cluster-api/api/addons/v1beta2
+sigs.k8s.io/cluster-api/api/core/v1beta1
+sigs.k8s.io/cluster-api/api/core/v1beta2
+sigs.k8s.io/cluster-api/api/deprecated/errors
+sigs.k8s.io/cluster-api/api/ipam/v1alpha1
+sigs.k8s.io/cluster-api/api/ipam/v1beta1
+sigs.k8s.io/cluster-api/api/ipam/v1beta2
+sigs.k8s.io/cluster-api/api/runtime/v1alpha1
+sigs.k8s.io/cluster-api/api/runtime/v1beta2
 # sigs.k8s.io/controller-runtime v0.25.0
 ## explicit; go 1.26.0
 sigs.k8s.io/controller-runtime

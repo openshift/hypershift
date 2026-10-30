@@ -369,7 +369,8 @@ CAPI_CRD_GEN = $(DIR)/hack/capi-crd-gen.sh
 cluster-api: $(CONTROLLER_GEN)
 	$(CAPI_CRD_GEN) --no-workspace $(DIR)/cmd/install/assets/crds/cluster-api $(CONTROLLER_GEN) $(CRD_OPTIONS) \
 		paths="./vendor/sigs.k8s.io/cluster-api/api/core/..." \
-		paths="./vendor/sigs.k8s.io/cluster-api/api/ipam/..." \
+		paths="./vendor/sigs.k8s.io/cluster-api/api/ipam/v1beta1" \
+		paths="./vendor/sigs.k8s.io/cluster-api/api/ipam/v1beta2" \
 		paths="./vendor/sigs.k8s.io/cluster-api/api/addons/..."
 
 # CAPI provider CRD targets run controller-gen inside a temporary Go workspace
