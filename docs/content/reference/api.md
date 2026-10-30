@@ -6897,6 +6897,16 @@ firewall rules, missing data plane nodes, or problems with infrastructure
 components like the konnectivity-agent workload.
 <strong>Unknown</strong> means the status cannot be determined (e.g., no worker nodes available or unable to inspect).</p>
 </td>
+</tr><tr><td><p>&#34;DeterministicLBIPSupported&#34;</p></td>
+<td><p>DeterministicLBIPSupported indicates whether the HostedCluster&rsquo;s
+deterministic load balancer configuration (loadBalancer.serviceAnnotations
+and loadBalancer.loadBalancerClass on the APIServer service) is honored by
+the control plane operator image in use.
+A False condition means the HostedCluster asks for annotations or an LB
+class that the control plane operator image predates, so the fields are
+ignored. Upgrading the control plane release image resolves it; the
+HostedCluster keeps reconciling in the meantime.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
 A failure here often means a software bug or a non-stable cluster.</p>

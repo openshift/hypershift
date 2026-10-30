@@ -1064,6 +1064,18 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 	_, useRestrictedPSA := controlPlaneOperatorImageLabels[useRestrictedPodSecurityLabel]
 	_, defaultToControlPlaneV2 := controlPlaneOperatorImageLabels[defaultToControlPlaneV2Label]
 
+	// The label lookup above already returned on error, so the labels are always
+	// resolved here. Writing only on an actual change keeps the steady state free
+	// of status writes.
+	if meta.SetStatusCondition(&hcluster.Status.Conditions, deterministicLBIPSupportedCondition(hcluster, controlPlaneOperatorImageLabels)) {
+		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to update %s condition: %w", hyperv1.DeterministicLBIPSupported, err)
+		}
+	}
+
 	// Reconcile the hosted cluster namespace
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
 		if controlPlaneNamespace.Labels == nil {

@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 func TestReconcileService(t *testing.T) {
@@ -249,6 +250,8 @@ func TestReconcileService(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When passing serviceAnnotations and loadBalancerClass, it should apply them to the Service", testReconcileServiceAnnotationPassthrough)
 }
 
 func TestReconcileServiceAzureInternalLB(t *testing.T) {
@@ -467,6 +470,8 @@ func TestReconcilePrivateService(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When passing serviceAnnotations and loadBalancerClass, it should apply them to the private Service", testReconcilePrivateServiceAnnotationPassthrough)
 }
 
 func TestReconcilePrivateServiceAWSNLBAnnotation(t *testing.T) {
@@ -518,6 +523,490 @@ func TestReconcilePrivateServiceAWSNLBAnnotation(t *testing.T) {
 				g.Expect(svc.Annotations).To(HaveKeyWithValue(AWSNLBAnnotation, tc.wantValue))
 			} else {
 				g.Expect(svc.Annotations).ToNot(HaveKey(AWSNLBAnnotation))
+			}
+		})
+	}
+}
+
+// testReconcileServiceAnnotationPassthrough is invoked as a subtest of
+// TestReconcileService to keep the one-to-one test-to-production-function rule.
+func testReconcileServiceAnnotationPassthrough(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name                  string
+		platform              hyperv1.PlatformType
+		endpointAccess        hyperv1.AWSEndpointAccessType
+		strategy              hyperv1.ServicePublishingStrategy
+		resourceVersion       string // non-empty = update, empty = create
+		existingServiceType   corev1.ServiceType
+		existingAnnotations   map[string]string
+		wantAnnotations       map[string]string
+		wantLoadBalancerClass *string
+		wantServiceType       corev1.ServiceType
+	}{
+		{
+			name:           "When creating a public LoadBalancer with serviceAnnotations it should apply them to the Service",
+			platform:       hyperv1.AgentPlatform,
+			endpointAccess: hyperv1.Public,
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					ServiceAnnotations: map[string]string{
+						"metallb.io/loadBalancerIPs": "10.1.1.100",
+						"metallb.io/address-pool":    "production",
+					},
+				},
+			},
+			wantAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs": "10.1.1.100",
+				"metallb.io/address-pool":    "production",
+			},
+		},
+		{
+			name:           "When creating a public LoadBalancer with loadBalancerClass it should set it on the Service",
+			platform:       hyperv1.AgentPlatform,
+			endpointAccess: hyperv1.Public,
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					LoadBalancerClass: "metallb.io/metallb",
+				},
+			},
+			wantLoadBalancerClass: ptr.To("metallb.io/metallb"),
+		},
+		{
+			name:            "When updating a LoadBalancer with serviceAnnotations it should apply them",
+			platform:        hyperv1.AgentPlatform,
+			endpointAccess:  hyperv1.Public,
+			resourceVersion: "1",
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					ServiceAnnotations: map[string]string{
+						"metallb.io/loadBalancerIPs": "10.1.1.100",
+					},
+				},
+			},
+			wantAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs": "10.1.1.100",
+			},
+		},
+		{
+			name:                "When updating a Service that is already a LoadBalancer without a class, it should not set loadBalancerClass",
+			platform:            hyperv1.AgentPlatform,
+			endpointAccess:      hyperv1.Public,
+			resourceVersion:     "1",
+			existingServiceType: corev1.ServiceTypeLoadBalancer,
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					LoadBalancerClass: "metallb.io/metallb",
+				},
+			},
+			wantLoadBalancerClass: nil,
+			wantServiceType:       corev1.ServiceTypeLoadBalancer,
+		},
+		{
+			name:           "When creating an AWS LoadBalancer with a serviceAnnotation that collides with CPO NLB annotation it should preserve CPO value",
+			platform:       hyperv1.AWSPlatform,
+			endpointAccess: hyperv1.Public,
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					ServiceAnnotations: map[string]string{
+						AWSNLBAnnotation: "clb",
+					},
+				},
+			},
+			// CPO writes "nlb" AFTER user annotations, so CPO wins.
+			wantAnnotations: map[string]string{
+				AWSNLBAnnotation: "nlb",
+			},
+		},
+		{
+			name:            "When updating an AWS LoadBalancer, it should ignore a user-supplied NLB annotation",
+			platform:        hyperv1.AWSPlatform,
+			endpointAccess:  hyperv1.Public,
+			resourceVersion: "1",
+			existingAnnotations: map[string]string{
+				AWSNLBAnnotation: "nlb",
+			},
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					ServiceAnnotations: map[string]string{
+						AWSNLBAnnotation: "clb",
+					},
+				},
+			},
+			// The admission policy forbids changing this annotation, so the
+			// existing CPO value must survive the update.
+			wantAnnotations: map[string]string{
+				AWSNLBAnnotation: "nlb",
+			},
+		},
+		{
+			name:            "When reconciling a LoadBalancer with serviceAnnotations it should preserve external annotations",
+			platform:        hyperv1.AgentPlatform,
+			endpointAccess:  hyperv1.Public,
+			resourceVersion: "1",
+			existingAnnotations: map[string]string{
+				"metallb.io/ip-allocated-from-pool": "production",
+			},
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					ServiceAnnotations: map[string]string{
+						"metallb.io/loadBalancerIPs": "10.1.1.100",
+					},
+				},
+			},
+			wantAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs":        "10.1.1.100",
+				"metallb.io/ip-allocated-from-pool": "production",
+			},
+		},
+		{
+			name:           "When using a Route strategy with serviceAnnotations it should not apply them",
+			platform:       hyperv1.AgentPlatform,
+			endpointAccess: hyperv1.Public,
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					ServiceAnnotations: map[string]string{
+						"metallb.io/loadBalancerIPs": "10.1.1.100",
+					},
+				},
+			},
+			wantAnnotations: nil,
+		},
+		{
+			name:            "When a user manually changes a serviceAnnotation value on the Service it should be overwritten by HC spec value",
+			platform:        hyperv1.AgentPlatform,
+			endpointAccess:  hyperv1.Public,
+			resourceVersion: "1",
+			existingAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs": "10.1.1.999",
+			},
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					ServiceAnnotations: map[string]string{
+						"metallb.io/loadBalancerIPs": "10.1.1.100",
+					},
+				},
+			},
+			wantAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs": "10.1.1.100",
+			},
+		},
+		{
+			name:           "When the cluster is private-only, it should not apply loadBalancerClass to the ClusterIP Service",
+			platform:       hyperv1.AWSPlatform,
+			endpointAccess: hyperv1.Private,
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					LoadBalancerClass: "metallb.io/metallb",
+					ServiceAnnotations: map[string]string{
+						"metallb.io/loadBalancerIPs": "10.1.1.100",
+					},
+				},
+			},
+			wantAnnotations:       nil,
+			wantLoadBalancerClass: nil,
+			wantServiceType:       corev1.ServiceTypeClusterIP,
+		},
+		{
+			name:           "When the cluster has public and private endpoints, it should apply the deterministic LB fields to the public Service",
+			platform:       hyperv1.AWSPlatform,
+			endpointAccess: hyperv1.PublicAndPrivate,
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					LoadBalancerClass: "metallb.io/metallb",
+					ServiceAnnotations: map[string]string{
+						"metallb.io/loadBalancerIPs": "10.1.1.100",
+					},
+				},
+			},
+			wantAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs": "10.1.1.100",
+			},
+			wantLoadBalancerClass: ptr.To("metallb.io/metallb"),
+			wantServiceType:       corev1.ServiceTypeLoadBalancer,
+		},
+		{
+			name:                "When a private cluster transitions to public, it should set loadBalancerClass on the existing Service",
+			platform:            hyperv1.AWSPlatform,
+			endpointAccess:      hyperv1.PublicAndPrivate,
+			resourceVersion:     "1",
+			existingServiceType: corev1.ServiceTypeClusterIP,
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					LoadBalancerClass: "metallb.io/metallb",
+				},
+			},
+			wantLoadBalancerClass: ptr.To("metallb.io/metallb"),
+			wantServiceType:       corev1.ServiceTypeLoadBalancer,
+		},
+		{
+			name:                "When the Service already exists as a LoadBalancer without a class, it should not set it",
+			platform:            hyperv1.AWSPlatform,
+			endpointAccess:      hyperv1.PublicAndPrivate,
+			resourceVersion:     "1",
+			existingServiceType: corev1.ServiceTypeLoadBalancer,
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					LoadBalancerClass: "metallb.io/metallb",
+				},
+			},
+			wantLoadBalancerClass: nil,
+			wantServiceType:       corev1.ServiceTypeLoadBalancer,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			svc := &corev1.Service{
+				ObjectMeta: v1.ObjectMeta{
+					ResourceVersion: tc.resourceVersion,
+				},
+				Spec: corev1.ServiceSpec{
+					Type: tc.existingServiceType,
+				},
+			}
+			if tc.existingAnnotations != nil {
+				svc.Annotations = tc.existingAnnotations
+			}
+
+			platform := hyperv1.PlatformSpec{Type: tc.platform}
+			if tc.endpointAccess != "" && tc.platform == hyperv1.AWSPlatform {
+				platform.AWS = &hyperv1.AWSPlatformSpec{EndpointAccess: tc.endpointAccess}
+			}
+			hcp := hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: platform}}
+
+			err := ReconcileService(svc, &tc.strategy, &v1.OwnerReference{}, 6443, []string{}, &hcp)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			for k, v := range tc.wantAnnotations {
+				g.Expect(svc.Annotations).To(HaveKeyWithValue(k, v), "expected annotation %s=%s", k, v)
+			}
+
+			if tc.wantLoadBalancerClass != nil {
+				g.Expect(svc.Spec.LoadBalancerClass).To(Equal(tc.wantLoadBalancerClass))
+			} else {
+				g.Expect(svc.Spec.LoadBalancerClass).To(BeNil())
+			}
+
+			if tc.wantServiceType != "" {
+				g.Expect(svc.Spec.Type).To(Equal(tc.wantServiceType))
+			}
+
+			// Verify Route strategy didn't apply LB annotations
+			if tc.strategy.Type == hyperv1.Route && tc.wantAnnotations == nil {
+				g.Expect(svc.Annotations).ToNot(HaveKey("metallb.io/loadBalancerIPs"))
+			}
+		})
+	}
+}
+
+// testReconcilePrivateServiceAnnotationPassthrough is invoked as a subtest of
+// TestReconcilePrivateService to keep the one-to-one test-to-production-function rule.
+func testReconcilePrivateServiceAnnotationPassthrough(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name                  string
+		platform              hyperv1.PlatformType
+		endpointAccess        hyperv1.AWSEndpointAccessType
+		serviceAnnotations    map[string]string
+		loadBalancerClass     string
+		resourceVersion       string
+		existingAnnotations   map[string]string
+		wantAnnotations       map[string]string
+		notWantAnnotations    []string
+		wantLoadBalancerClass *string
+	}{
+		{
+			name:     "When creating an AWS private service with serviceAnnotations it should apply them",
+			platform: hyperv1.AWSPlatform,
+			serviceAnnotations: map[string]string{
+				"service.beta.kubernetes.io/aws-load-balancer-eip-allocations": "eipalloc-abc123",
+			},
+			wantAnnotations: map[string]string{
+				"service.beta.kubernetes.io/aws-load-balancer-eip-allocations": "eipalloc-abc123",
+			},
+		},
+		{
+			name:                  "When creating a private service with loadBalancerClass it should set it",
+			platform:              hyperv1.AWSPlatform,
+			endpointAccess:        hyperv1.Private,
+			loadBalancerClass:     "metallb.io/metallb",
+			wantLoadBalancerClass: ptr.To("metallb.io/metallb"),
+		},
+		{
+			name:                  "When updating a private service with loadBalancerClass it should not set it",
+			platform:              hyperv1.AWSPlatform,
+			endpointAccess:        hyperv1.Private,
+			resourceVersion:       "1",
+			loadBalancerClass:     "metallb.io/metallb",
+			wantLoadBalancerClass: nil,
+		},
+		{
+			name:     "When creating a private service with serviceAnnotations it should preserve CPO platform annotations",
+			platform: hyperv1.AWSPlatform,
+			serviceAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs": "10.1.1.100",
+			},
+			wantAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs": "10.1.1.100",
+				// CPO's own AWS annotations must also be present
+				"service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled": "true",
+				"service.beta.kubernetes.io/aws-load-balancer-internal":                          "true",
+			},
+		},
+		{
+			name:            "When reconciling a private service it should preserve external annotations not in serviceAnnotations",
+			platform:        hyperv1.AWSPlatform,
+			endpointAccess:  hyperv1.Private,
+			resourceVersion: "1",
+			existingAnnotations: map[string]string{
+				"metallb.io/ip-allocated-from-pool": "production",
+			},
+			serviceAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs": "10.1.1.100",
+			},
+			wantAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs":        "10.1.1.100",
+				"metallb.io/ip-allocated-from-pool": "production",
+			},
+		},
+		{
+			name:           "When the cluster also has a public endpoint, it should apply loadBalancerClass but not the address annotations",
+			platform:       hyperv1.AWSPlatform,
+			endpointAccess: hyperv1.PublicAndPrivate,
+			serviceAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs": "10.1.1.100",
+			},
+			loadBalancerClass: "metallb.io/metallb",
+			wantAnnotations: map[string]string{
+				// CPO's own AWS private annotations are still applied.
+				"service.beta.kubernetes.io/aws-load-balancer-internal": "true",
+			},
+			notWantAnnotations:    []string{"metallb.io/loadBalancerIPs"},
+			wantLoadBalancerClass: ptr.To("metallb.io/metallb"),
+		},
+		{
+			name:            "When a private cluster gains a public endpoint, it should remove the address annotations from the private Service",
+			platform:        hyperv1.AWSPlatform,
+			endpointAccess:  hyperv1.PublicAndPrivate,
+			resourceVersion: "1",
+			existingAnnotations: map[string]string{
+				// Written while the cluster was private-only and this Service was
+				// the primary endpoint.
+				"metallb.io/loadBalancerIPs":        "10.1.1.100",
+				"metallb.io/ip-allocated-from-pool": "production",
+			},
+			serviceAnnotations: map[string]string{
+				"metallb.io/loadBalancerIPs": "10.1.1.100",
+			},
+			wantAnnotations: map[string]string{
+				// Keys outside serviceAnnotations are still left alone.
+				"metallb.io/ip-allocated-from-pool": "production",
+			},
+			notWantAnnotations:    []string{"metallb.io/loadBalancerIPs"},
+			wantLoadBalancerClass: nil,
+		},
+		{
+			name:            "When updating an AWS private Service, it should ignore a user-supplied NLB annotation",
+			platform:        hyperv1.AWSPlatform,
+			endpointAccess:  hyperv1.Private,
+			resourceVersion: "1",
+			existingAnnotations: map[string]string{
+				AWSNLBAnnotation: "nlb",
+			},
+			serviceAnnotations: map[string]string{
+				AWSNLBAnnotation: "clb",
+			},
+			// The admission policy forbids changing this annotation, so the
+			// existing CPO value must survive the update.
+			wantAnnotations: map[string]string{
+				AWSNLBAnnotation: "nlb",
+			},
+		},
+		{
+			name:            "When a private cluster gains a public endpoint, it should keep the CPO NLB annotation",
+			platform:        hyperv1.AWSPlatform,
+			endpointAccess:  hyperv1.PublicAndPrivate,
+			resourceVersion: "1",
+			existingAnnotations: map[string]string{
+				AWSNLBAnnotation: "nlb",
+			},
+			serviceAnnotations: map[string]string{
+				AWSNLBAnnotation: "clb",
+			},
+			// Releasing the address must not remove the operator-managed NLB
+			// type annotation; the admission policy rejects that update.
+			wantAnnotations: map[string]string{
+				AWSNLBAnnotation: "nlb",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			svc := &corev1.Service{
+				ObjectMeta: v1.ObjectMeta{
+					ResourceVersion: tc.resourceVersion,
+				},
+			}
+			if tc.existingAnnotations != nil {
+				svc.Annotations = tc.existingAnnotations
+			}
+
+			platform := hyperv1.PlatformSpec{Type: tc.platform}
+			if tc.endpointAccess != "" {
+				platform.AWS = &hyperv1.AWSPlatformSpec{EndpointAccess: tc.endpointAccess}
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: platform,
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+									ServiceAnnotations: tc.serviceAnnotations,
+									LoadBalancerClass:  tc.loadBalancerClass,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			err := ReconcilePrivateService(svc, hcp, &v1.OwnerReference{})
+			g.Expect(err).ToNot(HaveOccurred())
+
+			for k, v := range tc.wantAnnotations {
+				g.Expect(svc.Annotations).To(HaveKeyWithValue(k, v), "expected annotation %s=%s", k, v)
+			}
+			for _, k := range tc.notWantAnnotations {
+				g.Expect(svc.Annotations).ToNot(HaveKey(k), "unexpected annotation %s", k)
+			}
+
+			if tc.wantLoadBalancerClass != nil {
+				g.Expect(svc.Spec.LoadBalancerClass).To(Equal(tc.wantLoadBalancerClass))
+			} else {
+				g.Expect(svc.Spec.LoadBalancerClass).To(BeNil())
 			}
 		})
 	}

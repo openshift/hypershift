@@ -9965,3 +9965,226 @@ func TestReconcilePullSecretSync(t *testing.T) {
 		})
 	}
 }
+
+func TestHcUsesLBIPFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		expected bool
+	}{
+		{
+			name: "When HC has no serviceAnnotations or loadBalancerClass, it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:         hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{},
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When HC has serviceAnnotations, it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+									ServiceAnnotations: map[string]string{
+										"metallb.universe.tf/address-pool": "production",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When HC has loadBalancerClass, it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+									LoadBalancerClass: "metallb.io/metallb",
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When HC has nil LoadBalancer strategy, it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When only a non-APIServer service uses LB fields, it should return false",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:         hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{},
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+									ServiceAnnotations: map[string]string{"key": "val"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When HC has multiple services and the APIServer uses LB fields, it should return true",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:         hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{},
+							},
+						},
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+									ServiceAnnotations: map[string]string{"key": "val"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(hcUsesLBIPFields(tt.hc)).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestDeterministicLBIPSupportedCondition(t *testing.T) {
+	hcWithFields := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Generation: 7},
+		Spec: hyperv1.HostedClusterSpec{
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.LoadBalancer,
+						LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+							ServiceAnnotations: map[string]string{
+								"metallb.io/loadBalancerIPs": "10.1.1.100",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	hcWithoutFields := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Generation: 7},
+		Spec: hyperv1.HostedClusterSpec{
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type:         hyperv1.LoadBalancer,
+						LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{},
+					},
+				},
+			},
+		},
+	}
+	supportedLabels := map[string]string{controlPlaneOperatorSupportsDeterministicLBLabel: "true"}
+
+	tests := []struct {
+		name           string
+		hc             *hyperv1.HostedCluster
+		labels         map[string]string
+		expectedStatus metav1.ConditionStatus
+		expectedReason string
+	}{
+		{
+			name:           "When the CPO image advertises support, it should report True",
+			hc:             hcWithFields,
+			labels:         supportedLabels,
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:           "When the CPO image lacks the label and the HC uses deterministic LB fields, it should report False",
+			hc:             hcWithFields,
+			labels:         map[string]string{"other-label": "true"},
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperv1.UnsupportedControlPlaneOperatorReason,
+		},
+		{
+			name:           "When the CPO image lacks the label but the HC does not use the fields, it should report True",
+			hc:             hcWithoutFields,
+			labels:         map[string]string{"other-label": "true"},
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name:           "When image labels are unavailable and the HC uses deterministic LB fields, it should report False",
+			hc:             hcWithFields,
+			labels:         nil,
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperv1.UnsupportedControlPlaneOperatorReason,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			condition := deterministicLBIPSupportedCondition(tt.hc, tt.labels)
+			g.Expect(condition.Type).To(Equal(string(hyperv1.DeterministicLBIPSupported)))
+			g.Expect(condition.Status).To(Equal(tt.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tt.expectedReason))
+			g.Expect(condition.ObservedGeneration).To(Equal(tt.hc.Generation))
+		})
+	}
+}
