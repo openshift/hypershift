@@ -86,6 +86,7 @@ import (
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	"github.com/google/go-cmp/cmp"
 	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/v2/api/v1alpha1"
 	"go.uber.org/mock/gomock"
@@ -9904,6 +9905,75 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			pullSecret := controlplaneoperator.PullSecret("cp-ns")
 			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
 			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
+		})
+	}
+}
+
+func TestEffectiveGMPMonitoring(t *testing.T) {
+	supportedLabels := map[string]string{controlPlaneOperatorSupportsGMPMonitoringLabel: "true"}
+	testCases := []struct {
+		name                string
+		enableGMPMonitoring bool
+		platform            hyperv1.PlatformType
+		labels              map[string]string
+		labelsResolved      bool
+		expected            bool
+		expectLog           bool
+	}{
+		{
+			name:           "When GMP monitoring is disabled, it should not use GMP monitoring",
+			platform:       hyperv1.GCPPlatform,
+			labels:         supportedLabels,
+			labelsResolved: true,
+		},
+		{
+			name:                "When GMP monitoring is enabled and the CPO image supports it, it should use GMP monitoring",
+			enableGMPMonitoring: true,
+			platform:            hyperv1.GCPPlatform,
+			labels:              supportedLabels,
+			labelsResolved:      true,
+			expected:            true,
+		},
+		{
+			name:                "When GMP monitoring is enabled and the CPO image does not support it, it should log and not use GMP monitoring",
+			enableGMPMonitoring: true,
+			platform:            hyperv1.GCPPlatform,
+			labels:              map[string]string{controlPlaneOperatorSubcommandsLabel: "true"},
+			labelsResolved:      true,
+			expectLog:           true,
+		},
+		{
+			name:                "When GMP monitoring is enabled and the CPO image labels are unavailable, it should not use GMP monitoring",
+			enableGMPMonitoring: true,
+			platform:            hyperv1.GCPPlatform,
+		},
+		{
+			name:                "When GMP monitoring is enabled and the CPO image resolves with no labels at all, it should log and not use GMP monitoring",
+			enableGMPMonitoring: true,
+			platform:            hyperv1.GCPPlatform,
+			labelsResolved:      true,
+			expectLog:           true,
+		},
+		{
+			name:                "When GMP monitoring is enabled on a non-GCP platform, it should not use GMP monitoring",
+			enableGMPMonitoring: true,
+			platform:            hyperv1.AWSPlatform,
+			labels:              supportedLabels,
+			labelsResolved:      true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			var logged []string
+			log := funcr.New(func(_, args string) { logged = append(logged, args) }, funcr.Options{Verbosity: 1})
+			r := &HostedClusterReconciler{EnableGMPMonitoring: tc.enableGMPMonitoring}
+			g.Expect(r.effectiveGMPMonitoring(log, tc.platform, tc.labels, tc.labelsResolved)).To(Equal(tc.expected))
+			if tc.expectLog {
+				g.Expect(logged).To(HaveLen(1))
+			} else {
+				g.Expect(logged).To(BeEmpty())
+			}
 		})
 	}
 }

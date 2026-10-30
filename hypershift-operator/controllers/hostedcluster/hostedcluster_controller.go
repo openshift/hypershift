@@ -139,6 +139,7 @@ const (
 	controlPlaneOperatorSubcommandsLabel                 = "io.openshift.hypershift.control-plane-operator-subcommands"
 	controlPlaneOperatorSupportsKASCustomKubeconfigLabel = "io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubeconfig"
 	controlPlaneOperatorSupportsGCPResourceTagsLabel     = "io.openshift.hypershift.control-plane-operator-supports-gcp-resource-tags"
+	controlPlaneOperatorSupportsGMPMonitoringLabel       = "io.openshift.hypershift.control-plane-operator-supports-gmp-monitoring"
 
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
 	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
@@ -202,6 +203,10 @@ type HostedClusterReconciler struct {
 
 	MetricsSet    metrics.MetricsSet
 	SREConfigHash string
+
+	// EnableGMPMonitoring selects Google Managed Prometheus monitoring resources
+	// instead of monitoring.coreos.com resources.
+	EnableGMPMonitoring bool
 
 	OperatorNamespace string
 
@@ -1571,6 +1576,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	})
 
 	_, cpoSupportsKASCustomKubeconfig := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsKASCustomKubeconfigLabel]
+	enableGMPMonitoring := r.effectiveGMPMonitoring(log, hcluster.Spec.Platform.Type, controlPlaneOperatorImageLabels, controlPlaneOperatorImageLabelsResolved)
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
 	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
 	// Default to true when labels are unavailable (pull secret outage) — all
@@ -1651,7 +1657,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	report.executeOrBlock("OperatorDeployments", func() error {
 		return r.reconcileOperatorDeployments(ctx, createOrUpdate, hcluster, hcp, controlPlaneNamespace, p,
 			controlPlaneOperatorImage, utilitiesImage,
-			cpoHasUtilities, r.CertRotationScale, releaseImage, releaseImageVersion, releaseProvider)
+			cpoHasUtilities, enableGMPMonitoring, r.CertRotationScale, releaseImage, releaseImageVersion, releaseProvider)
 	})
 
 	report.executeOrBlock("RBACAndPolicies", func() error {
@@ -1819,7 +1825,7 @@ func (r *HostedClusterReconciler) reconcileOperatorDeployments(ctx context.Conte
 	hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, controlPlaneNamespace *corev1.Namespace,
 	p platform.Platform,
 	controlPlaneOperatorImage, utilitiesImage string,
-	cpoHasUtilities bool, certRotationScale time.Duration,
+	cpoHasUtilities, enableGMPMonitoring bool, certRotationScale time.Duration,
 	releaseImage *releaseinfo.ReleaseImage,
 	releaseImageVersion semver.Version,
 	releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides,
@@ -1849,6 +1855,7 @@ func (r *HostedClusterReconciler) reconcileOperatorDeployments(ctx context.Conte
 		DefaultSecurityContextUID: securityContextUID,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
 		MetricsSet:                metricsSet,
+		EnableGMPMonitoring:       enableGMPMonitoring,
 		ReleaseImageProvider:      imageProvider,
 		OmitOwnerReference:        true,
 	}
@@ -5896,6 +5903,39 @@ func (r *HostedClusterReconciler) effectiveMetricsSet(monitoring hyperv1.Monitor
 		return metrics.MetricsSet(monitoring.MetricsSet)
 	}
 	return r.MetricsSet
+}
+
+// effectiveGMPMonitoring returns whether a hosted control plane should use GMP monitoring. GMP is only
+// used when the CPO image declares support, so the components rendered by the hypershift-operator and
+// the CPO always emit monitors for the same API group. EnableGMPMonitoring is a management-cluster-wide
+// operator flag, not derived from the HostedCluster spec, so the platform is checked here as well: GMP
+// is GCP-only, and without this check the flag would also apply to non-GCP platforms sharing the
+// management cluster.
+func (r *HostedClusterReconciler) effectiveGMPMonitoring(log logr.Logger, platform hyperv1.PlatformType, controlPlaneOperatorImageLabels map[string]string, controlPlaneOperatorImageLabelsResolved bool) bool {
+	if !r.EnableGMPMonitoring {
+		return false
+	}
+	if platform != hyperv1.GCPPlatform {
+		return false
+	}
+	// controlPlaneOperatorImageLabels normally reflects what the resolved CPO image actually
+	// declares, but hyperv1.ControlPlaneOperatorImageLabelsAnnotation lets a HostedCluster
+	// override it, bypassing this image-derived support check entirely. An old/pre-GMP CPO
+	// handed --enable-gmp-monitoring through that escape hatch would reject the unknown flag
+	// and crash-loop; acceptable for a deliberate test override, but worth knowing before using it.
+	if _, supported := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsGMPMonitoringLabel]; !supported {
+		// controlPlaneOperatorImageLabelsResolved is false when the image lookup itself failed
+		// (e.g. a pull secret outage); operator deployments are blocked in that case, so the log
+		// would be noise. A resolved-but-nil/empty map means the image was fetched successfully
+		// and genuinely declares no labels, which is worth logging like any other unsupported case.
+		// V(1): this fires every reconcile per HostedCluster, which would be noisy at fleet scale
+		// during the rollout window before a HostedCluster's CPO image carries the label.
+		if controlPlaneOperatorImageLabelsResolved {
+			log.V(1).Info("GMP monitoring is enabled but the control plane operator image does not support it, using monitoring.coreos.com resources")
+		}
+		return false
+	}
+	return true
 }
 
 // reconcileSREMetricsConfig loads the SRE metrics configuration (avoids parsing if the content is the same)

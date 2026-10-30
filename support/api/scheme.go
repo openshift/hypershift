@@ -12,6 +12,7 @@ import (
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	"github.com/openshift/hypershift/support/gmpmonitoring"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -91,7 +92,7 @@ var (
 		json.SerializerOptions{Yaml: true, Pretty: true, Strict: false},
 	)
 	// AllMonitoringYamlSerializer allows decoding monitoring resources
-	// from either the default coreos group version or the rhobs group version
+	// from the CoreOS, RHOBS and GMP group versions
 	AllMonitoringYamlSerializer = json.NewSerializerWithOptions(
 		json.DefaultMetaFactory, AllMonitoringScheme, AllMonitoringScheme,
 		json.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
@@ -146,6 +147,8 @@ func init() {
 		} else {
 			_ = prometheusoperatorv1.AddToScheme(scheme)
 		}
+		// Type registration is additive; runtime resource selection is separate.
+		_ = gmpmonitoring.AddToScheme(scheme)
 		_ = snapshotv1.AddToScheme(scheme)
 		_ = mcfgv1.AddToScheme(scheme)
 		_ = cdiv1beta1.AddToScheme(scheme)
