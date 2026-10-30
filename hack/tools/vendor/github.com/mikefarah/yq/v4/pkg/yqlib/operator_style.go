@@ -19,14 +19,14 @@ func parseStyle(customStyle string) (Style, error) {
 	} else if customStyle == "flow" {
 		return FlowStyle, nil
 	} else if customStyle != "" {
-		return 0, fmt.Errorf("Unknown style %v", customStyle)
+		return 0, fmt.Errorf("unknown style %v", customStyle)
 	}
 	return 0, nil
 }
 
 func assignStyleOperator(d *dataTreeNavigator, context Context, expressionNode *ExpressionNode) (Context, error) {
 
-	log.Debugf("AssignStyleOperator: %v")
+	log.Debugf("AssignStyleOperator")
 	var style Style
 	if !expressionNode.Operation.UpdateAssign {
 		rhs, err := d.GetMatchingNodes(context.ReadOnlyClone(), expressionNode.RHS)
@@ -42,7 +42,7 @@ func assignStyleOperator(d *dataTreeNavigator, context Context, expressionNode *
 		}
 	}
 
-	lhs, err := d.GetMatchingNodes(context, expressionNode.LHS)
+	lhs, err := d.GetMatchingNodes(context.WritableClone(), expressionNode.LHS)
 
 	if err != nil {
 		return Context{}, err
