@@ -219,6 +219,10 @@ func init() {
 		false,
 	)
 	// Karpenter test environment variables
+	RegisterEnvVar("E2E_AUTONODE_LOCAL_ZONE", "Explicit AWS Local Zone for AutoNode bootstrap coverage; requires an already opted-in zone.", false)
+	RegisterEnvVar("E2E_AUTONODE_LOCAL_ZONE_SUBNET_ID", "Optional existing private subnet override; otherwise the lifecycle test creates and cleans up a Local Zone subnet in the hosted cluster VPC.", false)
+	RegisterEnvVar("E2E_AUTONODE_LOCAL_ZONE_INSTANCE_TYPE", "On-demand amd64 instance type offered in the selected Local Zone.", false)
+	RegisterEnvVar("E2E_AUTONODE_LOCAL_ZONE_VOLUME_TYPE", "Root EBS type (gp2 or gp3) supported in the selected Local Zone; no default.", false)
 	RegisterEnvVarWithDefault(
 		"PULL_SECRET_FILE",
 		"Path to pull secret file for release image lookups. Used by Karpenter version field tests.",
