@@ -27,14 +27,20 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 
+	"github.com/coreos/stream-metadata-go/stream"
+	"github.com/coreos/stream-metadata-go/stream/rhcos"
 	"github.com/go-logr/logr/testr"
 	"go.uber.org/mock/gomock"
 )
@@ -45,6 +51,33 @@ const (
 	testNodeClassName       = "default"
 	configVersionAnnotation = "hypershift.openshift.io/nodeClassCurrentConfigVersion"
 )
+
+// Keep platform fixtures fixed so these cases isolate NodeClass GVK handling.
+var nodeClassGVKTestCases = map[string]struct {
+	gvk schema.GroupVersionKind
+}{
+	"When the AWS GVK is configured, it should preserve reconciliation behavior": {
+		gvk: schema.GroupVersionKind{
+			Group:   "karpenter.hypershift.openshift.io",
+			Version: "v1",
+			Kind:    "OpenshiftEC2NodeClass",
+		},
+	},
+	"When the Azure GVK is configured, it should preserve reconciliation behavior": {
+		gvk: schema.GroupVersionKind{
+			Group:   "karpenter.hypershift.openshift.io",
+			Version: "v1alpha1",
+			Kind:    "OpenShiftAzureNodeClass",
+		},
+	},
+	"When a newer Azure GVK is configured, it should preserve reconciliation behavior": {
+		gvk: schema.GroupVersionKind{
+			Group:   "karpenter.hypershift.openshift.io",
+			Version: "v1beta1",
+			Kind:    "OpenShiftAzureNodeClass",
+		},
+	},
+}
 
 // fakeVersionResolver implements releaseinfo.VersionResolver for testing.
 type fakeVersionResolver struct {
@@ -60,7 +93,27 @@ func (f *fakeVersionResolver) Resolve(_ context.Context, version, channel string
 	return f.image, f.err
 }
 
+func toNodeClass(t *testing.T, nc *hyperkarpenterv1.OpenshiftEC2NodeClass) *nodeClass {
+	t.Helper()
+	g := NewWithT(t)
+	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(nc)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	result := &unstructured.Unstructured{Object: object}
+	result.SetGroupVersionKind(nc.GroupVersionKind())
+	return &nodeClass{object: result}
+}
+
 func TestReconcile(t *testing.T) {
+	for name, tc := range nodeClassGVKTestCases {
+		t.Run(name, func(t *testing.T) {
+			testReconcile(t, tc.gvk)
+		})
+	}
+}
+
+func testReconcile(t *testing.T, nodeClassGVK schema.GroupVersionKind) {
+	t.Helper()
 	g := NewWithT(t)
 	scheme := api.Scheme
 
@@ -165,11 +218,10 @@ kind: Config`),
 		},
 	}
 
-	nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: testNodeClassName,
-		},
-	}
+	nodeClass := newNodeClass(nodeClassGVK).object
+	nodeClass.SetName(testNodeClassName)
+	// The fake client's metadata patches turn an absent status into null.
+	nodeClass.Object["status"] = map[string]interface{}{}
 
 	coreConfig1 := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -208,12 +260,13 @@ kind: Config`),
 	fakeGuestClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(nodeClass).
-		WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+		WithStatusSubresource(nodeClass).
 		Build()
 
 	r := &KarpenterIgnitionReconciler{
 		ManagementClient:        fakeManagementClient,
 		GuestClient:             fakeGuestClient,
+		NodeClassGVK:            nodeClassGVK,
 		ReleaseProvider:         mockedReleaseProvider,
 		VersionResolver:         &fakeVersionResolver{},
 		ImageMetadataProvider:   fakeImageMetadataProvider,
@@ -267,7 +320,7 @@ kind: Config`),
 	// Get the initial config version from the nodeclass annotation
 	err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, nodeClass)
 	g.Expect(err).NotTo(HaveOccurred())
-	initialConfigVersion := nodeClass.Annotations[configVersionAnnotation]
+	initialConfigVersion := nodeClass.GetAnnotations()[configVersionAnnotation]
 	g.Expect(initialConfigVersion).NotTo(BeEmpty(), "config version annotation should be set")
 
 	// Change the pull secret reference to trigger a config hash change
@@ -291,11 +344,9 @@ kind: Config`),
 
 	// Create a second nodeclass
 	secondNodeClassName := "some-other-nodeclass"
-	nodeClass2 := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: secondNodeClassName,
-		},
-	}
+	nodeClass2 := newNodeClass(nodeClassGVK).object
+	nodeClass2.SetName(secondNodeClassName)
+	nodeClass2.Object["status"] = map[string]interface{}{}
 	err = fakeGuestClient.Create(ctx, nodeClass2)
 	g.Expect(err).NotTo(HaveOccurred())
 
@@ -314,14 +365,14 @@ kind: Config`),
 	// Get the updated config version for first nodeclass
 	err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, nodeClass)
 	g.Expect(err).NotTo(HaveOccurred())
-	updatedConfigVersion := nodeClass.Annotations[configVersionAnnotation]
+	updatedConfigVersion := nodeClass.GetAnnotations()[configVersionAnnotation]
 	g.Expect(updatedConfigVersion).NotTo(BeEmpty())
 	g.Expect(updatedConfigVersion).NotTo(Equal(initialConfigVersion), "config version should change when config is updated")
 
 	// Verify second nodeclass also got its config version
 	err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: secondNodeClassName}, nodeClass2)
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(nodeClass2.Annotations[configVersionAnnotation]).NotTo(BeEmpty(), "second nodeclass should have config version")
+	g.Expect(nodeClass2.GetAnnotations()[configVersionAnnotation]).NotTo(BeEmpty(), "second nodeclass should have config version")
 
 	// Verify all secrets were created
 	err = fakeManagementClient.List(ctx, secretList, client.InNamespace(testNamespace))
@@ -506,203 +557,440 @@ kind: Config`),
 		},
 	}
 
-	t.Run("When version is set it should call resolver and use resolved image", func(t *testing.T) {
-		g := NewWithT(t)
-		mockCtrl := gomock.NewController(t)
-		mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
-		resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:resolved123"
-		mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(testutils.InitReleaseImageOrDie("4.17.0"), nil).AnyTimes()
+	for name, tc := range nodeClassGVKTestCases {
+		t.Run(name, func(t *testing.T) {
+			t.Run("When version is set, it should call resolver and use resolved image", func(t *testing.T) {
+				g := NewWithT(t)
+				mockCtrl := gomock.NewController(t)
+				mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+				resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:resolved123"
+				mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(testutils.InitReleaseImageOrDie("4.17.0"), nil).AnyTimes()
 
-		hcp := baseHCP()
-		resolver := &fakeVersionResolver{image: resolvedImage}
+				hcp := baseHCP()
+				resolver := &fakeVersionResolver{image: resolvedImage}
 
-		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-			ObjectMeta: metav1.ObjectMeta{Name: "version-test"},
-			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-				Version: "4.17.0",
+				nodeClass := newNodeClass(tc.gvk).object
+				nodeClass.SetName("version-test")
+				nodeClass.Object["spec"] = map[string]interface{}{"version": "4.17.0"}
+				nodeClass.Object["status"] = map[string]interface{}{}
+
+				fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
+				fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(nodeClass).
+					WithStatusSubresource(nodeClass).
+					Build()
+
+				r := &KarpenterIgnitionReconciler{
+					ManagementClient:        fakeManagementClient,
+					GuestClient:             fakeGuestClient,
+					NodeClassGVK:            tc.gvk,
+					ReleaseProvider:         mockedReleaseProvider,
+					VersionResolver:         resolver,
+					ImageMetadataProvider:   fakeImageMetadataProvider,
+					HypershiftOperatorImage: "test-hypershift-operator-image",
+					IgnitionEndpoint:        testIgnitionEndpoint,
+					Namespace:               testNamespace,
+					CreateOrUpdateProvider:  upsert.New(false),
+				}
+
+				ctx := log.IntoContext(t.Context(), testr.New(t))
+				_, err := r.Reconcile(ctx, ctrl.Request{
+					NamespacedName: client.ObjectKey{Name: "version-test"},
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(resolver.calls).To(Equal(1), "resolver should be called once")
+
+				// Verify status was updated with resolved image
+				updatedNC := newNodeClass(tc.gvk)
+				err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "version-test"}, updatedNC.object)
+				g.Expect(err).NotTo(HaveOccurred())
+				status, err := updatedNC.status()
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(status.ReleaseImage).To(Equal(resolvedImage))
+				skewCondition := findCondition(status.Conditions, hyperkarpenterv1.ConditionTypeSupportedVersionSkew)
+				g.Expect(skewCondition).NotTo(BeNil())
+				g.Expect(skewCondition.Status).To(Equal(metav1.ConditionTrue))
+			})
+
+			t.Run("When token reconciliation fails, it should persist version skew status and return the token error", func(t *testing.T) {
+				g := NewWithT(t)
+				tokenErr := fmt.Errorf("release lookup failed")
+				mockedReleaseProvider := releaseinfo.NewMockProvider(gomock.NewController(t))
+				mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, tokenErr)
+
+				hcp := baseHCP()
+				nc := newNodeClass(tc.gvk)
+				nc.object.SetName("token-error-test")
+				nc.object.Object["status"] = map[string]interface{}{}
+				managementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
+				guestClient := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(nc.object).WithStatusSubresource(nc.object).Build()
+				r := &KarpenterIgnitionReconciler{
+					ManagementClient:       managementClient,
+					GuestClient:            guestClient,
+					NodeClassGVK:           tc.gvk,
+					ReleaseProvider:        mockedReleaseProvider,
+					Namespace:              testNamespace,
+					CreateOrUpdateProvider: upsert.New(false),
+				}
+
+				ctx := log.IntoContext(t.Context(), testr.New(t))
+				// Keep the resolved version unchanged so only the skew condition needs patching.
+				g.Expect(r.updateVersionStatus(ctx, nc, hcp.Spec.ReleaseImage, "4.17.0",
+					versionResolvedCondition(nc.object.GetGeneration(), "", hcp.Spec.ReleaseImage, nil))).To(Succeed())
+				initialStatus, err := nc.status()
+				g.Expect(err).NotTo(HaveOccurred())
+
+				_, err = r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(nc.object)})
+				g.Expect(err).To(MatchError(tokenErr))
+				g.Expect(err.Error()).To(ContainSubstring("failed to build config generator"))
+
+				updated := newNodeClass(tc.gvk)
+				g.Expect(guestClient.Get(ctx, client.ObjectKeyFromObject(nc.object), updated.object)).To(Succeed())
+				status, err := updated.status()
+				g.Expect(err).NotTo(HaveOccurred())
+				skewCondition := findCondition(status.Conditions, hyperkarpenterv1.ConditionTypeSupportedVersionSkew)
+				g.Expect(skewCondition).NotTo(BeNil())
+				g.Expect(skewCondition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(skewCondition.Reason).To(Equal(hyperkarpenterv1.ConditionReasonVersionNotSpecified))
+				g.Expect(findCondition(status.Conditions, hyperkarpenterv1.ConditionTypeVersionResolved)).To(
+					Equal(findCondition(initialStatus.Conditions, hyperkarpenterv1.ConditionTypeVersionResolved)))
+			})
+
+			t.Run("When token reconciliation fails once, it should preserve version status and recover on retry", func(t *testing.T) {
+				g := NewWithT(t)
+				tokenErr := fmt.Errorf("release lookup failed")
+				mockedReleaseProvider := releaseinfo.NewMockProvider(gomock.NewController(t))
+				gomock.InOrder(
+					mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, tokenErr),
+					mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+						Return(testutils.InitReleaseImageOrDie("4.17.0"), nil).AnyTimes(),
+				)
+
+				hcp := baseHCP()
+				nc := newNodeClass(tc.gvk)
+				nc.object.SetName("token-retry-test")
+				nc.object.Object["spec"] = map[string]interface{}{
+					"kubelet": map[string]interface{}{"maxPods": int64(203)},
+				}
+				nc.object.Object["status"] = map[string]interface{}{}
+				managementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
+				guestClient := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(nc.object).WithStatusSubresource(nc.object).Build()
+				r := &KarpenterIgnitionReconciler{
+					ManagementClient:        managementClient,
+					GuestClient:             guestClient,
+					NodeClassGVK:            tc.gvk,
+					ReleaseProvider:         mockedReleaseProvider,
+					ImageMetadataProvider:   fakeImageMetadataProvider,
+					HypershiftOperatorImage: "test-hypershift-operator-image",
+					IgnitionEndpoint:        testIgnitionEndpoint,
+					Namespace:               testNamespace,
+					CreateOrUpdateProvider:  upsert.New(false),
+				}
+
+				ctx := log.IntoContext(t.Context(), testr.New(t))
+				req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(nc.object)}
+				_, err := r.Reconcile(ctx, req)
+				g.Expect(err).To(MatchError(tokenErr))
+
+				updated := newNodeClass(tc.gvk)
+				g.Expect(guestClient.Get(ctx, req.NamespacedName, updated.object)).To(Succeed())
+				status, err := updated.status()
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(status.Version).To(BeEmpty())
+				g.Expect(status.ReleaseImage).To(BeEmpty())
+
+				_, err = r.Reconcile(ctx, req)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(guestClient.Get(ctx, req.NamespacedName, updated.object)).To(Succeed())
+				status, err = updated.status()
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(status.Version).To(Equal("4.17.0"))
+				g.Expect(status.ReleaseImage).To(Equal(hcp.Spec.ReleaseImage))
+				annotations := updated.object.GetAnnotations()
+				g.Expect(annotations[nodeClassAnnotationCurrentConfigVersion]).NotTo(BeEmpty())
+				g.Expect(annotations[nodeClassAnnotationCurrentRolloutConfig]).NotTo(BeEmpty())
+			})
+
+			t.Run("When version is not set, it should not call resolver and use HCP release image", func(t *testing.T) {
+				g := NewWithT(t)
+				mockCtrl := gomock.NewController(t)
+				mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+				mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(testutils.InitReleaseImageOrDie("4.17.0"), nil).AnyTimes()
+
+				hcp := baseHCP()
+				resolver := &fakeVersionResolver{image: "should-not-be-used"}
+
+				nodeClass := newNodeClass(tc.gvk).object
+				nodeClass.SetName("no-version-test")
+				nodeClass.Object["status"] = map[string]interface{}{}
+
+				fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
+				fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(nodeClass).
+					WithStatusSubresource(nodeClass).
+					Build()
+
+				r := &KarpenterIgnitionReconciler{
+					ManagementClient:        fakeManagementClient,
+					GuestClient:             fakeGuestClient,
+					NodeClassGVK:            tc.gvk,
+					ReleaseProvider:         mockedReleaseProvider,
+					VersionResolver:         resolver,
+					ImageMetadataProvider:   fakeImageMetadataProvider,
+					HypershiftOperatorImage: "test-hypershift-operator-image",
+					IgnitionEndpoint:        testIgnitionEndpoint,
+					Namespace:               testNamespace,
+					CreateOrUpdateProvider:  upsert.New(false),
+				}
+
+				ctx := log.IntoContext(t.Context(), testr.New(t))
+				_, err := r.Reconcile(ctx, ctrl.Request{
+					NamespacedName: client.ObjectKey{Name: "no-version-test"},
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(resolver.calls).To(Equal(0), "resolver should not be called when version is not set")
+
+				// Verify status.releaseImage matches the HCP release image when version is not set
+				updatedNC := newNodeClass(tc.gvk)
+				err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "no-version-test"}, updatedNC.object)
+				g.Expect(err).NotTo(HaveOccurred())
+				status, err := updatedNC.status()
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(status.ReleaseImage).To(Equal(hcp.Spec.ReleaseImage))
+			})
+
+			t.Run("When version resolution fails, it should return error", func(t *testing.T) {
+				g := NewWithT(t)
+				mockCtrl := gomock.NewController(t)
+				mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+
+				hcp := baseHCP()
+				resolver := &fakeVersionResolver{err: fmt.Errorf("Cincinnati API unavailable")}
+
+				nodeClass := newNodeClass(tc.gvk).object
+				nodeClass.SetName("fail-version-test")
+				nodeClass.Object["spec"] = map[string]interface{}{"version": "4.17.0"}
+				nodeClass.Object["status"] = map[string]interface{}{}
+
+				fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
+				fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(nodeClass).
+					WithStatusSubresource(nodeClass).
+					Build()
+
+				r := &KarpenterIgnitionReconciler{
+					ManagementClient:        fakeManagementClient,
+					GuestClient:             fakeGuestClient,
+					NodeClassGVK:            tc.gvk,
+					ReleaseProvider:         mockedReleaseProvider,
+					VersionResolver:         resolver,
+					ImageMetadataProvider:   fakeImageMetadataProvider,
+					HypershiftOperatorImage: "test-hypershift-operator-image",
+					IgnitionEndpoint:        testIgnitionEndpoint,
+					Namespace:               testNamespace,
+					CreateOrUpdateProvider:  upsert.New(false),
+				}
+
+				ctx := log.IntoContext(t.Context(), testr.New(t))
+				_, err := r.Reconcile(ctx, ctrl.Request{
+					NamespacedName: client.ObjectKey{Name: "fail-version-test"},
+				})
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("Cincinnati API unavailable"))
+
+				// Verify VersionResolved condition is set to False
+				updatedNC := newNodeClass(tc.gvk)
+				err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "fail-version-test"}, updatedNC.object)
+				g.Expect(err).NotTo(HaveOccurred())
+				status, err := updatedNC.status()
+				g.Expect(err).NotTo(HaveOccurred())
+				versionCondition := findCondition(status.Conditions, hyperkarpenterv1.ConditionTypeVersionResolved)
+				g.Expect(versionCondition).NotTo(BeNil(), "VersionResolved condition should be set")
+				g.Expect(versionCondition.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(versionCondition.Reason).To(Equal("ResolutionFailed"))
+
+			})
+
+			t.Run("When channel is set, it should pass HCP channel to resolver", func(t *testing.T) {
+				g := NewWithT(t)
+				mockCtrl := gomock.NewController(t)
+				mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+				resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:fast123"
+				mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(testutils.InitReleaseImageOrDie("4.17.0"), nil).AnyTimes()
+
+				hcp := baseHCP()
+				hcp.Spec.Channel = "fast-4.17"
+				resolver := &fakeVersionResolver{image: resolvedImage}
+
+				nodeClass := newNodeClass(tc.gvk).object
+				nodeClass.SetName("hcp-channel-test")
+				nodeClass.Object["spec"] = map[string]interface{}{"version": "4.17.0"}
+				nodeClass.Object["status"] = map[string]interface{}{}
+
+				fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
+				fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(nodeClass).
+					WithStatusSubresource(nodeClass).
+					Build()
+
+				r := &KarpenterIgnitionReconciler{
+					ManagementClient:        fakeManagementClient,
+					GuestClient:             fakeGuestClient,
+					NodeClassGVK:            tc.gvk,
+					ReleaseProvider:         mockedReleaseProvider,
+					VersionResolver:         resolver,
+					ImageMetadataProvider:   fakeImageMetadataProvider,
+					HypershiftOperatorImage: "test-hypershift-operator-image",
+					IgnitionEndpoint:        testIgnitionEndpoint,
+					Namespace:               testNamespace,
+					CreateOrUpdateProvider:  upsert.New(false),
+				}
+
+				ctx := log.IntoContext(t.Context(), testr.New(t))
+				_, err := r.Reconcile(ctx, ctrl.Request{
+					NamespacedName: client.ObjectKey{Name: "hcp-channel-test"},
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(resolver.lastChannel).To(Equal("fast-4.17"), "resolver should receive HCP channel prefix combined with version")
+			})
+		})
+	}
+
+	newAzureRelease := func(version string, image rhcos.AzureMarketplaceImage) *releaseinfo.ReleaseImage {
+		release := testutils.InitReleaseImageOrDie(version)
+		release.StreamMetadata = &stream.Stream{
+			Architectures: map[string]stream.Arch{
+				"x86_64": {
+					RHELCoreOSExtensions: &rhcos.Extensions{
+						Marketplace: &rhcos.Marketplace{
+							Azure: &rhcos.AzureMarketplace{
+								NoPurchasePlan: &rhcos.AzureMarketplaceImages{Gen2: &image},
+							},
+						},
+					},
+				},
 			},
 		}
-
-		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
-		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
-			WithObjects(nodeClass).
-			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
-			Build()
-
-		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
-			CreateOrUpdateProvider:  upsert.New(false),
-		}
-
-		ctx := log.IntoContext(t.Context(), testr.New(t))
-		_, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: client.ObjectKey{Name: "version-test"},
-		})
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(resolver.calls).To(Equal(1), "resolver should be called once")
-
-		// Verify status was updated with resolved image
-		updatedNC := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "version-test"}, updatedNC)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(updatedNC.Status.ReleaseImage).To(Equal(resolvedImage))
-	})
-
-	t.Run("When version is not set it should not call resolver and use HCP release image", func(t *testing.T) {
-		g := NewWithT(t)
-		mockCtrl := gomock.NewController(t)
-		mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
-		mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(testutils.InitReleaseImageOrDie("4.17.0"), nil).AnyTimes()
-
-		hcp := baseHCP()
-		resolver := &fakeVersionResolver{image: "should-not-be-used"}
-
-		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-			ObjectMeta: metav1.ObjectMeta{Name: "no-version-test"},
-		}
-
-		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
-		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
-			WithObjects(nodeClass).
-			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
-			Build()
-
-		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
-			CreateOrUpdateProvider:  upsert.New(false),
-		}
-
-		ctx := log.IntoContext(t.Context(), testr.New(t))
-		_, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: client.ObjectKey{Name: "no-version-test"},
-		})
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(resolver.calls).To(Equal(0), "resolver should not be called when version is not set")
-
-		// Verify status.releaseImage matches the HCP release image when version is not set
-		updatedNC := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "no-version-test"}, updatedNC)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(updatedNC.Status.ReleaseImage).To(Equal(hcp.Spec.ReleaseImage))
-	})
-
-	t.Run("When version resolution fails it should return error", func(t *testing.T) {
-		g := NewWithT(t)
-		mockCtrl := gomock.NewController(t)
-		mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
-
-		hcp := baseHCP()
-		resolver := &fakeVersionResolver{err: fmt.Errorf("Cincinnati API unavailable")}
-
-		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-			ObjectMeta: metav1.ObjectMeta{Name: "fail-version-test"},
-			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-				Version: "4.17.0",
+		return release
+	}
+	testCases := map[string]struct {
+		version      string
+		releaseImage string
+		image        rhcos.AzureMarketplaceImage
+	}{
+		"When an Azure NodeClass pins a release, it should generate ignition and Marketplace annotations from that release": {
+			version:      "4.20.0",
+			releaseImage: "quay.io/openshift-release-dev/ocp-release:4.20.0-x86_64",
+			image: rhcos.AzureMarketplaceImage{
+				Publisher: "azureopenshift",
+				Offer:     "aro4",
+				SKU:       "aro_420-v2",
+				Version:   "420.9.20250701",
 			},
-		}
-
-		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
-		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
-			WithObjects(nodeClass).
-			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
-			Build()
-
-		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
-			CreateOrUpdateProvider:  upsert.New(false),
-		}
-
-		ctx := log.IntoContext(t.Context(), testr.New(t))
-		_, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: client.ObjectKey{Name: "fail-version-test"},
-		})
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("Cincinnati API unavailable"))
-
-		// Verify VersionResolved condition is set to False
-		updatedNC := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "fail-version-test"}, updatedNC)
-		g.Expect(err).NotTo(HaveOccurred())
-		var versionCondition *metav1.Condition
-		for i, c := range updatedNC.Status.Conditions {
-			if c.Type == hyperkarpenterv1.ConditionTypeVersionResolved {
-				versionCondition = &updatedNC.Status.Conditions[i]
-				break
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			hcp := baseHCP()
+			hcp.Spec.ReleaseImage = "quay.io/openshift-release-dev/ocp-release:4.21.0-x86_64"
+			hcp.Spec.Channel = "stable-4.21"
+			hcp.Spec.Platform = hyperv1.PlatformSpec{
+				Type:  hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{Location: "eastus"},
 			}
-		}
-		g.Expect(versionCondition).NotTo(BeNil(), "VersionResolved condition should be set")
-		g.Expect(versionCondition.Status).To(Equal(metav1.ConditionFalse))
-		g.Expect(versionCondition.Reason).To(Equal("ResolutionFailed"))
+			hcp.Spec.AutoNode.Provisioner.Karpenter.Platform = hyperv1.AzurePlatform
+			hcp.Status.Version = "4.21.0"
+			hcp.Status.VersionStatus = &hyperv1.ClusterVersionStatus{
+				Desired: configv1.Release{Version: "4.21.0", Image: hcp.Spec.ReleaseImage},
+				History: []configv1.UpdateHistory{{
+					State:   configv1.CompletedUpdate,
+					Version: "4.21.0",
+					Image:   hcp.Spec.ReleaseImage,
+				}},
+			}
 
-	})
+			mockedReleaseProvider := releaseinfo.NewMockProvider(gomock.NewController(t))
+			mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), tc.releaseImage, gomock.Any()).
+				Return(newAzureRelease(tc.version, tc.image), nil)
+			mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), hcp.Spec.ReleaseImage, gomock.Any()).
+				Return(newAzureRelease("4.21.0", rhcos.AzureMarketplaceImage{
+					Publisher: "azureopenshift",
+					Offer:     "aro4",
+					SKU:       "aro_421-v2",
+					Version:   "421.9.20250801",
+				}), nil).AnyTimes()
 
-	t.Run("When channel is set it should pass HCP channel to resolver", func(t *testing.T) {
-		g := NewWithT(t)
-		mockCtrl := gomock.NewController(t)
-		mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
-		resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:fast123"
-		mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(testutils.InitReleaseImageOrDie("4.17.0"), nil).AnyTimes()
+			azureGVK := schema.GroupVersionKind{
+				Group:   "karpenter.hypershift.openshift.io",
+				Version: "v1alpha1",
+				Kind:    "OpenShiftAzureNodeClass",
+			}
+			nodeClass := newNodeClass(azureGVK).object
+			nodeClass.SetName("azure-version-test")
+			g.Expect(unstructured.SetNestedField(nodeClass.Object, tc.version, "spec", "version")).To(Succeed())
+			// The fake client's metadata patches turn an absent status into null.
+			nodeClass.Object["status"] = map[string]interface{}{}
 
-		hcp := baseHCP()
-		hcp.Spec.Channel = "fast-4.17"
-		resolver := &fakeVersionResolver{image: resolvedImage}
+			managementClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(baseManagementObjects(hcp)...).Build()
+			guestClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(nodeClass).WithStatusSubresource(nodeClass).Build()
+			resolver := &fakeVersionResolver{image: tc.releaseImage}
+			r := &KarpenterIgnitionReconciler{
+				ManagementClient:        managementClient,
+				GuestClient:             guestClient,
+				NodeClassGVK:            azureGVK,
+				ReleaseProvider:         mockedReleaseProvider,
+				VersionResolver:         resolver,
+				ImageMetadataProvider:   fakeImageMetadataProvider,
+				HypershiftOperatorImage: "test-hypershift-operator-image",
+				IgnitionEndpoint:        testIgnitionEndpoint,
+				Namespace:               testNamespace,
+				CreateOrUpdateProvider:  upsert.New(false),
+			}
 
-		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-			ObjectMeta: metav1.ObjectMeta{Name: "hcp-channel-test"},
-			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-				Version: "4.17.0",
-			},
-		}
+			ctx := log.IntoContext(t.Context(), testr.New(t))
+			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(nodeClass)})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(resolver.calls).To(Equal(1))
 
-		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
-		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
-			WithObjects(nodeClass).
-			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
-			Build()
-
-		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
-			CreateOrUpdateProvider:  upsert.New(false),
-		}
-
-		ctx := log.IntoContext(t.Context(), testr.New(t))
-		_, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: client.ObjectKey{Name: "hcp-channel-test"},
+			secrets := &corev1.SecretList{}
+			g.Expect(managementClient.List(ctx, secrets, client.InNamespace(testNamespace),
+				client.MatchingLabels{karpenterutil.ManagedByKarpenterLabel: "true"})).To(Succeed())
+			g.Expect(secrets.Items).To(HaveLen(2))
+			var tokenSecret, userDataSecret *corev1.Secret
+			for i := range secrets.Items {
+				secret := &secrets.Items[i]
+				if strings.HasPrefix(secret.Name, "token-") {
+					tokenSecret = secret
+				}
+				if strings.HasPrefix(secret.Name, "user-data-") {
+					userDataSecret = secret
+				}
+			}
+			g.Expect(tokenSecret).NotTo(BeNil())
+			g.Expect(tokenSecret.Data["release"]).To(Equal([]byte(tc.releaseImage)))
+			g.Expect(tokenSecret.Data["release-version"]).To(Equal([]byte(tc.version)))
+			g.Expect(userDataSecret).NotTo(BeNil())
+			g.Expect(userDataSecret.Data["value"]).NotTo(BeEmpty())
+			g.Expect(userDataSecret.Annotations).To(HaveKeyWithValue("hypershift.openshift.io/nodePool",
+				testNamespace+"/"+karpenterutil.KarpenterNodePoolName(nodeClass)))
+			for key, value := range map[string]string{
+				"hypershift.openshift.io/azure-marketplace-publisher": tc.image.Publisher,
+				"hypershift.openshift.io/azure-marketplace-offer":     tc.image.Offer,
+				"hypershift.openshift.io/azure-marketplace-sku":       tc.image.SKU,
+				"hypershift.openshift.io/azure-marketplace-version":   tc.image.Version,
+			} {
+				g.Expect(userDataSecret.Annotations).To(HaveKeyWithValue(key, value))
+			}
 		})
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(resolver.lastChannel).To(Equal("fast-4.17"), "resolver should receive HCP channel prefix combined with version")
-	})
+	}
 }
 
 func TestResolveVersion(t *testing.T) {
@@ -879,6 +1167,10 @@ func TestUpdateVersionStatus(t *testing.T) {
 
 	newNodeClass := func(name string, version string) *hyperkarpenterv1.OpenshiftEC2NodeClass {
 		return &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "karpenter.hypershift.openshift.io/v1",
+				Kind:       "OpenshiftEC2NodeClass",
+			},
 			ObjectMeta: metav1.ObjectMeta{Name: name},
 			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				Version: version,
@@ -898,7 +1190,8 @@ func TestUpdateVersionStatus(t *testing.T) {
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		hcpImage := "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64"
-		err := r.updateVersionStatus(ctx, nc, hcpImage, "4.17.0", nil)
+		err := r.updateVersionStatus(ctx, toNodeClass(t, nc), hcpImage, "4.17.0",
+			versionResolvedCondition(nc.GetGeneration(), nc.Spec.Version, hcpImage, nil))
 		g.Expect(err).NotTo(HaveOccurred())
 
 		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
@@ -925,7 +1218,8 @@ func TestUpdateVersionStatus(t *testing.T) {
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
-		err := r.updateVersionStatus(ctx, nc, resolvedImage, "4.17.0", nil)
+		err := r.updateVersionStatus(ctx, toNodeClass(t, nc), resolvedImage, "4.17.0",
+			versionResolvedCondition(nc.GetGeneration(), nc.Spec.Version, resolvedImage, nil))
 		g.Expect(err).NotTo(HaveOccurred())
 
 		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
@@ -954,7 +1248,8 @@ func TestUpdateVersionStatus(t *testing.T) {
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		resolveErr := fmt.Errorf("Cincinnati API unavailable")
-		err := r.updateVersionStatus(ctx, nc, "", "", resolveErr)
+		err := r.updateVersionStatus(ctx, toNodeClass(t, nc), "", "",
+			versionResolvedCondition(nc.GetGeneration(), nc.Spec.Version, "", resolveErr))
 		g.Expect(err).NotTo(HaveOccurred())
 
 		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
@@ -967,14 +1262,77 @@ func TestUpdateVersionStatus(t *testing.T) {
 		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 		g.Expect(cond.Reason).To(Equal("ResolutionFailed"))
 		g.Expect(cond.Message).To(ContainSubstring("Cincinnati API unavailable"))
+		g.Expect(findCondition(updated.Status.Conditions, hyperkarpenterv1.ConditionTypeSupportedVersionSkew)).To(BeNil())
 	})
+
+	testCases := []struct {
+		name           string
+		initialSkewErr error
+		skewErr        error
+		expectedStatus metav1.ConditionStatus
+		expectedReason string
+	}{
+		{
+			name:           "When only version skew becomes unsupported, it should persist the condition",
+			skewErr:        fmt.Errorf("version skew is unsupported"),
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperkarpenterv1.ConditionReasonUnsupportedSkew,
+		},
+		{
+			name:           "When only version skew becomes supported, it should persist the condition",
+			initialSkewErr: fmt.Errorf("version skew is unsupported"),
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperkarpenterv1.ConditionReasonAsExpected,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			nc := newNodeClass("skew-only", "4.17.0")
+			guestClient := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(nc).WithStatusSubresource(nc).Build()
+			r := &KarpenterIgnitionReconciler{GuestClient: guestClient}
+			ctx := log.IntoContext(t.Context(), testr.New(t))
+			resolvedImage := "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64"
+
+			wrapped := toNodeClass(t, nc)
+			g.Expect(r.updateVersionStatus(ctx, wrapped, resolvedImage, "4.17.0",
+				versionResolvedCondition(nc.GetGeneration(), nc.Spec.Version, resolvedImage, nil),
+				versionSkewCondition(nc.GetGeneration(), nc.Spec.Version, tc.initialSkewErr))).To(Succeed())
+			g.Expect(guestClient.Get(ctx, client.ObjectKeyFromObject(nc), wrapped.object)).To(Succeed())
+			initialStatus, err := wrapped.status()
+			g.Expect(err).NotTo(HaveOccurred())
+			initialVersionCondition := findCondition(initialStatus.Conditions, hyperkarpenterv1.ConditionTypeVersionResolved)
+			g.Expect(initialVersionCondition).NotTo(BeNil())
+
+			g.Expect(r.updateVersionStatus(ctx, wrapped, resolvedImage, "4.17.0",
+				versionResolvedCondition(nc.GetGeneration(), nc.Spec.Version, resolvedImage, nil),
+				versionSkewCondition(nc.GetGeneration(), nc.Spec.Version, tc.skewErr))).To(Succeed())
+			updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+			g.Expect(guestClient.Get(ctx, client.ObjectKeyFromObject(nc), updated)).To(Succeed())
+			skewCondition := findCondition(updated.Status.Conditions, hyperkarpenterv1.ConditionTypeSupportedVersionSkew)
+			g.Expect(skewCondition).NotTo(BeNil())
+			g.Expect(skewCondition.Status).To(Equal(tc.expectedStatus))
+			g.Expect(skewCondition.Reason).To(Equal(tc.expectedReason))
+			g.Expect(findCondition(updated.Status.Conditions, hyperkarpenterv1.ConditionTypeVersionResolved)).To(Equal(initialVersionCondition))
+			g.Expect(updated.Status.ReleaseImage).To(Equal(resolvedImage))
+			g.Expect(updated.Status.Version).To(Equal("4.17.0"))
+		})
+	}
 
 	t.Run("When condition has not changed it should not patch", func(t *testing.T) {
 		g := NewWithT(t)
 		nc := newNodeClass("no-change", "")
+		statusPatches := 0
 		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
 			WithObjects(nc).
 			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			WithInterceptorFuncs(interceptor.Funcs{
+				SubResourcePatch: func(ctx context.Context, c client.Client, subResource string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+					statusPatches++
+					return c.SubResource(subResource).Patch(ctx, obj, patch, opts...)
+				},
+			}).
 			Build()
 
 		r := &KarpenterIgnitionReconciler{GuestClient: fakeGuestClient}
@@ -982,18 +1340,109 @@ func TestUpdateVersionStatus(t *testing.T) {
 
 		hcpImage := "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64"
 
-		// First call sets the condition
-		err := r.updateVersionStatus(ctx, nc, hcpImage, "4.17.0", nil)
+		// First call sets both conditions.
+		var skewErr error
+		wrapped := toNodeClass(t, nc)
+		err := r.updateVersionStatus(ctx, wrapped, hcpImage, "4.17.0",
+			versionResolvedCondition(nc.GetGeneration(), nc.Spec.Version, hcpImage, nil),
+			versionSkewCondition(nc.GetGeneration(), nc.Spec.Version, skewErr))
 		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(statusPatches).To(Equal(1))
 
 		// Re-fetch to get the updated object with the condition already set
-		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "no-change"}, nc)
+		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "no-change"}, wrapped.object)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		// Second call with same inputs should not error (no-op patch skipped)
-		err = r.updateVersionStatus(ctx, nc, hcpImage, "4.17.0", nil)
+		err = r.updateVersionStatus(ctx, wrapped, hcpImage, "4.17.0",
+			versionResolvedCondition(nc.GetGeneration(), nc.Spec.Version, hcpImage, nil),
+			versionSkewCondition(nc.GetGeneration(), nc.Spec.Version, skewErr))
 		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(statusPatches).To(Equal(1), "unchanged conditions should not trigger another status patch")
 	})
+}
+
+func TestVersionResolvedCondition(t *testing.T) {
+	const resolvedImage = "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64"
+	testCases := map[string]struct {
+		specVersion     string
+		resolveErr      error
+		expectedStatus  metav1.ConditionStatus
+		expectedReason  string
+		expectedMessage string
+	}{
+		"When version is not specified, it should report the control plane release": {
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperkarpenterv1.ConditionReasonVersionNotSpecified,
+			expectedMessage: "No version specified, using control plane release image",
+		},
+		"When resolution succeeds, it should report the resolved image": {
+			specVersion:     "4.17.0",
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperkarpenterv1.ConditionReasonVersionResolved,
+			expectedMessage: `Version "4.17.0" resolved to quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64`,
+		},
+		"When resolution fails, it should report the resolution error": {
+			specVersion:     "4.17.0",
+			resolveErr:      fmt.Errorf("Cincinnati API unavailable"),
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperkarpenterv1.ConditionReasonResolutionFailed,
+			expectedMessage: `Failed to resolve version "4.17.0": Cincinnati API unavailable`,
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			condition := versionResolvedCondition(7, tc.specVersion, resolvedImage, tc.resolveErr)
+			g.Expect(condition.Type).To(Equal(hyperkarpenterv1.ConditionTypeVersionResolved))
+			g.Expect(condition.Status).To(Equal(tc.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+			g.Expect(condition.Message).To(Equal(tc.expectedMessage))
+			g.Expect(condition.ObservedGeneration).To(Equal(int64(7)))
+			g.Expect(condition.LastTransitionTime.IsZero()).To(BeFalse())
+		})
+	}
+}
+
+func TestVersionSkewCondition(t *testing.T) {
+	testCases := map[string]struct {
+		specVersion     string
+		skewErr         error
+		expectedStatus  metav1.ConditionStatus
+		expectedReason  string
+		expectedMessage string
+	}{
+		"When version is not specified, it should report the control plane release": {
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperkarpenterv1.ConditionReasonVersionNotSpecified,
+			expectedMessage: "No version specified, nodes use the control plane release image",
+		},
+		"When version skew is supported, it should report AsExpected": {
+			specVersion:     "4.17.0",
+			expectedStatus:  metav1.ConditionTrue,
+			expectedReason:  hyperkarpenterv1.ConditionReasonAsExpected,
+			expectedMessage: `Version "4.17.0" is within supported skew`,
+		},
+		"When version skew is unsupported, it should report UnsupportedSkew": {
+			specVersion:     "4.17.0",
+			skewErr:         fmt.Errorf("version skew is unsupported"),
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  hyperkarpenterv1.ConditionReasonUnsupportedSkew,
+			expectedMessage: "version skew is unsupported",
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			condition := versionSkewCondition(7, tc.specVersion, tc.skewErr)
+			g.Expect(condition.Type).To(Equal(hyperkarpenterv1.ConditionTypeSupportedVersionSkew))
+			g.Expect(condition.Status).To(Equal(tc.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+			g.Expect(condition.Message).To(Equal(tc.expectedMessage))
+			g.Expect(condition.ObservedGeneration).To(Equal(int64(7)))
+			g.Expect(condition.LastTransitionTime.IsZero()).To(BeFalse())
+		})
+	}
 }
 
 func TestCurrentClusterRelease(t *testing.T) {
@@ -1520,7 +1969,9 @@ func TestReconcileKubeletConfigMapOrphanCleanup(t *testing.T) {
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
-		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		config, err := toNodeClass(t, nodeClass).kubeletConfig()
+		g.Expect(err).NotTo(HaveOccurred())
+		err = r.reconcileKubeletConfigMap(ctx, hcp, nodeClass, config)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		// Add the finalizer as Reconcile() would
@@ -1605,7 +2056,9 @@ func TestReconcileKubeletConfigMapOrphanCleanup(t *testing.T) {
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
-		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		config, err := toNodeClass(t, nodeClass).kubeletConfig()
+		g.Expect(err).NotTo(HaveOccurred())
+		err = r.reconcileKubeletConfigMap(ctx, hcp, nodeClass, config)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
@@ -1723,7 +2176,7 @@ kind: Config`),
 		return append(objs, extra...)
 	}
 
-	fullReconciler := func(t *testing.T, hcp *hyperv1.HostedControlPlane, nodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, extraMgmt ...client.Object) (*KarpenterIgnitionReconciler, client.Client) {
+	fullReconciler := func(t *testing.T, hcp *hyperv1.HostedControlPlane, nodeClass *unstructured.Unstructured, extraMgmt ...client.Object) (*KarpenterIgnitionReconciler, client.Client) {
 		t.Helper()
 		mockCtrl := gomock.NewController(t)
 		mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
@@ -1744,12 +2197,13 @@ kind: Config`),
 			WithObjects(fullManagementObjects(hcp, extraMgmt...)...).Build()
 		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
 			WithObjects(nodeClass).
-			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			WithStatusSubresource(nodeClass).
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
 			ManagementClient:        fakeManagementClient,
 			GuestClient:             fakeGuestClient,
+			NodeClassGVK:            nodeClass.GroupVersionKind(),
 			ReleaseProvider:         mockedReleaseProvider,
 			VersionResolver:         &fakeVersionResolver{},
 			ImageMetadataProvider:   fakeImgProvider,
@@ -1761,130 +2215,128 @@ kind: Config`),
 		return r, fakeGuestClient
 	}
 
-	t.Run("When Reconcile runs with spec.kubelet set it should add the finalizer", func(t *testing.T) {
-		g := NewWithT(t)
+	for name, tc := range nodeClassGVKTestCases {
+		t.Run(name, func(t *testing.T) {
+			t.Run("When Reconcile runs with spec.kubelet set, it should add the finalizer", func(t *testing.T) {
+				g := NewWithT(t)
 
-		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-			ObjectMeta: metav1.ObjectMeta{Name: testNodeClassName},
-			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-				Kubelet: hyperkarpenterv1.KubeletConfiguration{
-					MaxPods: 500,
-				},
-			},
-		}
+				nodeClass := newNodeClass(tc.gvk).object
+				nodeClass.SetName(testNodeClassName)
+				nodeClass.Object["status"] = map[string]interface{}{}
+				nodeClass.Object["spec"] = map[string]interface{}{
+					"kubelet": map[string]interface{}{"maxPods": int64(500)},
+				}
 
-		r, fakeGuestClient := fullReconciler(t, fullHCP(), nodeClass)
-		ctx := log.IntoContext(t.Context(), testr.New(t))
+				r, fakeGuestClient := fullReconciler(t, fullHCP(), nodeClass)
+				ctx := log.IntoContext(t.Context(), testr.New(t))
 
-		_, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: client.ObjectKey{Name: testNodeClassName},
+				_, err := r.Reconcile(ctx, ctrl.Request{
+					NamespacedName: client.ObjectKey{Name: testNodeClassName},
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+
+				updated := newNodeClass(tc.gvk).object
+				err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, updated)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(updated.GetFinalizers()).To(ContainElement(kubeletConfigFinalizer))
+
+				cm := &corev1.ConfigMap{}
+				err = r.ManagementClient.Get(ctx, client.ObjectKey{
+					Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+					Namespace: testNamespace,
+				}, cm)
+				g.Expect(err).NotTo(HaveOccurred())
+			})
+
+			t.Run("When Reconcile runs with spec.kubelet cleared, it should remove the finalizer and delete the ConfigMap", func(t *testing.T) {
+				g := NewWithT(t)
+
+				nodeClass := newNodeClass(tc.gvk).object
+				nodeClass.SetName(testNodeClassName)
+				nodeClass.SetFinalizers([]string{kubeletConfigFinalizer})
+				nodeClass.Object["status"] = map[string]interface{}{}
+
+				existingCM := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{"config": "old-data"},
+				}
+
+				r, fakeGuestClient := fullReconciler(t, fullHCP(), nodeClass, existingCM)
+				ctx := log.IntoContext(t.Context(), testr.New(t))
+
+				_, err := r.Reconcile(ctx, ctrl.Request{
+					NamespacedName: client.ObjectKey{Name: testNodeClassName},
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+
+				updated := newNodeClass(tc.gvk).object
+				err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, updated)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(updated.GetFinalizers()).NotTo(ContainElement(kubeletConfigFinalizer))
+
+				cm := &corev1.ConfigMap{}
+				err = r.ManagementClient.Get(ctx, client.ObjectKey{
+					Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+					Namespace: testNamespace,
+				}, cm)
+				g.Expect(err).To(HaveOccurred(), "ConfigMap should be deleted")
+			})
+
+			t.Run("When Reconcile runs with arbitrary kubelet fields, it should preserve them in the ConfigMap", func(t *testing.T) {
+				g := NewWithT(t)
+
+				kubeletJSON := `{"maxPods": 500, "registryPullQPS": 5, "containerLogMaxSize": "50Mi"}`
+				var kubeletCfg map[string]interface{}
+				g.Expect(json.Unmarshal([]byte(kubeletJSON), &kubeletCfg)).To(Succeed())
+
+				nodeClass := newNodeClass(tc.gvk).object
+				nodeClass.SetName(testNodeClassName)
+				nodeClass.Object["status"] = map[string]interface{}{}
+				nodeClass.Object["spec"] = map[string]interface{}{"kubelet": kubeletCfg}
+
+				r, fakeGuestClient := fullReconciler(t, fullHCP(), nodeClass)
+				ctx := log.IntoContext(t.Context(), testr.New(t))
+
+				_, err := r.Reconcile(ctx, ctrl.Request{
+					NamespacedName: client.ObjectKey{Name: testNodeClassName},
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// Verify finalizer was added
+				updated := newNodeClass(tc.gvk).object
+				err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, updated)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(updated.GetFinalizers()).To(ContainElement(kubeletConfigFinalizer))
+
+				// Verify ConfigMap content includes all supplied kubelet fields.
+				cm := &corev1.ConfigMap{}
+				err = r.ManagementClient.Get(ctx, client.ObjectKey{
+					Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+					Namespace: testNamespace,
+				}, cm)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				var cr map[string]interface{}
+				err = yaml.Unmarshal([]byte(cm.Data["config"]), &cr)
+				g.Expect(err).NotTo(HaveOccurred())
+				spec, ok := cr["spec"].(map[string]interface{})
+				g.Expect(ok).To(BeTrue())
+				kubeletConfig, ok := spec["kubeletConfig"].(map[string]interface{})
+				g.Expect(ok).To(BeTrue())
+
+				g.Expect(kubeletConfig["maxPods"]).To(BeEquivalentTo(500))
+				g.Expect(kubeletConfig["registryPullQPS"]).To(BeEquivalentTo(5))
+				g.Expect(kubeletConfig["containerLogMaxSize"]).To(Equal("50Mi"))
+
+				taints, ok := kubeletConfig["registerWithTaints"].([]interface{})
+				g.Expect(ok).To(BeTrue())
+				g.Expect(taints).NotTo(BeEmpty())
+			})
 		})
-		g.Expect(err).NotTo(HaveOccurred())
-
-		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, updated)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(updated.Finalizers).To(ContainElement(kubeletConfigFinalizer))
-
-		cm := &corev1.ConfigMap{}
-		err = r.ManagementClient.Get(ctx, client.ObjectKey{
-			Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
-			Namespace: testNamespace,
-		}, cm)
-		g.Expect(err).NotTo(HaveOccurred())
-	})
-
-	t.Run("When Reconcile runs with spec.kubelet cleared it should remove the finalizer and delete the ConfigMap", func(t *testing.T) {
-		g := NewWithT(t)
-
-		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:       testNodeClassName,
-				Finalizers: []string{kubeletConfigFinalizer},
-			},
-		}
-
-		existingCM := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
-				Namespace: testNamespace,
-			},
-			Data: map[string]string{"config": "old-data"},
-		}
-
-		r, fakeGuestClient := fullReconciler(t, fullHCP(), nodeClass, existingCM)
-		ctx := log.IntoContext(t.Context(), testr.New(t))
-
-		_, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: client.ObjectKey{Name: testNodeClassName},
-		})
-		g.Expect(err).NotTo(HaveOccurred())
-
-		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, updated)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(updated.Finalizers).NotTo(ContainElement(kubeletConfigFinalizer))
-
-		cm := &corev1.ConfigMap{}
-		err = r.ManagementClient.Get(ctx, client.ObjectKey{
-			Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
-			Namespace: testNamespace,
-		}, cm)
-		g.Expect(err).To(HaveOccurred(), "ConfigMap should be deleted")
-	})
-
-	t.Run("When Reconcile runs with overflow kubelet fields they should appear in the ConfigMap", func(t *testing.T) {
-		g := NewWithT(t)
-
-		kubeletJSON := `{"maxPods": 500, "registryPullQPS": 5, "containerLogMaxSize": "50Mi"}`
-		var kubeletCfg hyperkarpenterv1.KubeletConfiguration
-		g.Expect(json.Unmarshal([]byte(kubeletJSON), &kubeletCfg)).To(Succeed())
-
-		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
-			ObjectMeta: metav1.ObjectMeta{Name: testNodeClassName},
-			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-				Kubelet: kubeletCfg,
-			},
-		}
-
-		r, fakeGuestClient := fullReconciler(t, fullHCP(), nodeClass)
-		ctx := log.IntoContext(t.Context(), testr.New(t))
-
-		_, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: client.ObjectKey{Name: testNodeClassName},
-		})
-		g.Expect(err).NotTo(HaveOccurred())
-
-		// Verify finalizer was added
-		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, updated)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(updated.Finalizers).To(ContainElement(kubeletConfigFinalizer))
-
-		// Verify ConfigMap content includes typed and overflow fields
-		cm := &corev1.ConfigMap{}
-		err = r.ManagementClient.Get(ctx, client.ObjectKey{
-			Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
-			Namespace: testNamespace,
-		}, cm)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		var cr map[string]interface{}
-		err = yaml.Unmarshal([]byte(cm.Data["config"]), &cr)
-		g.Expect(err).NotTo(HaveOccurred())
-		spec, ok := cr["spec"].(map[string]interface{})
-		g.Expect(ok).To(BeTrue())
-		kubeletConfig, ok := spec["kubeletConfig"].(map[string]interface{})
-		g.Expect(ok).To(BeTrue())
-
-		g.Expect(kubeletConfig["maxPods"]).To(BeEquivalentTo(500))
-		g.Expect(kubeletConfig["registryPullQPS"]).To(BeEquivalentTo(5))
-		g.Expect(kubeletConfig["containerLogMaxSize"]).To(Equal("50Mi"))
-
-		taints, ok := kubeletConfig["registerWithTaints"].([]interface{})
-		g.Expect(ok).To(BeTrue())
-		g.Expect(taints).NotTo(BeEmpty())
-	})
+	}
 
 	t.Run("When NodeClass is deleted with finalizer it should delete the ConfigMap and remove the finalizer", func(t *testing.T) {
 		g := NewWithT(t)
@@ -2060,7 +2512,7 @@ func TestCreateInMemoryNodePool(t *testing.T) {
 			// KubeletConfig is nil
 		}
 
-		np := r.createInMemoryNodePool(hcp, nodeClass, hcp.Spec.ReleaseImage)
+		np := r.createInMemoryNodePool(hcp, nodeClass, hcp.Spec.ReleaseImage, false)
 
 		g.Expect(np.Spec.Config).To(HaveLen(1))
 		g.Expect(np.Spec.Config[0].Name).To(Equal(karpenterutil.KarpenterTaintConfigMapName))
@@ -2086,7 +2538,7 @@ func TestCreateInMemoryNodePool(t *testing.T) {
 			},
 		}
 
-		np := r.createInMemoryNodePool(hcp, nodeClass, hcp.Spec.ReleaseImage)
+		np := r.createInMemoryNodePool(hcp, nodeClass, hcp.Spec.ReleaseImage, true)
 
 		// When Spec.Kubelet is set, only the per-nodeclass kubelet config ref is included.
 		// set-karpenter-taint is omitted because the taint is merged into the per-nodeclass
@@ -2137,7 +2589,9 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
-		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		config, err := toNodeClass(t, nodeClass).kubeletConfig()
+		g.Expect(err).NotTo(HaveOccurred())
+		err = r.reconcileKubeletConfigMap(ctx, hcp, nodeClass, config)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		// ConfigMap should be deleted
@@ -2178,7 +2632,9 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
-		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		config, err := toNodeClass(t, nodeClass).kubeletConfig()
+		g.Expect(err).NotTo(HaveOccurred())
+		err = r.reconcileKubeletConfigMap(ctx, hcp, nodeClass, config)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		cm := &corev1.ConfigMap{}
@@ -2242,7 +2698,9 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
-		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		config, err := toNodeClass(t, nodeClass).kubeletConfig()
+		g.Expect(err).NotTo(HaveOccurred())
+		err = r.reconcileKubeletConfigMap(ctx, hcp, nodeClass, config)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		cm := &corev1.ConfigMap{}
@@ -2295,7 +2753,9 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
-		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		config, err := toNodeClass(t, nodeClass).kubeletConfig()
+		g.Expect(err).NotTo(HaveOccurred())
+		err = r.reconcileKubeletConfigMap(ctx, hcp, nodeClass, config)
 		g.Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -2335,7 +2795,9 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
-		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		config, err := toNodeClass(t, nodeClass).kubeletConfig()
+		g.Expect(err).NotTo(HaveOccurred())
+		err = r.reconcileKubeletConfigMap(ctx, hcp, nodeClass, config)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		cm := &corev1.ConfigMap{}
