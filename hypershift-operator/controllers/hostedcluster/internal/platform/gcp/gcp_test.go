@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -15,10 +16,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -128,6 +131,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 	g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
 	g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
 	g.Expect(capigcp.AddToScheme(scheme)).To(Succeed())
+	g.Expect(capiv1.AddToScheme(scheme)).To(Succeed())
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&capigcp.GCPCluster{}).WithObjects().Build()
 
@@ -148,6 +152,17 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 	gcpCluster, ok := obj.(*capigcp.GCPCluster)
 	g.Expect(ok).To(BeTrue())
 	g.Expect(gcpCluster.Status.Ready).To(BeTrue()) // Critical: Ready status must be set
+	g.Expect(gcpCluster.Spec.ControlPlaneEndpoint.Host).To(Equal("example.com"))
+	g.Expect(gcpCluster.Spec.ControlPlaneEndpoint.Port).To(Equal(int32(443)))
+	g.Expect(gcpCluster.Annotations).To(HaveKeyWithValue(capiv1.ManagedByAnnotation, "external"))
+	kinds, unversioned, err := scheme.ObjectKinds(gcpCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(unversioned).To(BeFalse())
+	g.Expect(kinds).To(ConsistOf(schema.GroupVersionKind{
+		Group:   "infrastructure.cluster.x-k8s.io",
+		Version: "v1beta1",
+		Kind:    "GCPCluster",
+	}))
 }
 
 func TestReconcileGCPClusterResourceLabels(t *testing.T) {
@@ -173,18 +188,81 @@ func TestReconcileGCPClusterResourceLabels(t *testing.T) {
 }
 
 func TestCAPIProviderDeploymentSpec(t *testing.T) {
-	g := NewWithT(t)
-
-	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
-
-	// Test minimal implementation returns nil (no CAPI provider)
-	spec, err := platform.CAPIProviderDeploymentSpec(
-		validHostedCluster(),
-		nil, // HostedControlPlane
+	const (
+		payloadImage     = "registry.ci.openshift.org/ocp/5.1:gcp-cluster-api-controllers"
+		environmentImage = "registry.ci.openshift.org/ocp/5.0:gcp-cluster-api-controllers"
+		annotationImage  = "registry.ci.openshift.org/ocp/4.23:gcp-cluster-api-controllers"
 	)
+	testCases := []struct {
+		name             string
+		payloadImage     string
+		environmentImage string
+		annotations      map[string]string
+		expectedImage    string
+		expectedError    string
+	}{
+		{
+			name:          "When no overrides are set, it should use the payload provider image",
+			payloadImage:  payloadImage,
+			expectedImage: payloadImage,
+		},
+		{
+			name:             "When the environment overrides the payload, it should use the environment provider image",
+			payloadImage:     payloadImage,
+			environmentImage: environmentImage,
+			expectedImage:    environmentImage,
+		},
+		{
+			name:             "When an annotation overrides the environment and payload, it should use the annotated provider image",
+			payloadImage:     payloadImage,
+			environmentImage: environmentImage,
+			annotations:      map[string]string{hyperv1.ClusterAPIGCPProviderImage: annotationImage},
+			expectedImage:    annotationImage,
+		},
+		{
+			name:             "When the payload image is unavailable, it should accept an environment provider image",
+			environmentImage: environmentImage,
+			expectedImage:    environmentImage,
+		},
+		{
+			name:          "When only an annotation supplies an image, it should use the annotated provider image",
+			annotations:   map[string]string{hyperv1.ClusterAPIGCPProviderImage: annotationImage},
+			expectedImage: annotationImage,
+		},
+		{
+			name:          "When no provider image is available, it should return an error",
+			expectedError: "no GCP CAPI provider image specified",
+		},
+		{
+			name:             "When an empty annotation overrides available images, it should return an error",
+			payloadImage:     payloadImage,
+			environmentImage: environmentImage,
+			annotations:      map[string]string{hyperv1.ClusterAPIGCPProviderImage: ""},
+			expectedError:    "no GCP CAPI provider image specified",
+		},
+	}
 
-	g.Expect(err).To(BeNil())
-	g.Expect(spec).ToNot(BeNil()) // Should return deployment spec
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewWithT(t)
+			t.Setenv(images.GCPCAPIProviderEnvVar, testCase.environmentImage)
+			hostedCluster := validHostedCluster()
+			hostedCluster.Annotations = testCase.annotations
+			platform := New("test-utilities-image", testCase.payloadImage, &semver.Version{Major: 5, Minor: 1})
+
+			spec, err := platform.CAPIProviderDeploymentSpec(hostedCluster, nil)
+			if testCase.expectedError != "" {
+				g.Expect(err).To(MatchError(testCase.expectedError))
+				g.Expect(spec).To(BeNil())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(spec).ToNot(BeNil())
+			g.Expect(spec.Template.Spec.Containers).To(HaveLen(1))
+			g.Expect(spec.Template.Spec.Containers[0].Image).To(Equal(testCase.expectedImage))
+			g.Expect(spec.Template.Spec.Containers[0].Args).To(ContainElement("--feature-gates=MachinePool=false"))
+		})
+	}
 }
 
 func TestCAPIProviderDeploymentSpecNilGCPPlatform(t *testing.T) {
