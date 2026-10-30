@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -38,9 +39,6 @@ func TestProviderWithOpenShiftImageRegistryOverridesDecorator_Lookup(t *testing.
 	}
 	provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{
 		Delegate: delegate,
-		OpenShiftImageRegistryOverrides: map[string][]string{
-			canonicalReleaseImage: {mirroredReleaseImage},
-		},
 		// Mock repoSetupFn to avoid real network calls for mirror verification.
 		repoSetupFn: func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
 			ref, err := reference.Parse(imageRef)
@@ -51,6 +49,9 @@ func TestProviderWithOpenShiftImageRegistryOverridesDecorator_Lookup(t *testing.
 		},
 		lock: sync.Mutex{},
 	}
+	provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+		canonicalReleaseImage: {mirroredReleaseImage},
+	})
 
 	pullSecret := []byte(`{"auths":{}}`)
 	// Call the Lookup method and validate GetMirroredReleaseImage.
@@ -83,16 +84,198 @@ func TestProviderWithOpenShiftImageRegistryOverridesDecorator_LookupWithNilRepoS
 	// is assigned but never called, avoiding real network calls.
 	provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{
 		Delegate: delegate,
-		OpenShiftImageRegistryOverrides: map[string][]string{
-			"no-match-source": {"no-match-mirror"},
-		},
 		// repoSetupFn intentionally nil to exercise the default fallback.
 		lock: sync.Mutex{},
 	}
+	provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+		"no-match-source": {"no-match-mirror"},
+	})
 
 	pullSecret := []byte(`{"auths":{}}`)
 	result, err := provider.Lookup(t.Context(), directImage, pullSecret)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result).To(Equal(releaseImage))
 	g.Expect(provider.GetMirroredReleaseImage()).To(BeEmpty())
+}
+
+func TestProviderWithOpenShiftImageRegistryOverridesDecorator_GetOpenShiftImageRegistryOverrides(t *testing.T) {
+	t.Run("When overrides are cleared, it should preserve nil and empty snapshots", func(t *testing.T) {
+		g := NewWithT(t)
+		provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{}
+		g.Expect(provider.GetOpenShiftImageRegistryOverrides()).To(BeNil())
+		for _, overrides := range []map[string][]string{
+			{"quay.io": {"mirror.example.com"}},
+			nil,
+			{},
+			{"quay.io": nil, "registry.example.com": {}},
+		} {
+			provider.SetOpenShiftImageRegistryOverrides(overrides)
+			g.Expect(provider.GetOpenShiftImageRegistryOverrides()).To(Equal(overrides))
+		}
+	})
+
+	t.Run("When the returned snapshot is modified, it should preserve the provider state", func(t *testing.T) {
+		g := NewWithT(t)
+		provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{}
+		input := map[string][]string{
+			"quay.io": {"mirror-a.example.com", "mirror-b.example.com"},
+		}
+		provider.SetOpenShiftImageRegistryOverrides(input)
+
+		input["quay.io"][0] = "mutated-input.example.com"
+		input["new-source.example.com"] = []string{"new-mirror.example.com"}
+
+		overrides := provider.GetOpenShiftImageRegistryOverrides()
+		overrides["quay.io"][0] = "mutated.example.com"
+		delete(overrides, "quay.io")
+
+		g.Expect(provider.GetOpenShiftImageRegistryOverrides()).To(Equal(map[string][]string{
+			"quay.io": {"mirror-a.example.com", "mirror-b.example.com"},
+		}))
+	})
+}
+
+func TestProviderWithOpenShiftImageRegistryOverridesDecorator_GetMirroredReleaseImage(t *testing.T) {
+	t.Run("When fallback fails, it should clear the mirrored image before delegation during concurrent reads", func(t *testing.T) {
+		g := NewWithT(t)
+		var provider *ProviderWithOpenShiftImageRegistryOverridesDecorator
+		provider = &ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: &RegistryMirrorProviderDecorator{
+				Delegate: &fakeProvider{lookupFn: func(_ context.Context, image string, _ []byte) (*ReleaseImage, error) {
+					if image == "quay.io/release:latest" {
+						g.Expect(provider.GetMirroredReleaseImage()).To(BeEmpty())
+						return nil, context.Canceled
+					}
+					return &ReleaseImage{ImageStream: &imagev1.ImageStream{}, StreamMetadata: &stream.Stream{}}, nil
+				}},
+			},
+			repoSetupFn: func(context.Context, string, []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				return nil, nil, nil
+			},
+		}
+		g.Expect(provider.GetMirroredReleaseImage()).To(BeEmpty())
+		stop := make(chan struct{})
+		var readers sync.WaitGroup
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					provider.GetMirroredReleaseImage()
+				}
+			}
+		}()
+		defer func() {
+			close(stop)
+			readers.Wait()
+		}()
+		for range 100 {
+			provider.SetOpenShiftImageRegistryOverrides(map[string][]string{"quay.io": {"mirror.example.com"}})
+			_, err := provider.Lookup(t.Context(), "quay.io/release:latest", nil)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(provider.GetMirroredReleaseImage()).To(Equal("mirror.example.com/release:latest"))
+			provider.SetOpenShiftImageRegistryOverrides(nil)
+			_, err = provider.Lookup(t.Context(), "quay.io/release:latest", nil)
+			g.Expect(err).To(MatchError(context.Canceled))
+			g.Expect(provider.GetMirroredReleaseImage()).To(BeEmpty())
+		}
+	})
+}
+
+func TestProviderWithOpenShiftImageRegistryOverridesDecorator_ConcurrentOverrides(t *testing.T) {
+	t.Run("When mirror overrides are refreshed during lookup, it should use synchronized snapshots", func(t *testing.T) {
+		const waitTimeout = time.Second
+		canonicalReleaseImage := "canonical-release-image"
+		unavailableMirrorImage := "unavailable.example.com/release:latest"
+		oldMirrorImage := "mirror-a.example.com/release:latest"
+		newMirrorImage := "mirror-b.example.com/release:latest"
+		releaseImage := &ReleaseImage{
+			ImageStream:    &imagev1.ImageStream{},
+			StreamMetadata: &stream.Stream{},
+		}
+		requestedImages := make([]string, 0, 3)
+		lookupStarted := make(chan struct{}, 1)
+		releaseLookup := make(chan struct{})
+		lookupDone := make(chan struct{})
+		lookupErr := make(chan error, 1)
+		releaseLookupClosed := false
+		defer func() {
+			if !releaseLookupClosed {
+				close(releaseLookup)
+			}
+		}()
+
+		provider := &ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: &RegistryMirrorProviderDecorator{
+				Delegate: &fakeProvider{
+					lookupFn: func(_ context.Context, image string, _ []byte) (*ReleaseImage, error) {
+						requestedImages = append(requestedImages, image)
+						if image == unavailableMirrorImage {
+							lookupStarted <- struct{}{}
+							<-releaseLookup
+							return nil, context.Canceled
+						}
+						return releaseImage, nil
+					},
+				},
+				RegistryOverrides: map[string]string{},
+			},
+			repoSetupFn: func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				ref, err := reference.Parse(imageRef)
+				if err != nil {
+					return nil, nil, err
+				}
+				return nil, &ref, nil
+			},
+		}
+		provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+			canonicalReleaseImage: {unavailableMirrorImage, oldMirrorImage},
+		})
+
+		go func() {
+			defer close(lookupDone)
+			_, err := provider.Lookup(t.Context(), canonicalReleaseImage, []byte(`{"auths":{}}`))
+			lookupErr <- err
+		}()
+
+		select {
+		case <-lookupStarted:
+		case <-time.After(waitTimeout):
+			t.Fatal("timed out waiting for the delegate lookup to block")
+		}
+
+		setDone := make(chan struct{})
+		go func() {
+			provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+				canonicalReleaseImage: {newMirrorImage},
+			})
+			close(setDone)
+		}()
+
+		select {
+		case <-setDone:
+		case <-time.After(waitTimeout):
+			t.Fatal("override publication waited for the blocked delegate lookup")
+		}
+
+		close(releaseLookup)
+		releaseLookupClosed = true
+		select {
+		case <-lookupDone:
+		case <-time.After(waitTimeout):
+			t.Fatal("timed out waiting for the first lookup to finish")
+		}
+
+		g := NewWithT(t)
+		g.Expect(<-lookupErr).ToNot(HaveOccurred())
+		g.Expect(requestedImages).To(Equal([]string{unavailableMirrorImage, oldMirrorImage}))
+
+		_, err := provider.Lookup(t.Context(), canonicalReleaseImage, []byte(`{"auths":{}}`))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(requestedImages).To(Equal([]string{unavailableMirrorImage, oldMirrorImage, newMirrorImage}))
+		g.Expect(provider.GetMirroredReleaseImage()).To(Equal(newMirrorImage))
+	})
 }
