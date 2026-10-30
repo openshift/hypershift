@@ -11,7 +11,6 @@ import (
 	"go/token"
 	"go/types"
 	"slices"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -33,7 +32,7 @@ var EmbedLitAnalyzer = &analysis.Analyzer{
 		typeindexanalyzer.Analyzer,
 	},
 	Run: runEmbedLit,
-	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#embedlit",
+	URL: "https://pkg.go.dev/golang.org/x/tools/go/analysis/passes/modernize#hdr-Analyzer_embedlit",
 }
 
 // Go1.27 introduced the ability to directly access embedded struct fields.
@@ -68,10 +67,8 @@ func runEmbedLit(pass *analysis.Pass) (any, error) {
 // literal.
 // T{U: U{f: v, ...}} => T{f: v, ...}
 // It returns true if it reported a diagnostic with edits.
-func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Cursor) bool {
+func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Cursor) (reported bool) {
 	var (
-		edits       []analysis.TextEdit
-		names       []string // names of the embedded field types that can be removed
 		lit         = curLit.Node().(*ast.CompositeLit)
 		compLitType = info.TypeOf(lit)
 	)
@@ -95,6 +92,16 @@ func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Curs
 					if !analyzerutil.FileUsesGoVersion(pass, file, versions.Go1_27) {
 						return
 					}
+
+					tokFile := pass.Fset.File(kv.Pos())
+					fileEnd := token.Pos(tokFile.Base() + tokFile.Size())
+					// Skip if brace positions are missing or invalid (golang/go#81590).
+					if !innerLit.Lbrace.IsValid() || !innerLit.Rbrace.IsValid() ||
+						kv.Pos() > innerLit.Lbrace || closingPos > innerLit.Rbrace ||
+						innerLit.Rbrace >= fileEnd {
+						continue
+					}
+
 					// If any comments overlap with the range to delete, don't suggest a fix.
 					if !moreiters.Empty(astutil.Comments(file, kv.Pos(), innerLit.Lbrace+1)) ||
 						!moreiters.Empty(astutil.Comments(file, closingPos, innerLit.Rbrace+1)) {
@@ -116,7 +123,6 @@ func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Curs
 					//		}
 					//	}
 					//
-					tokFile := pass.Fset.File(kv.Pos())
 					lineOf := func(pos token.Pos) int {
 						return tokFile.PositionFor(pos, false).Line
 					}
@@ -144,7 +150,11 @@ func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Curs
 						}
 					}
 
-					edits = append(edits, []analysis.TextEdit{
+					if !(startPos < endPos && endPos <= closingPos) {
+						continue
+					}
+
+					edits := []analysis.TextEdit{
 						// T{U: U{f: v, ...}}
 						//   -----         -
 						{
@@ -159,29 +169,26 @@ func embedlitUnnest(pass *analysis.Pass, info *types.Info, curLit inspector.Curs
 							Pos: closingPos,
 							End: innerLit.Rbrace + 1,
 						},
-					}...)
-					names = append(names, kv.Key.(*ast.Ident).Name)
+					}
+					pass.Report(analysis.Diagnostic{
+						Pos:     kv.Pos(),
+						End:     innerLit.Lbrace + 1,
+						Message: "embedded field type can be removed from struct literal",
+						SuggestedFixes: []analysis.SuggestedFix{
+							{
+								Message:   fmt.Sprintf("Remove embedded field type %s", kv.Key.(*ast.Ident).Name),
+								TextEdits: edits,
+							},
+						},
+					})
+					reported = true
 					checkLit(innerLit)
 				}
 			}
 		}
 	}
 	checkLit(lit)
-	if len(edits) > 0 {
-		pass.Report(analysis.Diagnostic{
-			Pos:     curLit.Node().Pos(),
-			End:     curLit.Node().End(),
-			Message: "embedded field type can be removed from struct literal",
-			SuggestedFixes: []analysis.SuggestedFix{
-				{
-					Message:   fmt.Sprintf("Remove embedded field type%s %s", cond(len(names) == 1, "", "s"), strings.Join(names, ", ")),
-					TextEdits: edits,
-				},
-			},
-		})
-		return true
-	}
-	return false
+	return reported
 }
 
 // Pattern B: moving embedded field assignments inside the struct literal
@@ -209,15 +216,25 @@ func embedlitCombine(pass *analysis.Pass, index *typeindex.Index, info *types.In
 	case edge.AssignStmt_Rhs:
 		assign := curLit.Parent().Node().(*ast.AssignStmt)
 		// TODO(mkalil): Handle lhs forms that aren't idents, i.e. x.y[i] = T{...}.
-		if id, ok := assign.Lhs[curLit.ParentEdgeIndex()].(*ast.Ident); ok {
+		// TODO(mkalil): Handle multi-assignments like t1, t2 := A{}, B{}
+		if len(assign.Lhs) != 1 {
+			return nil
+		}
+		if id, ok := assign.Lhs[0].(*ast.Ident); ok {
 			lhs = id
 			curStmt = curLit.Parent()
 		}
 	case edge.ValueSpec_Values:
 		spec := curLit.Parent().Node().(*ast.ValueSpec)
-		lhs = spec.Names[curLit.ParentEdgeIndex()]
+		// TODO(mkalil): Handle multi-declarations like var (x = A{}; y = B{}) or var x, y = ...
+		if len(spec.Names) != 1 {
+			return nil
+		}
+		lhs = spec.Names[0]
 		if decl, ok := moreiters.First(curLit.Enclosing((*ast.DeclStmt)(nil))); ok {
-			curStmt = decl
+			if gdecl, ok := decl.Node().(*ast.DeclStmt).Decl.(*ast.GenDecl); ok && len(gdecl.Specs) == 1 {
+				curStmt = decl
+			}
 		}
 	default:
 		return nil
@@ -228,11 +245,34 @@ func embedlitCombine(pass *analysis.Pass, index *typeindex.Index, info *types.In
 	}
 
 	var (
-		tObj = info.ObjectOf(lhs)
+		compLitType = info.TypeOf(compLit)
+		tObj        = info.ObjectOf(lhs)
 		// Marks the contiguous block of embedded field assign statements that will
 		// be moved into the struct initialization.
-		firstStmt, lastStmt inspector.Cursor
+		firstStmt, lastStmt  inspector.Cursor
+		hasEmbeddedSelection bool
 	)
+	if compLitType == nil {
+		return nil
+	}
+
+	// Record the index paths of the existing fields in the composite literal. Two
+	// fields in a composite literal conflict if one field's path is a prefix of
+	// the other's. If the field in an assignment conflicts with an existing
+	// field, we won't suggest a fix to move it into the struct literal.
+	var fieldPaths [][]int
+	for _, elt := range compLit.Elts {
+		k, ok := elt.(*ast.KeyValueExpr).Key.(*ast.Ident)
+		if !ok {
+			return nil
+		}
+		_, idx, _ := types.LookupFieldOrMethod(compLitType, true, pass.Pkg, k.Name)
+		if len(idx) == 0 {
+			return nil
+		}
+		fieldPaths = append(fieldPaths, idx)
+	}
+
 stmtloop:
 	for {
 		var ok bool
@@ -262,6 +302,23 @@ stmtloop:
 		if obj != tObj {
 			break
 		}
+		fieldObj, assignIdx, indirect := types.LookupFieldOrMethod(compLitType, true, pass.Pkg, sel.Sel.Name)
+		fieldVar, ok := fieldObj.(*types.Var)
+		if !ok || len(assignIdx) == 0 || indirect { // don't allow accessing promoted fields through implicit pointer indirection
+			break
+		}
+		// A composite literal cannot specify both an enclosing embedded field and a promoted
+		// field from within it, nor duplicate fields.
+		if slices.ContainsFunc(fieldPaths, func(index []int) bool { return pathConflicts(index, assignIdx) }) {
+			break
+		}
+		// The selection is from an embedded field if it directly
+		// assigns an embedded struct field (t.B = B{...}) or if
+		// the length of the index path is greater than one.
+		if fieldVar.Embedded() || len(assignIdx) > 1 {
+			hasEmbeddedSelection = true
+		}
+
 		rhsCur := curStmt.ChildAt(edge.AssignStmt_Rhs, 0)
 		if uses(index, rhsCur, tObj) {
 			break
@@ -278,13 +335,18 @@ stmtloop:
 			// effects will be preserved because we preserve the order of the key
 			// value pairs inside the comp lit.
 		}
+		// We might move multiple sequential assignment statements into
+		// the struct literal, so we need to keep track of the index path
+		// of this assignment to check it against subsequent assignments.
+		fieldPaths = append(fieldPaths, assignIdx)
 		if !firstStmt.Valid() {
 			firstStmt = curStmt
 		}
 		lastStmt = curStmt
 	}
 
-	if !firstStmt.Valid() {
+	if !firstStmt.Valid() || !hasEmbeddedSelection {
+		// We should not suggest a fix if none of the selections are from embedded fields.
 		return nil
 	}
 
@@ -308,7 +370,17 @@ stmtloop:
 		lastElt := compLit.Elts[len(compLit.Elts)-1]
 		lastEltOffset := tokFile.Offset(lastElt.End())
 		rbraceOffset := tokFile.Offset(compLit.Rbrace)
-		hasTrailingComma = bytes.Contains(src[lastEltOffset:rbraceOffset], []byte(","))
+		span := bytes.Clone(src[lastEltOffset:rbraceOffset])
+		// Zero out any comments in the span, so that a comma within
+		// one is not mistaken for the literal's trailing comma.
+		for co := range astutil.Comments(file, lastElt.End(), compLit.Rbrace) {
+			start := max(tokFile.Offset(co.Pos())-lastEltOffset, 0)
+			end := min(tokFile.Offset(co.End())-lastEltOffset, len(span))
+			if start < end {
+				clear(span[start:end])
+			}
+		}
+		hasTrailingComma = bytes.Contains(span, []byte(","))
 	}
 	var edits []analysis.TextEdit
 	// Emit edits to move the field assignment into the struct lit while
@@ -445,4 +517,11 @@ func keyedField(info *types.Info, kv *ast.KeyValueExpr) *types.Var {
 		return nil
 	}
 	return obj
+}
+
+// pathConflicts reports whether the specified index paths conflict.
+// Two index paths conflict if one is a prefix of the other.
+func pathConflicts(p1, p2 []int) bool {
+	return (len(p1) >= len(p2) && slices.Equal(p1[:len(p2)], p2)) ||
+		(len(p2) >= len(p1) && slices.Equal(p2[:len(p1)], p1))
 }

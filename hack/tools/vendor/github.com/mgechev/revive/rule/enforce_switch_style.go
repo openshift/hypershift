@@ -14,10 +14,15 @@ type EnforceSwitchStyleRule struct {
 	allowDefaultNotLast bool // allow default, if present, not being the last case
 }
 
+var _ lint.ConfigurableRule = (*EnforceSwitchStyleRule)(nil)
+
 // Configure validates the rule configuration, and configures the rule accordingly.
 //
 // Configuration implements the [lint.ConfigurableRule] interface.
 func (r *EnforceSwitchStyleRule) Configure(arguments lint.Arguments) error {
+	r.allowNoDefault = false
+	r.allowDefaultNotLast = false
+
 	if len(arguments) < 1 {
 		return nil
 	}

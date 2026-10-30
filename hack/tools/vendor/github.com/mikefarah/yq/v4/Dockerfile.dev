@@ -1,8 +1,4 @@
-FROM golang:1.23.3
-
-RUN apt-get update && \
-    apt-get install -y npm && \
-    npm install -g npx cspell@latest
+FROM golang:1.27.1@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244
 
 COPY scripts/devtools.sh /opt/devtools.sh
 
