@@ -13,7 +13,6 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -675,17 +674,19 @@ func (t *Token) reconcileUserDataSecret(log logr.Logger, userDataSecret *corev1.
 	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
 		npLabels := t.nodePool.GetLabels()
 		if npLabels != nil && npLabels[karpenterutil.ManagedByKarpenterLabel] == "true" {
-			// TODO(maxcao13): Add support for userData reconciliation for Azure.
-			// tracked in https://redhat.atlassian.net/browse/AUTOSCALE-970
-			if t.hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-				err := setKarpenterAMILabels(log, userDataSecret, t.hostedCluster.Spec.Platform.AWS.Region, t.releaseImage, t.hostedCluster.Spec.Platform.Type, t.resolvedRHELStreamForBootImage)
-				if err != nil {
-					return err
-				}
-				userDataSecret.Labels[karpenterutil.ManagedByKarpenterLabel] = "true"
-			} else {
+			var err error
+			switch t.hostedCluster.Spec.Platform.Type {
+			case hyperv1.AWSPlatform:
+				err = setKarpenterAMILabels(log, userDataSecret, t.hostedCluster.Spec.Platform.AWS.Region, t.releaseImage, t.resolvedRHELStreamForBootImage)
+			case hyperv1.AzurePlatform:
+				err = setKarpenterAzureMarketplaceAnnotations(log, userDataSecret, t.releaseImage, t.resolvedRHELStreamForBootImage)
+			default:
 				return fmt.Errorf("karpenter userData reconciliation is currently not supported for platform: %s", t.hostedCluster.Spec.Platform.Type)
 			}
+			if err != nil {
+				return err
+			}
+			userDataSecret.Labels[karpenterutil.ManagedByKarpenterLabel] = "true"
 		}
 	}
 
@@ -699,29 +700,6 @@ func (t *Token) reconcileUserDataSecret(log logr.Logger, userDataSecret *corev1.
 	userDataSecret.Data = map[string][]byte{
 		"disableTemplating": []byte(base64.StdEncoding.EncodeToString([]byte("true"))),
 		"value":             userDataValue,
-	}
-	return nil
-}
-
-func setKarpenterAMILabels(log logr.Logger, userDataSecret *corev1.Secret, region string, releaseImage *releaseinfo.ReleaseImage, platform hyperv1.PlatformType, rhelStream string) error {
-	supportedArchitectures, err := karpenterutil.SupportedArchitectures(platform)
-	if err != nil {
-		return fmt.Errorf("failed to get supported architectures: %w", err)
-	}
-	supported := 0
-	for _, arch := range supportedArchitectures {
-		ami, err := defaultNodePoolAMI(region, arch, rhelStream, releaseImage)
-		if err != nil {
-			// skip unavailable architectures gracefully
-			log.Error(err, "failed to get default NodePool AMI for architecture", "architecture", arch)
-			continue
-		}
-		labelKey := karpenterutil.ArchToAMILabelKey(arch)
-		userDataSecret.Labels[labelKey] = ami
-		supported++
-	}
-	if supported == 0 {
-		return fmt.Errorf("no supported architectures found")
 	}
 	return nil
 }
