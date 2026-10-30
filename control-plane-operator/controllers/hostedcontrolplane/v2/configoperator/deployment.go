@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/pdbdrain"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 
@@ -82,6 +83,18 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 					Value: "1",
 				},
 			)
+		}
+		if os.Getenv("ENABLE_NODEPOOL_DRAIN_READINESS") == "1" && hcp.Annotations[hyperv1.NodePoolDrainReadinessAnnotation] == "true" {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "ENABLE_NODEPOOL_DRAIN_READINESS",
+				Value: "1",
+			})
+			if prefixes := os.Getenv(pdbdrain.AdditionalPlatformNamespacePrefixesEnv); prefixes != "" {
+				c.Env = append(c.Env, corev1.EnvVar{
+					Name:  pdbdrain.AdditionalPlatformNamespacePrefixesEnv,
+					Value: prefixes,
+				})
+			}
 		}
 		if len(os.Getenv("MANAGED_SERVICE")) > 0 {
 			c.Env = append(c.Env,
