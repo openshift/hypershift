@@ -213,6 +213,8 @@ type HostedControlPlaneReconciler struct {
 	ImageMetadataProvider                   imageregistry.ImageMetadataProvider
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
+	azureLocationClient                     *azureLocationClient
+	azureLocationValidation                 azureLocationValidationCache
 	clock                                   clock.Clock
 	lastDNSReconcile                        sync.Map
 }
@@ -677,6 +679,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	err := r.Client.Get(ctx, req.NamespacedName, hostedControlPlane)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
+			r.azureLocationValidation.remove(req.NamespacedName, nil)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -685,6 +688,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
+		r.azureLocationValidation.remove(req.NamespacedName, nil)
 		return r.reconcileDeletion(ctx, hostedControlPlane)
 	}
 
@@ -701,14 +705,16 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
+	var configValidationErr error
 	{
 		condition := metav1.Condition{
 			Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
 			ObservedGeneration: hostedControlPlane.Generation,
 		}
-		if err := r.validateConfigAndClusterCapabilities(ctx, hostedControlPlane); err != nil {
+		configValidationErr = r.validateConfigAndClusterCapabilities(ctx, hostedControlPlane)
+		if configValidationErr != nil {
 			condition.Status = metav1.ConditionFalse
-			condition.Message = err.Error()
+			condition.Message = configValidationErr.Error()
 			condition.Reason = hyperv1.InsufficientClusterCapabilitiesReason
 		} else {
 			condition.Status = metav1.ConditionTrue
@@ -807,7 +813,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		validConfig := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
 			r.Log.Info("Configuration is invalid, reconciliation is blocked")
-			return reconcile.Result{}, nil
+			return ctrl.Result{RequeueAfter: r.azureLocationRetryDelay(configValidationErr)}, nil
 		}
 	}
 
@@ -1214,6 +1220,7 @@ func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	r.azureLocationValidation.invalidate(hcp)
 	for _, svc := range hcp.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
@@ -3816,7 +3823,31 @@ func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Con
 }
 
 // verifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
-func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane) (validationErr error) {
+	entry := r.azureLocationValidation.entry(hcp)
+	entry.Lock()
+	defer entry.Unlock()
+	objectKey := client.ObjectKeyFromObject(hcp)
+	validConfig := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
+	if validConfig != nil && validConfig.Status == metav1.ConditionTrue && validConfig.ObservedGeneration == hcp.Generation {
+		r.azureLocationValidation.remove(objectKey, entry)
+		return nil
+	}
+	if entry.retry != nil && entry.retry.deadline.After(r.azureLocationClock().Now()) {
+		return entry.retry
+	}
+	entry.retry = nil
+	defer func() {
+		var responseErr *azcore.ResponseError
+		if errors.As(validationErr, &responseErr) && responseErr.StatusCode == http.StatusTooManyRequests {
+			delay, _ := hyperazureutil.ClassifyAzureError(validationErr)
+			entry.retry = &azureLocationRetryError{cause: validationErr, deadline: r.azureLocationClock().Now().Add(delay)}
+			validationErr = entry.retry
+		} else {
+			r.azureLocationValidation.remove(objectKey, entry)
+		}
+	}()
+
 	var (
 		creds     azcore.TokenCredential
 		found, ok bool
@@ -3850,17 +3881,25 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 	}
 
 	// Retrieve full vnet information from the VNET ID
-	vnet, err := hyperazureutil.GetVnetInfoFromVnetID(ctx, hcp.Spec.Platform.Azure.VnetID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
+	locationClient := r.azureLocationClient
+	if locationClient == nil {
+		locationClient = &azureLocationClient{
+			vnet:          hyperazureutil.GetVnetInfoFromVnetID,
+			securityGroup: hyperazureutil.GetNetworkSecurityGroupInfo,
+			resourceGroup: hyperazureutil.GetResourceGroupInfo,
+		}
+	}
+	vnet, err := locationClient.vnet(ctx, hcp.Spec.Platform.Azure.VnetID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
 		return fmt.Errorf("failed to get vnet info to verify its location: %w", err)
 	}
 	// Retrieve full network security group information from the network security group ID
-	nsg, err := hyperazureutil.GetNetworkSecurityGroupInfo(ctx, hcp.Spec.Platform.Azure.SecurityGroupID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
+	nsg, err := locationClient.securityGroup(ctx, hcp.Spec.Platform.Azure.SecurityGroupID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
 		return fmt.Errorf("failed to get network security group info to verify its location: %w", err)
 	}
 	// Retrieve full resource group information from the resource group name
-	rg, err := hyperazureutil.GetResourceGroupInfo(ctx, hcp.Spec.Platform.Azure.ResourceGroupName, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
+	rg, err := locationClient.resourceGroup(ctx, hcp.Spec.Platform.Azure.ResourceGroupName, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
 		return fmt.Errorf("failed to get resource group info to verify its location: %w", err)
 	}
