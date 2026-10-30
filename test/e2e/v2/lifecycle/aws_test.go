@@ -35,6 +35,100 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 			g.Expect(spec.DumpArgs).To(BeEmpty(), "variant %s", spec.Variant)
 		}
 	})
+
+	t.Run("When AWS cluster specs are built, kms-reencryption variant is always present", func(t *testing.T) {
+		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
+		var found bool
+		for _, s := range specs {
+			if s.Variant == "kms-reencryption" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("kms-reencryption variant missing from ClusterSpecs")
+		}
+	})
+
+	t.Run("When HYPERSHIFT_ETCD_KMS_KEY_ARN is set, kms-reencryption CreateArgs should include --kms-key-arn", func(t *testing.T) {
+		t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", "arn:aws:kms:us-east-1:123456789012:key/test-key")
+		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
+		for _, s := range specs {
+			if s.Variant == "kms-reencryption" {
+				if !slices.Contains(s.CreateArgs, "--kms-key-arn=arn:aws:kms:us-east-1:123456789012:key/test-key") {
+					t.Fatalf("kms-reencryption CreateArgs missing --kms-key-arn: %v", s.CreateArgs)
+				}
+				return
+			}
+		}
+		t.Fatal("kms-reencryption variant not found")
+	})
+
+	t.Run("When HYPERSHIFT_ETCD_KMS_KEY_ARN is not set, kms-reencryption CreateArgs should not include --kms-key-arn", func(t *testing.T) {
+		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
+		for _, s := range specs {
+			if s.Variant == "kms-reencryption" {
+				for _, arg := range s.CreateArgs {
+					if strings.HasPrefix(arg, "--kms-key-arn=") {
+						t.Fatalf("kms-reencryption CreateArgs should not contain --kms-key-arn when env var is unset, got: %v", s.CreateArgs)
+					}
+				}
+				return
+			}
+		}
+		t.Fatal("kms-reencryption variant not found")
+	})
+
+	t.Run("When AWS cluster specs are built, the variant catalog is identical with and without HYPERSHIFT_ETCD_KMS_KEY_ARN", func(t *testing.T) {
+		// The variant catalog must be static — create-guests and run-tests run in
+		// separate shells, so any env-var-conditional variant would produce different
+		// plans in the two steps and cause a mismatch.
+		wantVariants := []string{
+			"autoscaling", "external-oidc", "image-mirroring", "karpenter",
+			"karpenter-upgrade", "kms-reencryption", "managed-dns", "public", "upgrade",
+		}
+		for _, arn := range []string{"", "arn:aws:kms:us-east-1:123456789012:key/test-key"} {
+			t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", arn)
+			specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
+			got := make([]string, len(specs))
+			for i, s := range specs {
+				got[i] = s.Variant
+			}
+			slices.Sort(got)
+			if !reflect.DeepEqual(got, wantVariants) {
+				t.Errorf("HYPERSHIFT_ETCD_KMS_KEY_ARN=%q: variant catalog mismatch:\n got  %v\n want %v", arn, got, wantVariants)
+			}
+		}
+	})
+}
+
+func TestAWSPlatformConfigTestMatrix(t *testing.T) {
+	t.Run("When the default AWS plan is built, kms-reencryption is always in the parallel group", func(t *testing.T) {
+		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
+		matrix := cfg.TestMatrix()
+		want := TestGroup{Name: "kms-reencryption", Variant: "kms-reencryption", LabelFilter: "etcd-encryption-reencryption"}
+		if !slices.Contains(matrix.Parallel, want) {
+			t.Fatalf("TestMatrix parallel group missing kms-reencryption: %+v", matrix.Parallel)
+		}
+	})
+
+	t.Run("When the default AWS plan is built, ClusterSpecs and TestMatrix are consistent", func(t *testing.T) {
+		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
+		specs := cfg.ClusterSpecs(t.Context(), "current", "previous")
+		plan := cfg.DefaultTestPlan()
+		if err := plan.Validate(specs); err != nil {
+			t.Fatalf("default AWS plan is invalid: %v", err)
+		}
+	})
+
+	t.Run("When HYPERSHIFT_ETCD_KMS_KEY_ARN is set, the default plan still validates against ClusterSpecs", func(t *testing.T) {
+		t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", "arn:aws:kms:us-east-1:123456789012:key/test-key")
+		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
+		specs := cfg.ClusterSpecs(t.Context(), "current", "previous")
+		plan := cfg.DefaultTestPlan()
+		if err := plan.Validate(specs); err != nil {
+			t.Fatalf("default AWS plan is invalid when HYPERSHIFT_ETCD_KMS_KEY_ARN is set: %v", err)
+		}
+	})
 }
 
 // testCLIImage is a digest-pinned openshift/cli image reference used in lookup and setup tests.

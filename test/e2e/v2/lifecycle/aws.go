@@ -123,6 +123,11 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 	}
 	oneInitialReplica := 1
 
+	var kmsKeyARNArgs []string
+	if kmsKeyARN := os.Getenv("HYPERSHIFT_ETCD_KMS_KEY_ARN"); kmsKeyARN != "" {
+		kmsKeyARNArgs = append(kmsKeyARNArgs, "--kms-key-arn="+kmsKeyARN)
+	}
+
 	// The storage-kms test runs on the public cluster and requires the cluster
 	// to be created with a KMS key. HYPERSHIFT_STORAGE_KMS_KEY_ALIAS carries a
 	// pre-provisioned CI KMS key alias (e.g. alias/hypershift-ci), resolved here
@@ -148,7 +153,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 		publicArgs = append(publicArgs, "--initial-storage-volumes-kms-key="+arn)
 	}
 
-	return []ClusterSpec{
+	specs := []ClusterSpec{
 		{
 			Variant:     "public",
 			DestroyArgs: destroyArgs,
@@ -229,7 +234,19 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 				"--image-content-sources="+filepath.Join(a.sharedDir, "mirror-registry-ics.yaml"),
 			),
 		},
+		{
+			// Dedicated cluster for etcd KMS re-encryption tests. When
+			// HYPERSHIFT_ETCD_KMS_KEY_ARN is set, the cluster is created with
+			// --kms-key-arn so AWSKMSKeyRotationTest can rotate keys. When the
+			// variable is unset the cluster is created without KMS encryption and
+			// the rotation tests skip themselves via applies().
+			Variant:     "kms-reencryption",
+			DestroyArgs: destroyArgs,
+			CreateArgs:  clusterArgs(kmsKeyARNArgs...),
+		},
 	}
+
+	return specs
 }
 
 // PreCreate deploys the external OIDC provider and the mirror registry fixture
@@ -318,6 +335,11 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 				Name:        "image-mirroring",
 				Variant:     "image-mirroring",
 				LabelFilter: "image-mirroring",
+			},
+			{
+				Name:        "kms-reencryption",
+				Variant:     "kms-reencryption",
+				LabelFilter: "etcd-encryption-reencryption",
 			},
 		},
 		Sequential: []SequentialGroup{
