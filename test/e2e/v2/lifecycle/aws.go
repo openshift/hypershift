@@ -314,13 +314,25 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 				Variant:     "karpenter-upgrade",
 				LabelFilter: "karpenter-upgrade",
 			},
-			{
-				Name:        "image-mirroring",
-				Variant:     "image-mirroring",
-				LabelFilter: "image-mirroring",
-			},
 		},
 		Sequential: []SequentialGroup{
+			// The removal step is a day-2 mutation of imageContentSources that is
+			// not restored, so it must stay the last step on the variant.
+			{
+				Name: "image-mirroring",
+				Steps: []TestGroup{
+					{
+						Name:        "image-mirroring",
+						Variant:     "image-mirroring",
+						LabelFilter: "image-mirroring",
+					},
+					{
+						Name:        "image-mirroring-removal",
+						Variant:     "image-mirroring",
+						LabelFilter: "image-mirroring-removal",
+					},
+				},
+			},
 			{
 				Name: "public",
 				Steps: []TestGroup{
