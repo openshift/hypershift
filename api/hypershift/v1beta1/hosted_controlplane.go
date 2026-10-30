@@ -352,6 +352,11 @@ type HostedControlPlaneStatus struct {
 	// +optional
 	ControlPlaneEndpoint APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 
+	// sharedIngressWorkerAPIEndpoint is the observed address workers use to reach
+	// the API through shared ingress. It is absent when unavailable or not applicable.
+	// +optional
+	SharedIngressWorkerAPIEndpoint *APIEndpoint `json:"sharedIngressWorkerAPIEndpoint,omitempty"`
+
 	// oauthCallbackURLTemplate contains a template for the URL to use as a callback
 	// for identity providers. The [identity-provider-name] placeholder must be replaced
 	// with the name of an identity provider defined on the HostedCluster.
