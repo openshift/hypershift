@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 8f199149e3e5d2bee0c904350f9b36973273f29f601df7d58ff3d27f6a81220c
+    hypershift.openshift.io/desired-state-hash: a710e4828bca40ed7639829d8b3c7a47fc1c73ceac395b353a22e32d565f5c21
   creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
@@ -31,7 +31,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 19dc307e3b105d444ebc1fdd60b54b1d741638a5a0dd232cbcc341c5
+        component.hypershift.openshift.io/config-hash: 19dc307e3b105d44458a71d460b54b1d741638a5a0dd232cbcc341c5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
@@ -99,7 +99,7 @@ spec:
         - name: ALL_PROXY
           value: socks5://127.0.0.1:8090
         - name: NO_PROXY
-          value: kube-apiserver,audit-webhook,iam.cloud.ibm.com,iam.test.cloud.ibm.com
+          value: kube-apiserver,audit-webhook,oauth-openshift.hcp-namespace.svc.cluster.local,iam.cloud.ibm.com,iam.test.cloud.ibm.com
         image: oauth-server
         imagePullPolicy: IfNotPresent
         livenessProbe:
