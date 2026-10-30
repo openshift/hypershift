@@ -11,7 +11,6 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -182,9 +181,9 @@ func removeNamespaceObjectFinalizers(testCtx *internal.TestContext, namespace st
 		return fmt.Errorf("failed to get namespace %s: %w", namespace, err)
 	}
 
-	restConfig, err := util.GetConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get REST config: %w", err)
+	restConfig := testCtx.MgmtRESTConfig
+	if restConfig == nil {
+		return fmt.Errorf("management cluster REST config is not set on test context")
 	}
 
 	// Create discovery client

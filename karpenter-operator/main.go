@@ -135,36 +135,34 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to add managementCluster to controller runtime manager: %w", err)
 	}
 
-	hypershiftClient, err := hypershiftclient.NewForConfig(managementKubeconfig)
-	if err != nil {
-		return fmt.Errorf("failed to create hypershift client: %w", err)
-	}
-
-	r := karpenter.Reconciler{
-		StandaloneAdapter:         standaloneAdapter,
-		Namespace:                 namespace,
-		ControlPlaneOperatorImage: controlPlaneOperatorImage,
-		ReleaseProvider:           &releaseinfo.RegistryClientProvider{},
-		HypershiftClient:          hypershiftClient,
-	}
-	if err := r.SetupWithManager(ctx, mgr, managementCluster); err != nil {
-		return fmt.Errorf("failed to setup controller with manager: %w", err)
-	}
-
 	if !standaloneAdapter {
-		// MachineApprover was already migrated to standalone karpenter, don't enable in the adapter
+		// The standalone karpenter-operator owns these responsibilities, the adapter only runs the ignition controller.
+		hypershiftClient, err := hypershiftclient.NewForConfig(managementKubeconfig)
+		if err != nil {
+			return fmt.Errorf("failed to create hypershift client: %w", err)
+		}
+
+		r := karpenter.Reconciler{
+			Namespace:                 namespace,
+			ControlPlaneOperatorImage: controlPlaneOperatorImage,
+			ReleaseProvider:           &releaseinfo.RegistryClientProvider{},
+			HypershiftClient:          hypershiftClient,
+		}
+		if err := r.SetupWithManager(ctx, mgr, managementCluster); err != nil {
+			return fmt.Errorf("failed to setup controller with manager: %w", err)
+		}
+
 		mac := karpenter.MachineApproverController{}
 		if err := mac.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("failed to setup controller with manager: %w", err)
 		}
-	}
 
-	encr := nodeclass.EC2NodeClassReconciler{
-		Namespace:       namespace,
-		SkipUpstreamCRD: standaloneAdapter,
-	}
-	if err := encr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
-		return fmt.Errorf("failed to setup controller with manager: %w", err)
+		encr := nodeclass.EC2NodeClassReconciler{
+			Namespace: namespace,
+		}
+		if err := encr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
+			return fmt.Errorf("failed to setup controller with manager: %w", err)
+		}
 	}
 
 	imageRegistryOverrides := map[string][]string{}
@@ -208,8 +206,11 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to setup karpenter ignition controller with manager: %w", err)
 	}
 
-	if err := setupOperatorInfoMetric(managementCluster); err != nil {
-		return fmt.Errorf("failed to setup operator info metric: %w", err)
+	// Standalone karpenter-operator metrics exist in the standalone operator, so don't register them in the adapter
+	if !standaloneAdapter {
+		if err := setupOperatorInfoMetric(managementCluster); err != nil {
+			return fmt.Errorf("failed to setup operator info metric: %w", err)
+		}
 	}
 
 	if err := mgr.Start(ctx); err != nil {

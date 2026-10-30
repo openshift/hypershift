@@ -16,6 +16,7 @@ package nodepool
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,11 +34,15 @@ import (
 
 const (
 	// Annotation keys for scale-from-zero workaround
-	cpuKey    = "machine.openshift.io/vCPU"
-	memoryKey = "machine.openshift.io/memoryMb"
-	gpuKey    = "machine.openshift.io/GPU"
-	labelsKey = "capacity.cluster-autoscaler.kubernetes.io/labels"
-	taintsKey = "capacity.cluster-autoscaler.kubernetes.io/taints"
+	cpuKey          = "machine.openshift.io/vCPU"
+	memoryKey       = "machine.openshift.io/memoryMb"
+	gpuKey          = "machine.openshift.io/GPU"
+	capiCPUKey      = "capacity.cluster-autoscaler.kubernetes.io/cpu"
+	capiMemoryKey   = "capacity.cluster-autoscaler.kubernetes.io/memory"
+	capiGPUCountKey = "capacity.cluster-autoscaler.kubernetes.io/gpu-count"
+	capiGPUTypeKey  = "capacity.cluster-autoscaler.kubernetes.io/gpu-type"
+	labelsKey       = "capacity.cluster-autoscaler.kubernetes.io/labels"
+	taintsKey       = "capacity.cluster-autoscaler.kubernetes.io/taints"
 
 	archLabelKey = "kubernetes.io/arch"
 )
@@ -63,81 +68,77 @@ func taintsToAnnotation(taints []hyperv1.Taint) string {
 	return strings.Join(parts, ",")
 }
 
-// setScaleFromZeroAnnotationsOnObject sets scale-from-zero workaround annotations on MachineDeployment or MachineSet.
-// This is called during resource creation/update to provide capacity information
-// for cluster-autoscaler when the infrastructure provider doesn't support Status.Capacity natively.
+// setScaleFromZeroAnnotationsOnObject reconciles scheduling metadata on MachineDeployment or MachineSet.
+// Resource-capacity workarounds are only needed when native capacity is absent
+// and an instance-type provider is configured. Labels and taints are always needed.
 func setScaleFromZeroAnnotationsOnObject(ctx context.Context, provider instancetype.Provider, nodePool *hyperv1.NodePool, object client.Object, machineTemplate interface{}) error {
-	// 0. Get and initialize annotations
-	annotations := object.GetAnnotations()
+	annotations := maps.Clone(object.GetAnnotations())
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
 
-	// 1. Extract platform-specific fields using type switch
 	var instanceType string
 	var statusCapacity map[corev1.ResourceName]resource.Quantity
+	architecture := nodePool.Spec.Arch
+	if architecture == "" {
+		architecture = hyperv1.ArchitectureAMD64
+	}
 
 	switch template := machineTemplate.(type) {
 	case *infrav1.AWSMachineTemplate:
 		instanceType = template.Spec.Template.Spec.InstanceType
 		statusCapacity = template.Status.Capacity
+		if template.Status.NodeInfo != nil && template.Status.NodeInfo.Architecture != "" {
+			architecture = string(template.Status.NodeInfo.Architecture)
+		}
 	case *capiazure.AzureMachineTemplate:
 		instanceType = template.Spec.Template.Spec.VMSize
 		statusCapacity = template.Status.Capacity
+		if template.Status.NodeInfo != nil && template.Status.NodeInfo.Architecture != "" {
+			architecture = string(template.Status.NodeInfo.Architecture)
+		}
 	default:
 		return fmt.Errorf("unsupported machine template type: %T", machineTemplate)
 	}
 
-	// 2. Check if Status.Capacity is already provided (prefer native support)
-	if len(statusCapacity) > 0 {
-		// Clean up workaround annotations (if they exist)
-		annotationKeys := []string{cpuKey, memoryKey, gpuKey, labelsKey, taintsKey}
-		for _, key := range annotationKeys {
+	// Native capacity replaces only the resource workarounds, not scheduling metadata.
+	if len(statusCapacity) > 0 || provider == nil {
+		for _, key := range []string{cpuKey, memoryKey, gpuKey, capiCPUKey, capiMemoryKey, capiGPUCountKey, capiGPUTypeKey} {
 			delete(annotations, key)
 		}
-
-		// Set annotations back to the object
-		object.SetAnnotations(annotations)
-		// No need to add annotations, infrastructure provider provides Status.Capacity
-		return nil
-	}
-
-	// 2. Skip if provider is not configured
-	if provider == nil {
-		// No provider configured, skip setting scale-from-zero annotations
-		return nil
-	}
-
-	// 3. Validate instance type is not empty
-	if instanceType == "" {
-		return fmt.Errorf("instanceType is empty in machine template")
-	}
-
-	// 4. Get instance type information from provider
-	instanceInfo, err := provider.GetInstanceTypeInfo(ctx, instanceType)
-	if err != nil {
-		return err
-	}
-
-	// 5. Set workaround annotations
-	annotations[cpuKey] = strconv.FormatInt(int64(instanceInfo.VCPU), 10)
-	annotations[memoryKey] = strconv.FormatInt(instanceInfo.MemoryMb, 10)
-
-	// Set GPU annotation only if GPU > 0 (consistent with taints handling)
-	if instanceInfo.GPU > 0 {
-		annotations[gpuKey] = strconv.FormatInt(int64(instanceInfo.GPU), 10)
 	} else {
-		// Remove GPU annotation if there are no GPUs
-		delete(annotations, gpuKey)
+		if instanceType == "" {
+			return fmt.Errorf("instanceType is empty in machine template")
+		}
+		instanceInfo, err := provider.GetInstanceTypeInfo(ctx, instanceType)
+		if err != nil {
+			return fmt.Errorf("failed to get instance type information for %q: %w", instanceType, err)
+		}
+		if instanceInfo.CPUArchitecture != "" {
+			architecture = instanceInfo.CPUArchitecture
+		}
+		annotations[cpuKey] = strconv.FormatInt(int64(instanceInfo.VCPU), 10)
+		annotations[capiCPUKey] = annotations[cpuKey]
+		annotations[memoryKey] = strconv.FormatInt(instanceInfo.MemoryMb, 10)
+		annotations[capiMemoryKey] = fmt.Sprintf("%dMi", instanceInfo.MemoryMb)
+		if instanceInfo.GPU > 0 {
+			annotations[gpuKey] = strconv.FormatInt(int64(instanceInfo.GPU), 10)
+			annotations[capiGPUCountKey] = annotations[gpuKey]
+			annotations[capiGPUTypeKey] = "nvidia.com/gpu"
+		} else {
+			delete(annotations, gpuKey)
+			delete(annotations, capiGPUCountKey)
+			delete(annotations, capiGPUTypeKey)
+		}
 	}
 
-	// 6. Set labels (including architecture and NodePool.Spec.NodeLabels)
+	// Scheduling metadata is independent of native capacity or legacy provider configuration.
 	labelsMap := map[string]string{}
 	for k, v := range nodePool.Spec.NodeLabels {
 		labelsMap[k] = v
 	}
 	// Ensure architecture reflects the real instance type (don't allow NodeLabels to override it)
-	labelsMap[archLabelKey] = instanceInfo.CPUArchitecture
+	labelsMap[archLabelKey] = architecture
 
 	labels := make([]string, 0, len(labelsMap))
 	for k, v := range labelsMap {
@@ -146,7 +147,6 @@ func setScaleFromZeroAnnotationsOnObject(ctx context.Context, provider instancet
 	sort.Strings(labels)
 	annotations[labelsKey] = strings.Join(labels, ",")
 
-	// 7. Set taints
 	if len(nodePool.Spec.Taints) > 0 {
 		taintsAnnotation := taintsToAnnotation(nodePool.Spec.Taints)
 		annotations[taintsKey] = taintsAnnotation
@@ -155,7 +155,6 @@ func setScaleFromZeroAnnotationsOnObject(ctx context.Context, provider instancet
 		delete(annotations, taintsKey)
 	}
 
-	// 8. Set annotations back to the object
 	object.SetAnnotations(annotations)
 
 	return nil

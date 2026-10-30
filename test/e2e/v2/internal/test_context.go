@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"time"
 
 	"github.com/blang/semver"
 	. "github.com/onsi/ginkgo/v2"
@@ -45,6 +47,8 @@ type TestContextGetter func() *TestContext
 type TestContext struct {
 	context.Context
 	MgmtClient            crclient.Client
+	MgmtRESTConfig        *rest.Config
+	KubeconfigPath        string
 	ClusterName           string
 	ClusterNamespace      string
 	ControlPlaneNamespace string
@@ -70,8 +74,8 @@ func (tc *TestContext) GetHostedCluster() (*hyperv1.HostedCluster, error) {
 }
 
 // GetHostedClusterVersion fetches the HostedCluster and parses its version.
-// Returns an error if the cluster cannot be fetched or the version cannot be
-// parsed.
+// Returns an error if the cluster cannot be fetched or the version is missing or
+// cannot be parsed. Normalizes patch, prerelease, and build fields for minor-version checks.
 func (tc *TestContext) GetHostedClusterVersion() (semver.Version, error) {
 	hc, err := tc.GetHostedCluster()
 	if err != nil {
@@ -87,7 +91,7 @@ func (tc *TestContext) GetHostedClusterVersion() (semver.Version, error) {
 		releaseVersion.Build = nil
 		return releaseVersion, nil
 	}
-	return semver.Version{}, nil
+	return semver.Version{}, fmt.Errorf("HostedCluster %s/%s has no version in status history", hc.Namespace, hc.Name)
 }
 
 // GetHostedClusterRESTConfig returns the REST config for the hosted cluster.
@@ -199,9 +203,9 @@ func (tc *TestContext) GetHostedClusterClientViaPortForward(hc *hyperv1.HostedCl
 	listener.Close()
 
 	// 4. Set up the port-forward.
-	mgmtRESTConfig, err := e2eutil.GetConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get management cluster REST config: %w", err)
+	mgmtRESTConfig := tc.MgmtRESTConfig
+	if mgmtRESTConfig == nil {
+		return nil, fmt.Errorf("management cluster REST config is not set on test context")
 	}
 	kubeClient, err := kubernetes.NewForConfig(mgmtRESTConfig)
 	if err != nil {
@@ -326,18 +330,49 @@ func SetTestContext(ctx *TestContext) {
 	testCtx = ctx
 }
 
-// SetupTestContextFromEnv initializes the test context from environment variables.
-// It reads E2E_HOSTED_CLUSTER_NAME and E2E_HOSTED_CLUSTER_NAMESPACE from the environment.
-// If these are not set, it creates a basic context with only the management client.
+// SetupTestContextFromEnv initializes the test context from the current kubeconfig and
+// environment variables. When KUBECONFIG_SOURCE is set, that kubeconfig is used so
+// cross-cluster restore runs initialize the suite's default context on the source manager.
 func SetupTestContextFromEnv(ctx context.Context) (*TestContext, error) {
-	mgmtClient, err := e2eutil.GetClient()
+	if kubeconfigPath := GetEnvVarValue("KUBECONFIG_SOURCE"); kubeconfigPath != "" {
+		return SetupTestContextFromKubeconfig(ctx, kubeconfigPath)
+	}
+
+	mgmtRESTConfig, err := e2eutil.GetConfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get management client: %w", err)
+		return nil, fmt.Errorf("failed to get management cluster REST config: %w", err)
+	}
+	return setupTestContext(ctx, mgmtRESTConfig, os.Getenv("KUBECONFIG"))
+}
+
+// SetupTestContextFromKubeconfig initializes a role-specific test context from an
+// explicit management-cluster kubeconfig path and the HostedCluster environment variables.
+func SetupTestContextFromKubeconfig(ctx context.Context, kubeconfigPath string) (*TestContext, error) {
+	if kubeconfigPath == "" {
+		return nil, fmt.Errorf("management kubeconfig path must not be empty")
+	}
+	mgmtRESTConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load management kubeconfig %q: %w", kubeconfigPath, err)
+	}
+	return setupTestContext(ctx, mgmtRESTConfig, kubeconfigPath)
+}
+
+func setupTestContext(ctx context.Context, mgmtRESTConfig *rest.Config, kubeconfigPath string) (*TestContext, error) {
+	mgmtRESTConfig.QPS = -1
+	mgmtRESTConfig.Burst = -1
+	mgmtRESTConfig.Timeout = 5 * time.Minute
+
+	mgmtClient, err := e2eutil.GetClientForConfig(mgmtRESTConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create management client: %w", err)
 	}
 
 	testCtx := &TestContext{
-		Context:    ctx,
-		MgmtClient: mgmtClient,
+		Context:        ctx,
+		MgmtClient:     mgmtClient,
+		MgmtRESTConfig: mgmtRESTConfig,
+		KubeconfigPath: kubeconfigPath,
 	}
 
 	hostedClusterName := GetEnvVarValue("E2E_HOSTED_CLUSTER_NAME")

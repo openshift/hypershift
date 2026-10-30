@@ -9,7 +9,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/testutil"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -18,6 +21,116 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func TestAdaptDeployment(t *testing.T) {
+	tests := []struct {
+		name           string
+		managementType hyperv1.EtcdManagementType
+		disablePKI     bool
+		platform       hyperv1.PlatformType
+	}{
+		{
+			name:           "When etcd is managed and PKI reconciliation is enabled, it should retain the managed CA ConfigMap",
+			managementType: hyperv1.Managed,
+			platform:       hyperv1.NonePlatform,
+		},
+		{
+			name:           "When etcd is managed and PKI reconciliation is disabled, it should retain the managed CA ConfigMap",
+			managementType: hyperv1.Managed,
+			disablePKI:     true,
+			platform:       hyperv1.NonePlatform,
+		},
+		{
+			name:           "When etcd is unmanaged and PKI reconciliation is enabled, it should mount the client Secret CA",
+			managementType: hyperv1.Unmanaged,
+			platform:       hyperv1.NonePlatform,
+		},
+		{
+			name:           "When etcd is unmanaged and PKI reconciliation is disabled, it should mount the client Secret CA",
+			managementType: hyperv1.Unmanaged,
+			disablePKI:     true,
+			platform:       hyperv1.NonePlatform,
+		},
+		{
+			name:           "When IBMCloud etcd is unmanaged and PKI reconciliation is disabled, it should mount the client Secret CA",
+			managementType: hyperv1.Unmanaged,
+			disablePKI:     true,
+			platform:       hyperv1.IBMCloudPlatform,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: tt.platform},
+					Etcd:     hyperv1.EtcdSpec{ManagementType: tt.managementType},
+				},
+			}
+			if tt.managementType == hyperv1.Unmanaged {
+				hcp.Spec.Etcd.Unmanaged = &hyperv1.UnmanagedEtcdSpec{
+					Endpoint: "https://custom-etcd.example.com:2379",
+				}
+			}
+			if tt.disablePKI {
+				hcp.Annotations = map[string]string{hyperv1.DisablePKIReconciliationAnnotation: "true"}
+			}
+
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).NotTo(HaveOccurred())
+			podSpec := &deployment.Spec.Template.Spec
+			originalCA := podspec.FindVolume("etcd-ca", podSpec.Volumes)
+			g.Expect(originalCA).NotTo(BeNil())
+			originalCA = originalCA.DeepCopy()
+			originalClientCert := podspec.FindVolume("etcd-client-crt", podSpec.Volumes)
+			g.Expect(originalClientCert).NotTo(BeNil())
+			originalClientCert = originalClientCert.DeepCopy()
+			originalContainer := podspec.FindContainer(ComponentName, podSpec.Containers)
+			g.Expect(originalContainer).NotTo(BeNil())
+			originalContainer = originalContainer.DeepCopy()
+			originalVolumeCount := len(podSpec.Volumes)
+
+			cpContext := component.WorkloadContext{
+				HCP:                      hcp,
+				UserReleaseImageProvider: testutil.FakeImageProvider(),
+			}
+			g.Expect(adaptDeployment(cpContext, deployment)).To(Succeed())
+
+			ca := podspec.FindVolume("etcd-ca", podSpec.Volumes)
+			g.Expect(ca).NotTo(BeNil())
+			if tt.managementType == hyperv1.Unmanaged {
+				g.Expect(ca.VolumeSource).To(Equal(corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: manifests.EtcdClientSecret(hcp.Namespace).Name,
+						Items:      []corev1.KeyToPath{{Key: "etcd-client-ca.crt", Path: "ca.crt"}},
+					},
+				}))
+				g.Expect(podspec.FindContainer("wait-for-etcd", podSpec.InitContainers)).To(BeNil())
+			} else {
+				g.Expect(ca).To(Equal(originalCA))
+				g.Expect(podspec.FindContainer("wait-for-etcd", podSpec.InitContainers)).NotTo(BeNil())
+			}
+			g.Expect(podSpec.Volumes).To(HaveLen(originalVolumeCount))
+
+			clientCert := podspec.FindVolume("etcd-client-crt", podSpec.Volumes)
+			g.Expect(clientCert).To(Equal(originalClientCert))
+			container := podspec.FindContainer(ComponentName, podSpec.Containers)
+			g.Expect(container).NotTo(BeNil())
+			g.Expect(podspec.FindVolumeMount("etcd-ca", container.VolumeMounts)).To(Equal(&corev1.VolumeMount{
+				Name: "etcd-ca", MountPath: "/etc/kubernetes/certs/etcd-ca",
+			}))
+			g.Expect(podspec.FindVolumeMount("etcd-client-crt", container.VolumeMounts)).To(Equal(&corev1.VolumeMount{
+				Name: "etcd-client-crt", MountPath: "/etc/kubernetes/certs/etcd",
+			}))
+			g.Expect(container.Args).To(ContainElements(originalContainer.Args))
+		})
+	}
+}
 
 func TestResolveKASVerbosity(t *testing.T) {
 	logLevel := func(l hyperv1.LogLevel) hyperv1.KubeAPIServerOperatorSpec {

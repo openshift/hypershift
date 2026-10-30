@@ -379,6 +379,38 @@ func TestInject(t *testing.T) {
 			}
 		})
 	}
+	for _, test := range []struct {
+		name, host, instance, want string
+		port                       int32
+	}{
+		{name: "When the pod IP is raw IPv6, it should bracket the instance host", host: "2001:db8::1", port: 9090, want: "[2001:db8::1]:9090"},
+		{name: "When the pod IP is IPv4, it should preserve the instance", host: "192.0.2.1", port: 9090, want: "192.0.2.1:9090"},
+		{name: "When the host is DNS, it should preserve the instance", host: "metrics.example.test", port: 9090, want: "metrics.example.test:9090"},
+		{name: "When the port is alternate, it should retain the instance port", host: "2001:db8::1", port: 8443, want: "[2001:db8::1]:8443"},
+		{name: "When an instance is supplied, it should not overwrite it", host: "2001:db8::1", port: 9090, instance: "supplied-instance", want: "supplied-instance"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			metric := &dto.Metric{Label: []*dto.LabelPair{{Name: stringPtr("custom"), Value: stringPtr("retained")}}}
+			if test.instance != "" {
+				metric.Label = append(metric.Label, &dto.LabelPair{Name: stringPtr("instance"), Value: stringPtr(test.instance)})
+			}
+			families := map[string]*dto.MetricFamily{"metric": {Metric: []*dto.Metric{metric}}}
+			result := NewLabeler("test-ns").Inject(families, ScrapeTarget{PodIP: test.host, Port: test.port, PodName: "test-pod"}, "test-component", ComponentConfig{})
+			labels := map[string]string{}
+			for _, label := range result["metric"].Metric[0].Label {
+				if _, exists := labels[label.GetName()]; exists {
+					t.Errorf("label %q must not be duplicated", label.GetName())
+				}
+				labels[label.GetName()] = label.GetValue()
+			}
+			for name, want := range map[string]string{"instance": test.want, "custom": "retained", "pod": "test-pod", "namespace": "test-ns", "job": "test-component", "service": "test-component", "endpoint": "metrics"} {
+				if got := labels[name]; got != want {
+					t.Errorf("Inject label %q for %q: got %q, want %q", name, test.host, got, want)
+				}
+			}
+		})
+	}
 }
 
 // stringPtr returns a pointer to a string

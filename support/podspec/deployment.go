@@ -61,21 +61,3 @@ func DeploymentAddKubevirtInfraCredentials(deployment *appsv1.Deployment) {
 	deployment.Spec.Template.Spec.Containers[0].Command =
 		append(deployment.Spec.Template.Spec.Containers[0].Command, fmt.Sprintf("--kubevirt-infra-kubeconfig=%s", path.Join(volumeMountPath, kubeconfigKey)))
 }
-
-func DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment *appsv1.Deployment) {
-	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-		Name:      "openshift-config-managed-trusted-ca-bundle",
-		MountPath: "/etc/pki/ca-trust/extracted/pem",
-		ReadOnly:  true,
-	})
-	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
-		Name: "openshift-config-managed-trusted-ca-bundle",
-		VolumeSource: corev1.VolumeSource{
-			ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "openshift-config-managed-trusted-ca-bundle"},
-				Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"}},
-				Optional:             ptr.To(true),
-			},
-		},
-	})
-}

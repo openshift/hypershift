@@ -26,7 +26,7 @@ spec:
           haproxy -f /etc/haproxy/haproxy.conf
         command:
         - /bin/bash
-        image: haproxy-router
+        image: haproxy-router-haproxy32
         imagePullPolicy: IfNotPresent
         name: haproxy
         ports:

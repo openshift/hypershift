@@ -708,298 +708,64 @@ spec:
                               managing the lifecyle of the encryption keys outside of the control plane.
                               This allows integration with an external provider to manage the data encryption keys securely.
                             properties:
-                              type:
+                              pluginConfig:
                                 description: |-
-                                  type defines the kind of platform for the KMS provider.
-                                  Allowed values are Vault.
-                                  When set to Vault, the plugin connects to a HashiCorp Vault server for key management.
-                                enum:
-                                - Vault
-                                type: string
-                              vault:
-                                description: |-
-                                  vault defines the configuration for the Vault KMS plugin.
-                                  The plugin connects to a Vault Enterprise server that is managed
-                                  by the user outside the purview of the control plane.
-                                  This field must be set when type is Vault, and must be unset otherwise.
+                                  pluginConfig is a required reference to a cluster-scoped resource with a status subresource
+                                  that satisfies the OpenShift KMS plugin configuration status interface.
                                 properties:
-                                  authentication:
-                                    description: authentication defines the authentication
-                                      method used to authenticate with Vault.
-                                    properties:
-                                      appRole:
-                                        description: |-
-                                          appRole defines the configuration for AppRole authentication.
-                                          This field must be set when type is AppRole, and must be unset otherwise.
-                                        properties:
-                                          secret:
-                                            description: |-
-                                              secret references a secret in the openshift-config namespace containing
-                                              the AppRole credentials used to authenticate with Vault.
-                                              The referenced Secret must contain two keys: "role-id" for the AppRole Role ID and "secret-id" for the AppRole Secret ID.
-                                            properties:
-                                              name:
-                                                description: |-
-                                                  name is the metadata.name of the referenced secret in the openshift-config namespace.
-                                                  The name must be a valid DNS subdomain name: it must contain no more than 253 characters,
-                                                  contain only lowercase alphanumeric characters, '-' or '.', and start and end with an alphanumeric character.
-                                                maxLength: 253
-                                                minLength: 1
-                                                type: string
-                                                x-kubernetes-validations:
-                                                - message: 'name must be a valid DNS
-                                                    subdomain name: contain no more
-                                                    than 253 characters, contain only
-                                                    lowercase alphanumeric characters,
-                                                    ''-'' or ''.'', and start and
-                                                    end with an alphanumeric character'
-                                                  rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*$')
-                                            required:
-                                            - name
-                                            type: object
-                                        required:
-                                        - secret
-                                        type: object
-                                      type:
-                                        description: |-
-                                          type defines the authentication method used to authenticate with Vault.
-                                          Allowed values are AppRole.
-                                          When set to AppRole, the plugin uses AppRole credentials to authenticate with Vault.
-                                        enum:
-                                        - AppRole
-                                        type: string
-                                    required:
-                                    - type
-                                    type: object
-                                    x-kubernetes-validations:
-                                    - message: appRole config is required when authentication
-                                        type is AppRole, and forbidden otherwise
-                                      rule: 'self.type == ''AppRole'' ? has(self.appRole)
-                                        : !has(self.appRole)'
-                                  kmsPluginImage:
+                                  apiVersion:
                                     description: |-
-                                      kmsPluginImage specifies the container image for the HashiCorp Vault KMS plugin.
-
-                                      The image must be a fully qualified OCI image pull spec with a SHA256 digest.
-                                      The format is: host[:port][/namespace]/name@sha256:<digest>
-                                      where the digest must be 64 characters long and consist only of lowercase hexadecimal characters, a-f and 0-9.
-                                      The total length must be between 75 and 447 characters.
-
-                                      Short names (e.g., "vault-plugin" or "hashicorp/vault-plugin") are not allowed.
-                                      The registry hostname must be included and must contain at least one dot.
-                                      Image tags (e.g., ":latest", ":v1.0.0") are not allowed.
-
-                                      Consult the OpenShift documentation for compatible plugin versions with your cluster version,
-                                      then obtain the image digest for that version from HashiCorp's container registry.
-
-                                      For disconnected environments, mirror the plugin image to an accessible registry
-                                      and reference the mirrored location with its digest.
-                                    maxLength: 447
-                                    minLength: 75
-                                    type: string
-                                    x-kubernetes-validations:
-                                    - message: the OCI Image reference must end with
-                                        a valid '@sha256:<digest>' suffix, where '<digest>'
-                                        is 64 characters long
-                                      rule: (self.split('@').size() == 2 && self.split('@')[1].matches('^sha256:[a-f0-9]{64}$'))
-                                    - message: the OCI Image name should follow the
-                                        host[:port][/namespace]/name format, resembling
-                                        a valid URL without the scheme. Short names
-                                        are not allowed, the registry hostname must
-                                        be included.
-                                      rule: (self.split('@')[0].matches('^([a-zA-Z0-9-]+\\.)+[a-zA-Z0-9-]+(:[0-9]{2,5})?(/[a-zA-Z0-9-_.]+)+$'))
-                                  tls:
-                                    description: |-
-                                      tls contains the TLS configuration for connecting to the Vault server.
-                                      When this field is not set, system default TLS settings are used.
-                                    minProperties: 1
-                                    properties:
-                                      caBundle:
-                                        description: |-
-                                          caBundle references a ConfigMap in the openshift-config namespace containing
-                                          the CA certificate bundle used to verify the TLS connection to the Vault server.
-                                          The referenced ConfigMap must contain the CA bundle in the key "ca-bundle.crt".
-                                          When this field is not set, the system's trusted CA certificates are used.
-
-                                          The namespace for the ConfigMap is openshift-config.
-
-                                          Example ConfigMap:
-                                            apiVersion: v1
-                                            kind: ConfigMap
-                                            metadata:
-                                              name: vault-ca-bundle
-                                              namespace: openshift-config
-                                            data:
-                                              ca-bundle.crt: |
-                                                -----BEGIN CERTIFICATE-----
-                                                ...
-                                                -----END CERTIFICATE-----
-                                        properties:
-                                          name:
-                                            description: |-
-                                              name is the metadata.name of the referenced ConfigMap in the openshift-config namespace.
-                                              The name must be a valid DNS subdomain name: it must contain no more than 253 characters,
-                                              contain only lowercase alphanumeric characters, '-' or '.', and start and end with an alphanumeric character.
-                                            maxLength: 253
-                                            minLength: 1
-                                            type: string
-                                            x-kubernetes-validations:
-                                            - message: 'name must be a valid DNS subdomain
-                                                name: contain no more than 253 characters,
-                                                contain only lowercase alphanumeric
-                                                characters, ''-'' or ''.'', and start
-                                                and end with an alphanumeric character'
-                                              rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*$')
-                                        required:
-                                        - name
-                                        type: object
-                                      serverName:
-                                        description: |-
-                                          serverName specifies the Server Name Indication (SNI) to use when connecting to Vault via TLS.
-                                          This is useful when the Vault server's hostname doesn't match its TLS certificate.
-                                          When this field is not set, the hostname from vaultAddress is used for SNI.
-
-                                          The value must be a valid DNS hostname: it must contain no more than 253 characters,
-                                          contain only lowercase alphanumeric characters, '-' or '.', and start and end with an alphanumeric character.
-                                        maxLength: 253
-                                        minLength: 1
-                                        type: string
-                                        x-kubernetes-validations:
-                                        - message: 'serverName must be a valid DNS
-                                            hostname: contain no more than 253 characters,
-                                            contain only lowercase alphanumeric characters,
-                                            ''-'' or ''.'', and start and end with
-                                            an alphanumeric character'
-                                          rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*$')
-                                    type: object
-                                  vaultAddress:
-                                    description: |-
-                                      vaultAddress specifies the address of the HashiCorp Vault instance.
-                                      The value must be a valid HTTPS URL containing only scheme, host, and optional port.
-                                      Paths, user info, query parameters, and fragments are not allowed.
-
-                                      Format: https://hostname[:port]
-                                      Example: https://vault.example.com:8200
-
-                                      The value must be between 1 and 512 characters.
-                                    maxLength: 512
+                                      apiVersion is required and identifies the API version of the referenced KMS plugin configuration resource.
+                                      The value must be in the format <group>/<version>, where group is a DNS subdomain
+                                      and version is a Kubernetes API version (for example, v1 or v1alpha1).
+                                      It must contain between 1 and 64 characters.
+                                    maxLength: 64
                                     minLength: 1
                                     type: string
                                     x-kubernetes-validations:
-                                    - message: must be a valid URL
-                                      rule: isURL(self)
-                                    - message: must use the 'https' scheme
-                                      rule: isURL(self) && url(self).getScheme() ==
-                                        'https'
-                                    - message: must not contain a path
-                                      rule: isURL(self) && (url(self).getEscapedPath()
-                                        == '' || url(self).getEscapedPath() == '/')
-                                    - message: must not have a query
-                                      rule: isURL(self) && url(self).getQuery() ==
-                                        {}
-                                    - message: must not have a fragment
-                                      rule: self.find('#(.+)$') == ''
-                                    - message: must not have user info
-                                      rule: self.find('@') == ''
-                                  vaultAuthNamespace:
+                                    - message: apiVersion must be in the format <group>/<version>
+                                      rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+/v[0-9]+([a-z0-9]+)*$')
+                                  name:
                                     description: |-
-                                      vaultAuthNamespace specifies the Vault namespace to use for authentication.
-                                      This is only applicable for Vault Enterprise installations where authentication
-                                      and Transit operations may be in different namespaces.
-                                      When this field is not set, the value of vaultNamespace is used for both
-                                      authentication and Transit key operations.
-
-                                      The value must be between 1 and 4096 characters.
-                                      The namespace cannot end with a forward slash, cannot contain spaces, and cannot be one of the reserved strings: root, sys, audit, auth, cubbyhole, or identity.
-                                    maxLength: 4096
+                                      name is required and is the metadata.name of the referenced KMS plugin configuration resource.
+                                      The referenced resource must be cluster-scoped.
+                                      The name must be a valid DNS subdomain name: it must contain between 1 and 253 characters,
+                                      contain only lowercase alphanumeric characters, '-' or '.', and start and end with an alphanumeric character.
+                                    maxLength: 253
                                     minLength: 1
                                     type: string
                                     x-kubernetes-validations:
-                                    - message: vaultAuthNamespace cannot end with
-                                        a forward slash
-                                      rule: '!self.endsWith(''/'')'
-                                    - message: vaultAuthNamespace cannot contain spaces
-                                      rule: '!self.contains('' '')'
-                                    - message: vaultAuthNamespace cannot be a reserved
-                                        string (root, sys, audit, auth, cubbyhole,
-                                        identity)
-                                      rule: '!(self in [''root'', ''sys'', ''audit'',
-                                        ''auth'', ''cubbyhole'', ''identity''])'
-                                  vaultKeyPath:
+                                    - message: 'name must be a valid DNS subdomain
+                                        name: contain no more than 253 characters,
+                                        contain only lowercase alphanumeric characters,
+                                        ''-'' or ''.'', and start and end with an
+                                        alphanumeric character'
+                                      rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9\\-]*[a-z0-9])?)*$')
+                                  resource:
                                     description: |-
-                                      vaultKeyPath specifies the full path to the encryption key in Vault's Transit secrets engine,
-                                      combining the Transit engine mount path and the key name separated by "/keys/".
-                                      Format: <mount>/keys/<key-name> (e.g., transit/keys/my-key, myteam/transit/keys/production-key).
-
-                                      The total path length must be between 8 and 1542 characters.
-                                      The path cannot start or end with a forward slash, cannot contain consecutive forward slashes,
-                                      must only contain RFC 3986 unreserved characters (alphanumeric, hyphen, period, underscore, tilde)
-                                      and forward slashes as path separators, and must not contain "." or ".." path segments.
-                                      The key name must start and end with an alphanumeric character or underscore, and may contain
-                                      alphanumeric characters, underscores, hyphens, and periods in the middle.
-                                    maxLength: 1542
-                                    minLength: 8
-                                    type: string
-                                    x-kubernetes-validations:
-                                    - message: vaultKeyPath cannot start with a forward
-                                        slash
-                                      rule: '!self.startsWith(''/'')'
-                                    - message: vaultKeyPath cannot end with a forward
-                                        slash
-                                      rule: '!self.endsWith(''/'')'
-                                    - message: vaultKeyPath cannot contain consecutive
-                                        forward slashes
-                                      rule: '!self.contains(''//'')'
-                                    - message: vaultKeyPath must only contain RFC
-                                        3986 unreserved characters (alphanumeric,
-                                        hyphen, period, underscore, tilde) and forward
-                                        slashes
-                                      rule: self.matches('^[a-zA-Z0-9._~/-]+$')
-                                    - message: vaultKeyPath must not contain '.' or
-                                        '..' path segments
-                                      rule: self.split('/').filter(s, s == '.' ||
-                                        s == '..').size() == 0
-                                    - message: vaultKeyPath must follow the format
-                                        <mount>/keys/<key-name> where the key name
-                                        starts and ends with an alphanumeric character
-                                        or underscore and may contain alphanumeric
-                                        characters, underscores, hyphens, and periods
-                                      rule: self.matches('^[a-zA-Z0-9._~-]+(/[a-zA-Z0-9._~-]+)*/keys/[a-zA-Z0-9_]([a-zA-Z0-9_.-]*[a-zA-Z0-9_])?$')
-                                  vaultNamespace:
-                                    description: |-
-                                      vaultNamespace specifies the Vault namespace where the Transit secrets engine is mounted.
-                                      This is only applicable for Vault Enterprise installations.
-                                      When this field is not set, no namespace is used.
-
-                                      The value must be between 1 and 4096 characters.
-                                      The namespace cannot end with a forward slash, cannot contain spaces, and cannot be one of the reserved strings: root, sys, audit, auth, cubbyhole, or identity.
-                                    maxLength: 4096
+                                      resource is required and is the resource name of the referenced KMS plugin configuration custom resource.
+                                      This is the plural name used in the Kubernetes API (for example, vaultkmsconfigs),
+                                      not the Kind (for example, VaultKMSConfig).
+                                      The value must be between 1 and 63 characters, contain only lowercase alphanumeric
+                                      characters or '-', and start and end with an alphanumeric character.
+                                    maxLength: 63
                                     minLength: 1
                                     type: string
                                     x-kubernetes-validations:
-                                    - message: vaultNamespace cannot end with a forward
-                                        slash
-                                      rule: '!self.endsWith(''/'')'
-                                    - message: vaultNamespace cannot contain spaces
-                                      rule: '!self.contains('' '')'
-                                    - message: vaultNamespace cannot be a reserved
-                                        string (root, sys, audit, auth, cubbyhole,
-                                        identity)
-                                      rule: '!(self in [''root'', ''sys'', ''audit'',
-                                        ''auth'', ''cubbyhole'', ''identity''])'
+                                    - message: 'resource must be a valid Kubernetes
+                                        resource name: contain no more than 63 characters,
+                                        contain only lowercase alphanumeric characters
+                                        or ''-'', and start and end with an alphanumeric
+                                        character'
+                                      rule: self.matches('^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?$')
                                 required:
-                                - authentication
-                                - kmsPluginImage
-                                - vaultAddress
-                                - vaultKeyPath
+                                - apiVersion
+                                - name
+                                - resource
                                 type: object
                             required:
-                            - type
+                            - pluginConfig
                             type: object
-                            x-kubernetes-validations:
-                            - message: vault config is required when kms provider
-                                type is Vault, and forbidden otherwise
-                              rule: 'self.type == ''Vault'' ? has(self.vault) : !has(self.vault)'
                           type:
                             description: |-
                               type defines what encryption type should be used to encrypt resources at the datastore layer.
@@ -3134,26 +2900,26 @@ spec:
                     properties:
                       endpoint:
                         description: |-
-                          endpoint is the full etcd cluster client endpoint URL. For example:
+                          endpoint is the full etcd cluster client endpoint HTTPS URL. For example:
 
                               https://etcd-client:2379
 
-                          If the URL uses an HTTPS scheme, the TLS field is required.
+                          The tls field is required to authenticate to and verify the etcd endpoint.
                         maxLength: 255
                         pattern: ^https://
                         type: string
                       tls:
-                        description: tls specifies TLS configuration for HTTPS etcd
-                          client endpoints.
+                        description: tls specifies the required TLS configuration
+                          for the HTTPS etcd client endpoint.
                         properties:
                           clientSecret:
                             description: |-
-                              clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
-                              may have the following key/value pairs:
+                              clientSecret refers to a secret for client mTLS authentication with the etcd cluster.
+                              The secret must contain all three of the following key/value pairs:
 
-                                  etcd-client-ca.crt: Certificate Authority value
-                                  etcd-client.crt: Client certificate value
-                                  etcd-client.key: Client certificate key value
+                                  etcd-client-ca.crt: CA bundle used to verify the etcd server certificate
+                                  etcd-client.crt: Client certificate used to authenticate to etcd
+                                  etcd-client.key: Private key for the client certificate
                             properties:
                               name:
                                 default: ""
@@ -3873,6 +3639,62 @@ spec:
                     - message: ovnKubernetesConfig is immutable once set and cannot
                         be removed
                       rule: '!has(oldSelf.ovnKubernetesConfig) || has(self.ovnKubernetesConfig)'
+                  csiDriverOperator:
+                    description: |-
+                      csiDriverOperator configures the CSI drivers of the hosted cluster.
+                      Settings are grouped by platform.
+
+                      When omitted, the CSI drivers use their default configuration.
+                    minProperties: 1
+                    properties:
+                      aws:
+                        description: |-
+                          aws configures the AWS EBS CSI driver.
+                          It can only be set when spec.platform.type is AWS.
+
+                          When omitted, no AWS-specific CSI driver configuration is applied and the
+                          default StorageClass uses the AWS account's default EBS encryption settings.
+                        minProperties: 1
+                        properties:
+                          initialKMSKeyARN:
+                            description: |-
+                              initialKMSKeyARN is the ARN of an AWS KMS key used to encrypt volumes
+                              created by the default StorageClass. When set, new PersistentVolumes
+                              provisioned by the default StorageClass are encrypted with this key
+                              instead of the AWS account's default EBS encryption key.
+
+                              When omitted, no KMS key is configured on the default StorageClass and
+                              EBS volumes are encrypted with the AWS account's default EBS encryption
+                              key.
+
+                              The value may be either the ARN or Alias ARN of a KMS key and must follow
+                              the format arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>,
+                              where <partition> is one of aws, aws-cn, aws-us-gov, aws-iso, aws-iso-b,
+                              aws-iso-e, or aws-iso-f; <region> is the AWS region; <account-id> is the
+                              12-digit AWS account identifier; and <key-id-or-alias> is the KMS key ID
+                              or alias name. The key must be in the same region as the cluster
+                              (spec.platform.aws.region).
+
+                              When set, must be between 1 and 2048 characters.
+
+                              This field can only be set when the HostedCluster is created and is
+                              immutable afterwards. Day-2 changes to storage encryption must be made
+                              directly on the ClusterCSIDriver resource in the hosted cluster.
+
+                              The IAM role in spec.platform.aws.rolesRef.storageARN must have
+                              kms:Decrypt, kms:GenerateDataKeyWithoutPlaintext, and kms:CreateGrant
+                              permissions on the specified key.
+                            maxLength: 2048
+                            minLength: 1
+                            type: string
+                            x-kubernetes-validations:
+                            - message: 'initialKMSKeyARN must be a valid AWS KMS key
+                                ARN in the format: arn:<partition>:kms:<region>:<account-id>:(key|alias)/<key-id-or-alias>'
+                              rule: self.matches('^arn:(aws|aws-cn|aws-us-gov|aws-iso|aws-iso-b|aws-iso-e|aws-iso-f):kms:[a-z]([a-z0-9]|-[a-z0-9])*:[0-9]{12}:(key|alias)/.+$')
+                            - message: initialKMSKeyARN is immutable
+                              rule: self == oldSelf
+                        type: object
+                    type: object
                   ingressOperator:
                     description: |-
                       ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
@@ -7230,9 +7052,10 @@ spec:
                                   || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')
                             port:
                               description: |-
-                                port is the port of the NodePort service. If <=0, the port is dynamically
-                                assigned when the service is created.
+                                port is the port of the NodePort service.
+                                If omitted, the port is dynamically assigned when the service is created.
                               format: int32
+                              minimum: 1
                               type: integer
                           required:
                           - address
@@ -7420,6 +7243,20 @@ spec:
                 || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)
             - message: secretEncryption cannot be removed once configured
               rule: '!has(oldSelf.secretEncryption) || has(self.secretEncryption)'
+            - message: initialKMSKeyARN can only be set when the HostedCluster is
+                created and cannot be added or removed afterwards
+              rule: self.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue()
+                == oldSelf.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue()
+            - message: csiDriverOperator.aws can only be set when platform.type is
+                AWS
+              rule: '!self.?operatorConfiguration.?csiDriverOperator.?aws.hasValue()
+                || self.platform.type == ''AWS'''
+            - message: initialKMSKeyARN must be in the same region as the cluster
+                (platform.aws.region)
+              rule: '!self.?operatorConfiguration.?csiDriverOperator.?aws.?initialKMSKeyARN.hasValue()
+                || !has(self.platform.aws) || self.operatorConfiguration.csiDriverOperator.aws.initialKMSKeyARN.split('':'').size()
+                < 4 || self.operatorConfiguration.csiDriverOperator.aws.initialKMSKeyARN.split('':'')[3]
+                == self.platform.aws.region'
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:

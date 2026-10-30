@@ -16,8 +16,6 @@ limitations under the License.
 
 package v1beta2
 
-import "github.com/IBM/vpc-go-sdk/vpcv1"
-
 const (
 	// CIDRBlockAny is the CIDRBlock representing any allowable destination/source IP.
 	CIDRBlockAny string = "0.0.0.0/0"
@@ -124,69 +122,19 @@ var (
 // +kubebuilder:validation:Enum=least_connections;round_robin;weighted_round_robin
 type VPCLoadBalancerBackendPoolAlgorithm string
 
-var (
-	// VPCLoadBalancerBackendPoolAlgorithmLeastConnections is the string representing the least_connections load balancing algorithm.
-	VPCLoadBalancerBackendPoolAlgorithmLeastConnections VPCLoadBalancerBackendPoolAlgorithm = vpcv1.CreateLoadBalancerPoolOptionsAlgorithmLeastConnectionsConst
-
-	// VPCLoadBalancerBackendPoolAlgorithmRoundRobin is the string representing the round_robin load balancing algorithm.
-	VPCLoadBalancerBackendPoolAlgorithmRoundRobin VPCLoadBalancerBackendPoolAlgorithm = vpcv1.CreateLoadBalancerPoolOptionsAlgorithmRoundRobinConst
-
-	// VPCLoadBalancerBackendPoolAlgorithmWeightedRoundRobin is the string representing the weighted_round_robin load balancing algorithm.
-	VPCLoadBalancerBackendPoolAlgorithmWeightedRoundRobin VPCLoadBalancerBackendPoolAlgorithm = vpcv1.CreateLoadBalancerPoolOptionsAlgorithmWeightedRoundRobinConst
-)
-
 // VPCLoadBalancerBackendPoolProtocol describes the protocol for load balancer backend pools.
 // We have unique types in case IBM Cloud Load Balancer Listener and Backend Pool supported algorithms ever diverage.
 // +kubebuilder:validation:Enum=http;https;tcp;udp
 type VPCLoadBalancerBackendPoolProtocol string
-
-var (
-	// VPCLoadBalancerBackendPoolProtocolHTTP is the string representing the http protocol for load balancer backend pools.
-	VPCLoadBalancerBackendPoolProtocolHTTP VPCLoadBalancerBackendPoolProtocol = vpcv1.LoadBalancerPoolPrototypeLoadBalancerContextProtocolHTTPConst
-
-	// VPCLoadBalancerBackendPoolProtocolHTTPS is the string representing the https protocol for load balancer backend pools.
-	VPCLoadBalancerBackendPoolProtocolHTTPS VPCLoadBalancerBackendPoolProtocol = vpcv1.LoadBalancerPoolPrototypeLoadBalancerContextProtocolHTTPSConst
-
-	// VPCLoadBalancerBackendPoolProtocolTCP is the string representing the tcp protocol for load balancer backend pools.
-	VPCLoadBalancerBackendPoolProtocolTCP VPCLoadBalancerBackendPoolProtocol = vpcv1.LoadBalancerPoolPrototypeLoadBalancerContextProtocolTCPConst
-
-	// VPCLoadBalancerBackendPoolProtocolUDP is the string representing the tudp protocol for load balancer backend pools.
-	VPCLoadBalancerBackendPoolProtocolUDP VPCLoadBalancerBackendPoolProtocol = vpcv1.LoadBalancerPoolPrototypeLoadBalancerContextProtocolUDPConst
-)
 
 // VPCLoadBalancerListenerProtocol describes the protocol for load balancer listeners.
 // We have unique types in case IBM Cloud Load Balancer Listener and Backend Pool supported algorithms ever diverage.
 // +kubebuilder:validation:Enum=http;https;tcp;udp
 type VPCLoadBalancerListenerProtocol string
 
-var (
-	// VPCLoadBalancerListenerProtocolHTTP is the string representing the http protocol for load balancer listeners.
-	VPCLoadBalancerListenerProtocolHTTP VPCLoadBalancerListenerProtocol = vpcv1.LoadBalancerListenerProtocolHTTPConst
-
-	// VPCLoadBalancerListenerProtocolHTTPS is the string representing the https protocol for load balancer listeners.
-	VPCLoadBalancerListenerProtocolHTTPS VPCLoadBalancerListenerProtocol = vpcv1.LoadBalancerListenerProtocolHTTPSConst
-
-	// VPCLoadBalancerListenerProtocolTCP is the string representing the tcp protocol for load balancer listeners.
-	VPCLoadBalancerListenerProtocolTCP VPCLoadBalancerListenerProtocol = vpcv1.LoadBalancerListenerProtocolTCPConst
-
-	// VPCLoadBalancerListenerProtocolUDP is the string representing the tudp protocol for load balancer listeners.
-	VPCLoadBalancerListenerProtocolUDP VPCLoadBalancerListenerProtocol = vpcv1.LoadBalancerListenerProtocolUDPConst
-)
-
 // VPCLoadBalancerBackendPoolHealthMonitorType describes the backend pool's health check protocol type.
 // +kubebuilder:validation:Enum=http;https;tcp
 type VPCLoadBalancerBackendPoolHealthMonitorType string
-
-var (
-	// VPCLoadBalancerBackendPoolHealthMonitorTypeHTTP is the string representing the http health pool protocol type.
-	VPCLoadBalancerBackendPoolHealthMonitorTypeHTTP VPCLoadBalancerBackendPoolHealthMonitorType = vpcv1.LoadBalancerPoolHealthMonitorTypeHTTPConst
-
-	// VPCLoadBalancerBackendPoolHealthMonitorTypeHTTPS is the string representing the https health pool protocol type.
-	VPCLoadBalancerBackendPoolHealthMonitorTypeHTTPS VPCLoadBalancerBackendPoolHealthMonitorType = vpcv1.LoadBalancerPoolHealthMonitorTypeHTTPSConst
-
-	// VPCLoadBalancerBackendPoolHealthMonitorTypeTCP is the string representing the tcp health pool protocol type.
-	VPCLoadBalancerBackendPoolHealthMonitorTypeTCP VPCLoadBalancerBackendPoolHealthMonitorType = vpcv1.LoadBalancerPoolHealthMonitorTypeTCPConst
-)
 
 // VPCLoadBalancerState describes the state of the load balancer.
 type VPCLoadBalancerState string
@@ -299,38 +247,13 @@ const (
 // +kubebuilder:validation:Enum=allow;deny
 type VPCSecurityGroupRuleAction string
 
-const (
-	// VPCSecurityGroupRuleActionAllow defines that the Rule should allow traffic.
-	VPCSecurityGroupRuleActionAllow VPCSecurityGroupRuleAction = vpcv1.NetworkACLRuleActionAllowConst
-	// VPCSecurityGroupRuleActionDeny defines that the Rule should deny traffic.
-	VPCSecurityGroupRuleActionDeny VPCSecurityGroupRuleAction = vpcv1.NetworkACLRuleActionDenyConst
-)
-
 // VPCSecurityGroupRuleDirection represents the directions for a Security Group Rule.
 // +kubebuilder:validation:Enum=inbound;outbound
 type VPCSecurityGroupRuleDirection string
 
-const (
-	// VPCSecurityGroupRuleDirectionInbound defines the Rule is for inbound traffic.
-	VPCSecurityGroupRuleDirectionInbound VPCSecurityGroupRuleDirection = vpcv1.NetworkACLRuleDirectionInboundConst
-	// VPCSecurityGroupRuleDirectionOutbound defines the Rule is for outbound traffic.
-	VPCSecurityGroupRuleDirectionOutbound VPCSecurityGroupRuleDirection = vpcv1.NetworkACLRuleDirectionOutboundConst
-)
-
 // VPCSecurityGroupRuleProtocol represents the protocols for a Security Group Rule.
 // +kubebuilder:validation:Enum=all;icmp;tcp;udp
 type VPCSecurityGroupRuleProtocol string
-
-const (
-	// VPCSecurityGroupRuleProtocolAll defines the Rule is for all network protocols.
-	VPCSecurityGroupRuleProtocolAll VPCSecurityGroupRuleProtocol = vpcv1.NetworkACLRuleProtocolAllConst
-	// VPCSecurityGroupRuleProtocolIcmp defiens the Rule is for ICMP network protocol.
-	VPCSecurityGroupRuleProtocolIcmp VPCSecurityGroupRuleProtocol = vpcv1.NetworkACLRuleProtocolIcmpConst
-	// VPCSecurityGroupRuleProtocolTCP defines the Rule is for TCP network protocol.
-	VPCSecurityGroupRuleProtocolTCP VPCSecurityGroupRuleProtocol = vpcv1.NetworkACLRuleProtocolTCPConst
-	// VPCSecurityGroupRuleProtocolUDP defines the Rule is for UDP network protocol.
-	VPCSecurityGroupRuleProtocolUDP VPCSecurityGroupRuleProtocol = vpcv1.NetworkACLRuleProtocolUDPConst
-)
 
 // VPCSecurityGroupRuleRemoteType represents the type of Security Group Rule's destination or source is
 // intended. This is intended to define the VPCSecurityGroupRulePrototype subtype.

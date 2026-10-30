@@ -153,6 +153,14 @@ var cpObjects = []client.Object{
 	fakePackageServerService(),
 }
 
+func cpObjectsWithControlPlaneReleaseImage(image string) []client.Object {
+	objects := append([]client.Object{}, cpObjects...)
+	hcp := fakeHCP()
+	hcp.Spec.ControlPlaneReleaseImage = &image
+	objects[0] = hcp
+	return objects
+}
+
 // TestReconcileErrorHandling verifies that the reconcile loop proceeds when
 // errors occur.  The test uses a fake  client with a specific list of initial
 // objects in order to establish a baseline number of expected client create
@@ -175,6 +183,8 @@ func TestReconcileErrorHandling(t *testing.T) {
 	errorExceptions := []string{
 		"global pull secret syncer signaled to shutdown",
 	}
+	cpReleaseImage := "quay.io/openshift-release-dev/ocp-release:5.1.0-x86_64"
+	cpObjects := cpObjectsWithControlPlaneReleaseImage(cpReleaseImage)
 
 	var totalCreates int
 	{
@@ -193,6 +203,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Version: "5.1.0",
 				Components: map[string]string{
 					"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
 				},
@@ -227,6 +238,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Version: "5.1.0",
 				Components: map[string]string{
 					"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
 				},
@@ -244,6 +256,77 @@ func TestReconcileErrorHandling(t *testing.T) {
 				t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
 			}
 		}
+	}
+}
+
+func TestReconcileRequeueBehavior(t *testing.T) {
+	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
+	ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+	newReconciler := func(cpObjs []client.Object, guestObjs []client.Object) *reconciler {
+		return &reconciler{
+			client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(guestObjs...).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
+			uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			platformType:           hyperv1.NonePlatform,
+			clusterSignerCA:        "foobar",
+			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjs...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build(),
+			hcpName:                "foo",
+			hcpNamespace:           "bar",
+			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Components: map[string]string{
+					"cli": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cli-fake",
+				},
+			},
+			ImageMetaDataProvider: &imageMetaDataProvider,
+		}
+	}
+
+	tests := []struct {
+		name            string
+		cpObjects       []client.Object
+		guestObjects    []client.Object
+		wantRequeueSecs int
+		wantErr         bool
+	}{
+		{
+			name:            "When reconciliation succeeds, it should requeue after 60 seconds",
+			cpObjects:       cpObjects,
+			guestObjects:    initialObjects,
+			wantRequeueSecs: 60,
+			wantErr:         false,
+		},
+		{
+			name:            "When reconciliation fails, it should return error without RequeueAfter",
+			cpObjects:       []client.Object{fakeHCP()},
+			guestObjects:    initialObjects,
+			wantRequeueSecs: 0,
+			wantErr:         true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newReconciler(tc.cpObjects, tc.guestObjects)
+			result, err := r.Reconcile(ctx, controllerruntime.Request{})
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if result.RequeueAfter != 0 {
+					t.Errorf("expected no RequeueAfter on error, got %v", result.RequeueAfter)
+				}
+			} else {
+				// Allow known non-fatal errors (e.g. global pull secret syncer shutdown)
+				if err != nil && !strings.Contains(err.Error(), "global pull secret syncer signaled to shutdown") {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if result.RequeueAfter != time.Duration(tc.wantRequeueSecs)*time.Second {
+					t.Errorf("expected RequeueAfter %ds, got %v", tc.wantRequeueSecs, result.RequeueAfter)
+				}
+			}
+		})
 	}
 }
 

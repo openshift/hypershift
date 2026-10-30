@@ -19,7 +19,7 @@ package v1beta1
 import (
 	"fmt"
 
-	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	clusterv1beta1 "sigs.k8s.io/cluster-api-provider-gcp/capicore/api/core/v1beta1"
 )
 
 // GCPMachineTemplateResource describes the data needed to create am GCPMachine from a template.

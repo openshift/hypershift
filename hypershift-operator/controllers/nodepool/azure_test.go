@@ -1,6 +1,7 @@
 package nodepool
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -8,14 +9,16 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	supportutil "github.com/openshift/hypershift/support/util"
 
 	imageapi "github.com/openshift/api/image/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	azurecapicore "sigs.k8s.io/cluster-api-provider-azure/capicore/api/core/v1beta1"
 
 	"github.com/coreos/stream-metadata-go/stream"
 	"github.com/coreos/stream-metadata-go/stream/rhcos"
@@ -53,7 +56,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -127,7 +130,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -206,7 +209,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -296,7 +299,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -392,7 +395,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -535,7 +538,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			acrIdentityResourceID: "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/test-mi",
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -612,7 +615,234 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			},
 			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
 				Template: capiazure.AzureMachineTemplateResource{
-					ObjectMeta: clusterv1beta1.ObjectMeta{Labels: nil, Annotations: nil},
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
+					Spec: capiazure.AzureMachineSpec{
+						ProviderID:    nil,
+						VMSize:        "Standard_D2_v2",
+						FailureDomain: nil,
+						Image: &capiazure.Image{
+							ID:             ptr.To("testImageID"),
+							SharedGallery:  nil,
+							Marketplace:    nil,
+							ComputeGallery: nil,
+						},
+						UserAssignedIdentities:     nil,
+						SystemAssignedIdentityRole: nil,
+						RoleAssignmentName:         "",
+						OSDisk: capiazure.OSDisk{
+							OSType:     "",
+							DiskSizeGB: ptr.To[int32](30),
+							ManagedDisk: &capiazure.ManagedDiskParameters{
+								StorageAccountType: "Standard_LRS",
+								DiskEncryptionSet:  nil,
+								SecurityProfile:    nil,
+							},
+							DiffDiskSettings: nil,
+							CachingType:      "",
+						},
+						DataDisks:              nil,
+						SSHPublicKey:           dummySSHKey,
+						AdditionalTags:         nil,
+						AdditionalCapabilities: nil,
+						AllocatePublicIP:       false,
+						EnableIPForwarding:     false,
+						AcceleratedNetworking:  nil,
+						Diagnostics:            nil,
+						SpotVMOptions:          nil,
+						SecurityProfile:        nil,
+						SubnetName:             "",
+						DNSServers:             nil,
+						VMExtensions:           nil,
+						NetworkInterfaces: []capiazure.NetworkInterface{
+							{
+								SubnetName:            "testSubnetName",
+								PrivateIPConfigs:      0,
+								AcceleratedNetworking: nil,
+							},
+						},
+						CapacityReservationGroupID: nil,
+					},
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name: "When ipForwarding is AllowAllAddresses, it should enable IP forwarding on the Azure machine spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type:    hyperv1.ImageID,
+								ImageID: ptr.To("testImageID"),
+							},
+							SubnetID:     "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:       "Standard_D2_v2",
+							IPForwarding: hyperv1.AzureIPForwardingAllowAllAddresses,
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+							},
+						},
+					},
+				},
+			},
+			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
+				Template: capiazure.AzureMachineTemplateResource{
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
+					Spec: capiazure.AzureMachineSpec{
+						ProviderID:    nil,
+						VMSize:        "Standard_D2_v2",
+						FailureDomain: nil,
+						Image: &capiazure.Image{
+							ID:             ptr.To("testImageID"),
+							SharedGallery:  nil,
+							Marketplace:    nil,
+							ComputeGallery: nil,
+						},
+						UserAssignedIdentities:     nil,
+						SystemAssignedIdentityRole: nil,
+						RoleAssignmentName:         "",
+						OSDisk: capiazure.OSDisk{
+							OSType:     "",
+							DiskSizeGB: ptr.To[int32](30),
+							ManagedDisk: &capiazure.ManagedDiskParameters{
+								StorageAccountType: "Standard_LRS",
+								DiskEncryptionSet:  nil,
+								SecurityProfile:    nil,
+							},
+							DiffDiskSettings: nil,
+							CachingType:      "",
+						},
+						DataDisks:              nil,
+						SSHPublicKey:           dummySSHKey,
+						AdditionalTags:         nil,
+						AdditionalCapabilities: nil,
+						AllocatePublicIP:       false,
+						EnableIPForwarding:     true,
+						AcceleratedNetworking:  nil,
+						Diagnostics:            nil,
+						SpotVMOptions:          nil,
+						SecurityProfile:        nil,
+						SubnetName:             "",
+						DNSServers:             nil,
+						VMExtensions:           nil,
+						NetworkInterfaces: []capiazure.NetworkInterface{
+							{
+								SubnetName:            "testSubnetName",
+								PrivateIPConfigs:      0,
+								AcceleratedNetworking: nil,
+							},
+						},
+						CapacityReservationGroupID: nil,
+					},
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name: "When ipForwarding is InterfaceAddressesOnly, it should not enable IP forwarding on the Azure machine spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type:    hyperv1.ImageID,
+								ImageID: ptr.To("testImageID"),
+							},
+							SubnetID:     "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:       "Standard_D2_v2",
+							IPForwarding: hyperv1.AzureIPForwardingInterfaceAddressesOnly,
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+							},
+						},
+					},
+				},
+			},
+			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
+				Template: capiazure.AzureMachineTemplateResource{
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
+					Spec: capiazure.AzureMachineSpec{
+						ProviderID:    nil,
+						VMSize:        "Standard_D2_v2",
+						FailureDomain: nil,
+						Image: &capiazure.Image{
+							ID:             ptr.To("testImageID"),
+							SharedGallery:  nil,
+							Marketplace:    nil,
+							ComputeGallery: nil,
+						},
+						UserAssignedIdentities:     nil,
+						SystemAssignedIdentityRole: nil,
+						RoleAssignmentName:         "",
+						OSDisk: capiazure.OSDisk{
+							OSType:     "",
+							DiskSizeGB: ptr.To[int32](30),
+							ManagedDisk: &capiazure.ManagedDiskParameters{
+								StorageAccountType: "Standard_LRS",
+								DiskEncryptionSet:  nil,
+								SecurityProfile:    nil,
+							},
+							DiffDiskSettings: nil,
+							CachingType:      "",
+						},
+						DataDisks:              nil,
+						SSHPublicKey:           dummySSHKey,
+						AdditionalTags:         nil,
+						AdditionalCapabilities: nil,
+						AllocatePublicIP:       false,
+						EnableIPForwarding:     false,
+						AcceleratedNetworking:  nil,
+						Diagnostics:            nil,
+						SpotVMOptions:          nil,
+						SecurityProfile:        nil,
+						SubnetName:             "",
+						DNSServers:             nil,
+						VMExtensions:           nil,
+						NetworkInterfaces: []capiazure.NetworkInterface{
+							{
+								SubnetName:            "testSubnetName",
+								PrivateIPConfigs:      0,
+								AcceleratedNetworking: nil,
+							},
+						},
+						CapacityReservationGroupID: nil,
+					},
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			// Opting in is the only way to turn IP forwarding on. This case exists so the
+			// negative contract is asserted by name rather than inferred from the nominal
+			// cases above.
+			name: "When ipForwarding is unset, it should not enable IP forwarding on the Azure machine spec",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type:    hyperv1.ImageID,
+								ImageID: ptr.To("testImageID"),
+							},
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:   "Standard_D2_v2",
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+							},
+						},
+					},
+				},
+			},
+			expectedAzureMachineTemplateSpec: &capiazure.AzureMachineTemplateSpec{
+				Template: capiazure.AzureMachineTemplateResource{
+					ObjectMeta: azurecapicore.ObjectMeta{Labels: nil, Annotations: nil},
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
@@ -677,6 +907,136 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			}
 		})
 	}
+}
+
+// azureIPForwardingTestNodePool returns a NodePool whose Azure platform is populated exactly as a
+// pre-ipForwarding object would be, i.e. without the field ever being mentioned. mutate is applied
+// afterwards so individual cases can opt in to a specific ipForwarding value.
+func azureIPForwardingTestNodePool(mutate func(*hyperv1.AzureNodePoolPlatform)) *hyperv1.NodePool {
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool"},
+		Spec: hyperv1.NodePoolSpec{
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzureNodePoolPlatform{
+					Image: hyperv1.AzureVMImage{
+						Type:    hyperv1.ImageID,
+						ImageID: ptr.To("testImageID"),
+					},
+					SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+					VMSize:   "Standard_D2_v2",
+					OSDisk: hyperv1.AzureNodePoolOSDisk{
+						SizeGiB:                30,
+						DiskStorageAccountType: "Standard_LRS",
+					},
+				},
+			},
+		},
+	}
+	if mutate != nil {
+		mutate(nodePool.Spec.Platform.Azure)
+	}
+	return nodePool
+}
+
+// TestAzureMachineTemplateSpecIPForwardingDefaultsOff asserts that a NodePool written before
+// ipForwarding existed is completely unaffected by the field: IP forwarding stays off through a
+// full store/decode/reconcile round trip, and the generated machine template name is unchanged.
+// The name equality is the machine-checkable form of "deploying this operator version does not
+// roll the existing Azure fleet".
+func TestAzureMachineTemplateSpecIPForwardingDefaultsOff(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	nodePool := azureIPForwardingTestNodePool(nil)
+
+	spec, err := azureMachineTemplateSpec(nodePool, "")
+	g.Expect(err).To(BeNil())
+	g.Expect(spec.Template.Spec.EnableIPForwarding).To(BeFalse(), "an unset ipForwarding must never enable IP forwarding")
+
+	// Round trip the platform through the API wire format, the way a stored object is decoded
+	// before every reconcile. The key must not appear, and decoding it back must not flip the
+	// CAPZ field on.
+	platformJSON, err := json.Marshal(nodePool.Spec.Platform.Azure)
+	g.Expect(err).To(BeNil())
+	g.Expect(string(platformJSON)).ToNot(ContainSubstring("ipForwarding"), "an unset ipForwarding must not be serialized")
+
+	decodedPlatform := &hyperv1.AzureNodePoolPlatform{}
+	g.Expect(json.Unmarshal(platformJSON, decodedPlatform)).To(Succeed())
+	g.Expect(decodedPlatform.IPForwarding).To(BeEmpty())
+
+	decodedNodePool := azureIPForwardingTestNodePool(nil)
+	decodedNodePool.Spec.Platform.Azure = decodedPlatform
+	decodedSpec, err := azureMachineTemplateSpec(decodedNodePool, "")
+	g.Expect(err).To(BeNil())
+	g.Expect(decodedSpec.Template.Spec.EnableIPForwarding).To(BeFalse())
+
+	// The generated template name must be identical whether ipForwarding is absent or explicitly
+	// InterfaceAddressesOnly: neither value may produce a new AzureMachineTemplate and therefore
+	// a rollout.
+	hashNameGenerator := func(spec any) (string, error) {
+		specJSON, err := json.Marshal(spec)
+		if err != nil {
+			return "", err
+		}
+		return getName(nodePool.GetName(), supportutil.HashSimple(specJSON), validation.DNS1123SubdomainMaxLength), nil
+	}
+	templateNameFor := func(np *hyperv1.NodePool) string {
+		t.Helper()
+		capi := &CAPI{
+			Token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					nodePool: np,
+					rolloutConfig: &rolloutConfig{
+						releaseImage: createMockReleaseImage("4.20.0", true),
+					},
+				},
+			},
+		}
+		template, err := capi.azureMachineTemplate(t.Context(), hashNameGenerator)
+		g.Expect(err).To(BeNil())
+		return template.Name
+	}
+
+	unsetName := templateNameFor(nodePool)
+	interfaceOnlyName := templateNameFor(azureIPForwardingTestNodePool(func(platform *hyperv1.AzureNodePoolPlatform) {
+		platform.IPForwarding = hyperv1.AzureIPForwardingInterfaceAddressesOnly
+	}))
+	allowAllName := templateNameFor(azureIPForwardingTestNodePool(func(platform *hyperv1.AzureNodePoolPlatform) {
+		platform.IPForwarding = hyperv1.AzureIPForwardingAllowAllAddresses
+	}))
+
+	g.Expect(interfaceOnlyName).To(Equal(unsetName), "setting ipForwarding to InterfaceAddressesOnly must not change the machine template name, or existing NodePools would roll")
+	g.Expect(allowAllName).ToNot(Equal(unsetName), "setting ipForwarding to AllowAllAddresses must change the machine template name so the nodes are replaced")
+}
+
+// TestAzureMachineTemplateSpecIPForwardingSerialization guards the no-fleet-rollout property at the
+// level that actually determines it: the marshaled machine template spec, which is hashed into the
+// template name by machineTemplateBuilders (capi.go:880-889). A regression here — a dropped
+// omitempty in a CAPZ vendor bump, or a CRD default on ipForwarding — would roll every Azure
+// NodePool in the fleet, which the struct-level table test above cannot detect.
+func TestAzureMachineTemplateSpecIPForwardingSerialization(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	marshalSpecFor := func(ipForwarding hyperv1.AzureIPForwarding) string {
+		t.Helper()
+		spec, err := azureMachineTemplateSpec(azureIPForwardingTestNodePool(func(platform *hyperv1.AzureNodePoolPlatform) {
+			platform.IPForwarding = ipForwarding
+		}), "")
+		g.Expect(err).To(BeNil())
+		specJSON, err := json.Marshal(spec)
+		g.Expect(err).To(BeNil())
+		return string(specJSON)
+	}
+
+	unsetJSON := marshalSpecFor("")
+	g.Expect(unsetJSON).ToNot(ContainSubstring("enableIPForwarding"))
+
+	interfaceOnlyJSON := marshalSpecFor(hyperv1.AzureIPForwardingInterfaceAddressesOnly)
+	g.Expect(interfaceOnlyJSON).ToNot(ContainSubstring("enableIPForwarding"))
+	g.Expect(interfaceOnlyJSON).To(Equal(unsetJSON), "InterfaceAddressesOnly must marshal identically to unset so the template hash is unchanged")
+
+	allowAllJSON := marshalSpecFor(hyperv1.AzureIPForwardingAllowAllAddresses)
+	g.Expect(allowAllJSON).To(ContainSubstring(`"enableIPForwarding":true`))
 }
 
 func TestAzureMachineTemplate(t *testing.T) {

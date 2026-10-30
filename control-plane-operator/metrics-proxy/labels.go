@@ -1,7 +1,8 @@
 package metricsproxy
 
 import (
-	"fmt"
+	"net"
+	"strconv"
 
 	dto "github.com/prometheus/client_model/go"
 )
@@ -38,7 +39,7 @@ func (l *Labeler) Inject(families map[string]*dto.MetricFamily, target ScrapeTar
 		"job":       job,
 		"service":   service,
 		"endpoint":  endpoint,
-		"instance":  fmt.Sprintf("%s:%d", target.PodIP, target.Port),
+		"instance":  net.JoinHostPort(target.PodIP, strconv.Itoa(int(target.Port))),
 	}
 
 	for _, mf := range families {

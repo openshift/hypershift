@@ -18,7 +18,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1" //nolint SA1019
+	clusterv1 "sigs.k8s.io/cluster-api-provider-kubevirt/capicore/api/core/v1beta2"
 )
 
 // KubevirtClusterTemplateResource describes the data needed to create a KubevirtCluster from a template.
@@ -50,8 +50,4 @@ type KubevirtClusterTemplateList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []KubevirtClusterTemplate `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&KubevirtClusterTemplate{}, &KubevirtClusterTemplateList{})
 }

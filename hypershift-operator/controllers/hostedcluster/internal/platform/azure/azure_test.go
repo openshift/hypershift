@@ -23,7 +23,8 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	azurecapicore "sigs.k8s.io/cluster-api-provider-azure/capicore/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -615,7 +616,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 	staleDeletionTimestamp := metav1.NewTime(time.Now().Add(-(deletionFailedThreshold + time.Minute)))
 	recentDeletionTimestamp := metav1.NewTime(time.Now())
 
-	deletionFailedConditions := capiv1.Conditions{
+	deletionFailedConditions := azurecapicore.Conditions{
 		{
 			Type:   capiv1.ReadyCondition,
 			Status: corev1.ConditionFalse,
@@ -727,7 +728,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 						DeletionTimestamp: &staleDeletionTimestamp,
 					},
 					Status: capiazure.AzureMachineStatus{
-						Conditions: capiv1.Conditions{
+						Conditions: azurecapicore.Conditions{
 							{
 								Type:   capiv1.ReadyCondition,
 								Status: corev1.ConditionTrue,
@@ -771,7 +772,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 						DeletionTimestamp: &staleDeletionTimestamp,
 					},
 					Status: capiazure.AzureMachineStatus{
-						Conditions: capiv1.Conditions{
+						Conditions: azurecapicore.Conditions{
 							{
 								Type:   capiv1.ReadyCondition,
 								Status: corev1.ConditionTrue,
@@ -796,7 +797,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 						DeletionTimestamp: &staleDeletionTimestamp,
 					},
 					Status: capiazure.AzureMachineStatus{
-						Conditions: capiv1.Conditions{
+						Conditions: azurecapicore.Conditions{
 							{
 								Type:   capiv1.ReadyCondition,
 								Status: corev1.ConditionTrue,
@@ -821,7 +822,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 						DeletionTimestamp: &recentDeletionTimestamp,
 					},
 					Status: capiazure.AzureMachineStatus{
-						Conditions: capiv1.Conditions{
+						Conditions: azurecapicore.Conditions{
 							{
 								Type:   capiv1.ReadyCondition,
 								Status: corev1.ConditionTrue,
@@ -846,7 +847,7 @@ func TestDeleteOrphanedMachines(t *testing.T) {
 						DeletionTimestamp: &staleDeletionTimestamp,
 					},
 					Status: capiazure.AzureMachineStatus{
-						Conditions: capiv1.Conditions{
+						Conditions: azurecapicore.Conditions{
 							{
 								Type:   capiv1.ReadyCondition,
 								Status: corev1.ConditionTrue,
@@ -1125,7 +1126,7 @@ func TestHasDeletionFailedCondition(t *testing.T) {
 			name: "When Ready is False with DeletionFailed reason, it should return true",
 			machine: capiazure.AzureMachine{
 				Status: capiazure.AzureMachineStatus{
-					Conditions: capiv1.Conditions{
+					Conditions: azurecapicore.Conditions{
 						{
 							Type:   capiv1.ReadyCondition,
 							Status: corev1.ConditionFalse,
@@ -1140,7 +1141,7 @@ func TestHasDeletionFailedCondition(t *testing.T) {
 			name: "When Ready is True, it should return false",
 			machine: capiazure.AzureMachine{
 				Status: capiazure.AzureMachineStatus{
-					Conditions: capiv1.Conditions{
+					Conditions: azurecapicore.Conditions{
 						{
 							Type:   capiv1.ReadyCondition,
 							Status: corev1.ConditionTrue,
@@ -1154,7 +1155,7 @@ func TestHasDeletionFailedCondition(t *testing.T) {
 			name: "When Ready is False with a different reason, it should return false",
 			machine: capiazure.AzureMachine{
 				Status: capiazure.AzureMachineStatus{
-					Conditions: capiv1.Conditions{
+					Conditions: azurecapicore.Conditions{
 						{
 							Type:   capiv1.ReadyCondition,
 							Status: corev1.ConditionFalse,

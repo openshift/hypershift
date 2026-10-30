@@ -19,7 +19,7 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1" //nolint SA1019
+	clusterv1 "sigs.k8s.io/cluster-api-provider-kubevirt/capicore/api/core/v1beta2"
 )
 
 const (
@@ -38,6 +38,19 @@ const ( // labels
 const ( // annotations
 	VmiDeletionGraceTime       = "capk.cluster.x-k8s.io/vmi-deletion-grace-time"
 	VmiDeletionGraceTimeEscape = "capk.cluster.x-k8s.io~1vmi-deletion-grace-time"
+
+	// NodeCordonedByCapk is set on KubevirtMachine when CAPK cordons the
+	// guest node during an eviction drain. It is used to uncordon the node
+	// after the VMI is recreated on a different host.
+	NodeCordonedByCapk       = "capk.cluster.x-k8s.io/node-cordoned"
+	NodeCordonedByCapkEscape = "capk.cluster.x-k8s.io~1node-cordoned"
+
+	// VmiMigrationSubmitted is set on KubevirtMachine when CAPK creates a
+	// VirtualMachineInstanceMigration for a migratable VMI. It prevents
+	// duplicate migration creates and decouples the grace period timer from
+	// migration submission -- the timer only starts when the migration is
+	// actively in progress.
+	VmiMigrationSubmitted = "capk.cluster.x-k8s.io/migration-submitted"
 )
 
 // KubevirtClusterSpec defines the desired state of KubevirtCluster.
@@ -66,19 +79,30 @@ type KubevirtClusterSpec struct {
 	InfraClusterSecretRef *corev1.ObjectReference `json:"infraClusterSecretRef,omitempty"`
 }
 
+// KubevirtClusterInitializationStatus contains CAPI v1beta2 contract fields.
+type KubevirtClusterInitializationStatus struct {
+	// Provisioned indicates the infrastructure has been provisioned.
+	// +optional
+	Provisioned *bool `json:"provisioned,omitempty"`
+}
+
 // KubevirtClusterStatus defines the observed state of KubevirtCluster.
 type KubevirtClusterStatus struct {
 	// Ready denotes that the infrastructure is ready.
 	// +kubebuilder:default:=false
 	Ready bool `json:"ready"`
 
-	// FailureDomains don't mean much in CAPD since it's all local, but we can see how the rest of cluster API
+	// Initialization tracks CAPI v1beta2 contract initialization fields.
+	// +optional
+	Initialization *KubevirtClusterInitializationStatus `json:"initialization,omitempty"`
+
+	// FailureDomains don't mean much in CAPK since it's all local, but we can see how the rest of cluster API
 	// will use this if we populate it.
-	FailureDomains clusterv1.FailureDomains `json:"failureDomains,omitempty"`
+	FailureDomains []clusterv1.FailureDomain `json:"failureDomains,omitempty"`
 
 	// Conditions defines current service state of the KubevirtCluster.
 	// +optional
-	Conditions []clusterv1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.
@@ -140,11 +164,11 @@ type KubevirtCluster struct {
 	Status KubevirtClusterStatus `json:"status,omitempty"`
 }
 
-func (c *KubevirtCluster) GetConditions() clusterv1.Conditions {
+func (c *KubevirtCluster) GetConditions() []metav1.Condition {
 	return c.Status.Conditions
 }
 
-func (c *KubevirtCluster) SetConditions(conditions clusterv1.Conditions) {
+func (c *KubevirtCluster) SetConditions(conditions []metav1.Condition) {
 	c.Status.Conditions = conditions
 }
 
@@ -155,8 +179,4 @@ type KubevirtClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []KubevirtCluster `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&KubevirtCluster{}, &KubevirtClusterList{})
 }

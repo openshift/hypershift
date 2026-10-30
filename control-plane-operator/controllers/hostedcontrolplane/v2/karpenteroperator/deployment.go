@@ -2,8 +2,10 @@ package karpenteroperator
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path"
+	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
@@ -28,6 +30,8 @@ const (
 	KarpenterImageAzureEnvVar = "KARPENTER_IMAGE_AZURE"
 	// TokenMinterImageEnvVar is the environment variable that sets the Token Minter image.
 	TokenMinterImageEnvVar = "TOKEN_MINTER_IMAGE"
+	// DefaultSecurityContextUIDEnvVar sets the operand pods' runAsUser and fsGroup on management clusters without SCC.
+	DefaultSecurityContextUIDEnvVar = "DEFAULT_SECURITY_CONTEXT_UID"
 )
 
 func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -190,6 +194,13 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 		)
 	}
 
+	if cpContext.SetDefaultSecurityContext {
+		extraEnvVars = append(extraEnvVars, corev1.EnvVar{
+			Name:  DefaultSecurityContextUIDEnvVar,
+			Value: strconv.FormatInt(cpContext.DefaultSecurityContextUID, 10),
+		})
+	}
+
 	if platformType == hyperv1.AWSPlatform {
 		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
 			corev1.Volume{
@@ -222,7 +233,7 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 			},
 			corev1.EnvVar{
 				Name:  "CLUSTER_ENDPOINT",
-				Value: fmt.Sprintf("https://%s:%d", hcp.Status.ControlPlaneEndpoint.Host, hcp.Status.ControlPlaneEndpoint.Port),
+				Value: "https://" + net.JoinHostPort(hcp.Status.ControlPlaneEndpoint.Host, strconv.Itoa(int(hcp.Status.ControlPlaneEndpoint.Port))),
 			},
 			corev1.EnvVar{
 				Name:  "PLATFORM",
@@ -245,13 +256,13 @@ func (karp *KarpenterOperatorOptions) adaptStandaloneDeployment(cpContext compon
 func (karp *KarpenterOperatorOptions) addStandaloneAdapterContainer(deployment *appsv1.Deployment) error {
 	adapterEnv := []corev1.EnvVar{
 		{
-			Name: "MY_NAMESPACE",
+			Name: "NAMESPACE",
 			ValueFrom: &corev1.EnvVarSource{
 				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"},
 			},
 		},
 		{
-			Name: "MY_NAME",
+			Name: "POD_NAME",
 			ValueFrom: &corev1.EnvVarSource{
 				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
 			},
@@ -269,7 +280,7 @@ func (karp *KarpenterOperatorOptions) addStandaloneAdapterContainer(deployment *
 		Command: []string{"/usr/bin/karpenter-operator"},
 		Args: []string{
 			"--target-kubeconfig=/mnt/kubeconfig/target-kubeconfig",
-			"--namespace=$(MY_NAMESPACE)",
+			"--namespace=$(NAMESPACE)",
 			"--control-plane-operator-image=" + karp.ControlPlaneOperatorImage,
 			"--hypershift-operator-image=" + karp.HyperShiftOperatorImage,
 			"--ignition-endpoint=" + karp.IgnitionEndpoint,

@@ -8,16 +8,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -51,20 +47,21 @@ type AzurePlatformConfig struct {
 	marketplaceSKU       string
 	marketplaceVersion   string
 
-	keycloakConfig *v2util.KeycloakConfig
+	externalOIDC externalOIDCSetup
 }
 
 // NewAzurePlatformConfig reads Azure-specific configuration from
 // environment variables with CI defaults.
 func NewAzurePlatformConfig(sharedDir string) *AzurePlatformConfig {
 	cfg := &AzurePlatformConfig{
-		creds:              envOrDefault("AZURE_CREDS", defaultAzureCreds),
+		creds:              AzureCredentialsFileFromEnv(),
 		location:           envOrDefault("HYPERSHIFT_AZURE_LOCATION", defaultAzureLocation),
 		oidcIssuerURL:      envOrDefault("AZURE_OIDC_ISSUER_URL", defaultOIDCIssuerURL),
 		saTokenKeyPath:     envOrDefault("AZURE_SA_TOKEN_ISSUER_KEY_PATH", defaultSATokenKeyPath),
 		workloadIdentities: envOrDefault("AZURE_WORKLOAD_IDENTITIES_FILE", defaultWorkloadIdentities),
 		dnsZoneRG:          defaultAzureDNSZoneRG,
 		sharedDir:          sharedDir,
+		externalOIDC:       externalOIDCSetup{sharedDir: sharedDir},
 
 		marketplacePublisher: os.Getenv("HYPERSHIFT_AZURE_MARKETPLACE_IMAGE_PUBLISHER"),
 		marketplaceOffer:     os.Getenv("HYPERSHIFT_AZURE_MARKETPLACE_IMAGE_OFFER"),
@@ -106,73 +103,28 @@ func NewAzurePlatformConfig(sharedDir string) *AzurePlatformConfig {
 	return cfg
 }
 
+// AzureCredentialsFileFromEnv returns the configured Azure credentials path,
+// using the self-managed E2E default when AZURE_CREDS is unset.
+func AzureCredentialsFileFromEnv() string {
+	return envOrDefault("AZURE_CREDS", defaultAzureCreds)
+}
+
 func (a *AzurePlatformConfig) Name() string { return "azure" }
 
 func (a *AzurePlatformConfig) DefaultBaseDomain() string {
 	return "hcp-sm-azure.azure.devcluster.openshift.com"
 }
 
-func (a *AzurePlatformConfig) ClusterSpecs(releaseImage, n1Image string) []ClusterSpec {
-	// Parse EXTRA_ARGS from environment if provided
-	var extraArgs []string
-	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
-		extraArgs = strings.Fields(envArgs)
-	}
-
-	var publicExtraArgs []string
-	if a.encryptionKeyID != "" {
-		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
-	}
-	publicExtraArgs = append(publicExtraArgs, extraArgs...)
-
-	oneInitialReplica := 1
-	twoInitialReplicas := 2
-
-	return []ClusterSpec{
-		{
-			Variant:                 "public",
-			ExtraArgs:               publicExtraArgs,
-			InitialNodePoolReplicas: &twoInitialReplicas,
-		},
-		{
-			Variant:                 "private",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs: append([]string{
-				"--endpoint-access=Private",
-				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
-			}, extraArgs...),
-		},
-		{
-			Variant:                 "oauth-lb",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               append([]string{"--oauth-publishing-strategy=LoadBalancer"}, extraArgs...),
-		},
-		{
-			Variant:                 "oauth-lb-private",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs: append([]string{
-				"--endpoint-access=Private",
-				"--endpoint-access-private-nat-subnet-id=" + a.privateNATSubnetID,
-				"--oauth-publishing-strategy=LoadBalancer",
-			}, extraArgs...),
-		},
-		{
-			Variant:                 "upgrade",
-			ReleaseImage:            n1Image,
-			InitialNodePoolReplicas: &twoInitialReplicas,
-			ExtraArgs:               append([]string{"--control-plane-availability-policy=HighlyAvailable"}, extraArgs...),
-		},
-		{
-			Variant:                 "external-oidc",
-			InitialNodePoolReplicas: &oneInitialReplica,
-			ExtraArgs:               extraArgs,
-		},
-	}
-}
-
-func (a *AzurePlatformConfig) CreateArgs() []string {
-	args := []string{
+func (a *AzurePlatformConfig) ClusterSpecs(_ context.Context, releaseImage, n1Image string) []ClusterSpec {
+	destroyArgs := []string{
 		"--azure-creds=" + a.creds,
+		"--location=" + a.location,
+		"--dns-zone-rg-name=" + a.dnsZoneRG,
+	}
+
+	commonArgs := []string{
+		"--azure-creds=" + a.creds,
+		"--diagnostics-storage-account-type=Managed",
 		"--location=" + a.location,
 		"--oidc-issuer-url=" + a.oidcIssuerURL,
 		"--sa-token-issuer-private-key-path=" + a.saTokenKeyPath,
@@ -182,29 +134,92 @@ func (a *AzurePlatformConfig) CreateArgs() []string {
 	}
 
 	if a.marketplacePublisher != "" {
-		args = append(args, "--marketplace-publisher="+a.marketplacePublisher)
-		args = append(args, "--marketplace-offer="+a.marketplaceOffer)
+		commonArgs = append(commonArgs, "--marketplace-publisher="+a.marketplacePublisher)
+		commonArgs = append(commonArgs, "--marketplace-offer="+a.marketplaceOffer)
 		if a.marketplaceSKU != "" {
-			args = append(args, "--marketplace-sku="+a.marketplaceSKU)
+			commonArgs = append(commonArgs, "--marketplace-sku="+a.marketplaceSKU)
 		}
 		if a.marketplaceVersion != "" {
-			args = append(args, "--marketplace-version="+a.marketplaceVersion)
+			commonArgs = append(commonArgs, "--marketplace-version="+a.marketplaceVersion)
 		}
 	}
 
-	return args
+	// Parse EXTRA_ARGS from environment if provided
+	var extraArgs []string
+	if envArgs := os.Getenv("EXTRA_ARGS"); envArgs != "" {
+		extraArgs = strings.Fields(envArgs)
+	}
+
+	clusterArgs := func(args ...string) []string {
+		return slices.Concat(commonArgs, args, extraArgs)
+	}
+
+	var publicExtraArgs []string
+	if a.encryptionKeyID != "" {
+		publicExtraArgs = append(publicExtraArgs, "--encryption-key-id="+a.encryptionKeyID)
+	}
+
+	oneInitialReplica := 1
+	twoInitialReplicas := 2
+
+	return []ClusterSpec{
+		{
+			Variant:                 "public",
+			DestroyArgs:             destroyArgs,
+			CreateArgs:              clusterArgs(publicExtraArgs...),
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			InitialNodePoolReplicas: &twoInitialReplicas,
+		},
+		{
+			Variant:                 "private",
+			DestroyArgs:             destroyArgs,
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs: clusterArgs(
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id="+a.privateNATSubnetID,
+			),
+		},
+		{
+			Variant:                 "oauth-lb",
+			DestroyArgs:             destroyArgs,
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs:              clusterArgs("--oauth-publishing-strategy=LoadBalancer"),
+		},
+		{
+			Variant:                 "oauth-lb-private",
+			DestroyArgs:             destroyArgs,
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs: clusterArgs(
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id="+a.privateNATSubnetID,
+				"--oauth-publishing-strategy=LoadBalancer",
+			),
+		},
+		{
+			Variant:                 "upgrade",
+			DestroyArgs:             destroyArgs,
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			ReleaseImage:            n1Image,
+			InitialNodePoolReplicas: &twoInitialReplicas,
+			CreateArgs:              clusterArgs("--control-plane-availability-policy=HighlyAvailable"),
+		},
+		{
+			Variant:                 "external-oidc",
+			DestroyArgs:             destroyArgs,
+			DumpArgs:                []string{"--azure-creds=" + a.creds},
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs:              clusterArgs(),
+		},
+	}
 }
 
 // PreCreate deploys infrastructure that must be ready before clusters
 // are created (e.g., the Keycloak OIDC provider for the external-oidc variant).
 func (a *AzurePlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch, namespace string) error {
-	kcConfig, err := v2util.DeployKeycloak(ctx, cl, "https://placeholder.example.com/auth/callback")
-	if err != nil {
-		return fmt.Errorf("deploying keycloak in pre-create: %w", err)
-	}
-	a.keycloakConfig = kcConfig
-	log.Printf("Keycloak deployed: issuer=%s", kcConfig.IssuerURL)
-	return nil
+	return a.externalOIDC.preCreate(ctx, cl)
 }
 
 // PostCreate runs variant-specific post-creation hooks for each cluster
@@ -230,12 +245,7 @@ func (a *AzurePlatformConfig) PostAvailable(ctx context.Context, cl crclient.Wit
 }
 
 func (a *AzurePlatformConfig) PostVersionRollout(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error {
-	if oidcName, ok := clusterNames["external-oidc"]; ok {
-		if err := a.postCreateExternalOIDC(ctx, cl, namespace, oidcName); err != nil {
-			return err
-		}
-	}
-	return nil
+	return a.externalOIDC.postVersionRollout(ctx, cl, namespace, clusterNames)
 }
 
 func (a *AzurePlatformConfig) postCreatePublic(ctx context.Context, cl crclient.Client, namespace, name string) error {
@@ -263,89 +273,6 @@ func (a *AzurePlatformConfig) postCreatePublic(ctx context.Context, cl crclient.
 	return nil
 }
 
-func (a *AzurePlatformConfig) postCreateExternalOIDC(ctx context.Context, cl crclient.Client, namespace, name string) error {
-	hc := &hyperv1.HostedCluster{}
-	if err := cl.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: name}, hc); err != nil {
-		return fmt.Errorf("getting HostedCluster %s/%s for OIDC setup: %w", namespace, name, err)
-	}
-
-	kcConfig := a.keycloakConfig
-	if kcConfig == nil {
-		return fmt.Errorf("keycloak config not available; PreCreate must run before PostCreate")
-	}
-
-	consoleRedirectURI := fmt.Sprintf("https://console-openshift-console.apps.%s.%s/auth/callback",
-		hc.Name, hc.Spec.DNS.BaseDomain)
-	if err := v2util.UpdateKeycloakConsoleClient(ctx, consoleRedirectURI); err != nil {
-		return fmt.Errorf("updating keycloak console client redirect URI: %w", err)
-	}
-
-	caCM := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "oidc-ca",
-			Namespace: namespace,
-		},
-		Data: map[string]string{
-			"ca-bundle.crt": string(kcConfig.CABundle),
-		},
-	}
-	if err := v2util.CreateOrUpdate(ctx, cl, caCM); err != nil {
-		return fmt.Errorf("creating OIDC CA configmap: %w", err)
-	}
-
-	consoleSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "console-secret",
-			Namespace: namespace,
-		},
-		Type: corev1.SecretTypeOpaque,
-		StringData: map[string]string{
-			"clientSecret": kcConfig.ConsoleClientSecret,
-		},
-	}
-	if err := v2util.CreateOrUpdate(ctx, cl, consoleSecret); err != nil {
-		return fmt.Errorf("creating console client secret: %w", err)
-	}
-
-	extOIDCConfig := &e2eutil.ExtOIDCConfig{
-		ExternalOIDCProvider:     e2eutil.ProviderKeycloak,
-		OIDCProviderName:         "keycloak oidc server",
-		CliClientID:              kcConfig.CLIClientID,
-		ConsoleClientID:          kcConfig.ConsoleClientID,
-		IssuerURL:                kcConfig.IssuerURL,
-		GroupPrefix:              "oidc-groups-test:",
-		UserPrefix:               "oidc-user-test:",
-		ConsoleClientSecretName:  "console-secret",
-		ConsoleClientSecretValue: kcConfig.ConsoleClientSecret,
-		IssuerCAConfigmapName:    "oidc-ca",
-		TestUsers:                kcConfig.TestUsers,
-	}
-
-	patch := crclient.MergeFrom(hc.DeepCopy())
-	if hc.Spec.Configuration == nil {
-		hc.Spec.Configuration = &hyperv1.ClusterConfiguration{}
-	}
-	hc.Spec.Configuration.Authentication = extOIDCConfig.GetAuthenticationConfig()
-	if err := cl.Patch(ctx, hc, patch); err != nil {
-		return fmt.Errorf("patching HostedCluster %s/%s with OIDC config: %w", namespace, name, err)
-	}
-	log.Printf("Patched HostedCluster %s/%s with External OIDC config", namespace, name)
-
-	if a.sharedDir != "" {
-		caPath := filepath.Join(a.sharedDir, "external_oidc_ca_bundle")
-		if err := os.WriteFile(caPath, kcConfig.CABundle, 0600); err != nil {
-			return fmt.Errorf("writing CA bundle to %s: %w", caPath, err)
-		}
-		testUsersPath := filepath.Join(a.sharedDir, "external_oidc_test_users")
-		if err := os.WriteFile(testUsersPath, []byte(kcConfig.TestUsers), 0600); err != nil {
-			return fmt.Errorf("writing test users to %s: %w", testUsersPath, err)
-		}
-		log.Printf("Wrote External OIDC CA bundle and test users to SHARED_DIR")
-	}
-
-	return nil
-}
-
 func (a *AzurePlatformConfig) DefaultTestPlan() TestPlan {
 	return TestPlan{
 		Name:       "azure-full",
@@ -360,7 +287,7 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 			{
 				Name:        "private",
 				Variant:     "private",
-				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance",
+				LabelFilter: "self-managed-azure-private || hosted-cluster-compliance || azure-machine-diagnostics",
 			},
 			{
 				Name:        "oauth-lb-private",
@@ -375,14 +302,15 @@ func (a *AzurePlatformConfig) TestMatrix() TestMatrix {
 					{
 						Name:        "public",
 						Variant:     "public",
-						LabelFilter: "self-managed-azure-public || hosted-cluster-node-communication || hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress",
+						LabelFilter: "azure-machine-diagnostics || self-managed-azure-public || hosted-cluster-node-communication || hosted-cluster-cpo || nodepool-arm64 || secret-encryption || control-plane-workloads || hosted-cluster-security || nodepool-osimagestream || hosted-cluster-ingress",
 						Skip:        "KAS allowed CIDRs",
 					},
 					{
 						Name:    "public-nodepool-rollouts",
 						Variant: "public",
-						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
-							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-disk-encryption || nodepool-osimagestream-upgrade",
+						LabelFilter: "azure-machine-diagnostics-bootstrap || nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
+							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-disk-encryption || " +
+							"nodepool-ip-forwarding || nodepool-osimagestream-upgrade",
 					},
 				},
 			},
@@ -465,22 +393,7 @@ func (a *AzurePlatformConfig) SetupTestEnv(sharedDir string) {
 	}
 	os.Setenv("AZURE_PRIVATE_NAT_SUBNET_ID", azurePrivateNATSubnetID)
 
-	// External OIDC
-	caPath := filepath.Join(sharedDir, "external_oidc_ca_bundle")
-	if _, err := os.Stat(caPath); err == nil {
-		os.Setenv("E2E_EXTERNAL_OIDC_CA_BUNDLE_FILE", caPath)
-	}
-	if data, err := os.ReadFile(filepath.Join(sharedDir, "external_oidc_test_users")); err == nil {
-		os.Setenv("E2E_EXTERNAL_OIDC_TEST_USERS", strings.TrimSpace(string(data)))
-	}
-}
-
-func (a *AzurePlatformConfig) DestroyArgs() []string {
-	return []string{
-		"--azure-creds=" + a.creds,
-		"--location=" + a.location,
-		"--dns-zone-rg-name=" + a.dnsZoneRG,
-	}
+	setupExternalOIDCTestEnv(sharedDir)
 }
 
 func envOrDefault(key, defaultVal string) string {

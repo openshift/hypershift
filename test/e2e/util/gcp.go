@@ -18,9 +18,9 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func ValidateGCPWorkloadIdentityWebhookMutation(t testing.TB, ctx context.Context, hostedClusterClient crclient.Client) {
-	g := NewWithT(t)
-
+// ValidateGCPWorkloadIdentityWebhookMutation asserts pod mutation using the caller's
+// Gomega failure handler, preserving informing-test handling in the v2 suite.
+func ValidateGCPWorkloadIdentityWebhookMutation(t testing.TB, g Gomega, ctx context.Context, hostedClusterClient crclient.Client) {
 	nsName := fmt.Sprintf("gcp-wif-e2e-%d", time.Now().UnixNano())
 	testNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
 	g.Expect(hostedClusterClient.Create(ctx, testNamespace)).To(Succeed(), "failed to create test namespace")

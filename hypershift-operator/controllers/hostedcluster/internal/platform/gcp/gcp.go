@@ -39,7 +39,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	gcpcapicore "sigs.k8s.io/cluster-api-provider-gcp/capicore/api/core/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -158,12 +158,12 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	}
 
 	// Add resource labels as additional labels
-	if len(gcpSpec.ResourceLabels) > 0 {
+	if resourceLabels := gcputil.ResourceLabelsToMap(gcpSpec.ResourceLabels); len(resourceLabels) > 0 {
 		if gcpCluster.Spec.AdditionalLabels == nil {
 			gcpCluster.Spec.AdditionalLabels = make(map[string]string)
 		}
-		for _, label := range gcpSpec.ResourceLabels {
-			gcpCluster.Spec.AdditionalLabels[label.Key] = ptr.Deref(label.Value, "")
+		for key, value := range resourceLabels {
+			gcpCluster.Spec.AdditionalLabels[key] = value
 		}
 	}
 
@@ -177,7 +177,7 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	}
 
 	// Set control plane endpoint (following AWS pattern)
-	gcpCluster.Spec.ControlPlaneEndpoint = capiv1beta1.APIEndpoint{
+	gcpCluster.Spec.ControlPlaneEndpoint = gcpcapicore.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
@@ -342,17 +342,22 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 		return nil
 	}
 
-	credentialSecrets := map[hyperv1.GCPServiceAccountEmail]*corev1.Secret{
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool:        NodePoolManagementCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane:    ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController: CloudControllerCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage:         GCPPDCloudCredentialsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry:   ImageRegistryCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network:         CNCCCredsSecret(controlPlaneNamespace),
+	// Create credential secrets for all configured service accounts
+	// Use a slice instead of a map to support shared service accounts where multiple Secrets may use the same email.
+	credentialSecrets := []struct {
+		email  hyperv1.GCPServiceAccountEmail
+		secret *corev1.Secret
+	}{
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool, NodePoolManagementCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane, ControlPlaneOperatorCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController, CloudControllerCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage, GCPPDCloudCredentialsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry, ImageRegistryCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network, CNCCCredsSecret(controlPlaneNamespace)},
 	}
 
-	for email, secret := range credentialSecrets {
-		if err := syncSecret(secret, string(email)); err != nil {
+	for _, item := range credentialSecrets {
+		if err := syncSecret(item.secret, string(item.email)); err != nil {
 			errs = append(errs, err)
 		}
 	}

@@ -37,8 +37,6 @@ func hcpRouterLabels() map[string]string {
 	}
 }
 
-const PrivateRouterImage = "haproxy-router"
-
 func ReconcileRouterDeployment(deployment *appsv1.Deployment, hypershiftOperatorImage string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](2),

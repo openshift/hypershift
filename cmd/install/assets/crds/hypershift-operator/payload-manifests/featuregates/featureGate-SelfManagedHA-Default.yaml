@@ -37,7 +37,10 @@
                         "name": "EtcdSharding"
                     },
                     {
-                        "name": "HCPUserFacingOperatorLogs"
+                        "name": "DeterministicLBIP"
+                    },
+                    {
+                        "name": "AWSManagedDNS"
                     }
                 ],
                 "enabled": [
@@ -60,6 +63,9 @@
                     },
                     {
                         "name": "OSStreams"
+                    },
+                    {
+                        "name": "HCPUserFacingOperatorLogs"
                     }
                 ],
                 "version": ""

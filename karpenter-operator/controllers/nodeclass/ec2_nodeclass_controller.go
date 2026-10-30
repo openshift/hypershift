@@ -68,8 +68,6 @@ var (
 
 type EC2NodeClassReconciler struct {
 	Namespace string
-	// SkipUpstreamCRD leaves the upstream CRD ownership to the standalone operator.
-	SkipUpstreamCRD bool
 
 	managementClient client.Client
 	guestClient      client.Client
@@ -231,13 +229,10 @@ func (r *EC2NodeClassReconciler) reconcileCRDs(ctx context.Context, onlyCreate b
 	errs := []error{}
 	var op controllerutil.OperationResult
 	var err error
-	desiredCRDs := []*apiextensionsv1.CustomResourceDefinition{
+	for _, desired := range []*apiextensionsv1.CustomResourceDefinition{
+		crdEC2NodeClass,
 		crdOpenshiftEC2NodeClass,
-	}
-	if !r.SkipUpstreamCRD {
-		desiredCRDs = append([]*apiextensionsv1.CustomResourceDefinition{crdEC2NodeClass}, desiredCRDs...)
-	}
-	for _, desired := range desiredCRDs {
+	} {
 		// We need to deep copy because Create/CreateOrUpdate mutates the object
 		crd := desired.DeepCopy()
 		if onlyCreate {
@@ -340,6 +335,7 @@ func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2
 		MetadataOptions:                  karpenterMetadataOptionsFromNodeClassSpec(openshiftEC2NodeClass.Spec),
 		CapacityReservationSelectorTerms: karpenterCapacityReservationSelectorTermsFromNodeClassSpec(openshiftEC2NodeClass.Spec),
 		Kubelet:                          karpenterKubeletConfigurationFromNodeClassSpec(openshiftEC2NodeClass.Spec),
+		CPUOptions:                       karpenterCPUOptionsFromNodeClassSpec(openshiftEC2NodeClass.Spec),
 	}
 
 	// Set instance profile from HostedCluster annotation (platform-controlled)
@@ -645,19 +641,28 @@ func (r *EC2NodeClassReconciler) getUserDataSecret(ctx context.Context, openshif
 
 	expectedNodePoolName := karpenterutil.KarpenterNodePoolName(openshiftEC2NodeClass)
 
-	for _, secret := range secretList.Items {
+	var newest *corev1.Secret
+	for i := range secretList.Items {
+		secret := &secretList.Items[i]
 		annotations := secret.GetAnnotations()
 		if annotations == nil || annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation] == "" {
 			continue
 		}
-		// we want the userData secret, not the token secret
 		if annotations[nodepool.TokenSecretAnnotation] == "true" {
 			continue
 		}
 		nodePoolAnnotation := util.ParseNamespacedName(annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation])
-		if nodePoolAnnotation.Name == expectedNodePoolName {
-			return &secret, nil
+		if nodePoolAnnotation.Name != expectedNodePoolName {
+			continue
 		}
+		if newest == nil || secret.CreationTimestamp.After(newest.CreationTimestamp.Time) ||
+			(secret.CreationTimestamp.Equal(&newest.CreationTimestamp) && secret.Name > newest.Name) {
+			newest = secret
+		}
+	}
+
+	if newest != nil {
+		return newest, nil
 	}
 
 	return nil, fmt.Errorf("%w: expectedNodePoolName: %s, nodeclassName: %s", errKarpenterUserDataSecretNotFound, expectedNodePoolName, openshiftEC2NodeClass.Name)

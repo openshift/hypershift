@@ -103,6 +103,8 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"HCPEtcdBackup":           false,
 				"KarpenterOperator":       false,
 				"OSStreams":               true,
+				"DeterministicLBIP":       false,
+				"KubeletHAProxyRouting":   false,
 			},
 		},
 		{
@@ -115,6 +117,8 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"HCPEtcdBackup":           true,
 				"KarpenterOperator":       true,
 				"OSStreams":               true,
+				"DeterministicLBIP":       true,
+				"KubeletHAProxyRouting":   true,
 			},
 		},
 		{
@@ -127,6 +131,8 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 				"HCPEtcdBackup":           false,
 				"KarpenterOperator":       false,
 				"OSStreams":               false,
+				"DeterministicLBIP":       false,
+				"KubeletHAProxyRouting":   false,
 			},
 		},
 	}
@@ -171,6 +177,18 @@ func TestAllHypershiftOperatorFeatureGates(t *testing.T) {
 			assert.Equal(t, tc.expected["OSStreams"], actualOSStreams,
 				"OSStreams should be %v for feature set %s",
 				tc.expected["OSStreams"], tc.featureSet)
+
+			// Test DeterministicLBIP
+			actualDeterministicLBIP := featuregate.Gate().Enabled(featuregate.DeterministicLBIP)
+			assert.Equal(t, tc.expected["DeterministicLBIP"], actualDeterministicLBIP,
+				"DeterministicLBIP should be %v for feature set %s",
+				tc.expected["DeterministicLBIP"], tc.featureSet)
+
+			// Test KubeletHAProxyRouting
+			actualKubeletHAProxyRouting := featuregate.Gate().Enabled(featuregate.KubeletHAProxyRouting)
+			assert.Equal(t, tc.expected["KubeletHAProxyRouting"], actualKubeletHAProxyRouting,
+				"KubeletHAProxyRouting should be %v for feature set %s",
+				tc.expected["KubeletHAProxyRouting"], tc.featureSet)
 		})
 	}
 }
@@ -183,4 +201,6 @@ func TestFeatureGateConstants(t *testing.T) {
 	assert.Equal(t, "HCPEtcdBackup", string(featuregate.HCPEtcdBackup))
 	assert.Equal(t, "KarpenterOperator", string(featuregate.KarpenterOperator))
 	assert.Equal(t, "OSStreams", string(featuregate.OSStreams))
+	assert.Equal(t, "DeterministicLBIP", string(featuregate.DeterministicLBIP))
+	assert.Equal(t, "KubeletHAProxyRouting", string(featuregate.KubeletHAProxyRouting))
 }

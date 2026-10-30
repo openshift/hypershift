@@ -15,9 +15,7 @@ import (
 
 // standaloneKarpenterCRDNames lists CRDs adapter consumes but standalone operator owns.
 var standaloneKarpenterCRDNames = []string{
-	"nodepools.karpenter.sh",
-	"nodeclaims.karpenter.sh",
-	"ec2nodeclasses.karpenter.k8s.aws",
+	"openshiftec2nodeclasses.karpenter.hypershift.openshift.io",
 }
 
 // waitForKarpenterCRDs waits for CRDs owned by standalone operator before adapter registers typed watches.

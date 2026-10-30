@@ -23,7 +23,7 @@ spec:
         - /usr/local/etc/haproxy
         command:
         - haproxy
-        image: haproxy-router
+        image: haproxy-router-haproxy32
         imagePullPolicy: IfNotPresent
         livenessProbe:
           failureThreshold: 3

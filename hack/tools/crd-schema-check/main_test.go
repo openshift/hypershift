@@ -56,49 +56,6 @@ metadata:
 	}
 }
 
-func TestSkipFeatureGateVariant(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name     string
-		filename string
-		expected bool
-	}{
-		{
-			name:     "When given a Default variant it should skip",
-			filename: "hostedclusters-Hypershift-Default.crd.yaml",
-			expected: true,
-		},
-		{
-			name:     "When given a TechPreviewNoUpgrade variant it should skip",
-			filename: "hostedclusters-Hypershift-TechPreviewNoUpgrade.crd.yaml",
-			expected: true,
-		},
-		{
-			name:     "When given a CustomNoUpgrade variant it should not skip",
-			filename: "hostedclusters-Hypershift-CustomNoUpgrade.crd.yaml",
-			expected: false,
-		},
-		{
-			name:     "When given a plain CRD file it should not skip",
-			filename: "awsendpointservices.crd.yaml",
-			expected: false,
-		},
-		{
-			name:     "When given a non-CRD file it should not skip",
-			filename: "doc.go",
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			g := NewWithT(t)
-			g.Expect(skipFeatureGateVariant(tt.filename)).To(Equal(tt.expected))
-		})
-	}
-}
-
 func TestFilterVersionsWithSchema(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

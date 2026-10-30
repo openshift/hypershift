@@ -51,6 +51,7 @@ import (
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -69,6 +70,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capov1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -1155,6 +1157,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			},
 			hcpAnnotations: map[string]string{
 				k8sutil.DebugDeploymentsAnnotation:                             "control-plane-operator",
+				hyperv1.GCPFirewallSkipDeletionAnnotation:                      "true",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1":   "test1",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test3":   "test3",
 				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override4": "override4",
@@ -1172,6 +1175,18 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.DisableClusterAutoscalerAnnotation:                     "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation:             "true",
 				"unrelated": "test",
+			},
+		},
+		{
+			name:          "When deprecated aws-load-balancer-subnets annotation is stale on HCP and absent on HC it should be pruned",
+			hcAnnotations: map[string]string{},
+			hcpAnnotations: map[string]string{
+				hyperv1.AWSLoadBalancerSubnetsAnnotation: "subnet-1,subnet-2",
+			},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
 		},
 		{
@@ -1196,6 +1211,19 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			expectedAnnotations: map[string]string{
 				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperkarpenterv1.KarpenterOperatorImage:            "quay.io/custom/karpenter-operator:test",
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name: "When HostedCluster has skip-gcp-firewall-rule-cleanup annotation it should propagate to HCP",
+			hcAnnotations: map[string]string{
+				hyperv1.GCPFirewallSkipDeletionAnnotation: "true",
+			},
+			hcpAnnotations: map[string]string{},
+			expectedAnnotations: map[string]string{
+				k8sutil.HostedClusterAnnotation:                    hcKey,
+				hyperv1.GCPFirewallSkipDeletionAnnotation:          "true",
 				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
@@ -6273,7 +6301,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 			},
 		},
 		{
-			name: "When port is 0 for dynamic assignment it should always be valid",
+			name: "When port is omitted (zero value) for dynamic assignment it should always be valid",
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -6310,7 +6338,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(10000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(10000), "port must be within the configured range 30000-32767, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -6332,7 +6360,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(65000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(65000), "port must be within the configured range 30000-32767, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -6383,7 +6411,7 @@ func TestValidateNodePortPortRange(t *testing.T) {
 				},
 			},
 			expectedErrorList: field.ErrorList{
-				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(40000), "port must be within the configured range 25000-35000 or 0 for dynamic assignment"),
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(40000), "port must be within the configured range 25000-35000, or omitted for dynamic assignment"),
 			},
 		},
 		{
@@ -8940,7 +8968,152 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 		expectedErrSubstring string
 		// verifyResources asserts that specific resources were still created despite the failure.
 		verifyResources func(t *testing.T, client crclient.Client, hcpNamespace, hcName string)
+		verifyRecovery  func(t *testing.T, r *HostedClusterReconciler, hc *hyperv1.HostedCluster)
 	}{
+		{
+			name: "When GCP resource tags are unsupported, it should still sync secrets and create HCP but block deployments",
+			mutateHC: func(t *testing.T, hc *hyperv1.HostedCluster, client crclient.Client) {
+				hc.Spec.Platform = hyperv1.PlatformSpec{
+					Type: hyperv1.GCPPlatform,
+					GCP: &hyperv1.GCPPlatformSpec{
+						Project:      "my-project-123",
+						Region:       "us-central1",
+						ResourceTags: []hyperv1.GCPResourceTag{{Key: "environment", Value: "production"}},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
+								Storage:         "storage@my-project-123.iam.gserviceaccount.com",
+								ImageRegistry:   "imageregistry@my-project-123.iam.gserviceaccount.com",
+								Network:         "network@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+					},
+				}
+				managementNetwork := &configv1.Network{
+					ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+					Spec: configv1.NetworkSpec{
+						NetworkType:    "OVNKubernetes",
+						ClusterNetwork: []configv1.ClusterNetworkEntry{{CIDR: "10.128.0.0/14", HostPrefix: 23}},
+						ServiceNetwork: []string{"172.30.0.0/16"},
+					},
+				}
+				if err := client.Create(t.Context(), managementNetwork); err != nil {
+					t.Fatalf("failed to create management network: %v", err)
+				}
+				hc.Spec.SSHKey = corev1.LocalObjectReference{Name: "test-ssh-key"}
+				sshKey := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: hc.Spec.SSHKey.Name},
+					Data:       map[string][]byte{"id_rsa.pub": []byte("ssh-rsa AAAA...")},
+				}
+				if err := client.Create(t.Context(), sshKey); err != nil {
+					t.Fatalf("failed to create SSH key: %v", err)
+				}
+			},
+			expectedErrSubstring: "critical error: spec.platform.gcp.resourceTags requires a control plane operator image",
+			verifyResources: func(t *testing.T, client crclient.Client, hcpNamespace, hcName string) {
+				g := NewWithT(t)
+				hcp := &hyperv1.HostedControlPlane{}
+				g.Expect(client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hcName}, hcp)).To(Succeed())
+				g.Expect(hcp.Spec.Platform.GCP).NotTo(BeNil())
+				g.Expect(hcp.Spec.Platform.GCP.ResourceTags).To(Equal([]hyperv1.GCPResourceTag{{Key: "environment", Value: "production"}}))
+
+				sshKey := controlplaneoperator.SSHKey(hcpNamespace)
+				g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(sshKey), sshKey)).To(Succeed())
+				g.Expect(sshKey.Data["id_rsa.pub"]).To(Equal([]byte("ssh-rsa AAAA...")))
+
+				deployment := &appsv1.Deployment{}
+				g.Expect(errors2.IsNotFound(client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "control-plane-operator"}, deployment))).To(BeTrue())
+
+				hc := &hyperv1.HostedCluster{}
+				g.Expect(client.Get(t.Context(), crclient.ObjectKey{Namespace: "test-ns", Name: hcName}, hc)).To(Succeed())
+				condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
+				g.Expect(condition).NotTo(BeNil())
+				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(condition.Reason).To(Equal(hyperv1.AsExpectedReason))
+				reconciled := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ReconciliationSucceeded))
+				g.Expect(reconciled).NotTo(BeNil())
+				g.Expect(reconciled.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(reconciled.Reason).To(Equal("ReconciliationError"))
+				g.Expect(reconciled.Message).To(ContainSubstring("critical error: spec.platform.gcp.resourceTags requires"))
+				g.Expect(reconciled.Message).To(ContainSubstring("blocked operations:"))
+				g.Expect(reconciled.Message).To(ContainSubstring("OperatorDeployments"))
+			},
+			verifyRecovery: func(t *testing.T, r *HostedClusterReconciler, hc *hyperv1.HostedCluster) {
+				g := NewWithT(t)
+				reconcileAgain := func() error {
+					g.Expect(r.Client.Get(t.Context(), crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())
+					_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hc)})
+					g.Expect(r.Client.Get(t.Context(), crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())
+					return err
+				}
+				// A previous failure must not short-circuit the next capability check.
+				g.Expect(reconcileAgain()).To(MatchError(ContainSubstring("critical error: spec.platform.gcp.resourceTags")))
+
+				// An image-resolution outage is reported without misdiagnosing tag support.
+				hc.Annotations[hyperv1.ControlPlaneOperatorImageLabelsAnnotation] = "malformed-label"
+				g.Expect(r.Client.Update(t.Context(), hc)).To(Succeed())
+				g.Expect(reconcileAgain()).To(MatchError(ContainSubstring("failed to get controlPlaneOperatorImageLabels")))
+				g.Expect(r.Client.Get(t.Context(), crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())
+				condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
+				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(condition.Reason).To(Equal(hyperv1.AsExpectedReason))
+				reconciled := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ReconciliationSucceeded))
+				g.Expect(reconciled).NotTo(BeNil())
+				g.Expect(reconciled.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(reconciled.Message).To(ContainSubstring("failed to get controlPlaneOperatorImageLabels"))
+				g.Expect(reconciled.Message).NotTo(ContainSubstring("resourceTags requires"))
+
+				// A supporting image must recover without any special reset of status.
+				hc.Annotations[hyperv1.ControlPlaneOperatorImageLabelsAnnotation] = controlPlaneOperatorSupportsGCPResourceTagsLabel + "=true"
+				g.Expect(r.Client.Update(t.Context(), hc)).To(Succeed())
+				g.Expect(reconcileAgain()).To(Succeed())
+				g.Expect(r.Client.Get(t.Context(), crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())
+				condition = meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
+				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(condition.Reason).To(Equal(hyperv1.AsExpectedReason))
+				reconciled = meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ReconciliationSucceeded))
+				g.Expect(reconciled.Status).To(Equal(metav1.ConditionTrue))
+				g.Expect(reconciled.Message).To(Equal("Reconciliation completed successfully"))
+				deployment := &appsv1.Deployment{}
+				g.Expect(r.Client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name), Name: "control-plane-operator"}, deployment)).To(Succeed())
+			},
+		},
+		{
+			name: "When GCP configuration is invalid, it should block at the configuration gate without a capability exception",
+			mutateHC: func(t *testing.T, hc *hyperv1.HostedCluster, client crclient.Client) {
+				hc.Spec.ClusterID = "not-a-uuid"
+				hc.Spec.Platform = hyperv1.PlatformSpec{
+					Type: hyperv1.GCPPlatform,
+					GCP: &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123", Region: "us-central1",
+						ResourceTags: []hyperv1.GCPResourceTag{{Key: "environment", Value: "production"}},
+					},
+				}
+			},
+			expectedErrSubstring: "configuration is invalid",
+			verifyResources: func(t *testing.T, client crclient.Client, hcpNamespace, hcName string) {
+				g := NewWithT(t)
+				hc := &hyperv1.HostedCluster{}
+				g.Expect(client.Get(t.Context(), crclient.ObjectKey{Namespace: "test-ns", Name: hcName}, hc)).To(Succeed())
+				condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidHostedClusterConfiguration))
+				g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(condition.Reason).To(Equal(hyperv1.InvalidConfigurationReason))
+				g.Expect(condition.Message).To(ContainSubstring("cluster ID"))
+				reconciled := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ReconciliationSucceeded))
+				g.Expect(reconciled.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(reconciled.Message).To(ContainSubstring("configuration is invalid"))
+				g.Expect(reconciled.Message).NotTo(ContainSubstring("resourceTags requires"))
+				hcp := &hyperv1.HostedControlPlane{}
+				g.Expect(errors2.IsNotFound(client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: hcName}, hcp))).To(BeTrue())
+				deployment := &appsv1.Deployment{}
+				g.Expect(errors2.IsNotFound(client.Get(t.Context(), crclient.ObjectKey{Namespace: hcpNamespace, Name: "control-plane-operator"}, deployment))).To(BeTrue())
+			},
+		},
 		{
 			name: "When Phase 6 SSH key fails it should still create HCP and CPO deployment",
 			mutateHC: func(t *testing.T, hc *hyperv1.HostedCluster, client crclient.Client) {
@@ -9069,9 +9242,14 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 
 			mockCtrl := gomock.NewController(t)
 			mockReleaseProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			releaseImage := testutils.InitReleaseImageOrDie("4.16.0")
+			releaseImage.ImageStream.Spec.Tags = append(releaseImage.ImageStream.Spec.Tags, imagev1.TagReference{
+				Name: "gcp-cluster-api-controllers",
+				From: &corev1.ObjectReference{Name: "quay.io/openshift/origin-gcp-cluster-api-controllers:latest"},
+			})
 			mockReleaseProvider.EXPECT().
 				Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(testutils.InitReleaseImageOrDie("4.16.0"), nil).AnyTimes()
+				Return(releaseImage, nil).AnyTimes()
 			mockReleaseProvider.EXPECT().GetRegistryOverrides().Return(nil).AnyTimes()
 			mockReleaseProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
 			mockReleaseProvider.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
@@ -9127,7 +9305,7 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
 				WithObjects(hcluster, pullSecret, ingress).
-				WithStatusSubresource(hcluster).
+				WithStatusSubresource(hcluster, &capigcp.GCPCluster{}, &capiv1.Cluster{}).
 				Build()
 
 			// Apply test-specific mutations (fault injection)
@@ -9150,6 +9328,9 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 				EnableOCPClusterMonitoring:    true,
 				CertRotationScale:             24 * time.Hour,
 				HypershiftOperatorImage:       "test-hso-image",
+				GCPOIDCStorageBucketName:      "test-oidc-bucket",
+				GCSClient:                     newFakeGCSClient(),
+				HCPEgressBlockCIDRs:           []string{"192.0.2.10/32"},
 				RegistryProvider: fakeReleaseProvider{
 					releaseProvider:  mockReleaseProvider,
 					metadataProvider: fakeMetadata,
@@ -9161,7 +9342,7 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 			req := ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}
 			log := zap.New(zap.UseDevMode(true), zap.Level(zapcore.InfoLevel))
 
-			_, err := r.reconcile(t.Context(), req, log, hcluster)
+			_, err := r.Reconcile(ctrl.LoggerInto(t.Context(), log), req)
 
 			if err == nil {
 				t.Fatalf("expected reconcile to return an error containing %q, but got nil", tc.expectedErrSubstring)
@@ -9171,6 +9352,9 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 			}
 
 			tc.verifyResources(t, fakeClient, hcpNamespace, hcName)
+			if tc.verifyRecovery != nil {
+				tc.verifyRecovery(t, r, hcluster)
+			}
 		})
 	}
 }

@@ -18,7 +18,7 @@ func reconcileClusterVersion(ctx context.Context, hostedClusterClient client.Cli
 	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
 	if _, err := createOrUpdate(ctx, hostedClusterClient, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(params.ClusterID)
-		desiredCaps := capabilities.CalculateEnabledCapabilities(params.Capabilities)
+		desiredCaps := capabilities.CalculateEnabledCapabilities(params.Capabilities, params.FeatureSet, params.ControlPlaneReleaseVersion)
 		desiredCaps = capabilities.FilterByKnownCapabilities(desiredCaps, clusterVersion.Status.Capabilities.KnownCapabilities)
 		clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,

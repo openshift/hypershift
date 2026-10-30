@@ -19,8 +19,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
-	capiv1beta2 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -45,6 +43,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 	var hcpNameSpace string
 	var nodePoolsMap map[string]*hyperv1.NodePool
 	var machineDeploymentMap map[string]int64
+	var preUpgradeBootstrapState map[string]*bootstrapChainState
 
 	hyperShiftOperatorLatestImage := globalOpts.HyperShiftOperatorLatestImage
 
@@ -144,6 +143,12 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			g.Expect(len(machineDeploymentMap)).To(gomega.BeEquivalentTo(len(nodepools.Items)),
 				"Number of MachineDeployments and NodePools should match")
 			t.Logf("Found %d MachineDeployments", len(machineDeploymentMap))
+
+			// Capture bootstrap chain state before upgrade to detect replacement during upgrade
+			t.Log("Capturing bootstrap chain state before operator upgrade")
+			preUpgradeBootstrapState, err = captureBootstrapChain(ctx, mgmtClient, hcpNameSpace, nodePoolsMap, useCAPIv1Beta1)
+			g.Expect(err).ToNot(gomega.HaveOccurred(), "Failed to capture pre-upgrade bootstrap state")
+			t.Logf("Captured bootstrap state for %d NodePools", len(preUpgradeBootstrapState))
 		})).To(gomega.BeTrue(), "Calculating HyperShift Operator upgrade invariants should succeed")
 
 		g.Expect(t.Run("Upgrade HyperShift Operator", func(t *testing.T) {
@@ -244,32 +249,63 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 				return true
 			}, "5m", "1s").Should(gomega.BeTrue(), "Verification should consistently succeed for 5 minutes")
 		})).To(gomega.BeTrue(), "Verify upgrade invariants should succeed")
-	}).WithHOUpgrade().Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ho-upgrade", globalOpts.ServiceAccountSigningKey)
-}
 
-func listMachineDeploymentGenerations(ctx context.Context, client crclient.Client, namespace string, useV1Beta1 bool) (map[string]int64, error) {
-	generations := make(map[string]int64)
-	if useV1Beta1 {
-		machineDeployments := &capiv1beta1.MachineDeploymentList{}
-		if err := client.List(ctx, machineDeployments, crclient.InNamespace(namespace)); err != nil {
-			return nil, fmt.Errorf("listing MachineDeployments at cluster.x-k8s.io/v1beta1 in namespace %s: %w", namespace, err)
-		}
-		for i := range machineDeployments.Items {
-			generations[machineDeployments.Items[i].Name] = machineDeployments.Items[i].Generation
-		}
-	} else {
-		machineDeployments := &capiv1beta2.MachineDeploymentList{}
-		if err := client.List(ctx, machineDeployments, crclient.InNamespace(namespace)); err != nil {
-			return nil, fmt.Errorf("listing MachineDeployments at cluster.x-k8s.io/v1beta2 in namespace %s: %w", namespace, err)
-		}
-		for i := range machineDeployments.Items {
-			generations[machineDeployments.Items[i].Name] = machineDeployments.Items[i].Generation
-		}
-	}
-	if len(generations) == 0 {
-		return nil, fmt.Errorf("no MachineDeployments found in namespace %s", namespace)
-	}
-	return generations, nil
+		g.Expect(t.Run("Verify token rotation after upgrade", func(t *testing.T) {
+			t.Log("Verifying token rotation and bootstrap credential updates after operator upgrade")
+			g := gomega.NewWithT(t)
+
+			// Use pre-upgrade bootstrap state captured before operator upgrade
+			g.Expect(preUpgradeBootstrapState).ToNot(gomega.BeNil(), "Pre-upgrade bootstrap state should be captured")
+
+			// Verify bootstrap chain was preserved through the upgrade
+			t.Log("Verifying bootstrap chain integrity after upgrade")
+			for npName, preState := range preUpgradeBootstrapState {
+				nodePool := nodePoolsMap[npName]
+				err := verifyBootstrapChainIntact(ctx, mgmtClient, hcpNameSpace, preState, useCAPIv1Beta1, nodePool)
+				g.Expect(err).ToNot(gomega.HaveOccurred(),
+					"Bootstrap chain changed during operator upgrade for NodePool %s", npName)
+			}
+
+			// Make first rotation due by patching generation timestamps to 6 hours ago
+			t.Log("Triggering first rotation by patching token generation timestamps")
+			for npName, state := range preUpgradeBootstrapState {
+				err := makeTokenRotationDue(ctx, mgmtClient, hcpNameSpace, state)
+				g.Expect(err).ToNot(gomega.HaveOccurred(),
+					"Failed to patch generation timestamp for NodePool %s", npName)
+				t.Logf("Patched token Secret %s generation timestamp to trigger rotation", state.TokenSecretName)
+			}
+
+			// Poll for first rotation completion
+			t.Log("Waiting for first rotation to complete...")
+			g.Eventually(func(g gomega.Gomega) {
+				for npName, originalState := range preUpgradeBootstrapState {
+					err := verifyTokenRotation(ctx, mgmtClient, hcpNameSpace, originalState)
+					g.Expect(err).ToNot(gomega.HaveOccurred(),
+						"First rotation failed for NodePool %s", npName)
+				}
+			}, "2m", "5s").Should(gomega.Succeed(), "First rotation should complete within 2 minutes")
+
+			t.Log("First rotation completed - verifying credential propagation and Secret identity")
+
+			// Verify userdata Secrets contain the new credentials AND Secret identities preserved
+			g.Eventually(func(g gomega.Gomega) {
+				for npName, state := range preUpgradeBootstrapState {
+					err := verifyCredentialPropagationAndIdentity(ctx, mgmtClient, hcpNameSpace, state)
+					g.Expect(err).ToNot(gomega.HaveOccurred(),
+						"Credential propagation or identity verification failed for NodePool %s", npName)
+				}
+			}, "1m", "5s").Should(gomega.Succeed(), "Credential propagation and identity verification should complete within 1 minute")
+
+			t.Log("Credentials verified and Secret identities preserved")
+
+			// Verify complete rollout invariants (NodePool + MachineDeployment + updating conditions)
+			t.Log("Verifying complete rollout invariants after rotation")
+			err = verifyCompleteRolloutInvariants(ctx, mgmtClient, hcpNameSpace, nodePoolsMap, machineDeploymentMap, useCAPIv1Beta1)
+			g.Expect(err).ToNot(gomega.HaveOccurred(), "Rollout invariants should hold after rotation")
+
+			t.Log("✓ Token rotation verification passed - operator upgrade did not break rotation or credential updates")
+		})).To(gomega.BeTrue(), "Token rotation verification should succeed")
+	}).WithHOUpgrade().Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ho-upgrade", globalOpts.ServiceAccountSigningKey)
 }
 
 func managementClusterUsesCAPIv1Beta1(ctx context.Context, client crclient.Client) (bool, error) {

@@ -623,16 +623,6 @@ func validateControlPlaneWorkloadsByType(testCtx *TestContext, workloadTypes []s
 	return nil
 }
 
-// ValidateControlPlaneDeploymentsReadiness validates that all control plane Deployments are ready.
-func ValidateControlPlaneDeploymentsReadiness(testCtx *TestContext, excludeWorkloads []string) error {
-	return validateControlPlaneWorkloadsByType(testCtx, []string{"Deployment"}, excludeWorkloads)
-}
-
-// ValidateControlPlaneStatefulSetsReadiness validates that all control plane StatefulSets are ready.
-func ValidateControlPlaneStatefulSetsReadiness(testCtx *TestContext, excludeWorkloads []string) error {
-	return validateControlPlaneWorkloadsByType(testCtx, []string{"StatefulSet"}, excludeWorkloads)
-}
-
 // waitForControlPlaneWorkloadsByType waits for control plane workloads of specified types to be ready.
 func waitForControlPlaneWorkloadsByType(testCtx *TestContext, timeout time.Duration, workloadTypes []string, excludeWorkloads []string) error {
 	var lastErr error

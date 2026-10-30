@@ -396,75 +396,34 @@ func (n *NetworkManager) formatNATName() string {
 	return fmt.Sprintf("%s-nat", n.infraID)
 }
 
-// formatFirewallName returns the firewall rule name for kubelet access.
-func (n *NetworkManager) formatFirewallName() string {
+// formatLegacyFirewallName returns the name of the legacy kubelet firewall rule
+// that older versions of this CLI created at infrastructure setup time.
+func (n *NetworkManager) formatLegacyFirewallName() string {
 	return fmt.Sprintf("%s-allow-kubelet", n.infraID)
 }
 
-// CreateFirewallRule creates a firewall rule to allow kubelet API access.
-func (n *NetworkManager) CreateFirewallRule(ctx context.Context, networkSelfLink string) (*compute.Firewall, error) {
-	firewallName := n.formatFirewallName()
-	n.logger.Info("Creating firewall rule for kubelet access", "name", firewallName)
+// DeleteLegacyFirewallRule deletes the legacy kubelet firewall rule
+// (<infra-id>-allow-kubelet) created at setup time by older versions of
+// hypershift create infra gcp, before the worker firewall rule moved to CPO
+// ownership (<infra-id>-internal-cluster). The rule is no longer created, so
+// deletion tolerates it not existing.
+func (n *NetworkManager) DeleteLegacyFirewallRule(ctx context.Context) error {
+	legacyFirewallName := n.formatLegacyFirewallName()
+	n.logger.Info("Deleting legacy firewall rule", "name", legacyFirewallName)
 
-	firewall := &compute.Firewall{
-		Name:        firewallName,
-		Network:     networkSelfLink,
-		Description: fmt.Sprintf("Allow kubelet API access for HyperShift cluster %s", n.infraID),
-		Allowed: []*compute.FirewallAllowed{
-			{
-				IPProtocol: "tcp",
-				Ports:      []string{"10250"},
-			},
-		},
-		Direction: "INGRESS",
-		// Allow traffic from the 10.0.0.0/8 range which covers:
-		// - Worker node subnet (e.g., 10.0.0.0/24)
-		// - Pod CIDR (e.g., 10.132.0.0/14)
-		// This enables kube-apiserver to reach kubelets via konnectivity and
-		// allows pods to scrape kubelet metrics.
-		SourceRanges: []string{"10.0.0.0/8"},
-	}
-
-	op, err := n.computeService.Firewalls.Insert(n.projectID, firewall).Context(ctx).Do()
-	if err != nil {
-		if isAlreadyExistsError(err) {
-			n.logger.Info("Using existing firewall rule", "name", firewallName)
-			return n.getFirewall(ctx, firewallName)
-		}
-		return nil, fmt.Errorf("failed to create firewall rule: %w", err)
-	}
-
-	if err := n.waitForGlobalOperation(ctx, op.Name); err != nil {
-		return nil, fmt.Errorf("failed waiting for firewall rule creation: %w", err)
-	}
-
-	n.logger.Info("Created firewall rule for kubelet access", "name", firewallName)
-	return n.getFirewall(ctx, firewallName)
-}
-
-// DeleteFirewallRule deletes the firewall rule for kubelet access.
-func (n *NetworkManager) DeleteFirewallRule(ctx context.Context) error {
-	firewallName := n.formatFirewallName()
-	n.logger.Info("Deleting firewall rule", "name", firewallName)
-
-	op, err := n.computeService.Firewalls.Delete(n.projectID, firewallName).Context(ctx).Do()
+	op, err := n.computeService.Firewalls.Delete(n.projectID, legacyFirewallName).Context(ctx).Do()
 	if err != nil {
 		if isNotFoundError(err) {
-			n.logger.Info("Firewall rule not found, skipping", "name", firewallName)
+			n.logger.Info("Legacy firewall rule not found, skipping", "name", legacyFirewallName)
 			return nil
 		}
-		return fmt.Errorf("failed to delete firewall rule: %w", err)
+		return fmt.Errorf("failed to delete legacy firewall rule: %w", err)
 	}
 
 	if err := n.waitForGlobalOperation(ctx, op.Name); err != nil {
-		return fmt.Errorf("failed waiting for firewall rule deletion: %w", err)
+		return fmt.Errorf("failed waiting for legacy firewall rule deletion: %w", err)
 	}
 
-	n.logger.Info("Deleted firewall rule", "name", firewallName)
+	n.logger.Info("Deleted legacy firewall rule", "name", legacyFirewallName)
 	return nil
-}
-
-// getFirewall retrieves a firewall rule by name.
-func (n *NetworkManager) getFirewall(ctx context.Context, name string) (*compute.Firewall, error) {
-	return n.computeService.Firewalls.Get(n.projectID, name).Context(ctx).Do()
 }

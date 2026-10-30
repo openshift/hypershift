@@ -13,6 +13,17 @@ defaults
   timeout queue 5s
   retries 3
 
+resolvers nodedns
+  parse-resolv-conf
+  hold valid    10s
+  hold nx       5m
+  hold timeout  1h
+  hold refused  1h
+  hold other    1h
+  resolve_retries 3
+  timeout retry  1s
+  timeout resolve 1s
+
 frontend local_apiserver
   bind 172.20.0.1:443
   log global
@@ -26,4 +37,4 @@ backend remote_apiserver
   option httpchk GET /version
   option log-health-checks
   default-server inter 10s fall 3 rise 3
-  server controlplane api.hc.hypershift.local:443
+  server controlplane api.hc.hypershift.local:443 resolvers nodedns init-addr last,libc,none

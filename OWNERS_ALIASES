@@ -10,6 +10,9 @@ aliases:
     - csrwng
     - joelspeed
     - everettraven
+  ci-operator-config-approvers:
+    - ironcladlou
+    - mgencur
   tech-leads:
     - enxebre
     - csrwng
@@ -25,6 +28,7 @@ aliases:
     - devguyio
     - clebs
     - sdminonne
+    - ironcladlou
   core-reviewers:
     - enxebre
     - csrwng
@@ -45,16 +49,17 @@ aliases:
     - vismishr
     - rutvik23
   karpenter-approvers:
+    - LucasAndFlores
     - elmiko
     - enxebre
     - jkyros
     - joelsmith
+    - linkvt
     - maxcao13
     - muraee
   karpenter-reviewers:
-    - elmiko
-    - enxebre
-    - jkyros
+    - LucasAndFlores
+    - linkvt
     - joelsmith
     - maxcao13
     - muraee

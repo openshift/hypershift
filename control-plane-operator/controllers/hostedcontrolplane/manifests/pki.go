@@ -22,15 +22,6 @@ func RootCASecret(ns string) *corev1.Secret { return secretFor(ns, "root-ca") }
 
 func CSRSignerCASecret(ns string) *corev1.Secret { return secretFor(ns, "cluster-signer-ca") }
 
-func KASExternalCAConfigMap(name string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: "openshift-config",
-		},
-	}
-}
-
 func RootCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -109,15 +100,6 @@ func KonnectivityCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "konnectivity-ca-bundle",
-			Namespace: ns,
-		},
-	}
-}
-
-func OIDCCAConfigMap(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "oidc-ca",
 			Namespace: ns,
 		},
 	}

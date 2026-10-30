@@ -20,10 +20,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
 
 // Tags defines a map of tags.
@@ -235,14 +232,6 @@ type BuildParams struct {
 	// Any additional tags to be added to the resource.
 	// +optional
 	Additional Tags
-}
-
-// WithMachineName tags the namespaced machine name
-// The machine name will be tagged with key "MachineName".
-func (b BuildParams) WithMachineName(m *clusterv1.Machine) BuildParams {
-	machineNamespacedName := types.NamespacedName{Namespace: m.Namespace, Name: m.Name}
-	b.Additional[MachineNameTagKey] = machineNamespacedName.String()
-	return b
 }
 
 // WithCloudProvider tags the cluster ownership for a resource.

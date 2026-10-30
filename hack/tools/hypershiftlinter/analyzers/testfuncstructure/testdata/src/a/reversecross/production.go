@@ -1,0 +1,3 @@
+package reversecross
+
+func Validate() {}

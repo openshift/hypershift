@@ -3,7 +3,6 @@ package util
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
@@ -14,10 +13,6 @@ import (
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-const (
-	LBSubnetsLabel = "hypershift.openshift.io/request-serving-subnets"
 )
 
 // setHostedClusterSchedulingAnnotations sets the scheduling annotations on the hosted cluster based on the cluster sizing configuration.
@@ -85,16 +80,14 @@ func setHostedClusterSchedulingAnnotations(hc *hyperv1.HostedCluster, size strin
 		hc.Annotations[k] = v
 	}
 
-	//For AWS, get the subnets from the nodes and set the annotation
 	if len(nodes) > 0 {
-		lbSubnets := getLBSubnetsFromNodes(nodes)
-		if lbSubnets != "" {
-			hc.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation] = lbSubnets
-		}
-
 		hc.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] = fmt.Sprintf("%s=%s", hyperv1.NodeSizeLabel, size)
-
 	}
+
+	// Prune the deprecated, non-functional aws-load-balancer-subnets annotation. Setting
+	// subnets on the private load balancer causes private link creation failures, so it is
+	// no longer written; delete any value left behind by previous operator versions.
+	delete(hc.Annotations, hyperv1.AWSLoadBalancerSubnetsAnnotation)
 
 	return hc, nil
 }
@@ -114,22 +107,6 @@ func UpdateHostedCluster(ctx context.Context, c client.Client, hc *hyperv1.Hoste
 		}
 	}
 	return nil
-}
-
-func getLBSubnetsFromNodes(nodes []corev1.Node) string {
-	lbSubnets := ""
-	for _, node := range nodes {
-		if node.Labels[LBSubnetsLabel] != "" {
-			lbSubnets = node.Labels[LBSubnetsLabel]
-			break
-		}
-	}
-	if lbSubnets != "" {
-		// If subnets are separated by periods, replace them with commas
-		lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
-		return lbSubnets
-	}
-	return ""
 }
 
 func getGoMemLimitLabelFromNodes(nodes []corev1.Node) string {

@@ -85,7 +85,7 @@ ccoctl azure create-oidc-issuer \
 
 ### Workload Identities
 
-Self-managed Azure requires 7 managed identities with federated credentials for OpenShift components:
+Self-managed Azure requires 7 managed identities with federated credentials for OpenShift components. AutoNode requires an additional Karpenter identity:
 
 | Identity | Operator | Service Accounts | Azure Role |
 |----------|----------|------------------|------------|
@@ -96,6 +96,7 @@ Self-managed Azure requires 7 managed identities with federated credentials for 
 | **Cloud Provider** | Azure Cloud Provider | `azure-cloud-provider` | Cloud Provider Role (`a1f96423-95ce-4224-ab27-4e3dc72facd4`) |
 | **Node Pool Management** | Cluster API Provider Azure | `capi-provider` | Contributor (`b24988ac-6180-42a0-ab88-20f7382dd24c`) |
 | **Network** | Cloud Network Config Controller | `cloud-network-config-controller` | Network Role (`be7a6435-15ae-4171-8f30-4a343eff9e8f`) |
+| **Karpenter (AutoNode only)** | Karpenter | `karpenter` in `kube-system` | Virtual Machine Contributor (`9980e02c-c2be-4d73-94e8-173b1dc7cf3c`), Network Contributor (`4d97b98b-1d4f-4787-a291-c67834d212e7`), Managed Identity Operator (`f1a07417-d97a-45cb-824c-7a7467783830`) |
 
 Each identity is configured with:
 
@@ -116,6 +117,7 @@ Identities receive role assignments across multiple resource groups depending on
 | Network (CNCC) | Yes | Yes | No | No |
 | Image Registry | Yes | No | No | No |
 | Node Pool Management | Yes | Yes | No | No |
+| Karpenter (AutoNode only) | Yes | Yes (Network Contributor only) | No | No |
 
 ### Infrastructure Created by HyperShift
 
@@ -285,3 +287,4 @@ You can use an existing VNet and NSG from the same resource group, which places 
 - [Setup Azure Management Cluster for HyperShift](../../how-to/azure/setup-management-cluster.md) - Install HyperShift operator
 - [Create a Self-Managed Azure HostedCluster](../../how-to/azure/create-self-managed-azure-cluster.md) - Deploy your first hosted cluster
 - [Self-Managed Azure Overview](../../how-to/azure/self-managed-azure-index.md) - Comprehensive overview
+- [Create AutoNode hosted clusters](../../how-to/azure/create-azure-hosted-cluster-autonode.md) - Provision Azure worker nodes with Karpenter

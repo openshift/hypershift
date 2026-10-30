@@ -73,12 +73,15 @@ type AWSPlatformDestroyOptions struct {
 }
 
 type AzurePlatformDestroyOptions struct {
-	CredentialsFile       string
-	Location              string
-	ResourceGroupName     string
-	PreserveResourceGroup bool
-	Cloud                 string
-	DNSZoneRGName         string
+	CredentialsFile              string
+	Location                     string
+	ResourceGroupName            string
+	PreserveResourceGroup        bool
+	Cloud                        string
+	DNSZoneRGName                string
+	NSGResourceGroupName         string
+	VnetResourceGroupName        string
+	OnRoleAssignmentCleanupError func(error)
 }
 
 type PowerVSPlatformDestroyOptions struct {

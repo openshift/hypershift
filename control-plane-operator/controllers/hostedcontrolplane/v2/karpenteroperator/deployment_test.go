@@ -21,6 +21,43 @@ type fakeReleaseImageProvider struct {
 	images map[string]string
 }
 
+func TestAdaptStandaloneDeploymentEndpoint(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		host string
+		port int32
+		want string
+	}{
+		{name: "When the endpoint is raw IPv6, it should bracket the host", host: "2001:db8::1", port: 6443, want: "https://[2001:db8::1]:6443"},
+		{name: "When the endpoint is IPv4, it should preserve the authority", host: "192.0.2.1", port: 6443, want: "https://192.0.2.1:6443"},
+		{name: "When the endpoint is DNS, it should preserve the authority", host: "api.example.test", port: 6443, want: "https://api.example.test:6443"},
+		{name: "When the endpoint uses an alternate port, it should retain the port", host: "2001:db8::1", port: 443, want: "https://[2001:db8::1]:443"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).ToNot(HaveOccurred(), "load the production deployment manifest")
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{Region: "us-east-1"}},
+				},
+				Status: hyperv1.HostedControlPlaneStatus{ControlPlaneEndpoint: hyperv1.APIEndpoint{Host: test.host, Port: test.port}},
+			}
+			opts := &KarpenterOperatorOptions{StandaloneKarpenterOperatorEnabled: true}
+			err = opts.adaptDeployment(controlplanecomponent.WorkloadContext{
+				Context: t.Context(), HCP: hcp, ReleaseImageProvider: &fakeReleaseImageProvider{},
+			}, deployment)
+			g.Expect(err).ToNot(HaveOccurred(), "adapt standalone deployment for %q", test.host)
+			container := podspec.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers)
+			g.Expect(container).ToNot(BeNil(), "standalone operator container must exist")
+			g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: "CLUSTER_ENDPOINT", Value: test.want}), "deployment must carry the exact endpoint URL")
+		})
+	}
+}
+
 func (f *fakeReleaseImageProvider) GetImage(name string) string {
 	return f.images[name]
 }
@@ -51,6 +88,7 @@ func TestAdaptDeployment(t *testing.T) {
 		controlPlaneOperatorImage string
 		ignitionEndpoint          string
 		rhobsEnabled              bool
+		setDefaultSecurityContext bool
 		validateFunc              func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext)
 	}{
 		{
@@ -215,7 +253,7 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 		},
 		{
-			name:                      "When standalone mode is enabled, it should add the HyperShift adapter",
+			name:                      "When standalone mode is enabled with SCC, it should omit DEFAULT_SECURITY_CONTEXT_UID from the operator and adapter",
 			platformType:              hyperv1.AWSPlatform,
 			awsRegion:                 "us-west-2",
 			hyperShiftOperatorImage:   "quay.io/hypershift/operator:latest",
@@ -236,6 +274,50 @@ func TestAdaptDeployment(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 
 				g.Expect(podspec.FindContainer("karpenter-adapter", deploymentObj.Spec.Template.Spec.Containers)).ToNot(BeNil())
+				for _, container := range deploymentObj.Spec.Template.Spec.Containers {
+					g.Expect(podspec.FindEnvVar("DEFAULT_SECURITY_CONTEXT_UID", container.Env)).To(BeNil())
+				}
+			},
+		},
+		{
+			name:                      "When the legacy operator runs without SCC, it should omit DEFAULT_SECURITY_CONTEXT_UID",
+			platformType:              hyperv1.AWSPlatform,
+			awsRegion:                 "us-west-2",
+			setDefaultSecurityContext: true,
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(opts.adaptDeployment(cpContext, deploymentObj)).To(Succeed())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(podspec.FindEnvVar("DEFAULT_SECURITY_CONTEXT_UID", container.Env)).To(BeNil())
+			},
+		},
+		{
+			name:                      "When standalone mode is enabled without SCC, it should pass DEFAULT_SECURITY_CONTEXT_UID only to the operator",
+			platformType:              hyperv1.AWSPlatform,
+			awsRegion:                 "us-west-2",
+			setDefaultSecurityContext: true,
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+				opts.StandaloneKarpenterOperatorEnabled = true
+				cpContext.ReleaseImageProvider = &fakeReleaseImageProvider{images: map[string]string{
+					karpenterutil.KarpenterOperatorImageName:    "quay.io/openshift/karpenter-operator:latest",
+					karpenterutil.KarpenterProviderAWSImageName: "quay.io/openshift/karpenter-aws:latest",
+					"token-minter": "quay.io/openshift/token-minter:latest",
+				}}
+				g.Expect(opts.adaptDeployment(cpContext, deploymentObj)).To(Succeed())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil())
+				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: "DEFAULT_SECURITY_CONTEXT_UID", Value: "1001230000"}))
+				adapter := podspec.FindContainer(AdapterContainerName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(adapter).ToNot(BeNil())
+				g.Expect(podspec.FindEnvVar("DEFAULT_SECURITY_CONTEXT_UID", adapter.Env)).To(BeNil())
 			},
 		},
 	}
@@ -275,8 +357,10 @@ func TestAdaptDeployment(t *testing.T) {
 			}
 
 			cpContext := controlplanecomponent.WorkloadContext{
-				Context: t.Context(),
-				HCP:     hcp,
+				Context:                   t.Context(),
+				HCP:                       hcp,
+				SetDefaultSecurityContext: tc.setDefaultSecurityContext,
+				DefaultSecurityContextUID: 1001230000,
 			}
 
 			tc.validateFunc(t, g, opts, cpContext)

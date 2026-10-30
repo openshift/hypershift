@@ -172,6 +172,8 @@ func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster
 		return r.setPowerVSconditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage, resolvedRHELStream)
 	case hyperv1.OpenStackPlatform:
 		return r.setOpenStackConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage, resolvedRHELStream)
+	case hyperv1.GCPPlatform:
+		return r.setGCPConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage, resolvedRHELStream)
 	default:
 		return nil
 	}
@@ -453,8 +455,8 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
 	}
 
-	targetConfigHash := token.HashWithoutVersion()
-	currentConfigHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig]
+	targetConfigHash := token.RolloutHashWithoutVersion()
+	currentConfigHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentRolloutConfig]
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		reason := hyperv1.AsExpectedReason
@@ -501,6 +503,42 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 	} else {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
+	return nil, nil
+}
+
+func (r *NodePoolReconciler) configUpdatePendingCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+	token, err := r.token(ctx, hcluster, nodePool)
+	if err != nil {
+		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
+	}
+
+	// Config drift exists when the full payload hash differs from the last-applied
+	// payload, but the rollout hash has not changed. This means management-side
+	// content (e.g. HAProxy image) changed without triggering a rollout.
+	currentRolloutConfig := nodePool.GetAnnotations()[nodePoolAnnotationCurrentRolloutConfig]
+	targetRolloutConfig := token.RolloutHashWithoutVersion()
+	targetFullHash := token.Hash()
+	currentFullHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion]
+
+	isUpdating := isUpdatingConfig(nodePool, targetRolloutConfig) || isUpdatingVersion(nodePool, token.Version())
+	hasDrift := currentFullHash != "" && targetFullHash != currentFullHash && currentRolloutConfig == targetRolloutConfig
+
+	if hasDrift && !isUpdating {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolConfigUpdatePendingConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.ManagementConfigDriftReason,
+			Message:            "Management-side configuration has changed without triggering a rollout. Nodes retain the previous management-side configuration until the next spec-driven rollout (release upgrade or configuration change).",
+			ObservedGeneration: nodePool.Generation,
+		})
+	} else {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolConfigUpdatePendingConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.AsExpectedReason,
 			ObservedGeneration: nodePool.Generation,
@@ -582,7 +620,20 @@ func (r NodePoolReconciler) validGeneratedPayloadCondition(ctx context.Context, 
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
 	}
-	tokenSecret := token.TokenSecret()
+	// Record the deployed bootstrap hash so effectiveSecrets resolves the
+	// same secret the main reconcile maintains. r.token() does not set it,
+	// and without it resolveEffectiveHash cannot see the deployed state:
+	// during an in-flight rollout with management-side drift it falls through
+	// to the current Hash() secret, which may not exist, and this condition
+	// would report False (NotFound) for the whole rollout.
+	if err := r.resolveDeployedBootstrapHash(ctx, token, nodePool, hcluster); err != nil {
+		return &ctrl.Result{}, err
+	}
+	// Use effectiveSecrets to get the correct secret name during management-side drift.
+	// When only management-side content changes (e.g., HAProxy image), the deployed
+	// secret keeps its old hash, and Token.Reconcile maintains that secret rather than
+	// creating a new one.
+	tokenSecret, _ := token.effectiveSecrets(token.isOutdated())
 	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("error setting ValidGeneratedPayload condition: %w", err)
@@ -596,7 +647,17 @@ func (r NodePoolReconciler) reachedIgnitionEndpointCondition(ctx context.Context
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
 	}
-	tokenSecret := token.TokenSecret()
+	// Record the deployed bootstrap hash so effectiveSecrets resolves the
+	// same secret the main reconcile maintains (see
+	// validGeneratedPayloadCondition for the rationale).
+	if err := r.resolveDeployedBootstrapHash(ctx, token, nodePool, hcluster); err != nil {
+		return &ctrl.Result{}, err
+	}
+	// Use effectiveSecrets to get the correct secret name during management-side drift.
+	// When only management-side content changes (e.g., HAProxy image), the deployed
+	// secret keeps its old hash, and Token.Reconcile maintains that secret rather than
+	// creating a new one.
+	tokenSecret, _ := token.effectiveSecrets(token.isOutdated())
 	oldReachedIgnitionEndpointCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReachedIgnitionEndpoint)
 	// when an InPlace upgrade occurs, a new token-secret is generated, but since nodes don't reboot and reignite,
 	// the new token-secret wouldn't have the `hypershift.openshift.io/ignition-reached` annotation set.
@@ -1024,6 +1085,12 @@ func (r NodePoolReconciler) validPlatformConfigCondition(ctx context.Context, no
 		if err := r.validateKubevirtAdditionalNetworkNamespaces(nodePool, hc); err != nil {
 			condition.Status = corev1.ConditionFalse
 			condition.Reason = hyperv1.NodePoolValidationFailedReason
+			condition.Message = err.Error()
+		}
+	case hyperv1.GCPPlatform:
+		if err := validateGCPPlatformConfig(nodePool, hc); err != nil {
+			condition.Status = corev1.ConditionFalse
+			condition.Reason = hyperv1.GCPErrorReason
 			condition.Message = err.Error()
 		}
 	}

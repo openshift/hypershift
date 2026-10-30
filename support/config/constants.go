@@ -23,7 +23,11 @@ const (
 	// not API critical but still need elevated priority.
 	DefaultPriorityClass = "hypershift-control-plane"
 
-	DefaultServiceAccountIssuer  = "https://kubernetes.default.svc"
+	DefaultServiceAccountIssuer = "https://kubernetes.default.svc"
+	// KubeconfigKey is the key used for kubeconfig data in Secrets.
+	KubeconfigKey = "kubeconfig"
+	// AWSCloudProviderName is the cloud provider identifier for AWS.
+	AWSCloudProviderName         = "aws"
 	DefaultImageRegistryHostname = "image-registry.openshift-image-registry.svc:5000"
 	DefaultAdvertiseIPv4Address  = "172.20.0.1"
 	DefaultAdvertiseIPv6Address  = "fd00::1"
@@ -154,4 +158,5 @@ const (
 var (
 	Version419 = semver.MustParse("4.19.0")
 	Version420 = semver.MustParse("4.20.0")
+	Version510 = semver.MustParse("5.1.0")
 )

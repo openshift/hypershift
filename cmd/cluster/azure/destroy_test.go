@@ -19,7 +19,56 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
 )
+
+func TestCleanupRoleAssignments(t *testing.T) {
+	t.Parallel()
+	cleanupErr := errors.New("role assignment delete forbidden")
+	tests := []struct {
+		name       string
+		nsgRG      string
+		vnetRG     string
+		cleanupErr error
+		notify     bool
+	}{
+		{"When no overrides are provided, it should retain production defaults and log-only errors", "", "", cleanupErr, false},
+		{"When CI provides scopes and cleanup fails, it should notify CI of the original error", "Shared-NSG", "Shared-VNet", cleanupErr, true},
+		{"When cleanup succeeds, it should not notify CI of an error", "cluster-nsg-infra", "cluster-vnet-infra", nil, true},
+		{"When cleanup is canceled, it should notify CI without changing the cleanup return contract", "Shared-NSG", "Shared-VNet", context.Canceled, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			opts := &core.DestroyOptions{Name: "cluster", InfraID: "infra", Log: logr.Discard(), AzurePlatform: core.AzurePlatformDestroyOptions{
+				ResourceGroupName: "cluster-rg", DNSZoneRGName: "DNS-RG", NSGResourceGroupName: test.nsgRG, VnetResourceGroupName: test.vnetRG,
+			}}
+			var notified error
+			if test.notify {
+				opts.AzurePlatform.OnRoleAssignmentCleanupError = func(err error) { notified = err }
+			}
+			called := false
+			cleanupRoleAssignments(t.Context(), opts, func(ctx context.Context, logger logr.Logger, infraID, clusterRG, nsgRG, vnetRG, dnsRG string, customRoles bool) error {
+				called = true
+				expectedNSG, expectedVnet := test.nsgRG, test.vnetRG
+				if expectedNSG == "" {
+					expectedNSG = "cluster-nsg"
+				}
+				if expectedVnet == "" {
+					expectedVnet = "cluster-vnet"
+				}
+				if ctx != t.Context() || infraID != "infra" || clusterRG != "cluster-rg" || dnsRG != "DNS-RG" || nsgRG != expectedNSG || vnetRG != expectedVnet || customRoles {
+					t.Fatalf("unexpected cleanup inputs: %s %s %s %s %s custom=%t", infraID, clusterRG, nsgRG, vnetRG, dnsRG, customRoles)
+				}
+				return test.cleanupErr
+			})
+			if !called || (test.notify && !errors.Is(notified, test.cleanupErr)) || (!test.notify && notified != nil) {
+				t.Fatalf("cleanup called=%t, notification=%v, cleanup error=%v", called, notified, test.cleanupErr)
+			}
+		})
+	}
+}
 
 func TestNewDestroyCommandClientProvider(t *testing.T) {
 	t.Run("When management client creation fails, it should return the provider error", func(t *testing.T) {

@@ -138,6 +138,7 @@ const (
 
 	controlPlaneOperatorSubcommandsLabel                 = "io.openshift.hypershift.control-plane-operator-subcommands"
 	controlPlaneOperatorSupportsKASCustomKubeconfigLabel = "io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubeconfig"
+	controlPlaneOperatorSupportsGCPResourceTagsLabel     = "io.openshift.hypershift.control-plane-operator-supports-gcp-resource-tags"
 
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
 	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
@@ -882,6 +883,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.EtcdBackupSucceeded,
 			hyperv1.ConfigOperatorReconciliationSucceeded,
 		}
+		// GCPFirewallRulesReady is GCP-specific; only propagate it for GCP
+		// HostedClusters so non-GCP clusters don't gain an Unknown condition.
+		if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
+			hcpConditions = append(hcpConditions, hyperv1.GCPFirewallRulesReady)
+		}
+
+		if hcluster.Spec.Platform.AWS != nil && hcluster.Spec.Platform.AWS.ManagedDNS.IngressDomainPrefix != "" {
+			hcpConditions = append(hcpConditions, hyperv1.AWSManagedDNSAvailable)
+		} else {
+			// Managed DNS was disabled (or never enabled); drop any stale condition
+			// so consumers don't read outdated managed-DNS status.
+			meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.AWSManagedDNSAvailable))
+		}
 
 		for _, conditionType := range hcpConditions {
 			condition := &metav1.Condition{
@@ -894,6 +908,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if hcp != nil {
 				hcpCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(conditionType))
 				if hcpCondition != nil {
+					if conditionType == hyperv1.GCPFirewallRulesReady {
+						hcpCondition = gcpFirewallRulesReadyCondition(hcp, hcpCondition)
+					}
 					condition = hcpCondition
 				} else {
 					condition.Message = "Condition not found in the HCP"
@@ -1451,6 +1468,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	var pullSecretBytes []byte
 	controlPlaneOperatorImage := r.HypershiftOperatorImage
 	var controlPlaneOperatorImageLabels map[string]string
+	controlPlaneOperatorImageLabelsResolved := false
 
 	report.execute("CPOImageAndNamespace", critical, func() error {
 		var err error
@@ -1466,8 +1484,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 		}
+		controlPlaneOperatorImageLabelsResolved = true
 
 		return r.reconcileControlPlaneNamespace(ctx, createOrUpdate, hcluster, controlPlaneNamespace, controlPlaneOperatorImageLabels)
+	})
+
+	report.execute("ValidateAndReconcileGCPTags", critical, func() error {
+		return validateGCPResourceTagsSupport(hcluster, controlPlaneOperatorImageLabelsResolved, controlPlaneOperatorImageLabels)
 	})
 
 	cpoHasUtilities := false
@@ -2847,6 +2870,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.PrivateIngressControllerAnnotation,
 		hyperv1.IngressControllerLoadBalancerScope,
 		hyperv1.CleanupCloudResourcesAnnotation,
+		hyperv1.GCPFirewallSkipDeletionAnnotation,
 		hyperv1.ControlPlanePriorityClass,
 		hyperv1.APICriticalPriorityClass,
 		hyperv1.EtcdPriorityClass,
@@ -2861,6 +2885,8 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.KubeAPIServerGOGCAnnotation,
 		hyperv1.KubeAPIServerGOMemoryLimitAnnotation,
 		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
+		// Deprecated and no longer written by the scheduler. Kept here so the mirror
+		// keeps pruning any stale value from existing HCPs once the HC no longer has it.
 		hyperv1.AWSLoadBalancerSubnetsAnnotation,
 		hyperv1.AWSLoadBalancerTargetNodesAnnotation,
 		hyperv1.AWSLoadBalancerHealthProbeModeAnnotation,
@@ -4526,7 +4552,6 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	}
 
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
-
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
 }
 
@@ -5065,7 +5090,7 @@ func validateNodePortPortRange(hc *hyperv1.HostedCluster) field.ErrorList {
 				errs = append(errs, field.Invalid(
 					field.NewPath(fmt.Sprintf("spec.services[%d].nodePort.port", idx)),
 					port,
-					fmt.Sprintf("port must be within the configured range %d-%d or 0 for dynamic assignment", minPort, maxPort)))
+					fmt.Sprintf("port must be within the configured range %d-%d, or omitted for dynamic assignment", minPort, maxPort)))
 			}
 		}
 	}

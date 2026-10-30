@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -130,20 +131,34 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		return ctrl.Result{}, fmt.Errorf("failed to create token: %w", err)
 	}
 
-	// synchronously deleting the ignition token is unsafe; we need to clean up tokens by annotating them to expire
-	synchronousCleanup := func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
+	valid, cleanup, names, err := r.checkSecretValidity(ctx, secret, token, nodePool, controlPlaneNamespace)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if valid {
+		return ctrl.Result{}, nil
+	}
+
+	log.WithValues("options", names, "valid", valid).Info("removing secret as it does not match the expected set of names")
+	return ctrl.Result{}, cleanup(ctx, r.Client, secret)
+}
+
+type secretCleanupFunc func(context.Context, client.Client, *corev1.Secret) error
+
+func (r *secretJanitor) checkSecretValidity(ctx context.Context, secret *corev1.Secret, token *Token, nodePool *hyperv1.NodePool, controlPlaneNamespace string) (bool, secretCleanupFunc, []string, error) {
+	synchronousCleanup := secretCleanupFunc(func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
 		if err := c.Delete(ctx, secret); err != nil {
 			return err
 		}
 		ctrl.LoggerFrom(ctx).Info("Deleted secret", "secret", client.ObjectKeyFromObject(secret).String())
 		return nil
-	}
+	})
 	type nodePoolSecret struct {
 		expectedName   string
 		matchingPrefix string
-		cleanup        func(context.Context, client.Client, *corev1.Secret) error
+		cleanup        secretCleanupFunc
 	}
-	valid := false
+
 	options := []nodePoolSecret{
 		{
 			expectedName:   token.TokenSecret().GetName(),
@@ -158,6 +173,49 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 			cleanup:        synchronousCleanup,
 		},
 	}
+
+	completedHash := nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
+	if completedHash != "" && completedHash != token.Hash() {
+		completedTokenSecret, completedUserDataSecret := token.secretsForHash(completedHash)
+		options = append(options,
+			nodePoolSecret{
+				expectedName:   completedTokenSecret.GetName(),
+				matchingPrefix: TokenSecretPrefix,
+				cleanup: func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
+					return setExpirationTimestampOnToken(ctx, c, secret, r.now)
+				},
+			},
+			nodePoolSecret{
+				expectedName:   completedUserDataSecret.GetName(),
+				matchingPrefix: UserDataSecrePrefix,
+				cleanup:        synchronousCleanup,
+			},
+		)
+	}
+
+	activeBootstrapHash, err := r.activeBootstrapHashFromWorkload(ctx, nodePool, controlPlaneNamespace)
+	if err != nil {
+		return false, nil, nil, err
+	}
+	if activeBootstrapHash != "" && activeBootstrapHash != token.Hash() && activeBootstrapHash != completedHash {
+		activeTokenSecret, activeUserDataSecret := token.secretsForHash(activeBootstrapHash)
+		options = append(options,
+			nodePoolSecret{
+				expectedName:   activeTokenSecret.GetName(),
+				matchingPrefix: TokenSecretPrefix,
+				cleanup: func(ctx context.Context, c client.Client, secret *corev1.Secret) error {
+					return setExpirationTimestampOnToken(ctx, c, secret, r.now)
+				},
+			},
+			nodePoolSecret{
+				expectedName:   activeUserDataSecret.GetName(),
+				matchingPrefix: UserDataSecrePrefix,
+				cleanup:        synchronousCleanup,
+			},
+		)
+	}
+
+	valid := false
 	cleanup := synchronousCleanup
 	var names []string
 	for _, option := range options {
@@ -170,12 +228,7 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		}
 	}
 
-	if valid {
-		return ctrl.Result{}, nil
-	}
-
-	log.WithValues("options", names, "valid", valid).Info("removing secret as it does not match the expected set of names")
-	return ctrl.Result{}, cleanup(ctx, r.Client, secret)
+	return valid, cleanup, names, nil
 }
 
 // shouldKeepOldUserData determines if the old user data should be kept.
@@ -226,6 +279,40 @@ func (r *NodePoolReconciler) shouldKeepOldUserDataAWS(ctx context.Context, hc *h
 	}
 
 	return false, nil
+}
+
+// activeBootstrapHashFromWorkload extracts the hash from the active CAPI workload's bootstrap
+// secret reference, returning an empty string if the workload does not exist or has no reference.
+func (r *secretJanitor) activeBootstrapHashFromWorkload(ctx context.Context, nodePool *hyperv1.NodePool, controlPlaneNamespace string) (string, error) {
+	switch nodePool.Spec.Management.UpgradeType {
+	case hyperv1.UpgradeTypeReplace:
+		md := &capiv1.MachineDeployment{}
+		md.Name = nodePool.GetName()
+		md.Namespace = controlPlaneNamespace
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(md), md); err != nil {
+			if apierrors.IsNotFound(err) {
+				return "", nil
+			}
+			return "", fmt.Errorf("failed to get MachineDeployment for active bootstrap hash: %w", err)
+		}
+		if md.Spec.Template.Spec.Bootstrap.DataSecretName != nil {
+			return extractHashFromSecretName(*md.Spec.Template.Spec.Bootstrap.DataSecretName), nil
+		}
+	case hyperv1.UpgradeTypeInPlace:
+		ms := &capiv1.MachineSet{}
+		ms.Name = nodePool.GetName()
+		ms.Namespace = controlPlaneNamespace
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ms), ms); err != nil {
+			if apierrors.IsNotFound(err) {
+				return "", nil
+			}
+			return "", fmt.Errorf("failed to get MachineSet for active bootstrap hash: %w", err)
+		}
+		if ms.Spec.Template.Spec.Bootstrap.DataSecretName != nil {
+			return extractHashFromSecretName(*ms.Spec.Template.Spec.Bootstrap.DataSecretName), nil
+		}
+	}
+	return "", nil
 }
 
 // cleanupSecretForDeletion handles secret cleanup when the HostedCluster is missing or being deleted.

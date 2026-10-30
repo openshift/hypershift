@@ -8,8 +8,8 @@ import (
 )
 
 var testRegistry = []ClusterSpec{
-	{Variant: "public", ExtraArgs: []string{"--public-only"}},
-	{Variant: "private", ExtraArgs: []string{"--endpoint-access=Private"}},
+	{Variant: "public", CreateArgs: []string{"--public-only"}},
+	{Variant: "private", CreateArgs: []string{"--endpoint-access=Private"}},
 	{Variant: "upgrade", ReleaseImage: "registry.ci.openshift.org/ocp/release:4.16.0-0.nightly"},
 }
 

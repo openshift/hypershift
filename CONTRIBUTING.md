@@ -6,7 +6,7 @@ The following guidelines will help ensure a smooth contribution process for both
 ## Prior to Submitting a Pull Request
 1. **Keep changes focused**: Scope commits to one thing and keep them minimal. Separate refactoring from logic changes, and save additional improvements for separate PRs.
 
-2. **Test your changes**: Run `make pre-commit` to update dependencies, build code, verify formatting, and run tests. This prevents CI failures on your PR.
+2. **Validate your changes**: Run proportionate repository-required checks targeting the changed paths and fix failures, following [Pre-PR Gate](DEVELOPMENT.md#pre-pr-gate). Required change-specific safety, formatting, linting, generation, and test checks still apply; required CI checks remain unchanged. Review the complete diff, confirm a clean diff/status after committing, and report actual commands/results or review evidence, explicitly identifying skipped or unavailable checks.
 
 3. **Review before submitting**: Look at your changes from a reviewer's perspective and explain anything that might not be immediately clear in your PR description.
 
@@ -34,7 +34,7 @@ The following guidelines will help ensure a smooth contribution process for both
 
 This project uses [Prow](https://docs.ci.openshift.org/) and [GitHub Actions](https://github.com/openshift/hypershift/actions) for CI. Lightweight checks (linting, unit tests, verification) run automatically on pushes and pull requests. E2E tests that consume real cloud infrastructure only run after a reviewer grants `/lgtm`, to avoid unnecessary resource usage on work-in-progress PRs.
 
-**Adding CI targets:** When you add a new `make` target to `verify-parallel` or any other CI-facing Makefile target, you must also add it to the corresponding GitHub Actions workflow (e.g., `.github/workflows/verify-reusable.yaml` for verify targets, or as a new "reusable" target). GitHub Actions provide fast feedback on PRs; Prow runs heavier e2e tests. Targets that only exist in the Makefile without a matching GH Actions step will not run in CI.
+**Adding CI targets:** Ensure each new check is reachable from the corresponding GitHub Actions workflow, either through a Makefile entrypoint it already invokes or through a workflow step. For example, `.github/workflows/verify-reusable.yaml` runs `make verify-ci`, which delegates to `verify-serial-targets`; changing that group's contents does not require a separate workflow step. Adding a target only to `verify-parallel-targets` does not automatically include it in that workflow. GitHub Actions provide fast feedback on PRs; Prow runs heavier e2e tests.
 
 See hack/github-actions-runner/README.md for details.
 

@@ -6,11 +6,10 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/podspec"
 )
 
 const (
-	KubeconfigKey = podspec.KubeconfigKey
+	KubeconfigKey = config.KubeconfigKey
 )
 
 func InClusterKASURL(platformType hyperv1.PlatformType) string {
