@@ -79,6 +79,13 @@ const (
 	// owner: @jparrill
 	// alpha: v0.1.84
 	KubeletHAProxyRouting featuregate.Feature = "KubeletHAProxyRouting"
+	// IgnitionPayloadSystem gates the re-architected ignition system: the HO deploys the
+	// split ignition-payload-controller + ignition-payload-server (+ proxy) from the HO image
+	// and the NodePool controller uses the IgnitionPayload path instead of the legacy
+	// ignition-server. Fleet-wide selector (no per-HostedCluster opt-in).
+	// owner: @muraee
+	// alpha: v0.1.84
+	IgnitionPayloadSystem featuregate.Feature = "IgnitionPayloadSystem"
 )
 
 // Initialize new features here
@@ -95,6 +102,7 @@ var (
 	deterministicLBIPFeature       = featuregates.NewFeature(DeterministicLBIP, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	awsManagedDNSFeature           = featuregates.NewFeature(AWSManagedDNS, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	kubeletHAProxyRoutingFeature   = featuregates.NewFeature(KubeletHAProxyRouting, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	ignitionPayloadSystemFeature   = featuregates.NewFeature(IgnitionPayloadSystem, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -109,6 +117,7 @@ func init() {
 	allFeatures.AddFeature(deterministicLBIPFeature)
 	allFeatures.AddFeature(awsManagedDNSFeature)
 	allFeatures.AddFeature(kubeletHAProxyRoutingFeature)
+	allFeatures.AddFeature(ignitionPayloadSystemFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))

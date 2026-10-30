@@ -353,8 +353,8 @@ spec:
                   in-place OS downgrades are not supported.
                 properties:
                   name:
-                    description: name is a required reference to an OSImageStream
-                      to be used for the pool.
+                    description: name is a required reference to an OSImageStream.
+                      Valid values are "rhel-9" and "rhel-10".
                     enum:
                     - rhel-9
                     - rhel-10
@@ -2245,8 +2245,8 @@ spec:
                   When omitted, the pool is using the release version's default OS images.
                 properties:
                   name:
-                    description: name is a required reference to an OSImageStream
-                      to be used for the pool.
+                    description: name is a required reference to an OSImageStream.
+                      Valid values are "rhel-9" and "rhel-10".
                     enum:
                     - rhel-9
                     - rhel-10
