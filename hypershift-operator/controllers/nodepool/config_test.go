@@ -14,7 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -491,7 +491,7 @@ spec:
 					resolvedStream = s
 				}
 			}
-			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test", resolvedStream)
+			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test", true, resolvedStream)
 			if tc.error != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.error.Error()))
@@ -2979,6 +2979,13 @@ users:
 		}
 	}
 
+	workerEndpoint := func(endpoint *hyperv1.APIEndpoint) *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "test-cluster-name"},
+			Status:     hyperv1.HostedControlPlaneStatus{SharedIngressWorkerAPIEndpoint: endpoint},
+		}
+	}
+
 	routerService := func(ingress ...corev1.LoadBalancerIngress) *corev1.Service {
 		svc := sharedingress.RouterPublicService()
 		svc.Status.LoadBalancer.Ingress = ingress
@@ -2986,12 +2993,13 @@ users:
 	}
 
 	tests := []struct {
-		name              string
-		hcluster          *hyperv1.HostedCluster
-		objects           []crclient.Object
-		failKubeconfigGet bool
-		expectedConfig    string
-		expectedErr       string
+		name                              string
+		hcluster                          *hyperv1.HostedCluster
+		objects                           []crclient.Object
+		failKubeconfigGet                 bool
+		allowSharedIngressServiceFallback bool
+		expectedConfig                    string
+		expectedErr                       string
 	}{
 		{
 			name: "private cluster omits the server component",
@@ -3052,35 +3060,56 @@ users:
 			expectedErr:       "failed to get kubeconfig",
 		},
 		{
-			name:           "shared ingress cluster resolves the load balancer IP",
-			hcluster:       newAROHCPCluster(),
-			objects:        []crclient.Object{routerService(corev1.LoadBalancerIngress{IP: "10.0.0.1"})},
-			expectedConfig: "private=false,server=10.0.0.1:6443",
+			name:                              "shared ingress cluster resolves the load balancer IP",
+			allowSharedIngressServiceFallback: true,
+			hcluster:                          newAROHCPCluster(),
+			objects:                           []crclient.Object{workerEndpoint(&hyperv1.APIEndpoint{Host: "10.0.0.1", Port: 6443})},
+			expectedConfig:                    "private=false,server=10.0.0.1:6443",
 		},
 		{
-			name:           "shared ingress cluster falls back to the load balancer hostname",
-			hcluster:       newAROHCPCluster(),
-			objects:        []crclient.Object{routerService(corev1.LoadBalancerIngress{Hostname: "router.example.com"})},
-			expectedConfig: "private=false,server=router.example.com:6443",
+			name:                              "shared ingress cluster falls back to the load balancer hostname",
+			allowSharedIngressServiceFallback: true,
+			hcluster:                          newAROHCPCluster(),
+			objects:                           []crclient.Object{workerEndpoint(&hyperv1.APIEndpoint{Host: "router.example.com", Port: 6443})},
+			expectedConfig:                    "private=false,server=router.example.com:6443",
 		},
 		{
-			// A transient LB state change must not change the hash: the call
+			name:                              "shared ingress cluster brackets an IPv6 load balancer IP",
+			allowSharedIngressServiceFallback: true,
+			hcluster:                          newAROHCPCluster(),
+			objects:                           []crclient.Object{workerEndpoint(&hyperv1.APIEndpoint{Host: "fd00::1", Port: 6443})},
+			expectedConfig:                    "private=false,server=[fd00::1]:6443",
+		},
+		{
+			// An endpoint that is not published yet resolves through the router
+			// Service, so NodePools keep working across an operator upgrade.
+			name:                              "shared ingress cluster without published endpoint falls back to the router Service",
+			allowSharedIngressServiceFallback: true,
+			hcluster:                          newAROHCPCluster(),
+			objects:                           []crclient.Object{workerEndpoint(nil), routerService(corev1.LoadBalancerIngress{IP: "10.0.0.2"})},
+			expectedConfig:                    "private=false,server=10.0.0.2:6443",
+		},
+		{
+			// Unavailable endpoint data must not change the hash: the call
 			// fails and the reconcile retries.
-			name:        "shared ingress cluster without load balancer ingress fails",
-			hcluster:    newAROHCPCluster(),
-			objects:     []crclient.Object{routerService()},
-			expectedErr: "waiting on sharedIngress route service to report .Status.LoadBalancer.Ingress",
+			name:                              "shared ingress cluster without a provisioned router Service fails",
+			allowSharedIngressServiceFallback: true,
+			hcluster:                          newAROHCPCluster(),
+			objects:                           []crclient.Object{workerEndpoint(&hyperv1.APIEndpoint{Port: 6443}), routerService()},
+			expectedErr:                       "waiting on sharedIngress route service to report .Status.LoadBalancer.Ingress",
 		},
 		{
-			name:        "shared ingress cluster with empty ingress address fails",
-			hcluster:    newAROHCPCluster(),
-			objects:     []crclient.Object{routerService(corev1.LoadBalancerIngress{})},
-			expectedErr: "waiting on sharedIngress route service ingress to report an IP or hostname",
+			name:                              "shared ingress cluster without published endpoint does not read the router Service when fallback is disabled",
+			allowSharedIngressServiceFallback: false,
+			hcluster:                          newAROHCPCluster(),
+			objects:                           []crclient.Object{workerEndpoint(nil), routerService(corev1.LoadBalancerIngress{IP: "10.0.0.2"})},
+			expectedErr:                       "waiting on hosted control plane shared ingress worker API endpoint",
 		},
 		{
-			name:        "shared ingress cluster with missing router service fails",
-			hcluster:    newAROHCPCluster(),
-			expectedErr: "failed to get shared ingress router service",
+			name:                              "shared ingress cluster with missing hosted control plane fails",
+			allowSharedIngressServiceFallback: true,
+			hcluster:                          newAROHCPCluster(),
+			expectedErr:                       "failed to get hosted control plane",
 		},
 	}
 
@@ -3100,7 +3129,7 @@ users:
 			}
 			client := builder.Build()
 
-			config, err := endpointConfigString(t.Context(), client, tc.hcluster)
+			config, err := endpointConfigString(t.Context(), client, tc.hcluster, "test-cluster-name", tc.allowSharedIngressServiceFallback)
 			if tc.expectedErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErr))
@@ -3110,4 +3139,36 @@ users:
 			g.Expect(config).To(Equal(tc.expectedConfig))
 		})
 	}
+
+	// While HCP status is unpublished, the router Service fallback must resolve
+	// exactly what the HostedCluster controller publishes afterwards, otherwise
+	// the rollout hash would change once the status catches up.
+	t.Run("when HCP status is unpublished, the fallback should match the published endpoint", func(t *testing.T) {
+		for name, tc := range map[string]struct {
+			routerIngress   corev1.LoadBalancerIngress
+			publishedStatus *hyperv1.APIEndpoint
+		}{
+			"When the router reports an IP, the fallback should match the published endpoint": {
+				routerIngress:   corev1.LoadBalancerIngress{IP: "10.0.0.2"},
+				publishedStatus: &hyperv1.APIEndpoint{Host: "10.0.0.2", Port: sharedingress.KASSVCLBPort},
+			},
+			"When the router reports a hostname, the fallback should match the published endpoint": {
+				routerIngress:   corev1.LoadBalancerIngress{Hostname: "router.example.com"},
+				publishedStatus: &hyperv1.APIEndpoint{Host: "router.example.com", Port: sharedingress.KASSVCLBPort},
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				g := NewWithT(t)
+
+				fallbackClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(routerService(tc.routerIngress), workerEndpoint(nil)).Build()
+				publishedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(workerEndpoint(tc.publishedStatus)).Build()
+
+				fallbackConfig, err := endpointConfigString(t.Context(), fallbackClient, newAROHCPCluster(), "test-cluster-name", true)
+				g.Expect(err).NotTo(HaveOccurred())
+				publishedConfig, err := endpointConfigString(t.Context(), publishedClient, newAROHCPCluster(), "test-cluster-name", false)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(fallbackConfig).To(Equal(publishedConfig))
+			})
+		}
+	})
 }
