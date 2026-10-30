@@ -8,11 +8,13 @@ import (
 	"strconv"
 	"strings"
 
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,21 +44,26 @@ const (
 )
 
 // SecretBackedStore is a Secret-backed PayloadStore.
-//
-// The exported production constructor — which builds its own uncached client so reads go
-// straight to the API server regardless of any informer cache state (the stateless, scaled
-// serving tier must observe payloads the generator just wrote, and the store also performs
-// writes, so a read-only API reader is insufficient) — lands in the phase that wires the store
-// into the generator and serving tier. This phase provides only the store behavior and its
-// contract tests, which construct it with an injected client via newSecretBackedStore.
 type SecretBackedStore struct {
 	client    client.Client
 	namespace string
 }
 
-// newSecretBackedStore wraps an existing client so tests can inject a fake. The production
-// constructor that builds the uncached client (see the SecretBackedStore doc) arrives with the
-// wiring phase.
+// NewSecretBackedStore creates a Secret-backed PayloadStore. It builds its own uncached
+// client from cfg so reads go straight to the API server regardless of any informer
+// cache state — the stateless, scaled serving tier must observe payloads the generator
+// just wrote, and the store also performs writes (so a read-only API reader is
+// insufficient).
+func NewSecretBackedStore(cfg *rest.Config, namespace string) (*SecretBackedStore, error) {
+	c, err := client.New(cfg, client.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return nil, fmt.Errorf("failed to build uncached client for payload store: %w", err)
+	}
+	return newSecretBackedStore(c, namespace), nil
+}
+
+// newSecretBackedStore wraps an existing client. It exists so tests can inject a fake
+// client; production code must use NewSecretBackedStore to obtain an uncached client.
 func newSecretBackedStore(c client.Client, namespace string) *SecretBackedStore {
 	return &SecretBackedStore{
 		client:    c,
