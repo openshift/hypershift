@@ -3,6 +3,11 @@ package config
 import "github.com/blang/semver"
 
 const (
+	// NodePoolAPIEndpointAnnotation records the target endpoint on a CAPI workload and the completed endpoint on its NodePool.
+	NodePoolAPIEndpointAnnotation = "hypershift.openshift.io/node-pool-api-endpoint"
+	// PrivateAPIServerCleanupAnnotation authorizes CPO to remove the private API endpoint after worker cutover.
+	PrivateAPIServerCleanupAnnotation = "hypershift.openshift.io/private-api-server-cleanup"
+
 	// NeedManagementKASAccessLabel is used by network policies
 	// to prevent any pod which doesn't contain the label from accessing the management cluster KAS.
 	NeedManagementKASAccessLabel = "hypershift.openshift.io/need-management-kas-access"

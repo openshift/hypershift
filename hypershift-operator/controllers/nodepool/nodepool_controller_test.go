@@ -3259,14 +3259,13 @@ kind: Config`),
 			releaseImage := fakereleaseprovider.GetReleaseImage(ctx, hc, c, releaseProvider)
 			g.Expect(releaseImage).ToNot(BeNil())
 
-			// Call generateHAProxyRawConfig
-			cfg, err := reconciler.generateHAProxyRawConfig(ctx, nodePool, hc, releaseImage)
+			cfg, err := reconciler.generateHAProxyConfig(ctx, nodePool, hc, releaseImage)
 			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(cfg).ToNot(BeEmpty())
+			g.Expect(cfg.Raw).ToNot(BeEmpty())
 
 			// Unmarshal MachineConfig
 			mcfg := &mcfgv1.MachineConfig{}
-			err = yaml.Unmarshal([]byte(cfg), mcfg)
+			err = yaml.Unmarshal([]byte(cfg.Raw), mcfg)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// Unmarshal Ignition config

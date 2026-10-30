@@ -267,6 +267,7 @@ kind: Config`
 		hc                           *hyperv1.HostedCluster
 		other                        []crclient.Object
 		expectedHAProxyConfigContent []string
+		expectedEndpoint             string
 	}{
 		{
 			name: "private cluster uses .local address",
@@ -276,6 +277,7 @@ kind: Config`
 			}),
 
 			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:443"},
+			expectedEndpoint:             "private=true",
 		},
 		{
 			name: "private cluster uses .local address and custom apiserver port",
@@ -353,6 +355,7 @@ kind: Config`
 			}},
 
 			expectedHAProxyConfigContent: []string{"kubeconfig-host:443"},
+			expectedEndpoint:             "private=false,server=https://kubeconfig-host:443",
 		},
 		{
 			name: "public cluster uses address from kubeconfig and custom port",
@@ -505,9 +508,12 @@ kind: Config`
 			if err != nil {
 				t.Fatalf("reconcileHaProxyIgnitionConfig: %v", err)
 			}
+			if tc.expectedEndpoint != "" {
+				NewWithT(t).Expect(cfg.Endpoint).To(Equal(tc.expectedEndpoint))
+			}
 
 			mcfg := &mcfgv1.MachineConfig{}
-			if err := yaml.Unmarshal([]byte(cfg), mcfg); err != nil {
+			if err := yaml.Unmarshal([]byte(cfg.Raw), mcfg); err != nil {
 				t.Fatalf("cannot unmarshal machine config: %v", err)
 			}
 			ignitionCfg := &ignitionapi.Config{}

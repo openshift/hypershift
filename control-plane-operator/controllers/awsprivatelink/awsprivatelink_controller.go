@@ -71,7 +71,7 @@ const (
 type PrivateServiceObserver struct {
 	client.Client
 
-	clientset *kubeclient.Clientset
+	clientset kubeclient.Interface
 	log       logr.Logger
 
 	ControllerName   string
@@ -145,6 +145,9 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 		}
 		return ctrl.Result{}, err
 	}
+	if !svc.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
 
 	// Fetch the HostedControlPlane
 	hcpList := &hyperv1.HostedControlPlaneList{}
@@ -161,8 +164,8 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 
 	hcp := hcpList.Items[0]
 
-	// Return early if HostedControlPlane is deleted
-	if !hcp.DeletionTimestamp.IsZero() {
+	// Do not recreate PrivateLink resources after public cutover starts.
+	if !hcp.DeletionTimestamp.IsZero() || !netutil.IsPrivateHCP(&hcp) {
 		return ctrl.Result{}, nil
 	}
 
@@ -1386,13 +1389,14 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		}
 	}
 
-	// Delete the local hypershift.local zone this cluster owns. Ownership is
-	// read from the live HCP: only a managed-DNS, non-shared-VPC cluster creates
+	// Delete the shared local zone only when the HCP is being deleted; other
+	// endpoints may still use it when a single endpoint is removed during cutover.
+	// Ownership is read from the live HCP: only a managed-DNS, non-shared-VPC cluster creates
 	// and owns this zone. The zone ID comes from the builder cache, falling back
 	// to the persisted DNSZoneID after a controller restart. If the HCP is
 	// already gone (hcp is nil), managesLocalZone returns false and the zone is
 	// left to out-of-band infra teardown.
-	if managesLocalZone(hcp) {
+	if managesLocalZone(hcp) && !hcp.DeletionTimestamp.IsZero() {
 		localZoneID := r.awsClientBuilder.getLocalHostedZoneID()
 		if localZoneID == "" {
 			localZoneID = awsEndpointService.Status.DNSZoneID

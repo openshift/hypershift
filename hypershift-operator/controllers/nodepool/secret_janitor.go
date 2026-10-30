@@ -107,7 +107,7 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, nodePool, hcluster, releaseImage)
+	haproxyConfig, err := r.generateHAProxyConfig(ctx, nodePool, hcluster, releaseImage)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
@@ -118,7 +118,7 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyConfig, controlPlaneNamespace, resolvedRHELStream)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
