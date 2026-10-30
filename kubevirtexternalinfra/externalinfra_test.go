@@ -86,7 +86,7 @@ func TestGetKubeConfig(t *testing.T) {
 	}
 }
 
-func TestDiscoverKubevirtClusterClient(t *testing.T) {
+func TestKubevirtInfraClientMapImp_DiscoverKubevirtClusterClient(t *testing.T) {
 	t.Parallel()
 	t.Run("When cached credentials change or become unsafe, it should revalidate and replace or invalidate the client", func(t *testing.T) {
 		t.Parallel()

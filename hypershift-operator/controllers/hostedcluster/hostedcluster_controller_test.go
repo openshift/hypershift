@@ -9361,6 +9361,60 @@ func TestReconcileNonBlockingBehavior(t *testing.T) {
 			}
 		})
 	}
+
+	// Rejecting unsafe credentials must still allow pause propagation.
+	for _, tc := range []struct {
+		name   string
+		legacy bool
+		paused bool
+	}{
+		{name: "When external KubeVirt credentials are unsafe, it should remove the unsafe target and persist the rejection"},
+		{name: "When external KubeVirt credentials are unsafe in the legacy reconciler, it should remove the unsafe target and persist the rejection", legacy: true},
+		{name: "When external KubeVirt credentials are unsafe and reconciliation is paused, it should still pause the HostedControlPlane and CAPI Cluster", paused: true},
+		{name: "When external KubeVirt credentials are unsafe and the legacy reconciler is paused, it should still pause the HostedControlPlane and CAPI Cluster", legacy: true, paused: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			unsafe := strings.ReplaceAll(externalInfraKubeconfig, "user: {token: private-test-token}", "user: {exec: {apiVersion: client.authentication.k8s.io/v1, command: /bin/sh}}")
+			hc := credentialHostedCluster()
+			hc.Spec.InfraID = "tenant-infra"
+			if tc.paused {
+				hc.Spec.PausedUntil = ptr.To("true")
+			}
+			controlPlaneNamespace := hcpmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+			source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "infra"}, Data: map[string][]byte{"kubeconfig": []byte(unsafe)}}
+			target := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: hyperv1.KubeVirtInfraCredentialsSecretName}, Data: map[string][]byte{"kubeconfig": []byte(unsafe)}}
+			hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
+			capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace, hc.Spec.InfraID)
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).WithObjects(hc, source, target, hcp, capiCluster).Build()
+			r := &HostedClusterReconciler{Client: c, ReconcileLegacy: tc.legacy, now: metav1.Now}
+
+			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hc)})
+
+			g.Expect(err).To(MatchError(ContainSubstring("prohibited exec credentials")))
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(target), &corev1.Secret{})).To(Satisfy(errors2.IsNotFound))
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())
+			condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.PlatformCredentialsFound))
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(condition.Reason).To(Equal(hyperv1.PlatformCredentialsNotFoundReason))
+			g.Expect(condition.Message).To(ContainSubstring("prohibited exec credentials"))
+			g.Expect(condition.Message).NotTo(ContainSubstring("/bin/sh"))
+			g.Expect(meta.IsStatusConditionFalse(hc.Status.Conditions, string(hyperv1.ReconciliationSucceeded))).To(BeTrue())
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(source), source)).To(Succeed())
+			g.Expect(source.Data).To(Equal(map[string][]byte{"kubeconfig": []byte(unsafe)}))
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(capiCluster), capiCluster)).To(Succeed())
+			if tc.paused {
+				g.Expect(hcp.Spec.PausedUntil).To(Equal(ptr.To("true")))
+				g.Expect(capiCluster.Spec.Paused).To(Equal(ptr.To(true)))
+			} else {
+				g.Expect(hcp.Spec.PausedUntil).To(BeNil())
+				g.Expect(capiCluster.Spec.Paused).To(BeNil())
+			}
+		})
+	}
 }
 
 func TestReconcileSREMetricsConfig_EffectiveMetricsSet(t *testing.T) {
@@ -9908,62 +9962,6 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			pullSecret := controlplaneoperator.PullSecret("cp-ns")
 			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
 			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
-		})
-	}
-}
-
-func TestReconcile(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name   string
-		legacy bool
-		paused bool
-	}{
-		{name: "When external KubeVirt credentials are unsafe, it should remove the unsafe target and persist the rejection"},
-		{name: "When external KubeVirt credentials are unsafe in the legacy reconciler, it should remove the unsafe target and persist the rejection", legacy: true},
-		{name: "When external KubeVirt credentials are unsafe and reconciliation is paused, it should still pause the HostedControlPlane and CAPI Cluster", paused: true},
-		{name: "When external KubeVirt credentials are unsafe and the legacy reconciler is paused, it should still pause the HostedControlPlane and CAPI Cluster", legacy: true, paused: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			g := NewWithT(t)
-			unsafe := strings.ReplaceAll(externalInfraKubeconfig, "user: {token: private-test-token}", "user: {exec: {apiVersion: client.authentication.k8s.io/v1, command: /bin/sh}}")
-			hc := credentialHostedCluster()
-			hc.Spec.InfraID = "tenant-infra"
-			if tc.paused {
-				hc.Spec.PausedUntil = ptr.To("true")
-			}
-			controlPlaneNamespace := hcpmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
-			source := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: "infra"}, Data: map[string][]byte{"kubeconfig": []byte(unsafe)}}
-			target := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: hyperv1.KubeVirtInfraCredentialsSecretName}, Data: map[string][]byte{"kubeconfig": []byte(unsafe)}}
-			hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
-			capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace, hc.Spec.InfraID)
-			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithStatusSubresource(hc).WithObjects(hc, source, target, hcp, capiCluster).Build()
-			r := &HostedClusterReconciler{Client: c, ReconcileLegacy: tc.legacy, now: metav1.Now}
-
-			_, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hc)})
-
-			g.Expect(err).To(MatchError(ContainSubstring("prohibited exec credentials")))
-			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(target), &corev1.Secret{})).To(Satisfy(errors2.IsNotFound))
-			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())
-			condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.PlatformCredentialsFound))
-			g.Expect(condition).NotTo(BeNil())
-			g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
-			g.Expect(condition.Reason).To(Equal(hyperv1.PlatformCredentialsNotFoundReason))
-			g.Expect(condition.Message).To(ContainSubstring("prohibited exec credentials"))
-			g.Expect(condition.Message).NotTo(ContainSubstring("/bin/sh"))
-			g.Expect(meta.IsStatusConditionFalse(hc.Status.Conditions, string(hyperv1.ReconciliationSucceeded))).To(BeTrue())
-			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(source), source)).To(Succeed())
-			g.Expect(source.Data).To(Equal(map[string][]byte{"kubeconfig": []byte(unsafe)}))
-			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
-			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(capiCluster), capiCluster)).To(Succeed())
-			if tc.paused {
-				g.Expect(hcp.Spec.PausedUntil).To(Equal(ptr.To("true")))
-				g.Expect(capiCluster.Spec.Paused).To(Equal(ptr.To(true)))
-			} else {
-				g.Expect(hcp.Spec.PausedUntil).To(BeNil())
-				g.Expect(capiCluster.Spec.Paused).To(BeNil())
-			}
 		})
 	}
 }
