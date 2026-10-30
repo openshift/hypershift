@@ -1053,6 +1053,9 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		utilitiesImage = r.HypershiftOperatorImage
 	}
 
+	// The error from GetControlPlaneOperatorImageLabels above already returns early, so by this
+	// point the image lookup has unconditionally succeeded.
+	enableGMPMonitoring := r.effectiveGMPMonitoring(log, hcluster.Spec.Platform.Type, controlPlaneOperatorImageLabels, true)
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
 	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
 	_, useRestrictedPSA := controlPlaneOperatorImageLabels[useRestrictedPodSecurityLabel]
@@ -1700,6 +1703,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		DefaultSecurityContextUID: securityContextUID,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
 		MetricsSet:                metricsSet,
+		EnableGMPMonitoring:       enableGMPMonitoring,
 		ReleaseImageProvider:      imageProvider,
 		OmitOwnerReference:        true,
 	}
