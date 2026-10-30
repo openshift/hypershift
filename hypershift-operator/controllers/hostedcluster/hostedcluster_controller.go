@@ -78,6 +78,7 @@ import (
 	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/util/registryoverride"
 	supportvalidations "github.com/openshift/hypershift/support/validations"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -1476,7 +1477,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return fmt.Errorf("failed to get pull secret: %w", err)
 		}
-		controlPlaneOperatorImage, err = imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+		controlPlaneOperatorImage, err = resolveControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 		}
@@ -3189,6 +3190,44 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 	}
 
 	return nil
+}
+
+// resolveControlPlaneOperatorImage resolves the control plane operator image, applying
+// the release provider's registry overrides to the sources that are not mirrored already.
+//
+// The annotation and CPO override table images are returned verbatim by
+// GetControlPlaneOperatorImage. Without the override applied here the CPO deployment runs
+// an image from the original registry even when the operator is configured to mirror
+// everything, and the image metadata lookup that follows reaches out to that registry
+// directly.
+//
+// The release payload image is deliberately left alone: releaseinfo.RegistryMirrorProviderDecorator
+// has already rewritten it while resolving the image stream tags. registryoverride.Replace is
+// single-pass and not idempotent, so applying it a second time double rewrites whenever an
+// override destination is itself matched by a source prefix (for example
+// "quay.io=quay.io/cache" turns ".../cache/repo" into ".../cache/cache/repo"). The hypershift
+// operator's own image is left alone as well; it is the image this process is already running
+// from, not an image the HostedCluster asked to have mirrored.
+//
+// For the same reason an annotation that already names a mirror is left alone. Setting the
+// annotation to a mirrored image was the workaround for the CPO not being mirrored at all,
+// so HostedClusters carrying one predate this behavior and must keep resolving to the same
+// image after the operator is upgraded.
+func resolveControlPlaneOperatorImage(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithRegistryOverrides, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
+	image, source, err := imageregistry.GetControlPlaneOperatorImageWithSource(ctx, hcluster, releaseProvider, hypershiftOperatorImage, pullSecret)
+	if err != nil {
+		return "", err
+	}
+	switch source {
+	case imageregistry.CPOImageSourceAnnotation, imageregistry.CPOImageSourceOverrideTable:
+		registryOverrides := releaseProvider.GetRegistryOverrides()
+		if registryoverride.HasMirroredPrefix(image, registryOverrides) {
+			return image, nil
+		}
+		return registryoverride.Replace(image, registryOverrides), nil
+	default:
+		return image, nil
+	}
 }
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane

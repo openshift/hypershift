@@ -13,6 +13,12 @@ func TestReplace(t *testing.T) {
 		image     string
 		overrides map[string]string
 		want      string
+		// wantTwice is the result of feeding want back through Replace. Replace is
+		// single-pass, so for most overrides that is a no-op and wantTwice may be left
+		// empty to mean "same as want". The cases that set it pin down the exception:
+		// when a destination is still matched by a source, the second pass rewrites
+		// again, which is why callers must not apply Replace to its own output.
+		wantTwice string
 	}{
 		{
 			name:      "When nil overrides are provided, it should return input unchanged",
@@ -134,6 +140,13 @@ func TestReplace(t *testing.T) {
 			overrides: map[string]string{"quay.io": "mirror.example.com"},
 			want:      "",
 		},
+		{
+			name:      "When the destination is a path below its own source, it should rewrite again on a second pass",
+			image:     "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+			overrides: map[string]string{"quay.io": "quay.io/cache"},
+			want:      "quay.io/cache/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+			wantTwice: "quay.io/cache/cache/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+		},
 	}
 
 	for _, tc := range cases {
@@ -142,6 +155,14 @@ func TestReplace(t *testing.T) {
 			got := Replace(tc.image, tc.overrides)
 			if got != tc.want {
 				t.Errorf("Replace(%q, %v) = %q, want %q", tc.image, tc.overrides, got, tc.want)
+			}
+
+			wantTwice := tc.wantTwice
+			if wantTwice == "" {
+				wantTwice = tc.want
+			}
+			if twice := Replace(got, tc.overrides); twice != wantTwice {
+				t.Errorf("Replace(Replace(%q, %v), %v) = %q, want %q", tc.image, tc.overrides, tc.overrides, twice, wantTwice)
 			}
 		})
 	}
@@ -166,5 +187,72 @@ func TestReplace_DoesNotMutateOverrides(t *testing.T) {
 
 	if !reflect.DeepEqual(overrides, snapshot) {
 		t.Errorf("overrides map was mutated by Replace; got %v, want %v", overrides, snapshot)
+	}
+}
+
+func TestHasMirroredPrefix(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		image     string
+		overrides map[string]string
+		want      bool
+	}{
+		{
+			name:      "When no overrides are provided, it should report not mirrored",
+			image:     "quay.io/openshift-release-dev/ocp-release@sha256:abc",
+			overrides: nil,
+			want:      false,
+		},
+		{
+			name:      "When the image sits under a destination that matches its own source, it should report mirrored",
+			image:     "quay.io/cache/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest",
+			overrides: map[string]string{"quay.io": "quay.io/cache"},
+			want:      true,
+		},
+		{
+			name:      "When the image is the canonical source, it should report not mirrored",
+			image:     "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/cpo:latest",
+			overrides: map[string]string{"quay.io": "quay.io/cache"},
+			want:      false,
+		},
+		{
+			name:      "When the image only shares a destination prefix without a separator, it should report not mirrored",
+			image:     "quay.io/cache-team/cpo:latest",
+			overrides: map[string]string{"quay.io": "quay.io/cache"},
+			want:      false,
+		},
+		{
+			// An identity entry rewrites nothing, so it is no evidence that an image
+			// under that registry has been mirrored, and it must not suppress the more
+			// specific override below it.
+			name:  "When an identity override covers the image registry, it should report not mirrored",
+			image: "quay.io/team/cpo:latest",
+			overrides: map[string]string{
+				"quay.io":      "quay.io",
+				"quay.io/team": "mirror.example.com/team",
+			},
+			want: false,
+		},
+		{
+			name:  "When another registry is mirrored into the image registry, it should report not mirrored",
+			image: "quay.io/team/cpo:latest",
+			overrides: map[string]string{
+				"registry.redhat.io": "quay.io",
+				"quay.io/team":       "mirror.example.com/team",
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := HasMirroredPrefix(tc.image, tc.overrides)
+			if got != tc.want {
+				t.Errorf("HasMirroredPrefix(%q, %v) = %v, want %v", tc.image, tc.overrides, got, tc.want)
+			}
+		})
 	}
 }

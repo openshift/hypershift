@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hcpmanifests "github.com/openshift/hypershift/pkg/manifests"
 	etcdrecoverymanifests "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
@@ -9904,6 +9905,227 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			pullSecret := controlplaneoperator.PullSecret("cp-ns")
 			g.Expect(client.Get(t.Context(), crclient.ObjectKeyFromObject(pullSecret), pullSecret)).To(Succeed())
 			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
+		})
+	}
+}
+
+// stubReleaseImageProvider is a releaseinfo.Provider returning a fixed release payload.
+// It is used as the delegate of a real RegistryMirrorProviderDecorator so tests exercise
+// the registry rewriting the decorator actually performs, which a mocked provider hides.
+type stubReleaseImageProvider struct {
+	releaseImage *releaseinfo.ReleaseImage
+	err          error
+}
+
+func (p *stubReleaseImageProvider) Lookup(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	return p.releaseImage, nil
+}
+
+// releaseImageWithCPO returns a release payload for version that ships cpoImage as its
+// hypershift component image. InitReleaseImageOrDie omits that tag, and without it
+// GetControlPlaneOperatorImage never reaches the payload branch.
+func releaseImageWithCPO(version, cpoImage string) *releaseinfo.ReleaseImage {
+	releaseImage := testutils.InitReleaseImageOrDie(version)
+	if cpoImage != "" {
+		releaseImage.Spec.Tags = append(releaseImage.Spec.Tags, imagev1.TagReference{
+			Name: "hypershift",
+			From: &corev1.ObjectReference{Name: cpoImage},
+		})
+	}
+	return releaseImage
+}
+
+func TestResolveControlPlaneOperatorImage(t *testing.T) {
+	// t.Setenv is used below for the CPO override table path, which rules out
+	// t.Parallel for this test and its subtests.
+	t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "0")
+
+	const (
+		hypershiftOperatorImage = "quay.io/hypershift/hypershift-operator:latest"
+		// overrideTableVersion is a release version with an Azure entry in the
+		// embedded CPO override table.
+		overrideTableVersion = "4.20.0"
+		cpoSourceRepo        = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant"
+		cpoMirrorRepo        = "arohcpocpdev.azurecr.io/quay-cache/redhat-user-workloads/crt-redhat-acm-tenant"
+		// payloadCPOImage is the hypershift component image as it ships in the release
+		// payload, before the release provider mirrors it.
+		payloadCPOImage = "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift"
+	)
+
+	// Read the image from the override table rather than hardcoding it, so the
+	// test keeps working when the CPO images in overrides.yaml are bumped.
+	cpoOverrideImage := controlplaneoperatoroverrides.CPOImage(string(hyperv1.AzurePlatform), overrideTableVersion)
+	NewWithT(t).Expect(cpoOverrideImage).To(HavePrefix(cpoSourceRepo+"/"),
+		"the Azure CPO override table should have an entry for %s under %s; update overrideTableVersion if that release was dropped",
+		overrideTableVersion, cpoSourceRepo)
+	mirroredCPOImage := cpoMirrorRepo + strings.TrimPrefix(cpoOverrideImage, cpoSourceRepo)
+
+	mirrorOverrides := map[string]string{
+		"quay.io/openshift-release-dev/ocp-v4.0-art-dev": "arohcpocpdev.azurecr.io/openshift-release-dev/ocp-v4.0-art-dev",
+		cpoSourceRepo: cpoMirrorRepo,
+	}
+
+	// overlappingOverrides maps a registry onto a path below itself, the shape a pull
+	// through cache namespace on the same registry takes. A mirrored image still matches
+	// the source prefix, so a second rewrite yields "quay.io/cache/cache/...".
+	// registryoverride.Replace is single-pass, so only images that have not been
+	// rewritten already may be passed through it.
+	overlappingOverrides := map[string]string{"quay.io": "quay.io/cache"}
+	cachedCPOOverrideImage := "quay.io/cache" + strings.TrimPrefix(cpoOverrideImage, "quay.io")
+
+	// identityOverrides pairs a no-op entry for the whole registry with a real mirror
+	// for one repository under it. The no-op entry rewrites nothing, so it must not make
+	// images under that registry look mirrored and bypass the more specific entry.
+	identityOverrides := map[string]string{
+		"quay.io":     "quay.io",
+		cpoSourceRepo: cpoMirrorRepo,
+	}
+
+	// mirroredIntoSourceOverrides sends a different registry into quay.io while still
+	// mirroring the CPO repository out of it. quay.io being a destination says nothing
+	// about whether a quay.io image has been mirrored, so the CPO entry must still win.
+	mirroredIntoSourceOverrides := map[string]string{
+		"registry.redhat.io": "quay.io",
+		cpoSourceRepo:        cpoMirrorRepo,
+	}
+
+	testCases := []struct {
+		name            string
+		annotation      string
+		enableOverrides bool
+		overrides       map[string]string
+		payloadCPOImage string
+		lookupErr       error
+		expectedImage   string
+		expectErr       bool
+	}{
+		{
+			name:          "When the CPO image is overridden by annotation and a registry override matches, it should return the mirrored image",
+			annotation:    cpoOverrideImage,
+			overrides:     mirrorOverrides,
+			expectedImage: mirroredCPOImage,
+		},
+		{
+			name:            "When the CPO image comes from the override table and a registry override matches, it should return the mirrored image",
+			enableOverrides: true,
+			overrides:       mirrorOverrides,
+			expectedImage:   mirroredCPOImage,
+		},
+		{
+			name:            "When the CPO image comes from the override table and no registry override matches, it should return the image unchanged",
+			enableOverrides: true,
+			overrides:       map[string]string{"registry.redhat.io/redhat": "arohcpocpdev.azurecr.io/redhat"},
+			expectedImage:   cpoOverrideImage,
+		},
+		{
+			name:          "When the CPO image is already mirrored, it should return the image unchanged",
+			annotation:    mirroredCPOImage,
+			overrides:     mirrorOverrides,
+			expectedImage: mirroredCPOImage,
+		},
+		{
+			name:          "When no registry override matches the CPO image, it should return the image unchanged",
+			annotation:    cpoOverrideImage,
+			overrides:     map[string]string{"registry.redhat.io/redhat": "arohcpocpdev.azurecr.io/redhat"},
+			expectedImage: cpoOverrideImage,
+		},
+		{
+			name:          "When no registry overrides are configured, it should return the image unchanged",
+			annotation:    cpoOverrideImage,
+			overrides:     nil,
+			expectedImage: cpoOverrideImage,
+		},
+		{
+			name:            "When the CPO image comes from the release payload and the override destination matches its own source, it should rewrite the image only once",
+			overrides:       overlappingOverrides,
+			payloadCPOImage: payloadCPOImage,
+			expectedImage:   "quay.io/cache/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+		},
+		{
+			name:            "When the CPO image comes from the release payload and a registry override matches, it should return the image mirrored by the release provider",
+			overrides:       mirrorOverrides,
+			payloadCPOImage: payloadCPOImage,
+			expectedImage:   "arohcpocpdev.azurecr.io/openshift-release-dev/ocp-v4.0-art-dev:4.20.0-hypershift",
+		},
+		{
+			name:          "When the CPO image is overridden by annotation and the override destination matches its own source, it should rewrite the image only once",
+			annotation:    cpoOverrideImage,
+			overrides:     overlappingOverrides,
+			expectedImage: cachedCPOOverrideImage,
+		},
+		{
+			// Annotating an already mirrored image was the workaround for the CPO not
+			// being mirrored at all, so such HostedClusters must keep resolving to the
+			// same image once the operator starts applying the overrides itself.
+			name:          "When the annotation already names a mirrored image and the override destination matches its own source, it should return the image unchanged",
+			annotation:    cachedCPOOverrideImage,
+			overrides:     overlappingOverrides,
+			expectedImage: cachedCPOOverrideImage,
+		},
+		{
+			name:          "When an identity override covers the registry of an annotated CPO image, it should still apply the more specific override",
+			annotation:    cpoOverrideImage,
+			overrides:     identityOverrides,
+			expectedImage: mirroredCPOImage,
+		},
+		{
+			name:          "When another registry is mirrored into the registry of an annotated CPO image, it should still apply the more specific override",
+			annotation:    cpoOverrideImage,
+			overrides:     mirroredIntoSourceOverrides,
+			expectedImage: mirroredCPOImage,
+		},
+		{
+			name:          "When the release payload ships no CPO image, it should return the hypershift operator image unchanged",
+			overrides:     overlappingOverrides,
+			expectedImage: hypershiftOperatorImage,
+		},
+		{
+			name:      "When the release image lookup fails, it should return an error",
+			overrides: mirrorOverrides,
+			lookupErr: errors.New("failed to look up release image"),
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "any"},
+				Spec: hyperv1.HostedClusterSpec{
+					Release:  hyperv1.Release{Image: "quay.io/openshift-release-dev/ocp-release:4.20.0-x86_64"},
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AzurePlatform},
+				},
+			}
+			if tc.annotation != "" {
+				hcluster.Annotations = map[string]string{hyperv1.ControlPlaneOperatorImageAnnotation: tc.annotation}
+			}
+			if tc.enableOverrides {
+				t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "1")
+			}
+
+			// The real decorator, not a mock, so the payload path goes through the same
+			// rewriting it does in production.
+			releaseProvider := &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate: &stubReleaseImageProvider{
+					releaseImage: releaseImageWithCPO(overrideTableVersion, tc.payloadCPOImage),
+					err:          tc.lookupErr,
+				},
+				RegistryOverrides: tc.overrides,
+			}
+
+			image, err := resolveControlPlaneOperatorImage(t.Context(), hcluster, releaseProvider, hypershiftOperatorImage, nil)
+
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred(), "it should return an error when the release image lookup fails")
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred(), "it should resolve the control plane operator image")
+			g.Expect(image).To(Equal(tc.expectedImage), "it should apply the registry overrides to the control plane operator image exactly once")
 		})
 	}
 }
