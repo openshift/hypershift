@@ -5098,3 +5098,77 @@ func TestMHCRemediationAllowedChangedPredicate(t *testing.T) {
 		})
 	}
 }
+
+func TestMachineBootstrapDataSecretNameChangedPredicate(t *testing.T) {
+	t.Parallel()
+
+	newMachine := func(dataSecretName *string) *capiv1.Machine {
+		return &capiv1.Machine{
+			Spec: capiv1.MachineSpec{
+				Bootstrap: capiv1.Bootstrap{DataSecretName: dataSecretName},
+			},
+		}
+	}
+
+	tests := []struct {
+		name     string
+		old      *capiv1.Machine
+		new      *capiv1.Machine
+		expected bool
+	}{
+		{
+			name:     "When the bootstrap data Secret reference changes, it should trigger reconciliation",
+			old:      newMachine(ptr.To("user-data-np-hash-a")),
+			new:      newMachine(ptr.To("user-data-np-hash-b")),
+			expected: true,
+		},
+		{
+			name:     "When the bootstrap data Secret reference is set, it should trigger reconciliation",
+			old:      newMachine(nil),
+			new:      newMachine(ptr.To("user-data-np-hash")),
+			expected: true,
+		},
+		{
+			name:     "When the bootstrap data Secret reference is cleared, it should trigger reconciliation",
+			old:      newMachine(ptr.To("user-data-np-hash")),
+			new:      newMachine(nil),
+			expected: true,
+		},
+		{
+			name: "When only Machine status changes, it should not trigger reconciliation",
+			old:  newMachine(ptr.To("user-data-np-hash")),
+			new: func() *capiv1.Machine {
+				m := newMachine(ptr.To("user-data-np-hash"))
+				m.Status.NodeRef = capiv1.MachineNodeReference{Name: "worker-0"}
+				m.Status.Conditions = []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue}}
+				return m
+			}(),
+			expected: false,
+		},
+	}
+
+	pred := machineBootstrapDataSecretNameChangedPredicate()
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			e := event.UpdateEvent{
+				ObjectOld: tt.old,
+				ObjectNew: tt.new,
+			}
+			g.Expect(pred.Update(e)).To(Equal(tt.expected))
+		})
+	}
+
+	t.Run("When a Machine is created or deleted, it should trigger reconciliation", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		g.Expect(pred.Create(event.CreateEvent{Object: newMachine(ptr.To("user-data-np-hash"))})).To(BeTrue(),
+			"Machine creation must trigger reconciliation: autoscaler-created Machines need their bootstrap reference re-evaluated")
+		g.Expect(pred.Delete(event.DeleteEvent{Object: newMachine(ptr.To("user-data-np-hash"))})).To(BeTrue(),
+			"Machine deletion must trigger reconciliation: the bootstrap reference going away re-enables Secret cleanup")
+	})
+}
