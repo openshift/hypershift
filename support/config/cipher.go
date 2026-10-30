@@ -85,6 +85,32 @@ func CipherSuites(securityProfile *configv1.TLSSecurityProfile) ([]string, error
 	return OpenSSLToIANACipherSuites(ciphers), nil
 }
 
+// TLSGroups returns the TLS groups from the provided security profile. For named
+// profiles (Old, Intermediate, Modern) this is the profile's default group list.
+// For Custom profiles with no groups field set, this returns nil to indicate no
+// opinion and callers should not override Go's default curve preferences.
+func TLSGroups(securityProfile *configv1.TLSSecurityProfile) ([]configv1.TLSGroup, error) {
+	if securityProfile == nil {
+		securityProfile = &configv1.TLSSecurityProfile{
+			Type: configv1.TLSProfileIntermediateType,
+		}
+	}
+	if securityProfile.Type == configv1.TLSProfileCustomType {
+		if securityProfile.Custom == nil {
+			return nil, fmt.Errorf("TLS profile type is Custom but Custom field is nil")
+		}
+		if len(securityProfile.Custom.Groups) == 0 {
+			return nil, nil
+		}
+		return securityProfile.Custom.Groups, nil
+	}
+	profile := configv1.TLSProfiles[securityProfile.Type]
+	if profile == nil {
+		return nil, fmt.Errorf("unknown TLS profile type %q", securityProfile.Type)
+	}
+	return profile.Groups, nil
+}
+
 // SupportedEtcdCipherSuites filters the input cipher suites to only those supported by
 // etcd. It validates each cipher against etcd's tlsutil.GetCipherSuite(). Unknown suites
 // are logged.
@@ -137,5 +163,28 @@ func SetCipherSuitesUsingAPIServer(apiServerConfig *configv1.APIServer) (func(*t
 	}
 	return func(tlsConfig *tls.Config) {
 		tlsConfig.CipherSuites = suites
+	}, nil
+}
+
+// SetCurvePreferencesUsingAPIServer returns a function capable of setting curve
+// preferences on a tls.Config using the hub cluster APIServer TLS security
+// profile. When the profile does not specify groups, the returned setter is a
+// no-op so Go's default curve preferences are unchanged.
+func SetCurvePreferencesUsingAPIServer(apiServerConfig *configv1.APIServer) (func(*tls.Config), error) {
+	groups, err := TLSGroups(apiServerConfig.Spec.TLSSecurityProfile)
+	if err != nil {
+		return nil, err
+	}
+	if groups == nil {
+		return func(*tls.Config) {}, nil
+	}
+
+	curveIDs, _ := crypto.TLSGroupsToCurveIDs(groups)
+	if len(curveIDs) == 0 {
+		return func(*tls.Config) {}, nil
+	}
+
+	return func(tlsConfig *tls.Config) {
+		tlsConfig.CurvePreferences = curveIDs
 	}, nil
 }
