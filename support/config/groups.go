@@ -15,6 +15,14 @@ import (
 // CurvePreferences resolves a TLS profile's groups to Go curve IDs.
 // Unrecognized or non approved (FIPS) groups are logged and skipped.
 func CurvePreferences(ctx context.Context, profile *configv1.TLSSecurityProfile) ([]tls.CurveID, error) {
+	// HACK (main-CPO-on-4.20 experiment): the --tls-curve-preferences operand flag (post-quantum
+	// curve 4588) only exists in >= 5.0 binaries; the 4.20 machine-approver rejects it
+	// ("unknown flag: --tls-curve-preferences") and CrashLoops. Return nil on older payloads so
+	// no curve flag is emitted. Same operand-version gate as TLSArgs.
+	if !operandSupportsTLSArgs() {
+		return nil, nil
+	}
+
 	if profile == nil {
 		profile = &configv1.TLSSecurityProfile{Type: libgocrypto.DefaultTLSProfileType}
 	}

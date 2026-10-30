@@ -20,10 +20,8 @@ spec:
       - args:
         - start
         - -v=2
-        - --config=/var/run/configmaps/config/config.yaml
         - --terminate-on-files=/var/run/secrets/serving-cert/tls.crt
         - --terminate-on-files=/var/run/secrets/serving-cert/tls.key
-        - --terminate-on-files=/var/run/configmaps/config/config.yaml
         - --guest-kubeconfig=/etc/guest-kubeconfig/kubeconfig
         command:
         - cluster-storage-operator
@@ -99,8 +97,6 @@ spec:
           value: quay.io/openshift/origin-control-plane:latest
         - name: AWS_EBS_DRIVER_CONTROL_PLANE_IMAGE
           value: quay.io/openshift/origin-aws-ebs-csi-driver:latest
-        - name: GCP_PD_DRIVER_CONTROL_PLANE_IMAGE
-          value: quay.io/openshift/origin-gcp-pd-csi-driver:latest
         - name: AZURE_DISK_DRIVER_CONTROL_PLANE_IMAGE
           value: quay.io/openshift/origin-azure-disk-csi-driver-operator:latest
         - name: LIVENESS_PROBE_CONTROL_PLANE_IMAGE
@@ -136,11 +132,6 @@ spec:
         volumeMounts:
         - mountPath: /etc/guest-kubeconfig
           name: guest-kubeconfig
-        - mountPath: /var/run/secrets/serving-cert
-          name: cluster-storage-operator-serving-cert
-        - mountPath: /var/run/configmaps/config
-          name: config
-          readOnly: true
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -150,9 +141,3 @@ spec:
       - name: guest-kubeconfig
         secret:
           secretName: service-network-admin-kubeconfig
-      - name: cluster-storage-operator-serving-cert
-        secret:
-          secretName: cluster-storage-operator-serving-cert
-      - configMap:
-          name: cluster-storage-operator-config
-        name: config

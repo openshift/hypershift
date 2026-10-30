@@ -39,6 +39,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -89,6 +90,11 @@ type envConfig struct {
 	etcdSC      string
 	pullSecret  string
 
+	// EXPERIMENT (main-CPO-on-4.20): CPO image resolved from the CI-passed payload
+	// (RELEASE_IMAGE_LATEST). Applied as the control-plane-operator-image annotation on
+	// every created HostedCluster so the PR's CPO drives the pinned 4.20.x guest.
+	cpoOverrideImage string
+
 	platform         lifecycle.PlatformConfig
 	hypershiftBinary string
 	waitTimeout      time.Duration
@@ -136,6 +142,22 @@ func loadEnvConfig() envConfig {
 	if cfg.n1Image == "" {
 		cfg.n1Image = cfg.releaseImage
 	}
+
+	// EXPERIMENT (main-CPO-on-4.20): resolve the CPO from the CI-passed payload
+	// (RELEASE_IMAGE_LATEST, currently in cfg.releaseImage) BEFORE pinning the guest
+	// release, since the payload embeds the PR's CPO as its "hypershift" component image.
+	// Then hard-pin every created guest to the base version (4.20.42). The upgrade target
+	// (4.20.43) is driven by the test binary via E2E_LATEST_RELEASE_IMAGE, not here.
+	cpoCtx, cpoCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	cpo, err := e2eutil.ResolveCPOImageFromPayload(cpoCtx, cfg.releaseImage, cfg.pullSecret)
+	cpoCancel()
+	if err != nil {
+		log.Fatalf("Failed to resolve CPO image from passed payload %q: %v", cfg.releaseImage, err)
+	}
+	cfg.cpoOverrideImage = cpo.CPOImage
+	cfg.releaseImage = e2eutil.PinnedGuestReleaseImage
+	cfg.n1Image = e2eutil.PinnedGuestReleaseImage
+	e2eutil.LogExperimentPinning(log.Printf, "v2 create-guests loadEnvConfig", cpo, e2eutil.PinnedGuestReleaseImage, e2eutil.PinnedGuestUpgradeReleaseImage)
 
 	return cfg
 }
@@ -278,10 +300,13 @@ func run(ctx context.Context, cfg envConfig) error {
 
 // buildCreateArgs returns CLI arguments for creating a cluster.
 func buildCreateArgs(cfg envConfig, ns namedSpec) []string {
+	// EXPERIMENT (main-CPO-on-4.20): always create at the pinned base release. Ignore any
+	// per-spec ns.ReleaseImage (e.g. the "upgrade" variant's n1Image) so no spec can leak a
+	// non-pinned guest at create time. cfg.releaseImage is already pinned in loadEnvConfig.
+	// The upgrade still happens: the test binary bumps the HostedCluster to the upgrade
+	// target (E2E_LATEST_RELEASE_IMAGE), which is pinned == base HC (4.20.42) so the upgrade
+	// never drives a NodePool/HC above the HostedCluster version (ValidateVersionSkew).
 	releaseImage := cfg.releaseImage
-	if ns.ReleaseImage != "" {
-		releaseImage = ns.ReleaseImage
-	}
 	nodeCount := cfg.nodeCount
 	if ns.InitialNodePoolReplicas != nil {
 		nodeCount = *ns.InitialNodePoolReplicas
@@ -297,6 +322,12 @@ func buildCreateArgs(cfg envConfig, ns namedSpec) []string {
 		"--pull-secret=" + cfg.pullSecret,
 		"--release-image=" + releaseImage,
 		"--generate-ssh",
+	}
+
+	// EXPERIMENT (main-CPO-on-4.20): override the CPO with the one resolved from the passed
+	// payload. This annotation is precedence #1 in GetControlPlaneOperatorImage.
+	if cfg.cpoOverrideImage != "" {
+		args = append(args, "--annotations="+hyperv1.ControlPlaneOperatorImageAnnotation+"="+cfg.cpoOverrideImage)
 	}
 
 	if cfg.externalDNS != "" {
