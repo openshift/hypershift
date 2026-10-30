@@ -16,21 +16,6 @@ import (
 )
 
 const (
-	// tokenIssuer identifies the generator that signed a bearer token.
-	tokenIssuer = "ignition-payload-controller"
-	// tokenAudience is the audience the serving tier validates a presented token against.
-	tokenAudience = "ignition-server"
-
-	// rolloutGenerationHeader is the static HTTP header baked into a node's userData that selects
-	// which rollout generation the server resolves. It is a plain (unsigned) request input: the
-	// token's name-scope is the authorization boundary, and only the two retained generations
-	// resolve to a live store entry, so an unsigned selector introduces no escalation.
-	rolloutGenerationHeader = "rollout-generation"
-
-	// defaultTokenClockSkew is the leeway applied to the not-before claim so a first-booting node
-	// whose clock is wrong before NTP is not rejected.
-	defaultTokenClockSkew = 10 * time.Minute
-
 	// userData Secret keys, matching the pointer-ignition contract CAPI consumes at first boot.
 	userDataValueKey             = "value"
 	userDataDisableTemplatingKey = "disableTemplating"
@@ -72,9 +57,9 @@ func LoadECDSAPrivateKey(pemBytes []byte) (*ecdsa.PrivateKey, error) {
 func NewJWTMinter(key *ecdsa.PrivateKey) *jwtMinter {
 	return &jwtMinter{
 		key:       key,
-		issuer:    tokenIssuer,
-		audience:  tokenAudience,
-		clockSkew: defaultTokenClockSkew,
+		issuer:    payloadstore.TokenIssuer,
+		audience:  payloadstore.TokenAudience,
+		clockSkew: payloadstore.DefaultTokenClockSkew,
 		now:       time.Now,
 	}
 }
@@ -86,14 +71,14 @@ func NewJWTMinter(key *ecdsa.PrivateKey) *jwtMinter {
 func (m *jwtMinter) Mint(owner payloadstore.OwnerRef, ttl time.Duration) (string, error) {
 	now := m.now()
 	claims := jwt.MapClaims{
-		"iss":              m.issuer,
-		"aud":              m.audience,
-		"sub":              owner.Namespace + "/" + owner.Name,
-		"payloadNamespace": owner.Namespace,
-		"payloadName":      owner.Name,
-		"iat":              now.Unix(),
-		"nbf":              now.Add(-m.clockSkew).Unix(),
-		"exp":              now.Add(ttl).Unix(),
+		"iss":                              m.issuer,
+		"aud":                              m.audience,
+		"sub":                              owner.Namespace + "/" + owner.Name,
+		payloadstore.ClaimPayloadNamespace: owner.Namespace,
+		payloadstore.ClaimPayloadName:      owner.Name,
+		"iat":                              now.Unix(),
+		"nbf":                              now.Add(-m.clockSkew).Unix(),
+		"exp":                              now.Add(ttl).Unix(),
 	}
 	signed, err := jwt.NewWithClaims(jwt.SigningMethodES256, claims).SignedString(m.key)
 	if err != nil {
@@ -123,7 +108,7 @@ func pointerIgnitionConfig(caCert []byte, token, endpoint, payloadName string, r
 						Source: ptr.To(fmt.Sprintf("https://%s/ignition/%s", endpoint, payloadName)),
 						HTTPHeaders: []ignitionapi.HTTPHeader{
 							{Name: "Authorization", Value: ptr.To(fmt.Sprintf("Bearer %s", token))},
-							{Name: rolloutGenerationHeader, Value: ptr.To(fmt.Sprintf("%d", rolloutGeneration))},
+							{Name: payloadstore.RolloutGenerationHeader, Value: ptr.To(fmt.Sprintf("%d", rolloutGeneration))},
 						},
 					},
 				},

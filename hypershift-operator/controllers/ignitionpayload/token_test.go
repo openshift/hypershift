@@ -32,7 +32,7 @@ func TestNewJWTMinter(t *testing.T) {
 		claims := jwt.MapClaims{}
 		parsed, err := jwt.ParseWithClaims(tok, claims, func(token *jwt.Token) (any, error) {
 			return &key.PublicKey, nil
-		}, jwt.WithValidMethods([]string{"ES256"}), jwt.WithAudience(tokenAudience), jwt.WithIssuer(tokenIssuer))
+		}, jwt.WithValidMethods([]string{"ES256"}), jwt.WithAudience(payloadstore.TokenAudience), jwt.WithIssuer(payloadstore.TokenIssuer))
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(parsed.Valid).To(BeTrue())
 
@@ -58,6 +58,22 @@ func TestNewJWTMinter(t *testing.T) {
 		}, jwt.WithValidMethods([]string{"ES256"}))
 		g.Expect(err).To(HaveOccurred(), "an expired token must fail verification")
 	})
+
+	t.Run("a minted token verifies against the shared serving-tier verifier, scoped to the owner", func(t *testing.T) {
+		g := NewWithT(t)
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		g.Expect(err).ToNot(HaveOccurred())
+		owner := payloadstore.OwnerRef{Namespace: "hcp", Name: "np-1"}
+
+		// A token the generator mints must verify against the shared serving-tier verifier. This
+		// pins the two sides to the same audience/issuer/claim contract.
+		tok, err := NewJWTMinter(key).Mint(owner, time.Hour)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		got, err := payloadstore.NewTokenVerifier(&key.PublicKey).Verify(tok)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(got).To(Equal(owner))
+	})
 }
 
 func TestPointerIgnitionConfig(t *testing.T) {
@@ -76,7 +92,7 @@ func TestPointerIgnitionConfig(t *testing.T) {
 		headers[h.Name] = *h.Value
 	}
 	g.Expect(headers["Authorization"]).To(Equal("Bearer tok-abc"))
-	g.Expect(headers[rolloutGenerationHeader]).To(Equal("3"), "static header selects the rollout generation")
+	g.Expect(headers[payloadstore.RolloutGenerationHeader]).To(Equal("3"), "static header selects the rollout generation")
 }
 
 func TestLoadECDSAPrivateKey(t *testing.T) {
