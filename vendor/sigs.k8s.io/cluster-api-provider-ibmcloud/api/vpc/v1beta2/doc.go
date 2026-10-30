@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1beta2 contains the v1beta2 API implementation.
+// Package v1beta2 contains the IBMCloudVPC v1beta2 API implementation.
 package v1beta2

@@ -42,9 +42,9 @@ type IBMPowerVSMachineTemplateStatus struct {
 	Capacity corev1.ResourceList `json:"capacity,omitempty"`
 }
 
-//+kubebuilder:subresource:status
-//+kubebuilder:object:root=true
-//+kubebuilder:storageversion
+// +kubebuilder:subresource:status
+// +kubebuilder:object:root=true
+// +kubebuilder:deprecatedversion
 
 // IBMPowerVSMachineTemplate is the Schema for the ibmpowervsmachinetemplates API.
 type IBMPowerVSMachineTemplate struct {
@@ -55,7 +55,7 @@ type IBMPowerVSMachineTemplate struct {
 	Status IBMPowerVSMachineTemplateStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // IBMPowerVSMachineTemplateList contains a list of IBMPowerVSMachineTemplate.
 type IBMPowerVSMachineTemplateList struct {
