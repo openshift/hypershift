@@ -120,7 +120,7 @@ func TestGetDigest(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			provider := &RegistryClientImageMetadataProvider{
-				OpenShiftImageRegistryOverrides: tc.overrides,
+				openShiftImageRegistryOverrides: tc.overrides,
 			}
 			if tc.setupMock != nil {
 				provider.repoSetupFn = tc.setupMock(ctrl)
@@ -232,7 +232,7 @@ func TestGetManifest(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			provider := &RegistryClientImageMetadataProvider{
-				OpenShiftImageRegistryOverrides: tc.overrides,
+				openShiftImageRegistryOverrides: tc.overrides,
 			}
 			if tc.setupMock != nil {
 				provider.repoSetupFn = tc.setupMock(ctrl)
@@ -514,7 +514,7 @@ func TestSeekOverride(t *testing.T) {
 			g := NewGomegaWithT(t)
 			pullSecret := []byte(`{"auths":{}}`)
 			provider := &RegistryClientImageMetadataProvider{
-				OpenShiftImageRegistryOverrides: tc.overrides,
+				openShiftImageRegistryOverrides: tc.overrides,
 				metadataGetter:                  fakeGetter,
 			}
 			imgRef := provider.seekOverride(ctx, tc.imageRef, pullSecret)
@@ -1043,7 +1043,7 @@ func TestSeekOverrideWithCache(t *testing.T) {
 		}
 
 		provider := &RegistryClientImageMetadataProvider{
-			OpenShiftImageRegistryOverrides: overrides,
+			openShiftImageRegistryOverrides: overrides,
 			metadataGetter:                  failingGetter,
 		}
 
@@ -1073,7 +1073,7 @@ func TestSeekOverrideWithCache(t *testing.T) {
 
 		// Test with first mirror
 		provider1 := &RegistryClientImageMetadataProvider{
-			OpenShiftImageRegistryOverrides: map[string][]string{
+			openShiftImageRegistryOverrides: map[string][]string{
 				"quay.io": {"mirror1.example.com"},
 			},
 			metadataGetter: failingGetter,
@@ -1082,7 +1082,7 @@ func TestSeekOverrideWithCache(t *testing.T) {
 
 		// Test with second mirror
 		provider2 := &RegistryClientImageMetadataProvider{
-			OpenShiftImageRegistryOverrides: map[string][]string{
+			openShiftImageRegistryOverrides: map[string][]string{
 				"quay.io": {"mirror2.example.com"},
 			},
 			metadataGetter: failingGetter,
@@ -1110,7 +1110,7 @@ func TestSeekOverrideFallsBackWhenMirrorUnavailable(t *testing.T) {
 	ctx := context.Background()
 
 	provider := &RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: map[string][]string{
+		openShiftImageRegistryOverrides: map[string][]string{
 			"quay.io": {"nonexistent-mirror.invalid"},
 		},
 		// Mock metadataGetter that simulates an unavailable mirror, avoiding real network calls.
