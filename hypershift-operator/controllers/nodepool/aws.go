@@ -426,6 +426,7 @@ func (c *CAPI) awsMachineTemplate(ctx context.Context, templateNameGenerator fun
 		return nil, fmt.Errorf("failed to get existing AWSMachineTemplate: %w", err)
 	}
 
+	// CAPI MachineDeployment and MachineSet reconciliation adds the Cluster owner reference to this template.
 	template := &capiaws.AWSMachineTemplate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: templateName,
