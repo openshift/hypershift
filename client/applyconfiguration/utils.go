@@ -467,6 +467,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ServicePublishingStrategyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ServicePublishingStrategyMapping"):
 		return &hypershiftv1beta1.ServicePublishingStrategyMappingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("SharedIngressWorkerAPIEndpoint"):
+		return &hypershiftv1beta1.SharedIngressWorkerAPIEndpointApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SpotOptions"):
 		return &hypershiftv1beta1.SpotOptionsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SubnetFilter"):

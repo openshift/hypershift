@@ -14,7 +14,6 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -3009,8 +3008,12 @@ contexts:
 current-context: cluster
 kind: Config`)},
 			}
-			sharedIngressService := sharedingress.RouterPublicService()
-			sharedIngressService.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{IP: "10.0.0.100"}}
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: hostedCluster.Name, Namespace: testNamespace},
+				Status: hyperv1.HostedControlPlaneStatus{
+					SharedIngressWorkerAPIEndpoint: hyperv1.SharedIngressWorkerAPIEndpoint{IP: "10.0.0.100", Port: 6443},
+				},
+			}
 			coreConfigs := []client.Object{}
 			for _, name := range []string{"core-ignition-config-1", "core-ignition-config-2"} {
 				coreConfigs = append(coreConfigs, &corev1.ConfigMap{
@@ -3024,8 +3027,8 @@ kind: Config`)},
 
 			fakeManagementClient := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
-				WithObjects(append(coreConfigs, pullSecret, kubeconfigSecret, sharedIngressService)...).
-				WithStatusSubresource(sharedIngressService).
+				WithObjects(append(coreConfigs, pullSecret, kubeconfigSecret, hcp)...).
+				WithStatusSubresource(hcp).
 				Build()
 
 			r := &KarpenterIgnitionReconciler{

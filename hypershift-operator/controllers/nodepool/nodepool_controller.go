@@ -56,6 +56,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -149,6 +150,10 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&hyperv1.NodePool{}, builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the HostedCluster IgnitionEndpoint is available.
 		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
+		Watches(&hyperv1.HostedControlPlane{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedControlPlane), builder.WithPredicates(
+			reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()),
+			sharedIngressEndpointChangedPredicate(),
+		)).
 		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		Watches(&capiv1.MachineHealthCheck{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(predicate.And(mhcRemediationAllowedChangedPredicate(), reconcilerpolicy.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))).
@@ -186,6 +191,24 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor("nodepool-controller")
 
 	return nil
+}
+
+// sharedIngressEndpointChangedPredicate passes HostedControlPlane events only when
+// Status.SharedIngressWorkerAPIEndpoint changes, the only field NodePools consume.
+func sharedIngressEndpointChangedPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldHCP, ok := e.ObjectOld.(*hyperv1.HostedControlPlane)
+			if !ok {
+				return true
+			}
+			newHCP, ok := e.ObjectNew.(*hyperv1.HostedControlPlane)
+			if !ok {
+				return true
+			}
+			return oldHCP.Status.SharedIngressWorkerAPIEndpoint != newHCP.Status.SharedIngressWorkerAPIEndpoint
+		},
+	}
 }
 
 // managedResources are all the resources that are managed as childresources for a HostedCluster
@@ -1119,6 +1142,17 @@ func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(ctx context.Contex
 	}
 
 	return result
+}
+
+func (r *NodePoolReconciler) enqueueNodePoolsForHostedControlPlane(ctx context.Context, obj client.Object) []reconcile.Request {
+	hcName, ok := obj.GetAnnotations()[k8sutil.HostedClusterAnnotation]
+	if !ok {
+		return nil
+	}
+	hc := supportutil.ParseNamespacedName(hcName)
+	return r.enqueueNodePoolsForHostedCluster(ctx, &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: hc.Name},
+	})
 }
 
 func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj client.Object) []reconcile.Request {

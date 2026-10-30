@@ -54581,6 +54581,21 @@ after the infrastructure is ready.</p>
 </tr>
 <tr>
 <td>
+<code>sharedIngressWorkerAPIEndpoint,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SharedIngressWorkerAPIEndpoint">
+SharedIngressWorkerAPIEndpoint
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>sharedIngressWorkerAPIEndpoint is the observed address workers use to reach
+the API through shared ingress. It is absent when unavailable or not applicable.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>oauthCallbackURLTemplate</code></br>
 <em>
 string
@@ -61943,6 +61958,60 @@ ServicePublishingStrategy
 <p>ServiceType defines what control plane services can be exposed from the
 management control plane.</p>
 </p>
+###SharedIngressWorkerAPIEndpoint { #hypershift.openshift.io/v1beta1.SharedIngressWorkerAPIEndpoint }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>SharedIngressWorkerAPIEndpoint contains the first shared ingress address.
+The producer publishes the IP when one is reported and falls back to the hostname.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ip</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ip is the load balancer IP address.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>hostname</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>hostname is the load balancer hostname when no IP is reported.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>port</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<p>port is the port workers use to reach the shared ingress API endpoint.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###SpotOptions { #hypershift.openshift.io/v1beta1.SpotOptions }
 <p>
 (<em>Appears on:</em>

@@ -999,6 +999,10 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
 
+	if err := r.reconcileSharedIngressWorkerEndpoint(ctx, hcluster); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if err := r.defaultClusterIDsIfNeeded(ctx, hcluster); err != nil {
 		return ctrl.Result{}, err
 	}

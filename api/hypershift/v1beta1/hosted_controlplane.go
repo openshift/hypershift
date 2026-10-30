@@ -352,6 +352,11 @@ type HostedControlPlaneStatus struct {
 	// +optional
 	ControlPlaneEndpoint APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 
+	// sharedIngressWorkerAPIEndpoint is the observed address workers use to reach
+	// the API through shared ingress. It is absent when unavailable or not applicable.
+	// +optional
+	SharedIngressWorkerAPIEndpoint SharedIngressWorkerAPIEndpoint `json:"sharedIngressWorkerAPIEndpoint,omitzero"`
+
 	// oauthCallbackURLTemplate contains a template for the URL to use as a callback
 	// for identity providers. The [identity-provider-name] placeholder must be replaced
 	// with the name of an identity provider defined on the HostedCluster.
@@ -447,6 +452,29 @@ type HostedControlPlaneInitializationStatus struct {
 	// This satisfies CAPI contract https://cluster-api.sigs.k8s.io/developer/providers/contracts/control-plane#controlplane-initialization-completed
 	// +optional
 	ControlPlaneInitialized *bool `json:"controlPlaneInitialized,omitempty"`
+}
+
+// SharedIngressWorkerAPIEndpoint contains the first shared ingress address.
+// The producer publishes the IP when one is reported and falls back to the hostname.
+// +kubebuilder:validation:MinProperties=2
+type SharedIngressWorkerAPIEndpoint struct {
+	// ip is the load balancer IP address.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=45
+	IP string `json:"ip,omitempty"`
+
+	// hostname is the load balancer hostname when no IP is reported.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Hostname string `json:"hostname,omitempty"`
+
+	// port is the port workers use to reach the shared ingress API endpoint.
+	// +required
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port,omitempty"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.

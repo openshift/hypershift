@@ -14,7 +14,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/imageregistry"
@@ -100,7 +99,7 @@ func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *
 	return cpoSkips, controlPlaneOperatorImage, nil
 }
 
-func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, err error) {
+func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage, controlPlaneNamespace string) (cfg string, err error) {
 	var apiServerExternalAddress string
 	var apiServerExternalPort int32
 	var apiServerInternalAddress string
@@ -180,21 +179,14 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *
 
 	// This is true for ARO in CI while swift is not available.
 	if netutil.UseSharedIngressHC(hcluster) && !netutil.IsPrivateHC(hcluster) {
-		sharedIngressRouteSVC := &corev1.Service{
-			TypeMeta: metav1.TypeMeta{},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      sharedingress.RouterPublicService().Name,
-				Namespace: sharedingress.RouterNamespace,
-			},
-		}
-		if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(sharedIngressRouteSVC), sharedIngressRouteSVC); err != nil {
+		apiServerExternalAddress, apiServerExternalPort, err = ResolveSharedIngressWorkerAPIEndpoint(
+			ctx,
+			r.Client,
+			crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: hcluster.Name},
+		)
+		if err != nil {
 			return "", err
 		}
-		if len(sharedIngressRouteSVC.Status.LoadBalancer.Ingress) < 1 {
-			return "", fmt.Errorf("waiting on sharedIngress route service to report .Status.LoadBalancer.Ingress")
-		}
-		apiServerExternalAddress = sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].IP
-		apiServerExternalPort = sharedingress.KASSVCLBPort
 	}
 
 	useProxyProtocol := netutil.UseSharedIngressHC(hcluster) && !netutil.IsPrivateHC(hcluster)
@@ -619,7 +611,7 @@ func (r *HAProxy) GenerateHAProxyRawConfig(ctx context.Context, hcluster *hyperv
 			}
 		}
 
-		haproxyRawConfig, err = r.reconcileHAProxyIgnitionConfig(ctx, hcluster, cpoImage)
+		haproxyRawConfig, err = r.reconcileHAProxyIgnitionConfig(ctx, hcluster, cpoImage, controlPlaneNamespace)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate haproxy ignition config: %w", err)
 		}

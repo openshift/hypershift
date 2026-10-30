@@ -7,7 +7,7 @@
     "List$",
     "HostedControlPlane*$",
     "KubeconfigSecretRef",
-    "APIEndpoint",
+    "\\.APIEndpoint$",
     "AWSEndpointService*"
   ],
   "externalPackages": [

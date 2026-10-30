@@ -31,6 +31,7 @@ type HostedControlPlaneStatusApplyConfiguration struct {
 	Initialized                    *bool                                                     `json:"initialized,omitempty"`
 	ExternalManagedControlPlane    *bool                                                     `json:"externalManagedControlPlane,omitempty"`
 	ControlPlaneEndpoint           *APIEndpointApplyConfiguration                            `json:"controlPlaneEndpoint,omitempty"`
+	SharedIngressWorkerAPIEndpoint *SharedIngressWorkerAPIEndpointApplyConfiguration         `json:"sharedIngressWorkerAPIEndpoint,omitempty"`
 	OAuthCallbackURLTemplate       *string                                                   `json:"oauthCallbackURLTemplate,omitempty"`
 	ControlPlaneVersion            *ControlPlaneVersionStatusApplyConfiguration              `json:"controlPlaneVersion,omitempty"`
 	VersionStatus                  *ClusterVersionStatusApplyConfiguration                   `json:"versionStatus,omitempty"`
@@ -96,6 +97,14 @@ func (b *HostedControlPlaneStatusApplyConfiguration) WithExternalManagedControlP
 // If called multiple times, the ControlPlaneEndpoint field is set to the value of the last call.
 func (b *HostedControlPlaneStatusApplyConfiguration) WithControlPlaneEndpoint(value *APIEndpointApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
 	b.ControlPlaneEndpoint = value
+	return b
+}
+
+// WithSharedIngressWorkerAPIEndpoint sets the SharedIngressWorkerAPIEndpoint field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the SharedIngressWorkerAPIEndpoint field is set to the value of the last call.
+func (b *HostedControlPlaneStatusApplyConfiguration) WithSharedIngressWorkerAPIEndpoint(value *SharedIngressWorkerAPIEndpointApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
+	b.SharedIngressWorkerAPIEndpoint = value
 	return b
 }
 

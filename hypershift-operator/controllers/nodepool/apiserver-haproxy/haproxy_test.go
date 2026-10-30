@@ -9,7 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/testutil"
 
@@ -470,21 +470,14 @@ kind: Config`
 						"kubeconfig": []byte(kubeconfig(443)),
 					},
 				},
-				&corev1.Service{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      sharedingress.RouterPublicService().Name,
-						Namespace: sharedingress.RouterNamespace,
-					},
-					Status: corev1.ServiceStatus{
-						LoadBalancer: corev1.LoadBalancerStatus{
-							Ingress: []corev1.LoadBalancerIngress{
-								{IP: "10.0.0.100"},
-							},
-						},
+				&hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{Name: hc().Name, Namespace: "control-plane"},
+					Status: hyperv1.HostedControlPlaneStatus{
+						SharedIngressWorkerAPIEndpoint: hyperv1.SharedIngressWorkerAPIEndpoint{IP: "10.0.0.100", Port: 6443},
 					},
 				},
 			},
-			expectedHAProxyConfigContent: []string{"10.0.0.100:6443"},
+			expectedHAProxyConfigContent: []string{"10.0.0.100:6443", "send-proxy-v2 set-proxy-v2-tlv-fmt(0x20)"},
 		},
 	}
 
@@ -495,12 +488,13 @@ kind: Config`
 			}
 
 			r := HAProxy{
-				Client:       fake.NewClientBuilder().WithObjects(tc.other...).Build(),
+				Client:       fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.other...).Build(),
 				HAProxyImage: "some-image",
 			}
 			cfg, err := r.reconcileHAProxyIgnitionConfig(t.Context(),
 				tc.hc,
 				"cpo-image",
+				"control-plane",
 			)
 			if err != nil {
 				t.Fatalf("reconcileHaProxyIgnitionConfig: %v", err)

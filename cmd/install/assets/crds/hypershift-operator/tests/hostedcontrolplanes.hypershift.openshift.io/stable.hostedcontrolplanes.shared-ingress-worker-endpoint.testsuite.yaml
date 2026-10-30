@@ -1,0 +1,397 @@
+apiVersion: apiextensions.k8s.io/v1
+name: HostedControlPlane shared ingress worker endpoint validation
+crdName: hostedcontrolplanes.hypershift.openshift.io
+version: v1beta1
+tests:
+  onUpdate:
+  - name: absent endpoint is valid
+    initial: &baseHCP |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/example/release:4.17
+        pullSecret: {name: pull-secret}
+        issuerURL: https://issuer.example.com
+        sshKey: {name: ssh-key}
+        infraID: test
+        platform: {type: None}
+        dns: {baseDomain: example.com}
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/example/release:4.17
+        pullSecret: {name: pull-secret}
+        issuerURL: https://issuer.example.com
+        sshKey: {name: ssh-key}
+        infraID: test
+        platform: {type: None}
+        dns: {baseDomain: example.com}
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+  - name: IP endpoint is valid
+    initial: *baseHCP
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/example/release:4.17
+        pullSecret: {name: pull-secret}
+        issuerURL: https://issuer.example.com
+        sshKey: {name: ssh-key}
+        infraID: test
+        platform: {type: None}
+        dns: {baseDomain: example.com}
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+        sharedIngressWorkerAPIEndpoint:
+          ip: 10.0.0.1
+          port: 6443
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+        sharedIngressWorkerAPIEndpoint:
+          ip: 10.0.0.1
+          port: 6443
+  - name: hostname endpoint is valid
+    initial: *baseHCP
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/example/release:4.17
+        pullSecret: {name: pull-secret}
+        issuerURL: https://issuer.example.com
+        sshKey: {name: ssh-key}
+        infraID: test
+        platform: {type: None}
+        dns: {baseDomain: example.com}
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+        sharedIngressWorkerAPIEndpoint:
+          hostname: router.example.com
+          port: 6443
+    expected: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+        sharedIngressWorkerAPIEndpoint:
+          hostname: router.example.com
+          port: 6443
+  - name: empty endpoint is invalid
+    initial: *baseHCP
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/example/release:4.17
+        pullSecret: {name: pull-secret}
+        issuerURL: https://issuer.example.com
+        sshKey: {name: ssh-key}
+        infraID: test
+        platform: {type: None}
+        dns: {baseDomain: example.com}
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+        sharedIngressWorkerAPIEndpoint: {}
+    expectedStatusError: sharedIngressWorkerAPIEndpoint
+  - name: empty IP is invalid
+    initial: *baseHCP
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/example/release:4.17
+        pullSecret: {name: pull-secret}
+        issuerURL: https://issuer.example.com
+        sshKey: {name: ssh-key}
+        infraID: test
+        platform: {type: None}
+        dns: {baseDomain: example.com}
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+        sharedIngressWorkerAPIEndpoint:
+          ip: ""
+          port: 6443
+    expectedStatusError: sharedIngressWorkerAPIEndpoint.ip
+  - name: empty hostname is invalid
+    initial: *baseHCP
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/example/release:4.17
+        pullSecret: {name: pull-secret}
+        issuerURL: https://issuer.example.com
+        sshKey: {name: ssh-key}
+        infraID: test
+        platform: {type: None}
+        dns: {baseDomain: example.com}
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+        sharedIngressWorkerAPIEndpoint:
+          hostname: ""
+          port: 6443
+    expectedStatusError: sharedIngressWorkerAPIEndpoint.hostname
+  - name: missing port is invalid
+    initial: *baseHCP
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/example/release:4.17
+        pullSecret: {name: pull-secret}
+        issuerURL: https://issuer.example.com
+        sshKey: {name: ssh-key}
+        infraID: test
+        platform: {type: None}
+        dns: {baseDomain: example.com}
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+        sharedIngressWorkerAPIEndpoint:
+          ip: 10.0.0.1
+    expectedStatusError: sharedIngressWorkerAPIEndpoint.port
+  - name: zero port is invalid
+    initial: *baseHCP
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/example/release:4.17
+        pullSecret: {name: pull-secret}
+        issuerURL: https://issuer.example.com
+        sshKey: {name: ssh-key}
+        infraID: test
+        platform: {type: None}
+        dns: {baseDomain: example.com}
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+        sharedIngressWorkerAPIEndpoint:
+          ip: 10.0.0.1
+          port: 0
+    expectedStatusError: sharedIngressWorkerAPIEndpoint.port
+  - name: port above 65535 is invalid
+    initial: *baseHCP
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/example/release:4.17
+        pullSecret: {name: pull-secret}
+        issuerURL: https://issuer.example.com
+        sshKey: {name: ssh-key}
+        infraID: test
+        platform: {type: None}
+        dns: {baseDomain: example.com}
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+        sharedIngressWorkerAPIEndpoint:
+          ip: 10.0.0.1
+          port: 65536
+    expectedStatusError: sharedIngressWorkerAPIEndpoint.port
+  - name: port without address is invalid
+    initial: *baseHCP
+    updated: |
+      apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedControlPlane
+      spec:
+        releaseImage: quay.io/example/release:4.17
+        pullSecret: {name: pull-secret}
+        issuerURL: https://issuer.example.com
+        sshKey: {name: ssh-key}
+        infraID: test
+        platform: {type: None}
+        dns: {baseDomain: example.com}
+        etcd:
+          managementType: Managed
+          managed:
+            storage:
+              type: PersistentVolume
+        services:
+        - service: APIServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: OAuthServer
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Konnectivity
+          servicePublishingStrategy: {type: Route, route: {}}
+        - service: Ignition
+          servicePublishingStrategy: {type: Route, route: {}}
+      status:
+        ready: false
+        initialized: false
+        externalManagedControlPlane: true
+        sharedIngressWorkerAPIEndpoint:
+          port: 6443
+    expectedStatusError: sharedIngressWorkerAPIEndpoint

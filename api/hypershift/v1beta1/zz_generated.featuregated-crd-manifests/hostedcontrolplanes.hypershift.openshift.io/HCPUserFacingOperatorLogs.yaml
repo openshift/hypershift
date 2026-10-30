@@ -7992,6 +7992,33 @@ spec:
                         otherwise
                       rule: 'self.provider == ''AESCBC'' ? has(self.aescbc) : !has(self.aescbc)'
                 type: object
+              sharedIngressWorkerAPIEndpoint:
+                description: |-
+                  sharedIngressWorkerAPIEndpoint is the observed address workers use to reach
+                  the API through shared ingress. It is absent when unavailable or not applicable.
+                minProperties: 2
+                properties:
+                  hostname:
+                    description: hostname is the load balancer hostname when no IP
+                      is reported.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  ip:
+                    description: ip is the load balancer IP address.
+                    maxLength: 45
+                    minLength: 1
+                    type: string
+                  port:
+                    description: port is the port workers use to reach the shared
+                      ingress API endpoint.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                required:
+                - port
+                type: object
               version:
                 description: |-
                   version is the semantic version of the release applied by
