@@ -74,8 +74,13 @@ func newRolloutFixture(t *testing.T, strategy hyperv1.UpgradeType) *rolloutFixtu
 	return &rolloutFixture{
 		capi: &CAPI{Token: token},
 		md: &capiv1.MachineDeployment{
-			ObjectMeta: metav1.ObjectMeta{Name: nodePool.Name, Namespace: token.controlplaneNamespace, Generation: 1},
-			Spec:       capiv1.MachineDeploymentSpec{Replicas: ptr.To(int32(3)), Template: *template.DeepCopy()},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        nodePool.Name,
+				Namespace:   token.controlplaneNamespace,
+				Generation:  1,
+				Annotations: map[string]string{capiv1.RevisionAnnotation: "1"},
+			},
+			Spec: capiv1.MachineDeploymentSpec{Replicas: ptr.To(int32(3)), Template: *template.DeepCopy()},
 		},
 		ms: &capiv1.MachineSet{
 			ObjectMeta: metav1.ObjectMeta{
@@ -126,10 +131,22 @@ func (f *rolloutFixture) observeDeployedState() {
 func (f *rolloutFixture) complete(t *testing.T) {
 	t.Helper()
 	if f.capi.nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
+		desired := ptr.Deref(f.md.Spec.Replicas, 0)
 		f.md.Status = capiv1.MachineDeploymentStatus{
-			Replicas: ptr.To(int32(3)), UpToDateReplicas: ptr.To(int32(3)),
-			AvailableReplicas: ptr.To(int32(3)), ObservedGeneration: f.md.Generation,
+			Replicas: ptr.To(desired), UpToDateReplicas: ptr.To(int32(0)),
+			AvailableReplicas: ptr.To(desired), ObservedGeneration: f.md.Generation,
 		}
+		ms := &capiv1.MachineSet{ObjectMeta: metav1.ObjectMeta{
+			Name: f.md.Name + "-current", Namespace: f.md.Namespace,
+		}}
+		_, err := f.capi.CreateOrUpdate(t.Context(), f.capi.Client, ms, func() error {
+			ms.Labels = map[string]string{capiv1.MachineDeploymentNameLabel: f.md.Name}
+			ms.Annotations = map[string]string{capiv1.RevisionAnnotation: f.md.Annotations[capiv1.RevisionAnnotation]}
+			ms.Spec = capiv1.MachineSetSpec{Replicas: ptr.To(desired), Template: *f.md.Spec.Template.DeepCopy()}
+			ms.Status = capiv1.MachineSetStatus{Replicas: ptr.To(desired), AvailableReplicas: ptr.To(desired)}
+			return nil
+		})
+		NewWithT(t).Expect(err).NotTo(HaveOccurred())
 		f.capi.reconcileMachineDeploymentStatus(t.Context(), logr.Discard(), f.md, f.template)
 		return
 	}
