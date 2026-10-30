@@ -455,9 +455,13 @@ test: generate test-e2ev2-unit
 	@echo "Running tests with $(NUM_CORES) parallel jobs..."
 	$(GO) test $(GO_TEST_FLAGS) -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
+# Unit tests for the v2 e2e framework itself. These packages are entirely
+# behind the e2ev2 build tag, so the plain `go test ./...` in `test` skips
+# them. Excludes ./test/e2e/v2/backuprestore and all but a handful of
+# ./test/e2e/v2/tests, which are the Ginkgo suites that require a live cluster.
 .PHONY: test-e2ev2-unit
 test-e2ev2-unit:
-	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m ./test/e2e/v2/internal ./test/e2e/v2/cmd/run-tests
+	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m ./test/e2e/v2/internal ./test/e2e/v2/cmd/... ./test/e2e/v2/lifecycle
 	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m -run '^(TestComponentSupportsTLSConfig|TestVerifyIntermediateTLSConnectivityAfterDowngrade|TestImageMirroring.*)$$' ./test/e2e/v2/tests
 
 # Run tests only for Go packages with changes relative to PULL_BASE_SHA.
