@@ -28,6 +28,7 @@ Project documentation is published via MkDocs. The site structure and navigation
 | **Design invariants** | [docs/content/reference/goals-and-design-invariants.md](docs/content/reference/goals-and-design-invariants.md) |
 | **Versioning and support** | [docs/content/reference/versioning-support.md](docs/content/reference/versioning-support.md) |
 | **Upgrades lifecycle** | [docs/content/how-to/upgrades.md](docs/content/how-to/upgrades.md) |
+| **HostedCluster setup and incomplete startup** | [skills/hosted-cluster-lifecycle/SKILL.md](skills/hosted-cluster-lifecycle/SKILL.md) — load readiness and provider references progressively |
 | **Contributing and PR workflow** | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **Agentic SDLC framework** | [docs/content/how-to/agentic-sdlc.md](docs/content/how-to/agentic-sdlc.md) |
 | **Feature gates** | [docs/content/how-to/feature-gates.md](docs/content/how-to/feature-gates.md) — two separate systems: management cluster gates vs hosted cluster gates |
