@@ -8,7 +8,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/images"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -253,6 +255,46 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 		},
 		{
+			name:                    "When the HyperShift operator has IMAGE_SHARED_INGRESS_HAPROXY set, it should pass it to the container",
+			platformType:            hyperv1.AzurePlatform,
+			hyperShiftOperatorImage: "quay.io/hypershift/operator:latest",
+			ignitionEndpoint:        "https://ignition.example.com",
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				t.Setenv(images.SharedIngressHAProxyEnvVar, "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472")
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = opts.adaptDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil(), "container %s should exist", ComponentName)
+				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: images.SharedIngressHAProxyEnvVar, Value: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472"}))
+			},
+		},
+		{
+			name:                    "When the HyperShift operator has registry overrides, it should pass them to the container",
+			platformType:            hyperv1.AzurePlatform,
+			hyperShiftOperatorImage: "quay.io/hypershift/operator:latest",
+			ignitionEndpoint:        "https://ignition.example.com",
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				opts.RegistryOverrides = map[string]string{"quay.io/openshift-release-dev": "mirror.example.com/openshift-release-dev"}
+				opts.OpenShiftRegistryOverrides = map[string][]string{"quay.io/openshift-release-dev": {"mirror.example.com/openshift-release-dev"}}
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = opts.adaptDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil(), "container %s should exist", ComponentName)
+				g.Expect(container.Args).To(ContainElement("--registry-overrides=quay.io/openshift-release-dev=mirror.example.com/openshift-release-dev"))
+				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: "OPENSHIFT_IMG_OVERRIDES", Value: "quay.io/openshift-release-dev=mirror.example.com/openshift-release-dev"}))
+			},
+		},
+		{
 			name:                      "When standalone mode is enabled with SCC, it should omit DEFAULT_SECURITY_CONTEXT_UID from the operator and adapter",
 			platformType:              hyperv1.AWSPlatform,
 			awsRegion:                 "us-west-2",
@@ -368,15 +410,97 @@ func TestAdaptDeployment(t *testing.T) {
 	}
 }
 
+func TestSetIgnitionEnvVars(t *testing.T) {
+	testCases := map[string]struct {
+		envVars     map[string]string
+		expectedEnv []corev1.EnvVar
+	}{
+		"When the HyperShift operator has no ignition env vars set, it should not add env vars": {
+			expectedEnv: []corev1.EnvVar{},
+		},
+		"When the HyperShift operator has IMAGE_SHARED_INGRESS_HAPROXY set, it should pass it on": {
+			envVars: map[string]string{
+				images.SharedIngressHAProxyEnvVar: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472",
+			},
+			expectedEnv: []corev1.EnvVar{
+				{
+					Name:  images.SharedIngressHAProxyEnvVar,
+					Value: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472",
+				},
+			},
+		},
+		"When the HyperShift operator has ENABLE_CPO_OVERRIDES set, it should pass it on": {
+			envVars:     map[string]string{controlplaneoperatoroverrides.CPOOverridesEnvVar: "1"},
+			expectedEnv: []corev1.EnvVar{{Name: controlplaneoperatoroverrides.CPOOverridesEnvVar, Value: "1"}},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			t.Setenv(images.SharedIngressHAProxyEnvVar, "")
+			t.Setenv(controlplaneoperatoroverrides.CPOOverridesEnvVar, "")
+			for envVarName, value := range tc.envVars {
+				t.Setenv(envVarName, value)
+			}
+
+			var env []corev1.EnvVar
+			setIgnitionEnvVars(&env)
+			g.Expect(env).To(ConsistOf(tc.expectedEnv))
+		})
+	}
+}
+
+func TestSetRegistryOverrides(t *testing.T) {
+	testCases := map[string]struct {
+		registryOverrides          map[string]string
+		openShiftRegistryOverrides map[string][]string
+		expectedArgs               []string
+		expectedEnv                []corev1.EnvVar
+	}{
+		"When the HyperShift operator has no registry overrides, it should not add args or env vars": {
+			expectedArgs: []string{},
+			expectedEnv:  []corev1.EnvVar{},
+		},
+		"When the HyperShift operator has registry overrides, it should pass them on": {
+			registryOverrides:          map[string]string{"quay.io/openshift-release-dev": "mirror.example.com/openshift-release-dev"},
+			openShiftRegistryOverrides: map[string][]string{"quay.io/openshift-release-dev": {"mirror1.example.com/openshift-release-dev", "mirror2.example.com/openshift-release-dev"}},
+			expectedArgs:               []string{"--registry-overrides=quay.io/openshift-release-dev=mirror.example.com/openshift-release-dev"},
+			expectedEnv: []corev1.EnvVar{{
+				Name:  "OPENSHIFT_IMG_OVERRIDES",
+				Value: "quay.io/openshift-release-dev=mirror1.example.com/openshift-release-dev,quay.io/openshift-release-dev=mirror2.example.com/openshift-release-dev",
+			}},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			opts := &KarpenterOperatorOptions{
+				RegistryOverrides:          tc.registryOverrides,
+				OpenShiftRegistryOverrides: tc.openShiftRegistryOverrides,
+			}
+
+			container := &corev1.Container{}
+			opts.setRegistryOverrides(container)
+			g.Expect(container.Args).To(ConsistOf(tc.expectedArgs))
+			g.Expect(container.Env).To(ConsistOf(tc.expectedEnv))
+		})
+	}
+}
+
 func TestAddStandaloneAdapterContainer(t *testing.T) {
 	g := NewWithT(t)
+	t.Setenv(images.SharedIngressHAProxyEnvVar, "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472")
 	deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	opts := &KarpenterOperatorOptions{
-		HyperShiftOperatorImage:   "quay.io/hypershift/operator:latest",
-		ControlPlaneOperatorImage: "quay.io/hypershift/cpo:latest",
-		IgnitionEndpoint:          "https://ignition.example.com",
+		HyperShiftOperatorImage:    "quay.io/hypershift/operator:latest",
+		ControlPlaneOperatorImage:  "quay.io/hypershift/cpo:latest",
+		IgnitionEndpoint:           "https://ignition.example.com",
+		RegistryOverrides:          map[string]string{"quay.io/openshift-release-dev": "mirror.example.com/openshift-release-dev"},
+		OpenShiftRegistryOverrides: map[string][]string{"quay.io/openshift-release-dev": {"mirror.example.com/openshift-release-dev"}},
 	}
 	err = opts.addStandaloneAdapterContainer(deploymentObj)
 	g.Expect(err).ToNot(HaveOccurred())
@@ -391,13 +515,16 @@ func TestAddStandaloneAdapterContainer(t *testing.T) {
 		"--control-plane-operator-image=quay.io/hypershift/cpo:latest",
 		"--hypershift-operator-image=quay.io/hypershift/operator:latest",
 		"--ignition-endpoint=https://ignition.example.com",
+		"--registry-overrides=quay.io/openshift-release-dev=mirror.example.com/openshift-release-dev",
 	))
+	g.Expect(adapter.Env).To(ContainElement(corev1.EnvVar{Name: "OPENSHIFT_IMG_OVERRIDES", Value: "quay.io/openshift-release-dev=mirror.example.com/openshift-release-dev"}))
 	g.Expect(adapter.VolumeMounts).To(ContainElement(
 		corev1.VolumeMount{Name: "target-kubeconfig", MountPath: "/mnt/kubeconfig"},
 	))
 	g.Expect(adapter.VolumeMounts).ToNot(ContainElement(
 		corev1.VolumeMount{Name: "provider-creds", MountPath: "/etc/provider"},
 	))
+	g.Expect(adapter.Env).To(ContainElement(corev1.EnvVar{Name: images.SharedIngressHAProxyEnvVar, Value: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472"}))
 }
 
 func TestAdaptStandaloneDeployment(t *testing.T) {

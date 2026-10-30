@@ -1796,7 +1796,7 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 	}
 
-	if err := r.reconcileKarpenterOperator(cpContext, hcluster, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
+	if err := r.reconcileKarpenterOperator(cpContext, hcluster, r.HypershiftOperatorImage, controlPlaneOperatorImage, releaseProvider); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter operator: %w", err)
 	}
 

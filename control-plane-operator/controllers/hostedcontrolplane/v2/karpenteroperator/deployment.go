@@ -9,8 +9,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/images"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
@@ -48,6 +51,8 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 			"--ignition-endpoint="+karp.IgnitionEndpoint,
 		)
 		proxy.SetEnvVars(&c.Env)
+		setIgnitionEnvVars(&c.Env)
+		karp.setRegistryOverrides(c)
 	})
 
 	switch hcp.Spec.Platform.Type {
@@ -98,6 +103,30 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 	}
 
 	return nil
+}
+
+// setIgnitionEnvVars passes on the HyperShift operator environment variables read by the ignition code.
+func setIgnitionEnvVars(env *[]corev1.EnvVar) {
+	if image := os.Getenv(images.SharedIngressHAProxyEnvVar); image != "" {
+		*env = append(*env, corev1.EnvVar{Name: images.SharedIngressHAProxyEnvVar, Value: image})
+	}
+	if controlplaneoperatoroverrides.IsOverridesEnabled() {
+		*env = append(*env, corev1.EnvVar{Name: controlplaneoperatoroverrides.CPOOverridesEnvVar, Value: "1"})
+	}
+}
+
+// setRegistryOverrides passes on the registry overrides of the HyperShift operator, so the
+// karpenter-operator looks up release images from the same registries.
+func (karp *KarpenterOperatorOptions) setRegistryOverrides(c *corev1.Container) {
+	if len(karp.RegistryOverrides) > 0 {
+		c.Args = append(c.Args, "--registry-overrides="+imageregistry.ConvertRegistryOverridesToCommandLineFlag(karp.RegistryOverrides))
+	}
+	if len(karp.OpenShiftRegistryOverrides) > 0 {
+		c.Env = append(c.Env, corev1.EnvVar{
+			Name:  "OPENSHIFT_IMG_OVERRIDES",
+			Value: imageregistry.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(karp.OpenShiftRegistryOverrides),
+		})
+	}
 }
 
 // adaptStandaloneDeployment configures the deployment for the standalone karpenter-operator binary.
@@ -273,6 +302,7 @@ func (karp *KarpenterOperatorOptions) addStandaloneAdapterContainer(deployment *
 		},
 	}
 	proxy.SetEnvVars(&adapterEnv)
+	setIgnitionEnvVars(&adapterEnv)
 
 	deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
 		Name:    AdapterContainerName,
@@ -300,6 +330,7 @@ func (karp *KarpenterOperatorOptions) addStandaloneAdapterContainer(deployment *
 			},
 		},
 	})
+	podspec.UpdateContainer(AdapterContainerName, deployment.Spec.Template.Spec.Containers, karp.setRegistryOverrides)
 
 	return nil
 }

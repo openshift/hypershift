@@ -25,6 +25,7 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/k8sutil"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/statuspatching"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -38,7 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, hcluster *hyperv1.HostedCluster, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
+func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, hcluster *hyperv1.HostedCluster, hypershiftOperatorImage, controlPlaneOperatorImage string, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
 	// The taint ConfigMap (set-karpenter-taint) is created by the karpenter-operator itself.
 
 	if !karpenterutil.IsKarpenterEnabled(hcluster.Spec.AutoNode) {
@@ -78,6 +79,8 @@ func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlpl
 		ControlPlaneOperatorImage:          controlPlaneOperatorImage,
 		IgnitionEndpoint:                   hcluster.Status.IgnitionEndpoint,
 		StandaloneKarpenterOperatorEnabled: karpenterutil.IsStandaloneKarpenterOperatorEnabled(),
+		RegistryOverrides:                  releaseProvider.GetRegistryOverrides(),
+		OpenShiftRegistryOverrides:         releaseProvider.GetOpenShiftImageRegistryOverrides(),
 	})
 
 	// Always reconcile the Karpenter Operator so it has a chance to clean up, the predicate on
