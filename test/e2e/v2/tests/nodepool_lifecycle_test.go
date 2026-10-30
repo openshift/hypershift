@@ -26,8 +26,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	npconst "github.com/openshift/hypershift/pkg/nodepool"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/pkg/manifests"
+	npconst "github.com/openshift/hypershift/pkg/nodepool"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/netutil"
 	"github.com/openshift/hypershift/support/podspec"
@@ -45,6 +46,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
+
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -69,6 +76,7 @@ func RegisterNodePoolLifecycleTests(getTestCtx internal.TestContextGetter) {
 	NodePoolTrustBundleTest(getTestCtx)
 	NodePoolNTOPerformanceProfileTest(getTestCtx)
 	NodePoolAutoRepairTest(getTestCtx)
+	NodePoolRootVolumeKMSTest(getTestCtx)
 	NodePoolDiskEncryptionTest(getTestCtx)
 	NodePoolIPForwardingTest(getTestCtx)
 	RegisterPredictableRolloutTests(getTestCtx)
@@ -1221,6 +1229,166 @@ func NodePoolAutoRepairTest(getTestCtx internal.TestContextGetter) {
 		//   e2eutil.WaitForReadyNodesByNodePool with WithCollectionPredicates and WithPredicates
 		//   to verify the old node is replaced and the new node is healthy.
 	})
+}
+
+// NodePoolRootVolumeKMSTest creates a NodePool whose AWS root volume requests
+// encryption and verifies through the EC2 API that the backing EBS root volume is
+// encrypted with the expected KMS key. It replaces the v1 KMSRootVolumeTest
+// (retired from test/e2e/nodepool_test.go in the same change).
+func NodePoolRootVolumeKMSTest(getTestCtx internal.TestContextGetter) {
+	It("should encrypt the NodePool root volume with the configured KMS key", Label("nodepool-root-volume-kms", internal.InformingLabel), func() {
+		testCtx := getTestCtx()
+		testCtx.SkipIfNotPlatform(hyperv1.AWSPlatform)
+
+		hc, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+		Expect(hc.Spec.Platform.AWS).NotTo(BeNil(), "AWS platform spec must be set on an AWS HostedCluster")
+
+		ctx := testCtx.Context
+		region := hc.Spec.Platform.AWS.Region
+		Expect(region).NotTo(BeEmpty(), "HostedCluster AWS region should be set")
+
+		// The KMS key is the day-1 key supplied to create-guests through
+		// HYPERSHIFT_STORAGE_KMS_KEY_ALIAS, which is not set in every job. When it is
+		// absent the NodePool still requests encryption, so the assertion falls back
+		// to the account default EBS key, as the v1 test did.
+		var encryptionKey string
+		if hc.Spec.OperatorConfiguration != nil {
+			encryptionKey = hc.Spec.OperatorConfiguration.CSIDriverOperator.AWS.InitialKMSKeyARN
+		}
+
+		// The EBS check needs AWS credentials for the guest infra account. Treat
+		// their absence as a precondition (skip), not a failure.
+		awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
+		if awsCredsFile == "" {
+			Skip("AWS_GUEST_INFRA_CREDENTIALS_FILE is not set; cannot verify EBS root volume encryption")
+		}
+
+		defaultNP := getDefaultNodePool(ctx, testCtx.MgmtClient, hc)
+		Expect(defaultNP).NotTo(BeNil(), "default NodePool should exist")
+
+		var oneReplica int32 = 1
+		np := buildTestNodePool(defaultNP, "root-volume-kms", func(pool *hyperv1.NodePool) {
+			pool.Spec.Replicas = &oneReplica
+			Expect(pool.Spec.Platform.AWS).NotTo(BeNil(), "AWS platform spec must be set on an AWS NodePool")
+			Expect(pool.Spec.Platform.AWS.RootVolume).NotTo(BeNil(),
+				"default NodePool should define an AWS root volume; AWS cluster variants pass --root-volume-size and --root-volume-type")
+			pool.Spec.Platform.AWS.RootVolume = &hyperv1.Volume{
+				Size:          pool.Spec.Platform.AWS.RootVolume.Size,
+				Type:          pool.Spec.Platform.AWS.RootVolume.Type,
+				Encrypted:     ptr.To(true),
+				EncryptionKey: encryptionKey,
+			}
+		})
+
+		Expect(testCtx.MgmtClient.Create(ctx, np)).To(Succeed(), "failed to create NodePool %s", np.Name)
+		GinkgoWriter.Printf("Created NodePool %s with an encrypted root volume\n", np.Name)
+		DeferCleanup(func() {
+			cleanupNodePool(ctx, testCtx.MgmtClient, np)
+		})
+
+		awsSession := awsutil.NewSession(ctx, "e2e-nodepool-root-volume-kms", awsCredsFile, "", "", region)
+		Expect(awsSession).NotTo(BeNil(), "failed to create AWS session")
+		awsConfig := awsutil.NewConfig()
+		ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+			o.Retryer = awsConfig()
+		})
+
+		// The root volume exists only once the instance is launched, so instance
+		// provisioning is the earliest observable to wait for.
+		var instanceID string
+		Eventually(func(g Gomega) {
+			machines := &capiaws.AWSMachineList{}
+			g.Expect(testCtx.MgmtClient.List(ctx, machines,
+				crclient.InNamespace(testCtx.ControlPlaneNamespace),
+				crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: np.Name})).To(Succeed(),
+				"failed to list AWSMachines for NodePool %s", np.Name)
+			g.Expect(machines.Items).NotTo(BeEmpty(), "expected at least one AWSMachine for NodePool %s", np.Name)
+
+			instanceID = ""
+			for i := range machines.Items {
+				if id := aws.ToString(machines.Items[i].Spec.InstanceID); id != "" {
+					instanceID = id
+					break
+				}
+			}
+			g.Expect(instanceID).NotTo(BeEmpty(), "expected an AWSMachine with an instanceID for NodePool %s", np.Name)
+		}).WithContext(ctx).WithTimeout(20 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+
+		By("resolving the instance root device name")
+		var rootDeviceName string
+		Eventually(func(g Gomega) {
+			out, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{InstanceIds: []string{instanceID}})
+			g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance %s", instanceID)
+			g.Expect(out.Reservations).NotTo(BeEmpty(), "no reservations found for instance %s", instanceID)
+			g.Expect(out.Reservations[0].Instances).NotTo(BeEmpty(), "no instances found in reservation for instance %s", instanceID)
+			rootDeviceName = aws.ToString(out.Reservations[0].Instances[0].RootDeviceName)
+			g.Expect(rootDeviceName).NotTo(BeEmpty(), "instance %s should report a root device name", instanceID)
+		}).WithContext(ctx).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+		By("verifying the backing EBS root volume is encrypted")
+		var rootVolume ec2types.Volume
+		Eventually(func(g Gomega) {
+			out, err := ec2Client.DescribeVolumes(ctx, &ec2.DescribeVolumesInput{
+				Filters: []ec2types.Filter{
+					{Name: aws.String("attachment.instance-id"), Values: []string{instanceID}},
+				},
+			})
+			g.Expect(err).NotTo(HaveOccurred(), "failed to describe EBS volumes for instance %s", instanceID)
+			g.Expect(out.Volumes).NotTo(BeEmpty(), "no EBS volumes attached to instance %s", instanceID)
+
+			found := false
+			for i := range out.Volumes {
+				if volumeIsAttachedAsDevice(&out.Volumes[i], instanceID, rootDeviceName) {
+					rootVolume = out.Volumes[i]
+					found = true
+					break
+				}
+			}
+			g.Expect(found).To(BeTrue(), "instance %s should have an attached volume for root device %s", instanceID, rootDeviceName)
+			g.Expect(rootVolume.Encrypted).To(HaveValue(BeTrue()),
+				"EBS root volume %s must be encrypted", aws.ToString(rootVolume.VolumeId))
+			g.Expect(rootVolume.KmsKeyId).NotTo(BeNil(),
+				"EBS root volume %s must reference a KMS key", aws.ToString(rootVolume.VolumeId))
+		}).WithContext(ctx).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+		// Resolve the expected key once: the configured KMS key when the hosted
+		// cluster has one, otherwise the account default EBS key that encryption
+		// falls back to. DescribeVolumes returns the resolved key ARN while the
+		// reference may be an alias, a key ID, or an ARN, so canonicalize it through
+		// DescribeKey before comparing. This proves the volume uses exactly the
+		// expected key rather than any key. (The v1 test compared this too, but its
+		// default-key path used a zero-argument BeElementOf matcher that could never
+		// pass, so that branch ran without checking key identity.)
+		kmsClient := kms.NewFromConfig(*awsSession, func(o *kms.Options) {
+			o.Retryer = awsConfig()
+		})
+		expectedKeyRef := encryptionKey
+		if expectedKeyRef == "" {
+			defaultKeyOut, err := ec2Client.GetEbsDefaultKmsKeyId(ctx, &ec2.GetEbsDefaultKmsKeyIdInput{})
+			Expect(err).NotTo(HaveOccurred(), "failed to get the account default EBS KMS key")
+			expectedKeyRef = aws.ToString(defaultKeyOut.KmsKeyId)
+			Expect(expectedKeyRef).NotTo(BeEmpty(), "account default EBS KMS key reference must be non-empty")
+		}
+
+		keyOut, err := kmsClient.DescribeKey(ctx, &kms.DescribeKeyInput{KeyId: aws.String(expectedKeyRef)})
+		Expect(err).NotTo(HaveOccurred(), "failed to resolve expected KMS key %s", expectedKeyRef)
+		Expect(keyOut.KeyMetadata).NotTo(BeNil(), "DescribeKey returned no metadata for %s", expectedKeyRef)
+		expectedKeyARN := aws.ToString(keyOut.KeyMetadata.Arn)
+		Expect(expectedKeyARN).NotTo(BeEmpty(), "resolved key ARN for %s must be non-empty", expectedKeyRef)
+		Expect(aws.ToString(rootVolume.KmsKeyId)).To(Equal(expectedKeyARN),
+			"EBS root volume %s must be encrypted with KMS key %s", aws.ToString(rootVolume.VolumeId), expectedKeyRef)
+	})
+}
+
+// volumeIsAttachedAsDevice reports whether volume is attached to instanceID as device.
+func volumeIsAttachedAsDevice(volume *ec2types.Volume, instanceID, device string) bool {
+	for _, attachment := range volume.Attachments {
+		if aws.ToString(attachment.InstanceId) == instanceID && aws.ToString(attachment.Device) == device {
+			return true
+		}
+	}
+	return false
 }
 
 // NodePoolDiskEncryptionTest is a skeleton for Azure disk encryption tests.

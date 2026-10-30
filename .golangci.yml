@@ -290,7 +290,6 @@ formatters:
       - '^test/e2e/nodepool_arm64_create_test\.go$'
       - '^test/e2e/nodepool_autorepair_test\.go$'
       - '^test/e2e/nodepool_imagetype_test\.go$'
-      - '^test/e2e/nodepool_kms_root_volume_test\.go$'
       - '^test/e2e/nodepool_kv_advanced_multinet_test\.go$'
       - '^test/e2e/nodepool_kv_cache_image_test\.go$'
       - '^test/e2e/nodepool_kv_evictionstrategy_test\.go$'

@@ -337,7 +337,8 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 						Variant: "public",
 						LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade || nodepool-inplace-version-upgrade || " +
 							"nodepool-n1-release || nodepool-n2-release || nodepool-auto-repair || nodepool-osimagestream-upgrade || " +
-							"nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-performance-profile || nodepool-mirror-config",
+							"nodepool-root-volume-kms || nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || " +
+							"nodepool-performance-profile || nodepool-mirror-config",
 					},
 				},
 			},
