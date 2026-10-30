@@ -44,11 +44,15 @@ oc exec -it etcd-0 -n ${HOSTED_CLUSTER_NAMESPACE} -- env ETCDCTL_API=3 \
   snapshot save /var/lib/data/snapshot.db
 ```
 
-Verify the snapshot:
+Verify the snapshot using `etcdutl` when available, falling back to `etcdctl` for older payloads. Taking snapshots and querying the running cluster still require `etcdctl`:
 
 ```bash
-oc exec -it etcd-0 -n ${HOSTED_CLUSTER_NAMESPACE} -- env ETCDCTL_API=3 \
-  /usr/bin/etcdctl -w table snapshot status /var/lib/data/snapshot.db
+oc exec -it etcd-0 -n ${HOSTED_CLUSTER_NAMESPACE} -c etcd -- env ETCDCTL_API=3 /usr/bin/bash -ec '
+  if [ -x /usr/bin/etcdutl ]; then
+    exec /usr/bin/etcdutl snapshot status /var/lib/data/snapshot.db -w table
+  else
+    exec /usr/bin/etcdctl snapshot status /var/lib/data/snapshot.db -w table
+  fi'
 ```
 
 !!! warning "Etcd CA Certificate Location"
@@ -98,7 +102,9 @@ Store this key securely — without it, the etcd data cannot be decrypted on res
 
 ## Restoring an Etcd Snapshot
 
-An etcd snapshot can currently only be restored during cluster creation. This is done by modifying the HostedCluster spec to include a `restoreSnapshotURL`.
+To restore etcd on an existing HighlyAvailable HostedCluster after quorum loss, follow [Recovery from Quorum Loss](../etcd-recovery.md#recovery-from-quorum-loss). That procedure restores the same snapshot into all three member PVCs before starting etcd.
+
+The procedure below restores a snapshot during cluster creation by modifying the HostedCluster spec to include a `restoreSnapshotURL`.
 
 ### Step 1: Create a Pre-Signed URL
 
