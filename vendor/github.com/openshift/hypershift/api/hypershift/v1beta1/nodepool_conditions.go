@@ -100,6 +100,17 @@ const (
 	// The full configuration will converge on the next spec-driven rollout
 	// (e.g. release upgrade, user MachineConfig change).
 	NodePoolConfigUpdatePendingConditionType = "ConfigUpdatePending"
+
+	// NodePoolDrainBlockedConditionType signals whether a structurally-blocking customer
+	// PodDisruptionBudget would prevent draining this pool's nodes during an upgrade.
+	// True  = blocked (reason BlockedByPodDisruptionBudget); an upgrade would stall on drain.
+	// False = drainable (reason Drainable).
+	// Unknown (reason Unverified) = the guest-side signal is missing or stale; consumers
+	// should treat this as fail-open and not gate on it.
+	// This condition is informational in HyperShift (status-only, non-gating); the enforcement
+	// policy lives in the consumer (e.g. Clusters Service). It carries only a count, never
+	// customer workload identifiers.
+	NodePoolDrainBlockedConditionType = "DrainBlocked"
 )
 
 // PerformanceProfile Conditions

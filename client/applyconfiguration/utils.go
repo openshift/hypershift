@@ -377,6 +377,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.NodePoolAutoScalingApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePoolCondition"):
 		return &hypershiftv1beta1.NodePoolConditionApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("NodePoolDrain"):
+		return &hypershiftv1beta1.NodePoolDrainApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePoolManagement"):
 		return &hypershiftv1beta1.NodePoolManagementApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePoolNodesInfo"):
