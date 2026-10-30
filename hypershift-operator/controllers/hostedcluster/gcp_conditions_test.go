@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
-func TestReconcileGCPCredentialConditions(t *testing.T) {
+func TestHostedClusterReconciler_ReconcileGCPCredentialConditions(t *testing.T) {
 	for _, tc := range []struct {
 		name                               string
 		hcVersion, hcpVersion              string
@@ -266,4 +266,53 @@ func TestReconcileGCPCredentialConditions(t *testing.T) {
 		g.Expect(err).To(MatchError(ContainSubstring("failed to update GCP credential status")))
 		g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 	})
+}
+
+func TestValidateGCPResourceTagsSupport(t *testing.T) {
+	for _, tc := range []struct {
+		name                                                      string
+		tags, supported, unresolved, otherPlatform, missingConfig bool
+		invalidConfiguration                                      bool
+		expectedError                                             string
+	}{
+		{name: "When tags are omitted, it should not require CPO support"},
+		{name: "When the GCP configuration is absent, it should not require CPO support", missingConfig: true},
+		{name: "When the platform is not GCP, it should not require GCP tag support", tags: true, otherPlatform: true},
+		{name: "When the CPO supports tags, it should succeed", tags: true, supported: true},
+		{name: "When the CPO does not support tags, it should identify the unsupported field", tags: true, expectedError: "spec.platform.gcp.resourceTags requires a control plane operator image that supports GCP resource tag propagation"},
+		{name: "When labels are unresolved, it should defer to the image-resolution error", tags: true, unresolved: true},
+		{name: "When unrelated configuration is invalid and tags are supported, it should leave the condition unchanged", tags: true, supported: true, invalidConfiguration: true},
+		{name: "When unrelated configuration is invalid and tags are unsupported, it should leave the condition unchanged and return the tag error", tags: true, invalidConfiguration: true, expectedError: "spec.platform.gcp.resourceTags requires a control plane operator image that supports GCP resource tag propagation"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hc := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform, GCP: &hyperv1.GCPPlatformSpec{}}},
+			}
+			if tc.tags {
+				hc.Spec.Platform.GCP.ResourceTags = []hyperv1.GCPResourceTag{{Key: "environment", Value: "production"}}
+			}
+			if tc.otherPlatform {
+				hc.Spec.Platform.Type = hyperv1.NonePlatform
+			}
+			if tc.missingConfig {
+				hc.Spec.Platform.GCP = nil
+			}
+			if tc.invalidConfiguration {
+				hc.Status.Conditions = []metav1.Condition{{Type: string(hyperv1.ValidHostedClusterConfiguration), Status: metav1.ConditionFalse, Reason: hyperv1.InvalidConfigurationReason, Message: "unrelated configuration error"}}
+			}
+			var labels map[string]string
+			if tc.supported {
+				labels = map[string]string{controlPlaneOperatorSupportsGCPResourceTagsLabel: "true"}
+			}
+			before := hc.DeepCopy()
+			err := validateGCPResourceTagsSupport(hc, !tc.unresolved, labels)
+			if tc.expectedError == "" {
+				g.Expect(err).NotTo(HaveOccurred())
+			} else {
+				g.Expect(err).To(MatchError(tc.expectedError))
+			}
+			g.Expect(hc).To(Equal(before), "validation must not mutate spec or conditions")
+		})
+	}
 }

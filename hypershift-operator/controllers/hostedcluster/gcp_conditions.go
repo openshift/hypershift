@@ -23,3 +23,17 @@ func (r *HostedClusterReconciler) reconcileGCPCredentialConditions(ctx context.C
 	}
 	return nil
 }
+
+// validateGCPResourceTagsSupport checks whether requested tags can be propagated
+// by the selected CPO image, without changing the HostedCluster. Image-resolution
+// failures are reported separately, so unresolved labels are not treated as a
+// missing capability.
+func validateGCPResourceTagsSupport(hc *hyperv1.HostedCluster, labelsResolved bool, imageLabels map[string]string) error {
+	if hc.Spec.Platform.Type != hyperv1.GCPPlatform || hc.Spec.Platform.GCP == nil || len(hc.Spec.Platform.GCP.ResourceTags) == 0 || !labelsResolved {
+		return nil
+	}
+	if _, supported := imageLabels[controlPlaneOperatorSupportsGCPResourceTagsLabel]; !supported {
+		return fmt.Errorf("spec.platform.gcp.resourceTags requires a control plane operator image that supports GCP resource tag propagation")
+	}
+	return nil
+}
