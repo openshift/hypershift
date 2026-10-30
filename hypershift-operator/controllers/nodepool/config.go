@@ -13,8 +13,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	kvnetwork "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
-	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -143,7 +143,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		}
 	}
 
-	endpointConfig, err := endpointConfigString(ctx, client, hostedCluster)
+	endpointConfig, err := endpointConfigString(ctx, client, hostedCluster, controlPlaneNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve the API server endpoint config: %w", err)
 	}
@@ -600,7 +600,7 @@ func (cg *ConfigGenerator) GetCloudConfigHash(ctx context.Context) (string, erro
 // and retries, rather than silently computing a different hash: a transient
 // lookup failure would otherwise trigger a phantom rollout that reverts
 // when the lookup recovers.
-func endpointConfigString(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster) (string, error) {
+func endpointConfigString(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) (string, error) {
 	var parts []string
 	parts = append(parts, fmt.Sprintf("private=%v", netutil.IsPrivateHC(hcluster)))
 	if hcluster.Spec.Networking.APIServer != nil {
@@ -611,7 +611,7 @@ func endpointConfigString(ctx context.Context, c client.Client, hcluster *hyperv
 			parts = append(parts, fmt.Sprintf("port=%d", *hcluster.Spec.Networking.APIServer.Port))
 		}
 	}
-	server, err := resolvedAPIServerEndpoint(ctx, c, hcluster)
+	server, err := resolvedAPIServerEndpoint(ctx, c, hcluster, controlPlaneNamespace)
 	if err != nil {
 		return "", err
 	}
@@ -623,39 +623,29 @@ func endpointConfigString(ctx context.Context, c client.Client, hcluster *hyperv
 
 // resolvedAPIServerEndpoint returns the resolved API server address that
 // HAProxy will use. For shared-ingress public clusters, this is the router
-// Service load-balancer address (IP or hostname) and the shared-ingress KAS
-// port, which override the kubeconfig URL. For other public clusters, it is
-// the kubeconfig server URL. Returns empty for private clusters.
+// endpoint published in HCP status (IP or hostname and port), which overrides
+// the kubeconfig URL. For other public clusters, it is the kubeconfig server URL.
+// Returns empty for private clusters.
 //
 // Unavailable endpoint data returns an error, mirroring the HAProxy payload
 // generation (apiserver-haproxy/haproxy.go): data still being provisioned
-// (kubeconfig status, load-balancer ingress) yields a "waiting on" error,
+// (kubeconfig status, HCP endpoint status) yields a "waiting on" error,
 // and lookup or parse failures are returned as-is. The rollout hash must
 // never be computed from partially-unavailable endpoint data.
-func resolvedAPIServerEndpoint(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster) (string, error) {
+func resolvedAPIServerEndpoint(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) (string, error) {
 	if netutil.IsPrivateHC(hcluster) {
 		return "", nil
 	}
 
 	if netutil.UseSharedIngressHC(hcluster) {
-		sharedIngressRouteSVC := &corev1.Service{}
-		sharedIngressRouteSVC.Name = sharedingress.RouterPublicService().Name
-		sharedIngressRouteSVC.Namespace = sharedingress.RouterNamespace
-		if err := c.Get(ctx, client.ObjectKeyFromObject(sharedIngressRouteSVC), sharedIngressRouteSVC); err != nil {
-			return "", fmt.Errorf("failed to get shared ingress router service: %w", err)
+		address, port, err := haproxy.ResolveSharedIngressWorkerAPIEndpoint(ctx, c, client.ObjectKey{
+			Namespace: controlPlaneNamespace,
+			Name:      hcluster.Name,
+		})
+		if err != nil {
+			return "", err
 		}
-		if len(sharedIngressRouteSVC.Status.LoadBalancer.Ingress) < 1 {
-			return "", fmt.Errorf("waiting on sharedIngress route service to report .Status.LoadBalancer.Ingress")
-		}
-		// Load balancers on some providers report a hostname instead of an IP.
-		addr := sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].IP
-		if addr == "" {
-			addr = sharedIngressRouteSVC.Status.LoadBalancer.Ingress[0].Hostname
-		}
-		if addr == "" {
-			return "", fmt.Errorf("waiting on sharedIngress route service ingress to report an IP or hostname")
-		}
-		return fmt.Sprintf("%s:%d", addr, sharedingress.KASSVCLBPort), nil
+		return fmt.Sprintf("%s:%d", address, port), nil
 	}
 
 	if hcluster.Status.KubeConfig == nil {

@@ -39,6 +39,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
@@ -47,6 +48,45 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/vincent-petithory/dataurl"
 )
+
+func TestSharedIngressEndpointChangedPredicate(t *testing.T) {
+	endpoint := hyperv1.SharedIngressWorkerAPIEndpoint{IP: "10.0.0.1", Port: 443}
+
+	tests := map[string]struct {
+		oldEndpoint hyperv1.SharedIngressWorkerAPIEndpoint
+		newEndpoint hyperv1.SharedIngressWorkerAPIEndpoint
+		expected    bool
+	}{
+		"When the endpoint is unchanged, it should not trigger reconciliation": {
+			oldEndpoint: endpoint,
+			newEndpoint: endpoint,
+			expected:    false,
+		},
+		"When the endpoint is published, it should trigger reconciliation": {
+			newEndpoint: endpoint,
+			expected:    true,
+		},
+		"When the endpoint changes, it should trigger reconciliation": {
+			oldEndpoint: endpoint,
+			newEndpoint: hyperv1.SharedIngressWorkerAPIEndpoint{Hostname: "router.example.com", Port: 443},
+			expected:    true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			oldHCP := &hyperv1.HostedControlPlane{}
+			oldHCP.Status.SharedIngressWorkerAPIEndpoint = tc.oldEndpoint
+			newHCP := &hyperv1.HostedControlPlane{}
+			newHCP.Status.SharedIngressWorkerAPIEndpoint = tc.newEndpoint
+
+			e := event.UpdateEvent{ObjectOld: oldHCP, ObjectNew: newHCP}
+			g.Expect(sharedIngressEndpointChangedPredicate().Update(e)).To(Equal(tc.expected))
+		})
+	}
+}
 
 func TestIsUpdatingConfig(t *testing.T) {
 	t.Parallel()
@@ -4003,6 +4043,52 @@ func TestEnqueueNodePoolsForCloudConfig(t *testing.T) {
 
 			result := r.enqueueNodePoolsForCloudConfig(context.Background(), tc.cm)
 			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestEnqueueNodePoolsForHostedControlPlane(t *testing.T) {
+	for name, tc := range map[string]struct {
+		parent   string
+		expected []reconcile.Request
+	}{
+		"When HCP status changes, it should enqueue only its cluster's NodePools": {
+			parent: "clusters/cluster",
+			expected: []reconcile.Request{
+				{NamespacedName: client.ObjectKey{Namespace: "clusters", Name: "matching"}},
+			},
+		},
+
+		"When the parent annotation is missing, it should enqueue nothing": {
+			expected: []reconcile.Request{},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "matching", Namespace: "clusters"},
+					Spec:       hyperv1.NodePoolSpec{ClusterName: "cluster"},
+				},
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{Name: "other-cluster", Namespace: "clusters"},
+					Spec:       hyperv1.NodePoolSpec{ClusterName: "other"},
+				},
+			).Build()
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster", Namespace: "clusters-cluster"},
+			}
+			if tc.parent != "" {
+				hcp.Annotations = map[string]string{k8sutil.HostedClusterAnnotation: tc.parent}
+			}
+
+			r := &NodePoolReconciler{Client: c}
+
+			requests := r.enqueueNodePoolsForHostedControlPlane(t.Context(), hcp)
+
+			g.Expect(requests).To(ConsistOf(tc.expected))
 		})
 	}
 }

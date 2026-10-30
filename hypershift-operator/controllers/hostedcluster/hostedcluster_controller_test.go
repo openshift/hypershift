@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hcpmanifests "github.com/openshift/hypershift/pkg/manifests"
 	etcdrecoverymanifests "github.com/openshift/hypershift/pkg/manifests/etcdrecovery"
@@ -9906,4 +9907,139 @@ func TestReconcilePullSecretSync(t *testing.T) {
 			g.Expect(pullSecret.Data[".dockerconfigjson"]).To(Equal(validPullSecret))
 		})
 	}
+}
+
+func TestReconcileSharedIngressWorkerEndpoint(t *testing.T) {
+	readError := errors.New("router read failed")
+
+	testCases := map[string]struct {
+		ingress          []corev1.LoadBalancerIngress // nil means the router Service is absent.
+		routerError      error
+		expectedEndpoint hyperv1.SharedIngressWorkerAPIEndpoint
+		expectedError    error
+	}{
+		"When the first ingress has IP and hostname, it should publish its IP": {
+			ingress: []corev1.LoadBalancerIngress{
+				{IP: "10.0.0.1", Hostname: "first.example"},
+				{IP: "10.0.0.2"},
+			},
+			expectedEndpoint: hyperv1.SharedIngressWorkerAPIEndpoint{IP: "10.0.0.1", Port: 6443},
+		},
+
+		"When the first ingress has only a hostname, it should publish that hostname": {
+			ingress: []corev1.LoadBalancerIngress{
+				{Hostname: "router.example.com"},
+				{IP: "10.0.0.2"},
+			},
+			expectedEndpoint: hyperv1.SharedIngressWorkerAPIEndpoint{Hostname: "router.example.com", Port: 6443},
+		},
+
+		"When the first ingress has no address, it should clear the endpoint": {
+			ingress:          []corev1.LoadBalancerIngress{{}},
+			expectedEndpoint: hyperv1.SharedIngressWorkerAPIEndpoint{},
+		},
+
+		"When the router is missing, it should clear the endpoint": {
+			expectedEndpoint: hyperv1.SharedIngressWorkerAPIEndpoint{},
+		},
+
+		"When the router read fails, it should preserve the endpoint and return the error": {
+			routerError:      readError,
+			expectedEndpoint: hyperv1.SharedIngressWorkerAPIEndpoint{IP: "10.0.0.99", Port: 6443},
+			expectedError:    readError,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "clusters"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublic,
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+							},
+						},
+					},
+				},
+			}
+
+			hcp := controlplaneoperator.HostedControlPlane(hcpmanifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name), hc.Name)
+			hcp.Status.SharedIngressWorkerAPIEndpoint = hyperv1.SharedIngressWorkerAPIEndpoint{IP: "10.0.0.99", Port: 6443}
+
+			router := sharedingress.RouterPublicService()
+			router.Status.LoadBalancer.Ingress = tc.ingress
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp).WithStatusSubresource(hcp)
+			if tc.ingress != nil {
+				builder = builder.WithObjects(router)
+			}
+			if tc.routerError != nil {
+				builder = builder.WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c crclient.WithWatch, key crclient.ObjectKey, obj crclient.Object, opts ...crclient.GetOption) error {
+						if key == crclient.ObjectKeyFromObject(router) {
+							return tc.routerError
+						}
+						return c.Get(ctx, key, obj, opts...)
+					},
+				})
+			}
+
+			c := builder.Build()
+			r := &HostedClusterReconciler{Client: c}
+
+			err := r.reconcileSharedIngressWorkerEndpoint(t.Context(), hc)
+			if tc.expectedError != nil {
+				g.Expect(err).To(MatchError(tc.expectedError))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+
+			observed := &hyperv1.HostedControlPlane{}
+			g.Expect(c.Get(t.Context(), crclient.ObjectKeyFromObject(hcp), observed)).To(Succeed())
+
+			g.Expect(observed.Status.SharedIngressWorkerAPIEndpoint).To(Equal(tc.expectedEndpoint))
+		})
+	}
+}
+
+func TestEnqueueHostedClustersForSharedIngressRouter(t *testing.T) {
+	t.Setenv("ENABLE_HOSTEDCLUSTERS_ANNOTATION_SCOPING", "true")
+	t.Setenv("HOSTEDCLUSTERS_SCOPE_ANNOTATION", "operator-a")
+	g := NewWithT(t)
+
+	eligible := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "eligible",
+			Namespace:   "clusters",
+			Annotations: map[string]string{"hypershift.openshift.io/scope": "operator-a"},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AzurePlatform,
+				Azure: &hyperv1.AzurePlatformSpec{
+					Topology: hyperv1.AzureTopologyPublic,
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+						AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+					},
+				},
+			},
+		},
+	}
+
+	otherScope := eligible.DeepCopy()
+	otherScope.Name = "other-scope"
+	otherScope.Annotations["hypershift.openshift.io/scope"] = "operator-b"
+
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(eligible, otherScope).Build()
+	mapper := enqueueHostedClustersForSharedIngressRouter(c)
+
+	requests := mapper(t.Context(), sharedingress.RouterPublicService())
+
+	g.Expect(requests).To(ConsistOf(reconcile.Request{NamespacedName: crclient.ObjectKeyFromObject(eligible)}))
 }

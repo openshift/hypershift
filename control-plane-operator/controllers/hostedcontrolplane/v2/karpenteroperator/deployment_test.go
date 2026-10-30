@@ -9,6 +9,7 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/images"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -253,6 +254,25 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 		},
 		{
+			name:                    "When the HyperShift operator has IMAGE_SHARED_INGRESS_HAPROXY set, it should pass it to the container",
+			platformType:            hyperv1.AzurePlatform,
+			hyperShiftOperatorImage: "quay.io/hypershift/operator:latest",
+			ignitionEndpoint:        "https://ignition.example.com",
+			validateFunc: func(t *testing.T, g Gomega, opts *KarpenterOperatorOptions, cpContext controlplanecomponent.WorkloadContext) {
+				t.Helper()
+				t.Setenv(images.SharedIngressHAProxyEnvVar, "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472")
+				deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				err = opts.adaptDeployment(cpContext, deploymentObj)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				container := podspec.FindContainer(ComponentName, deploymentObj.Spec.Template.Spec.Containers)
+				g.Expect(container).ToNot(BeNil(), "container %s should exist", ComponentName)
+				g.Expect(container.Env).To(ContainElement(corev1.EnvVar{Name: images.SharedIngressHAProxyEnvVar, Value: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472"}))
+			},
+		},
+		{
 			name:                      "When standalone mode is enabled with SCC, it should omit DEFAULT_SECURITY_CONTEXT_UID from the operator and adapter",
 			platformType:              hyperv1.AWSPlatform,
 			awsRegion:                 "us-west-2",
@@ -368,8 +388,45 @@ func TestAdaptDeployment(t *testing.T) {
 	}
 }
 
+func TestSetIgnitionEnvVars(t *testing.T) {
+	testCases := map[string]struct {
+		envVars     map[string]string
+		expectedEnv []corev1.EnvVar
+	}{
+		"When the HyperShift operator has no ignition env vars set, it should not add env vars": {
+			expectedEnv: []corev1.EnvVar{},
+		},
+		"When the HyperShift operator has IMAGE_SHARED_INGRESS_HAPROXY set, it should pass it on": {
+			envVars: map[string]string{
+				images.SharedIngressHAProxyEnvVar: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472",
+			},
+			expectedEnv: []corev1.EnvVar{
+				{
+					Name:  images.SharedIngressHAProxyEnvVar,
+					Value: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472",
+				},
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			t.Setenv(images.SharedIngressHAProxyEnvVar, "")
+			for envVarName, value := range tc.envVars {
+				t.Setenv(envVarName, value)
+			}
+
+			var env []corev1.EnvVar
+			setIgnitionEnvVars(&env)
+			g.Expect(env).To(ConsistOf(tc.expectedEnv))
+		})
+	}
+}
+
 func TestAddStandaloneAdapterContainer(t *testing.T) {
 	g := NewWithT(t)
+	t.Setenv(images.SharedIngressHAProxyEnvVar, "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472")
 	deploymentObj, err := assets.LoadDeploymentManifest(ComponentName)
 	g.Expect(err).ToNot(HaveOccurred())
 
@@ -398,6 +455,7 @@ func TestAddStandaloneAdapterContainer(t *testing.T) {
 	g.Expect(adapter.VolumeMounts).ToNot(ContainElement(
 		corev1.VolumeMount{Name: "provider-creds", MountPath: "/etc/provider"},
 	))
+	g.Expect(adapter.Env).To(ContainElement(corev1.EnvVar{Name: images.SharedIngressHAProxyEnvVar, Value: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472"}))
 }
 
 func TestAdaptStandaloneDeployment(t *testing.T) {
