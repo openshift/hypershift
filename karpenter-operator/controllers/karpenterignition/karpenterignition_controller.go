@@ -695,12 +695,17 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 		return nil, fmt.Errorf("failed to resolve HAProxy image: %w", err)
 	}
 
+	// This manager's cache is scoped to the HostedControlPlane namespace, so it
+	// cannot read the shared ingress router Service and must not fall back to it.
+	const allowSharedIngressServiceFallback = false
+
 	haproxyClient := haproxy.HAProxy{
-		Client:                  r.ManagementClient,
-		HAProxyImage:            haproxyImage,
-		HypershiftOperatorImage: r.HypershiftOperatorImage,
-		ReleaseProvider:         r.ReleaseProvider,
-		ImageMetadataProvider:   r.ImageMetadataProvider,
+		Client:                            r.ManagementClient,
+		HAProxyImage:                      haproxyImage,
+		HypershiftOperatorImage:           r.HypershiftOperatorImage,
+		ReleaseProvider:                   r.ReleaseProvider,
+		ImageMetadataProvider:             r.ImageMetadataProvider,
+		AllowSharedIngressServiceFallback: allowSharedIngressServiceFallback,
 	}
 	haproxyRawConfig, err := haproxyClient.GenerateHAProxyRawConfig(ctx, hostedCluster, controlPlaneNamespace)
 	if err != nil {
@@ -712,7 +717,7 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyRawConfig, controlPlaneNamespace, allowSharedIngressServiceFallback, resolvedRHELStream)
 }
 
 // hostedClusterFromHCP creates a barebones in-memory HostedCluster from a HostedControlPlane.
