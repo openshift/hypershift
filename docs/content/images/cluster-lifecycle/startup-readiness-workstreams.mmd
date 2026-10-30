@@ -1,0 +1,24 @@
+---
+config:
+  theme: default
+  look: classic
+  htmlLabels: false
+  markdownAutoWrap: false
+  fontFamily: Arial, sans-serif
+  flowchart:
+    htmlLabels: false
+    wrappingWidth: 500
+---
+flowchart TD
+    CP["CONTROL PLANE<br/>HCP and HC Available<br/>CPCs at desired version and rollout-complete<br/>HCP controlPlaneVersion Completed"] --> ALL
+    NP["REQUESTED WORKERS<br/>Every intended NodePool Ready<br/>AllMachinesReady and AllNodesHealthy<br/>Desired version and worker count"] --> ALL
+    GUEST["GUEST CONVERGENCE<br/>CVO release Completed<br/>All expected operators converged<br/>HC version history Completed"] --> ALL
+    ALL{"All applicable checks true now<br/>and required validation passes?"}
+    ALL -- yes --> READY["Cluster ready"]
+    ALL -- no --> WAIT["Name each unresolved workstream<br/>and inspect its first unmet dependency"]
+    classDef cp fill:#e8f0fe,stroke:#3566ac,color:#10233f;
+    classDef workers fill:#dcf4ee,stroke:#17745e,color:#123d32;
+    classDef guest fill:#f0e7fa,stroke:#794ba3,color:#38244d;
+    class CP cp;
+    class NP workers;
+    class GUEST guest;

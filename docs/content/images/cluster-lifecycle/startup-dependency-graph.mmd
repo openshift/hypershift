@@ -1,0 +1,40 @@
+---
+config:
+  theme: default
+  look: classic
+  htmlLabels: false
+  markdownAutoWrap: false
+  fontFamily: Arial, sans-serif
+  flowchart:
+    htmlLabels: false
+    wrappingWidth: 500
+---
+flowchart TD
+    HC([HostedCluster created]) --> V{"P0<br/>intake and validation"}
+    V -- "invalid or blocked" --> VFAIL["Inspect HostedCluster validation conditions<br/>and HyperShift Operator logs"]
+    V -- "valid" --> S["P1<br/>HO creates resources<br/>namespace, credentials, HCP,<br/>platform infra CR, CAPI Cluster"]
+    S --> EP["P2<br/>published endpoints<br/>API, Konnectivity, OAuth, routers"]
+    EP --> IR{"HCP<br/>InfrastructureReady=True?"}
+    IR -- "no" --> EPFAIL["Inspect Services, Routes, load balancers,<br/>DNS and platform endpoint resources"]
+    IR -- "yes" --> F["P3<br/>foundation<br/>managed etcd + featuregate-generator"]
+    F --> KAS["P4<br/>KAS available<br/>KubeAPIServerAvailable=True"]
+    S --> KC{"HostedCluster kubeconfig<br/>published?"}
+    KC -- "yes" --> NP["P6<br/>NodePool bootstrap<br/>token, user-data, machine template"]
+    KAS --> CPC["P5<br/>remaining control-plane components"]
+    CPC --> CPAVAIL["HCP Available<br/>HostedCluster Available"]
+    CPC --> CPVERSION["CPC RolloutComplete at desired version<br/>HCP controlPlaneVersion Completed"]
+    NP --> CLOUD["P7<br/>CAPI provisions machines<br/>instance fetches ignition"]
+    CLOUD --> NODES["P8<br/>Machine Ready + NodeHealthy<br/>NodePool Ready"]
+    NODES --> GUEST["P9<br/>guest CVO Completed<br/>ClusterOperators converged"]
+    CPAVAIL --> DONE{"All completion checks true?"}
+    CPVERSION --> DONE
+    GUEST --> DONE
+    DONE -- "yes" --> COMPLETE([HostedCluster fully complete])
+    DONE -- "no" --> NEXT["Return to the first false gate"]
+
+    classDef gate fill:#fff4ce,stroke:#8a6d00,color:#3d3000;
+    classDef done fill:#d4f7d4,stroke:#247a24,color:#123d12;
+    classDef fail fill:#ffe0e0,stroke:#a33,color:#4d1111;
+    class V,IR,KC,DONE gate;
+    class COMPLETE done;
+    class VFAIL,EPFAIL,NEXT fail;

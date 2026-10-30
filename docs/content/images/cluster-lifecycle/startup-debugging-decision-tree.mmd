@@ -1,0 +1,46 @@
+---
+config:
+  theme: default
+  look: classic
+  htmlLabels: false
+  markdownAutoWrap: false
+  fontFamily: Arial, sans-serif
+  flowchart:
+    htmlLabels: false
+    wrappingWidth: 500
+---
+flowchart TD
+    START([Start with HostedCluster status]) --> VALID{"Validation blocked?"}
+    VALID -- "yes" --> P0["P0 Intake<br/>HostedCluster conditions + HO logs"]
+    VALID -- "no" --> HCPEXISTS{"HCP exists?"}
+    HCPEXISTS -- "no" --> P1["P1 Management resources<br/>HO reconciliation errors, namespace,<br/>HCP and CAPI resource creation"]
+    HCPEXISTS -- "yes" --> INFRA{"HCP<br/>InfrastructureReady=True?"}
+    INFRA -- "no" --> P2["P2 Endpoints<br/>Services, Routes, LB, DNS, platform endpoints"]
+    INFRA -- "yes" --> FOUNDATION{"Required foundation ready?<br/>etcd + featuregate-generator"}
+    FOUNDATION -- "no" --> P3["P3 Foundation<br/>etcd and featuregate-generator dependencies"]
+    FOUNDATION -- "yes" --> KAS{"KubeAPIServerAvailable=True,<br/>published endpoint health check succeeds,<br/>and HC/HCP kubeconfigs published?"}
+    KAS -- "no" --> P4["P4 Hosted API and kubeconfig<br/>KAS workload, Service/Route/LB, DNS,<br/>endpoint health, Secret and status publication"]
+    KAS -- "yes" --> HCPAVAIL{"HCP<br/>Available=True?"}
+    HCPAVAIL -- "no" --> P5["P5 Control-plane convergence<br/>CPC Available / RolloutComplete"]
+    HCPAVAIL -- "yes" --> NPROW{"NodePool<br/>exists?"}
+    NPROW -- "no" --> INTENT{"Workers requested?"}
+    INTENT -- "yes" --> P6CREATE["P6 NodePool intent<br/>Inspect the requested pool's creation<br/>create it only within the authorized setup"]
+    INTENT -- "no" --> CPONLY["Report control-plane-only readiness<br/>do not create workers"]
+    NPROW -- "yes" --> NPREADY{"NodePool<br/>Ready=True?"}
+    NPREADY -- "no" --> MACHINE{"CAPI Machine<br/>exists?"}
+    MACHINE -- "no" --> P6["P6 NodePool bootstrap<br/>kubeconfig, payload, worker security group,<br/>CAPI workload"]
+    MACHINE -- "yes" --> IGN{"ReachedIgnitionEndpoint<br/>=True?"}
+    IGN -- "no" --> P7["P7 Machine provisioning<br/>provider, machine, ignition path"]
+    IGN -- "yes" --> P8["P8 Worker readiness<br/>AllMachinesReady / AllNodesHealthy"]
+    NPREADY -- "yes" --> NPHEALTH{"AllMachinesReady=True<br/>and AllNodesHealthy=True?"}
+    NPHEALTH -- "no" --> P8
+    NPHEALTH -- "yes" --> GUEST{"HostedCluster version<br/>Completed and guest<br/>operators converged?"}
+    GUEST -- "no" --> P9["P9 Guest convergence<br/>CVO, ClusterOperators, HCCO"]
+    GUEST -- "yes" --> CURRENT{"Full checklist true now?<br/>Include control-plane rollout,<br/>desired versions and required validation"}
+    CURRENT -- "yes" --> DONE([Fully complete])
+    CURRENT -- "no" --> RECHECK["Inspect the remaining current gate<br/>a historical success is insufficient"]
+
+    classDef stage fill:#e8f0fe,stroke:#3b6fb6,color:#10233f;
+    classDef complete fill:#d4f7d4,stroke:#247a24,color:#123d12;
+    class P0,P1,P2,P3,P4,P5,P6,P6CREATE,P7,P8,P9,CPONLY,RECHECK stage;
+    class DONE complete;

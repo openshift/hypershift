@@ -2579,6 +2579,10 @@ graph TD
 
 # Cluster Lifecycle and Control Plane
 
+The hosted cluster startup roadmap
+describes startup dependencies, readiness checks, and the resources to inspect
+when a HostedCluster has not finished starting.
+
 ---
 
 ## HostedCluster Lifecycle
@@ -2735,30 +2739,12 @@ flowchart TD
 
 ### Component Dependencies
 
-```mermaid
-graph TD
-    PKI[PKI Operator] --> |no deps| READY1((Ready))
-    ETCD[etcd] --> |no deps| READY2((Ready))
-    FG[FeatureGate Generator] --> |no deps| READY3((Ready))
-    ROUTER[Router] --> |no deps| READY4((Ready))
-
-    READY2 --> KAS[kube-apiserver]
-    READY3 --> KAS
-
-    KAS --> |implicit dependency| KCM[kube-controller-manager]
-    KAS --> |implicit dependency| SCHED[kube-scheduler]
-    KAS --> |implicit dependency| OAPI[openshift-apiserver]
-    KAS --> |implicit dependency| CVO[CVO]
-    KAS --> |implicit dependency| ALL["All other<br/>components (~30)"]
-
-    style PKI fill:#c8e6c9
-    style ETCD fill:#c8e6c9
-    style FG fill:#c8e6c9
-    style ROUTER fill:#c8e6c9
-    style KAS fill:#ffcc80
-```
-
-KAS is an implicit dependency for all components **except**: etcd, featuregate-generator, control-plane-operator, cluster-api, capi-provider, karpenter, and router.
+Components reconcile when their dependencies are ready; their registration
+order does not determine startup order. Most components wait for kube-apiserver.
+See Foundation components
+for the dependency graph and exceptions, and
+Control-plane convergence
+for dependency conditions and diagnostic checks.
 
 ### Status Propagation
 
@@ -64456,6 +64442,1523 @@ In disconnected environments, pinned images are not part of the hosted cluster p
 - `hypershift-operator/controllers/hostedcluster/internal/platform/{aws,azure,gcp,kubevirt,agent,openstack,powervs}/` -- per-platform `CAPIProviderDeploymentSpec()`
 - `support/images/envvars.go` -- env var to payload image name mapping
 - `hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go` -- CAPI manager image override
+
+
+---
+
+## Source: docs/content/reference/cluster-startup-aws-observation.md
+
+---
+title: AWS startup debugging examples (5.0.0-rc.7)
+---
+
+# AWS startup debugging examples (5.0.0-rc.7)
+
+This page records the startup of an AWS HostedCluster created on 28 October
+2026, identified as **HostedCluster 1** in the
+comparison of two HostedClusters. It illustrates
+the startup roadmap. The requested HO was healthy
+before creation, and startup required no manual credential repair, HO rollout,
+or bootstrap changes. The management cluster and its image caches were warm.
+
+!!! note "Development timing example only"
+
+    This HostedCluster was created in development. Its timings illustrate the
+    lifecycle gates and do not indicate expected timings for managed services
+    such as ROSA HCP or ARO HCP, production deployments, Azure, or other
+    environments. They are not performance benchmarks, deadlines, SLAs, or SLOs.
+
+The creation and deletion observations
+contain the shared configuration, creation timestamps, startup milestones,
+component timings, and guest-operator timings for both HostedClusters. This
+page explains the waits observed during HostedCluster 1 startup.
+
+## Observed gates
+
+### Why a ready API did not immediately produce Machines
+
+This diagram measures elapsed time from HostedCluster 1 creation. The timer is
+specific to the pinned CPO revision below; it is not a generic AWS timeout.
+
+```mermaid
+flowchart TD
+    EARLY["Early identity condition reports<br/>KAS unavailable"] --> UNKNOWN["ValidAWSIdentityProvider = Unknown<br/>Check returns no error"]
+    UNKNOWN --> TIMER["Next check scheduled on the<br/>five-minute successful-check interval"]
+    KAS["+1m20s<br/>KAS workload available"] --> VALID
+    TIMER --> VALID["+5m34s<br/>AWS identity validation passes"]
+    VALID --> SG["+5m35s<br/>Default worker SG published"]
+    PAYLOAD["+3m13s<br/>Bootstrap payload generated"] --> WORKLOAD
+    SG --> WORKLOAD["+5m35s<br/>MachineDeployment created"]
+    WORKLOAD --> MACHINES["+5m39s<br/>First Machine created"]
+    MACHINES --> IGNITION["+6m04s<br/>At least one ignition fetch"]
+    IGNITION --> WORKERS["+9m40s<br/>NodePool ready"]
+    classDef wait fill:#fff4ce,stroke:#8a6d00,color:#3d3000;
+    class UNKNOWN,TIMER wait;
+```
+
+While this gate is pending, inspect identity-check timing and SG publication.
+There is no instance boot path to inspect until Machines and instances exist.
+
+The release CPO revision is `b9d6ae1c63453c012e889525eb924b3a07bac26b`.
+Its AWS identity check
+explicitly checks KAS availability before obtaining an EC2 client. Observations
+from both HostedClusters contain the condition message
+`Cannot validate AWS identity provider while KubeAPIServer is not available`,
+with `ValidAWSIdentityProvider=Unknown`. That branch returns no error. When
+the complete health-check update, including its status patch, returns no error,
+the health-check controller
+selects its five-minute interval. These messages and the pinned source support
+the explanation for this HostedCluster; KAS timing alone would not establish it.
+
+The same revision also records `Unknown` and returns no error for an unavailable
+EC2 client. Before attributing a similar wait to KAS, verify the deployed CPO
+revision, the actual `ValidAWSIdentityProvider` message, and EC2-client and
+credential configuration, including `AWS_SHARED_CREDENTIALS_FILE`. These
+observations required no credential repair.
+
+`ValidOIDCConfiguration=True` was present from creation. Bootstrap payload
+generation at +3m13s preceded worker security-group readiness. CPO AWS
+identity-provider validation passed at +5m34s. The default worker security
+group and MachineDeployment followed at +5m35s. CAPI created the first Machine at
++5m39s. At least one instance fetched ignition at +6m04s, and the NodePool
+became ready at +9m40s.
+
+### Why ready workers did not mean a complete guest cluster
+
+```mermaid
+flowchart TD
+    NP["+9m40s<br/>NodePool ready"] --> REMAINING["Guest CVO and operators still converging"]
+    RBAC["Monitoring reconciliation<br/>reports missing RBAC dependencies"] --> VALIDATION["Five-minute availability-validation wait<br/>Prometheus resource still absent"]
+    VALIDATION --> RETRY["Next reconciliation"]
+    RETRY --> PROM["+16m14s<br/>Prometheus/k8s created"]
+    REMAINING --> MON["+16m34s<br/>Monitoring converged"]
+    PROM --> MON
+    MON --> VERSION["+16m59s<br/>Guest CVO and HC version Completed"]
+    VERSION --> FULL["~+17m02s<br/>Full checklist observed true together"]
+    classDef wait fill:#fff4ce,stroke:#8a6d00,color:#3d3000;
+    class RBAC,VALIDATION wait;
+```
+
+Times use HostedCluster 1 creation as zero. The five-minute validation wait is
+part of reconciliation, not a measured duration from NodePool readiness.
+
+Monitoring was the last guest operator to converge. Its initial reconciliation
+reported missing `cluster-monitoring-view` and `monitoring-alertmanager-edit`
+RBAC dependencies. Prometheus remained absent during a five-minute availability
+validation. The next reconciliation created `Prometheus/k8s` at +16m14s;
+monitoring converged at +16m34s without manual intervention. Guest CVO and HC
+version completion followed at +16m59s, and the full checklist was first
+observed at approximately +17m02s.
+
+
+---
+
+## Source: docs/content/reference/cluster-startup-aws-repeat.md
+
+---
+title: AWS HostedCluster creation and deletion observations (5.0.0-rc.7)
+---
+
+# AWS HostedCluster creation and deletion observations (5.0.0-rc.7)
+
+!!! note "Development timing examples only"
+
+    These HostedClusters were created and destroyed in development. All times
+    in the tables and charts are examples from these two runs; they do not
+    indicate expected startup or teardown times for managed services such as
+    ROSA HCP or ARO HCP, production deployments, Azure, or other environments.
+    They are not performance benchmarks, deadlines, SLAs, or SLOs. Measure the
+    target environment separately before setting timing expectations.
+
+These observations cover two separate AWS HostedClusters created and then
+deleted on the same development management cluster on 28 October 2026. Tables
+identify them as **HostedCluster 1** and **HostedCluster 2**; chart labels use
+**HC1** and **HC2**. Each has its own creation timestamp, infrastructure ID,
+startup measurements, and deletion measurements, listed below.
+
+Both used release
+`quay.io/openshift-release-dev/ocp-release:5.0.0-rc.7-multi` and HO image
+`quay.io/acm-d/rhtap-hypershift-operator@sha256:d7eb652dbbfac8ae9866b413c7125c86961a5cfb46396eb31774e0b3e171a3a5`.
+Each had two `m5.large` workers in `us-east-1a` and public endpoints. Both used
+`SingleReplica` policies for the control plane and infrastructure. The management
+cluster and its caches were warm. The requested HO was healthy before each create.
+
+Neither startup needed manual credential repair or bootstrap intervention.
+Both teardowns used the normal destroy path without force or manual finalizer
+removal. Both clusters and their tracked AWS infrastructure were removed.
+
+See the startup roadmap,
+AWS startup debugging examples, and
+teardown roadmap for gate definitions and
+investigation paths.
+
+## Lifecycle summary
+
+Startup times begin at HC creation. Teardown times begin immediately before
+invoking the destroy script, including STS refresh and CLI setup.
+`~` marks the first successful polling observation. The table lists idle review
+time separately and excludes it from both clocks. Startup milestones use the
+earliest captured successful transition. Later successful condition timestamps
+can differ.
+
+| Measurement | HostedCluster 1 | HostedCluster 2 |
+|-------------|---------------|---------------|
+| HC creation | `2026-10-28T20:09:30+00:00` | `2026-10-28T21:11:01+00:00` |
+| Infrastructure ID | `startup-roadmap-aws-dpqbm` | `startup-roadmap-aws-87pvz` |
+| HCP available | 4m 32s | 3m 57s |
+| HostedCluster available | 4m 32s | 3m 57s |
+| NodePool ready | 9m 40s | 9m 28s |
+| Guest operators converged | 16m 34s | 16m 35s |
+| HC version Completed | 16m 59s | 16m 57s |
+| Full startup checklist | ~17m 02s | ~17m 02s |
+| Successful command to HC creation | 18s | 21s |
+| Review/idle interval before destroy | ~35m 18s | ~57s |
+| Destroy command returned success | 7m 37s | 7m 20s |
+| Teardown independently verified | ~7m 40s | ~7m 34s |
+
+These two samples do not establish a typical duration or explain the timing
+differences. HostedCluster 1 remained available for review before teardown.
+HostedCluster 2's teardown began after capture of its completion evidence and
+deletion inventory. HostedCluster 1's command logs retain a NAT-quota retry
+before HC creation. That retry does not contribute to startup timing.
+
+## Startup comparison
+
+
+
+Each marker measures elapsed time since HC creation. It does not measure the
+duration of a separate phase. Both HostedClusters use HC creation as zero, and
+`~` marks the first successful polling observation. Select a chart to open the
+full-size SVG. The table below contains all values.
+
+| Stage | Milestone | HostedCluster 1 | HostedCluster 2 |
+|-------|-----------|---------------|---------------|
+| P0 | HostedCluster created | 0s | 0s |
+| P0 | Validation passed | 0s | 0s |
+| P1 | HostedControlPlane created | 0s | 1s |
+| P1 | Platform infrastructure object created | 0s | 1s |
+| P1 | CAPI Cluster created | 0s | 1s |
+| P1 | Management operators deployed | 4s | 2s |
+| P1 | Management operators available | 1m 25s | 1m 06s |
+| P2 | HCP InfrastructureReady | 23s | 25s |
+| P3 | etcd available | 52s | 45s |
+| P3 | featuregate-generator ready | 33s | 30s |
+| P4 | Kube API server available | 1m 20s | 1m 06s |
+| P4 | HostedCluster kubeconfig published | ~58s | ~48s |
+| P5 | HostedControlPlane available | 4m 32s | 3m 57s |
+| P5 | HostedCluster available | 4m 32s | 3m 57s |
+| P5 | Control-plane rollout complete | 5m 32s | 4m 12s |
+| P6 | NodePool created | 0s | 1s |
+| P6 | Node bootstrap payload generated | 3m 13s | 3m 06s |
+| P6 | MachineDeployment or MachineSet created | 5m 35s | 5m 34s |
+| P7 | First CAPI Machine created | 5m 39s | 5m 38s |
+| P7 | Ignition endpoint reached | 6m 04s | 6m 02s |
+| P8 | All CAPI Machines ready | 9m 39s | 9m 26s |
+| P8 | All CAPI Nodes healthy | 9m 39s | 9m 26s |
+| P8 | NodePool ready | 9m 40s | 9m 28s |
+| P9 | HostedCluster version Completed | 16m 59s | 16m 57s |
+| P9 | Guest ClusterVersion complete | 16m 59s | 16m 57s |
+| P9 | Guest ClusterOperators converged | 16m 34s | 16m 35s |
+| P9 | Full completion checklist | ~17m 02s | ~17m 02s |
+
+### Observed startup waits
+
+Both HostedClusters published valid OIDC configuration immediately and completed
+without manual credential repair, an HO rollout, or bootstrap intervention.
+HostedCluster 2 first reached HCP availability 35 seconds earlier and NodePool
+readiness 12 seconds earlier, while the full checklist was first observed at
+about 17m02s in both. These small differences are observations, not evidence of
+a reliable performance improvement.
+
+The full trace captures HostedCluster 2's first `Available=True` transition at
++3m57s. A later successful condition carries a +4m12s transition timestamp, also
+the control-plane rollout completion time. Both captured observations were
+`True`; no intervening `False` was captured. The tables retain the earliest
+successful transition rather than replacing it with the latest condition
+timestamp.
+
+AWS identity validation passed at +5m34s for HostedCluster 1 and +5m33s for
+HostedCluster 2; each default worker security group appeared one second later.
+The startup debugging examples
+explain this wait using the observed condition messages and the pinned CPO
+source, including how to distinguish KAS unavailability from an unavailable
+EC2 client.
+
+Monitoring was the last guest operator to converge in both HostedClusters.
+HostedCluster 1 reported missing `cluster-monitoring-view` and
+`monitoring-alertmanager-edit` RBAC dependencies. HostedCluster 2 reproduced the
+Alertmanager role-binding failure. Its log records the initial failure at
+`21:22:06Z`, followed by a five-minute availability-validation wait and a failed
+task result at `21:27:06Z`. The next reconciliation created `Prometheus/k8s` at
++16m15s, and monitoring converged at +16m35s. The corresponding HostedCluster 1
+times were +16m14s and +16m34s. Reconciliation resolved both failures. Checking
+only existing monitoring pods would have missed the absent Prometheus resource
+during this interval.
+
+## Teardown comparison
+
+Deletion timestamps and observed absence are different signals. The first
+row below uses the HC API deletion timestamp. Resource-removal rows use the
+first successful collection that confirms absence or an AWS terminal state.
+The command-return row in the summary uses the wrapper's actual return time.
+
+
+
+All chart markers except command return are first successful polling
+observations. Lines connect the two HostedClusters for comparison; they do not
+measure individual cleanup-task durations. The table lists all tracked
+resources.
+
+| Gate | HostedCluster 1 | HostedCluster 2 |
+|------|---------------|---------------|
+| HC deletion timestamp | 2s | 1s |
+| Both worker instances terminal | ~3m 00s | ~2m 52s |
+| Worker root volumes removed | ~3m 00s | ~3m 05s |
+| All CAPI Machines removed | ~3m 13s | ~3m 05s |
+| NodePool removed | ~3m 13s | ~3m 05s |
+| HCP removed | ~3m 40s | ~3m 32s |
+| Guest classic load balancer removed | ~3m 13s | ~3m 05s |
+| Control-plane load balancer removed | ~3m 40s | ~3m 32s |
+| Tracked target groups removed | ~3m 40s | ~3m 32s |
+| OIDC documents removed | ~3m 40s | ~3m 32s |
+| All HCP pods removed | ~5m 54s | ~5m 47s |
+| Component API objects removed | ~6m 34s | ~6m 00s |
+| HCP namespace removed | ~6m 34s | ~6m 00s |
+| VPC endpoints removed | ~6m 47s | ~6m 14s |
+| Private hosted zones removed | ~6m 47s | ~6m 14s |
+| NAT gateways terminal | ~7m 40s | ~7m 07s |
+| Internet gateways deleted | ~7m 40s | ~7m 20s |
+| Elastic IPs released | ~7m 40s | ~7m 20s |
+| VPC removed | ~7m 40s | ~7m 20s |
+| Cluster IAM roles removed | ~7m 40s | ~7m 34s |
+| Worker instance profiles removed | ~7m 40s | ~7m 34s |
+| OIDC provider removed | ~7m 40s | ~7m 20s |
+| HC absent | ~7m 40s | ~7m 34s |
+| All teardown checks passed | ~7m 40s | ~7m 34s |
+
+### Observed teardown waits
+
+HCP deletion is an intermediate milestone. In both HostedClusters, the workers
+terminated and CAPI removed the Machine objects before HCP removal. The HCP
+namespace, component API objects, Services and remaining API-server pods
+remained afterward. Removing a component API object does not establish that its
+workload has stopped.
+
+API-server grace periods explain part of the namespace wait. The HostedCluster 2
+observation captured `terminationGracePeriodSeconds` and
+`deletionGracePeriodSeconds`: 135 seconds for KAS and 120 seconds for the
+OpenShift API and OAuth API servers. For example, the KAS pod was already
+observed terminating in the collection ending `21:32:45Z`, with a future
+deletion timestamp of `21:34:34Z`. That timestamp is a grace deadline, not a
+request time. HostedCluster 1 observations include pod deletion timestamps but
+not explicit grace-period fields. HostedCluster 2 observations include both.
+
+Read namespace conditions alongside the remaining objects. In HostedCluster 2,
+the namespace reported no remaining content or finalizers while the captured
+polls still showed terminating API-server pods and component objects. Check each
+resource's presence before concluding that the namespace is empty.
+
+The final CLI phase is separate from controller cleanup. After the HCP
+namespace disappeared, the destroy command continued removing remaining VPC
+dependencies, NAT infrastructure, IAM roles/profiles and the OIDC provider.
+The CLI finalizer kept the HC present during this work. The dataset records
+command return and the first collection that confirmed Kubernetes and AWS
+cleanup as separate measurements. Neither deletion used force or manual finalizer
+removal.
+
+Both commands logged transient internet-gateway `DependencyViolation` errors
+for mapped public addresses while the NAT gateway was still `deleting`.
+They retried and completed without intervention. In this state, follow NAT
+and network-dependency progress before treating a retry message as a leak or
+removing a finalizer.
+
+## Control-plane component comparison
+
+First successful transitions may precede later rollouts. These component
+transitions are separate from aggregate HCP availability and full completion.
+
+
+
+The chart compares first availability in both HostedClusters. The table lists
+components alphabetically and retains both availability and rollout timestamps.
+These observations do not establish a dependency order. Rollout completion can
+follow availability. Open the image for the full-size vector chart.
+
+| Component | First available: HostedCluster 1 | First available: HostedCluster 2 | First rollout: HostedCluster 1 | First rollout: HostedCluster 2 |
+|-----------|--------------------------|--------------------------|------------------------|------------------------|
+| `aws-cloud-controller-manager` | 1m 35s | 1m 10s | 1m 35s | 1m 10s |
+| `capi-provider` | 1m 26s | 1m 06s | 1m 31s | 1m 06s |
+| `catalog-operator` | 3m 31s | 2m 01s | 3m 31s | 2m 01s |
+| `certified-operators-catalog` | 3m 31s | 1m 41s | 3m 31s | 1m 41s |
+| `cloud-credential-operator` | 3m 57s | 3m 57s | 3m 57s | 3m 57s |
+| `cluster-api` | 7s | 3s | 7s | 3s |
+| `cluster-autoscaler` | 1m 23s | 1m 08s | 1m 23s | 1m 08s |
+| `cluster-image-registry-operator` | 3m 31s | 2m 01s | 3m 31s | 2m 01s |
+| `cluster-network-operator` | 3m 57s | 3m 57s | 5m 30s | 3m 57s |
+| `cluster-node-tuning-operator` | 2m 17s | 1m 30s | 2m 17s | 1m 30s |
+| `cluster-policy-controller` | 2m 17s | 1m 34s | 2m 17s | 1m 34s |
+| `cluster-storage-operator` | 2m 37s | 1m 49s | 3m 57s | 3m 57s |
+| `cluster-version-operator` | 2m 27s | 1m 40s | 2m 27s | 1m 40s |
+| `community-operators-catalog` | 3m 31s | 1m 52s | 3m 31s | 1m 52s |
+| `control-plane-operator` | 5s | 2s | 5s | 2s |
+| `control-plane-pki-operator` | 1m 26s | 1m 12s | 1m 26s | 1m 12s |
+| `csi-snapshot-controller-operator` | 2m 38s | 1m 50s | 2m 48s | 2m 01s |
+| `dns-operator` | 3m 30s | 2m 00s | 3m 30s | 2m 00s |
+| `etcd` | 51s | 45s | 51s | 45s |
+| `featuregate-generator` | 26s | 26s | 33s | 30s |
+| `hosted-cluster-config-operator` | 2m 47s | 2m 00s | 2m 47s | 2m 00s |
+| `ignition-server` | 28s | 27s | 28s | 27s |
+| `ignition-server-proxy` | 30s | 29s | 30s | 29s |
+| `ingress-operator` | 3m 57s | 3m 57s | 3m 57s | 3m 57s |
+| `konnectivity-agent` | 1m 27s | 1m 11s | 1m 27s | 1m 11s |
+| `kube-apiserver` | 1m 18s | 1m 05s | 1m 18s | 1m 05s |
+| `kube-controller-manager` | 1m 25s | 1m 09s | 1m 29s | 1m 15s |
+| `kube-scheduler` | 1m 18s | 1m 09s | 1m 23s | 1m 17s |
+| `kube-storage-version-migrator` | 1m 29s | 1m 10s | 1m 29s | 1m 10s |
+| `machine-approver` | 1m 26s | 1m 09s | 1m 26s | 1m 09s |
+| `oauth-openshift` | 1m 50s | 1m 28s | 2m 20s | 1m 34s |
+| `olm-collect-profiles` | 1m 20s | 1m 06s | 1m 20s | 1m 06s |
+| `olm-operator` | 3m 31s | 2m 01s | 3m 31s | 2m 01s |
+| `openshift-apiserver` | 1m 23s | 1m 08s | 1m 44s | 1m 21s |
+| `openshift-controller-manager` | 2m 18s | 1m 27s | 2m 18s | 1m 27s |
+| `openshift-oauth-apiserver` | 1m 50s | 1m 27s | 2m 20s | 1m 30s |
+| `openshift-route-controller-manager` | 1m 50s | 1m 28s | 2m 19s | 1m 30s |
+| `packageserver` | 3m 31s | 3m 57s | 3m 31s | 3m 57s |
+| `redhat-operators-catalog` | 4m 32s | 3m 57s | 4m 32s | 3m 57s |
+
+### Creation to component availability
+
+These durations start at `ControlPlaneComponent` object creation and include
+controller and dependency waits. They do not measure container startup time.
+
+| Component | HostedCluster 1 | HostedCluster 2 |
+|-----------|---------------|---------------|
+| `aws-cloud-controller-manager` | 1m 11s | 46s |
+| `capi-provider` | 1m 22s | 1m 04s |
+| `catalog-operator` | 3m 06s | 1m 36s |
+| `certified-operators-catalog` | 3m 06s | 1m 16s |
+| `cloud-credential-operator` | 3m 33s | 3m 33s |
+| `cluster-api` | 3s | 1s |
+| `cluster-autoscaler` | 30s | 22s |
+| `cluster-image-registry-operator` | 3m 07s | 1m 37s |
+| `cluster-network-operator` | 3m 33s | 3m 33s |
+| `cluster-node-tuning-operator` | 1m 53s | 1m 06s |
+| `cluster-policy-controller` | 1m 53s | 1m 10s |
+| `cluster-storage-operator` | 2m 13s | 1m 25s |
+| `cluster-version-operator` | 2m 03s | 1m 16s |
+| `community-operators-catalog` | 3m 06s | 1m 27s |
+| `control-plane-operator` | 4s | 1s |
+| `control-plane-pki-operator` | 1m 03s | 49s |
+| `csi-snapshot-controller-operator` | 2m 14s | 1m 26s |
+| `dns-operator` | 3m 06s | 1m 36s |
+| `etcd` | 27s | 22s |
+| `featuregate-generator` | 2s | 3s |
+| `hosted-cluster-config-operator` | 2m 23s | 1m 36s |
+| `ignition-server` | 3s | 2s |
+| `ignition-server-proxy` | 5s | 4s |
+| `ingress-operator` | 3m 33s | 3m 33s |
+| `konnectivity-agent` | 1m 03s | 47s |
+| `kube-apiserver` | 54s | 42s |
+| `kube-controller-manager` | 1m 01s | 46s |
+| `kube-scheduler` | 54s | 46s |
+| `kube-storage-version-migrator` | 1m 04s | 45s |
+| `machine-approver` | 33s | 23s |
+| `oauth-openshift` | 1m 26s | 1m 04s |
+| `olm-collect-profiles` | 55s | 41s |
+| `olm-operator` | 3m 06s | 1m 36s |
+| `openshift-apiserver` | 59s | 44s |
+| `openshift-controller-manager` | 1m 54s | 1m 03s |
+| `openshift-oauth-apiserver` | 1m 26s | 1m 03s |
+| `openshift-route-controller-manager` | 1m 26s | 1m 04s |
+| `packageserver` | 3m 06s | 3m 32s |
+| `redhat-operators-catalog` | 4m 07s | 3m 32s |
+
+## Guest operator comparison
+
+An operator converges when it reports `Available=True`, `Progressing=False`, and
+`Degraded=False`. It can resume progressing afterward. Full completion requires
+all operators to report these conditions in the same collection cycle.
+
+
+
+The vertical reference lines mark NodePool readiness. Some operators converge
+before workers; others need guest workloads to run. Monitoring is the last
+operator in these two observations. Check all operators together before
+reporting full completion.
+
+| Operator | HostedCluster 1 | HostedCluster 2 |
+|----------|---------------|---------------|
+| `cloud-credential` | 3m 48s | 2m 13s |
+| `console` | 11m 55s | 11m 22s |
+| `csi-snapshot-controller` | 2m 47s | 1m 55s |
+| `dns` | 11m 06s | 10m 23s |
+| `image-registry` | 10m 58s | 10m 40s |
+| `ingress` | 11m 53s | 11m 36s |
+| `insights` | 9m 58s | 9m 46s |
+| `kube-apiserver` | 2m 55s | 2m 08s |
+| `kube-controller-manager` | 2m 55s | 2m 09s |
+| `kube-scheduler` | 2m 55s | 2m 09s |
+| `kube-storage-version-migrator` | 10m 21s | 9m 51s |
+| `monitoring` | 16m 34s | 16m 35s |
+| `network` | 10m 52s | 10m 40s |
+| `node-tuning` | 9m 18s | 9m 08s |
+| `openshift-apiserver` | 2m 55s | 2m 08s |
+| `openshift-controller-manager` | 2m 55s | 2m 08s |
+| `openshift-samples` | 11m 33s | 10m 53s |
+| `operator-lifecycle-manager` | 3m 25s | 2m 02s |
+| `operator-lifecycle-manager-catalog` | 3m 48s | 2m 32s |
+| `operator-lifecycle-manager-packageserver` | 2m 55s | 2m 09s |
+| `service-ca` | 10m 23s | 10m 14s |
+| `storage` | 9m 50s | 9m 38s |
+
+## Measurement limits
+
+Startup and teardown were polled at ten-second intervals, with query duration
+adding to the interval between observations. Startup polling timestamps mark
+query start; teardown absence timestamps mark query completion. API transition
+timestamps are used where available. Polling observations are approximate:
+queries span a time window, and AWS eventual consistency can delay a result.
+A failed query leaves the resource state unknown; it does not prove deletion.
+
+Teardown checks covered the worker VPC and its resources, plus control-plane
+load balancers discovered through HCP Services in the management VPC. Shared
+management resources, the HO installation, OIDC bucket, and base-domain zone
+were outside the teardown scope.
+
+
+---
+
+## Source: docs/content/reference/cluster-startup-roadmap.md
+
+---
+title: Hosted cluster startup roadmap
+---
+
+# Hosted cluster startup roadmap
+
+This page follows HostedCluster startup, beginning with creation of the
+`HostedCluster` API object and ending when the control plane, requested workers,
+and guest operators are ready. It covers AWS and self-managed Azure with
+managed etcd (`spec.etcd.managementType=Managed`). Unmanaged-etcd clusters use
+an external etcd service and do not deploy or wait for the managed-etcd
+component shown in this roadmap. Their external-etcd configuration and
+availability need separate checks. ARO HCP uses a different provisioning
+process and is outside this guide's scope.
+
+This guide uses HC for HostedCluster, HCP for HostedControlPlane, CPC for
+ControlPlaneComponent, and KAS for kube-apiserver.
+
+For component timings and debugging examples, see the
+AWS startup debugging examples for 5.0.0-rc.7
+and the comparison of two HostedClusters.
+For deletion stages, cleanup checks, and teardown timing examples, see the
+AWS teardown roadmap.
+
+!!! note "Timing examples from development clusters only"
+
+    All measured times in these lifecycle pages and charts come from two AWS
+    HostedClusters created and destroyed in development on the same warm
+    management cluster. They illustrate readiness and cleanup gates; they do
+    not indicate expected startup or teardown times for managed services such
+    as ROSA HCP or ARO HCP, production deployments, Azure, or other environments.
+    They are not performance benchmarks, deadlines, SLAs, or SLOs. Measure the
+    target environment separately before setting timing expectations.
+
+The roadmap follows the controllers in this repository. These controllers
+can work at the same time:
+
+- The HyperShift Operator (HO) continues creating management-cluster
+  resources while the Control Plane Operator (CPO) starts the control plane.
+- CAPI infrastructure can continue provisioning while control-plane workloads
+  are starting.
+- NodePool bootstrap can begin as soon as the hosted API kubeconfig exists,
+  before every control-plane component has finished rolling out.
+- Guest ClusterVersion and ClusterOperator convergence continues after the
+  NodePool reports ready.
+
+Use the stage gates below to find the next unmet dependency. Check the
+dependency conditions as well as the timestamps to establish startup order.
+
+!!! note "Existing SLO targets are not observed baselines"
+
+    SLOs defines CI targets such as HostedCluster availability in
+    under five minutes, NodePool availability in under eight minutes, and full
+    rollout in under fifteen minutes. Those are targets under a documented CI
+    environment, not general AWS or Azure medians. Collect a baseline with the
+    timeline tooling described in Measuring startup
+    before making timing claims.
+
+## What "ready" means
+
+Each readiness signal answers a different question:
+
+| Question | Authoritative signal | What it does not prove |
+|----------|----------------------|------------------------|
+| Are the published control-plane endpoints available? | HCP `InfrastructureReady=True` | The `AWSCluster` or `AzureCluster`, worker networks, or guest nodes are ready. |
+| Is the hosted API server workload available? | HCP `KubeAPIServerAvailable=True` plus the endpoint checks described in P4 | Every control-plane component is available. |
+| Can the hosted API be used by the HO and NodePool controller? | `HostedCluster.status.kubeconfig` is populated | Workers have joined or the guest cluster has converged. |
+| Is the hosted control plane available? | HCP `Available=True`, copied to HostedCluster `Available=True` | Any NodePool exists or is ready. |
+| Has the management-side control plane completed its rollout? | HCP `status.controlPlaneVersion.history[0].state=Completed`, with every `ControlPlaneComponent` at the desired version and `RolloutComplete=True` | The guest ClusterVersion or ClusterOperators have converged. |
+| Are the requested workers ready? | NodePool `Ready=True`, `AllMachinesReady=True`, and `AllNodesHealthy=True` | Every guest operator is stable or complete. |
+| Is the guest release rollout complete? | HostedCluster `status.version.history[0].state=Completed` and desired image match | Every ClusterOperator is necessarily converged at that instant. |
+| Is the cluster operationally complete? | The full checklist in Full completion | Conditions will remain healthy after this check. |
+
+!!! warning
+
+    HostedCluster `Available=True` can be true while a NodePool is still
+    provisioning. NodePool `Ready=True` can be true while the guest CVO is still
+    progressing. HostedCluster `Progressing=False` alone is also not a
+    completion check. The HO's `Progressing` condition mainly tracks whether the
+    desired release image differs from the observed release.
+
+## Startup dependency graph
+
+Click any diagram on this page to open the full-screen viewer. Click again to
+zoom, then drag to follow the diagram; on touch screens, pinch to zoom.
+
+
+
+The diagram shows hard gates, not exact execution order. For example, the CPO
+can publish endpoints while CAPI is still creating cloud infrastructure, and the
+NodePool controller can build bootstrap resources while OLM or another
+control-plane component is still becoming available. Kubeconfig publication
+and KAS Deployment availability are separate observations; the kubeconfig can
+be published first. HCP availability and control-plane rollout completion are
+also separate gates, both required by the full completion checklist.
+
+### Check control-plane, worker, and guest readiness
+
+Check all three groups of conditions. Control-plane availability alone does
+not establish worker or guest readiness. The arrows join the required checks;
+they do not show startup order.
+
+
+
+If the user requested only a control plane, report its readiness. Do not create
+workers when the user intentionally omitted NodePools or set zero replicas.
+
+## Stage map
+
+| Stage | Hard gate to leave the stage | Primary evidence | First place to investigate |
+|-------|------------------------------|------------------|----------------------------|
+| P0 Intake | HO accepts the HostedCluster configuration and release image | HostedCluster validation conditions; HCP may not exist yet | HostedCluster conditions and HO logs |
+| P1 Management resources | HCP, platform infrastructure CR, and CAPI `Cluster` exist; management operators are deployed | HCP and CAPI resources; HO deployments | HO logs, namespace events, credential Secrets |
+| P2 Endpoints | HCP `InfrastructureReady=True` | HCP condition; Services, Routes, load balancers, DNS | HCP condition reason; endpoint resources; platform DNS/endpoint conditions |
+| P3 Foundation | Managed etcd and featuregate-generator are ready | CPC status; etcd StatefulSet; featuregate Job; HCP `EtcdAvailable` | etcd pods, PVCs, events, certificates; featuregate Job |
+| P4 KAS | KAS workload is available and the hosted kubeconfig is published | HCP `KubeAPIServerAvailable`; HCP kubeconfig; HostedCluster kubeconfig | KAS deployment, pods, Service/LB health, HCP status reason |
+| P5 Control-plane convergence | Every CPC is available and rollout-complete at the desired version | CPC conditions; HCP `Available` and `controlPlaneVersion` | CPC dependency messages, deployment status, component operand status |
+| P6 NodePool bootstrap | Bootstrap payload, token, machine template, and CAPI workload exist | NodePool conditions and Secrets; MachineDeployment or MachineSet | NodePool conditions, kubeconfig status, user-data/token Secrets, HO logs |
+| P7 Machine provisioning | Cloud machine exists and at least one instance reaches ignition | CAPI Machine and platform machine; NodePool `ReachedIgnitionEndpoint` | CAPI provider logs, machine events, ignition DNS/endpoint, console logs |
+| P8 Worker readiness | Machines are ready and nodes are healthy | NodePool `Ready`, `AllMachinesReady`, `AllNodesHealthy` | CAPI Machine conditions, NodePool aggregate messages, guest node and network status |
+| P9 Guest convergence | Guest CVO completes and ClusterOperators converge | HostedCluster `status.version`; guest CVO and ClusterOperators | Guest CVO, ClusterOperators, HCCO logs, HCP conditions |
+
+## Before P0: provisioning inputs
+
+The roadmap clock starts when the HostedCluster API object is created. The
+create command can provision infrastructure before that point.
+For example, `hypershift create cluster aws` creates the VPC, subnets, NAT
+gateway, DNS zones, OIDC configuration, and IAM roles before submitting the
+HostedCluster, unless existing infrastructure and IAM inputs are supplied.
+
+Before the HostedCluster object exists, inspect the create command's logs
+for progress and errors. An AWS NAT gateway or IAM provisioning wait at this
+point is outside P0; it cannot appear in HostedCluster conditions because the
+object does not exist yet. The later `AWSCluster` resource represents the CAPI
+infrastructure object, not the start of this CLI provisioning work.
+
+An AWS `NatGatewayLimitExceeded` error is another example of a failure before
+P0. Check the NAT gateway quota and usage in the selected availability zone,
+including gateways being deleted. A failed create can leave a VPC, subnets,
+internet gateway, and allocated Elastic IP even though no HostedCluster exists.
+Preserve the failed attempt's infrastructure ID and logs, then clean up those
+resources before retrying; do not treat "no HostedCluster found" as proof that
+the create command allocated nothing.
+
+Record both intervals to include the work before HC creation:
+
+- Command start to HostedCluster creation: infrastructure and identity setup.
+- HostedCluster creation to each readiness gate: the P0 through P9 controller timeline.
+
+Record create-command start before running the create script. Use the
+HostedCluster creation timestamp as t=0 so infrastructure setup before object
+creation stays separate from P0–P9 controller startup.
+
+## P0: intake and validation
+
+The HO validates the HostedCluster before it can create a usable control plane.
+The exact validation set depends on platform and capabilities, but common
+conditions include:
+
+- `ValidConfiguration`
+- `SupportedHostedCluster`
+- `ValidReleaseImage`
+- `ValidIDPConfiguration`
+- `ValidProxyConfiguration`
+- AWS: `ValidAWSIdentityProvider`, `ValidAWSKMSConfig`, and related credential
+  and endpoint conditions
+- Azure: `ValidAzureKMSConfig` and workload-identity validation
+
+If a blocking validation condition is false, the HO stops the remaining startup
+work for that reconciliation. This appears as a HostedCluster condition or a blocked
+`Progressing` reason, often before an HCP exists.
+
+Validation continues after the HO creates the initial resources. For example,
+OIDC document publication can fail after KAS has started. Depending on the
+deployed CPO revision, an AWS identity check can remain `Unknown` while KAS or
+its EC2 client is unavailable; inspect the actual condition message. A later
+`ValidOIDCConfiguration=False` can therefore make P0 the first false gate while
+P1 through P4 resources already exist. Read the condition message and HO logs
+to identify the failure. A failed validation condition does not mean those
+resources were removed.
+
+For an AWS OIDC upload failure, distinguish the two credential file formats:
+`create cluster aws --sts-creds` accepts STS JSON, while
+`install --oidc-storage-provider-s3-credentials` supplies a shared AWS INI
+profile to the HO SDK. Temporary credentials in that profile need
+`aws_session_token` as well as the access key and secret key. An HO log showing
+credential fallback to EC2 IMDS can indicate an unreadable or incorrectly
+formatted profile; it does not necessarily mean the STS session expired.
+
+Inspect:
+
+```bash
+oc get hostedcluster "$HC_NAME" -n "$HC_NAMESPACE" \
+  -o json | jq -r '.status.conditions[]
+  | [.type, .status, .reason, .message, .lastTransitionTime] | @tsv'
+
+oc logs -n hypershift deployment/operator --tail=200
+```
+
+## P1: management-cluster resources
+
+After validation, the HO reconciles these resources:
+
+1. Resolve the CPO image and create or update the control-plane namespace. The
+   namespace name is `<hostedcluster-namespace>-<hostedcluster-name>`, with dots
+   in the cluster name replaced by dashes.
+2. Reconcile platform credentials, pull secret, and encryption configuration.
+3. Reconcile the `HostedControlPlane`, then the platform infrastructure CR,
+   then the CAPI `Cluster`.
+4. Deploy the CPO, CAPI manager (`cluster-api`), CAPI provider
+   (`capi-provider`), and optionally Karpenter.
+5. Reconcile RBAC and network policies.
+
+!!! note "HostedCluster namespaces can be shared"
+
+    Multiple HostedCluster definitions can share the management-cluster
+    namespace that contains the HostedCluster resources. Each HostedCluster
+    still gets its own derived HostedControlPlane namespace,
+    `<hostedcluster-namespace>-<hostedcluster-name>`. NodePools select their
+    HostedCluster with `spec.clusterName`; filter by that field when tracking
+    worker readiness so unrelated HostedClusters are not mixed together.
+
+    For per-cluster disaster recovery, OCPBUGS-61116 reports that restoring a
+    backup which includes a shared HostedCluster namespace can also restore
+    other HostedClusters' resources from that namespace. Use separate
+    HostedCluster namespaces or cluster-specific backup filtering in that case.
+
+The platform infrastructure CR is `AWSCluster` on AWS and `AzureCluster` on
+self-managed Azure. Azure also creates an `AzureClusterIdentity`.
+
+This stage is shared by AWS and Azure, but the credential and identity inputs
+differ:
+
+| Concern | AWS | Self-managed Azure |
+|---------|-----|--------------------|
+| Management identity | STS/OIDC federation and IAM roles; CAPA credential Secrets | Workload identities and federated credentials; `AzureClusterIdentity` |
+| CAPI infrastructure | `AWSCluster` | `AzureCluster` plus `AzureClusterIdentity` |
+| CAPI provider | CAPA (`capi-provider`) | CAPZ (`capi-provider`) |
+
+Inspect:
+
+```bash
+oc get hostedcontrolplane "$HC_NAME" -n "$HCP_NAMESPACE" -o yaml
+oc get cluster.cluster.x-k8s.io -n "$HCP_NAMESPACE"
+oc get awscluster -n "$HCP_NAMESPACE"                 # AWS
+oc get azurecluster,azureclusteridentity -n "$HCP_NAMESPACE"  # Azure
+oc get deployment -n "$HCP_NAMESPACE" \
+  control-plane-operator cluster-api capi-provider
+oc get events -n "$HCP_NAMESPACE" --sort-by=.lastTimestamp
+```
+
+An existing HCP only proves that the API object was created. It does not prove
+that the CPO is running or that the platform infrastructure is ready.
+
+On AWS, the `capi-provider` pod can initially wait for the
+`service-network-admin-kubeconfig` Secret. Its init container uses the guest API,
+so the pod can remain unready while P2 through P4 proceed. A transient
+`FailedMount` event for that Secret alone does not establish that AWS credentials
+are wrong. Check whether KAS is still starting before treating this as a
+separate provider failure.
+
+## P2: endpoint publication
+
+The CPO first reconciles the infrastructure services used to publish the control
+plane: API server, Konnectivity, OAuth when enabled, OpenShift API server, OLM
+package server, and HCP router services. It then reads their status.
+
+`InfrastructureReady=True` means the required published endpoint addresses are
+available. It does not mean the `AWSCluster` or `AzureCluster` is ready. Cloud
+network creation and CAPI reconciliation can still be in progress.
+
+If the condition is false, read its reason and message first. Common reasons
+point to:
+
+- A missing or unpopulated load balancer
+- A Service or Route that has not received an address
+- A DNS hostname that does not resolve
+- An API server or Konnectivity service with no published host/port
+- A required internal or external router that is not ready
+
+Platform-specific checks:
+
+- AWS: KAS load balancer or Route, HCP router, endpoint services/PrivateLink,
+  and managed or external DNS. Look for `AWSEndpointServiceAvailable`,
+  `AWSEndpointAvailable`, `ExternalDNSReachable`, and `PublicEndpointExposed`
+  conditions where applicable.
+- Azure: KAS load balancer, DNS, and, for private clusters, the
+  `AzurePrivateLinkService` status and private DNS resources. Azure KAS load
+  balancing in the code examined uses service port `7443` because `6443`
+  collides with the management cluster's public load-balancer rule.
+
+Inspect:
+
+```bash
+oc get hostedcontrolplane "$HC_NAME" -n "$HCP_NAMESPACE" \
+  -o jsonpath='{range .status.conditions[?(@.type=="InfrastructureReady")]}{.status}{"\t"}{.reason}{"\t"}{.message}{"\n"}{end}'
+oc get service,route -n "$HCP_NAMESPACE"
+oc get events -n "$HCP_NAMESPACE" --sort-by=.lastTimestamp
+oc logs -n "$HCP_NAMESPACE" deployment/control-plane-operator --tail=200
+```
+
+## P3: foundation components
+
+The CPO does not reconcile its component set until the published infrastructure
+is ready. When it starts, the first dependency chain is:
+
+
+
+`kube-apiserver` has explicit dependencies on managed etcd and
+`featuregate-generator`. Most other components wait for KAS to be available and
+rollout-complete through an implicit dependency. The exceptions are:
+
+- etcd components, including configured shards such as `etcd-events`
+- featuregate-generator
+- control-plane-operator
+- cluster-api
+- capi-provider
+- karpenter and karpenter-operator
+- router
+- ignition-server
+- ignition-server-proxy
+
+Router still depends on ignition-server, and the ignition proxy also depends on
+ignition-server.
+
+!!! note
+
+    Component registration order is not startup order. For example,
+    `control-plane-pki-operator` is registered early but has the implicit KAS
+    dependency, so it is not the first component to reconcile during initial
+    startup.
+
+The CPO reports managed etcd status through HCP `EtcdAvailable` and KAS status
+through HCP `KubeAPIServerAvailable`. It computes both conditions from the
+existing StatefulSet and Deployment before reconciling component updates. A
+condition can therefore lag the workload by a reconcile cycle.
+
+Inspect:
+
+```bash
+oc get controlplanecomponent -n "$HCP_NAMESPACE"
+oc get controlplanecomponent etcd featuregate-generator kube-apiserver \
+  -n "$HCP_NAMESPACE" -o yaml
+oc get statefulset etcd -n "$HCP_NAMESPACE"
+oc get pods -n "$HCP_NAMESPACE" -l app=etcd
+oc get jobs,pods -n "$HCP_NAMESPACE" | grep featuregate
+oc get events -n "$HCP_NAMESPACE" --sort-by=.lastTimestamp
+```
+
+For etcd, inspect PVC binding and storage events. For featuregate-generator,
+inspect the Job and its pod logs.
+
+## P4: kube API server and kubeconfig
+
+Several controllers depend on KAS:
+
+- Remaining control-plane components wait for KAS.
+- The HO needs an HCP kubeconfig to publish `HostedCluster.status.kubeconfig`.
+- The NodePool controller waits for `HostedCluster.status.kubeconfig` before it
+  generates node bootstrap data.
+
+`KubeAPIServerAvailable=True` comes from the KAS Deployment's `Available`
+condition. HCP availability separately runs the KAS endpoint health check.
+For public `Route` or `LoadBalancer` publishing, CPO probes the corresponding
+endpoint. For a private HCP, CPO probes the internal `kube-apiserver` Service.
+A running pod can therefore pass the Deployment check while the selected
+endpoint fails its health check.
+
+For a private HCP, a healthy internal Service can leave HCP `Available=True`
+while the published private endpoint is unreachable. Check that endpoint
+independently from the intended client network, including its DNS resolution,
+load balancer, and network path.
+
+These signals can become true and then false again during initial component
+rollouts. Preserve the observations rather than using the latest condition's
+`lastTransitionTime` as the first availability time. Distinguish first
+availability from the final rollout and the simultaneous completion checklist.
+
+Once the KAS component creates its kubeconfig Secret, the CPO publishes it in
+HCP status and the HO copies it to the HostedCluster namespace. NodePool
+provisioning can start after this copy, even while P5 is still finishing.
+
+Inspect:
+
+```bash
+oc get deployment kube-apiserver -n "$HCP_NAMESPACE"
+oc get pods -n "$HCP_NAMESPACE" -l app=kube-apiserver
+oc get hostedcontrolplane "$HC_NAME" -n "$HCP_NAMESPACE" \
+  -o jsonpath='{.status.kubeConfig}{"\n"}{.status.controlPlaneEndpoint}{"\n"}'
+oc get hostedcluster "$HC_NAME" -n "$HC_NAMESPACE" \
+  -o jsonpath='{.status.kubeconfig}{"\n"}'
+oc get events -n "$HCP_NAMESPACE" --sort-by=.lastTimestamp
+```
+
+For a failed endpoint health check, inspect the KAS Service, load balancer,
+Route, DNS, and network policies. The HCP `Available` condition reason
+`KASLoadBalancerNotReachable` is specific to this class of failure.
+
+## P5: control-plane convergence
+
+After KAS, the remaining components reconcile according to their dependencies.
+OAuth, CVO, OCM, DNS, ingress, registry, storage, NTO, and OLM also depend on the
+OpenShift API server. Each dependency must meet all of these conditions:
+
+- `Available=True`
+- `RolloutComplete=True`
+- Reporting the desired component version
+
+For initial HCP availability, the reconciler checks:
+
+1. HCP `InfrastructureReady` is true.
+2. HCP kubeconfig exists.
+3. Managed etcd is available.
+4. KAS is available.
+5. The KAS endpoint selected by CPO passes its health check, as described in P4.
+6. Every `ControlPlaneComponent` in the namespace has `Available=True`.
+
+The HCP check evaluates those conditions in priority order. Its reason and
+message identify the first failed check. When the reason is
+`ControlPlaneComponentsNotAvailable`, the message lists the affected component
+names.
+
+Once HCP is already available and the KAS endpoint selected by CPO remains healthy,
+the reconciler skips the CPC availability check. A later unavailable CPC does
+not necessarily clear HCP `Available`. Check current CPC availability and
+rollout state independently in the full-completion checklist below.
+
+HostedCluster `Available` is copied from HCP `Available`, so it has the same
+meaning. It is not a worker-readiness check.
+
+For management-side rollout completion, use HCP
+`status.controlPlaneVersion.history[0]`. `Completed` means every CPC
+reported the desired version with `RolloutComplete=True`. This is stricter than
+checking `Available` alone. In Go, the corresponding OpenShift API constant is
+`configv1.CompletedUpdate`, but its serialized value is `Completed`.
+
+Inspect:
+
+```bash
+oc get hostedcontrolplane "$HC_NAME" -n "$HCP_NAMESPACE" \
+  -o jsonpath='{range .status.conditions[?(@.type=="Available")]}{.status}{"\t"}{.reason}{"\t"}{.message}{"\n"}{end}'
+oc get controlplanecomponent -n "$HCP_NAMESPACE" -o wide
+oc get controlplanecomponent -n "$HCP_NAMESPACE" \
+  -o json | jq -r '.items[]
+  | .metadata.name as $name
+  | .status.conditions[]
+  | select(.status != "True")
+  | [$name, .type, .status, .reason, .message] | @tsv'
+oc get deployment -n "$HCP_NAMESPACE"
+oc get pods -n "$HCP_NAMESPACE"
+```
+
+Start with the newest false condition or rollout reason. `WaitingForDependencies`
+identifies a dependency chain. `WaitingForOperands` means the primary workload
+is ready but a child deployment is not.
+
+### Network startup gates across P5 and P8
+
+A Deployment or Pod can exist before its application starts serving. Network
+startup includes several such waits, spanning the management cluster and guest
+workers. Controllers retry reconciliation, init containers poll APIs, and
+applications wait for files or certificates. A Kubernetes `Event` can explain a
+wait; it is not necessarily the trigger that releases it.
+
+The gates below follow the component sources in the `5.0.0-rc.7` release used
+for the AWS observations. They describe code dependencies, not additional
+measured timings. Check the deployed release before applying them to another
+version. The diagram assumes OVN-Kubernetes, multi-network enabled, and network
+node identity enabled. Multi-network can be disabled. Node identity defaults to
+enabled; the guest `openshift-network-operator/network-node-identity` ConfigMap
+can override it through `data.enabled`.
+
+| Workload or resource | Location | Prerequisite and visible wait | First check |
+|----------------------|----------|-------------------------------|-------------|
+| `cluster-network-operator` (CNO) | HCP namespace on management cluster | CPC dependencies include KAS and OpenShift API. The `availability-prober` init container additionally waits for a successful API probe, discovery of `Network`, `EgressRouter`, and `OperatorPKI` APIs, guest `Infrastructure/cluster.status.infrastructureName`, and the `cluster-network-operator` ClusterRoleBinding. | CPC dependency reason, then `availability-prober` logs. A Pod in `Init` has not started the operator application. |
+| CNO guest credentials | HCP namespace on management cluster | After the prober, `init-client-token-minter` must mint a guest service-account token before the main containers start. | Init-container status and logs; guest API reachability and `openshift-network-operator/cluster-network-operator` service account. |
+| Network operand manifests | Both clusters, reconciled by CNO | Rendering hosted Multus admission resources requires the HCP `root-ca` ConfigMap with `ca.crt`. A rendering error can leave operands absent even though CNO is running. | CNO application logs and the management-side ConfigMap. |
+| `multus-admission-controller` and `network-node-identity` Pods | HCP namespace on management cluster | Required volumes include serving-certificate Secrets, `root-ca`, and `service-network-admin-kubeconfig`. After init, application containers wait for a guest token written by a sidecar. Missing tokens can cause container restarts. | Pod events for `FailedMount`; then `hosted-cluster-token` logs for Multus admission or `token-minter` logs for node identity. |
+| `network-node-identity.openshift.io` ValidatingWebhookConfiguration | Guest API | CNO defers initial webhook registration until the node-identity Deployment finishes progressing and a usable CA bundle exists. The Deployment itself is rendered before this gate passes. | Management-side Deployment rollout and CA; guest webhook object. Its initial absence can be an intentional wait. |
+| `multus` DaemonSet application | Guest workers, `openshift-multus` | For OVN, the daemon waits for `/host/run/multus/cni/net.d/10-ovn-kubernetes.conf` before launching its listener. Its Pod uses host networking and can start before normal pod networking works. | `kube-multus` logs and the same node's `ovnkube-node` status/logs. The file is `/run/multus/cni/net.d/10-ovn-kubernetes.conf` on the worker. |
+| Multus per-node client certificate | Guest worker and guest API | When node identity is enabled, Multus then waits for its client certificate. Its CSR must be approved and signed; a running Multus container does not prove this has happened. | Multus `Waiting for certificate` logs, guest CSRs, management-side node-identity `approver` logs, and signing-controller health. |
+
+CPO reconciles the serving-certificate Secrets
+`multus-admission-controller-secret` and `network-node-identity-secret` in the
+HCP namespace using the HCP root CA. Multus certificate reconciliation applies
+when multi-network is enabled.
+
+If the corresponding Service has a
+`service.alpha.openshift.io/serving-cert-secret-name` or
+`service.beta.openshift.io/serving-cert-secret-name` annotation, CPO skips its
+root-CA certificate reconciliation for that Service. Check the Service
+annotations and Secret ownership to identify the responsible controller. Guest
+service-ca readiness is not a universal prerequisite for these hosted Pods.
+
+
+
+The webhook-registration branch is distinct from the approver branch. Webhook
+registration is not a prerequisite for requesting a Multus certificate. The
+node-identity `approver` container handles eligible Multus CSRs, while a signing
+controller issues the certificate after approval.
+
+The CNO source also checks `kube-system/bootstrap` for `status: complete` in its
+non-hosted path. That check gates webhook registration for conventional
+OpenShift; the HyperShift branch does not use it. It is not a HostedCluster
+milestone to wait for.
+
+For OVN on AWS and Azure, CPO's CNO operand rollout check waits for the
+management-side `ovnkube-control-plane`, `network-node-identity`, and
+`cloud-network-config-controller` Deployments, plus `multus-admission-controller`
+when multi-network is enabled. This check verifies operand images and Deployment
+readiness. Guest DaemonSets, node networking, and ClusterOperator convergence
+still need their own checks in P8 and P9.
+
+#### Inspect the waiting network workload
+
+Use the management-cluster context for the first block. Read init-container and
+sidecar logs before treating a restarting application as the source of the
+failure. Select the affected Pod for `describe`; check previous container logs
+when it has restarted.
+
+```bash
+oc get controlplanecomponent cluster-network-operator -n "$HCP_NAMESPACE" -o yaml
+oc get deployment,pod -n "$HCP_NAMESPACE"
+oc describe pod "$NETWORK_POD" -n "$HCP_NAMESPACE"
+oc logs deployment/cluster-network-operator -n "$HCP_NAMESPACE" -c availability-prober
+oc logs deployment/cluster-network-operator -n "$HCP_NAMESPACE" -c init-client-token-minter
+oc logs deployment/cluster-network-operator -n "$HCP_NAMESPACE" -c cluster-network-operator
+oc get configmap root-ca -n "$HCP_NAMESPACE"
+oc get secret root-ca service-network-admin-kubeconfig \
+  multus-admission-controller-secret network-node-identity-secret -n "$HCP_NAMESPACE"
+oc logs deployment/multus-admission-controller -n "$HCP_NAMESPACE" -c hosted-cluster-token
+oc logs deployment/network-node-identity -n "$HCP_NAMESPACE" -c token-minter
+oc logs deployment/network-node-identity -n "$HCP_NAMESPACE" -c approver
+```
+
+Use an existing guest kubeconfig for the next block. Inspect the Multus Pod and
+OVN Pod on the affected worker, rather than an arbitrary DaemonSet replica.
+For pending CSRs, inspect the requester, signer, conditions, and approver logs;
+an approved CSR with no issued certificate points to signing rather than
+approval. Diagnose the failed check before considering any approval action.
+
+```bash
+oc --kubeconfig="$GUEST_KUBECONFIG" get infrastructure cluster \
+  -o jsonpath='{.status.infrastructureName}{"\n"}'
+oc --kubeconfig="$GUEST_KUBECONFIG" get clusterrolebinding cluster-network-operator
+oc --kubeconfig="$GUEST_KUBECONFIG" get validatingwebhookconfiguration network-node-identity.openshift.io
+oc --kubeconfig="$GUEST_KUBECONFIG" get daemonset,pod -n openshift-multus -o wide
+oc --kubeconfig="$GUEST_KUBECONFIG" logs "$MULTUS_POD" -n openshift-multus -c kube-multus
+oc --kubeconfig="$GUEST_KUBECONFIG" get daemonset,pod -n openshift-ovn-kubernetes -o wide
+oc --kubeconfig="$GUEST_KUBECONFIG" get csr
+oc --kubeconfig="$GUEST_KUBECONFIG" describe csr "$CSR_NAME"
+oc --kubeconfig="$GUEST_KUBECONFIG" describe node "$NODE_NAME"
+oc --kubeconfig="$GUEST_KUBECONFIG" get clusteroperator network -o yaml
+```
+
+Sources pinned to the release:
+
+| Gate | Implementation |
+|------|----------------|
+| CNO startup and operand rollout | Component dependencies and prober configuration; CNO init and token containers |
+| Hosted operand rendering, certificates, and tokens | Multus admission renderer; Multus admission manifest; CPO serving certificates |
+| Node-identity configuration, webhook, and approver | Enablement; webhook registration; hosted Deployment; Multus CSR acceptance configuration |
+| Guest Multus startup | DaemonSet configuration; daemon file wait; per-node certificate wait |
+
+## P6: NodePool bootstrap
+
+The NodePool controller evaluates validation and rollout conditions before it
+creates machine resources. Check these conditions:
+
+- `ValidReleaseImage`
+- `ValidPlatformImage`
+- `ValidMachineConfig`
+- `ValidPlatformConfig`
+- `SupportedVersionSkew`
+- `IgnitionEndpointAvailable`
+- `UpdatingVersion`
+
+The controller normally removes `IgnitionEndpointAvailable` from NodePool
+status when the endpoint is healthy. A `False` condition indicates a problem.
+
+The controller then waits for `HostedCluster.status.kubeconfig`. Once present,
+it generates the bootstrap configuration and reconciles:
+
+- A token Secret and a user-data Secret, named with the configuration hash
+- The platform machine template
+- A CAPI `MachineDeployment` for `Replace` upgrades (the default)
+- A CAPI `MachineSet` for `InPlace` upgrades
+
+On AWS, `ValidGeneratedPayload=True` can coexist with
+`AWSSecurityGroupAvailable=False` (`DefaultSGNotReady`) and no Machines. The
+NodePool is waiting for the HostedCluster's default worker security group to be
+published in `status.platform.aws.defaultWorkerSecurityGroupID`. Check the
+HCP `ValidAWSIdentityProvider` and `AWSDefaultSecurityGroupCreated` conditions,
+CPO logs, and that HostedCluster status field before investigating ignition
+delivery or guest kubelet startup. The CPO waits for identity-provider
+validation before creating this security group; a ready `AWSCluster` alone does
+not prove the default worker security group is available.
+
+For the observed `5.0.0-rc.7` CPO revision
+`b9d6ae1c63453c012e889525eb924b3a07bac26b`, the
+AWS health check
+explicitly checks KAS availability. Both retained traces contain its
+KAS-unavailable message with `ValidAWSIdentityProvider=Unknown`. This branch
+returns no error; a successful complete health-check update selects the
+five-minute interval. An unavailable EC2 client also produces `Unknown` without
+an error, so verify the deployed revision, condition message, and client and
+credential configuration before assigning the cause of a similar wait. See the
+AWS startup debugging examples.
+
+The NodePool controller sets `status.version` after the initial CAPI workload
+rollout completes. An empty `status.version` during initial provisioning is
+expected.
+
+Inspect:
+
+```bash
+oc get nodepool -n "$HC_NAMESPACE" -o json | jq --arg hc "$HC_NAME" \
+  '[.items[] | select(.spec.clusterName == $hc)
+  | {name: .metadata.name, replicas: .spec.replicas, version: .status.version}]'
+oc describe nodepool "$NODEPOOL_NAME" -n "$HC_NAMESPACE"
+oc get secret -n "$HCP_NAMESPACE" \
+  -o json | jq -r '.items[].metadata.name
+  | select(startswith("token-") or startswith("user-data-"))'
+oc get machinedeployment,machineset -n "$HCP_NAMESPACE"
+oc get machines -n "$HCP_NAMESPACE"
+oc get events -n "$HCP_NAMESPACE" --sort-by=.lastTimestamp
+```
+
+Select `NODEPOOL_NAME` from the matching HostedCluster's pools above before
+describing it. HostedCluster namespaces can contain pools for other clusters.
+
+Never print or paste Secret data while debugging. Names, creation timestamps,
+and annotations are sufficient for this stage.
+
+If no machine workload exists, first confirm that the HostedCluster kubeconfig
+is populated, then check the NodePool conditions and the HO logs for machine
+template or bootstrap errors.
+
+## P7: cloud machine and ignition
+
+The CAPI manager creates `Machine` objects and the platform CAPI provider
+creates the cloud infrastructure machine:
+
+- AWS: CAPA reconciles `AWSMachine` resources
+- Self-managed Azure: CAPZ reconciles `AzureMachine` resources
+
+The instance boots with the generated user data and fetches its Ignition
+payload. NodePool `ReachedIgnitionEndpoint=True` means at least one instance
+successfully fetched a payload from the ignition server. The ignition server
+records this by annotating the token Secret with
+`hypershift.openshift.io/ignition-reached`.
+
+This condition does not establish that every machine reached ignition, that
+any node registered, or that kubelet is healthy.
+
+The OS can still be applying its first-boot MachineConfig and rebooting before
+kubelet starts and requests a certificate. In the AWS observation, console
+output showed Machine Config Daemon first-boot work after ignition was reached
+and before any guest CSR or Node existed. If ignition succeeded but no Node
+exists yet, inspect instance boot progress.
+
+Inspect:
+
+```bash
+oc get machines -n "$HCP_NAMESPACE" -o wide
+oc get awsmachine -n "$HCP_NAMESPACE"      # AWS
+oc get azuremachine -n "$HCP_NAMESPACE"    # Azure
+oc logs -n "$HCP_NAMESPACE" deployment/capi-provider -c manager --tail=200
+oc get nodepool "$NODEPOOL_NAME" -n "$HC_NAMESPACE" \
+  -o jsonpath='{range .status.conditions[?(@.type=="ReachedIgnitionEndpoint")]}{.status}{"\t"}{.reason}{"\t"}{.message}{"\n"}{end}'
+oc get events -n "$HCP_NAMESPACE" --sort-by=.lastTimestamp
+```
+
+For AWS, inspect instance console output and verify that the instance can reach
+the ignition endpoint. For Azure, inspect the VM, boot diagnostics, network
+security group, and DNS path. The provider-specific
+node debugging guides
+contain the next steps for console logs, journals, and bastion access.
+
+## P8: worker readiness
+
+`AllMachinesReady` aggregates the CAPI `Machine` `Ready` condition.
+`AllNodesHealthy` aggregates the CAPI `Machine` `NodeHealthy` condition.
+NodePool `Ready` reports the CAPI MachineDeployment or MachineSet `Ready`
+condition.
+
+Use these conditions to locate the failure:
+
+- `AllMachinesReady=False`: the cloud machine, bootstrap, or CAPI machine
+  lifecycle is incomplete.
+- `AllMachinesReady=True` and `AllNodesHealthy=False`: the instance exists but
+  the node has not registered or is unhealthy.
+- All three true: the requested workers are usable.
+
+Inspect:
+
+```bash
+oc get nodepool "$NODEPOOL_NAME" -n "$HC_NAMESPACE" -o yaml
+oc get machinedeployment,machineset,machine -n "$HCP_NAMESPACE" -o wide
+oc get machine -n "$HCP_NAMESPACE" -o json | jq -r '.items[]
+  | .metadata.name as $name
+  | .status.conditions[]
+  | [$name, .type, .status, .reason, .message] | @tsv'
+```
+
+The aggregate NodePool messages usually identify the first failing machine and
+reason. Once a node has registered, use the guest kubeconfig to inspect
+`oc get nodes` and node conditions. Registration does not prove the worker's CNI
+is usable. If node conditions or pod events report a networking failure, follow
+the network startup gates through the
+affected worker's OVN configuration, Multus process, and client certificate.
+
+## P9: guest convergence and full completion
+
+The Hosted Cluster Config Operator (HCCO) copies version status and CVO
+conditions from the guest `ClusterVersion` into HCP status. The HO then copies
+that version status and those conditions into HostedCluster status. At least
+one reconciliation separates guest CVO completion from the corresponding
+HostedCluster status update. Inspect guest `ClusterOperator` resources for
+individual operator health.
+
+Use this checklist for "fully complete":
+
+- Required HostedCluster validation conditions pass, with no blocking validation
+  condition false
+- HostedCluster and HCP `Available=True`, with each condition's
+  `observedGeneration` matching that object's `metadata.generation`
+- Every `ControlPlaneComponent` has `Available=True` and
+  `RolloutComplete=True` at the desired version
+- HCP `status.controlPlaneVersion` observes the current HCP generation, and its
+  latest history entry is `Completed` for the desired image and semantic
+  version. Resolve the target from HC `spec.controlPlaneRelease.image`, falling
+  back to `spec.release.image`, and verify it matches HCP spec and status.
+  Resolve tag/digest equivalence through release metadata.
+- Every requested NodePool has fresh `Ready=True`, `AllMachinesReady=True`, and
+  `AllNodesHealthy=True` conditions. Its `status.version` matches the semantic
+  version resolved from its requested release, with no active `UpdatingVersion`
+  or `UpdatingConfig` condition.
+- HostedCluster's latest version history entry is `Completed`, with image and
+  semantic version matching both `status.version.desired` and the data-plane
+  target resolved from HC `spec.release.image`. Resolve
+  tag/digest equivalence through release metadata; stale status cannot prove
+  completion of the current request.
+- Guest `ClusterVersion.status.observedGeneration` matches the guest
+  `ClusterVersion.metadata.generation`, and its conditions are `Available=True`,
+  `Progressing=False`, and `Failing=False`
+- Every guest ClusterOperator has `Available=True`, `Progressing=False`, and
+  `Degraded=False`
+
+If monitoring is the remaining operator, inspect its Prometheus custom resource
+and CMO reconciliation tasks as well as its pods. Healthy existing pods do not
+prove every operand was created. A bootstrap dependency error can be followed by
+several minutes of availability validation before a retry creates the missing
+resource, as seen in the AWS startup debugging examples.
+
+Inspect:
+
+```bash
+oc get hostedcluster "$HC_NAME" -n "$HC_NAMESPACE" \
+  -o jsonpath='{.status.version.history[0].state}{"\t"}{.status.version.history[0].image}{"\n"}'
+
+umask 077
+GUEST_KUBECONFIG="$(mktemp)"
+oc get secret "$HC_NAME-admin-kubeconfig" -n "$HC_NAMESPACE" \
+  -o jsonpath='{.data.kubeconfig}' | base64 --decode > "$GUEST_KUBECONFIG"
+
+KUBECONFIG="$GUEST_KUBECONFIG" oc get clusterversion version -o yaml
+KUBECONFIG="$GUEST_KUBECONFIG" oc get clusteroperators
+rm -f "$GUEST_KUBECONFIG"
+```
+
+Never commit the extracted kubeconfig or include it in a support bundle.
+
+## Where am I?
+
+Start at the first false gate in the decision tree. Its stage contains the
+specific objects and logs to inspect. Click the chart to open the full-screen
+viewer, then zoom and pan to follow its branches.
+
+
+
+Useful summaries for all stages:
+
+```bash
+oc get hostedcluster "$HC_NAME" -n "$HC_NAMESPACE" \
+  -o json | jq -r '.status.conditions[]
+  | [.type, .status, .reason, .message] | @tsv'
+
+oc get hostedcontrolplane "$HC_NAME" -n "$HCP_NAMESPACE" \
+  -o json | jq -r '.status.conditions[]
+  | [.type, .status, .reason, .message] | @tsv'
+
+oc get nodepool -n "$HC_NAMESPACE" -o json | jq -r --arg hc "$HC_NAME" '.items[]
+  | select(.spec.clusterName == $hc)
+  | .metadata.name as $name
+  | .status.conditions[]?
+  | [$name, .type, .status, .reason, .message] | @tsv'
+
+oc get events -n "$HC_NAMESPACE" --sort-by=.lastTimestamp
+oc get events -n "$HCP_NAMESPACE" --sort-by=.lastTimestamp
+```
+
+## Measuring startup
+
+For each run, record the create-command start and the HostedCluster creation
+timestamp separately; use the latter as t=0. Capture the status of the
+HostedCluster, HostedControlPlane, ControlPlaneComponents, NodePools,
+deployments, CAPI and platform machines, and optionally guest CVO,
+ClusterOperators, and Nodes. The `oc` commands above show the core conditions;
+use explicit management-cluster and guest-cluster contexts.
+
+Record the HostedCluster namespace, name, and UID with each run. Start a new
+timeline when the UID changes, even if the namespace and name are reused;
+do not combine first-seen milestones from different cluster instances.
+
+Use resource creation timestamps and condition `lastTransitionTime` where
+available. For gates without an API timestamp, poll at a known interval and
+record the first observation and query duration. The transition can happen
+between polls, so report that time as an observation rather than an exact event.
+
+Keep each observation tied to its provider, region, release, HostedCluster and
+NodePool sizes, endpoint access, management-cluster load, HO image/source, and
+release CPO image/source. Avoid recording Secret data, kubeconfigs, or tokens.
+
+Timing caveats:
+
+- Controllers write `lastTransitionTime` during reconciliation. It can lag
+  behind the moment a process became usable.
+- The CPO writes status before it reconciles every component update, so HCP
+  conditions can lag by a cycle.
+- `InfrastructureReady` measures published endpoints, not the full cloud
+  infrastructure or worker network.
+- A single run is an observation, not a baseline. Compare repeated runs only
+  when their cloud, topology, version, and management-cluster load are known.
+- The HO can run newer code than the release's CPO; an observed difference from
+  the code map may reflect that version difference.
+
+## Code map
+
+| Behavior | Source |
+|----------|--------|
+| HO validation, HCP and CAPI resource creation, operator deployments | `hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go` |
+| HCP availability priority and component aggregation | `reconcileAvailabilityStatus` and `controlPlaneComponentsAvailable` in `control-plane-operator/controllers/hostedcontrolplane/hostedcontrolplane_controller.go` |
+| CPO infrastructure-first startup and component loop | `HostedControlPlaneReconciler.update` and `registerComponents` |
+| CPC dependency and rollout gates | `support/controlplane-component/status.go` |
+| HCP infrastructure readiness semantics | `control-plane-operator/controllers/hostedcontrolplane/infra/infra.go` |
+| NodePool condition order and bootstrap gate | `hypershift-operator/controllers/nodepool/nodepool_controller.go` |
+| NodePool machine and node aggregation | `hypershift-operator/controllers/nodepool/conditions.go` |
+| Ignition-reached annotation | `ignition-server/cmd/start.go` |
+| Guest CVO version and condition propagation | `control-plane-operator/hostedclusterconfigoperator/controllers/hcpstatus/hcpstatus.go` |
+| E2E completion predicates | `test/e2e/util/util.go` |
+
+See also:
+
+- Cluster lifecycle and control plane
+- Controller architecture
+- NodePool rollouts
+- Troubleshooting
+- SLOs
+
+
+---
+
+## Source: docs/content/reference/cluster-teardown-roadmap.md
+
+---
+title: AWS hosted cluster teardown roadmap
+---
+
+# AWS hosted cluster teardown roadmap
+
+Startup and teardown have different completion gates. This page describes
+normal AWS deletion through the HyperShift CLI, HO, CAPI, CPO, and AWS APIs.
+Use it with the startup roadmap and the measured
+creation and deletion observations for two HostedClusters.
+
+!!! note "Development timing examples only"
+
+    The linked teardown measurements come from two AWS HostedClusters created
+    and destroyed in development on the same warm management cluster. They do
+    not indicate expected cleanup times for managed services such as ROSA HCP
+    or ARO HCP, production deployments, Azure, or other environments. They are
+    not performance benchmarks, deadlines, SLAs, or SLOs. Use the cleanup gates
+    to diagnose progress and measure timing in the target environment.
+
+## Deletion workstreams
+
+```mermaid
+flowchart TD
+    CMD["Destroy command begins"] --> CLI["CLI adds openshift.io/destroy-cluster<br/>for platform-specific cleanup"]
+    CLI --> CLOUDRES{"DestroyCloudResources enabled?"}
+    CLOUDRES -- yes --> ANNOTATE["CLI sets cloud-cleanup annotation"]
+    CLOUDRES -- no --> HC["HC receives deletion timestamp"]
+    ANNOTATE --> HC
+    HC --> WORKERS["HO requests NodePool and CAPI Cluster deletion"]
+    WORKERS --> CAPI["CAPI removes Machines and AWSMachines<br/>EC2 instances terminate"]
+    CAPI --> HCP["HCP cleanup<br/>endpoints and control-plane resources;<br/>guest cloud resources only if cleanup enabled"]
+    HCP --> OIDC["OIDC documents cleaned"]
+    OIDC --> NSCHECK{"Skip HCP namespace deletion?"}
+    NSCHECK -- no --> NS["HCP namespace removed"]
+    NSCHECK -- yes --> RETAINED["HCP namespace intentionally retained"]
+    NS --> INFRA["CLI removes remaining AWS infrastructure<br/>NAT, VPC dependencies, private zones"]
+    RETAINED --> INFRA
+    INFRA --> PRESERVE{"--preserve-iam=true?"}
+    PRESERVE -- no --> IAM["CLI removes cluster IAM and OIDC provider"]
+    PRESERVE -- yes --> FINAL["CLI removes its finalizer<br/>destroy command returns"]
+    IAM --> FINAL
+    FINAL --> CHECK{"Kubernetes absence and<br/>AWS cleanup checks pass?"}
+    CHECK -- yes --> DONE["Teardown verified"]
+    CHECK -- no --> INSPECT["Inspect the first remaining resource<br/>or failed observation"]
+```
+
+This is a dependency model, not a strictly serial trace of every resource.
+Cloud cleanup can overlap controller cleanup. The CLI finalizer keeps the HC
+present while infrastructure cleanup continues, so an HC that still exists
+after the HCP namespace disappears or is intentionally retained is not
+automatically stuck.
+
+The CLI sets `hypershift.openshift.io/cleanup-cloud-resources: "true"` only
+when `--destroy-cloud-resources=true` (`DestroyCloudResources`) requests cleanup
+of guest-created resources such as load balancers and storage disks. With
+`--preserve-iam=true`, AWS cleanup skips cluster IAM and AWS OIDC provider
+deletion. Record both options before deletion and verify the requested cleanup
+scope; intentionally preserved IAM resources are not leaks.
+
+The relevant code is in `cmd/cluster/core/destroy.go`,
+`cmd/cluster/aws/destroy.go`,
+`hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go`,
+and the provider and HCP deletion reconcilers. Image revisions may differ from
+this checkout; record the HO and release CPO image/source revisions with each
+observation.
+
+## What to inspect next
+
+```mermaid
+flowchart TD
+    START["A deletion check is still pending"] --> QUERY{"Did the query succeed?"}
+    QUERY -- no --> UNKNOWN["Absence is unknown<br/>Inspect auth, discovery, connectivity<br/>or throttling before drawing conclusions"]
+    QUERY -- yes --> MACHINES{"Workers or Machines remain?"}
+    MACHINES -- yes --> CAPI["CAPA / Machine deletion conditions<br/>Exact EC2 instance state"]
+    MACHINES -- no --> HCP{"HCP remains or namespace<br/>cleanup scope unverified?"}
+    HCP -- yes --> PODS["CPO cleanup and remaining objects<br/>Pod grace deadlines and finalizers"]
+    HCP -- no --> CLOUD{"Tracked AWS cleanup<br/>scope incomplete?"}
+    CLOUD -- yes --> AWS["Follow the exact resource dependency<br/>NAT deleting, ENIs, IGW, EIPs,<br/>IAM roles, profiles or OIDC"]
+    CLOUD -- no --> CLI{"Destroy command succeeded<br/>and every inventory check passed?"}
+    CLI -- no --> LOGS["Inspect command state and failed checks<br/>Keep command return separate from absence"]
+    CLI -- yes --> DONE["Teardown independently verified"]
+```
+
+Follow each remaining workstream when several are pending. This tree selects
+evidence to inspect; it does not prescribe force deletion or finalizer removal.
+
+| Remaining gate | Inspect first |
+|----------------|---------------|
+| NodePool or CAPI Machines | Inspect Machine `Deleting` conditions, AWSMachine finalizers, CAPA logs, and EC2 states. `WaitingForInfrastructureDeletion` can be normal while an instance is shutting down. |
+| CAPI Cluster or AWSCluster | Remaining Machines, infrastructure conditions, provider errors and finalizers. |
+| HCP | CPO cleanup conditions/logs, guest load balancers or storage, endpoint services, service and PVC finalizers. |
+| HCP namespace | Namespace conditions and remaining resource finalizers; distinguish normal termination from a discovery failure. |
+| NAT gateway | AWS state: `deleting` is still pending; terminal `deleted` is cleanup for this resource. |
+| VPC or network dependencies | ENIs, VPC endpoints, subnets, route tables, security groups, internet gateway and Elastic IP. |
+| IAM/OIDC | Inspect cluster-prefixed roles, profiles, and the exact AWS OIDC provider when IAM preservation is disabled; verify intended retention otherwise. Check the cluster's S3 key prefix separately. |
+| HC with only the CLI destroy finalizer | Destroy command progress and remaining AWS infrastructure. |
+| A failed query | Authentication, permissions, throttling or API connectivity; failed observation is not evidence that a resource was deleted. |
+
+In both deletion observations, internet-gateway detachment temporarily reported
+`DependencyViolation` for mapped public addresses while the NAT gateway was
+still `deleting`. The normal CLI retry completed cleanup. Inspect NAT state
+and remaining dependencies for progress before treating this message as a
+permanent failure.
+
+Do not remove finalizers to improve an observed timing. The normal cleanup
+path is the subject of these measurements.
+
+## Measuring teardown
+
+Record a baseline before deletion: management-cluster context, HostedCluster
+namespace/name/UID, release, HO and release CPO images, region, infrastructure
+ID, worker VPC ID, and the AWS resources in scope. Start recording before the
+destroy command and keep its start time, finish time, and exit code separate
+from Kubernetes deletion timestamps.
+
+During cleanup, take timestamped snapshots of HostedCluster, NodePool, HCP,
+CAPI Cluster, Machine and platform-machine conditions, remaining control-plane
+objects, pods, Services, PVCs, and namespace conditions. Inspect the AWS state
+of the tracked VPC, networking, load balancer, IAM, and OIDC resources. Record
+successful query start/end times and the first successful observation of
+absence. A failed query means the state is unknown, not absent.
+
+For pods, `deletionTimestamp` can be a future grace-period deadline rather than
+the time deletion was requested. Record `deletionGracePeriodSeconds` and
+`terminationGracePeriodSeconds` when available, and distinguish first observed
+termination, the grace deadline, and first observed absence. A terminating
+API-server pod can explain a namespace wait without a stuck finalizer.
+
+Read namespace conditions alongside the actual remaining objects. In the
+HostedCluster 2 deletion observation, conditions reported no remaining content
+while terminating API-server pods and component API objects were still present.
+Verify those objects directly before concluding the namespace is empty.
+
+The AWS inventory includes worker-VPC resources and control-plane load
+balancers discovered through HCP Service DNS names. Retain tracked DHCP option,
+Elastic IP, worker-volume, internet-gateway, target-group, and private-zone
+identities through detachment or tag changes. Query retained IDs directly;
+detachment or an empty tag-filtered result does not establish deletion.
+
+## Teardown completion
+
+Treat teardown as verified only after the destroy command returns successfully
+and successful queries confirm the absence of the HostedCluster, NodePools,
+HCP, Machines, AWSMachines, CAPI/AWS clusters, control-plane components, pods,
+Services, PVCs, and HCP namespace. Also verify removal of the tracked AWS
+infrastructure and OIDC documents within the requested cleanup scope. Require
+cluster IAM roles, profiles, and the AWS OIDC provider to be absent only when
+`--preserve-iam=false`; otherwise verify and report their intended retention.
+Instances in `terminated` and NAT gateways in `deleted` are terminal even if
+AWS retains their records.
+
+The namespace-absence check assumes the HC annotation
+`hypershift.openshift.io/skip-delete-hosted-controlplane-namespace` was not
+`"true"`. Record it before deletion. When it is `"true"`, inspect retained
+objects and report the HCP namespace as intentionally retained within the
+requested scope.
+
+Use the first successful polling observation unless an API timestamp is
+available. Cloud consistency and polling add uncertainty. Command return and
+verified absence are separate milestones. These checks cover only the resources
+inventoried for this test, not the entire AWS account. The shared HO
+installation, management cluster, OIDC bucket, and base-domain hosted zone
+remain in place.
 
 
 ---

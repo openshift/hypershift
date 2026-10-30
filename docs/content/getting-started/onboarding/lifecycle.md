@@ -1,5 +1,9 @@
 # Cluster Lifecycle and Control Plane
 
+The [hosted cluster startup roadmap](../../reference/cluster-startup-roadmap.md)
+describes startup dependencies, readiness checks, and the resources to inspect
+when a HostedCluster has not finished starting.
+
 ---
 
 ## HostedCluster Lifecycle
@@ -156,30 +160,12 @@ flowchart TD
 
 ### Component Dependencies
 
-```mermaid
-graph TD
-    PKI[PKI Operator] --> |no deps| READY1((Ready))
-    ETCD[etcd] --> |no deps| READY2((Ready))
-    FG[FeatureGate Generator] --> |no deps| READY3((Ready))
-    ROUTER[Router] --> |no deps| READY4((Ready))
-
-    READY2 --> KAS[kube-apiserver]
-    READY3 --> KAS
-
-    KAS --> |implicit dependency| KCM[kube-controller-manager]
-    KAS --> |implicit dependency| SCHED[kube-scheduler]
-    KAS --> |implicit dependency| OAPI[openshift-apiserver]
-    KAS --> |implicit dependency| CVO[CVO]
-    KAS --> |implicit dependency| ALL["All other<br/>components (~30)"]
-
-    style PKI fill:#c8e6c9
-    style ETCD fill:#c8e6c9
-    style FG fill:#c8e6c9
-    style ROUTER fill:#c8e6c9
-    style KAS fill:#ffcc80
-```
-
-KAS is an implicit dependency for all components **except**: etcd, featuregate-generator, control-plane-operator, cluster-api, capi-provider, karpenter, and router.
+Components reconcile when their dependencies are ready; their registration
+order does not determine startup order. Most components wait for kube-apiserver.
+See [Foundation components](../../reference/cluster-startup-roadmap.md#p3-foundation-components)
+for the dependency graph and exceptions, and
+[Control-plane convergence](../../reference/cluster-startup-roadmap.md#p5-control-plane-convergence)
+for dependency conditions and diagnostic checks.
 
 ### Status Propagation
 

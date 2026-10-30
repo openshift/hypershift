@@ -1,0 +1,34 @@
+---
+config:
+  theme: default
+  look: classic
+  htmlLabels: false
+  markdownAutoWrap: false
+  fontFamily: Arial, sans-serif
+  flowchart:
+    htmlLabels: false
+    wrappingWidth: 500
+---
+flowchart TD
+    subgraph MGMT["Management cluster: HCP namespace"]
+        API["KAS + OpenShift API dependencies<br/>guest APIs, Infrastructure, RBAC"] --> INIT["CNO init gates<br/>availability-prober, then guest token"]
+        INIT --> CNO["CNO reconciles network manifests"]
+        CA["root-ca ConfigMap available"] --> CNO
+        CNO --> PODS["Multus admission + node-identity Pods"]
+        TLS["Required Secrets mount<br/>guest token sidecars succeed"] --> SERVE["Operand applications start"]
+        PODS --> SERVE
+        SERVE --> ID["Node-identity Deployment<br/>finishes progressing"]
+    end
+    subgraph GUEST["Guest API and workers"]
+        CNO --> OVN["ovnkube-node on each worker"]
+        CNO --> MULTUS["Multus host-network Pod on each worker"]
+        OVN --> FILE["OVN writes default CNI configuration"]
+        MULTUS --> WAITFILE["Multus waits for OVN configuration file"]
+        FILE --> WAITFILE
+        WAITFILE --> CERT["Multus client certificate available<br/>CSR approved and signed"]
+        CERT --> DAEMON["Multus daemon starts its listener"]
+        WEBHOOK["CNO registers node-identity webhook"]
+    end
+    ID --> WEBHOOK
+    CA --> WEBHOOK
+    SERVE -- "node-identity approver handles eligible CSRs" --> CERT
