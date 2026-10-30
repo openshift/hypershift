@@ -132,6 +132,12 @@ func (r *HostedClusterReconciler) reconcileLegacy(ctx context.Context, req ctrl.
 		}
 	}
 
+	// Reject unsafe external KubeVirt credentials before anything below can
+	// discover the infrastructure cluster, including during deletion.
+	if err := r.reconcileKubevirtCredentialSafety(ctx, hcluster, hcp); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	var hcDestroyGracePeriod time.Duration
 
 	if gracePeriodString := hcluster.Annotations[hyperv1.HCDestroyGracePeriodAnnotation]; len(gracePeriodString) > 0 {
