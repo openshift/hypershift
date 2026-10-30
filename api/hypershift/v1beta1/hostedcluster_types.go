@@ -2063,8 +2063,12 @@ type ClusterAutoscaling struct {
 	// * Random - selects a group randomly.
 	// If not specified, `[Priority, LeastWaste]` is the default.
 	// Maximum of 3 expanders can be specified.
+	// Each expander may only be specified once, and Random, being a fallback that
+	// always succeeds, must be the last expander in the list when specified.
 	// +kubebuilder:validation:MaxItems=3
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:XValidation:rule="self.all(x, self.exists_one(y, x == y))",message="expanders must not contain duplicates"
+	// +kubebuilder:validation:XValidation:rule="!('Random' in self) || self.indexOf('Random') == size(self) - 1",message="Random must be the last expander in the list"
 	//
 	// +optional
 	Expanders []ExpanderString `json:"expanders,omitempty"`
