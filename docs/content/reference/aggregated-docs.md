@@ -16000,7 +16000,9 @@ or omissions require an explicit rationale in the review record.
 
 Run the relevant v2 behavioral tests in the agreed platform contexts. Inspect
 selection, skips, early exits, and results to establish whether the intended
-behavior was exercised. Distinguish an assertion failure reported by an informing
+behavior was exercised. Verify that transferred blocking checks still fail the
+relevant CI job on assertion failure, considering spec labels, result handling,
+and job configuration. Distinguish an assertion failure reported by an informing
 spec from a genuine precondition skip or a successful assertion; process exit
 status alone is insufficient.
 
@@ -16020,9 +16022,18 @@ exclude its execution for the selected platform. Inspect the complete change to
 confirm that other platforms and unmigrated scenarios retain their required
 assertions, setup, and cleanup. Avoid unrelated changes that obscure the transfer.
 
-Follow the v2 conventions for informing tests. Explicitly record any change in
-failure gating when retiring v1 execution; porting a test does not itself promote
-a v2 spec to blocking.
+Preserve the enforcement status of transferred responsibilities. A v2 replacement
+for blocking v1 behavior must be blocking when the corresponding v1 execution is
+retired. For transfers under this procedure, preserving existing blocking
+enforcement is an exception to the default that new v2 tests start informing.
+
+Apply the informing and soaking policy to net-new behavior. Separate additional
+assertions from the transferred blocking checks where necessary so they can soak
+without weakening existing enforcement. If the replacement has implementation
+bugs or instability, fix them or postpone retiring the blocking v1 execution.
+
+Any deliberate reduction in enforcement requires a separate, explicit review
+decision with a rationale; it must not be an incidental consequence of porting.
 
 ### 7. Review and Accept the Transfer
 
@@ -16039,7 +16050,8 @@ V1 source references, selected platform, execution contexts, and retirement boun
 
 ### Replacement and preservation argument
 V2 source references and how prerequisites, actions, assertions, and lifecycle
-responsibilities are preserved.
+responsibilities are preserved, including existing and replacement enforcement
+status.
 
 ### Differences and uncertainty
 Intentional changes or omissions, effects on failure gating, responsibilities
