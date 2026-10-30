@@ -63,15 +63,15 @@ require (
 	github.com/onsi/gomega v1.42.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/openshift/api v0.0.0-20260922100147-3a6e03c5a473
-	github.com/openshift/client-go v0.0.0-20261001003915-dcaad1dc7fe8
+	github.com/openshift/api v0.0.0-20261028163820-1f109e9eefc7
+	github.com/openshift/client-go v0.0.0-20261026144452-41e357d76bc8
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20260120122324-898e638ec7d1
 	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20260825115124-078cde8b7f7f
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 	github.com/openshift/hypershift/api v0.0.0-20260824191009-a7f22d5ea3e5
-	github.com/openshift/library-go v0.0.0-20261001035620-0eb5e87de1be
+	github.com/openshift/library-go v0.0.0-20261028054900-dbcad7febe41
 	github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b
 	github.com/operator-framework/api v0.45.0
 	github.com/pkg/errors v0.9.1

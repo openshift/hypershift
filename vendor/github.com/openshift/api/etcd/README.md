@@ -10,7 +10,6 @@ Contains the `PacemakerCluster` custom resource for monitoring Pacemaker cluster
 
 #### PacemakerCluster
 
-- **Feature Gate**: `DualReplica`
 - **Component**: `two-node-fencing`
 - **Scope**: Cluster-scoped singleton resource (must be named "cluster")
 - **Resource Path**: `pacemakerclusters.etcd.openshift.io`
