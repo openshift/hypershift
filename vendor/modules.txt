@@ -2670,7 +2670,7 @@ sigs.k8s.io/cluster-api/util/patch
 ## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2
 sigs.k8s.io/cluster-api-provider-aws/v2/capicore/api/core/v1beta1
-# sigs.k8s.io/cluster-api-provider-azure v1.26.0 => ./pkg/capi/azure
+# sigs.k8s.io/cluster-api-provider-azure v1.27.0 => ./pkg/capi/azure
 ## explicit; go 1.25.7
 sigs.k8s.io/cluster-api-provider-azure/api/v1beta1
 sigs.k8s.io/cluster-api-provider-azure/capicore/api/core/v1beta1
