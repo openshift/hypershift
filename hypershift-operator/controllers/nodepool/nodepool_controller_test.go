@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -39,6 +40,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
@@ -3599,7 +3602,7 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 }
 
 func TestNodePoolReconciler_reconcile(t *testing.T) {
-	t.Parallel()
+	t.Setenv("ENABLE_NODEPOOL_DRAIN_READINESS", "")
 	tests := []struct {
 		name string // description of this test case
 		// Named input parameters for target function.
@@ -3767,8 +3770,12 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			g := NewWithT(t)
+			if tt.name == "When reconciling, it should set conditions in the expected order" {
+				tt.nodePool.Status.Conditions = []hyperv1.NodePoolCondition{{
+					Type: hyperv1.NodePoolDrainBlockedConditionType, Status: corev1.ConditionTrue,
+				}}
+			}
 
 			pullSecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -3806,7 +3813,7 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 
 			// For the condition order test, verify conditions are set in the expected order
 			if tt.name == "When reconciling, it should set conditions in the expected order" {
-				// Expected condition order based on reconcile() signalConditions array
+				// Disabling the feature removes a condition left by an earlier enabled deployment.
 				expectedConditionOrder := []string{
 					hyperv1.NodePoolAutoscalingEnabledConditionType,
 					hyperv1.NodePoolUpdateManagementEnabledConditionType,
@@ -4003,6 +4010,106 @@ func TestEnqueueNodePoolsForCloudConfig(t *testing.T) {
 
 			result := r.enqueueNodePoolsForCloudConfig(context.Background(), tc.cm)
 			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestNodePoolReconciler_enqueueNodePoolsForHostedControlPlane(t *testing.T) {
+	objects := []client.Object{
+		&hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: "clusters-a"}, Spec: hyperv1.NodePoolSpec{ClusterName: "first"}},
+		&hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "other-cluster", Namespace: "clusters-a"}, Spec: hyperv1.NodePoolSpec{ClusterName: "second"}},
+		&hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "other-namespace", Namespace: "clusters-b"}, Spec: hyperv1.NodePoolSpec{ClusterName: "first"}},
+	}
+	for _, tc := range []struct {
+		name       string
+		annotation string
+		want       []reconcile.Request
+		wantLists  int
+	}{
+		{
+			name:       "When the HCP names its parent cluster, it should list only that namespace and enqueue its NodePools",
+			annotation: "clusters-a/first",
+			want:       []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: "clusters-a", Name: "workers"}}},
+			wantLists:  1,
+		},
+		{
+			name: "When the HCP has no parent annotation, it should avoid a fleet-wide NodePool list",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listCalls := 0
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithInterceptorFuncs(interceptor.Funcs{
+				List: func(ctx context.Context, reader client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+					listCalls++
+					options := (&client.ListOptions{}).ApplyOptions(opts)
+					if options.Namespace != "clusters-a" {
+						t.Errorf("NodePool list namespace = %q, want clusters-a", options.Namespace)
+					}
+					return reader.List(ctx, list, opts...)
+				},
+			}).Build()
+			hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+				Name: "first", Namespace: "clusters-a-first",
+				Annotations: map[string]string{k8sutil.HostedClusterAnnotation: tc.annotation},
+			}}
+			r := &NodePoolReconciler{Client: c}
+			got := r.enqueueNodePoolsForHostedControlPlane(t.Context(), hcp)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("requests mismatch (-want +got):\n%s", diff)
+			}
+			if listCalls != tc.wantLists {
+				t.Errorf("NodePool list calls = %d, want %d", listCalls, tc.wantLists)
+			}
+		})
+	}
+}
+
+func TestNodePoolDrainStatusChanged(t *testing.T) {
+	base := &hyperv1.HostedControlPlane{}
+	base.Status.NodePoolDrainLastProbeTime = ptr.To(metav1.Now())
+	base.Status.Conditions = []metav1.Condition{{
+		Type: hyperv1.HostedControlPlaneNodePoolDrainUpToDate, Status: metav1.ConditionTrue,
+		Reason: hyperv1.AsExpectedReason, Message: "healthy", LastTransitionTime: metav1.Now(),
+	}}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*hyperv1.HostedControlPlane)
+		want   bool
+	}{
+		{
+			name:   "When unrelated HCP status changes, it should ignore the update",
+			mutate: func(h *hyperv1.HostedControlPlane) { h.Status.Ready = true },
+		},
+		{
+			name: "When drain results change, it should enqueue NodePools",
+			mutate: func(h *hyperv1.HostedControlPlane) {
+				h.Status.NodePoolDrain = []hyperv1.NodePoolDrain{{NodePoolName: "workers", State: hyperv1.NodePoolDrainStateBlocked}}
+			},
+			want: true,
+		},
+		{
+			name: "When the probe timestamp advances, it should enqueue NodePools",
+			mutate: func(h *hyperv1.HostedControlPlane) {
+				h.Status.NodePoolDrainLastProbeTime = ptr.To(metav1.NewTime(h.Status.NodePoolDrainLastProbeTime.Add(time.Minute)))
+			},
+			want: true,
+		},
+		{
+			name:   "When the up-to-date status changes, it should enqueue NodePools",
+			mutate: func(h *hyperv1.HostedControlPlane) { h.Status.Conditions[0].Status = metav1.ConditionFalse },
+			want:   true,
+		},
+		{
+			name:   "When only the up-to-date message changes, it should ignore the update",
+			mutate: func(h *hyperv1.HostedControlPlane) { h.Status.Conditions[0].Message = "still healthy" },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			newHCP := base.DeepCopy()
+			tc.mutate(newHCP)
+			if got := nodePoolDrainStatusChanged(event.UpdateEvent{ObjectOld: base, ObjectNew: newHCP}); got != tc.want {
+				t.Errorf("changed = %t, want %t", got, tc.want)
+			}
 		})
 	}
 }
