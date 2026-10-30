@@ -159,41 +159,7 @@ func adaptStatefulSetForShard(cpContext component.WorkloadContext, sts *appsv1.S
 	})
 
 	podspec.UpdateContainer("reset-member", sts.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
-		script := fmt.Sprintf(`#!/bin/bash
-
-set -eu
-
-export ETCDCTL_API=3
-export ETCDCTL_CACERT=/etc/etcd/tls/etcd-ca/ca.crt
-export ETCDCTL_CERT=/etc/etcd/tls/server/server.crt
-export ETCDCTL_KEY=/etc/etcd/tls/server/server.key
-export ETCDCTL_ENDPOINTS=https://%s:2379
-
-echo "new" > /etc/etcd/clusterstate/state
-
-if [[ ! -f /var/lib/data/member/snap/db ]]; then
-  echo "No existing etcd data found"
-  echo "Checking if cluster is functional"
-  if etcdctl member list; then
-    echo "Cluster is functional"
-    MEMBER_ID=$(etcdctl member list -w simple | grep "${HOSTNAME}" | awk -F, '{ print $1 }')
-    if [[ -n "${MEMBER_ID}" ]]; then
-      echo "A member with this name (${HOSTNAME}) already exists, removing"
-      etcdctl member remove "${MEMBER_ID}"
-      echo "Adding new member"
-      etcdctl member add ${HOSTNAME} --peer-urls https://${HOSTNAME}.%s.${NAMESPACE}.svc:2380
-      echo "existing" > /etc/etcd/clusterstate/state
-    else
-      echo "A member does not exist with name (${HOSTNAME}), nothing to do"
-    fi
-  else
-    echo "Cannot list members in cluster, so likely not up yet"
-  fi
-else
-  echo "Snapshot db exists, member has data"
-fi
-`, clientService, discoveryService)
-		c.Args = []string{"-c", script}
+		c.Args = []string{"-c", resetMemberScript(clientService, discoveryService)}
 	})
 
 	// Update volume secret/configmap names to use shard-specific TLS secrets
@@ -260,6 +226,69 @@ fi
 	adaptShardScheduling(sts, shard)
 
 	return nil
+}
+
+func resetMemberScript(clientService, discoveryService string) string {
+	return fmt.Sprintf(`#!/bin/bash
+
+set -euo pipefail
+
+# This script checks whether the data directory of this etcd member is empty.
+# If it is, and there is a functional etcd cluster, then it ensures that a member
+# corresponding to this pod does not exist in the cluster so it can be added
+# as a new member.
+
+# Setup the etcdctl environment
+export ETCDCTL_API=3
+export ETCDCTL_CACERT=/etc/etcd/tls/etcd-ca/ca.crt
+export ETCDCTL_CERT=/etc/etcd/tls/server/server.crt
+export ETCDCTL_KEY=/etc/etcd/tls/server/server.key
+export ETCDCTL_ENDPOINTS=https://%s:2379
+
+if [[ ! -f /etc/etcd/clusterstate/state ]]; then
+  echo "new" > /etc/etcd/clusterstate/state
+fi
+
+# The cluster-state marker is stored in an emptyDir, so it survives init-container
+# retries within a Pod but not Pod replacement. Persistent storage cannot preserve
+# a marker through recovery, which deletes the Pod and PVC after data loss.
+
+if [[ ! -f /var/lib/data/member/snap/db ]]; then
+  echo "No existing etcd data found"
+  echo "Checking if cluster is functional"
+  if etcdctl member list >/dev/null 2>&1; then
+    echo "Cluster is functional"
+    # Once a functional cluster has been observed, never fall back to
+    # bootstrap mode. Interrupted membership repair must be retried
+    # rather than recreating the identity removed from quorum.
+    echo "existing" > /etc/etcd/clusterstate/state
+    PEER_URL=https://${HOSTNAME}.%s.${NAMESPACE}.svc:2380
+    # Match the member name exactly against the third field of the
+    # comma-separated member list, so the lookup cannot match the
+    # hostname where it also appears in a peer or client URL.
+    MEMBER_ID=$(etcdctl member list -w simple | awk -F', ' -v name="${HOSTNAME}" '$3 == name { print $1 }')
+    if [[ -n "${MEMBER_ID}" ]]; then
+      echo "A member with this name already exists, removing"
+      etcdctl member remove "${MEMBER_ID}"
+      echo "Adding new member"
+      etcdctl member add ${HOSTNAME} --peer-urls "${PEER_URL}"
+    elif etcdctl member list -w simple | grep -F "${PEER_URL}" >/dev/null; then
+      echo "A member without a name already uses this peer URL, nothing to do"
+    else
+      echo "A member does not exist with this name, adding it"
+      etcdctl member add ${HOSTNAME} --peer-urls "${PEER_URL}"
+    fi
+  else
+    if [[ "$(cat /etc/etcd/clusterstate/state)" == "existing" ]]; then
+      echo "Cannot list members in an existing cluster, refusing to start in bootstrap mode"
+      exit 1
+    fi
+    echo "Cannot list members in cluster, so likely not up yet"
+  fi
+else
+  echo "Snapshot db exists, member has data"
+fi
+`, clientService, discoveryService)
 }
 
 func adaptShardStorage(sts *appsv1.StatefulSet, shard hyperv1.ManagedEtcdShardSpec, hcp *hyperv1.HostedControlPlane) {

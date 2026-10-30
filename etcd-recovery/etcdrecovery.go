@@ -110,14 +110,19 @@ func setupCmdContext(cmdContext context.Context) context.Context {
 }
 
 type etcdStatus struct {
-	failingPod      *string
-	missingMember   *string
-	recoverable     bool
-	nodeUnreachable bool // true when the failing pod was evicted by the taint manager (unreachable node)
+	failingPod       *string
+	missingMember    *string
+	recoverable      bool
+	nodeUnreachable  bool // true when the failing pod was evicted by the taint manager (unreachable node)
+	unhealthyMembers bool // true when any member reported an unhealthy endpoint (e.g. a replacement member that has not published a client URL yet)
 }
 
 func (s *etcdStatus) isUnhealthy() bool {
 	return s.missingMember != nil || s.failingPod != nil
+}
+
+func (s *etcdStatus) isHealthyForWait() bool {
+	return !s.isUnhealthy() && !s.unhealthyMembers
 }
 
 func (s *etcdStatus) isRecoverable() bool {
@@ -153,6 +158,9 @@ func (s *etcdStatus) String() string {
 	}
 	if s.nodeUnreachable {
 		status = append(status, "node unreachable")
+	}
+	if s.unhealthyMembers {
+		status = append(status, "unhealthy member")
 	}
 	if !s.recoverable {
 		status = append(status, "broken: NOT RECOVERABLE")
@@ -196,7 +204,10 @@ func runRecovery(ctx context.Context, opts options) error {
 		return errors.New("etcd cluster does not have a recoverable status")
 	}
 	if !status.isUnhealthy() {
-		return nil
+		if status.isHealthyForWait() {
+			return nil
+		}
+		return waitForHealthyCluster(ctx, opts)
 	}
 
 	if err := recoverEtcd(ctx, opts, *status); err != nil {
@@ -222,7 +233,11 @@ func waitForHealthyCluster(ctx context.Context, opts options) error {
 		if err != nil {
 			return false, err
 		}
-		if !status.isUnhealthy() {
+		// The cluster is only healthy once there is no missing member or failing
+		// pod and every member reports a healthy endpoint. A replacement member
+		// publishes its client URL only after it has started, so unhealthyMembers
+		// stays true until the recovered member is actually serving.
+		if status.isHealthyForWait() {
 			log.Info("Cluster is healthy")
 			return true, nil
 		}
@@ -289,6 +304,11 @@ func memberName(member *etcdserverpb.Member) string {
 	return name
 }
 
+type memberEndpointHealth struct {
+	name    string
+	healthy bool
+}
+
 func checkEtcdStatus(ctx context.Context, opts options, etcdClient memberLister, k crclient.Client, isHealthy endpointHealthChecker) (*etcdStatus, error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -316,7 +336,7 @@ func checkEtcdStatus(ctx context.Context, opts options, etcdClient memberLister,
 		log.Info("Etcd cluster has 3 members")
 	}
 
-	memberHealth := map[string]bool{}
+	memberHealth := map[uint64]memberEndpointHealth{}
 	// Determine member health by looking at their endpoint health
 	for _, member := range etcdMemberList.Members {
 		name := memberName(member)
@@ -324,13 +344,21 @@ func checkEtcdStatus(ctx context.Context, opts options, etcdClient memberLister,
 		// no client URLs. There is no endpoint to health check, so it counts as unhealthy.
 		if len(member.ClientURLs) == 0 {
 			log.Info("member has not advertised any client URL, treating it as unhealthy", "member", name)
-			memberHealth[name] = false
+			result.unhealthyMembers = true
+			memberHealth[member.ID] = memberEndpointHealth{name: name, healthy: false}
 			continue
 		}
 		if len(member.ClientURLs) > 1 {
 			return nil, fmt.Errorf("member %s does not have an expected client URL: %v", name, member.ClientURLs)
 		}
-		memberHealth[name] = isHealthy(ctx, opts, name, member.ClientURLs[0])
+		healthy := isHealthy(ctx, opts, name, member.ClientURLs[0])
+		if !healthy {
+			result.unhealthyMembers = true
+		}
+		memberHealth[member.ID] = memberEndpointHealth{
+			name:    name,
+			healthy: healthy,
+		}
 	}
 	result.recoverable = isRecoverableMemberHealth(ctx, memberHealth)
 	if !result.recoverable {
@@ -366,11 +394,11 @@ func checkEtcdStatus(ctx context.Context, opts options, etcdClient memberLister,
 		// Recovering deletes the failing pod's data. If a different member is also
 		// unhealthy, that would leave only one member serving and risk losing quorum,
 		// so require the failing pod to be the unhealthy member.
-		for name, healthy := range memberHealth {
-			if !healthy && name != *result.failingPod {
+		for _, health := range memberHealth {
+			if !health.healthy && health.name != *result.failingPod {
 				result.recoverable = false
 				log.Info("Failing pod is not the unhealthy member. Etcd cluster is not recoverable",
-					"failingPod", *result.failingPod, "unhealthyMember", name)
+					"failingPod", *result.failingPod, "unhealthyMember", health.name)
 			}
 		}
 	default:
@@ -538,20 +566,20 @@ func isEndpointHealthy(ctx context.Context, opts options, name, endpointURL stri
 	return true
 }
 
-func isRecoverableMemberHealth(ctx context.Context, memberHealth map[string]bool) bool {
+func isRecoverableMemberHealth(ctx context.Context, memberHealth map[uint64]memberEndpointHealth) bool {
 	log := ctrl.LoggerFrom(ctx)
 	switch len(memberHealth) {
 	case 2:
-		for m, healthy := range memberHealth {
-			if !healthy {
-				log.Info("etcd cluster is not recoverable, missing member and unhealthy member", "unhealthy", m)
+		for _, health := range memberHealth {
+			if !health.healthy {
+				log.Info("etcd cluster is not recoverable, missing member and unhealthy member", "unhealthy", health.name)
 				return false
 			}
 		}
 	case 3:
 		unHealthyCount := 0
-		for _, healthy := range memberHealth {
-			if !healthy {
+		for _, health := range memberHealth {
+			if !health.healthy {
 				unHealthyCount++
 			}
 		}
