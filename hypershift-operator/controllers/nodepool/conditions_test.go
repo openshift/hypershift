@@ -668,6 +668,8 @@ func TestValidMachineConfigCondition(t *testing.T) {
 	cond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
 	g.Expect(cond).ToNot(BeNil())
 	g.Expect(cond.Status).To(Equal(corev1.ConditionTrue))
+
+	t.Run("CRIO default ulimits preserve", testValidMachineConfigConditionPreservesCRIODefaultUlimits)
 }
 
 func setupTestObjects() (*corev1.Secret, *corev1.Secret, *corev1.ConfigMap, *corev1.ConfigMap, *corev1.ConfigMap, *corev1.ConfigMap) {
@@ -1452,4 +1454,59 @@ func TestReachedIgnitionEndpointCondition(t *testing.T) {
 			g.Expect(condition.Reason).To(Equal(hyperv1.AsExpectedReason))
 		})
 	}
+}
+
+func testValidMachineConfigConditionPreservesCRIODefaultUlimits(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3 := setupTestObjects()
+
+	hostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "cluster-name", Namespace: "myns"},
+		Spec: hyperv1.HostedClusterSpec{
+			PullSecret: corev1.LocalObjectReference{Name: pullSecret.Name},
+			InfraID:    "fake-infra-id",
+		},
+	}
+	kubeconfig := withKubeconfig(hostedCluster)
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nodepool-name",
+			Namespace: "myns",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hostedCluster.Name,
+			Release:     hyperv1.Release{Image: "fake-release-image"},
+			Config:      []corev1.LocalObjectReference{{Name: "machineconfig-1"}},
+		},
+		Status: hyperv1.NodePoolStatus{
+			Version: "4.20.0",
+		},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+		nodePool, hostedCluster, pullSecret, ignitionServerCACert,
+		machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3,
+		kubeconfig,
+	).Build()
+
+	r := &NodePoolReconciler{
+		Client:          client,
+		ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: "4.21.0"},
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+			Result: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{
+					Labels: map[string]string{},
+				},
+			},
+		},
+	}
+
+	_, err := r.validMachineConfigCondition(t.Context(), nodePool, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(nodePool.Annotations).To(HaveKeyWithValue(
+		CRIODefaultUlimitsPreserveAnnotation,
+		"true",
+	))
 }

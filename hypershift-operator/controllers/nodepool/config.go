@@ -389,6 +389,10 @@ func (cg *ConfigGenerator) parseRolloutConfig(configs []corev1.ConfigMap) (strin
 func (cg *ConfigGenerator) doParse(configs []corev1.ConfigMap, managementSideConfig string) (string, error) {
 	var errors []error
 	var allConfigPlainText []string
+	// If a user or platform config already writes the CRI-O drop-in path, do
+	// not add ours. MCO merges files by path and the higher-named MC would win
+	// silently, so let the existing config own it.
+	crioDropInPathDefined := false
 
 	if managementSideConfig != "" {
 		allConfigPlainText = append(allConfigPlainText, managementSideConfig)
@@ -410,11 +414,29 @@ func (cg *ConfigGenerator) doParse(configs []corev1.ConfigMap, managementSideCon
 					errors = append(errors, fmt.Errorf("configmap %q yaml document failed validation: %w", config.Name, err))
 					continue
 				}
+				if machineConfigWritesFile(manifest, crioDefaultUlimitsDropInPath) {
+					crioDropInPathDefined = true
+				}
 				allConfigPlainText = append(allConfigPlainText, string(manifest))
 			}
 			if coreerrors.Is(err, io.EOF) {
 				break
 			}
+		}
+	}
+
+	// The CRI-O default ulimits drop-in is spec-driven NodePool configuration,
+	// so it belongs in both the full and the rollout config.
+	targetVersion := ""
+	if cg.releaseImage != nil {
+		targetVersion = cg.releaseImage.Version()
+	}
+	if !crioDropInPathDefined && shouldPreserveCRIODefaultUlimits(cg.nodePool, targetVersion) {
+		crioDefaultUlimitsConfig, err := crioDefaultUlimitsRawConfig()
+		if err != nil {
+			errors = append(errors, err)
+		} else {
+			allConfigPlainText = append(allConfigPlainText, crioDefaultUlimitsConfig)
 		}
 	}
 

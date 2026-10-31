@@ -1364,6 +1364,8 @@ func TestIsOutdated(t *testing.T) {
 }
 
 func TestGenerateMCORawConfig(t *testing.T) {
+	t.Run("CRIO default ulimits", testGenerateMCORawConfigCRIODefaultUlimits)
+
 	coreMachineConfig1 := `
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
