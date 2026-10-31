@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"context"
+	coreerrors "errors"
 	"fmt"
 	"net/netip"
 	"strconv"
@@ -426,16 +427,21 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 		})
 		return &ctrl.Result{}, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+
+	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hcluster)
 	if err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
-			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedReason,
-			Message:            err.Error(),
-			ObservedGeneration: nodePool.Generation,
-		})
-		return &ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
+		return &ctrl.Result{}, fmt.Errorf("failed to detect CPO capabilities: %w", err)
+	}
+
+	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream, cpoCapabilities.RenderedTrustBundleValidation)
+	if err != nil {
+		result, condErr := setValidMachineConfigConditionForError(nodePool, err)
+		if condErr == nil {
+			// Trust-bundle ConfigMap problems soft-fail; ValidMachineConfig=False already
+			// surfaces the problem and ConfigMap watches requeue when restored.
+			log.Info("HostedCluster trust bundle ConfigMap is missing or invalid", "error", err.Error())
+		}
+		return result, condErr
 	}
 
 	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -446,6 +452,32 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 	})
 
 	return nil, nil
+}
+
+// setValidMachineConfigConditionForError sets ValidMachineConfig=False for a config generation error.
+// Missing or malformed HostedCluster trust-bundle ConfigMaps soft-fail (nil error) so transient
+// delete/recreate windows do not hard-fail NodePool reconciliation. Other config errors still
+// return an error for exponential backoff.
+func setValidMachineConfigConditionForError(nodePool *hyperv1.NodePool, err error) (*ctrl.Result, error) {
+	reason := hyperv1.NodePoolValidationFailedReason
+	var trustBundleErr *TrustBundleConfigError
+	softFail := coreerrors.As(err, &trustBundleErr)
+	if softFail && apierrors.IsNotFound(err) {
+		reason = hyperv1.NodePoolNotFoundReason
+	}
+
+	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+		Status:             corev1.ConditionFalse,
+		Reason:             reason,
+		Message:            err.Error(),
+		ObservedGeneration: nodePool.Generation,
+	})
+	if softFail {
+		// Reconciling won't solve the input problem; a ConfigMap create/update will requeue.
+		return &ctrl.Result{}, nil
+	}
+	return &ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
 }
 
 func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {

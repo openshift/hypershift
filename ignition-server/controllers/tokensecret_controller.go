@@ -35,10 +35,14 @@ const (
 	TokenSecretPullSecretHashKey            = "pull-secret-hash"
 	TokenSecretHCConfigurationHashKey       = "hc-configuration-hash"
 	TokenSecretAdditionalTrustBundleHashKey = "additional-trust-bundle-hash"
-	TokenSecretCloudConfigHashKey           = "cloud-config-hash"
-	InvalidConfigReason                     = "InvalidConfig"
-	CloudConfigPendingReason                = "CloudConfigPending"
-	TokenSecretReasonKey                    = "reason"
+	// TokenSecretProxyTrustedCAHashKey is intentionally duplicated from nodepool/token.go
+	// to avoid a dependency from ignition-server -> hypershift-operator.
+	TokenSecretProxyTrustedCAHashKey      = "proxy-trusted-ca-hash"
+	TokenSecretRenderedTrustBundleHashKey = "rendered-trust-bundle-hash"
+	TokenSecretCloudConfigHashKey         = "cloud-config-hash"
+	InvalidConfigReason                   = "InvalidConfig"
+	CloudConfigPendingReason              = "CloudConfigPending"
+	TokenSecretReasonKey                  = "reason"
 	// TokenSecretOSStreamKey is intentionally duplicated from nodepool/token.go
 	// to avoid a dependency from ignition-server → hypershift-operator.
 	TokenSecretOSStreamKey         = "os-stream"
@@ -90,7 +94,7 @@ func NewPayloadStore() *ExpiringCache {
 type IgnitionProvider interface {
 	// GetPayload returns the ignition payload content for
 	// the provided release image and a config string containing 0..N MachineConfig yaml definitions.
-	GetPayload(ctx context.Context, payloadImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream, cloudConfigHash string) ([]byte, error)
+	GetPayload(ctx context.Context, payloadImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream, cloudConfigHash, renderedTrustBundleHash string) ([]byte, error)
 }
 
 // TokenSecretReconciler watches token Secrets
@@ -234,9 +238,12 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	token := string(tokenSecret.Data[TokenSecretTokenKey])
 	cloudConfigHash := string(tokenSecret.Data[TokenSecretCloudConfigHashKey])
+	additionalTrustBundleHash := string(tokenSecret.Data[TokenSecretAdditionalTrustBundleHashKey])
+	proxyTrustedCAHash := string(tokenSecret.Data[TokenSecretProxyTrustedCAHashKey])
+	renderedTrustBundleHash := string(tokenSecret.Data[TokenSecretRenderedTrustBundleHashKey])
 	if value, ok := r.PayloadStore.Get(token); ok {
-		if value.CloudConfigHash != cloudConfigHash {
-			log.Info("Cloud config hash changed, invalidating cached payload")
+		if !cachedPayloadStillValid(value, cloudConfigHash, additionalTrustBundleHash, proxyTrustedCAHash, renderedTrustBundleHash) {
+			log.Info("Content hash changed, invalidating cached payload")
 			r.PayloadStore.Delete(token)
 		} else {
 			log.Info("Payload found in cache")
@@ -256,11 +263,11 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	oldToken, ok := tokenSecret.Data[TokenSecretOldTokenKey]
 	if ok {
 		if value, ok := r.PayloadStore.Get(string(oldToken)); ok {
-			if value.CloudConfigHash == cloudConfigHash {
+			if cachedPayloadStillValid(value, cloudConfigHash, additionalTrustBundleHash, proxyTrustedCAHash, renderedTrustBundleHash) {
 				r.PayloadStore.Set(token, value)
 				return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
 			}
-			log.Info("Cloud config hash changed, invalidating old token cached payload")
+			log.Info("Content hash changed, invalidating old token cached payload")
 			r.PayloadStore.Delete(string(oldToken))
 		}
 	}
@@ -287,11 +294,10 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	PayloadCacheMissTotal.Inc()
 	pullSecretHash := string(tokenSecret.Data[TokenSecretPullSecretHashKey])
 	hcConfigurationHash := string(tokenSecret.Data[TokenSecretHCConfigurationHashKey])
-	additionalTrustBundleHash := string(tokenSecret.Data[TokenSecretAdditionalTrustBundleHashKey])
 	osStream := string(tokenSecret.Data[TokenSecretOSStreamKey])
 	payload, err := func() ([]byte, error) {
 		start := time.Now()
-		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream, cloudConfigHash)
+		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash, additionalTrustBundleHash, hcConfigurationHash, osStream, cloudConfigHash, renderedTrustBundleHash)
 		if err != nil {
 			return nil, fmt.Errorf("error getting ignition payload: %w", err)
 		}
@@ -323,7 +329,14 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	log.Info("IgnitionProvider generated payload")
-	cacheValue := CacheValue{Payload: payload, SecretName: tokenSecret.Name, CloudConfigHash: cloudConfigHash}
+	cacheValue := CacheValue{
+		Payload:                   payload,
+		SecretName:                tokenSecret.Name,
+		CloudConfigHash:           cloudConfigHash,
+		AdditionalTrustBundleHash: additionalTrustBundleHash,
+		ProxyTrustedCAHash:        proxyTrustedCAHash,
+		RenderedTrustBundleHash:   renderedTrustBundleHash,
+	}
 	r.PayloadStore.Set(token, cacheValue)
 	oldToken, ok = tokenSecret.Data[TokenSecretOldTokenKey]
 	if ok {
@@ -376,6 +389,22 @@ func getTokenTimeLived(tokenSecret *corev1.Secret, now time.Time) (*time.Duratio
 }
 
 // tokenIDNeedRotation returns true if a duration is longer than the ttl/2.
+// cachedPayloadStillValid reports whether a cached payload is still valid for the token Secret's
+// current content hashes. All three hashes are compared because any of them can change in place
+// for a token Secret whose name does not change: cloudConfigHash and hcConfigurationHash are
+// written unconditionally on every HyperShift Operator reconcile (see token.go), and
+// additionalTrustBundleHash/proxyTrustedCAHash are written unconditionally while a Secret pair is
+// intentionally kept under its existing name across a hash-formula migration (see
+// hypershift-operator/controllers/nodepool/config_hash_version.go). Without checking all of them,
+// a cache hit would keep serving a payload generated from stale trust-bundle content until the
+// token naturally rotates or expires.
+func cachedPayloadStillValid(value CacheValue, cloudConfigHash, additionalTrustBundleHash, proxyTrustedCAHash, renderedTrustBundleHash string) bool {
+	return value.CloudConfigHash == cloudConfigHash &&
+		value.AdditionalTrustBundleHash == additionalTrustBundleHash &&
+		value.ProxyTrustedCAHash == proxyTrustedCAHash &&
+		value.RenderedTrustBundleHash == renderedTrustBundleHash
+}
+
 // This is the criteria to trigger a token ID rotation.
 func tokenNeedRotation(timeLived *time.Duration) bool {
 	if timeLived == nil || *timeLived >= ttl/2 {

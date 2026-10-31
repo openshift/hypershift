@@ -34,19 +34,28 @@ import (
 )
 
 const (
-	TokenSecretTokenGenerationTime       = "hypershift.openshift.io/last-token-generation-time"
-	TokenSecretReleaseKey                = "release"
-	TokenSecretReleaseVersionKey         = "release-version"
-	TokenSecretTokenKey                  = "token"
-	TokenSecretPullSecretHashKey         = "pull-secret-hash"
-	TokenSecretHCConfigurationHashKey    = "hc-configuration-hash"
-	TokenSecretAdditionalTrustBundleKey  = "additional-trust-bundle-hash"
-	TokenSecretCloudConfigHashKey        = "cloud-config-hash"
-	TokenSecretConfigKey                 = "config"
-	TokenSecretAnnotation                = "hypershift.openshift.io/ignition-config"
-	TokenSecretIgnitionReachedAnnotation = "hypershift.openshift.io/ignition-reached"
-	TokenSecretNodePoolUpgradeType       = "hypershift.openshift.io/node-pool-upgrade-type"
-	TokenSecretOSStreamKey               = "os-stream"
+	TokenSecretTokenGenerationTime      = "hypershift.openshift.io/last-token-generation-time"
+	TokenSecretReleaseKey               = "release"
+	TokenSecretReleaseVersionKey        = "release-version"
+	TokenSecretTokenKey                 = "token"
+	TokenSecretPullSecretHashKey        = "pull-secret-hash"
+	TokenSecretHCConfigurationHashKey   = "hc-configuration-hash"
+	TokenSecretAdditionalTrustBundleKey = "additional-trust-bundle-hash"
+	// TokenSecretProxyTrustedCAHashKey tracks spec.configuration.proxy.trustedCA ConfigMap
+	// content, mirroring TokenSecretAdditionalTrustBundleKey. It is written unconditionally on
+	// every reconcile (like TokenSecretHCConfigurationHashKey/TokenSecretCloudConfigHashKey
+	// below) so the ignition-server token-secret controller can detect a proxy trustedCA content
+	// change for a Secret pair that CAPI is intentionally keeping under its existing name (see
+	// effectiveSecrets and the versioned rollout baseline) and invalidate its cached payload
+	// instead of serving stale content indefinitely until the token naturally rotates/expires.
+	TokenSecretProxyTrustedCAHashKey      = "proxy-trusted-ca-hash"
+	TokenSecretRenderedTrustBundleHashKey = "rendered-trust-bundle-hash"
+	TokenSecretCloudConfigHashKey         = "cloud-config-hash"
+	TokenSecretConfigKey                  = "config"
+	TokenSecretAnnotation                 = "hypershift.openshift.io/ignition-config"
+	TokenSecretIgnitionReachedAnnotation  = "hypershift.openshift.io/ignition-reached"
+	TokenSecretNodePoolUpgradeType        = "hypershift.openshift.io/node-pool-upgrade-type"
+	TokenSecretOSStreamKey                = "os-stream"
 )
 
 // Token knows how to create an UUUID token for a unique configGenerator Hash.
@@ -56,12 +65,12 @@ type Token struct {
 	upsert.CreateOrUpdateProvider
 	cpoCapabilities *CPOCapabilities
 	*ConfigGenerator
-	// TODO(alberto): we don't really support content inplace changes for fields like pull secret and AdditionalTrustBundle.
-	// In fact we only trigger a rollout if the .Name referenced in the field changes.
-	// Consider removing these hash checks and consolidate with the rolloutConfig struct input.
-	// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
+	// These content hashes are stored in the token Secret for the ignition-server
+	// token-secret controller. They are separate from the rolloutConfig hash that
+	// drives NodePool rollouts (see ConfigGenerator.RolloutHash).
 	pullSecretHash            []byte
 	additionalTrustBundleHash []byte
+	proxyTrustedCAHash        []byte
 	globalConfigHash          []byte
 	cloudConfigHash           []byte
 	userData                  *userData
@@ -125,6 +134,9 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 			return nil, err
 		}
 		additionalTrustBundle = additionalTrustBundleCM.Data["ca-bundle.crt"]
+		if configGenerator.renderedTrustBundleHash != "" && supportutil.HashSimple(additionalTrustBundle) != configGenerator.additionalTrustBundleHash {
+			return nil, &TrustBundleConfigError{err: fmt.Errorf("additional trust bundle changed while building token; retrying")}
+		}
 	}
 
 	// TODO(alberto): This hash should be consolidated with configGenerator using globalConfigString as that is what configGenerator uses to create a configGenerator.Hash() and so what triggers a rollout.
@@ -149,6 +161,7 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 		cpoCapabilities:           cpoCapabilities,
 		pullSecretHash:            []byte(supportutil.HashSimple(pullSecretBytes)),
 		additionalTrustBundleHash: []byte(supportutil.HashSimple(additionalTrustBundle)),
+		proxyTrustedCAHash:        []byte(configGenerator.proxyTrustedCAHash),
 		globalConfigHash:          []byte(hcConfigurationHash),
 		cloudConfigHash:           []byte(cloudConfigHash),
 	}
@@ -310,6 +323,9 @@ func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSe
 
 func (t *Token) Reconcile(ctx context.Context) error {
 	log := ctrl.LoggerFrom(ctx)
+	if err := t.validateTrustBundleCapabilities(ctx); err != nil {
+		return err
+	}
 
 	outdated := t.isOutdated()
 	if outdated {
@@ -345,6 +361,38 @@ func (t *Token) Reconcile(ctx context.Context) error {
 		return err
 	} else {
 		log.Info("Reconciled user data Secret", "result", result)
+	}
+	return nil
+}
+
+func (t *Token) validateTrustBundleCapabilities(ctx context.Context) error {
+	if t.cpoCapabilities.RenderedTrustBundleValidation {
+		return nil
+	}
+	// Old ignition servers ignore new Secret keys. Fail before token cleanup or
+	// bootstrap propagation rather than letting an unvalidated payload roll nodes.
+	if (len(t.additionalTrustBundleHash) > 0 && string(t.additionalTrustBundleHash) != supportutil.HashSimple("")) || len(t.proxyTrustedCAHash) > 0 {
+		return fmt.Errorf("trust bundle reconciliation requires a CPO image with rendered-trust-bundle-validation support")
+	}
+	// Also protect removal of the last bundle when the operator/CPO is downgraded.
+	// The deployed payload can differ from the completed one during a rollout.
+	// Check both before cleanup; a bundle may exist only in the in-flight target.
+	for _, hash := range []string{t.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion], t.deployedBootstrapHash} {
+		if hash == "" {
+			continue
+		}
+		previous, _ := t.secretsForHash(hash)
+		if err := t.Get(ctx, client.ObjectKeyFromObject(previous), previous); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+		for _, key := range []string{TokenSecretRenderedTrustBundleHashKey, TokenSecretAdditionalTrustBundleKey, TokenSecretProxyTrustedCAHashKey} {
+			if value := string(previous.Data[key]); value != "" && value != supportutil.HashSimple("") {
+				return fmt.Errorf("trust bundle removal requires a CPO image with rendered-trust-bundle-validation support")
+			}
+		}
 	}
 	return nil
 }
@@ -653,6 +701,18 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 	// Otherwise if something which does not trigger a new token generation from spec.Config changes, like .IDP, both hashes would mismatch forever.
 	tokenSecret.Data[TokenSecretHCConfigurationHashKey] = t.globalConfigHash
 	tokenSecret.Data[TokenSecretCloudConfigHashKey] = t.cloudConfigHash
+	// Also kept in sync in place (see comment above): lets the ignition-server token-secret
+	// controller invalidate a cached payload when proxy.trustedCA content changes for a token
+	// Secret that CAPI is intentionally keeping under its existing name/token (hash-formula
+	// migration skip, see config_hash_version.go), instead of serving stale CA content until the
+	// token naturally rotates or expires.
+	tokenSecret.Data[TokenSecretProxyTrustedCAHashKey] = t.proxyTrustedCAHash
+	if t.renderedTrustBundleHash != "" {
+		tokenSecret.Data[TokenSecretRenderedTrustBundleHashKey] = []byte(t.renderedTrustBundleHash)
+	}
+	// Retained bootstrap tokens must follow the migration baseline too. Otherwise
+	// a cache rebuild rejects a token whose additional bundle changed before migration.
+	tokenSecret.Data[TokenSecretAdditionalTrustBundleKey] = t.additionalTrustBundleHash
 
 	return nil
 }
