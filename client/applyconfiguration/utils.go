@@ -243,6 +243,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.GCPServiceAccountsEmailsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPWorkloadIdentityConfig"):
 		return &hypershiftv1beta1.GCPWorkloadIdentityConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("GPULimit"):
+		return &hypershiftv1beta1.GPULimitApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HCPEtcdBackup"):
 		return &hypershiftv1beta1.HCPEtcdBackupApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HCPEtcdBackupAzureBlob"):
@@ -443,6 +445,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ReleaseApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ReplaceUpgrade"):
 		return &hypershiftv1beta1.ReplaceUpgradeApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ResourceLimits"):
+		return &hypershiftv1beta1.ResourceLimitsApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ResourceRange"):
+		return &hypershiftv1beta1.ResourceRangeApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("RollingUpdate"):
 		return &hypershiftv1beta1.RollingUpdateApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("RoutePublishingStrategy"):
@@ -453,6 +459,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.RouterParamApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ScaleDownConfig"):
 		return &hypershiftv1beta1.ScaleDownConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ScaleUpConfig"):
+		return &hypershiftv1beta1.ScaleUpConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionKeyStatus"):
 		return &hypershiftv1beta1.SecretEncryptionKeyStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionSpec"):

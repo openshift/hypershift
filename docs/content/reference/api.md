@@ -6120,6 +6120,116 @@ Valid values are 1 through 2000.
 When omitted, the flag is not set and the autoscaler uses its default (10).</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>localStorageScaleDown</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.LocalStorageScaleDownPolicy">
+LocalStorageScaleDownPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>localStorageScaleDown controls whether the autoscaler considers nodes running pods
+with local storage, such as EmptyDir or HostPath volumes, as eligible for scale-down.
+Skip protects such nodes from scale-down. Consider allows the autoscaler to remove them
+like any other node. This affects the &ldquo;&ndash;skip-nodes-with-local-storage&rdquo; flag on
+cluster-autoscaler.</p>
+<p>When omitted, this defaults to Consider, preserving HyperShift&rsquo;s current behavior.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>similarNodeGroupBalancing</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SimilarNodeGroupBalancingPolicy">
+SimilarNodeGroupBalancingPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>similarNodeGroupBalancing controls whether the autoscaler tries to keep similar node
+groups, meaning NodePools with the same instance type and labels, at similar sizes when
+scaling up. This affects the &ldquo;&ndash;balance-similar-node-groups&rdquo; flag on cluster-autoscaler.</p>
+<p>When omitted, this defaults to Balance, preserving HyperShift&rsquo;s current behavior.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>daemonSetUtilization</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.DaemonSetUtilizationPolicy">
+DaemonSetUtilizationPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>daemonSetUtilization controls whether DaemonSet pod resource requests are included when
+the autoscaler calculates node utilization for scale-down eligibility. Include counts
+DaemonSet pod requests toward utilization. Exclude ignores them. This affects the
+&ldquo;&ndash;ignore-daemonsets-utilization&rdquo; flag on cluster-autoscaler.</p>
+<p>When omitted, no flag is rendered and the autoscaler&rsquo;s own default behavior of including
+DaemonSet pod requests applies.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceLimits,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ResourceLimits">
+ResourceLimits
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>resourceLimits bounds the aggregate CPU, memory, and GPU resources across all
+guest-cluster nodes that the autoscaler may grow the hosted cluster to. The
+autoscaler counts resources from all guest-cluster nodes read through its guest
+kubeconfig and blocks scale-up of any NodePool once a configured maximum would be
+exceeded. maxNodesTotal and each configured resourceLimits maximum are independent,
+cluster-wide ceilings that apply in addition to each NodePool&rsquo;s own
+autoScaling.max; the core or memory budget is shared across NodePools, not a
+separate allowance for each one.</p>
+<p>When omitted, no additional resource limits are applied beyond maxNodesTotal and
+NodePool bounds.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>scaleUp,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ScaleUpConfig">
+ScaleUpConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scaleUp configures the behavior of the Cluster Autoscaler scale up operation.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>logVerbosity</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>logVerbosity sets the hosted cluster autoscaler&rsquo;s klog verbosity level. This is a top-level field,
+independent of scaling, scaleDown, and scaleUp: it changes only the autoscaler container&rsquo;s own log
+output, not scaling policy, the control plane operator&rsquo;s logs, or guest control-plane logs. This
+affects the &ldquo;&ndash;v&rdquo; flag on cluster-autoscaler.</p>
+<p>When omitted, this defaults to 4, preserving HyperShift&rsquo;s current behavior. An explicit 0 is
+distinct from omission and is honored as a valid, lower-verbosity choice. Higher values increase
+log volume and can add processing overhead.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ClusterConfiguration { #hypershift.openshift.io/v1beta1.ClusterConfiguration }
@@ -7630,6 +7740,32 @@ int64
 </tr>
 </tbody>
 </table>
+###CordonNodeBeforeTerminatingPolicy { #hypershift.openshift.io/v1beta1.CordonNodeBeforeTerminatingPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ScaleDownConfig">ScaleDownConfig</a>)
+</p>
+<p>
+<p>CordonNodeBeforeTerminatingPolicy controls whether the autoscaler cordons a node, marking it
+unschedulable, before draining and terminating it during scale-down.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Disabled&#34;</p></td>
+<td><p>CordonNodeBeforeTerminatingDisabled directs the autoscaler not to cordon a node before draining
+and terminating it during scale-down.</p>
+</td>
+</tr><tr><td><p>&#34;Enabled&#34;</p></td>
+<td><p>CordonNodeBeforeTerminatingEnabled directs the autoscaler to cordon a node before draining and
+terminating it during scale-down.</p>
+</td>
+</tr></tbody>
+</table>
 ###CpuModelType { #hypershift.openshift.io/v1beta1.CpuModelType }
 <p>
 (<em>Appears on:</em>
@@ -7778,6 +7914,32 @@ string
 </td>
 </tr>
 </tbody>
+</table>
+###DaemonSetUtilizationPolicy { #hypershift.openshift.io/v1beta1.DaemonSetUtilizationPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>DaemonSetUtilizationPolicy controls whether DaemonSet pod resource requests are included
+when calculating node utilization for scale-down eligibility.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Exclude&#34;</p></td>
+<td><p>DaemonSetUtilizationExclude excludes DaemonSet pod resource requests from node
+utilization for scale-down eligibility.</p>
+</td>
+</tr><tr><td><p>&#34;Include&#34;</p></td>
+<td><p>DaemonSetUtilizationInclude counts DaemonSet pod resource requests toward node
+utilization for scale-down eligibility.</p>
+</td>
+</tr></tbody>
 </table>
 ###DataPlaneManagedIdentities { #hypershift.openshift.io/v1beta1.DataPlaneManagedIdentities }
 <p>
@@ -9663,6 +9825,68 @@ GCPServiceAccountsEmails
 <p>serviceAccountsEmails contains email addresses of various Google Service Accounts
 required to enable integrations for different controllers and operators.
 This follows the AWS pattern of having different roles for different purposes.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GPULimit { #hypershift.openshift.io/v1beta1.GPULimit }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ResourceLimits">ResourceLimits</a>)
+</p>
+<p>
+<p>GPULimit specifies a minimum and maximum bound on the number of GPU devices of a given
+accelerator type across all guest-cluster nodes.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>type identifies the GPU accelerator type this limit applies to, matching the value of
+the &ldquo;cluster-api/accelerator&rdquo; label on the guest Nodes it applies to. It is a label
+value, not a resource name. The values &ldquo;cpu&rdquo; and &ldquo;memory&rdquo; are reserved and rejected,
+even though both satisfy label-value syntax: the autoscaler&rsquo;s resource limiter stores
+CPU, memory, and GPU limits in maps keyed by those names, so a GPU entry using either
+reserved name would overwrite the corresponding resource limit.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>min</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<p>min is the minimum number of GPU devices of this type that scale-down must preserve
+across all guest-cluster nodes. A configured minimum prevents scale-down from
+reducing aggregate capacity below this floor; it does not trigger scale-up to reach
+it.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>max</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<p>max is the maximum number of GPU devices of this type allowed across all
+guest-cluster nodes. A value of 0 blocks all scale-up of this GPU type. The
+autoscaler will not scale up beyond this ceiling.</p>
 </td>
 </tr>
 </tbody>
@@ -14131,6 +14355,31 @@ Minimum 1, maximum 10 annotations per service.</p>
 </tr>
 </tbody>
 </table>
+###LocalStorageScaleDownPolicy { #hypershift.openshift.io/v1beta1.LocalStorageScaleDownPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>LocalStorageScaleDownPolicy controls whether nodes running pods with local storage are
+eligible for scale-down.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Consider&#34;</p></td>
+<td><p>LocalStorageScaleDownConsider allows nodes running pods with local storage to be
+considered for scale-down like any other node.</p>
+</td>
+</tr><tr><td><p>&#34;Skip&#34;</p></td>
+<td><p>LocalStorageScaleDownSkip protects nodes running pods with local storage from scale-down.</p>
+</td>
+</tr></tbody>
+</table>
 ###LogLevel { #hypershift.openshift.io/v1beta1.LogLevel }
 <p>
 (<em>Appears on:</em>
@@ -18325,6 +18574,125 @@ creating new nodes and deleting the old ones.</p>
 </tr>
 </tbody>
 </table>
+###ResourceLimits { #hypershift.openshift.io/v1beta1.ResourceLimits }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>ResourceLimits specifies cluster-wide ceilings on aggregate guest-cluster node resources
+that the autoscaler may grow the hosted cluster to, across all NodePools.</p>
+<p>When any minimum here is greater than 0, ClusterAutoscaling.scaleDown.delayAfterDeleteSeconds
+must be explicitly set to at least 60 seconds (see that field&rsquo;s doc for why).</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cores,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ResourceRange">
+ResourceRange
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>cores bounds the total CPU cores, in whole cores, across all guest-cluster nodes.
+This affects the &ldquo;&ndash;cores-total&rdquo; flag on cluster-autoscaler.</p>
+<p>When omitted, the autoscaler&rsquo;s own default applies (effectively unlimited).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>memory,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ResourceRange">
+ResourceRange
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>memory bounds the total memory, in whole GiB, across all guest-cluster nodes.
+This affects the &ldquo;&ndash;memory-total&rdquo; flag on cluster-autoscaler.</p>
+<p>When omitted, the autoscaler&rsquo;s own default applies (effectively unlimited).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>gpus</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GPULimit">
+[]GPULimit
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>gpus bounds the total number of GPU devices of each listed type across all
+guest-cluster nodes. Each entry&rsquo;s type must match the value of the
+&ldquo;cluster-api/accelerator&rdquo; label that administrators set on the GPU-capable NodePool
+and that is applied to its guest Nodes. This affects the &ldquo;&ndash;gpu-total&rdquo; flag on
+cluster-autoscaler, rendered once per entry.</p>
+<p>When omitted, no GPU limits are applied.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ResourceRange { #hypershift.openshift.io/v1beta1.ResourceRange }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ResourceLimits">ResourceLimits</a>)
+</p>
+<p>
+<p>ResourceRange specifies a minimum and maximum bound, in whole units, for a cluster-wide
+CPU or memory resource limit. Both bounds are required so an explicit zero minimum stays
+distinct from an omitted range.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>min</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<p>min is the minimum amount of this resource that scale-down must preserve across all
+guest-cluster nodes. A configured minimum prevents scale-down from reducing aggregate
+capacity below this floor; it does not trigger scale-up to reach it.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>max</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<p>max is the maximum amount of this resource allowed across all guest-cluster nodes.
+The autoscaler will not scale up beyond this ceiling. The minimum of 1 means the zero
+value is never a valid explicit setting, so this field does not need to be a pointer to
+distinguish &ldquo;unset&rdquo; from &ldquo;explicitly zero&rdquo;.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###RetentionPolicy { #hypershift.openshift.io/v1beta1.RetentionPolicy }
 <p>
 <p>RetentionPolicy defines the policy for handling resources associated with a cluster when the cluster is deleted.</p>
@@ -18605,6 +18973,14 @@ int32
 It must be between 0 and 86400 (24 hours).
 When set to 0, this means scale down evaluation will resume immediately after node deletion, without any delay.
 When omitted, the autoscaler defaults to 0s.</p>
+<p>When resourceLimits configures a minimum greater than 0 for cores, memory, or any gpu
+type, this field must be explicitly set to at least 60 seconds: with too short a delay,
+the autoscaler can resume scale-down evaluation and delete a second node before Cluster
+API has fully accounted for a prior deletion, transiently dropping aggregate capacity
+below the configured floor. 60 seconds is the floor confirmed sufficient by live
+testing, not a value derived from a documented upper bound on Cluster API convergence
+time; the underlying race is only fully closed by having the autoscaler itself account
+for in-flight deletions (tracked as future work, see the enhancement proposal).</p>
 </td>
 </tr>
 <tr>
@@ -18651,6 +19027,60 @@ When set to 0, this means nodes will only be considered for scale down if they a
 When set to 100, this means nodes will be considered for scale down regardless of their utilization level.
 A value between 0 and 100 represents the utilization threshold below which a node can be considered for scale down.
 When omitted, the autoscaler defaults to 50%.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cordonNodeBeforeTerminating</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CordonNodeBeforeTerminatingPolicy">
+CordonNodeBeforeTerminatingPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>cordonNodeBeforeTerminating controls whether the autoscaler cordons a guest-cluster node, marking it
+unschedulable, before draining and terminating it during scale-down. The cordon is applied to the
+guest Node object through the autoscaler&rsquo;s guest kubeconfig; the backing management-cluster Machine
+is deleted separately through Cluster API once the node has drained. This affects the
+&ldquo;&ndash;cordon-node-before-terminating&rdquo; flag on cluster-autoscaler.</p>
+<p>When omitted, HyperShift explicitly renders the flag as false (not cordoning).</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ScaleUpConfig { #hypershift.openshift.io/v1beta1.ScaleUpConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>ScaleUpConfig configures the behavior of the Cluster Autoscaler scale up operation.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>newPodScaleUpDelay</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>newPodScaleUpDelay delays scale-up evaluation for pods younger than this duration, measured from
+the pod&rsquo;s creation timestamp on the guest cluster. This is useful for short-lived, bursty, or
+batch workloads that should not trigger scale-up before they have a chance to be scheduled on
+existing capacity. Expressed as a Go duration string, for example &ldquo;30s&rdquo;. This affects the
+&ldquo;&ndash;new-pod-scale-up-delay&rdquo; flag on cluster-autoscaler.</p>
+<p>A shorter per-pod &ldquo;cluster-autoscaler.kubernetes.io/pod-scale-up-delay&rdquo; annotation on an
+individual pod cannot override this value; the autoscaler keeps the longer of the two delays.</p>
 </td>
 </tr>
 </tbody>
@@ -19142,6 +19572,32 @@ ServicePublishingStrategy
 <p>ServiceType defines what control plane services can be exposed from the
 management control plane.</p>
 </p>
+###SimilarNodeGroupBalancingPolicy { #hypershift.openshift.io/v1beta1.SimilarNodeGroupBalancingPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>SimilarNodeGroupBalancingPolicy controls whether the autoscaler balances similar node
+groups when scaling up.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Balance&#34;</p></td>
+<td><p>SimilarNodeGroupBalancingBalance directs the autoscaler to keep similar node groups at
+similar sizes when scaling up.</p>
+</td>
+</tr><tr><td><p>&#34;DoNotBalance&#34;</p></td>
+<td><p>SimilarNodeGroupBalancingDoNotBalance allows the autoscaler to scale up similar node
+groups without balancing their sizes.</p>
+</td>
+</tr></tbody>
+</table>
 ###SpotOptions { #hypershift.openshift.io/v1beta1.SpotOptions }
 <p>
 (<em>Appears on:</em>

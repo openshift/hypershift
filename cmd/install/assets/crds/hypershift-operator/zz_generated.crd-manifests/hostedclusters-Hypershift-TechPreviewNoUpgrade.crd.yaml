@@ -328,6 +328,20 @@ spec:
                     - message: Each balancingIgnoredLabels item must be a valid label
                         key
                       rule: self.all(l, l.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[a-zA-Z0-9]([a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9])?$'))
+                  daemonSetUtilization:
+                    description: |-
+                      daemonSetUtilization controls whether DaemonSet pod resource requests are included when
+                      the autoscaler calculates node utilization for scale-down eligibility. Include counts
+                      DaemonSet pod requests toward utilization. Exclude ignores them. This affects the
+                      "--ignore-daemonsets-utilization" flag on cluster-autoscaler.
+
+                      When omitted, no flag is rendered and the autoscaler's own default behavior of including
+                      DaemonSet pod requests applies.
+                    enum:
+                    - ""
+                    - Include
+                    - Exclude
+                    type: string
                   expanders:
                     description: |-
                       expanders guide the autoscaler in choosing node groups during scale-out.
@@ -370,6 +384,34 @@ spec:
                     format: int32
                     maximum: 1000
                     minimum: -1
+                    type: integer
+                  localStorageScaleDown:
+                    description: |-
+                      localStorageScaleDown controls whether the autoscaler considers nodes running pods
+                      with local storage, such as EmptyDir or HostPath volumes, as eligible for scale-down.
+                      Skip protects such nodes from scale-down. Consider allows the autoscaler to remove them
+                      like any other node. This affects the "--skip-nodes-with-local-storage" flag on
+                      cluster-autoscaler.
+
+                      When omitted, this defaults to Consider, preserving HyperShift's current behavior.
+                    enum:
+                    - ""
+                    - Skip
+                    - Consider
+                    type: string
+                  logVerbosity:
+                    description: |-
+                      logVerbosity sets the hosted cluster autoscaler's klog verbosity level. This is a top-level field,
+                      independent of scaling, scaleDown, and scaleUp: it changes only the autoscaler container's own log
+                      output, not scaling policy, the control plane operator's logs, or guest control-plane logs. This
+                      affects the "--v" flag on cluster-autoscaler.
+
+                      When omitted, this defaults to 4, preserving HyperShift's current behavior. An explicit 0 is
+                      distinct from omission and is honored as a valid, lower-verbosity choice. Higher values increase
+                      log volume and can add processing overhead.
+                    format: int32
+                    maximum: 10
+                    minimum: 0
                     type: integer
                   maxFreeDifferenceRatioPercent:
                     description: |-
@@ -418,11 +460,164 @@ spec:
                       https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption
                     format: int32
                     type: integer
+                  resourceLimits:
+                    description: |-
+                      resourceLimits bounds the aggregate CPU, memory, and GPU resources across all
+                      guest-cluster nodes that the autoscaler may grow the hosted cluster to. The
+                      autoscaler counts resources from all guest-cluster nodes read through its guest
+                      kubeconfig and blocks scale-up of any NodePool once a configured maximum would be
+                      exceeded. maxNodesTotal and each configured resourceLimits maximum are independent,
+                      cluster-wide ceilings that apply in addition to each NodePool's own
+                      autoScaling.max; the core or memory budget is shared across NodePools, not a
+                      separate allowance for each one.
+
+                      When omitted, no additional resource limits are applied beyond maxNodesTotal and
+                      NodePool bounds.
+                    minProperties: 1
+                    properties:
+                      cores:
+                        description: |-
+                          cores bounds the total CPU cores, in whole cores, across all guest-cluster nodes.
+                          This affects the "--cores-total" flag on cluster-autoscaler.
+
+                          When omitted, the autoscaler's own default applies (effectively unlimited).
+                        properties:
+                          max:
+                            description: |-
+                              max is the maximum amount of this resource allowed across all guest-cluster nodes.
+                              The autoscaler will not scale up beyond this ceiling. The minimum of 1 means the zero
+                              value is never a valid explicit setting, so this field does not need to be a pointer to
+                              distinguish "unset" from "explicitly zero".
+                            format: int32
+                            minimum: 1
+                            type: integer
+                          min:
+                            description: |-
+                              min is the minimum amount of this resource that scale-down must preserve across all
+                              guest-cluster nodes. A configured minimum prevents scale-down from reducing aggregate
+                              capacity below this floor; it does not trigger scale-up to reach it.
+                            format: int32
+                            minimum: 0
+                            type: integer
+                        required:
+                        - max
+                        - min
+                        type: object
+                        x-kubernetes-validations:
+                        - message: min must not exceed max
+                          rule: self.min <= self.max
+                      gpus:
+                        description: |-
+                          gpus bounds the total number of GPU devices of each listed type across all
+                          guest-cluster nodes. Each entry's type must match the value of the
+                          "cluster-api/accelerator" label that administrators set on the GPU-capable NodePool
+                          and that is applied to its guest Nodes. This affects the "--gpu-total" flag on
+                          cluster-autoscaler, rendered once per entry.
+
+                          When omitted, no GPU limits are applied.
+                        items:
+                          description: |-
+                            GPULimit specifies a minimum and maximum bound on the number of GPU devices of a given
+                            accelerator type across all guest-cluster nodes.
+                          properties:
+                            max:
+                              description: |-
+                                max is the maximum number of GPU devices of this type allowed across all
+                                guest-cluster nodes. A value of 0 blocks all scale-up of this GPU type. The
+                                autoscaler will not scale up beyond this ceiling.
+                              format: int32
+                              minimum: 0
+                              type: integer
+                            min:
+                              description: |-
+                                min is the minimum number of GPU devices of this type that scale-down must preserve
+                                across all guest-cluster nodes. A configured minimum prevents scale-down from
+                                reducing aggregate capacity below this floor; it does not trigger scale-up to reach
+                                it.
+                              format: int32
+                              minimum: 0
+                              type: integer
+                            type:
+                              description: |-
+                                type identifies the GPU accelerator type this limit applies to, matching the value of
+                                the "cluster-api/accelerator" label on the guest Nodes it applies to. It is a label
+                                value, not a resource name. The values "cpu" and "memory" are reserved and rejected,
+                                even though both satisfy label-value syntax: the autoscaler's resource limiter stores
+                                CPU, memory, and GPU limits in maps keyed by those names, so a GPU entry using either
+                                reserved name would overwrite the corresponding resource limit.
+                              maxLength: 63
+                              minLength: 1
+                              type: string
+                              x-kubernetes-validations:
+                              - message: type must be a valid label value
+                                rule: self.matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$')
+                              - message: type must not be "cpu" or "memory"
+                                rule: self != 'cpu' && self != 'memory'
+                          required:
+                          - max
+                          - min
+                          - type
+                          type: object
+                          x-kubernetes-validations:
+                          - message: min must not exceed max
+                            rule: self.min <= self.max
+                        maxItems: 64
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - type
+                        x-kubernetes-list-type: map
+                      memory:
+                        description: |-
+                          memory bounds the total memory, in whole GiB, across all guest-cluster nodes.
+                          This affects the "--memory-total" flag on cluster-autoscaler.
+
+                          When omitted, the autoscaler's own default applies (effectively unlimited).
+                        properties:
+                          max:
+                            description: |-
+                              max is the maximum amount of this resource allowed across all guest-cluster nodes.
+                              The autoscaler will not scale up beyond this ceiling. The minimum of 1 means the zero
+                              value is never a valid explicit setting, so this field does not need to be a pointer to
+                              distinguish "unset" from "explicitly zero".
+                            format: int32
+                            minimum: 1
+                            type: integer
+                          min:
+                            description: |-
+                              min is the minimum amount of this resource that scale-down must preserve across all
+                              guest-cluster nodes. A configured minimum prevents scale-down from reducing aggregate
+                              capacity below this floor; it does not trigger scale-up to reach it.
+                            format: int32
+                            minimum: 0
+                            type: integer
+                        required:
+                        - max
+                        - min
+                        type: object
+                        x-kubernetes-validations:
+                        - message: min must not exceed max
+                          rule: self.min <= self.max
+                    type: object
                   scaleDown:
                     description: |-
                       scaleDown configures the behavior of the Cluster Autoscaler scale down operation.
                       This field is only valid when scaling is set to ScaleUpAndScaleDown.
                     properties:
+                      cordonNodeBeforeTerminating:
+                        description: |-
+                          cordonNodeBeforeTerminating controls whether the autoscaler cordons a guest-cluster node, marking it
+                          unschedulable, before draining and terminating it during scale-down. The cordon is applied to the
+                          guest Node object through the autoscaler's guest kubeconfig; the backing management-cluster Machine
+                          is deleted separately through Cluster API once the node has drained. This affects the
+                          "--cordon-node-before-terminating" flag on cluster-autoscaler.
+
+                          When omitted, HyperShift explicitly renders the flag as false (not cordoning).
+                        enum:
+                        - ""
+                        - Enabled
+                        - Disabled
+                        type: string
                       delayAfterAddSeconds:
                         description: |-
                           delayAfterAddSeconds sets how long after scale up the scale down evaluation resumes in seconds.
@@ -439,6 +634,15 @@ spec:
                           It must be between 0 and 86400 (24 hours).
                           When set to 0, this means scale down evaluation will resume immediately after node deletion, without any delay.
                           When omitted, the autoscaler defaults to 0s.
+
+                          When resourceLimits configures a minimum greater than 0 for cores, memory, or any gpu
+                          type, this field must be explicitly set to at least 60 seconds: with too short a delay,
+                          the autoscaler can resume scale-down evaluation and delete a second node before Cluster
+                          API has fully accounted for a prior deletion, transiently dropping aggregate capacity
+                          below the configured floor. 60 seconds is the floor confirmed sufficient by live
+                          testing, not a value derived from a documented upper bound on Cluster API convergence
+                          time; the underlying race is only fully closed by having the autoscaler itself account
+                          for in-flight deletions (tracked as future work, see the enhancement proposal).
                         format: int32
                         maximum: 86400
                         minimum: 0
@@ -475,6 +679,32 @@ spec:
                         minimum: 0
                         type: integer
                     type: object
+                  scaleUp:
+                    description: scaleUp configures the behavior of the Cluster Autoscaler
+                      scale up operation.
+                    properties:
+                      newPodScaleUpDelay:
+                        description: |-
+                          newPodScaleUpDelay delays scale-up evaluation for pods younger than this duration, measured from
+                          the pod's creation timestamp on the guest cluster. This is useful for short-lived, bursty, or
+                          batch workloads that should not trigger scale-up before they have a chance to be scheduled on
+                          existing capacity. Expressed as a Go duration string, for example "30s". This affects the
+                          "--new-pod-scale-up-delay" flag on cluster-autoscaler.
+
+                          A shorter per-pod "cluster-autoscaler.kubernetes.io/pod-scale-up-delay" annotation on an
+                          individual pod cannot override this value; the autoscaler keeps the longer of the two delays.
+                        maxLength: 100
+                        minLength: 1
+                        type: string
+                        x-kubernetes-validations:
+                        - message: newPodScaleUpDelay must be a valid Go duration
+                            string, e.g. "30s"
+                          rule: self.matches('^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$')
+                        - message: newPodScaleUpDelay must not exceed 1h
+                          rule: duration(self) <= duration('1h')
+                    required:
+                    - newPodScaleUpDelay
+                    type: object
                   scaling:
                     default: ScaleUpAndScaleDown
                     description: |-
@@ -488,8 +718,29 @@ spec:
                     - ScaleUpOnly
                     - ScaleUpAndScaleDown
                     type: string
+                  similarNodeGroupBalancing:
+                    description: |-
+                      similarNodeGroupBalancing controls whether the autoscaler tries to keep similar node
+                      groups, meaning NodePools with the same instance type and labels, at similar sizes when
+                      scaling up. This affects the "--balance-similar-node-groups" flag on cluster-autoscaler.
+
+                      When omitted, this defaults to Balance, preserving HyperShift's current behavior.
+                    enum:
+                    - ""
+                    - Balance
+                    - DoNotBalance
+                    type: string
                 type: object
                 x-kubernetes-validations:
+                - message: scaleDown.delayAfterDeleteSeconds must be explicitly set
+                    to at least 60 seconds when resourceLimits configures a minimum
+                    greater than 0 for cores, memory, or any gpu type
+                  rule: '!((has(self.resourceLimits) && ((has(self.resourceLimits.cores)
+                    && self.resourceLimits.cores.min > 0) || (has(self.resourceLimits.memory)
+                    && self.resourceLimits.memory.min > 0) || (has(self.resourceLimits.gpus)
+                    && self.resourceLimits.gpus.exists(g, g.min > 0))))) || (has(self.scaleDown)
+                    && has(self.scaleDown.delayAfterDeleteSeconds) && self.scaleDown.delayAfterDeleteSeconds
+                    >= 60)'
                 - message: scaleDown can only be set when scaling is ScaleUpAndScaleDown
                   rule: 'self.scaling == ''ScaleUpAndScaleDown'' ? true : !has(self.scaleDown)'
               capabilities:
