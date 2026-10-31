@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: fcf515750e3d29a828e33bf8744d2cd7d19e602bccbfd8be7894923164174d56
+    hypershift.openshift.io/desired-state-hash: ce336be5db93a9318b43bad06b5144806c51d9d7e2769b736a05002a572684c2
     image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
   labels:
@@ -18,6 +18,7 @@ metadata:
     uid: ""
   resourceVersion: "1"
 spec:
+  progressDeadlineSeconds: 1800
   replicas: 1
   revisionHistoryLimit: 2
   selector:
@@ -77,11 +78,13 @@ spec:
             command:
             - grpc_health_probe
             - -addr=:50051
+            - -connect-timeout=1s
+            - -rpc-timeout=2s
           failureThreshold: 3
           initialDelaySeconds: 10
           periodSeconds: 10
           successThreshold: 1
-          timeoutSeconds: 1
+          timeoutSeconds: 5
         name: registry
         ports:
         - containerPort: 50051
@@ -92,6 +95,8 @@ spec:
             command:
             - grpc_health_probe
             - -addr=:50051
+            - -connect-timeout=1s
+            - -rpc-timeout=2s
           failureThreshold: 3
           initialDelaySeconds: 5
           periodSeconds: 10
@@ -108,10 +113,12 @@ spec:
             command:
             - grpc_health_probe
             - -addr=:50051
-          failureThreshold: 15
+            - -connect-timeout=1s
+            - -rpc-timeout=2s
+          failureThreshold: 120
           periodSeconds: 10
           successThreshold: 1
-          timeoutSeconds: 1
+          timeoutSeconds: 5
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
