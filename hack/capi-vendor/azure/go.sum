@@ -58,8 +58,8 @@ k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2 h1:AZYQSJemyQB5eRxqcPky+/7EdBj0x
 k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2/go.mod h1:xDxuJ0whA3d0I4mf/C4ppKHxXynQ+fxnkmQH0vTHnuk=
 sigs.k8s.io/cluster-api-provider-azure v1.27.0 h1:5LvbNYX2RzsxFSlQuQiIz021PRmVg5RNHRMiOPSSUgM=
 sigs.k8s.io/cluster-api-provider-azure v1.27.0/go.mod h1:ufLmOcTM3PSduRgUPOKOyVzVdeLDXzmGff0AWqzghsk=
-sigs.k8s.io/cluster-api/api v1.14.0 h1:XibHlX+QdF4y+TxOAiqR7HDlgrIiLDWO43lbavVAG/Y=
-sigs.k8s.io/cluster-api/api v1.14.0/go.mod h1:LJ/5hdS9tqTBi9YqyLRnd1t53Sn/cXsa7rEVaY0bBms=
+sigs.k8s.io/cluster-api/api v1.14.3 h1:lTjHLULtlJHRXvroECdeiM2fXZOsvu93y+LYRjm/5II=
+sigs.k8s.io/cluster-api/api v1.14.3/go.mod h1:LJ/5hdS9tqTBi9YqyLRnd1t53Sn/cXsa7rEVaY0bBms=
 sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 h1:IpInykpT6ceI+QxKBbEflcR5EXP7sU1kvOlxwZh5txg=
 sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730/go.mod h1:mdzfpAEoE6DHQEN0uh9ZbOCuHbLK5wOm7dK4ctXE9Tg=
 sigs.k8s.io/randfill v1.0.0 h1:JfjMILfT8A6RbawdsK2JXGBR5AQVfd+9TbzrlneTyrU=
