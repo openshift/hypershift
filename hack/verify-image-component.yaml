@@ -1,0 +1,44 @@
+# One-time Konflux provisioning. Subsequent builds use the checked-in
+# .tekton/hypershift-verify-* PipelineRuns.
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Application
+metadata:
+  name: hypershift-verification
+  namespace: crt-redhat-acm-tenant
+spec:
+  displayName: HyperShift verification
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: Component
+metadata:
+  name: hypershift-verify
+  namespace: crt-redhat-acm-tenant
+  annotations:
+    build.appstudio.openshift.io/request: configure-pac-no-mr
+    build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
+    git-provider: github
+    git-provider-url: https://github.com
+spec:
+  application: hypershift-verification
+  componentName: hypershift-verify
+  source:
+    git:
+      url: https://github.com/openshift/hypershift.git
+      revision: main
+      context: ./
+      dockerfileUrl: Dockerfile.verify
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ImageRepository
+metadata:
+  name: hypershift-verify
+  namespace: crt-redhat-acm-tenant
+  annotations:
+    image-controller.appstudio.redhat.com/update-component-image: "true"
+  labels:
+    appstudio.redhat.com/application: hypershift-verification
+    appstudio.redhat.com/component: hypershift-verify
+spec:
+  image:
+    name: crt-redhat-acm-tenant/hypershift-verify
+    visibility: public

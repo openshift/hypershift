@@ -76,13 +76,6 @@ ifeq ($(OPENSHIFT_CI),true)
 	FAIL_FAST = false
 endif
 
-# Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
-ifeq (,$(shell go env GOBIN))
-GOBIN=$(shell go env GOPATH)/bin
-else
-GOBIN=$(shell go env GOBIN)
-endif
-
 # Change HOME to writeable location in CI for staticcheck
 ifeq ("/","${HOME}")
 HOME=/tmp
@@ -131,10 +124,12 @@ precommit-api-lint-fix: $(GOLANGCI_LINT)
 	cd api && $(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(patsubst api/%,%,$(FILES))
 
 .PHONY: lint
-lint: generate verify-capi-sync $(HYPERSHIFTLINTER_PLUGIN)
-	$(MAKE) api-lint; api_rc=$$?; \
-	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v; main_rc=$$?; \
-	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
+lint: generate ## Run static analysis and formatting checks without fixing source.
+	$(MAKE) -k staticcheck verify-fmt vet api-lint main-lint
+
+.PHONY: main-lint
+main-lint: $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v
 
 .PHONY: main-lint-fix
 main-lint-fix: generate $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
@@ -185,7 +180,7 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 # Targets that conflict, such as deleting or mutating a directory another target
 # reads, must move to verify-serial-targets instead of running in parallel here.
 .PHONY: verify-parallel-targets
-verify-parallel-targets: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
+verify-parallel-targets: verify-codespell verify-codecov verify-api-deps verify-crd-schema cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs verify-make-targets
 
 # Run target checks sequentially after preparation.
 .PHONY: verify-serial-targets
@@ -195,20 +190,39 @@ verify-serial-targets:
 	$(MAKE) verify-capi-decoupling
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
-	$(MAKE) verify-serial-targets
-	$(MAKE) lint
-	$(MAKE) verify-git-clean
+verify-ci: verify ## Compatibility alias for existing CI callers.
 
-.PHONY: verify
-verify: generate update staticcheck fmt vet
-	$(MAKE) verify-serial-targets
+.PHONY: _verify-repository
+_verify-repository:
+	$(MAKE) verify-generated
+	$(MAKE) -j1 verify-serial-targets
 	$(MAKE) -j verify-parallel-targets
 	$(MAKE) verify-git-clean
 
-.PHONY: verify-quick
-verify-quick: generate update
+.PHONY: verify
+VERIFY_CONTAINER ?= $(if $(filter true,$(OPENSHIFT_CI) $(GITHUB_ACTIONS)),0,1)
+verify: ## Run the complete verification workload locally and in CI.
+	$(if $(filter 0,$(VERIFY_CONTAINER)),./hack/verify-in-container.sh $(MAKE) _verify,@RUNTIME="$(RUNTIME)" PULL_BASE_SHA="$(PULL_BASE_SHA)" ./hack/verify-container.sh)
+
+.PHONY: _verify
+_verify:
+	$(MAKE) _verify-repository
+	$(MAKE) lint
 	$(MAKE) verify-git-clean
+
+.PHONY: verify-generated
+verify-generated: ## Regenerate content and dependencies, then check for differences.
+	# Writers must finish before checks or linters read the generated sources.
+	$(MAKE) -j1 generate update
+	$(MAKE) verify-git-clean
+
+.PHONY: verify-quick
+verify-quick: verify-generated ## Compatibility alias for older generation-only callers.
+
+.PHONY: verify-make-targets
+verify-make-targets:
+	python3 -m unittest discover -s hack -p 'verify_make_targets_test.py'
+	python3 -m unittest discover -s hack -p 'verify_container_test.py'
 
 $(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod # Build controller-gen from tools folder.
 	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
@@ -352,7 +366,7 @@ hypershift-api: workspace-sync $(CONTROLLER_GEN) $(CODE_GEN)
 	# Remove SelfManagedHA CRDs
 	rm -rf cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/hostedclusters-SelfManagedHA-*.yaml
 	rm -rf cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-SelfManagedHA-*.yaml
-	
+
 	# HyperShift doesn't have a notion of CustomNoUpgrade, so remove any CustomNoUpgrade CRDs.
 	rm -rf cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/*-CustomNoUpgrade.crd.yaml
 
@@ -653,6 +667,17 @@ test-cross-cluster-restore: backuprestore-e2e
 .PHONY: fmt
 fmt:
 	$(GO) fmt ./...
+
+.PHONY: verify-fmt
+verify-fmt:
+	# Include the same file sets as go fmt; strip go list's per-package newlines.
+	@files=$$(mktemp); unformatted=$$(mktemp); \
+	trap 'rm -f "$$files" "$$unformatted"' EXIT HUP INT TERM; \
+	$(GO) list -f '{{$$dir := .Dir}}{{range .GoFiles}}{{printf "%s/%s\x00" $$dir .}}{{end}}{{range .CgoFiles}}{{printf "%s/%s\x00" $$dir .}}{{end}}{{range .TestGoFiles}}{{printf "%s/%s\x00" $$dir .}}{{end}}{{range .XTestGoFiles}}{{printf "%s/%s\x00" $$dir .}}{{end}}{{range .IgnoredGoFiles}}{{printf "%s/%s\x00" $$dir .}}{{end}}' ./... > "$$files" && \
+	tr -d '\n' < "$$files" | xargs -0 "$$( $(GO) env GOROOT)/bin/gofmt" -l > "$$unformatted" || exit 1; \
+	if [ -s "$$unformatted" ]; then \
+		cat "$$unformatted"; echo 'Run make fmt to format these files.' >&2; exit 1; \
+	fi
 
 # Run go vet against code
 .PHONY: vet

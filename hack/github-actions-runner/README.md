@@ -17,8 +17,9 @@ When a PR is opened against `openshift/hypershift`, GitHub triggers the workflow
 files defined in `.github/workflows/`. All workflows follow a **caller + reusable**
 pattern: each caller workflow (e.g., `lint.yaml`) delegates to a reusable workflow
 (e.g., `lint-reusable.yaml`) pinned at `@main` via `uses:`. The reusable workflow
-contains the actual job steps and specifies `runs-on: arc-runner-set`, which tells
-GitHub to route the job to our self-hosted runners instead of GitHub-hosted runners.
+contains the actual job steps and selects our self-hosted runners with `runs-on`.
+Most jobs use `arc-runner-set`; verification uses a dedicated job container on
+`arc-verify-runner-set` as described in [Verification Job Containers](#verification-job-containers).
 
 **Note:** These runners are scoped to the `openshift/hypershift` repository
 only (via `githubConfigUrl` in the Helm values). PRs in other OpenShift repos
@@ -111,7 +112,8 @@ constraints.
 |---|---|---|
 | ARC Controller | `arc-systems` | Manages runner lifecycle and scaling |
 | Listener | `arc-systems` | Receives webhook events from GitHub |
-| Runner pods | `arc-runners` | Execute GitHub Actions jobs |
+| Runner pods | `arc-runners` | Execute general-purpose GitHub Actions jobs |
+| Verification runners and job containers | `arc-verify-runners` | Execute `make verify` in the shared runtime image |
 
 ### Design Decisions
 
@@ -498,29 +500,69 @@ oc -n arc-monitoring get pods
 oc -n arc-monitoring get route grafana -o jsonpath='{.spec.host}'
 ```
 
-## Updating the Runner Image
+## Verification Job Containers
 
-When updating Go or other tooling:
+Verification uses a dedicated `hypershift-verify` image, built from
+`Dockerfile.verify`. It contains the runtime needed by `make verify`, without the
+GHA runner or CLIs used by other workflows. The source checkout supplies the
+generators and linters, which the Makefile builds from vendored sources.
 
-1. Update `Dockerfile.github-actions-runner` in the repo root
-2. Merge to `main` — Konflux will automatically build and push the new image
-3. New runner pods will pick up the `:latest` tag on next job execution
+The reusable verification workflow first resolves `hack/verify-image` on the
+existing runner set. It then schedules its verification job on
+`arc-verify-runner-set`, with that image as its job container. ARC uses Kubernetes
+container hooks to create the job pod and copy its filesystem between lifecycle
+steps (`kubernetes-novolume` mode). The official runner image only orchestrates
+the job. There is no Docker daemon or privileged sidecar.
 
-To force an immediate rollout, run the Helm upgrade:
+The verification scale set is separate from the general-purpose runners and
+requires job containers. Its dedicated `arc-verify-runners` namespace isolates
+the runner's pod/secret-management permissions. The job template gives
+verification 4 CPUs and 16 GiB RAM and disables its Kubernetes API token mount.
+Runner pods request 500m CPU and 1 GiB RAM, with limits of 1 CPU and 2 GiB RAM.
+
+Both containers run without root, privilege escalation or Linux capabilities.
+The verification job has a read-only root filesystem: ARC provides its writable
+workspace, action binaries and GitHub directories, while the job template adds
+an ephemeral `/tmp` volume for verification caches and temporary files. The
+official runner retains a writable root filesystem because its `run.sh` copies
+`run-helper.sh.template` to `run-helper.sh` beside itself; registration files and
+diagnostic logs also live under `/home/runner`. Setting only
+`readOnlyRootFilesystem: true` breaks that startup path. The runner orchestrates
+jobs; repository commands run in the separate verification job container.
+
+### Publish the Verification Image
+
+See [Publishing and updating the image](../../docs/content/contribute/verification.md#publishing-and-updating-the-image)
+for Konflux provisioning, build triggers, registry tags and consumer pin updates.
+
+### Deploy the Verification Scale Set
+
+Use ARC controller and scale-set chart version 0.15.1, which supports
+`kubernetes-novolume`. If the controller is older, upgrade and validate it before
+installing this scale set. Provision `github-app-secret` in the new namespace
+using the same GitHub App setup described above.
 
 ```bash
-helm upgrade arc-runner-set \
-  --namespace arc-runners \
+kubectl create namespace arc-verify-runners
+# Provision github-app-secret in arc-verify-runners before installing the chart.
+kubectl apply -f hack/github-actions-runner/verify-job-template.yaml
+helm upgrade --install arc-verify-runner-set \
+  --namespace arc-verify-runners \
+  --version 0.15.1 \
   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set \
-  -f hack/github-actions-runner/values.yaml
+  -f hack/github-actions-runner/verify-values.yaml
 ```
 
-To pin to a specific build instead of `:latest`, use the commit SHA tag:
+Validate a container job on the new scale set before switching the verification
+workflow. On OpenShift, confirm the runner service account can run the official
+runner's configured UID under the cluster's SCC policy. Keep any required SCC
+grant scoped to that runner service account; the verification job itself uses
+the normal workload policy. Existing workflows continue using `arc-runner-set`.
 
-```bash
-# In values.yaml, replace the image with:
-image: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-gh-actions-runner:<commit-sha>
-```
+Runtime updates require publishing a new verification image and updating the two
+consumer pins. Updating the verification runtime does not require a runner
+rollout. Runner updates change only `verify-values.yaml` and its Helm deployment;
+general-purpose runner updates continue to use `values.yaml`.
 
 ## Teardown
 

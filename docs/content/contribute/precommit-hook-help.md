@@ -1,8 +1,8 @@
 # General Help on Using precommit Hooks in the HyperShift Repo
 precommit hooks are helpful in catching issues prior to any new code or pull request appearing in the HyperShift repo.
-The hooks are split into two stages: lightweight commit hooks that run on every commit, and a fast smoke check on push
-that catches the most common CI failures. Full verification (staticcheck, linting, full test suite) runs in GitHub
-Actions. The following sections walk you through how to install the hooks, what they do, and how to bypass them.
+The hooks are split into lightweight checks on every commit and the complete containerized verification workload
+on push. Local runs, GitHub Actions and Prow use the same `make verify` target and pinned tool image. The following
+sections walk you through how to install the hooks, what they do, and how to bypass them.
 
 ## Installing precommit hooks
 Once you have precommit installed on your machine([see this for more info](https://pre-commit.com/#install)), it's quite simple to install the precommit hooks.
@@ -38,13 +38,13 @@ changed. This catches title and body formatting issues before the commit is crea
 
 ## What runs on push (pre-push stage)
 
-These are a fast smoke check (~3-8 minutes) designed to catch the most common "this will fail CI" mistakes:
+Start Podman or Docker before pushing. The pre-push stage runs:
 
-- **make verify-quick** — runs code generation (`go generate`, CRD generation, client generation, docs aggregation) and checks for uncommitted diffs. This catches stale fixtures, mocks, and generated code.
+- **make verify** — runs the complete verification workload in the shared pinned tool image: generation, repository policy checks, staticcheck, golangci-lint, formatting and vet. It requires a clean, committed checkout and checks generated content for differences. The first run also pulls the image and populates tool and analysis caches; later runs reuse those caches. See [Verification](verification.md) for coverage and cache details.
 - **make test-changed** — runs unit tests only for Go packages with changes relative to `upstream/main`. Skips entirely if no Go files changed.
 
-Full verification (staticcheck, golangci-lint, go vet, CRD schema checks, etc.) and the complete unit test suite
-run in GitHub Actions on your pull request.
+GitHub Actions and Prow run the same verification workload on your pull request. The complete unit test suite
+runs separately in CI.
 
 ## Uninstalling precommit hooks
 Sometimes it might be useful to turn off the precommit hooks briefly.

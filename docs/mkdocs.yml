@@ -449,6 +449,7 @@ nav:
   - 'Konflux CI Scripts': contribute/konflux-scripts.md
   - 'Contribute to docs': contribute/contribute-docs.md
   - 'Retrospective Guidelines': contribute/retrospective-guidelines.md
+  - 'Verification': contribute/verification.md
 - 'Blog':
   - blog/index.md
   - 'August 2026 Progress Report': blog/2026-08-progress-report.md
