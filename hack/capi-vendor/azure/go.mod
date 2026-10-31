@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift/hack/capi-vendor/azure
 
-go 1.26.0
+go 1.27.0
 
 require sigs.k8s.io/cluster-api-provider-azure v1.27.0
 
@@ -20,7 +20,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.36.3 // indirect
 	k8s.io/apimachinery v0.36.3 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
-	k8s.io/kube-openapi v0.0.0-20260317180543-43fb72c5454a // indirect
+	k8s.io/kube-openapi v0.0.0-20261014044854-ca3452a79603 // indirect
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2 // indirect
 	sigs.k8s.io/cluster-api/api v1.14.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
