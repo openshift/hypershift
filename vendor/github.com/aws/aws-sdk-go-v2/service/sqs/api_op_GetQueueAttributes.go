@@ -4,9 +4,10 @@ package sqs
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Gets attributes for the specified queue.
@@ -206,6 +207,19 @@ type GetQueueAttributesInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetQueueAttributesInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetQueueAttributesRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetQueueAttributesInput) SerializeMembers(s smithy.ShapeSerializer) {
+	serializeAttributeNameList(s, schemas.GetQueueAttributesRequest_AttributeNames, v.AttributeNames)
+	if v.QueueUrl != nil {
+		s.WriteString(schemas.GetQueueAttributesRequest_QueueUrl, *v.QueueUrl)
+	}
+}
+
 // A list of returned queue attributes.
 type GetQueueAttributesOutput struct {
 
@@ -218,22 +232,32 @@ type GetQueueAttributesOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetQueueAttributesOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetQueueAttributesResult)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetQueueAttributesOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	serializeQueueAttributeMap(s, schemas.GetQueueAttributesResult_Attributes, v.Attributes)
+}
+func (v *GetQueueAttributesOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetQueueAttributesResult, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetQueueAttributesResult_Attributes:
+			return deserializeQueueAttributeMap(d, schemas.GetQueueAttributesResult_Attributes, &v.Attributes)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetQueueAttributesMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson10_serializeOpGetQueueAttributes{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetQueueAttributes, schemas.GetQueueAttributesRequest, schemas.GetQueueAttributesResult)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson10_deserializeOpGetQueueAttributes{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetQueueAttributes, schemas.GetQueueAttributesRequest, schemas.GetQueueAttributesResult), output: &GetQueueAttributesOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -243,19 +267,10 @@ func (c *Client) addOperationGetQueueAttributesMiddlewares(stack *middleware.Sta
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetQueueAttributesValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetQueueAttributes"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

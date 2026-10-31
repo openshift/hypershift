@@ -4,8 +4,9 @@ package kms
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/kms/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Gets a key policy attached to the specified KMS key.
@@ -64,6 +65,21 @@ type GetKeyPolicyInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetKeyPolicyInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetKeyPolicyRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetKeyPolicyInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.KeyId != nil {
+		s.WriteString(schemas.GetKeyPolicyRequest_KeyId, *v.KeyId)
+	}
+	if v.PolicyName != nil {
+		s.WriteString(schemas.GetKeyPolicyRequest_PolicyName, *v.PolicyName)
+	}
+}
+
 type GetKeyPolicyOutput struct {
 
 	// A key policy document in JSON format.
@@ -78,22 +94,41 @@ type GetKeyPolicyOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GetKeyPolicyOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GetKeyPolicyResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GetKeyPolicyOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.Policy != nil {
+		s.WriteString(schemas.GetKeyPolicyResponse_Policy, *v.Policy)
+	}
+	if v.PolicyName != nil {
+		s.WriteString(schemas.GetKeyPolicyResponse_PolicyName, *v.PolicyName)
+	}
+}
+func (v *GetKeyPolicyOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GetKeyPolicyResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GetKeyPolicyResponse_Policy:
+			v.Policy = new(string)
+			return d.ReadString(schemas.GetKeyPolicyResponse_Policy, v.Policy)
+		case schemas.GetKeyPolicyResponse_PolicyName:
+			v.PolicyName = new(string)
+			return d.ReadString(schemas.GetKeyPolicyResponse_PolicyName, v.PolicyName)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGetKeyPolicyMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson11_serializeOpGetKeyPolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetKeyPolicy, schemas.GetKeyPolicyRequest, schemas.GetKeyPolicyResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpGetKeyPolicy{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GetKeyPolicy, schemas.GetKeyPolicyRequest, schemas.GetKeyPolicyResponse), output: &GetKeyPolicyOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -103,19 +138,10 @@ func (c *Client) addOperationGetKeyPolicyMiddlewares(stack *middleware.Stack, op
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetKeyPolicyValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GetKeyPolicy"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

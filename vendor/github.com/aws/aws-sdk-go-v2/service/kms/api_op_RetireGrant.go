@@ -4,8 +4,9 @@ package kms
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/kms/schemas"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Deletes a grant. Typically, you retire a grant when you no longer need its
@@ -97,6 +98,27 @@ type RetireGrantInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *RetireGrantInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.RetireGrantRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *RetireGrantInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.DryRun != nil {
+		s.WriteBool(schemas.RetireGrantRequest_DryRun, *v.DryRun)
+	}
+	if v.GrantId != nil {
+		s.WriteString(schemas.RetireGrantRequest_GrantId, *v.GrantId)
+	}
+	if v.GrantToken != nil {
+		s.WriteString(schemas.RetireGrantRequest_GrantToken, *v.GrantToken)
+	}
+	if v.KeyId != nil {
+		s.WriteString(schemas.RetireGrantRequest_KeyId, *v.KeyId)
+	}
+}
+
 type RetireGrantOutput struct {
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -104,22 +126,29 @@ type RetireGrantOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *RetireGrantOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(nil)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *RetireGrantOutput) SerializeMembers(s smithy.ShapeSerializer) {
+}
+func (v *RetireGrantOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, nil, func(s *smithy.Schema) error {
+		switch s {
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationRetireGrantMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson11_serializeOpRetireGrant{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.RetireGrant, schemas.RetireGrantRequest, nil)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpRetireGrant{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.RetireGrant, schemas.RetireGrantRequest, nil), output: &RetireGrantOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -129,16 +158,7 @@ func (c *Client) addOperationRetireGrantMiddlewares(stack *middleware.Stack, opt
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "RetireGrant"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

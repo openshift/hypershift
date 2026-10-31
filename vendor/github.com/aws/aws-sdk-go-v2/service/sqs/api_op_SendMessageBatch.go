@@ -4,9 +4,10 @@ package sqs
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // You can use SendMessageBatch to send up to 10 messages to the specified queue
@@ -68,6 +69,19 @@ type SendMessageBatchInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *SendMessageBatchInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.SendMessageBatchRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *SendMessageBatchInput) SerializeMembers(s smithy.ShapeSerializer) {
+	serializeSendMessageBatchRequestEntryList(s, schemas.SendMessageBatchRequest_Entries, v.Entries)
+	if v.QueueUrl != nil {
+		s.WriteString(schemas.SendMessageBatchRequest_QueueUrl, *v.QueueUrl)
+	}
+}
+
 // For each message in the batch, the response contains a SendMessageBatchResultEntry tag if the message
 // succeeds or a BatchResultErrorEntrytag if the message fails.
 type SendMessageBatchOutput struct {
@@ -88,22 +102,35 @@ type SendMessageBatchOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *SendMessageBatchOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.SendMessageBatchResult)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *SendMessageBatchOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	serializeBatchResultErrorEntryList(s, schemas.SendMessageBatchResult_Failed, v.Failed)
+	serializeSendMessageBatchResultEntryList(s, schemas.SendMessageBatchResult_Successful, v.Successful)
+}
+func (v *SendMessageBatchOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.SendMessageBatchResult, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.SendMessageBatchResult_Failed:
+			return deserializeBatchResultErrorEntryList(d, schemas.SendMessageBatchResult_Failed, &v.Failed)
+		case schemas.SendMessageBatchResult_Successful:
+			return deserializeSendMessageBatchResultEntryList(d, schemas.SendMessageBatchResult_Successful, &v.Successful)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationSendMessageBatchMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson10_serializeOpSendMessageBatch{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.SendMessageBatch, schemas.SendMessageBatchRequest, schemas.SendMessageBatchResult)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson10_deserializeOpSendMessageBatch{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.SendMessageBatch, schemas.SendMessageBatchRequest, schemas.SendMessageBatchResult), output: &SendMessageBatchOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -113,12 +140,6 @@ func (c *Client) addOperationSendMessageBatchMiddlewares(stack *middleware.Stack
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addValidateSendMessageBatchChecksum(stack, options); err != nil {
 		return err
 	}
@@ -126,9 +147,6 @@ func (c *Client) addOperationSendMessageBatchMiddlewares(stack *middleware.Stack
 		return err
 	}
 	if err = addOpSendMessageBatchValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "SendMessageBatch"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

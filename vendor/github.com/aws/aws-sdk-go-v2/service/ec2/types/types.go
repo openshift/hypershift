@@ -698,6 +698,294 @@ type AnalysisSecurityGroupRule struct {
 	noSmithyDocumentSerde
 }
 
+// Describes an entry in a transit gateway policy table.
+type AnalysisTransitGatewayPolicyTableEntry struct {
+
+	// The destination CIDR block. If this value is not present, the entry matches any
+	// destination address.
+	DestinationCidr *string
+
+	// The destination port range. If this value is not present, the entry matches any
+	// destination port.
+	DestinationPortRange *PortRange
+
+	// The protocol number. A value of -1 means that the entry matches all protocols.
+	Protocol *string
+
+	// The rule number for the policy table entry. Entries are evaluated in ascending
+	// order of rule number.
+	RuleNumber *int32
+
+	// The source CIDR block. If this value is not present, the entry matches any
+	// source address.
+	SourceCidr *string
+
+	// The source port range. If this value is not present, the entry matches any
+	// source port.
+	SourcePortRange *PortRange
+
+	// The ID of the transit gateway route table to which the entry routes matching
+	// traffic.
+	TargetRouteTableId *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes the application-level health status for an instance.
+type ApplicationStatus struct {
+
+	// Details about the application status checks for the instance.
+	Details []ApplicationStatusDetail
+
+	// The date and time when application status reporting resumes after suppression.
+	ResumeAt *time.Time
+
+	// The current instance-level application status. This status is derived from
+	// application status checks with Aggregation set to included . Possible values:
+	//
+	//   - ok – All included checks passed.
+	//
+	//   - impaired – At least one included check failed.
+	//
+	//   - initializing – At least one included check is initializing, and no included
+	//   check is impaired.
+	//
+	//   - insufficient-data – At least one included check has insufficient data, and
+	//   no included check is impaired or initializing.
+	//
+	//   - not-applicable – No checks with Aggregation set to included apply to the
+	//   instance.
+	//
+	//   - suppressed – Application status reporting is suppressed for the instance.
+	//
+	// Checks with Aggregation set to excluded do not affect this value.
+	Status ApplicationStatusEnum
+
+	// The date and time when the current status started.
+	StatusSince *time.Time
+
+	// The date and time of the last status update.
+	StatusTimeStamp *time.Time
+
+	noSmithyDocumentSerde
+}
+
+// Information about an application status check association. Each item in the
+// associationSet of a DescribeApplicationStatusCheckAssociations response is of
+// this type.
+type ApplicationStatusCheckAssociationObject struct {
+
+	// The ID of the application status check.
+	ApplicationStatusCheckId *string
+
+	// The type of target that the application status check is associated with.
+	// Possible values:
+	//
+	//   - tag – The check applies to current and future instances with a matching tag
+	//   key-value pair.
+	//
+	//   - instance-id – The check applies to a specific instance.
+	AssociationType AssociationTypeEnum
+
+	// The key for the association. This value is present only for tag-based
+	// associations, where it contains the tag key. For instance-based associations,
+	// this value is absent.
+	Key *string
+
+	// The value for the association target. For tag-based associations, this is the
+	// tag value. For instance-based associations, this is the instance ID (for
+	// example, i-0123456789abcdef0 ).
+	Value *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes an application status check.
+type ApplicationStatusCheckResponseObject struct {
+
+	// The aggregation setting for the application status check. When set to included ,
+	// the result of this check contributes to the instance-level application status.
+	// When set to excluded , the check runs independently and does not affect the
+	// instance-level status.
+	Aggregation AggregationStatusEnum
+
+	// The ID of the application status check.
+	ApplicationStatusCheckId *string
+
+	// The date and time when the application status check was created.
+	CreationTime *time.Time
+
+	// The date and time when the application status check was deleted.
+	DeletionTime *time.Time
+
+	// The index of the network device used for the health check. The value is greater
+	// than or equal to 0.
+	DeviceIndex *int32
+
+	// The number of consecutive failed health checks before the application status is
+	// considered impaired. The value must be greater than 0.
+	FailureThreshold *int32
+
+	// The health check paths for the application status check.
+	HealthCheckPaths []HealthCheckPathResponseObject
+
+	// The number of seconds to wait before starting health checks after an instance
+	// is launched. Valid values: 1 to 600.
+	InitializationGracePeriodSeconds *int32
+
+	// The interval, in seconds, between health checks. Valid value: 60.
+	Interval *int32
+
+	// The IP scope used for the health check.
+	IpScope IpScopeEnum
+
+	// The IP version used for the health check.
+	IpVersion IpVersionEnum
+
+	// The date and time when the application status check was last updated.
+	LastUpdatedAt *time.Time
+
+	// The date and time when the application status check was last modified.
+	ModifyTime *time.Time
+
+	// The URL path used for the health check HTTP request.
+	Path *string
+
+	// The port used for the health check.
+	Port *int32
+
+	// The protocol used for the health check.
+	Protocol NetworkProtocolEnum
+
+	// The comma-separated list of individual HTTP status codes or ranges that
+	// indicate a successful health check response.
+	StatusCodeMatcher *string
+
+	// The number of consecutive successful health checks before the application
+	// status is considered healthy. The value must be greater than 0.
+	SuccessThreshold *int32
+
+	// The tags assigned to the application status check.
+	Tags []Tag
+
+	// The [tags] associated with the application status check. Instances with these tags
+	// are automatically monitored by this check.
+	//
+	// [tags]: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html
+	TargetTagAssociations []CustomTagKeyValueResponsePair
+
+	// The amount of time, in seconds, to wait for a health check response. Valid
+	// values: 1 to 30.
+	Timeout *int32
+
+	noSmithyDocumentSerde
+}
+
+// Describes the details of an application status check for an instance.
+type ApplicationStatusDetail struct {
+
+	// The aggregation setting for the application status check. When set to included ,
+	// the result of this check contributes to the instance-level application status.
+	// When set to excluded , the check runs independently and does not affect the
+	// instance-level status.
+	Aggregation AggregationStatusEnum
+
+	// The ID of the application status check.
+	ApplicationStatusCheckId *string
+
+	// The date and time when the check was last updated.
+	CheckUpdateTime *time.Time
+
+	// The reason for the current status.
+	Reason *ApplicationStatusReason
+
+	// The status of the individual application status check. Possible values:
+	//
+	//   - passed – The check reached its success threshold.
+	//
+	//   - failed – The check reached its failure threshold.
+	//
+	//   - initializing – The check is initializing or has not reached a success or
+	//   failure threshold.
+	//
+	//   - insufficient-data – The check does not have enough data to determine a
+	//   result.
+	//
+	//   - not-applicable – The check does not apply to the instance.
+	//
+	// This value reflects the check result and is not affected by aggregation or
+	// suppression.
+	Status ApplicationStatusCheckEnum
+
+	// The date and time when the current status started for this check.
+	StatusSince *time.Time
+
+	// The date and time of the last status update for this check.
+	StatusTimeStamp *time.Time
+
+	noSmithyDocumentSerde
+}
+
+// Describes the application statuses for instances.
+type ApplicationStatusesResponseType struct {
+
+	// The application status information for the instances.
+	Instances []InstanceApplicationStatus
+
+	noSmithyDocumentSerde
+}
+
+// Describes the reason for an application status check result.
+type ApplicationStatusReason struct {
+
+	// The reason code for the application status check result. Possible values:
+	//
+	//   - ResponseCodeMatched – The HTTP status code returned by the health check
+	//   matched the configured StatusCodeMatcher .
+	//
+	//   - ResponseCodeMismatch – The HTTP status code returned by the health check did
+	//   not match the configured StatusCodeMatcher .
+	//
+	//   - ConnectionTimeout – The connection to the target timed out.
+	//
+	//   - ResponseTimeout – The health check timed out while waiting for a response
+	//   from the target.
+	//
+	//   - ConnectionRefused – The target refused the health check connection.
+	//
+	//   - ConnectionReset – The target reset the health check connection before
+	//   returning a response.
+	//
+	// Current health check results use the values in the preceding list. Legacy
+	// results that do not contain structured reason metadata can instead contain a
+	// producer error type, such as Http Status Code or HttpConnectTimeoutException .
+	//
+	// For ResponseCodeMatched and ResponseCodeMismatch , the statusCode field
+	// contains the returned HTTP status code. The protocol field contains the
+	// protocol used for the health check.
+	Code *string
+
+	// The protocol used for the health check. Possible values: HTTP and HTTPS .
+	Protocol *string
+
+	// The HTTP status code returned by the health check.
+	StatusCode *int32
+
+	noSmithyDocumentSerde
+}
+
+// Provides a summary of the application-level health status for an instance.
+type ApplicationStatusSummary struct {
+
+	// The date and time when the application status became impaired.
+	ImpairedSince *time.Time
+
+	// The current status.
+	Status SummaryStatus
+
+	noSmithyDocumentSerde
+}
+
 // An Autonomous System Number (ASN) and BYOIP CIDR association.
 type AsnAssociation struct {
 
@@ -1138,12 +1426,6 @@ type BaselinePerformanceFactorsRequest struct {
 	noSmithyDocumentSerde
 }
 
-type BlobAttributeValue struct {
-	Value []byte
-
-	noSmithyDocumentSerde
-}
-
 // Describes a block device mapping, which defines the EBS volumes and instance
 // store volumes to attach to an instance at launch.
 type BlockDeviceMapping struct {
@@ -1306,6 +1588,9 @@ type ByoipCidr struct {
 	// The description of the address range.
 	Description *string
 
+	// The ID of the IPAM pool associated with the CIDR.
+	IpamPoolId *string
+
 	// If you have [Local Zones] enabled, you can choose a network border group for Local Zones
 	// when you provision and advertise a BYOIPv4 CIDR. Choose the network border group
 	// carefully as the EIP and the Amazon Web Services resource it is associated with
@@ -1325,6 +1610,9 @@ type ByoipCidr struct {
 	//
 	// [Local Zones]: https://docs.aws.amazon.com/local-zones/latest/ug/how-local-zones-work.html
 	NetworkBorderGroup *string
+
+	// The ID of the address pool associated with the CIDR.
+	PoolId *string
 
 	// The state of the address range.
 	//
@@ -1911,6 +2199,23 @@ type CapacityManagerTagDimension struct {
 // Describes a Capacity Reservation.
 type CapacityReservation struct {
 
+	// The configuration that the Capacity Reservation will have after the requested
+	// adjustment is applied.
+	AdjustmentDetails *CapacityReservationAdjustmentDetails
+
+	// The status of the most recent modification to the Capacity Reservation. A
+	// Capacity Reservation can have one of the following adjustment statuses:
+	//
+	//   - requested - The modification was requested and is being processed.
+	//
+	//   - applied - The modification was applied to the Capacity Reservation.
+	//
+	//   - rejected - The modification was not applied and the Capacity Reservation
+	//   keeps its existing configuration.
+	//
+	// This field is not returned if the Capacity Reservation has never been modified.
+	AdjustmentStatus CapacityReservationAdjustmentStatus
+
 	// The Availability Zone in which the capacity is reserved.
 	AvailabilityZone *string
 
@@ -2010,6 +2315,22 @@ type CapacityReservation struct {
 	// source reservation for interruptible Capacity Reservations.
 	InterruptionInfo *InterruptionInfo
 
+	// Only supported for UltraServers.
+	//
+	// Indicates whether you can launch instances into the Capacity Reservation. A
+	// Capacity Reservation can have the following launch statuses:
+	//
+	//   - launchable - You can launch instances into the Capacity Reservation.
+	//
+	//   - unlaunchable - You can't launch instances into the Capacity Reservation. For
+	//   example, the Capacity Reservation is not active.
+	LaunchStatus CapacityReservationLaunchStatus
+
+	// The start date that you originally requested for the Capacity Reservation, in
+	// the ISO8601 format in the UTC time zone ( YYYY-MM-DDThh:mm:ss.sssZ ). This value
+	// doesn't change when you push out the start date.
+	OriginalStartDate *time.Time
+
 	// The Amazon Resource Name (ARN) of the Outpost on which the Capacity Reservation
 	// was created.
 	OutpostArn *string
@@ -2099,6 +2420,44 @@ type CapacityReservation struct {
 	// capacity of the Capacity Reservation is assigned.
 	UnusedReservationBillingOwnerId *string
 
+	//  The zero-size preference configured for the interruptible Capacity
+	// Reservation. A value of retain keeps the interruptible Capacity Reservation
+	// active at zero capacity when you reduce its allocation to zero. A value of
+	// default cancels the interruptible Capacity Reservation when you reduce its
+	// allocation to zero.
+	ZeroSizePreference ZeroSizePreference
+
+	noSmithyDocumentSerde
+}
+
+// Describes the configuration that a Capacity Reservation will have after a
+// pending adjustment is applied.
+type CapacityReservationAdjustmentDetails struct {
+
+	// The commitment duration, in seconds, that the Capacity Reservation will have
+	// after the adjustment.
+	CommitmentDuration *int64
+
+	// The date and time at which the commitment duration will expire after the
+	// adjustment.
+	CommitmentEndDate *time.Time
+
+	// The end date that the Capacity Reservation will have after the adjustment.
+	EndDate *time.Time
+
+	// Indicates the way in which the Capacity Reservation will end after the
+	// adjustment. Possible values are:
+	//
+	//   - unlimited - The Capacity Reservation remains active until you explicitly
+	//   cancel it.
+	//
+	//   - limited - The Capacity Reservation expires automatically at the date and
+	//   time given by endDate .
+	EndDateType *string
+
+	// The start date that the Capacity Reservation will have after the adjustment.
+	StartDate *time.Time
+
 	noSmithyDocumentSerde
 }
 
@@ -2168,6 +2527,11 @@ type CapacityReservationCancellationQuote struct {
 
 // Information about your commitment for a future-dated Capacity Reservation.
 type CapacityReservationCommitmentInfo struct {
+
+	// The commitment duration, in seconds, for the future-dated Capacity Reservation.
+	// This is the minimum duration for which you commit to having the Capacity
+	// Reservation in the active state in your account after it has been delivered.
+	CommitmentDuration *int64
 
 	// The date and time at which the commitment duration expires, in the ISO8601
 	// format in the UTC time zone ( YYYY-MM-DDThh:mm:ss.sssZ ). You can't decrease the
@@ -2330,6 +2694,45 @@ type CapacityReservationInfo struct {
 
 	// The tenancy of the Capacity Reservation.
 	Tenancy CapacityReservationTenancy
+
+	noSmithyDocumentSerde
+}
+
+// Describes a Capacity Reservation modification quote, which provides the terms
+// for changing the start date or the commitment of a future-dated Capacity
+// Reservation.
+type CapacityReservationModificationQuote struct {
+
+	// The ID of the Capacity Reservation associated with the modification quote.
+	CapacityReservationId *string
+
+	// The ID of the modification quote.
+	CapacityReservationModificationQuoteId *string
+
+	// The date and time at which the modification quote was created.
+	CreateTime *time.Time
+
+	// The configuration that the Capacity Reservation has at the time the quote was
+	// generated.
+	CurrentConfiguration *ModificationQuoteCurrentConfiguration
+
+	// The date and time at which the modification quote expires.
+	ExpirationTime *time.Time
+
+	// The terms of the modification, including the configuration that the Capacity
+	// Reservation will have if you accept them by using ModifyCapacityReservation .
+	ModificationTerms *ModificationTerms
+
+	// The state of the modification quote itself. Possible values are:
+	//
+	//   - active - The quote can still be used.
+	//
+	//   - expired - The quote can no longer be used. A quote becomes expired at its
+	//   expirationTime .
+	QuoteState CapacityReservationModificationQuoteState
+
+	// The tags assigned to the modification quote.
+	Tags []Tag
 
 	noSmithyDocumentSerde
 }
@@ -2861,6 +3264,10 @@ type ClientVpnAuthorizationRuleStatus struct {
 // Describes a client connection.
 type ClientVpnConnection struct {
 
+	// The date and time the authorization policy was last evaluated for the client
+	// connection, if applicable.
+	AuthorizationPolicyLastEvaluatedTime *string
+
 	// The IP address of the client.
 	ClientIp *string
 
@@ -2979,6 +3386,10 @@ type ClientVpnEndpoint struct {
 
 	// A brief description of the endpoint.
 	Description *string
+
+	// The device trust providers configured for the Client VPN endpoint, if
+	// applicable.
+	DevicePostureOptions *DevicePostureResponseOptions
 
 	// Indicates whether the client VPN session is disconnected after the maximum
 	// sessionTimeoutHours is reached. If true , users are prompted to reconnect client
@@ -3137,6 +3548,50 @@ type ClientVpnRouteStatus struct {
 	noSmithyDocumentSerde
 }
 
+// Information about a device trust provider configured for a Client VPN endpoint.
+type ClientVpnTrustProvider struct {
+
+	// The URL of the public signing key that is used to verify the identity token
+	// issued by the device trust provider.
+	PublicSigningKeyUrl *string
+
+	// The tenant ID associated with your device trust provider account.
+	TenantId *string
+
+	// The type of the device trust provider. Possible values include:
+	//
+	//   - crowdstrike - CrowdStrike device trust provider.
+	//
+	//   - jamf - Jamf device trust provider.
+	//
+	//   - jumpcloud - JumpCloud device trust provider.
+	TrustProviderType ClientVpnDeviceTrustProviderType
+
+	noSmithyDocumentSerde
+}
+
+// Describes a device trust provider to configure for a Client VPN endpoint.
+type ClientVpnTrustProviderRequest struct {
+
+	// The URL of the public signing key that is used to verify the identity token
+	// issued by the device trust provider.
+	PublicSigningKeyUrl *string
+
+	// The tenant ID associated with your device trust provider account.
+	TenantId *string
+
+	// The type of the device trust provider. Possible values include:
+	//
+	//   - crowdstrike - CrowdStrike device trust provider.
+	//
+	//   - jamf - Jamf device trust provider.
+	//
+	//   - jumpcloud - JumpCloud device trust provider.
+	TrustProviderType ClientVpnDeviceTrustProviderType
+
+	noSmithyDocumentSerde
+}
+
 // Options for sending VPN tunnel logs to CloudWatch.
 type CloudWatchLogOptions struct {
 
@@ -3273,6 +3728,10 @@ type ConnectionLogOptions struct {
 	// Indicates whether connection logging is enabled.
 	Enabled *bool
 
+	// Specifies whether to include the authorization policy evaluation context in the
+	// connection logs for the Client VPN endpoint.
+	IncludeAuthorizationPolicyContext *bool
+
 	noSmithyDocumentSerde
 }
 
@@ -3291,6 +3750,10 @@ type ConnectionLogResponseOptions struct {
 	// Indicates whether client connection logging is enabled for the Client VPN
 	// endpoint.
 	Enabled *bool
+
+	// Specifies whether the authorization policy evaluation context is included in
+	// the connection logs for the Client VPN endpoint.
+	IncludeAuthorizationPolicyContext *bool
 
 	noSmithyDocumentSerde
 }
@@ -3559,7 +4022,9 @@ type CreateFleetError struct {
 	LaunchTemplateAndOverrides *LaunchTemplateAndOverridesResponse
 
 	// Indicates if the instance that could not be launched was a Spot, On-Demand,
-	// Capacity Block, or Interruptible Capacity Reservation instance.
+	// Capacity Block for ML, or interruptible Capacity Reservation instance. If you
+	// are using ReservedCapacityOptions with on-demand-capacity-reservation in the
+	// ReservationTypes list, the value can also be on-demand-capacity-reservation .
 	Lifecycle InstanceLifecycle
 
 	noSmithyDocumentSerde
@@ -3592,7 +4057,7 @@ type CreateFleetInstance struct {
 	LaunchTemplateAndOverrides *LaunchTemplateAndOverridesResponse
 
 	// Indicates if the instance that was launched is a Spot, On-Demand, Capacity
-	// Block, or Interruptible Capacity Reservation instance.
+	// Block for ML, or interruptible Capacity Reservation instance.
 	Lifecycle InstanceLifecycle
 
 	// The value is windows for Windows instances in an EC2 Fleet. Otherwise, the
@@ -3657,7 +4122,12 @@ type CreateTransitGatewayVpcAttachmentRequestOptions struct {
 	// Enable or disable DNS support. The default is enable .
 	DnsSupport DnsSupportValue
 
-	// Enable or disable IPv6 support. The default is disable .
+	// Specifies whether IPv6 support is enabled for the attachment. When enabled, the
+	// transit gateway network interface receives an IPv6 address. When you enable
+	// route propagation, IPv6 VPC CIDRs propagate to the transit gateway route tables.
+	// When disabled, the network interface does not receive an IPv6 address, and IPv6
+	// routes do not propagate. The setting does not filter IPv6 traffic. The default
+	// is disable .
 	Ipv6Support Ipv6SupportValue
 
 	// Enables you to reference a security group across VPCs attached to a transit
@@ -3959,6 +4429,31 @@ type CustomerGateway struct {
 
 	// The type of VPN connection the customer gateway supports ( ipsec.1 ).
 	Type *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes a tag key-value pair for an application status check association
+// request.
+type CustomTagKeyValueRequestPair struct {
+
+	// The key of the tag.
+	Key *string
+
+	// The value of the tag.
+	Value *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes a tag key-value pair for an application status check association.
+type CustomTagKeyValueResponsePair struct {
+
+	// The key of the tag.
+	Key *string
+
+	// The value of the tag.
+	Value *string
 
 	noSmithyDocumentSerde
 }
@@ -4328,13 +4823,13 @@ type DescribeFleetError struct {
 	// The error code that indicates why the instance could not be launched. For more
 	// information about error codes, see [Error codes].
 	//
-	// [Error codes]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/errors-overview.html.html
+	// [Error codes]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/errors-overview.html
 	ErrorCode *string
 
 	// The error message that describes why the instance could not be launched. For
 	// more information about error messages, see [Error codes].
 	//
-	// [Error codes]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/errors-overview.html.html
+	// [Error codes]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/errors-overview.html
 	ErrorMessage *string
 
 	// The launch templates and overrides that were used for launching the instances.
@@ -4343,7 +4838,9 @@ type DescribeFleetError struct {
 	LaunchTemplateAndOverrides *LaunchTemplateAndOverridesResponse
 
 	// Indicates if the instance that could not be launched was a Spot, On-Demand,
-	// Capacity Block, or Interruptible Capacity Reservation instance.
+	// Capacity Block for ML, or interruptible Capacity Reservation instance. If you
+	// are using ReservedCapacityOptions with on-demand-capacity-reservation in the
+	// ReservationTypes list, the value can also be on-demand-capacity-reservation .
 	Lifecycle InstanceLifecycle
 
 	noSmithyDocumentSerde
@@ -4364,7 +4861,7 @@ type DescribeFleetsInstances struct {
 	LaunchTemplateAndOverrides *LaunchTemplateAndOverridesResponse
 
 	// Indicates if the instance that was launched is a Spot, On-Demand, Capacity
-	// Block, or Interruptible Capacity Reservation instance.
+	// Block for ML, or interruptible Capacity Reservation instance.
 	Lifecycle InstanceLifecycle
 
 	// The value is windows for Windows instances in an EC2 Fleet. Otherwise, the
@@ -4417,6 +4914,31 @@ type DeviceOptions struct {
 
 	// The ID of the tenant application with the device-identity provider.
 	TenantId *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes the device posture options for a Client VPN endpoint. Device posture
+// options specify the device trust providers that the endpoint uses to evaluate
+// the security posture of connecting devices.
+type DevicePostureOptions struct {
+
+	// Indicates whether device posture evaluation is enabled for the Client VPN
+	// endpoint. Specify false to disable device posture, which clears the configured
+	// device trust providers.
+	Enabled *bool
+
+	// The device trust providers to configure for the Client VPN endpoint.
+	TrustProviders []ClientVpnTrustProviderRequest
+
+	noSmithyDocumentSerde
+}
+
+// Information about the device posture options for a Client VPN endpoint.
+type DevicePostureResponseOptions struct {
+
+	// The device trust providers configured for the Client VPN endpoint.
+	TrustProviders []ClientVpnTrustProvider
 
 	noSmithyDocumentSerde
 }
@@ -5847,6 +6369,12 @@ type Explanation struct {
 	// The transit gateway attachment.
 	TransitGatewayAttachment *AnalysisComponent
 
+	// The transit gateway policy table.
+	TransitGatewayPolicyTable *AnalysisComponent
+
+	// The transit gateway policy table entry.
+	TransitGatewayPolicyTableEntry *AnalysisTransitGatewayPolicyTableEntry
+
 	// The transit gateway route table.
 	TransitGatewayRouteTable *AnalysisComponent
 
@@ -6325,6 +6853,22 @@ type FleetCapacityReservation struct {
 	//
 	// [Instance type weight]: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/crfleet-concepts.html#instance-weight
 	Weight *float64
+
+	noSmithyDocumentSerde
+}
+
+// Describes the target Capacity Reservations or Capacity Reservation Resource
+// Groups for an EC2 Fleet that launches into reserved capacity. You can specify
+// Capacity Reservation IDs or a Capacity Reservation Resource Group ARN, but not
+// both.
+type FleetCapacityReservationTargetRequest struct {
+
+	// The IDs of the Capacity Reservations in which to launch the instances.
+	CapacityReservationIds []string
+
+	// The ARNs of the Capacity Reservation Resource Groups in which to launch the
+	// instances.
+	CapacityReservationResourceGroupArns []string
 
 	noSmithyDocumentSerde
 }
@@ -7346,6 +7890,82 @@ type GroupIdentifier struct {
 	noSmithyDocumentSerde
 }
 
+// Describes a destination for a health check path in a request. Destinations can
+// be in a different Availability Zone than the source (cross-AZ) or in a Local
+// Zone (AZ to Local Zone), enabling remote health validation of your application.
+type HealthCheckPathDestinationRequestObject struct {
+
+	// The ID of the security group for the destination.
+	SecurityGroupId *string
+
+	// The ID of the subnet for the destination.
+	SubnetId *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes a destination for a health check path.
+type HealthCheckPathDestinationResponseObject struct {
+
+	// The ID of the security group for the destination.
+	SecurityGroupId *string
+
+	// The ID of the subnet for the destination.
+	SubnetId *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes a health check path for an application status check request.
+type HealthCheckPathRequestObject struct {
+
+	// The destinations for the health check path.
+	Destinations []HealthCheckPathDestinationRequestObject
+
+	// The source for the health check path.
+	Source *HealthCheckPathSourceRequestObject
+
+	noSmithyDocumentSerde
+}
+
+// Describes a health check path for an application status check.
+type HealthCheckPathResponseObject struct {
+
+	// The destinations for the health check path.
+	Destinations []HealthCheckPathDestinationResponseObject
+
+	// The source for the health check path.
+	Source *HealthCheckPathSourceResponseObject
+
+	noSmithyDocumentSerde
+}
+
+// Describes the source for a health check path in a request. The source defines
+// the subnet and security group where a health check elastic network interface
+// (ENI) is created to originate health check traffic.
+type HealthCheckPathSourceRequestObject struct {
+
+	// The ID of the security group for the source.
+	SecurityGroupId *string
+
+	// The ID of the subnet for the source.
+	SubnetId *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes the source for a health check path.
+type HealthCheckPathSourceResponseObject struct {
+
+	// The ID of the security group for the source.
+	SecurityGroupId *string
+
+	// The ID of the subnet for the source.
+	SubnetId *string
+
+	noSmithyDocumentSerde
+}
+
 // Indicates whether your instance is configured for hibernation. This parameter
 // is valid only if the instance meets the [hibernation prerequisites]. For more information, see [Hibernate your Amazon EC2 instance] in the
 // Amazon EC2 User Guide.
@@ -7821,6 +8441,10 @@ type Image struct {
 	// [Configure the AMI]: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-IMDS-new-instances.html#configure-IMDS-new-instances-ami-configuration
 	ImdsSupport ImdsSupportValues
 
+	// The instance type specification for the AMI, which defines which instance types
+	// are compatible with this image.
+	InstanceTypeSpecification *InstanceTypeSpecification
+
 	// The kernel associated with the image, if any. Only applicable for machine
 	// images.
 	KernelId *string
@@ -7871,6 +8495,14 @@ type Image struct {
 	// The type of root device used by the AMI. The AMI can use an Amazon EBS volume
 	// or an instance store volume.
 	RootDeviceType DeviceType
+
+	// The Amazon Inspector scan results for the AMI. This information is present only
+	// for AMIs that Amazon Inspector has scanned.
+	//
+	// When you share an AMI with other accounts, organizations, or organizational
+	// units (OUs), or make it public, its scan results are available to the accounts
+	// that can use the AMI.
+	ScanResults *ScanResults
 
 	// The ID of the source AMI from which the AMI was created.
 	SourceImageId *string
@@ -8013,6 +8645,12 @@ type ImageCriterion struct {
 	// Maximum: 50 values
 	MarketplaceProductCodes []string
 
+	// The Amazon Inspector scan-result criteria that an AMI must meet to be allowed.
+	// The criteria can limit the highest finding severity, the number of days since
+	// Amazon Inspector last scanned the AMI, and the number of days since Amazon
+	// Inspector reported a fix as available.
+	ScanResultCondition *ScanResultCondition
+
 	noSmithyDocumentSerde
 }
 
@@ -8098,6 +8736,12 @@ type ImageCriterionRequest struct {
 	// Maximum: 50 values
 	MarketplaceProductCodes []string
 
+	// The Amazon Inspector scan-result criteria that an AMI must meet to be allowed.
+	// The criteria can limit the highest finding severity, the number of days since
+	// Amazon Inspector last scanned the AMI, and the number of days since Amazon
+	// Inspector reported a fix as available.
+	ScanResultCondition *ScanResultConditionRequest
+
 	noSmithyDocumentSerde
 }
 
@@ -8124,6 +8768,57 @@ type ImageDiskContainer struct {
 
 	// The S3 bucket for the disk image.
 	UserBucket *UserBucket
+
+	noSmithyDocumentSerde
+}
+
+// Describes an Amazon Inspector vulnerability finding for an AMI.
+type ImageFinding struct {
+
+	// The date and time, in the ISO 8601 format in the UTC time zone
+	// (YYYY-MM-DDThh:mm:ss.sssZ), when Amazon Inspector first observed the finding.
+	FirstObservedAt *time.Time
+
+	// Specifies whether a fix is available for the finding. This value is true when
+	// Amazon Inspector reports a full or partial fix for the finding.
+	FixAvailable *bool
+
+	// The file paths in the AMI that are affected by the finding. Amazon EC2 returns
+	// up to 10 file paths for each finding.
+	Paths []string
+
+	// The Amazon Inspector score for the finding.
+	Score *float64
+
+	// The severity of the finding.
+	//
+	// The valid values are the following Amazon Inspector severity levels, which
+	// correspond to CVSS score ranges:
+	//
+	//   - informational - CVSS score of 0.
+	//
+	//   - low - CVSS score of 0.1 to 3.9.
+	//
+	//   - medium - CVSS score of 4.0 to 6.9.
+	//
+	//   - high - CVSS score of 7.0 to 8.9.
+	//
+	//   - critical - CVSS score of 9.0 to 10.0.
+	//
+	// For more information, see [Software package vulnerability severity] in the Amazon Inspector User Guide.
+	//
+	// [Software package vulnerability severity]: https://docs.aws.amazon.com/inspector/latest/user/findings-understanding-severity.html#findings-understanding-package-score
+	SeverityLabel SeverityLabel
+
+	// The ID of the Amazon EBS snapshot of the AMI in which the finding was detected.
+	SnapshotId *string
+
+	// The title of the finding.
+	Title *string
+
+	// The date and time, in the ISO 8601 format in the UTC time zone
+	// (YYYY-MM-DDThh:mm:ss.sssZ), when Amazon Inspector last updated the finding.
+	UpdatedAt *time.Time
 
 	noSmithyDocumentSerde
 }
@@ -8948,6 +9643,27 @@ type Instance struct {
 
 	// The ID of the VPC in which the instance is running.
 	VpcId *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes the application status for an instance.
+type InstanceApplicationStatus struct {
+
+	// The application status for the instance.
+	ApplicationStatus *ApplicationStatus
+
+	// The Availability Zone of the instance.
+	AvailabilityZone *string
+
+	// The ID of the Availability Zone of the instance.
+	AvailabilityZoneId *string
+
+	// The ID of the instance.
+	InstanceId *string
+
+	// The tags assigned to the instance.
+	Tags []Tag
 
 	noSmithyDocumentSerde
 }
@@ -10882,8 +11598,12 @@ type InstanceStateChange struct {
 	noSmithyDocumentSerde
 }
 
-// Describes the status of an instance.
+// Describes the status of an instance, including system status, instance status,
+// attached EBS status, application status, and performance status.
 type InstanceStatus struct {
+
+	// Reports the application-level health status for the instance.
+	ApplicationStatus *ApplicationStatusSummary
 
 	// Reports impaired functionality that stems from an attached Amazon EBS volume
 	// that is unreachable and unable to complete I/O operations.
@@ -10914,6 +11634,11 @@ type InstanceStatus struct {
 
 	// The Amazon Resource Name (ARN) of the Outpost.
 	OutpostArn *string
+
+	// Reports the performance-related health status for the instance. This
+	// information is returned only when performance status checks are enabled for the
+	// instance.
+	PerformanceStatus *PerformanceStatusSummary
 
 	// Reports impaired functionality that stems from issues related to the systems
 	// that support an instance, such as hardware failures and network connectivity
@@ -11172,6 +11897,15 @@ type InstanceTypeInfoFromInstanceRequirements struct {
 	noSmithyDocumentSerde
 }
 
+// An instance type name or wildcard pattern in an instance type specification.
+type InstanceTypeItem struct {
+
+	// The instance type or wildcard pattern (for example, t3.* or m5.large ).
+	InstanceType *string
+
+	noSmithyDocumentSerde
+}
+
 // The instance types offered.
 type InstanceTypeOffering struct {
 
@@ -11187,6 +11921,45 @@ type InstanceTypeOffering struct {
 
 	// The location type.
 	LocationType LocationType
+
+	noSmithyDocumentSerde
+}
+
+// Describes the instance type compatibility rules for an AMI, including lists of
+// supported and unsupported instance type patterns.
+type InstanceTypeSpecification struct {
+
+	// The instance types that the AMI supports.
+	SupportedInstanceTypes []InstanceTypeItem
+
+	// The instance types that the AMI does not support.
+	UnsupportedInstanceTypes []InstanceTypeItem
+
+	noSmithyDocumentSerde
+}
+
+// The instance type specification for an AMI, which contains lists of supported
+// and unsupported instance types that define which instance types are compatible
+// with the AMI.
+type InstanceTypeSpecificationRequest struct {
+
+	// The instance types that the AMI supports. You can specify instance type names
+	// or use wildcard patterns (for example, t3.* ).
+	//
+	// Constraints: Maximum 100 entries. Each entry must be 1-24 characters and match
+	// the pattern ^[A-Za-z0-9_.*-]+$ . Consecutive wildcard characters ( ** ) are not
+	// allowed. Entries must be unique within each list and across both lists;
+	// duplicate entries cause the request to fail.
+	SupportedInstanceTypes []string
+
+	// The instance types that the AMI does not support. You can specify instance type
+	// names or use wildcard patterns (for example, t3.* ).
+	//
+	// Constraints: Maximum 100 entries. Each entry must be 1-24 characters and match
+	// the pattern ^[A-Za-z0-9_.*-]+$ . Consecutive wildcard characters ( ** ) are not
+	// allowed. Entries must be unique within each list and across both lists;
+	// duplicate entries cause the request to fail.
+	UnsupportedInstanceTypes []string
 
 	noSmithyDocumentSerde
 }
@@ -11268,6 +12041,14 @@ type InterruptibleCapacityAllocation struct {
 	//  After your modify request, the requested number of instances allocated to
 	// interruptible reservation.
 	TargetInstanceCount *int32
+
+	//  Specifies how Amazon EC2 handles the interruptible Capacity Reservation when
+	// you reduce its allocation to zero instances. A value of retain keeps the
+	// interruptible Capacity Reservation active at zero capacity so that you can
+	// allocate instances to it again later. A value of default cancels the
+	// interruptible Capacity Reservation and returns the capacity to your source
+	// Capacity Reservation.
+	ZeroSizePreference ZeroSizePreference
 
 	noSmithyDocumentSerde
 }
@@ -11617,6 +12398,68 @@ type IpamDiscoveredResourceCidr struct {
 	noSmithyDocumentSerde
 }
 
+// Contains information about a BGP route discovered by IPAM resource discovery.
+type IpamDiscoveredRoute struct {
+
+	// The advertisement type of the route. Possible values:
+	//
+	//   - regional - The IP address is advertised from a single location (regional
+	//   services such as Amazon EC2).
+	//
+	//   - global - The IP address is advertised from multiple global locations
+	//   simultaneously (global services such as Amazon CloudFront).
+	AdvertisementType IpamByoipAdvertisementType
+
+	// The Autonomous System Number (ASN) that originates the route.
+	Asn *string
+
+	// The IP address prefix of the discovered route in CIDR notation.
+	Cidr *string
+
+	// The ID of the IPAM pool associated with the route.
+	IpamPoolId *string
+
+	// The ID of the IPAM resource discovery that discovered the route.
+	IpamResourceDiscoveryId *string
+
+	// The network border group for the route.
+	NetworkBorderGroup *string
+
+	// The ID of the BYOIP pool associated with the route.
+	PoolId *string
+
+	// The ID of the resource owner.
+	ResourceOwnerId *string
+
+	// The Amazon Web Services Region where the route was discovered.
+	ResourceRegion *string
+
+	// The time when the route was last sampled.
+	SampleTime *time.Time
+
+	// The state of the BYOIP CIDR. Possible values:
+	//
+	//   - advertised - The CIDR is being advertised.
+	//
+	//   - deprovisioned - The CIDR has been deprovisioned.
+	//
+	//   - failed-deprovision - Deprovisioning failed.
+	//
+	//   - failed-provision - Provisioning failed.
+	//
+	//   - pending-deprovision - Deprovisioning is in progress.
+	//
+	//   - pending-provision - Provisioning is in progress.
+	//
+	//   - provisioned - The CIDR is provisioned.
+	//
+	//   - provisioned-not-publicly-advertisable - The CIDR is provisioned but not
+	//   publicly advertisable.
+	State IpamByoipCidrState
+
+	noSmithyDocumentSerde
+}
+
 // The discovery failure reason.
 type IpamDiscoveryFailureReason struct {
 
@@ -11686,6 +12529,89 @@ type IpamExternalResourceVerificationToken struct {
 
 	// Token value.
 	TokenValue *string
+
+	noSmithyDocumentSerde
+}
+
+// Contains information about an association between an IPAM and a Regional
+// Internet Registry (RIR) for delegated RPKI management.
+type IpamInternetRegistryAssociation struct {
+
+	// The XML content for the child request to be submitted to the internet registry
+	// to complete the BPKI setup.
+	ChildRequestXml *string
+
+	// The description of the internet registry association.
+	Description *string
+
+	// The ID of the associated IPAM.
+	IpamId *string
+
+	// The Amazon Resource Name (ARN) of the internet registry association.
+	IpamInternetRegistryAssociationArn *string
+
+	// The ID of the internet registry association.
+	IpamInternetRegistryAssociationId *string
+
+	// The Amazon Web Services Region of the IPAM.
+	IpamRegion *string
+
+	// The organization handle at the internet registry.
+	OrganizationHandle *string
+
+	// The ID of the Amazon Web Services account that owns the internet registry
+	// association.
+	OwnerId *string
+
+	// The Regional Internet Registry. Possible values:
+	//
+	//   - ripe - RIPE NCC (Europe, the Middle East, and Central Asia).
+	//
+	//   - apnic - APNIC (Asia Pacific).
+	//
+	//   - arin - ARIN (North America).
+	//
+	//   - lacnic - LACNIC (Latin America and the Caribbean).
+	Rir Rir
+
+	// The state of the internet registry association. Valid values: pending-activation
+	// | pending-enable | create-in-progress | create-failed | enable-in-progress |
+	// enable-complete | enable-failed | delete-in-progress | delete-complete |
+	// delete-failed .
+	State IpamInternetRegistryAssociationState
+
+	// A message describing the current state of the internet registry association,
+	// including additional details such as the reason for a failure.
+	StateMessage *string
+
+	// The tags assigned to the internet registry association.
+	Tags []Tag
+
+	noSmithyDocumentSerde
+}
+
+// Contains information about an Autonomous System Number (ASN) registered at an
+// internet registry and associated with an IPAM.
+type IpamInternetRegistryAssociationAsn struct {
+
+	// The Autonomous System Number.
+	Asn *string
+
+	// The time when the ASN was last observed at the internet registry.
+	LastObservedAt *time.Time
+
+	noSmithyDocumentSerde
+}
+
+// Contains information about an IP address CIDR registered at an internet
+// registry and associated with an IPAM.
+type IpamInternetRegistryAssociationCidr struct {
+
+	// The IP address prefix in CIDR notation.
+	Cidr *string
+
+	// The time when the CIDR was last observed at the internet registry.
+	LastObservedAt *time.Time
 
 	noSmithyDocumentSerde
 }
@@ -12821,6 +13747,199 @@ type IpamResourceTag struct {
 
 	// The value of the tag.
 	Value *string
+
+	noSmithyDocumentSerde
+}
+
+// Contains information about a Route Origin Authorization (ROA) published in the
+// RPKI. A ROA cryptographically attests that a specific ASN is authorized to
+// originate a specific IP address prefix.
+type IpamRouteOriginAuthorization struct {
+
+	// The Autonomous System Number (ASN) authorized by the ROA.
+	Asn *string
+
+	// The expiration date of the ROA.
+	Expiration *time.Time
+
+	// Specifies whether the ROA matches the route announcement.
+	Match *bool
+
+	// The maximum prefix length that the ASN is authorized to announce.
+	MaxLength *int32
+
+	// The IP address prefix authorized by the ROA in CIDR notation.
+	Prefix *string
+
+	noSmithyDocumentSerde
+}
+
+// Contains information about a Route Origin Authorization (ROA) currently
+// published in the RPKI.
+type IpamRouteOriginAuthorizationInfo struct {
+
+	// The Autonomous System Number (ASN) authorized to originate the prefix.
+	Asn *string
+
+	// The IP address prefix in CIDR notation authorized by the ROA.
+	Cidr *string
+
+	// The maximum prefix length that the ASN is authorized to announce.
+	MaxLength *int32
+
+	noSmithyDocumentSerde
+}
+
+// Contains information about an overlapping route detected for a BYOIP prefix.
+type IpamRouteOverlap struct {
+
+	// The ASN originating the overlapping route.
+	Asn *string
+
+	// The time when the overlap was detected.
+	DetectedAt *time.Time
+
+	// The overlapping IP address prefix in CIDR notation.
+	Prefix *string
+
+	noSmithyDocumentSerde
+}
+
+// Contains information about a route protection finding, including the RPKI
+// validation status of a BYOIP route announcement.
+type IpamRouteProtectionFinding struct {
+
+	// The advertisement type. Possible values:
+	//
+	//   - regional - The IP address is advertised from a single location (regional
+	//   services such as Amazon EC2).
+	//
+	//   - global - The IP address is advertised from multiple global locations
+	//   simultaneously (global services such as Amazon CloudFront).
+	AdvertisementType IpamByoipAdvertisementType
+
+	// The Autonomous System Number (ASN) that originates the route.
+	Asn *string
+
+	// The IP address prefix in CIDR notation.
+	Cidr *string
+
+	// The ID of the IPAM pool associated with the finding.
+	IpamPoolId *string
+
+	// The network border group.
+	NetworkBorderGroup *string
+
+	// The ID of the BYOIP pool.
+	PoolId *string
+
+	// The ID of the resource owner.
+	ResourceOwnerId *string
+
+	// The Amazon Web Services Region of the resource.
+	ResourceRegion *string
+
+	// The time when the ROA data was last sampled.
+	RoaSampleTime *time.Time
+
+	// The Route Origin Authorizations (ROAs) that cover the prefix.
+	Roas []IpamRouteOriginAuthorization
+
+	// The overlapping routes detected for this prefix.
+	RouteOverlaps []IpamRouteOverlap
+
+	// The RPKI validation status of the route. Possible values:
+	//
+	//   - valid - The route has a matching ROA that covers the prefix and origin ASN.
+	//
+	//   - invalid - The route has a ROA for the prefix, but the origin ASN or prefix
+	//   length does not match.
+	//
+	//   - unknown - No ROA exists for the prefix, so RPKI validation cannot be
+	//   performed.
+	RpkiStatus IpamRpkiStatus
+
+	// The RPKI enforcement strength for the route. Possible values:
+	//
+	//   - strict - Invalid routes are rejected.
+	//
+	//   - permissive - Invalid routes are accepted but flagged.
+	RpkiStrength IpamRpkiStrength
+
+	// The time when the route was last sampled.
+	SampleTime *time.Time
+
+	// The state of the BYOIP CIDR. Possible values:
+	//
+	//   - advertised - The CIDR is being advertised.
+	//
+	//   - deprovisioned - The CIDR has been deprovisioned.
+	//
+	//   - failed-deprovision - Deprovisioning failed.
+	//
+	//   - failed-provision - Provisioning failed.
+	//
+	//   - pending-deprovision - Deprovisioning is in progress.
+	//
+	//   - pending-provision - Provisioning is in progress.
+	//
+	//   - provisioned - The CIDR is provisioned.
+	//
+	//   - provisioned-not-publicly-advertisable - The CIDR is provisioned but not
+	//   publicly advertisable.
+	State IpamByoipCidrState
+
+	noSmithyDocumentSerde
+}
+
+// Contains information about a routing policy registration that represents a
+// Route Origin Authorization (ROA) managed through IPAM.
+type IpamRoutingPolicyRegistration struct {
+
+	// The Autonomous System Numbers (ASNs) authorized to originate the prefix.
+	Asns []string
+
+	// The IP address prefix in CIDR notation authorized by the ROA.
+	Cidr *string
+
+	// The description of the routing policy registration.
+	Description *string
+
+	// The ID of the most recent delta that modified this registration.
+	LatestDeltaId *string
+
+	// The maximum prefix length that the ASNs are authorized to announce.
+	MaxLength *int32
+
+	// Specifies whether to permit more specific route announcements than the CIDR
+	// prefix. When enabled, ASNs can announce sub-prefixes of the authorized CIDR up
+	// to the specified maximum length. Default: false .
+	PermitMoreSpecificAnnouncements *bool
+
+	// The state of the routing policy registration. Valid values: pending-activate |
+	// activate-failed | create-in-progress | create-complete | update-in-progress |
+	// update-complete | delete-in-progress | delete-complete .
+	State IpamRoutingPolicyRegistrationState
+
+	noSmithyDocumentSerde
+}
+
+// Contains information about a routing policy registration change, including the
+// changes applied and their publication state.
+type IpamRoutingPolicyRegistrationDelta struct {
+
+	// The unique identifier of the delta.
+	DeltaId *string
+
+	// The JSON specification describing the changes applied in this delta.
+	DeltaJson *string
+
+	// The state of the delta. Valid values: pending | published | failed .
+	State IpamRoutingPolicyRegistrationDeltaState
+
+	// A message describing the current state, including error information if the
+	// delta failed.
+	StateMessage *string
 
 	noSmithyDocumentSerde
 }
@@ -15321,6 +16440,57 @@ type MetricValue struct {
 	noSmithyDocumentSerde
 }
 
+// Describes the configuration that a Capacity Reservation has at the time a
+// modification quote is generated.
+type ModificationQuoteCurrentConfiguration struct {
+
+	// The number of instances in the Capacity Reservation.
+	InstanceCount *int32
+
+	// The start date that the Capacity Reservation was originally requested with.
+	// This value does not change when you push out the start date.
+	OriginalStartDate *time.Time
+
+	// The current state of the Capacity Reservation.
+	ReservationState *string
+
+	// The start date that the Capacity Reservation has before the quoted modification
+	// is applied.
+	StartDate *time.Time
+
+	noSmithyDocumentSerde
+}
+
+// Describes the changes that a Capacity Reservation modification quote will apply
+// to a Capacity Reservation.
+type ModificationReservationUpdate struct {
+
+	// The commitment duration, in seconds, that the Capacity Reservation will have
+	// after the modification.
+	NewCommitmentDuration *int32
+
+	// The date and time at which the commitment duration will expire after the
+	// modification, in the ISO8601 format in the UTC time zone (
+	// YYYY-MM-DDThh:mm:ss.sssZ ).
+	NewCommitmentEndDate *time.Time
+
+	// The start date that the Capacity Reservation will have after the modification,
+	// in the ISO8601 format in the UTC time zone ( YYYY-MM-DDThh:mm:ss.sssZ ).
+	NewStartDate *time.Time
+
+	noSmithyDocumentSerde
+}
+
+// Describes the terms of a Capacity Reservation modification quote.
+type ModificationTerms struct {
+
+	// The changes that will be applied to the Capacity Reservation if you accept the
+	// modification terms.
+	ReservationUpdate *ModificationReservationUpdate
+
+	noSmithyDocumentSerde
+}
+
 // The transit gateway options.
 type ModifyTransitGatewayOptions struct {
 
@@ -15407,7 +16577,11 @@ type ModifyTransitGatewayVpcAttachmentRequestOptions struct {
 	// Enable or disable DNS support. The default is enable .
 	DnsSupport DnsSupportValue
 
-	// Enable or disable IPv6 support. The default is enable .
+	// Specifies whether IPv6 support is enabled for the attachment. When enabled, the
+	// transit gateway network interface receives an IPv6 address. When you enable
+	// route propagation, IPv6 VPC CIDRs propagate to the transit gateway route tables.
+	// When disabled, the network interface does not receive an IPv6 address, and IPv6
+	// routes do not propagate. The setting does not filter IPv6 traffic.
 	Ipv6Support Ipv6SupportValue
 
 	// Enables you to reference a security group across VPCs attached to a transit
@@ -16110,6 +17284,9 @@ type NetworkCardInfo struct {
 
 	// The default number of the ENA queues for each interface.
 	DefaultEnaQueueCountPerInterface *int32
+
+	// The supported interface types for the network card.
+	InterfaceTypes []NetworkCardInterfaceType
 
 	// The maximum number of the ENA queues.
 	MaximumEnaQueueCount *int32
@@ -17081,6 +18258,9 @@ type PathComponent struct {
 	// The transit gateway.
 	TransitGateway *AnalysisComponent
 
+	// The entry in a transit gateway policy table.
+	TransitGatewayPolicyTableEntry *AnalysisTransitGatewayPolicyTableEntry
+
 	// The route in a transit gateway route table.
 	TransitGatewayRouteTableRoute *TransitGatewayRouteTableRoute
 
@@ -17346,6 +18526,22 @@ type PerformanceFactorReferenceRequest struct {
 	// [RequestSpotFleet]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_RequestSpotFleet
 	// [ModifyFleet]: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ModifyFleet
 	InstanceFamily *string
+
+	noSmithyDocumentSerde
+}
+
+// Provides a summary of the performance status check results for an instance.
+type PerformanceStatusSummary struct {
+
+	// The date and time when the performance status became impaired.
+	ImpairedSince *time.Time
+
+	// The recommended action to remediate the impaired instance, if one is available.
+	// This value is returned only when the instance is impaired.
+	Remediation *string
+
+	// The current status.
+	Status SummaryStatus
 
 	noSmithyDocumentSerde
 }
@@ -18781,18 +19977,61 @@ type ReservationValue struct {
 	noSmithyDocumentSerde
 }
 
-// Defines EC2 Fleet preferences for utilizing reserved capacity when
-// DefaultTargetCapacityType is set to reserved-capacity .
-type ReservedCapacityOptions struct {
+// Describes the fallback behavior for an EC2 Fleet that uses reserved capacity
+// when the reserved capacity is not enough to meet the target capacity. If you
+// don't specify fallback options, EC2 Fleet does not fall back to any other market
+// type after the specified reservation types are exhausted.
+type ReservedCapacityFallbackOptions struct {
 
-	// The types of Capacity Reservations used for fulfilling the EC2 Fleet request.
-	ReservationTypes []FleetReservationType
+	// The instance purchasing options to fall back to when the reserved capacity is
+	// not enough to meet the target capacity. The only supported value is on-demand ,
+	// which launches On-Demand Instances to fulfill the remaining target capacity.
+	MarketTypes []ReservedCapacityFallbackMarketType
+
+	noSmithyDocumentSerde
+}
+
+// Describes the fallback behavior for an EC2 Fleet that uses reserved capacity
+// when the reserved capacity is not enough to meet the target capacity. If you
+// don't specify fallback options, EC2 Fleet does not fall back to any other market
+// type after the specified reservation types are exhausted.
+type ReservedCapacityFallbackOptionsRequest struct {
+
+	// The instance purchasing options to fall back to when the reserved capacity is
+	// not enough to meet the target capacity. The only supported value is on-demand ,
+	// which launches On-Demand Instances to fulfill the remaining target capacity.
+	MarketTypes []ReservedCapacityFallbackMarketType
 
 	noSmithyDocumentSerde
 }
 
 // Defines EC2 Fleet preferences for utilizing reserved capacity when
-// DefaultTargetCapacityType is set to reserved-capacity .
+// DefaultTargetCapacityType is set to reserved-capacity . EC2 Fleet can fulfill
+// reserved capacity using On-Demand Capacity Reservations, Capacity Blocks for ML,
+// and interruptible Capacity Reservations.
+type ReservedCapacityOptions struct {
+
+	// The strategy that determines the order in which EC2 Fleet launches instances
+	// across the reservation types that you specify. The only supported value is
+	// prioritized , which launches instances in the priority order that you specify in
+	// your launch template overrides. If you don't specify an allocation strategy,
+	// instances are launched in a random order.
+	AllocationStrategy ReservedCapacityAllocationStrategy
+
+	// The types of Capacity Reservations used for fulfilling the EC2 Fleet request.
+	ReservationTypes []FleetReservationType
+
+	// The fallback behavior for the EC2 Fleet when there is not enough reserved
+	// capacity available to meet the target capacity.
+	ReservedCapacityFallbackOptions *ReservedCapacityFallbackOptions
+
+	noSmithyDocumentSerde
+}
+
+// Defines EC2 Fleet preferences for utilizing reserved capacity when
+// DefaultTargetCapacityType is set to reserved-capacity . EC2 Fleet can fulfill
+// reserved capacity using On-Demand Capacity Reservations, Capacity Blocks for ML,
+// and interruptible Capacity Reservations.
 //
 // This configuration can only be used if the EC2 Fleet is of type instant .
 //
@@ -18800,14 +20039,35 @@ type ReservedCapacityOptions struct {
 // DefaultTargetCapacityType to reserved-capacity in the
 // TargetCapacitySpecification .
 //
-// For more information about Interruptible Capacity Reservations, see [Launch instances into an Interruptible Capacity Reservation] in the
+// For more information about interruptible Capacity Reservations, see [Launch instances into an interruptible Capacity Reservation] in the
 // Amazon EC2 User Guide.
 //
-// [Launch instances into an Interruptible Capacity Reservation]: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-fleet-launch-instances-interruptible-cr-walkthrough.html
+// [Launch instances into an interruptible Capacity Reservation]: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-fleet-launch-instances-interruptible-cr-walkthrough.html
 type ReservedCapacityOptionsRequest struct {
 
+	// The strategy that determines the order in which EC2 Fleet launches instances
+	// across the reservation types that you specify. The only supported value is
+	// prioritized , which launches instances in the priority order that you specify in
+	// your launch template overrides. If you don't specify an allocation strategy,
+	// instances are launched in a random order.
+	AllocationStrategy ReservedCapacityAllocationStrategy
+
+	// The Capacity Reservations or Capacity Reservation Resource Groups to use for
+	// fulfilling the EC2 Fleet request. You can specify Capacity Reservation IDs or a
+	// Capacity Reservation Resource Group ARN, but not both.
+	CapacityReservationTarget *FleetCapacityReservationTargetRequest
+
 	// The types of Capacity Reservations to use for fulfilling the EC2 Fleet request.
+	// This is an ordered list: EC2 Fleet attempts to launch instances into each
+	// Capacity Reservation type in the order that you specify them before moving on to
+	// the next type.
 	ReservationTypes []FleetReservationType
+
+	// The fallback behavior for the EC2 Fleet when there is not enough reserved
+	// capacity available to meet the target capacity. This member takes a
+	// ReservedCapacityFallbackOptionsRequest structure, in which you set MarketTypes
+	// to the instance purchasing options to fall back to.
+	ReservedCapacityFallbackOptions *ReservedCapacityFallbackOptionsRequest
 
 	noSmithyDocumentSerde
 }
@@ -19946,6 +21206,284 @@ type S3Storage struct {
 	noSmithyDocumentSerde
 }
 
+// The Amazon Inspector scan-result criteria that an AMI must meet to be allowed.
+// The criteria can limit the highest finding severity. They can also limit, for
+// each severity, the days since Amazon Inspector reported a fix as available.
+//
+// The severity limit applies to all findings, whether or not a fix is available.
+// The day limits for each severity apply only to findings that have a fix
+// available. A scanned AMI that has no fix-available finding of a given severity
+// meets that severity's day limit. AMIs that Amazon Inspector has not scanned are
+// not allowed when you specify this condition.
+type ScanResultCondition struct {
+
+	// The maximum number of days since Amazon Inspector reported a fix as available
+	// for a critical severity finding on the AMI. For example, a value of 7 does not
+	// allow an AMI if Amazon Inspector reported such a fix more than 7 days ago.
+	//
+	// A scanned AMI that has no critical severity finding with a fix available meets
+	// this limit. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceCriticalFixAvailable *int32
+
+	// The maximum number of days since Amazon Inspector reported a fix as available
+	// for a high severity finding on the AMI. For example, a value of 7 does not
+	// allow an AMI if Amazon Inspector reported such a fix more than 7 days ago.
+	//
+	// A scanned AMI that has no high severity finding with a fix available meets this
+	// limit. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceHighFixAvailable *int32
+
+	// The maximum number of days since Amazon Inspector reported a fix as available
+	// for an informational severity finding on the AMI. For example, a value of 7
+	// does not allow an AMI if Amazon Inspector reported such a fix more than 7 days
+	// ago.
+	//
+	// A scanned AMI that has no informational severity finding with a fix available
+	// meets this limit. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceInformationalFixAvailable *int32
+
+	// The maximum number of days that have elapsed since Amazon Inspector last
+	// scanned the AMI. For example, a value of 7 allows AMIs that were scanned within
+	// the last 7 days. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceLastFindingScan *int32
+
+	// The maximum number of days since Amazon Inspector reported a fix as available
+	// for a low severity finding on the AMI. For example, a value of 7 does not allow
+	// an AMI if Amazon Inspector reported such a fix more than 7 days ago.
+	//
+	// A scanned AMI that has no low severity finding with a fix available meets this
+	// limit. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceLowFixAvailable *int32
+
+	// The maximum number of days since Amazon Inspector reported a fix as available
+	// for a medium severity finding on the AMI. For example, a value of 7 does not
+	// allow an AMI if Amazon Inspector reported such a fix more than 7 days ago.
+	//
+	// A scanned AMI that has no medium severity finding with a fix available meets
+	// this limit. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceMediumFixAvailable *int32
+
+	// The maximum severity that an AMI's Amazon Inspector findings can have for the
+	// AMI to be allowed. Findings count whether or not a fix is available. For
+	// example, a value of medium allows AMIs whose highest severity is informational ,
+	// low , or medium .
+	//
+	// The valid values are the following Amazon Inspector severity levels, which
+	// correspond to CVSS score ranges:
+	//
+	//   - informational - CVSS score of 0.
+	//
+	//   - low - CVSS score of 0.1 to 3.9.
+	//
+	//   - medium - CVSS score of 4.0 to 6.9.
+	//
+	//   - high - CVSS score of 7.0 to 8.9.
+	//
+	//   - critical - CVSS score of 9.0 to 10.0.
+	//
+	// For more information, see [Software package vulnerability severity] in the Amazon Inspector User Guide.
+	//
+	// A scanned AMI that has no findings meets this limit.
+	//
+	// AMIs that Amazon Inspector has not scanned are not allowed when you specify
+	// this condition.
+	//
+	// [Software package vulnerability severity]: https://docs.aws.amazon.com/inspector/latest/user/findings-understanding-severity.html#findings-understanding-package-score
+	MaximumSeverityLabel SeverityLabel
+
+	noSmithyDocumentSerde
+}
+
+// The Amazon Inspector scan-result criteria that an AMI must meet to be allowed.
+// The criteria can limit the highest finding severity. They can also limit, for
+// each severity, the days since Amazon Inspector reported a fix as available.
+//
+// The severity limit applies to all findings, whether or not a fix is available.
+// The day limits for each severity apply only to findings that have a fix
+// available. A scanned AMI that has no fix-available finding of a given severity
+// meets that severity's day limit. AMIs that Amazon Inspector has not scanned are
+// not allowed when you specify this condition.
+type ScanResultConditionRequest struct {
+
+	// The maximum number of days since Amazon Inspector reported a fix as available
+	// for a critical severity finding on the AMI. For example, a value of 7 does not
+	// allow an AMI if Amazon Inspector reported such a fix more than 7 days ago.
+	//
+	// A scanned AMI that has no critical severity finding with a fix available meets
+	// this limit. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceCriticalFixAvailable *int32
+
+	// The maximum number of days since Amazon Inspector reported a fix as available
+	// for a high severity finding on the AMI. For example, a value of 7 does not
+	// allow an AMI if Amazon Inspector reported such a fix more than 7 days ago.
+	//
+	// A scanned AMI that has no high severity finding with a fix available meets this
+	// limit. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceHighFixAvailable *int32
+
+	// The maximum number of days since Amazon Inspector reported a fix as available
+	// for an informational severity finding on the AMI. For example, a value of 7
+	// does not allow an AMI if Amazon Inspector reported such a fix more than 7 days
+	// ago.
+	//
+	// A scanned AMI that has no informational severity finding with a fix available
+	// meets this limit. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceInformationalFixAvailable *int32
+
+	// The maximum number of days that have elapsed since Amazon Inspector last
+	// scanned the AMI. For example, a value of 7 allows AMIs that were scanned within
+	// the last 7 days. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceLastFindingScan *int32
+
+	// The maximum number of days since Amazon Inspector reported a fix as available
+	// for a low severity finding on the AMI. For example, a value of 7 does not allow
+	// an AMI if Amazon Inspector reported such a fix more than 7 days ago.
+	//
+	// A scanned AMI that has no low severity finding with a fix available meets this
+	// limit. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceLowFixAvailable *int32
+
+	// The maximum number of days since Amazon Inspector reported a fix as available
+	// for a medium severity finding on the AMI. For example, a value of 7 does not
+	// allow an AMI if Amazon Inspector reported such a fix more than 7 days ago.
+	//
+	// A scanned AMI that has no medium severity finding with a fix available meets
+	// this limit. AMIs that Amazon Inspector has not scanned are not allowed.
+	//
+	// Constraints: Minimum value of 0. Maximum value of 2147483647.
+	MaxDaysSinceMediumFixAvailable *int32
+
+	// The maximum severity that an AMI's Amazon Inspector findings can have for the
+	// AMI to be allowed. Findings count whether or not a fix is available. For
+	// example, a value of medium allows AMIs whose highest severity is informational ,
+	// low , or medium .
+	//
+	// The valid values are the following Amazon Inspector severity levels, which
+	// correspond to CVSS score ranges:
+	//
+	//   - informational - CVSS score of 0.
+	//
+	//   - low - CVSS score of 0.1 to 3.9.
+	//
+	//   - medium - CVSS score of 4.0 to 6.9.
+	//
+	//   - high - CVSS score of 7.0 to 8.9.
+	//
+	//   - critical - CVSS score of 9.0 to 10.0.
+	//
+	// For more information, see [Software package vulnerability severity] in the Amazon Inspector User Guide.
+	//
+	// A scanned AMI that has no findings meets this limit.
+	//
+	// AMIs that Amazon Inspector has not scanned are not allowed when you specify
+	// this condition.
+	//
+	// [Software package vulnerability severity]: https://docs.aws.amazon.com/inspector/latest/user/findings-understanding-severity.html#findings-understanding-package-score
+	MaximumSeverityLabel SeverityLabel
+
+	noSmithyDocumentSerde
+}
+
+// The Amazon Inspector scan results for an AMI. This information is present only
+// for AMIs that Amazon Inspector has scanned.
+//
+// When you share an AMI with other accounts, organizations, or organizational
+// units (OUs), or make it public, its scan results are available to the accounts
+// that can use the AMI.
+//
+// The fix-available dates are specific to the AMI. Each date reflects when a fix
+// became available for a finding on that AMI, not when the vendor released the
+// fix. As a result, a date can be later than the vendor's release date, and AMIs
+// with the same vulnerability can have different dates.
+type ScanResults struct {
+
+	// The earliest date and time, in the ISO 8601 format in the UTC time zone
+	// (YYYY-MM-DDThh:mm:ss.sssZ), at which Amazon Inspector reported a fix as
+	// available for a critical severity finding on the AMI. This value is present
+	// only if the AMI has at least one critical severity finding with a fix
+	// available. Amazon Inspector recomputes this value on each scan.
+	CriticalFixAvailableSince *time.Time
+
+	// The date and time, in the ISO 8601 format in the UTC time zone
+	// (YYYY-MM-DDThh:mm:ss.sssZ), of the most recent Amazon Inspector scan of the AMI.
+	FindingScanDate *time.Time
+
+	// The earliest date and time, in the ISO 8601 format in the UTC time zone
+	// (YYYY-MM-DDThh:mm:ss.sssZ), at which Amazon Inspector reported a fix as
+	// available for a high severity finding on the AMI. This value is present only if
+	// the AMI has at least one high severity finding with a fix available. Amazon
+	// Inspector recomputes this value on each scan.
+	HighFixAvailableSince *time.Time
+
+	// The highest severity among the AMI's Amazon Inspector findings, whether or not
+	// a fix is available.
+	//
+	// The valid values are the following Amazon Inspector severity levels, which
+	// correspond to CVSS score ranges:
+	//
+	//   - informational - CVSS score of 0.
+	//
+	//   - low - CVSS score of 0.1 to 3.9.
+	//
+	//   - medium - CVSS score of 4.0 to 6.9.
+	//
+	//   - high - CVSS score of 7.0 to 8.9.
+	//
+	//   - critical - CVSS score of 9.0 to 10.0.
+	//
+	// For more information, see [Software package vulnerability severity] in the Amazon Inspector User Guide.
+	//
+	// This value is present only if the AMI has at least one finding.
+	//
+	// [Software package vulnerability severity]: https://docs.aws.amazon.com/inspector/latest/user/findings-understanding-severity.html#findings-understanding-package-score
+	HighestFindingSeverityLabel SeverityLabel
+
+	// The earliest date and time, in the ISO 8601 format in the UTC time zone
+	// (YYYY-MM-DDThh:mm:ss.sssZ), at which Amazon Inspector reported a fix as
+	// available for an informational severity finding on the AMI. This value is
+	// present only if the AMI has at least one informational severity finding with a
+	// fix available. Amazon Inspector recomputes this value on each scan.
+	InformationalFixAvailableSince *time.Time
+
+	// The earliest date and time, in the ISO 8601 format in the UTC time zone
+	// (YYYY-MM-DDThh:mm:ss.sssZ), at which Amazon Inspector reported a fix as
+	// available for a low severity finding on the AMI. This value is present only if
+	// the AMI has at least one low severity finding with a fix available. Amazon
+	// Inspector recomputes this value on each scan.
+	LowFixAvailableSince *time.Time
+
+	// The earliest date and time, in the ISO 8601 format in the UTC time zone
+	// (YYYY-MM-DDThh:mm:ss.sssZ), at which Amazon Inspector reported a fix as
+	// available for a medium severity finding on the AMI. This value is present only
+	// if the AMI has at least one medium severity finding with a fix available.
+	// Amazon Inspector recomputes this value on each scan.
+	MediumFixAvailableSince *time.Time
+
+	noSmithyDocumentSerde
+}
+
 // Describes a Scheduled Instance.
 type ScheduledInstance struct {
 
@@ -20534,6 +22072,16 @@ type SecondarySubnetIpv4CidrBlockAssociation struct {
 
 	// The reason for the current state of the CIDR block association.
 	StateReason *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes a value for a resource attribute that is a Base64-encoded binary data
+// object.
+type SecureBlobAttributeValue struct {
+
+	// The attribute value.
+	Value []byte
 
 	noSmithyDocumentSerde
 }
@@ -22727,6 +24275,22 @@ type Subscription struct {
 	noSmithyDocumentSerde
 }
 
+// Describes a successful application status check association.
+type SuccessfulAssociationResponseObject struct {
+
+	// The ID of the application status check.
+	ApplicationStatusCheckId *string
+
+	// The type of association. Valid values: EC2TAG and INSTANCE_ID .
+	AssociationType *string
+
+	// The association value. For EC2TAG , the value is formatted as key=value . For
+	// INSTANCE_ID , the value is the instance ID.
+	AssociationValue *string
+
+	noSmithyDocumentSerde
+}
+
 // Describes the burstable performance instance whose credit option for CPU usage
 // was successfully modified.
 type SuccessfulInstanceCreditSpecificationItem struct {
@@ -22742,6 +24306,21 @@ type SuccessfulQueuedPurchaseDeletion struct {
 
 	// The ID of the Reserved Instance.
 	ReservedInstancesId *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes a successful application status check suppression.
+type SuccessfulSuppressionResponseObject struct {
+
+	// The ID of the instance.
+	InstanceId *string
+
+	// The date and time when suppression ends and health checks resume.
+	ResumeAt *time.Time
+
+	// The date and time when suppression started.
+	SuppressAt *time.Time
 
 	noSmithyDocumentSerde
 }
@@ -23309,6 +24888,10 @@ type TransitGatewayAttachment struct {
 	// The creation time.
 	CreationTime *time.Time
 
+	// The state of NAT gateway support for the attachment. Only the owner of the
+	// transit gateway receives this parameter.
+	NatGatewaySupport TransitGatewayAttachmentNatGatewaySupportState
+
 	// The ID of the resource.
 	ResourceId *string
 
@@ -23341,6 +24924,9 @@ type TransitGatewayAttachmentAssociation struct {
 
 	// The state of the association.
 	State TransitGatewayAssociationState
+
+	// The ID of the transit gateway policy table associated with the attachment.
+	TransitGatewayPolicyTableId *string
 
 	// The ID of the route table for the transit gateway.
 	TransitGatewayRouteTableId *string
@@ -23814,6 +25400,57 @@ type TransitGatewayMulticastRegisteredGroupSources struct {
 	noSmithyDocumentSerde
 }
 
+// Contains information about a NAT gateway rule for a transit gateway attachment,
+// including the rule number, the source CIDR block, the translated CIDR block, and
+// the state of the rule.
+type TransitGatewayNatRule struct {
+
+	// The IPv4 CIDR block of the source addresses to translate.
+	MatchSourceCidr *string
+
+	// The IPv4 CIDR block that the transit gateway translates the source addresses to.
+	NatCidr *string
+
+	// The rule number.
+	RuleNumber *int32
+
+	// The state of the NAT gateway rule. The possible values are:
+	//
+	//   - pending - The transit gateway is applying a change to the rule.
+	//
+	//   - activated - The rule is in effect because NAT gateway support is enabled for
+	//   the attachment.
+	//
+	//   - deactivated - The rule isn't in effect because NAT gateway support is
+	//   disabled for the attachment.
+	State TransitGatewayNatRuleState
+
+	noSmithyDocumentSerde
+}
+
+// Describes a NAT gateway rule to apply to a transit gateway attachment. A NAT
+// gateway rule translates source addresses in the MatchSourceCidr range to the
+// corresponding addresses in the NatCidr range.
+type TransitGatewayNatRuleRequest struct {
+
+	// The IPv4 CIDR block of the source addresses to translate. The CIDR block can't
+	// overlap the multicast range ( 224.0.0.0/4 ) or the link-local range (
+	// 169.254.0.0/16 ).
+	MatchSourceCidr *string
+
+	// The IPv4 CIDR block to translate the source addresses to. The CIDR block must
+	// be in a private (RFC 1918) or shared address space (RFC 6598) range, and must
+	// have the same prefix length as MatchSourceCidr . The CIDR blocks in the rules
+	// for an attachment can't overlap each other.
+	NatCidr *string
+
+	// The rule number. Valid values are 1 to 32766. Each rule number must be unique
+	// within the request.
+	RuleNumber *int32
+
+	noSmithyDocumentSerde
+}
+
 // Describes the options for a transit gateway.
 type TransitGatewayOptions struct {
 
@@ -23918,8 +25555,7 @@ type TransitGatewayPolicyRule struct {
 	// The destination CIDR block for the transit gateway policy rule.
 	DestinationCidrBlock *string
 
-	// The port range for the transit gateway policy rule. Currently this is set to *
-	// (all).
+	// The destination port or port range for the transit gateway policy rule.
 	DestinationPortRange *string
 
 	// The meta data tags used for the transit gateway policy rule.
@@ -23931,8 +25567,7 @@ type TransitGatewayPolicyRule struct {
 	// The source CIDR block for the transit gateway policy rule.
 	SourceCidrBlock *string
 
-	// The port range for the transit gateway policy rule. Currently this is set to *
-	// (all).
+	// The source port or port range for the transit gateway policy rule.
 	SourcePortRange *string
 
 	noSmithyDocumentSerde
@@ -24000,6 +25635,9 @@ type TransitGatewayPolicyTableEntry struct {
 
 	// The rule number for the transit gateway policy table entry.
 	PolicyRuleNumber *string
+
+	// The state of the transit gateway policy table entry.
+	State TransitGatewayPolicyTableEntryState
 
 	// The ID of the target route table.
 	TargetRouteTableId *string
@@ -24113,6 +25751,47 @@ type TransitGatewayRequestOptions struct {
 
 	// Enable or disable Equal Cost Multipath Protocol support. Enabled by default.
 	VpnEcmpSupport VpnEcmpSupportValue
+
+	noSmithyDocumentSerde
+}
+
+// The matching criteria for a transit gateway policy table entry.
+type TransitGatewayRequestPolicyRule struct {
+
+	// The destination CIDR block for the policy rule.
+	DestinationCidrBlock *string
+
+	// The destination port or port range for the policy rule. You can specify a port
+	// range only when Protocol is 6 (TCP) or 17 (UDP); for all other protocols, this
+	// value must be * .
+	DestinationPortRange *string
+
+	// The metadata key-value pair for the policy rule.
+	MetaData *TransitGatewayRequestPolicyRuleMetaData
+
+	// The protocol for the policy rule. Valid values are 1 (ICMP), 6 (TCP), 17 (UDP),
+	// 47 (GRE), or * for all protocols.
+	Protocol *string
+
+	// The source CIDR block for the policy rule.
+	SourceCidrBlock *string
+
+	// The source port or port range for the policy rule. You can specify a port range
+	// only when Protocol is 6 (TCP) or 17 (UDP); for all other protocols, this value
+	// must be * .
+	SourcePortRange *string
+
+	noSmithyDocumentSerde
+}
+
+// A metadata key-value pair for a transit gateway policy rule.
+type TransitGatewayRequestPolicyRuleMetaData struct {
+
+	// The key of the metadata pair for the policy rule.
+	MetaDataKey *string
+
+	// The value of the metadata pair for the policy rule.
+	MetaDataValue *string
 
 	noSmithyDocumentSerde
 }
@@ -24461,6 +26140,25 @@ type TunnelOption struct {
 	noSmithyDocumentSerde
 }
 
+// Describes an unsuccessful application status check association.
+type UnsuccessfulAssociationResponseObject struct {
+
+	// The ID of the application status check.
+	ApplicationStatusCheckId *string
+
+	// The type of association. Valid values: EC2TAG and INSTANCE_ID .
+	AssociationType *string
+
+	// The association value. For EC2TAG , the value is formatted as key=value . For
+	// INSTANCE_ID , the value is the instance ID.
+	AssociationValue *string
+
+	// The reason the association failed.
+	Reason *string
+
+	noSmithyDocumentSerde
+}
+
 // Describes the burstable performance instance whose credit option for CPU usage
 // was not modified.
 type UnsuccessfulInstanceCreditSpecificationItem struct {
@@ -24511,6 +26209,24 @@ type UnsuccessfulItemError struct {
 
 	// The error message accompanying the error code.
 	Message *string
+
+	noSmithyDocumentSerde
+}
+
+// Describes an unsuccessful application status check suppression.
+type UnsuccessfulSuppressionResponseObject struct {
+
+	// The ID of the instance.
+	InstanceId *string
+
+	// The reason the suppression failed.
+	Reason *string
+
+	// The date and time when health checks would have resumed.
+	ResumeAt *time.Time
+
+	// The date and time when suppression was attempted.
+	SuppressAt *time.Time
 
 	noSmithyDocumentSerde
 }
@@ -25342,6 +27058,9 @@ type Volume struct {
 	// The Amazon Resource Name (ARN) of the Outpost.
 	OutpostArn *string
 
+	// The ID of the Amazon Web Services account that owns the volume.
+	OwnerId *string
+
 	// The size of the volume, in GiBs.
 	Size *int32
 
@@ -25365,6 +27084,9 @@ type Volume struct {
 
 	// The throughput that the volume supports, in MiB/s.
 	Throughput *int32
+
+	// The Amazon Resource Name (ARN) of the volume.
+	VolumeArn *string
 
 	// The ID of the volume.
 	VolumeId *string
@@ -26053,8 +27775,8 @@ type VpcEndpoint struct {
 	// Reason for the failure.
 	FailureReason *string
 
-	// (Interface endpoint) Information about the security groups that are associated
-	// with the network interface.
+	// (Interface, Resource, ServiceNetwork, and Tunnel endpoints only) Information
+	// about the security groups that are associated with the network interface.
 	Groups []SecurityGroupIdentifier
 
 	// The IP address type for the endpoint.
@@ -26069,7 +27791,8 @@ type VpcEndpoint struct {
 	// The last error that occurred for endpoint.
 	LastError *LastError
 
-	// (Interface endpoint) The network interfaces for the endpoint.
+	// (Interface, Gateway Load Balancer endpoints, Resource, ServiceNetwork, and
+	// Tunnel endpoints only) The network interfaces for the endpoint.
 	NetworkInterfaceIds []string
 
 	// The ID of the Amazon Web Services account that owns the endpoint.
@@ -26106,7 +27829,8 @@ type VpcEndpoint struct {
 	// The state of the endpoint.
 	State State
 
-	// (Interface endpoint) The subnets for the endpoint.
+	// (Interface, Gateway Load Balancer endpoints, Resource, ServiceNetwork, and
+	// Tunnel endpoints only) The subnets for the endpoint.
 	SubnetIds []string
 
 	// The tags assigned to the endpoint.
@@ -26116,6 +27840,11 @@ type VpcEndpoint struct {
 	VpcEndpointId *string
 
 	// The type of endpoint.
+	//
+	// For more information about the types of VPC endpoints, see [VPC endpoints] in the Amazon Web
+	// Services PrivateLink User Guide.
+	//
+	// [VPC endpoints]: https://docs.aws.amazon.com/vpc/latest/privatelink/concepts.html#concepts-vpc-endpoints
 	VpcEndpointType VpcEndpointType
 
 	// The ID of the VPC to which the endpoint is associated.

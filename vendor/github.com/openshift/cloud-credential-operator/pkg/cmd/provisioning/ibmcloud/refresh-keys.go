@@ -35,6 +35,7 @@ func NewRefreshKeysCmd() *cobra.Command {
 	refreshKeysCmd.PersistentFlags().StringVar(&Options.ResourceGroupName, "resource-group-name", "", "Name of the resource group used for scoping the access policies")
 	refreshKeysCmd.PersistentFlags().BoolVar(&Options.Create, "create", false, "Create the ServiceID if does not exists")
 	refreshKeysCmd.PersistentFlags().BoolVar(&Options.EnableTechPreview, "enable-tech-preview", false, "Opt into processing CredentialsRequests marked as tech-preview")
+	refreshKeysCmd.PersistentFlags().StringVar(&Options.APIEndpoint, "api-endpoint", "", "Override the IBM Cloud API base domain (e.g. test.cloud.ibm.com)")
 
 	return refreshKeysCmd
 }
@@ -46,7 +47,8 @@ func refreshKeysCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	params := &ibmcloud.ClientParams{
-		InfraName: Options.Name,
+		InfraName:   Options.Name,
+		APIEndpoint: Options.APIEndpoint,
 	}
 
 	ibmclient, err := ibmcloud.NewClient(apiKey, params)

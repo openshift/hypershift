@@ -23,6 +23,7 @@ func NewDeleteServiceIDCmd() *cobra.Command {
 	deleteServiceIDCmd.PersistentFlags().StringVar(&Options.CredRequestDir, "credentials-requests-dir", "", "Directory containing files of CredentialsRequests to delete IAM Roles for (can be created by running 'oc adm release extract --credentials-requests --cloud=ibmcloud' against an OpenShift release image)")
 	deleteServiceIDCmd.MarkPersistentFlagRequired("credentials-requests-dir")
 	deleteServiceIDCmd.PersistentFlags().BoolVar(&Options.Force, "force", false, "delete all the service account forcefully(will delete all the entries with the name)")
+	deleteServiceIDCmd.PersistentFlags().StringVar(&Options.APIEndpoint, "api-endpoint", "", "Override the IBM Cloud API base domain (e.g. test.cloud.ibm.com)")
 
 	return deleteServiceIDCmd
 }
@@ -34,7 +35,8 @@ func deleteServiceIDCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	params := &ibmcloud.ClientParams{
-		InfraName: Options.Name,
+		InfraName:   Options.Name,
+		APIEndpoint: Options.APIEndpoint,
 	}
 
 	ibmclient, err := ibmcloud.NewClient(apiKey, params)

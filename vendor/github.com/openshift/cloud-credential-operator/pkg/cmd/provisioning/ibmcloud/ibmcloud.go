@@ -13,6 +13,9 @@ type options struct {
 	KubeConfigFile    string
 	Create            bool
 	EnableTechPreview bool
+	// APIEndpoint is the base domain of the IBM Cloud API to target (e.g. "test.cloud.ibm.com").
+	// When empty, production endpoints are used.
+	APIEndpoint string
 }
 
 // NewIBMCloudCmd implements the "ibmcloud" subcommand for the credentials provisioning

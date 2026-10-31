@@ -26,6 +26,11 @@ type MachineAutoscalerSpec struct {
 type MachineAutoscalerStatus struct {
 	// LastTargetRef holds reference to the recently observed scalable resource
 	LastTargetRef *CrossVersionObjectReference `json:"lastTargetRef,omitempty"`
+	// Conditions represent the latest available observations of the MachineAutoscaler's state.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

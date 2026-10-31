@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Creates a Client VPN endpoint. A Client VPN endpoint is the resource you create
@@ -93,6 +92,11 @@ type CreateClientVpnEndpointInput struct {
 
 	// A brief description of the Client VPN endpoint.
 	Description *string
+
+	// The device posture options for the Client VPN endpoint. Use this parameter to
+	// specify the device trust providers that the endpoint uses to evaluate the
+	// security posture of connecting devices.
+	DevicePostureOptions *types.DevicePostureOptions
 
 	// Indicates whether the client VPN session is disconnected after the maximum
 	// timeout specified in SessionTimeoutHours is reached. If true , users are
@@ -204,12 +208,6 @@ func (c *Client) addOperationCreateClientVpnEndpointMiddlewares(stack *middlewar
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -219,12 +217,6 @@ func (c *Client) addOperationCreateClientVpnEndpointMiddlewares(stack *middlewar
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
@@ -232,9 +224,6 @@ func (c *Client) addOperationCreateClientVpnEndpointMiddlewares(stack *middlewar
 		return err
 	}
 	if err = addOpCreateClientVpnEndpointValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateClientVpnEndpoint"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -4,9 +4,10 @@ package kms
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/kms/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/kms/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Generates a hash-based message authentication code (HMAC) for a message using
@@ -114,6 +115,28 @@ type GenerateMacInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GenerateMacInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GenerateMacRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GenerateMacInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.DryRun != nil {
+		s.WriteBool(schemas.GenerateMacRequest_DryRun, *v.DryRun)
+	}
+	serializeGrantTokenList(s, schemas.GenerateMacRequest_GrantTokens, v.GrantTokens)
+	if v.KeyId != nil {
+		s.WriteString(schemas.GenerateMacRequest_KeyId, *v.KeyId)
+	}
+	if v.MacAlgorithm != "" {
+		s.WriteString(schemas.GenerateMacRequest_MacAlgorithm, string(v.MacAlgorithm))
+	}
+	if v.Message != nil {
+		s.WriteBlob(schemas.GenerateMacRequest_Message, v.Message)
+	}
+}
+
 type GenerateMacOutput struct {
 
 	// The HMAC KMS key used in the operation.
@@ -136,22 +159,50 @@ type GenerateMacOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *GenerateMacOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.GenerateMacResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *GenerateMacOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.KeyId != nil {
+		s.WriteString(schemas.GenerateMacResponse_KeyId, *v.KeyId)
+	}
+	if v.Mac != nil {
+		s.WriteBlob(schemas.GenerateMacResponse_Mac, v.Mac)
+	}
+	if v.MacAlgorithm != "" {
+		s.WriteString(schemas.GenerateMacResponse_MacAlgorithm, string(v.MacAlgorithm))
+	}
+}
+func (v *GenerateMacOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.GenerateMacResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.GenerateMacResponse_KeyId:
+			v.KeyId = new(string)
+			return d.ReadString(schemas.GenerateMacResponse_KeyId, v.KeyId)
+		case schemas.GenerateMacResponse_Mac:
+			return d.ReadBlob(schemas.GenerateMacResponse_Mac, &v.Mac)
+		case schemas.GenerateMacResponse_MacAlgorithm:
+			var ev string
+			if err := d.ReadString(schemas.GenerateMacResponse_MacAlgorithm, &ev); err != nil {
+				return err
+			}
+			v.MacAlgorithm = types.MacAlgorithmSpec(ev)
+			return nil
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationGenerateMacMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsAwsjson11_serializeOpGenerateMac{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GenerateMac, schemas.GenerateMacRequest, schemas.GenerateMacResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpGenerateMac{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.GenerateMac, schemas.GenerateMacRequest, schemas.GenerateMacResponse), output: &GenerateMacOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -161,19 +212,10 @@ func (c *Client) addOperationGenerateMacMiddlewares(stack *middleware.Stack, opt
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGenerateMacValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "GenerateMac"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

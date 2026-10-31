@@ -1,3 +1,156 @@
+# v0.5.1 (2026-10-27)
+
+* **Dependency Update**: Update to smithy-go v1.28.7.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.5.0 (2026-10-26)
+
+* **Feature**: Improve DownloadDirectory throughput and memory usage by downloading objects with DownloadObject, and only replace an existing file once its download succeeds.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.19 (2026-10-22)
+
+* **Bug Fix**: Update smithy-go to v1.28.6
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.18 (2026-10-21)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.17 (2026-10-19)
+
+* **Bug Fix**: Fix the concurrent reader panic when buffer len is smaller than capacity
+
+# v0.4.16 (2026-10-09.2)
+
+* **Dependency Update**: Update to smithy-go v1.28.5.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.15 (2026-10-08)
+
+* **Dependency Update**: Update to smithy-go v1.28.4.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.14 (2026-10-06)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.13 (2026-10-01)
+
+* No change notes available for this release.
+
+# v0.4.12 (2026-09-30)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.11 (2026-09-28)
+
+* **Bug Fix**: Add reassembly check for GetObject parts mode so mismatch between response part range and calculated position will throw error
+
+# v0.4.10 (2026-09-24)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.9 (2026-09-23)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.8 (2026-09-21)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.7 (2026-09-14)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.6 (2026-09-11)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.5 (2026-09-09)
+
+* **Bug Fix**: Fix potential deadlock in GetObject calls.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.4 (2026-09-08)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.3 (2026-09-04)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.2 (2026-08-31.2)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.1 (2026-08-28)
+
+* **Bug Fix**: Fix DownloadObject bug so parts can be read to correct offset regardless of parts sizes change
+* **Bug Fix**: Fix GetObject bug so object parts can be read to correct offset regardless of parts sizes change
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.4.0 (2026-08-27)
+
+* **Feature**: Support connection read timeouts in the SDK. This is currently available on an opt-in basis by setting env `AWS_ENABLE_DEFAULT_SOCKET_TIMEOUT_2026=true`.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.3.17 (2026-08-26)
+
+* **Dependency Update**: Update to smithy-go v1.28.0.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.3.16 (2026-08-25)
+
+* **Dependency Update**: Update to smithy-go v1.27.10.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.3.15 (2026-08-20)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.3.14 (2026-08-18)
+
+* **Bug Fix**: Close each file transferred during directory upload/download to avoid leaking file handles
+
+# v0.3.13 (2026-08-14)
+
+* **Dependency Update**: Update to smithy-go v1.27.8.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.3.12 (2026-08-10)
+
+* **Dependency Update**: Update to smithy-go v1.27.7.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.3.11 (2026-08-06)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.3.10 (2026-08-05)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.3.9 (2026-08-03)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.3.8 (2026-07-31.2)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+* **Dependency Update**: Upgrade to smithy-go v1.27.6 to fix various serde issues in HTTP binding services.
+
+# v0.3.7 (2026-07-29)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v0.3.6 (2026-07-28)
+
+* **Bug Fix**: Fix flaky test from feature/s3/transfermanager upload retry
+* **Bug Fix**: Forward SSE-C, VersionId, RequestPayer and other fields to HeadObject call when using transfer manager
+* **Dependency Update**: Update to smithy-go v1.27.5.
+* **Dependency Update**: Updated to the latest SDK module versions
+
 # v0.3.5 (2026-07-21)
 
 * **Dependency Update**: Updated to the latest SDK module versions
