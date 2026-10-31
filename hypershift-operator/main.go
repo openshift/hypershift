@@ -66,6 +66,7 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/netutil"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
@@ -164,6 +165,7 @@ type StartOptions struct {
 	OIDCStorageProviderS3Credentials       string
 	GCPOIDCStorageBucketName               string
 	EnableUWMTelemetryRemoteWrite          bool
+	EnableGMPMonitoring                    bool
 	EnableValidatingWebhook                bool
 	EnableDedicatedRequestServingIsolation bool
 	ScaleFromZeroProvider                  string
@@ -209,6 +211,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
+	cmd.Flags().BoolVar(&opts.EnableGMPMonitoring, "enable-gmp-monitoring", opts.EnableGMPMonitoring, "If true, emit Google Managed Prometheus (monitoring.googleapis.com) monitoring resources instead of monitoring.coreos.com resources")
 	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.Flags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
 	cmd.Flags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws)")
@@ -407,6 +410,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 func validateStartOptions(opts *StartOptions, log logr.Logger) error {
 	if opts.EtcdBackupMaxCount < 1 {
 		return fmt.Errorf("--etcd-backup-max-count must be at least 1, got %d", opts.EtcdBackupMaxCount)
+	}
+
+	if err := metrics.ValidateGMPMonitoring(opts.EnableGMPMonitoring, os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1"); err != nil {
+		return fmt.Errorf("--enable-gmp-monitoring: %w", err)
 	}
 
 	supportedProviders := set.New("aws", "azure")
@@ -675,6 +682,7 @@ func setupHostedClusterController(ctx context.Context, mgr ctrl.Manager, opts *S
 		EnableOCPClusterMonitoring:              opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
 		MetricsSet:                              metricsSet,
+		EnableGMPMonitoring:                     opts.EnableGMPMonitoring,
 		OperatorNamespace:                       opts.Namespace,
 		SREConfigHash:                           sreConfigHash,
 		KubevirtInfraClients:                    kvinfra.NewKubevirtInfraClientMap(),
