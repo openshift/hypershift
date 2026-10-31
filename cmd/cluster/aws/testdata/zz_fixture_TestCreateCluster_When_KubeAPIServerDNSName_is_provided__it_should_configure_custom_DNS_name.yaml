@@ -28,7 +28,7 @@ spec:
     managed:
       storage:
         persistentVolume:
-          size: 8Gi
+          size: 32Gi
           storageClassName: gp3-csi
         type: PersistentVolume
     managementType: Managed

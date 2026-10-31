@@ -17,7 +17,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - "https://bucket.s3.amazonaws.com/snapshot1.db"
               - "https://bucket.s3.amazonaws.com/snapshot2.db"
@@ -64,7 +64,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - "https://bucket.s3.amazonaws.com/snapshot.db"
         platform:
@@ -109,7 +109,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - "http://backup.example.com/snapshot.db"
         platform:
@@ -155,7 +155,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - "https://backup.example.com/snapshot.db"
         platform:
@@ -200,7 +200,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - "s3://bucket/snapshot.db"
         platform:
@@ -246,7 +246,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - "https://bucket.s3.amazonaws.com/snapshot-old.db"
         platform:
@@ -289,7 +289,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - "https://bucket.s3.amazonaws.com/snapshot-new.db"
         platform:
@@ -335,7 +335,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - "https://bucket.s3.amazonaws.com/snapshot.db"
         platform:
@@ -378,7 +378,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL: []
         platform:
           type: AWS
@@ -423,7 +423,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
         platform:
           type: AWS
         pullSecret:
@@ -464,7 +464,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - "https://bucket.s3.amazonaws.com/snapshot.db"
         platform:
@@ -510,7 +510,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - "https://bucket.s3.amazonaws.com/snapshot.db"
         platform:
@@ -553,7 +553,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - "https://bucket.s3.amazonaws.com/snapshot.db"
         platform:
@@ -596,7 +596,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               restoreSnapshotURL:
               - https://bucket.s3.amazonaws.com/snapshot.db
               type: PersistentVolume
@@ -651,7 +651,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
         platform:
           type: AWS
         pullSecret:
@@ -692,7 +692,7 @@ tests:
             storage:
               type: PersistentVolume
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
         platform:
           type: AWS
         pullSecret:
@@ -733,7 +733,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
