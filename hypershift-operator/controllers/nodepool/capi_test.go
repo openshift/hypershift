@@ -3,6 +3,7 @@ package nodepool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -1312,10 +1313,14 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 			g.Expect(mhc.Spec).To(testutil.MatchExpected(tt.expected.Spec))
 		})
 	}
+
 }
 
 func TestCAPIReconcile(t *testing.T) {
 	t.Parallel()
+	t.Run("When reconciling CAPI, it should propagate the global pull secret managed label", func(t *testing.T) {
+		testGlobalPSManagedLabelOnMachines(t, false)
+	})
 	maxUnavailable := intstr.FromInt(0)
 	maxSurge := intstr.FromInt(1)
 	// This is the generated name by machineTemplateBuilders.
@@ -1636,6 +1641,95 @@ func TestCAPIReconcile(t *testing.T) {
 			},
 			expectedError: false,
 		},
+		{
+			name: "When auto repair is enabled but ReachedIgnitionEndpoint is not true, it should return early with accumulated conditions",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: &maxUnavailable,
+								MaxSurge:       &maxSurge,
+							},
+						},
+						AutoRepair: true,
+					},
+					Replicas: ptr.To[int32](3),
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:                      "",
+							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+							RolesRef:                    hyperv1.AWSRolesRef{},
+							ResourceTags:                []hyperv1.AWSClusterResourceTag{},
+							EndpointAccess:              "",
+							AdditionalAllowedPrincipals: []string{},
+							MultiArch:                   false,
+						},
+					},
+				},
+			},
+			machineSet: &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-machineset",
+					Namespace: "test-namespace-test-cluster",
+					Annotations: map[string]string{
+						nodePoolAnnotation: "test-namespace/test-nodepool",
+					},
+				},
+				Spec: capiv1.MachineSetSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
+								Kind:     "AWSMachineTemplate",
+								APIGroup: "infrastructure.cluster.x-k8s.io",
+								Name:     awsMachineTemplateName,
+							},
+						},
+					},
+				},
+			},
+			templates: []client.Object{
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "does-not-match-infra-ref-name",
+						Namespace: "test-namespace-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      awsMachineTemplateName,
+						Namespace: "test-namespace-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+			},
+			expectedError: false,
+		},
 		// {
 		// 	name: "error during machine template cleanup",
 		// 	nodePool: &hyperv1.NodePool{
@@ -1844,6 +1938,7 @@ func TestCAPIReconcile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
+			tt.nodePool.Generation = 7
 			c := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
 				// WithObjectTracker()
@@ -1883,11 +1978,65 @@ func TestCAPIReconcile(t *testing.T) {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(templateList.Items).To(HaveLen(2))
 
-			err = capi.Reconcile(t.Context())
+			capiResult, err := capi.Reconcile(t.Context())
 			if tt.expectedError {
-				g.Expect(err).To(HaveOccurred())
+				g.Expect(err).To(HaveOccurred(), "CAPI reconciliation should return the expected error")
 			} else {
-				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(err).NotTo(HaveOccurred(), "failed to reconcile CAPI for the initial workload")
+				g.Expect(capiResult).NotTo(BeNil(), "CAPI reconciliation should return a nonnil result")
+				expectedConditions := []hyperv1.NodePoolCondition{{
+					Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+					Status:             corev1.ConditionTrue,
+					Reason:             hyperv1.AsExpectedReason,
+					Message:            fmt.Sprintf("platform machine template update in progress. Target template: %s", awsMachineTemplateName),
+					ObservedGeneration: tt.nodePool.Generation,
+				}}
+				reachedIgnition := FindStatusCondition(tt.nodePool.Status.Conditions, hyperv1.NodePoolReachedIgnitionEndpoint)
+				if !tt.nodePool.Spec.Management.AutoRepair {
+					expectedConditions = append(expectedConditions, hyperv1.NodePoolCondition{
+						Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
+						Status:             corev1.ConditionFalse,
+						Reason:             hyperv1.AsExpectedReason,
+						ObservedGeneration: tt.nodePool.Generation,
+					})
+				} else if reachedIgnition != nil && reachedIgnition.Status == corev1.ConditionTrue {
+					expectedConditions = append(expectedConditions, hyperv1.NodePoolCondition{
+						Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
+						Status:             corev1.ConditionTrue,
+						Reason:             hyperv1.AsExpectedReason,
+						ObservedGeneration: tt.nodePool.Generation,
+					})
+				}
+				g.Expect(capiResult.Conditions).To(Equal(expectedConditions), "initial reconciliation should return platform-update and auto-repair conditions in order with the current generation")
+				if tt.nodePool.Spec.Management.AutoRepair && reachedIgnition == nil {
+					for _, ignitionTest := range []struct {
+						name   string
+						status corev1.ConditionStatus
+					}{
+						{
+							name:   "When ReachedIgnitionEndpoint is false, it should preserve prior conditions and skip MHC reconciliation",
+							status: corev1.ConditionFalse,
+						},
+						{
+							name:   "When ReachedIgnitionEndpoint is unknown, it should preserve prior conditions and skip MHC reconciliation",
+							status: corev1.ConditionUnknown,
+						},
+					} {
+						t.Run(ignitionTest.name, func(t *testing.T) {
+							g := NewWithT(t)
+							tt.nodePool.Status.Conditions = []hyperv1.NodePoolCondition{{
+								Type:   hyperv1.NodePoolReachedIgnitionEndpoint,
+								Status: ignitionTest.status,
+							}}
+							repeatedResult, repeatedErr := capi.Reconcile(t.Context())
+							g.Expect(repeatedErr).NotTo(HaveOccurred(), "failed to reconcile CAPI while ignition is not reached")
+							g.Expect(repeatedResult.Conditions).To(Equal(expectedConditions), "repeated reconciliation before ignition should preserve the accumulated conditions")
+							mhc := &capiv1.MachineHealthCheck{}
+							err := capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, mhc)
+							g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "MachineHealthCheck should remain absent until ignition is reached")
+						})
+					}
+				}
 
 				// Check that old machine templates are deleted.
 				templateList := &capiaws.AWSMachineTemplateList{}
@@ -1945,15 +2094,20 @@ func TestCAPIReconcile(t *testing.T) {
 				}
 
 				// Check MachineHealthCheck
-				if tt.nodePool.Spec.Management.AutoRepair {
+				if tt.nodePool.Spec.Management.AutoRepair && reachedIgnition != nil && reachedIgnition.Status == corev1.ConditionTrue {
 					mhc := &capiv1.MachineHealthCheck{}
 					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, mhc)
-					g.Expect(err).NotTo(HaveOccurred())
-					g.Expect(mhc.Spec.ClusterName).To(Equal(capiClusterName))
+					g.Expect(err).NotTo(HaveOccurred(), "failed to retrieve the MachineHealthCheck after ignition was reached")
+					g.Expect(mhc.Spec.ClusterName).To(Equal(capiClusterName), "MachineHealthCheck should target the expected CAPI cluster")
+				} else if tt.nodePool.Spec.Management.AutoRepair {
+					// AutoRepair is enabled but ReachedIgnitionEndpoint is not true — early return path.
+					mhc := &capiv1.MachineHealthCheck{}
+					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, mhc)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "MHC should not be created when ReachedIgnitionEndpoint is not true")
 				} else {
 					mhc := &capiv1.MachineHealthCheck{}
-					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: "test-cp-namespace", Name: tt.nodePool.GetName()}, mhc)
-					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, mhc)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "MachineHealthCheck should remain absent when auto-repair is disabled")
 				}
 
 				// Check spot MHC and interruptible label
@@ -1996,8 +2150,10 @@ func TestCAPIReconcile(t *testing.T) {
 					g.Expect(err).NotTo(HaveOccurred())
 
 					// Re-run reconcile.
-					err = capi.Reconcile(t.Context())
-					g.Expect(err).NotTo(HaveOccurred())
+					capiResult, err = capi.Reconcile(t.Context())
+					g.Expect(err).NotTo(HaveOccurred(), "failed to reconcile CAPI after MachineDeployment completion")
+					g.Expect(capiResult).NotTo(BeNil(), "reconciliation after MachineDeployment completion should return a nonnil result")
+					g.Expect(capiResult.Conditions).To(Equal(expectedConditions), "MachineDeployment completion should preserve the returned condition fields and ordering")
 
 					// Check for the expected annotations.
 					// TODO(alberto): reconcileMachineDeployment mutate the NodePool with this annotations and status.version.
@@ -2015,6 +2171,9 @@ func TestCAPIReconcile(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When an InPlace MachineSet reports readiness repeatedly, it should return exact invocation-local conditions", testCAPIReconcileMachineSetReadyCondition)
+	t.Run("When a later CAPI operation fails, it should return every condition accumulated before the error", testCAPIReconcileConditionErrorPaths)
 }
 
 // TestCAPIReconcile_machineset is specific for UpgradeTypeInPlace.
@@ -2081,6 +2240,7 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
+			tt.nodePool.Generation = 7
 
 			hostedCluster := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
@@ -2165,19 +2325,524 @@ func TestCAPIReconcile_machineset(t *testing.T) {
 				ApplyProvider:   upsert.NewApplyProvider(false),
 			}
 
-			err := capi.Reconcile(t.Context())
-			g.Expect(err).NotTo(HaveOccurred())
+			capiResult, err := capi.Reconcile(t.Context())
+			g.Expect(err).NotTo(HaveOccurred(), "failed to reconcile the initial InPlace MachineSet")
 
 			ms := &capiv1.MachineSet{}
 			err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlplaneNamespace, Name: tt.nodePool.GetName()}, ms)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(ms.Spec.Template.Spec.Deletion.NodeDrainTimeoutSeconds).To(Equal(durationToSeconds(tt.nodePool.Spec.NodeDrainTimeout)))
-			g.Expect(ms.Spec.Template.Spec.Deletion.NodeVolumeDetachTimeoutSeconds).To(Equal(durationToSeconds(tt.nodePool.Spec.NodeVolumeDetachTimeout)))
+			g.Expect(err).NotTo(HaveOccurred(), "failed to retrieve the initial InPlace MachineSet")
+			g.Expect(ms.Spec.Template.Spec.Deletion.NodeDrainTimeoutSeconds).To(Equal(durationToSeconds(tt.nodePool.Spec.NodeDrainTimeout)), "MachineSet should preserve the configured node drain timeout")
+			g.Expect(ms.Spec.Template.Spec.Deletion.NodeVolumeDetachTimeoutSeconds).To(Equal(durationToSeconds(tt.nodePool.Spec.NodeVolumeDetachTimeout)), "MachineSet should preserve the configured volume detach timeout")
+
+			g.Expect(capiResult).NotTo(BeNil(), "initial MachineSet reconciliation should return a nonnil result")
+			g.Expect(capiResult.Conditions).To(Equal([]hyperv1.NodePoolCondition{
+				{
+					Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+					Status:             corev1.ConditionTrue,
+					Reason:             hyperv1.AsExpectedReason,
+					Message:            fmt.Sprintf("platform machine template update in progress. Target template: %s", awsMachineTemplateName),
+					ObservedGeneration: tt.nodePool.Generation,
+				},
+				{
+					Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
+					Status:             corev1.ConditionFalse,
+					Reason:             hyperv1.AsExpectedReason,
+					ObservedGeneration: tt.nodePool.Generation,
+				},
+			}), "initial MachineSet reconciliation should return platform-update and disabled auto-repair conditions")
 		})
 	}
 }
 
-func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
+func newCAPIReconcileTestCAPI(t *testing.T, nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster) (*CAPI, string) {
+	t.Helper()
+
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	return &CAPI{
+		Token: &Token{
+			ConfigGenerator: &ConfigGenerator{
+				hostedCluster:         hostedCluster,
+				nodePool:              nodePool,
+				controlplaneNamespace: controlPlaneNamespace,
+				rolloutConfig: &rolloutConfig{releaseImage: &releaseinfo.ReleaseImage{
+					ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "target-version"}},
+				}},
+			},
+			cpoCapabilities:        &CPOCapabilities{},
+			CreateOrUpdateProvider: upsert.New(false),
+		},
+		capiClusterName: "infra-id",
+		ApplyProvider:   upsert.NewApplyProvider(false),
+	}, controlPlaneNamespace
+}
+
+func testCAPIReconcileMachineSetReadyCondition(t *testing.T) {
+	t.Helper()
+	g := NewWithT(t)
+
+	awsMachineTemplateName := "test-nodepool-28d5cf5a"
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "test-nodepool",
+			Namespace:  "test-namespace",
+			Generation: 11,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "test-cluster",
+			Management: hyperv1.NodePoolManagement{
+				UpgradeType: hyperv1.UpgradeTypeInPlace,
+				InPlace:     &hyperv1.InPlaceUpgrade{},
+			},
+			Replicas: ptr.To[int32](3),
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSNodePoolPlatform{
+					AMI: "an-ami",
+				},
+			},
+		},
+	}
+
+	hostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					Region:                      "",
+					CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+					ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+					RolesRef:                    hyperv1.AWSRolesRef{},
+					ResourceTags:                []hyperv1.AWSClusterResourceTag{},
+					EndpointAccess:              "",
+					AdditionalAllowedPrincipals: []string{},
+					MultiArch:                   false,
+				},
+			},
+		},
+	}
+
+	existingMachineSet := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nodePool.GetName(),
+			Namespace: "test-namespace-test-cluster",
+			Annotations: map[string]string{
+				nodePoolAnnotation: "test-namespace/test-nodepool",
+			},
+		},
+		Spec: capiv1.MachineSetSpec{
+			Template: capiv1.MachineTemplateSpec{
+				Spec: capiv1.MachineSpec{
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
+						Kind:     "AWSMachineTemplate",
+						APIGroup: "infrastructure.cluster.x-k8s.io",
+						Name:     awsMachineTemplateName,
+					},
+				},
+			},
+		},
+	}
+
+	templates := []client.Object{
+		&capiaws.AWSMachineTemplate{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      awsMachineTemplateName,
+				Namespace: "test-namespace-test-cluster",
+				Annotations: map[string]string{
+					nodePoolAnnotation: "test-namespace/test-nodepool",
+				},
+			},
+		},
+	}
+
+	capi, controlplaneNamespace := newCAPIReconcileTestCAPI(t, nodePool, hostedCluster)
+	nodePool.Status.Conditions = []hyperv1.NodePoolCondition{{
+		Type:               hyperv1.NodePoolReadyConditionType,
+		Status:             corev1.ConditionUnknown,
+		Reason:             "PreviousReadiness",
+		Message:            "waiting for reconciliation",
+		ObservedGeneration: nodePool.Generation - 1,
+		LastTransitionTime: metav1.NewTime(time.Unix(100, 0)),
+	}}
+	originalConditions := append([]hyperv1.NodePoolCondition(nil), nodePool.Status.Conditions...)
+	capi.Client = fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(nodePool, existingMachineSet).
+		WithObjects(templates...).
+		Build()
+
+	// First reconcile: MachineSet gets updated with user data, version, and config.
+	_, err := capi.Reconcile(t.Context())
+	g.Expect(err).NotTo(HaveOccurred(), "failed to reconcile the initial MachineSet")
+
+	// Update MachineSet status with a ReadyCondition to exercise the condition propagation path.
+	ms := &capiv1.MachineSet{}
+	err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlplaneNamespace, Name: nodePool.GetName()}, ms)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to retrieve the reconciled MachineSet")
+
+	ms.Status.AvailableReplicas = ptr.To[int32](3)
+	ms.Status.Conditions = append(ms.Status.Conditions, metav1.Condition{
+		Type:    capiv1.MachinesReadyCondition,
+		Status:  metav1.ConditionTrue,
+		Reason:  "MachinesReady",
+		Message: "All machines are ready",
+	})
+	err = capi.Client.Update(t.Context(), ms)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to update MachineSet readiness status")
+
+	// Second reconcile: MachineSet now has matching data, so isUpdating=false
+	// and the MachinesReady condition from MachineSet status is propagated to CAPIResult.
+	capiResult, err := capi.Reconcile(t.Context())
+	g.Expect(err).NotTo(HaveOccurred(), "failed to reconcile the ready MachineSet")
+	g.Expect(capiResult).NotTo(BeNil(), "ready MachineSet reconciliation should return a nonnil result")
+	g.Expect(capiResult.Conditions).To(Equal([]hyperv1.NodePoolCondition{
+		{
+			Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            fmt.Sprintf("platform machine template update in progress. Target template: %s", awsMachineTemplateName),
+			ObservedGeneration: nodePool.Generation,
+		},
+		{
+			Type:               hyperv1.NodePoolReadyConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             "MachinesReady",
+			Message:            "All machines are ready",
+			ObservedGeneration: nodePool.Generation,
+		},
+		{
+			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: nodePool.Generation,
+		},
+	}), "ready MachineSet should return ordered platform-update, Ready and auto-repair conditions with the NodePool generation")
+
+	// A third reconcile on the same CAPI instance proves the result is local to each call.
+	// It also covers the empty-reason fallback and the non-updating platform-template condition.
+	err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlplaneNamespace, Name: nodePool.GetName()}, ms)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to retrieve the MachineSet before changing readiness")
+	ms.Status.Conditions[0].Status = metav1.ConditionFalse
+	ms.Status.Conditions[0].Reason = ""
+	ms.Status.Conditions[0].Message = "machines are starting"
+	g.Expect(capi.Client.Update(t.Context(), ms)).To(Succeed(), "failed to update MachineSet status with an empty readiness reason")
+
+	capiResult, err = capi.Reconcile(t.Context())
+	g.Expect(err).NotTo(HaveOccurred(), "failed to reconcile the MachineSet with an empty readiness reason")
+	g.Expect(capiResult.Conditions).To(Equal([]hyperv1.NodePoolCondition{
+		{
+			Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: nodePool.Generation,
+		},
+		{
+			Type:               hyperv1.NodePoolReadyConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            "machines are starting",
+			ObservedGeneration: nodePool.Generation,
+		},
+		{
+			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: nodePool.Generation,
+		},
+	}), "repeated MachineSet reconciliation should return fresh conditions with AsExpected fallback and the updated readiness message")
+
+	ms.Status.Conditions = nil
+	g.Expect(capi.Client.Update(t.Context(), ms)).To(Succeed(), "failed to remove MachineSet readiness conditions")
+	capiResult, err = capi.Reconcile(t.Context())
+	g.Expect(err).NotTo(HaveOccurred(), "failed to reconcile the MachineSet without MachinesReady")
+	g.Expect(capiResult).NotTo(BeNil(), "MachineSet reconciliation without readiness should return a nonnil result")
+	g.Expect(capiResult.Conditions).To(Equal([]hyperv1.NodePoolCondition{
+		{
+			Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: nodePool.Generation,
+		},
+		{
+			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: nodePool.Generation,
+		},
+	}), "MachineSet without MachinesReady should omit Ready while preserving other condition fields and ordering")
+	g.Expect(nodePool.Status.Replicas).To(Equal(int32(3)), "MachineSet readiness conversion should preserve available replica propagation")
+	g.Expect(nodePool.Status.Conditions).To(Equal(originalConditions), "direct CAPI reconciliation should return conditions without mutating existing NodePool conditions")
+}
+
+func testCAPIReconcileConditionErrorPaths(t *testing.T) {
+	t.Helper()
+
+	const machineTemplateName = "test-nodepool-28d5cf5a"
+	injectedErr := errors.New("injected reconciliation failure")
+
+	tests := []struct {
+		name          string
+		upgradeType   hyperv1.UpgradeType
+		autoRepair    bool
+		spot          bool
+		interceptors  interceptor.Funcs
+		expectedTypes []string
+	}{
+		{
+			name:        "When MachineTemplate retrieval fails, it should return an empty result",
+			upgradeType: hyperv1.UpgradeTypeReplace,
+			interceptors: interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*capiaws.AWSMachineTemplate); ok && key.Name == machineTemplateName {
+						return injectedErr
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+			},
+		},
+		{
+			name:        "When MachineDeployment persistence fails after status reconciliation, it should return only pre-workload conditions",
+			upgradeType: hyperv1.UpgradeTypeReplace,
+			interceptors: interceptor.Funcs{
+				Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					if _, ok := obj.(*capiv1.MachineDeployment); ok {
+						return injectedErr
+					}
+					return c.Patch(ctx, obj, patch, opts...)
+				},
+			},
+			expectedTypes: []string{
+				hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+			},
+		},
+		{
+			name:        "When MachineSet persistence fails after status reconciliation, it should return only pre-workload conditions",
+			upgradeType: hyperv1.UpgradeTypeInPlace,
+			interceptors: interceptor.Funcs{
+				Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+					if _, ok := obj.(*capiv1.MachineSet); ok {
+						return injectedErr
+					}
+					return c.Patch(ctx, obj, patch, opts...)
+				},
+			},
+			expectedTypes: []string{
+				hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+			},
+		},
+		{
+			name:        "When normal MachineHealthCheck creation fails, it should preserve readiness without fabricating autorepair success",
+			upgradeType: hyperv1.UpgradeTypeReplace,
+			autoRepair:  true,
+			interceptors: interceptor.Funcs{
+				Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+					if mhc, ok := obj.(*capiv1.MachineHealthCheck); ok && mhc.Name == "test-nodepool" {
+						return injectedErr
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			},
+			expectedTypes: []string{
+				hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+				hyperv1.NodePoolReadyConditionType,
+			},
+		},
+		{
+			name:        "When MachineHealthCheck creation fails after MachineSet persistence, it should preserve readiness",
+			upgradeType: hyperv1.UpgradeTypeInPlace,
+			autoRepair:  true,
+			interceptors: interceptor.Funcs{
+				Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+					if _, ok := obj.(*capiv1.MachineHealthCheck); ok {
+						return injectedErr
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			},
+			expectedTypes: []string{
+				hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+				hyperv1.NodePoolReadyConditionType,
+			},
+		},
+		{
+			name:        "When disabled-autorepair MachineHealthCheck retrieval fails, it should not fabricate autorepair disabled",
+			upgradeType: hyperv1.UpgradeTypeReplace,
+			interceptors: interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*capiv1.MachineHealthCheck); ok && key.Name == "test-nodepool" {
+						return injectedErr
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+			},
+			expectedTypes: []string{
+				hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+				hyperv1.NodePoolReadyConditionType,
+			},
+		},
+		{
+			name:        "When spot MachineHealthCheck creation fails, it should retain earlier readiness and autorepair conditions",
+			upgradeType: hyperv1.UpgradeTypeReplace,
+			autoRepair:  true,
+			spot:        true,
+			interceptors: interceptor.Funcs{
+				Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+					if mhc, ok := obj.(*capiv1.MachineHealthCheck); ok && mhc.Name == "test-nodepool-spot" {
+						return injectedErr
+					}
+					return c.Create(ctx, obj, opts...)
+				},
+			},
+			expectedTypes: []string{
+				hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+				hyperv1.NodePoolReadyConditionType,
+				hyperv1.NodePoolAutorepairEnabledConditionType,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-nodepool",
+					Namespace:  "test-namespace",
+					Generation: 9,
+					Annotations: map[string]string{
+						nodePoolAnnotationPlatformMachineTemplate: machineTemplateName,
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Replicas:    ptr.To[int32](3),
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: tt.upgradeType,
+						AutoRepair:  tt.autoRepair,
+					},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSNodePoolPlatform{AMI: "an-ami"},
+					},
+				},
+			}
+			if tt.upgradeType == hyperv1.UpgradeTypeReplace {
+				nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{Strategy: hyperv1.UpgradeStrategyRollingUpdate}
+			} else {
+				nodePool.Spec.Management.InPlace = &hyperv1.InPlaceUpgrade{}
+			}
+			if tt.autoRepair {
+				nodePool.Status.Conditions = []hyperv1.NodePoolCondition{{
+					Type:   hyperv1.NodePoolReachedIgnitionEndpoint,
+					Status: corev1.ConditionTrue,
+				}}
+			}
+			if tt.spot {
+				nodePool.Annotations[AnnotationEnableSpot] = "true"
+			}
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{},
+					},
+				}},
+			}
+			capi, controlPlaneNamespace := newCAPIReconcileTestCAPI(t, nodePool, hostedCluster)
+
+			objects := []client.Object{
+				nodePool,
+				&capiaws.AWSMachineTemplate{ObjectMeta: metav1.ObjectMeta{
+					Name:        machineTemplateName,
+					Namespace:   controlPlaneNamespace,
+					Annotations: map[string]string{nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String()},
+				}},
+			}
+			readyCondition := metav1.Condition{
+				Type:    capiv1.MachinesReadyCondition,
+				Status:  metav1.ConditionTrue,
+				Reason:  "MachinesReady",
+				Message: "all machines are ready",
+			}
+			if tt.upgradeType == hyperv1.UpgradeTypeReplace {
+				objects = append(objects, &capiv1.MachineDeployment{
+					ObjectMeta: metav1.ObjectMeta{Name: nodePool.Name, Namespace: controlPlaneNamespace},
+					Spec: capiv1.MachineDeploymentSpec{Template: capiv1.MachineTemplateSpec{Spec: capiv1.MachineSpec{
+						Bootstrap:         capiv1.Bootstrap{DataSecretName: ptr.To(capi.UserDataSecret().Name)},
+						InfrastructureRef: capiv1.ContractVersionedObjectReference{Name: machineTemplateName},
+						Version:           capi.Version(),
+					}}},
+					Status: capiv1.MachineDeploymentStatus{
+						AvailableReplicas: ptr.To[int32](3),
+						Conditions:        []metav1.Condition{readyCondition},
+					},
+				})
+			} else {
+				configVersion := capi.Hash()
+				objects = append(objects, &capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      nodePool.Name,
+						Namespace: controlPlaneNamespace,
+						Annotations: map[string]string{
+							nodePoolAnnotationCurrentConfigVersion: configVersion,
+							nodePoolAnnotationTargetConfigVersion:  configVersion,
+						},
+					},
+					Spec: capiv1.MachineSetSpec{Template: capiv1.MachineTemplateSpec{Spec: capiv1.MachineSpec{
+						Bootstrap:         capiv1.Bootstrap{DataSecretName: ptr.To(capi.UserDataSecret().Name)},
+						InfrastructureRef: capiv1.ContractVersionedObjectReference{Name: machineTemplateName},
+						Version:           capi.Version(),
+					}}},
+					Status: capiv1.MachineSetStatus{
+						AvailableReplicas: ptr.To[int32](3),
+						Conditions:        []metav1.Condition{readyCondition},
+					},
+				})
+			}
+			if tt.autoRepair && tt.spot {
+				objects = append(objects, &capiv1.MachineHealthCheck{
+					ObjectMeta: metav1.ObjectMeta{Name: nodePool.Name, Namespace: controlPlaneNamespace},
+				})
+			}
+
+			capi.Client = fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				WithInterceptorFuncs(tt.interceptors).
+				Build()
+
+			result, err := capi.Reconcile(ctrl.LoggerInto(t.Context(), logr.Discard()))
+			g.Expect(err).To(MatchError(ContainSubstring(injectedErr.Error())), "CAPI reconciliation should preserve the injected operation error")
+			g.Expect(result).NotTo(BeNil(), "failed CAPI reconciliation should still return a nonnil result")
+			g.Expect(result.Conditions).To(HaveLen(len(tt.expectedTypes)), "failed reconciliation should return exactly the conditions computed before the error")
+			for i, conditionType := range tt.expectedTypes {
+				expected := hyperv1.NodePoolCondition{
+					Type:               conditionType,
+					Reason:             hyperv1.AsExpectedReason,
+					ObservedGeneration: nodePool.Generation,
+				}
+				switch conditionType {
+				case hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType:
+					expected.Status = corev1.ConditionFalse
+				case hyperv1.NodePoolReadyConditionType:
+					expected.Status = corev1.ConditionTrue
+					expected.Reason = "MachinesReady"
+					expected.Message = "all machines are ready"
+				case hyperv1.NodePoolAutorepairEnabledConditionType:
+					expected.Status = corev1.ConditionTrue
+				}
+				g.Expect(result.Conditions[i]).To(Equal(expected), "condition %d should preserve type, status, reason, message and observed generation before the error", i)
+			}
+		})
+	}
+}
+
+func testGlobalPSManagedLabelOnMachines(t *testing.T, directWorkloadReconcile bool) {
+	t.Helper()
 	t.Parallel()
 	maxUnavailable := intstr.FromInt(0)
 	maxSurge := intstr.FromInt(1)
@@ -2190,7 +2855,7 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 		nodePool      *hyperv1.NodePool
 		hostedCluster *hyperv1.HostedCluster
 		objects       []client.Object
-		reconcile     func(t *testing.T, capi *CAPI) error
+		reconcile     func(t *testing.T, capi *CAPI) (*CAPIResult, error)
 		expectLabel   bool
 	}{
 		{
@@ -2331,10 +2996,10 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 					},
 				},
 			},
-			reconcile: func(t *testing.T, capi *CAPI) error {
+			reconcile: func(t *testing.T, capi *CAPI) (*CAPIResult, error) {
 				md := &capiv1.MachineDeployment{}
 				if err := capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlPlaneNamespace, Name: "test-nodepool"}, md); err != nil {
-					return err
+					return nil, err
 				}
 				template := &capiazure.AzureMachineTemplate{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2343,7 +3008,8 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 					},
 				}
 				log := ctrl.LoggerFrom(t.Context())
-				return capi.reconcileMachineDeployment(t.Context(), log, md, template)
+				conditions, err := capi.reconcileMachineDeployment(t.Context(), log, md, template)
+				return &CAPIResult{Conditions: conditions}, err
 			},
 			expectLabel: true,
 		},
@@ -2479,10 +3145,10 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 			},
 			// Call reconcileMachineDeployment directly to test the label logic
 			// without requiring full KubeVirt machine template setup.
-			reconcile: func(t *testing.T, capi *CAPI) error {
+			reconcile: func(t *testing.T, capi *CAPI) (*CAPIResult, error) {
 				md := &capiv1.MachineDeployment{}
 				if err := capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlPlaneNamespace, Name: "test-nodepool"}, md); err != nil {
-					return err
+					return nil, err
 				}
 				kvTemplate := &capikubevirt.KubevirtMachineTemplate{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2491,12 +3157,16 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 					},
 				}
 				log := ctrl.LoggerFrom(t.Context())
-				return capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)
+				conditions, err := capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)
+				return &CAPIResult{Conditions: conditions}, err
 			},
 		},
 	}
 
 	for _, tt := range tests {
+		if (tt.reconcile != nil) != directWorkloadReconcile {
+			continue
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
@@ -2533,12 +3203,12 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 
 			reconcile := tt.reconcile
 			if reconcile == nil {
-				reconcile = func(t *testing.T, capi *CAPI) error {
+				reconcile = func(t *testing.T, capi *CAPI) (*CAPIResult, error) {
 					return capi.Reconcile(t.Context())
 				}
 			}
-			err := reconcile(t, capi)
-			g.Expect(err).NotTo(HaveOccurred())
+			_, err := reconcile(t, capi)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to reconcile CAPI while propagating the global pull-secret managed label")
 
 			globalPSManagedLabelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, globalPSNodeLabel)
 			machineList := &capiv1.MachineList{}
@@ -2562,14 +3232,30 @@ func TestGlobalPSManagedLabelOnMachines(t *testing.T) {
 	}
 }
 
-// TestReconcileSelectorDropsStaleLabels is a regression test for a runaway Machine-creation
+func TestCAPI_ReconcileMachineDeployment(t *testing.T) {
+	t.Run("When a MachineDeployment selector has stale labels, it should drop them and retain template labels", func(t *testing.T) {
+		testReconcileSelectorDropsStaleLabels(t, hyperv1.UpgradeTypeReplace)
+	})
+	t.Run("When reconciling a MachineDeployment, it should propagate the global pull secret managed label", func(t *testing.T) {
+		testGlobalPSManagedLabelOnMachines(t, true)
+	})
+}
+
+func TestCAPI_ReconcileMachineSet(t *testing.T) {
+	t.Run("When a MachineSet selector has stale labels, it should drop them and retain template labels", func(t *testing.T) {
+		testReconcileSelectorDropsStaleLabels(t, hyperv1.UpgradeTypeInPlace)
+	})
+}
+
+// testReconcileSelectorDropsStaleLabels is a regression test for a runaway Machine-creation
 // bug: the MachineDeployment/MachineSet selector used to be mutated in place across reconciles
 // while the template labels were reassigned from scratch. When resourcesName changed (e.g. after
 // an infraID change) the selector kept the old key that the template no longer carried, so the
 // selector matched zero Machines and the MachineSet controller created Machines without bound.
 // The builders now rebuild the selector deterministically; this test asserts a pre-existing stale
 // key is dropped and the selector stays a strict subset of the template labels.
-func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
+func testReconcileSelectorDropsStaleLabels(t *testing.T, upgradeType hyperv1.UpgradeType) {
+	t.Helper()
 	t.Parallel()
 
 	const (
@@ -2645,8 +3331,7 @@ func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
 		}
 	}
 
-	t.Run("MachineDeployment", func(t *testing.T) {
-		t.Parallel()
+	if upgradeType == hyperv1.UpgradeTypeReplace {
 		g := NewWithT(t)
 		capi := newCAPI(g)
 
@@ -2660,12 +3345,10 @@ func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
 			},
 		}
 
-		g.Expect(capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)).To(Succeed())
+		_, err := capi.reconcileMachineDeployment(t.Context(), log, md, kvTemplate)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to reconcile MachineDeployment while removing stale selector labels")
 		assertSubset(g, md.Spec.Selector.MatchLabels, md.Spec.Template.Labels)
-	})
-
-	t.Run("MachineSet", func(t *testing.T) {
-		t.Parallel()
+	} else {
 		g := NewWithT(t)
 		capi := newCAPI(g)
 
@@ -2678,9 +3361,10 @@ func TestReconcileSelectorDropsStaleLabels(t *testing.T) {
 			},
 		}
 
-		g.Expect(capi.reconcileMachineSet(t.Context(), ms, kvTemplate)).To(Succeed())
+		_, err := capi.reconcileMachineSet(t.Context(), ms, kvTemplate)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to reconcile MachineSet while removing stale selector labels")
 		assertSubset(g, ms.Spec.Selector.MatchLabels, ms.Spec.Template.Labels)
-	})
+	}
 }
 
 func TestPause(t *testing.T) {
@@ -3522,6 +4206,84 @@ func TestPropagateVersionAndTemplateToMachineSet(t *testing.T) {
 	}
 }
 
+func TestNodePoolReadyConditions(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name       string
+		conditions []metav1.Condition
+		expected   []hyperv1.NodePoolCondition
+	}{
+		{
+			name: "When conditions are absent, it should return no Ready condition",
+		},
+		{
+			name: "When MachinesReady is absent, it should ignore other conditions",
+			conditions: []metav1.Condition{{
+				Type:   capiv1.AvailableCondition,
+				Status: metav1.ConditionTrue,
+			}},
+		},
+		{
+			name: "When machines are ready, it should preserve status reason and message with the NodePool generation",
+			conditions: []metav1.Condition{{
+				Type:               capiv1.MachinesReadyCondition,
+				Status:             metav1.ConditionTrue,
+				Reason:             "MachinesReady",
+				Message:            "all machines are ready",
+				ObservedGeneration: 3,
+				LastTransitionTime: metav1.NewTime(time.Unix(100, 0)),
+			}},
+			expected: []hyperv1.NodePoolCondition{{
+				Type:               hyperv1.NodePoolReadyConditionType,
+				Status:             corev1.ConditionTrue,
+				Reason:             "MachinesReady",
+				Message:            "all machines are ready",
+				ObservedGeneration: 7,
+			}},
+		},
+		{
+			name: "When MachinesReady is false without a reason, it should use AsExpected and preserve the message",
+			conditions: []metav1.Condition{{
+				Type:    capiv1.MachinesReadyCondition,
+				Status:  metav1.ConditionFalse,
+				Message: "machines are starting",
+			}},
+			expected: []hyperv1.NodePoolCondition{{
+				Type:               hyperv1.NodePoolReadyConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            "machines are starting",
+				ObservedGeneration: 7,
+			}},
+		},
+		{
+			name: "When MachinesReady is unknown, it should preserve the unknown status and diagnostic fields",
+			conditions: []metav1.Condition{{
+				Type:    capiv1.MachinesReadyCondition,
+				Status:  metav1.ConditionUnknown,
+				Reason:  "InspectionPending",
+				Message: "waiting for machine status",
+			}},
+			expected: []hyperv1.NodePoolCondition{{
+				Type:               hyperv1.NodePoolReadyConditionType,
+				Status:             corev1.ConditionUnknown,
+				Reason:             "InspectionPending",
+				Message:            "waiting for machine status",
+				ObservedGeneration: 7,
+			}},
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			testAssertions := NewWithT(t)
+			originalConditions := append([]metav1.Condition(nil), testCase.conditions...)
+			testAssertions.Expect(nodePoolReadyConditions(testCase.conditions, 7)).To(Equal(testCase.expected), "Ready conversion should preserve status, reason and message, use the NodePool generation and leave transition time unset")
+			testAssertions.Expect(testCase.conditions).To(Equal(originalConditions), "Ready conversion should not mutate the source conditions")
+		})
+	}
+}
+
 func TestReconcileMachineDeploymentStatus(t *testing.T) {
 	testReconcileStatusAfterReversion(t, hyperv1.UpgradeTypeReplace)
 	testReconcileStatusWithoutBootstrap(t, hyperv1.UpgradeTypeReplace)
@@ -3554,7 +4316,8 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 		expectedConfigAnnotation     bool
 		expectedTemplateAnnotation   bool
 		expectedReadyConditionStatus corev1.ConditionStatus
-		expectedReadyConditionSet    bool
+		expectedReadyReason          string
+		expectedReadyMessage         string
 	}{
 		{
 			name: "When MachineDeployment is complete, it should update nodePool version and annotations",
@@ -3606,7 +4369,7 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 			expectedTemplateAnnotation: false,
 		},
 		{
-			name: "When MachineDeployment has Ready condition, it should propagate it to nodePool",
+			name: "When MachineDeployment has MachinesReady with a reason, it should return the exact NodePool Ready condition",
 			machineDeployment: &capiv1.MachineDeployment{
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Spec: capiv1.MachineDeploymentSpec{
@@ -3629,8 +4392,34 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 			targetVersion:                "4.17.0",
 			expectedVersion:              "4.16.0",
 			expectedReplicas:             2,
-			expectedReadyConditionSet:    true,
 			expectedReadyConditionStatus: corev1.ConditionTrue,
+			expectedReadyReason:          "SomeReason",
+			expectedReadyMessage:         "all good",
+		},
+		{
+			name: "When MachineDeployment has MachinesReady without a reason, it should return AsExpected for NodePool Ready",
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: capiv1.MachineDeploymentStatus{
+					AvailableReplicas: ptr.To[int32](2),
+					Conditions: []metav1.Condition{{
+						Type:    capiv1.MachinesReadyCondition,
+						Status:  metav1.ConditionFalse,
+						Message: "machines are starting",
+					}},
+				},
+			},
+			nodePoolVersion:              "4.16.0",
+			nodePoolAnnotations:          map[string]string{},
+			targetVersion:                "4.17.0",
+			expectedVersion:              "4.16.0",
+			expectedReplicas:             2,
+			expectedReadyConditionStatus: corev1.ConditionFalse,
+			expectedReadyReason:          hyperv1.AsExpectedReason,
+			expectedReadyMessage:         "machines are starting",
 		},
 	}
 
@@ -3643,6 +4432,7 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 					Name:        "test-np",
 					Namespace:   "test-ns",
 					Annotations: tc.nodePoolAnnotations,
+					Generation:  5,
 				},
 				Status: hyperv1.NodePoolStatus{
 					Version: tc.nodePoolVersion,
@@ -3694,24 +4484,30 @@ func TestReconcileMachineDeploymentStatus(t *testing.T) {
 				},
 			}
 
-			capi.reconcileMachineDeploymentStatus(context.Background(), logr.Discard(), tc.machineDeployment, templateCR)
+			conditions := capi.reconcileMachineDeploymentStatus(context.Background(), logr.Discard(), tc.machineDeployment, templateCR)
 
-			g.Expect(nodePool.Status.Replicas).To(Equal(tc.expectedReplicas))
-			g.Expect(nodePool.Status.Version).To(Equal(tc.expectedVersion))
+			g.Expect(nodePool.Status.Replicas).To(Equal(tc.expectedReplicas), "MachineDeployment readiness conversion should preserve available replica propagation")
+			g.Expect(nodePool.Status.Version).To(Equal(tc.expectedVersion), "MachineDeployment status reconciliation should preserve version advancement semantics")
 
 			if tc.expectedConfigAnnotation {
-				g.Expect(nodePool.Annotations).To(HaveKey(nodePoolAnnotationCurrentConfig))
+				g.Expect(nodePool.Annotations).To(HaveKey(nodePoolAnnotationCurrentConfig), "completed MachineDeployment should record the current config annotation")
 			}
 			if tc.expectedTemplateAnnotation {
 				g.Expect(nodePool.Annotations).To(HaveKeyWithValue(
 					nodePoolAnnotationPlatformMachineTemplate, "template-name",
-				))
+				), "completed MachineDeployment should record the current platform machine template")
 			}
 
-			if tc.expectedReadyConditionSet {
-				readyCond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReadyConditionType)
-				g.Expect(readyCond).ToNot(BeNil())
-				g.Expect(readyCond.Status).To(Equal(tc.expectedReadyConditionStatus))
+			if tc.expectedReadyReason == "" {
+				g.Expect(conditions).To(BeNil(), "MachineDeployment without MachinesReady should return no Ready condition")
+			} else {
+				g.Expect(conditions).To(Equal([]hyperv1.NodePoolCondition{{
+					Type:               hyperv1.NodePoolReadyConditionType,
+					Status:             tc.expectedReadyConditionStatus,
+					Reason:             tc.expectedReadyReason,
+					Message:            tc.expectedReadyMessage,
+					ObservedGeneration: nodePool.Generation,
+				}}), "MachineDeployment readiness should preserve status and message, use the expected reason and observe the NodePool generation")
 			}
 		})
 	}
@@ -4364,10 +5160,11 @@ func TestPauseUnpauseCycle(t *testing.T) {
 
 			if tc.upgradeType == hyperv1.UpgradeTypeReplace {
 				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(md), md)).To(Succeed())
-				g.Expect(capiObj.reconcileMachineDeployment(t.Context(), log, md, template)).To(Succeed())
+				_, err := capiObj.reconcileMachineDeployment(t.Context(), log, md, template)
+				g.Expect(err).ToNot(HaveOccurred(), "failed to reconcile MachineDeployment after unpausing")
 
 				// Verify pause annotation removed.
-				g.Expect(md.Annotations).NotTo(HaveKey(capiv1.PausedAnnotation))
+				g.Expect(md.Annotations).NotTo(HaveKey(capiv1.PausedAnnotation), "MachineDeployment reconciliation should remove the paused annotation")
 				// Verify replicas clamped within autoscaler bounds.
 				g.Expect(*md.Spec.Replicas).To(Equal(tc.expectedReplicas))
 				// Verify autoscaler annotations preserved.
@@ -4375,10 +5172,11 @@ func TestPauseUnpauseCycle(t *testing.T) {
 				g.Expect(md.Annotations).To(HaveKeyWithValue(autoscalerMaxAnnotation, fmt.Sprintf("%d", tc.autoscalingMax)))
 			} else {
 				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)).To(Succeed())
-				g.Expect(capiObj.reconcileMachineSet(t.Context(), ms, template)).To(Succeed())
+				_, err := capiObj.reconcileMachineSet(t.Context(), ms, template)
+				g.Expect(err).ToNot(HaveOccurred(), "failed to reconcile MachineSet after unpausing")
 
 				// Verify pause annotation removed.
-				g.Expect(ms.Annotations).NotTo(HaveKey(capiv1.PausedAnnotation))
+				g.Expect(ms.Annotations).NotTo(HaveKey(capiv1.PausedAnnotation), "MachineSet reconciliation should remove the paused annotation")
 				// Verify replicas clamped within autoscaler bounds.
 				g.Expect(*ms.Spec.Replicas).To(Equal(tc.expectedReplicas))
 				// Verify autoscaler annotations preserved.
@@ -4841,8 +5639,9 @@ func TestMHCRemediationAllowedBubbledUpToReady(t *testing.T) {
 
 			nodePool := &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-nodepool",
-					Namespace: "test-namespace",
+					Name:       "test-nodepool",
+					Namespace:  "test-namespace",
+					Generation: 7,
 				},
 				Spec: hyperv1.NodePoolSpec{
 					ClusterName: "test-cluster",
@@ -5006,15 +5805,51 @@ func TestMHCRemediationAllowedBubbledUpToReady(t *testing.T) {
 			capi.Client = c
 
 			ctx := ctrl.LoggerInto(t.Context(), logr.Discard())
-			err := capi.Reconcile(ctx)
-			g.Expect(err).NotTo(HaveOccurred())
+			result, err := capi.Reconcile(ctx)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to reconcile CAPI with MachineHealthCheck remediation status")
+			g.Expect(result).NotTo(BeNil(), "MHC readiness reconciliation should return a nonnil result")
+
+			expectedConditions := []hyperv1.NodePoolCondition{
+				{
+					Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+					Status:             corev1.ConditionTrue,
+					Reason:             hyperv1.AsExpectedReason,
+					Message:            fmt.Sprintf("platform machine template update in progress. Target template: %s", awsMachineTemplateName),
+					ObservedGeneration: nodePool.Generation,
+				},
+				{
+					Type:               hyperv1.NodePoolReadyConditionType,
+					Status:             corev1.ConditionTrue,
+					Reason:             hyperv1.AsExpectedReason,
+					ObservedGeneration: nodePool.Generation,
+				},
+				{
+					Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
+					Status:             corev1.ConditionTrue,
+					Reason:             hyperv1.AsExpectedReason,
+					ObservedGeneration: nodePool.Generation,
+				},
+			}
+			if tt.expectedReadyStatus == corev1.ConditionFalse {
+				expectedConditions = append(expectedConditions, hyperv1.NodePoolCondition{
+					Type:               hyperv1.NodePoolReadyConditionType,
+					Status:             corev1.ConditionFalse,
+					Reason:             tt.expectedReadyReason,
+					Message:            tt.expectedMessage,
+					ObservedGeneration: nodePool.Generation,
+				})
+			}
+			g.Expect(result.Conditions).To(Equal(expectedConditions), "MHC reconciliation should return ordered platform-update, workload-readiness, auto-repair and optional remediation override conditions")
+			for _, condition := range result.Conditions {
+				SetStatusCondition(&nodePool.Status.Conditions, condition)
+			}
 
 			readyCond := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReadyConditionType)
-			g.Expect(readyCond).NotTo(BeNil())
-			g.Expect(readyCond.Status).To(Equal(tt.expectedReadyStatus))
-			g.Expect(readyCond.Reason).To(Equal(tt.expectedReadyReason))
+			g.Expect(readyCond).NotTo(BeNil(), "applying returned CAPI conditions should produce a Ready condition")
+			g.Expect(readyCond.Status).To(Equal(tt.expectedReadyStatus), "applied Ready status should reflect MachineHealthCheck remediation precedence")
+			g.Expect(readyCond.Reason).To(Equal(tt.expectedReadyReason), "applied Ready reason should reflect MachineHealthCheck remediation precedence")
 			if tt.expectedMessage != "" {
-				g.Expect(readyCond.Message).To(Equal(tt.expectedMessage))
+				g.Expect(readyCond.Message).To(Equal(tt.expectedMessage), "applied Ready message should preserve the MachineHealthCheck diagnostic")
 			}
 		})
 	}

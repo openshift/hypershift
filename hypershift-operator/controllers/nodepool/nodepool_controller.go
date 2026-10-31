@@ -503,7 +503,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, nil
 	}
 
-	if err := capi.Reconcile(ctx); err != nil {
+	capiResult, err := capi.Reconcile(ctx)
+	if capiResult != nil {
+		for _, condition := range capiResult.Conditions {
+			SetStatusCondition(&nodePool.Status.Conditions, condition)
+		}
+	}
+	if err != nil {
 		var notReadyErr *NotReadyError
 		if coreerrors.As(err, &notReadyErr) {
 			log.Info("Waiting to create machine template", "message", err.Error())
