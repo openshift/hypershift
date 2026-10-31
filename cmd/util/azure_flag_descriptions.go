@@ -48,7 +48,9 @@ const (
 	DiskEncryptionSetIDDescription = "Full resource ID of an Azure Disk Encryption Set used to encrypt NodePool OS disks with customer-managed keys."
 
 	// AutoNode / Karpenter
-	EnableKarpenterDescription = "Create a Karpenter workload identity for AutoNode. Use this when the cluster will be created with --auto-node."
+	AutoNodeDescription          = "If true, this flag indicates the Hosted Cluster will support the AutoNode feature."
+	EnableKarpenterDescription   = "Create a Karpenter workload identity for AutoNode. Use this when the cluster will be created with --auto-node."
+	KarpenterClientIDDescription = "Client ID of an existing federated Azure identity for Karpenter. Does not create the identity or federation trust. Overrides karpenterClientID in --workload-identities-file when supplied."
 
 	// VM configuration
 	InstanceTypeDescription = "Azure VM size for NodePool instances (e.g. Standard_D4s_v5, Standard_D8s_v5)."

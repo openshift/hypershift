@@ -54,6 +54,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to file containing ARO HCP managed identities JSON")
 	cmd.Flags().StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.DataPlaneIdentitiesFile, "Path to file containing ARO HCP data plane identities JSON")
 	cmd.Flags().StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, "Path to file containing self-managed Azure workload identities JSON")
+	cmd.Flags().StringVar(&opts.KarpenterClientID, "karpenter-client-id", opts.KarpenterClientID, util.KarpenterClientIDDescription)
 
 	// RBAC and identity role assignment flags
 	cmd.Flags().BoolVar(&opts.AssignServicePrincipalRoles, "assign-identity-roles", opts.AssignServicePrincipalRoles, util.AssignIdentityRolesDescription)
@@ -288,11 +289,16 @@ func (o *CreateInfraOptions) handleIdentitiesAndRBAC(ctx context.Context, rbacMg
 			if err := rbacMgr.AssignWorkloadIdentities(ctx, o, result.WorkloadIdentities, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName); err != nil {
 				return err
 			}
-			if result.KarpenterClientID != "" {
-				if err := rbacMgr.AssignKarpenterRoles(ctx, o, result.KarpenterClientID, resourceGroupName, vnetResourceGroupName); err != nil {
-					return err
-				}
-			}
+		}
+	}
+
+	if o.KarpenterClientID != "" {
+		result.KarpenterClientID = o.KarpenterClientID
+	}
+
+	if o.AssignServicePrincipalRoles && result.KarpenterClientID != "" {
+		if err := rbacMgr.AssignKarpenterRoles(ctx, o, result.KarpenterClientID, resourceGroupName, vnetResourceGroupName); err != nil {
+			return err
 		}
 	}
 
