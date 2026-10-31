@@ -7,9 +7,31 @@ permissions:
   contents: read
 
 jobs:
+  image:
+    name: Resolve verification image
+    runs-on: arc-runner-set
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: image
+        shell: bash
+        run: |
+          image=$(./hack/verify-image.sh)
+          printf 'image=%s\n' "$image" >> "$GITHUB_OUTPUT"
+
   verify:
     name: Verify
-    runs-on: arc-runner-set
+    needs: image
+    runs-on: arc-verify-runner-set
+    container:
+      image: ${{ needs.image.outputs.image }}
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -17,7 +39,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: |
-          if [ -n "${{ github.base_ref }}" ]; then
-            git fetch origin "${{ github.base_ref }}:${{ github.base_ref }}"
+          if [ -n "$BASE_REF" ]; then
+            git fetch origin "$BASE_REF:$BASE_REF"
           fi
-      - run: make verify-ci
+        env:
+          BASE_REF: ${{ github.base_ref }}
+      - run: make verify
+        env:
+          VERIFY_CONTAINER: "0"

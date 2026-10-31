@@ -90,6 +90,7 @@
     {"pattern": "Dockerfile.dev", "group": "Tooling", "why": "root file"},
     {"pattern": "Dockerfile.e2e", "group": "Tooling", "why": "root file"},
     {"pattern": "Dockerfile.github-actions-runner", "group": "Tooling", "why": "root file"},
+    {"pattern": "Dockerfile.verify", "group": "Tooling", "why": "root file"},
     {"pattern": "GEMINI.md", "group": "Docs", "why": "root documentation"},
     {"pattern": "HACKING.md", "group": "Docs", "why": "root documentation"},
     {"pattern": "LICENSE", "group": "Tooling", "why": "root file"},
