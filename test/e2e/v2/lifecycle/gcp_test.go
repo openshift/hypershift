@@ -26,6 +26,7 @@ func testGCPInfra() gcpInfra {
 		storageSA:         "storage@sa",
 		imageRegistrySA:   "ir@sa",
 		networkSA:         "net@sa",
+		ingressSA:         "ingress@sa",
 		saSigningKeyPath:  "/shared/sa-signer.key",
 		oidcIssuerURL:     "https://hypershift-ci123-oidc",
 	}
@@ -48,6 +49,7 @@ func writeSharedInfra(t *testing.T) string {
 		"storage-sa":                "storage@sa",
 		"imageregistry-sa":          "ir@sa",
 		"network-sa":                "net@sa",
+		"ingress-sa":                "ingress@sa",
 		"sa-signing-key-path":       "/shared/sa-signer.key",
 		"hosted-cluster-name":       "ci123",
 		"hosted-cluster-project-id": "my-project",
@@ -126,13 +128,13 @@ func TestGCPClusterSpecs(t *testing.T) {
 	}
 
 	specs := cfg.ClusterSpecs(t.Context(), "release-image", "n1-image")
-	if len(specs) != 1 {
-		t.Fatalf("got %d GCP variants, want 1", len(specs))
+	if len(specs) != 2 {
+		t.Fatalf("got %d GCP variants, want 2", len(specs))
+	}
+	if specs[0].Variant != "default" || specs[1].Variant != "ingress" {
+		t.Fatalf("GCP variants %q/%q, want default/ingress", specs[0].Variant, specs[1].Variant)
 	}
 	spec := specs[0]
-	if spec.Variant != "default" {
-		t.Fatalf("GCP variant %q, want %q", spec.Variant, "default")
-	}
 
 	// Each flag encodes a distinct cluster-creation contract that a
 	// regression could silently drop. The default variant must also
@@ -159,18 +161,73 @@ func TestGCPClusterSpecs(t *testing.T) {
 			t.Errorf("default CreateArgs %v missing %q", spec.CreateArgs, arg)
 		}
 	}
+
+	// The ingress variant keeps the Ingress capability enabled so the guest
+	// ingress operator runs, disables Console, and must carry the ingress
+	// service account flag.
+	ingressSpec := specs[1]
+	if slices.Contains(ingressSpec.CreateArgs, "--disable-cluster-capabilities=Ingress") {
+		t.Errorf("ingress CreateArgs %v must not disable the Ingress capability", ingressSpec.CreateArgs)
+	}
+	for _, arg := range []string{
+		"--disable-cluster-capabilities=Console",
+		"--feature-set=TechPreviewNoUpgrade",
+		"--ingress-service-account=ingress@sa",
+		"--base-domain=" + cfg.variantBaseDomain("ingress"),
+	} {
+		if !slices.Contains(ingressSpec.CreateArgs, arg) {
+			t.Errorf("ingress CreateArgs %v missing %q", ingressSpec.CreateArgs, arg)
+		}
+	}
+}
+
+func TestGCPInfraIngressServiceAccountIsOptional(t *testing.T) {
+	t.Setenv("HYPERSHIFT_GCP_PROJECT", "")
+	t.Setenv("HYPERSHIFT_GCP_REGION", "")
+
+	// The CI setup step only writes ingress-sa once cluster provisioning
+	// creates an ingress service account; until then the flag must be
+	// omitted rather than emitted empty.
+	dir := writeSharedInfra(t)
+	if err := os.Remove(filepath.Join(dir, "ingress-sa")); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := NewGCPPlatformConfig(dir)
+	if err != nil {
+		t.Fatalf("NewGCPPlatformConfig() = %v, want nil error", err)
+	}
+	if cfg.infra.ingressSA != "" {
+		t.Errorf("ingressSA = %q, want empty", cfg.infra.ingressSA)
+	}
+	for _, arg := range cfg.infra.args() {
+		if strings.HasPrefix(arg, "--ingress-service-account") {
+			t.Errorf("args() contains %q, want no ingress service account flag", arg)
+		}
+	}
+
+	// When provisioning does write it, the flag is passed through.
+	if err := os.WriteFile(filepath.Join(dir, "ingress-sa"), []byte("ingress@sa\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = NewGCPPlatformConfig(dir)
+	if err != nil {
+		t.Fatalf("NewGCPPlatformConfig() = %v, want nil error", err)
+	}
+	if !slices.Contains(cfg.infra.args(), "--ingress-service-account=ingress@sa") {
+		t.Errorf("args() = %v, want it to contain --ingress-service-account=ingress@sa", cfg.infra.args())
+	}
 }
 
 func TestGCPClusterSpecsHonorsExtraArgs(t *testing.T) {
 	t.Setenv("EXTRA_ARGS", "--foo=bar --baz")
 
 	specs := (&GCPPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
-	if len(specs) != 1 {
-		t.Fatalf("got %d GCP variants, want 1", len(specs))
-	}
-	for _, arg := range []string{"--foo=bar", "--baz"} {
-		if !slices.Contains(specs[0].CreateArgs, arg) {
-			t.Errorf("default CreateArgs %v missing EXTRA_ARGS entry %q", specs[0].CreateArgs, arg)
+	for _, spec := range specs {
+		for _, arg := range []string{"--foo=bar", "--baz"} {
+			if !slices.Contains(spec.CreateArgs, arg) {
+				t.Errorf("%s CreateArgs %v missing EXTRA_ARGS entry %q", spec.Variant, spec.CreateArgs, arg)
+			}
 		}
 	}
 }
@@ -190,11 +247,25 @@ func TestGCPTestMatrixValidates(t *testing.T) {
 	}
 
 	groups := cfg.TestMatrix().Parallel
-	if len(groups) != 1 {
-		t.Fatalf("got %d parallel groups, want 1", len(groups))
+	if len(groups) != 2 {
+		t.Fatalf("got %d parallel groups, want 2", len(groups))
 	}
-	if got, want := groups[0].LabelFilter, "!lifecycle || gcp-worker-firewall"; got != want {
-		t.Errorf("default label filter = %q, want %q", got, want)
+	wantGroups := map[string]string{
+		"default": "!lifecycle || gcp-worker-firewall",
+		"ingress": "gcp-ingress",
+	}
+	for _, group := range groups {
+		want, ok := wantGroups[group.Name]
+		if !ok {
+			t.Errorf("unexpected test group %q", group.Name)
+			continue
+		}
+		if group.Variant != group.Name {
+			t.Errorf("group %q variant = %q, want %q", group.Name, group.Variant, group.Name)
+		}
+		if group.LabelFilter != want {
+			t.Errorf("group %q label filter = %q, want %q", group.Name, group.LabelFilter, want)
+		}
 	}
 }
 
@@ -227,14 +298,16 @@ func TestGCPClusterSpecsBaseDomainIsPerCluster(t *testing.T) {
 		prowJobID:   "job-123",
 		ciDNSDomain: "example.gcp-hcp.test",
 	}
-	spec := cfg.ClusterSpecs(t.Context(), "release-image", "n1-image")[0]
-	if got := spec.CreateArgs[0]; got != "--base-domain="+cfg.variantBaseDomain("default") {
-		t.Errorf("CreateArgs[0] = %q, want --base-domain=%q", got, cfg.variantBaseDomain("default"))
+	for _, spec := range cfg.ClusterSpecs(t.Context(), "release-image", "n1-image") {
+		want := "--base-domain=" + cfg.variantBaseDomain(spec.Variant)
+		if got := spec.CreateArgs[0]; got != want {
+			t.Errorf("%s CreateArgs[0] = %q, want %q", spec.Variant, got, want)
+		}
 	}
 }
 
 func TestGCPPreCreateChecksBaseDomainLength(t *testing.T) {
-	cfg := &GCPPlatformConfig{prowJobID: "job-123"}
+	cfg := &GCPPlatformConfig{prowJobID: "job-123", infra: testGCPInfra()}
 	//nolint:hypershiftlinter // unit test of PreCreate wiring; no Ginkgo TestContext here
 	if err := cfg.PreCreate(context.TODO(), nil, ""); err != nil {
 		t.Errorf("PreCreate(normal domain) = %v, want nil", err)
@@ -251,6 +324,27 @@ func TestGCPPreCreateChecksBaseDomainLength(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "DNS hostname limit") {
 		t.Errorf("PreCreate error %q should mention the DNS hostname limit", err)
+	}
+}
+
+func TestGCPPreCreateRequiresIngressServiceAccount(t *testing.T) {
+	cfg := &GCPPlatformConfig{prowJobID: "job-123"}
+
+	// The ingress variant requires the ingress service account; without it
+	// "create cluster gcp" would reject the cluster deep in the create chain.
+	//nolint:hypershiftlinter // unit test of PreCreate wiring; no Ginkgo TestContext here
+	err := cfg.PreCreate(context.TODO(), nil, "")
+	if err == nil {
+		t.Fatal("PreCreate(missing ingress-sa) = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "ingress-sa") {
+		t.Errorf("PreCreate error %q should name the missing ingress-sa file", err)
+	}
+
+	cfg.infra = testGCPInfra()
+	//nolint:hypershiftlinter // unit test of PreCreate wiring; no Ginkgo TestContext here
+	if err := cfg.PreCreate(context.TODO(), nil, ""); err != nil {
+		t.Errorf("PreCreate(with ingress-sa) = %v, want nil", err)
 	}
 }
 

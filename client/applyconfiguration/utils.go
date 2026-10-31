@@ -219,6 +219,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.GCPBootDiskApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPDiskEncryptionKey"):
 		return &hypershiftv1beta1.GCPDiskEncryptionKeyApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("GCPDNSDelegationSpec"):
+		return &hypershiftv1beta1.GCPDNSDelegationSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPNetworkConfig"):
 		return &hypershiftv1beta1.GCPNetworkConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPNodePoolPlatform"):

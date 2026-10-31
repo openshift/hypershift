@@ -32,8 +32,26 @@ const (
 	// created in the customer VPC
 	GCPDNSAvailable ConditionType = "GCPDNSAvailable"
 
+	// GCPACMECNAMEAvailable indicates whether the ACME DNS-01 challenge CNAME
+	// requested through the HostedCluster's
+	// spec.platform.gcp.delegation.acmeChallengeTarget was published in the
+	// cluster's public ingress DNS zone. The condition is only present when
+	// that field is set.
+	GCPACMECNAMEAvailable ConditionType = "GCPACMECNAMEAvailable"
+
 	GCPSuccessReason string = "GCPSuccess"
 	GCPErrorReason   string = "GCPError"
+
+	// GCPACMECNAMEOutsideBaseDomainReason indicates that no ACME challenge CNAME
+	// was created because the cluster's ingress domain is not within its base
+	// domain, so the public ingress zone is not authoritative for the challenge
+	// name.
+	GCPACMECNAMEOutsideBaseDomainReason string = "ACMECNAMEOutsideBaseDomain"
+
+	// GCPACMECNAMESelfReferentialReason indicates that no ACME challenge CNAME
+	// was created because the configured target equals the challenge record name,
+	// which would be a self-referential CNAME.
+	GCPACMECNAMESelfReferentialReason string = "ACMECNAMESelfReferential"
 )
 
 // DNSZoneStatus represents a single DNS zone and its records
@@ -91,7 +109,7 @@ type GCPPrivateServiceConnectSpec struct {
 // GCPPrivateServiceConnectStatus defines the observed state of PSC infrastructure
 type GCPPrivateServiceConnectStatus struct {
 	// conditions represent the current state of PSC infrastructure
-	// Current condition types are: "GCPPrivateServiceConnectAvailable", "GCPServiceAttachmentAvailable", "GCPEndpointAvailable", "GCPDNSAvailable"
+	// Current condition types are: "GCPPrivateServiceConnectAvailable", "GCPServiceAttachmentAvailable", "GCPEndpointAvailable", "GCPDNSAvailable", "GCPACMECNAMEAvailable"
 	// +optional
 	// +listType=map
 	// +listMapKey=type

@@ -6934,6 +6934,13 @@ recovery job was triggered.</p>
 A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
 and registered correctly.</p>
 </td>
+</tr><tr><td><p>&#34;GCPACMECNAMEAvailable&#34;</p></td>
+<td><p>GCPACMECNAMEAvailable indicates whether the ACME DNS-01 challenge CNAME
+requested through the HostedCluster&rsquo;s
+spec.platform.gcp.delegation.acmeChallengeTarget was published in the
+cluster&rsquo;s public ingress DNS zone. The condition is only present when
+that field is set.</p>
+</td>
 </tr><tr><td><p>&#34;GCPDNSAvailable&#34;</p></td>
 <td><p>GCPDNSAvailable indicates whether the DNS configuration has been
 created in the customer VPC</p>
@@ -7017,6 +7024,14 @@ and reports missing images if any.</p>
 <td><p>InfrastructureReady bubbles up the same condition from HCP. It signals if the infrastructure for a control plane to be operational,
 e.g. load balancers were created successfully.
 A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.</p>
+</td>
+</tr><tr><td><p>&#34;IngressCredentialsFound&#34;</p></td>
+<td><p>IngressCredentialsFound indicates whether the optional ingress-operator
+credentials are configured. It is only evaluated for platforms whose
+ingress operator needs cloud credentials (today: GCP). A False condition
+is non-blocking: the HostedCluster keeps reconciling, but the guest
+ingress operator runs without cloud credentials and cannot publish the
+*.apps DNS records.</p>
 </td>
 </tr><tr><td><p>&#34;IngressDefaultCertificateSynced&#34;</p></td>
 <td><p>IngressDefaultCertificateSynced indicates whether the user-provided default
@@ -8518,6 +8533,58 @@ If not specified, Google-managed encryption keys are used.</p>
 </tr>
 </tbody>
 </table>
+###GCPDNSDelegationSpec { #hypershift.openshift.io/v1beta1.GCPDNSDelegationSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPDNSDelegationSpec configures DNS delegation for the ingress wildcard
+certificate of a GCP hosted cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>acmeChallengeTarget</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>acmeChallengeTarget delegates the ACME DNS-01 challenge for the ingress
+wildcard certificate (*.apps) to a solver running outside the cluster.
+When set, HyperShift publishes a CNAME record at
+_acme-challenge.<ingress domain> in the cluster&rsquo;s public ingress DNS zone,
+pointing at this target, so an external certificate issuer that can write
+the target&rsquo;s zone but not the cluster&rsquo;s ingress zone (for example a central
+cert-manager) can solve the challenge by following the CNAME.</p>
+<p>The value is the fully qualified name the external solver writes its
+challenge TXT records to. It must be lowercase, must start with the
+_acme-challenge. label, must contain at least two further labels, must not
+end with a dot, and is limited to 253 characters.</p>
+<p>The record is only created when the cluster&rsquo;s ingress domain
+(apps.<baseDomainPrefix>.<baseDomain> by default, or the
+spec.configuration.ingress domain or appsDomain override when set) is
+within the cluster&rsquo;s base domain, and when the target differs from the
+record name. When the record is not created, the GCPACMECNAMEAvailable
+condition on the HostedCluster reports why.</p>
+<p>When this field is not set, no record is created and the deployment is
+responsible for issuing the ingress wildcard certificate, solving its
+DNS-01 challenge in the ingress zone itself.</p>
+<p>The field can be set when the cluster is created or added later, but once
+set it cannot be changed or removed.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###GCPDiskEncryptionKey { #hypershift.openshift.io/v1beta1.GCPDiskEncryptionKey }
 <p>
 (<em>Appears on:</em>
@@ -9018,6 +9085,21 @@ supporting control plane operator image is configured.</p>
 </tr>
 <tr>
 <td>
+<code>delegation,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPDNSDelegationSpec">
+GCPDNSDelegationSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delegation configures DNS delegation for the ingress wildcard certificate
+of the hosted cluster. When omitted, no delegation record is created.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>workloadIdentity,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig">
@@ -9143,7 +9225,7 @@ Auto-populated by the HyperShift Operator</p>
 <td>
 <em>(Optional)</em>
 <p>conditions represent the current state of PSC infrastructure
-Current condition types are: &ldquo;GCPPrivateServiceConnectAvailable&rdquo;, &ldquo;GCPServiceAttachmentAvailable&rdquo;, &ldquo;GCPEndpointAvailable&rdquo;, &ldquo;GCPDNSAvailable&rdquo;</p>
+Current condition types are: &ldquo;GCPPrivateServiceConnectAvailable&rdquo;, &ldquo;GCPServiceAttachmentAvailable&rdquo;, &ldquo;GCPEndpointAvailable&rdquo;, &ldquo;GCPDNSAvailable&rdquo;, &ldquo;GCPACMECNAMEAvailable&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -9570,6 +9652,36 @@ This GSA requires the following IAM roles:
 - roles/compute.networkUser (Compute Network User - for using subnets)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingress</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ingress is the Google Service Account email for the cluster Ingress Operator
+that manages the default IngressController&rsquo;s wildcard (*.apps) Cloud DNS records.
+This GSA requires the following IAM role:
+- roles/dns.admin (DNS Admin - for managing records in the ingress managed zone)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.</p>
+<p>When the Ingress capability is enabled (the default), creating the cluster
+through the CLI without this field fails fast, and a cluster created
+without it (e.g. via direct YAML) reports a non-blocking
+IngressCredentialsFound condition: the guest ingress operator runs
+without credentials and cannot publish the *.apps DNS records. Because
+the field is immutable, such a cluster cannot be fixed after creation.
+When the Ingress capability is disabled, this field is ignored. The email
+must belong to the GCP project in spec.project, and it can only be set at
+creation time.</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
 Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
 the required service accounts with appropriate IAM roles and WIF bindings.</p>

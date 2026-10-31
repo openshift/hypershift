@@ -48,8 +48,12 @@ type gcpInfra struct {
 	storageSA         string
 	imageRegistrySA   string
 	networkSA         string
-	saSigningKeyPath  string
-	oidcIssuerURL     string
+	// ingressSA is optional: the CI setup step only writes it once the
+	// cluster provisioning creates an ingress service account. Variants with
+	// the Ingress capability enabled require it.
+	ingressSA        string
+	saSigningKeyPath string
+	oidcIssuerURL    string
 }
 
 // GCPPlatformConfig holds GCP-specific configuration for the hypershift
@@ -124,11 +128,19 @@ func (g *GCPPlatformConfig) DefaultBaseDomain() string {
 }
 
 // ClusterSpecs returns the GCP cluster variants to create, expressing the
-// complete "create cluster gcp" command line per variant. Currently only
-// the "default" variant (Console + Ingress disabled,
-// TechPreviewNoUpgrade), reproducing today's single-cluster e2e-v2-gke
-// behavior. Additional variants are appended here and require no change
-// outside this file.
+// complete "create cluster gcp" command line per variant:
+//
+//   - "default": Console + Ingress disabled, TechPreviewNoUpgrade,
+//     reproducing today's single-cluster e2e-v2-gke behavior.
+//   - "ingress": Console disabled, Ingress enabled, TechPreviewNoUpgrade.
+//     The hosted cluster's cluster-ingress-operator then manages the *.apps wildcard in
+//     the CPO-managed public ingress zone using the ingress service account,
+//     so the ingress path is exercised end to end (see the gcp-ingress
+//     tests). It requires the ingress service account, which the CI setup
+//     step writes to SHARED_DIR/ingress-sa.
+//
+// Additional variants are appended here and require no change outside this
+// file.
 func (g *GCPPlatformConfig) ClusterSpecs(_ context.Context, releaseImage, n1Image string) []ClusterSpec {
 	commonArgs := []string{
 		"--project=" + g.project,
@@ -152,22 +164,35 @@ func (g *GCPPlatformConfig) ClusterSpecs(_ context.Context, releaseImage, n1Imag
 		extraArgs = strings.Fields(envArgs)
 	}
 
-	return []ClusterSpec{
-		{
-			Variant: "default",
-			CreateArgs: slices.Concat(
-				// The per-cluster --base-domain overrides the global one
-				// (pflag keeps the last value).
-				[]string{"--base-domain=" + g.variantBaseDomain("default")},
-				[]string{
-					"--disable-cluster-capabilities=Console",
-					"--disable-cluster-capabilities=Ingress",
-					"--feature-set=TechPreviewNoUpgrade",
-				},
-				commonArgs,
-				extraArgs,
-			),
+	defaultArgs := slices.Concat(
+		// The per-cluster --base-domain overrides the global one
+		// (pflag keeps the last value).
+		[]string{"--base-domain=" + g.variantBaseDomain("default")},
+		[]string{
+			"--disable-cluster-capabilities=Console",
+			"--disable-cluster-capabilities=Ingress",
+			"--feature-set=TechPreviewNoUpgrade",
 		},
+		commonArgs,
+		extraArgs,
+	)
+
+	ingressArgs := slices.Concat(
+		[]string{"--base-domain=" + g.variantBaseDomain("ingress")},
+		[]string{
+			// Ingress stays enabled: the guest ingress operator publishes the
+			// *.apps wildcard into the public ingress zone using the ingress
+			// service account passed through gcpInfra.args().
+			"--disable-cluster-capabilities=Console",
+			"--feature-set=TechPreviewNoUpgrade",
+		},
+		commonArgs,
+		extraArgs,
+	)
+
+	return []ClusterSpec{
+		{Variant: "default", CreateArgs: defaultArgs},
+		{Variant: "ingress", CreateArgs: ingressArgs},
 	}
 }
 
@@ -180,6 +205,13 @@ func (g *GCPPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch
 		if err := checkBaseDomainLength(spec.Variant, g.variantBaseDomain(spec.Variant)); err != nil {
 			return err
 		}
+	}
+	// The ingress variant is part of the default test plan and enables the
+	// Ingress capability, so "create cluster gcp" refuses to create it
+	// without --ingress-service-account. Fail here, before any cluster or
+	// credential is provisioned, rather than deep in the create chain.
+	if g.infra.ingressSA == "" {
+		return fmt.Errorf("the GCP %q variant requires an ingress service account, but SHARED_DIR/ingress-sa is missing or empty; the CI setup step must write it from the 'create iam gcp' output (ingress-op entry)", "ingress")
 	}
 	return nil
 }
@@ -198,7 +230,7 @@ func (g *GCPPlatformConfig) variantBaseDomain(variant string) string {
 // args renders the shared infrastructure values as "create cluster gcp"
 // flags. It is pure so arg construction is testable without GCP access.
 func (i gcpInfra) args() []string {
-	return []string{
+	args := []string{
 		"--network=" + i.network,
 		"--private-service-connect-subnet=" + i.pscSubnet,
 		"--workload-identity-project-number=" + i.wifProjectNumber,
@@ -210,9 +242,14 @@ func (i gcpInfra) args() []string {
 		"--storage-service-account=" + i.storageSA,
 		"--image-registry-service-account=" + i.imageRegistrySA,
 		"--network-service-account=" + i.networkSA,
-		"--service-account-signing-key-path=" + i.saSigningKeyPath,
-		"--oidc-issuer-url=" + i.oidcIssuerURL,
 	}
+	if i.ingressSA != "" {
+		args = append(args, "--ingress-service-account="+i.ingressSA)
+	}
+	return append(args,
+		"--service-account-signing-key-path="+i.saSigningKeyPath,
+		"--oidc-issuer-url="+i.oidcIssuerURL,
+	)
 }
 
 // readGCPInfra reads the account-level GCP infrastructure values that the
@@ -233,6 +270,15 @@ func readGCPInfra(sharedDir string) (gcpInfra, error) {
 	required["imageregistry-sa"] = &infra.imageRegistrySA
 	required["network-sa"] = &infra.networkSA
 	required["sa-signing-key-path"] = &infra.saSigningKeyPath
+
+	// Optional: written only once cluster provisioning creates an ingress
+	// service account. Clusters that disable the Ingress capability (as the
+	// default variant does) do not need it, so its absence is not an error.
+	ingressSA, err := readSharedFile(sharedDir, "ingress-sa")
+	if err != nil {
+		return gcpInfra{}, fmt.Errorf("reading GCP infra value ingress-sa from SHARED_DIR: %w", err)
+	}
+	infra.ingressSA = ingressSA
 
 	var missing []string
 	for name, dst := range required {
@@ -297,8 +343,10 @@ func (g *GCPPlatformConfig) DefaultTestPlan() TestPlan {
 	}
 }
 
-// TestMatrix runs the GCP suite with today's exact label filter: all
-// non-lifecycle specs plus the one GCP-specific lifecycle spec.
+// TestMatrix runs the GCP suite against both variants: today's exact label
+// filter on the "default" cluster (all non-lifecycle specs plus the one
+// GCP-specific lifecycle spec), and the ingress delegation/route specs on the
+// "ingress" cluster.
 func (g *GCPPlatformConfig) TestMatrix() TestMatrix {
 	return TestMatrix{
 		Parallel: []TestGroup{
@@ -306,6 +354,11 @@ func (g *GCPPlatformConfig) TestMatrix() TestMatrix {
 				Name:        "default",
 				Variant:     "default",
 				LabelFilter: "!lifecycle || gcp-worker-firewall",
+			},
+			{
+				Name:        "ingress",
+				Variant:     "ingress",
+				LabelFilter: "gcp-ingress",
 			},
 		},
 	}

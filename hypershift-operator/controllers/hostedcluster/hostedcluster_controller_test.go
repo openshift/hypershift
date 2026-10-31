@@ -7090,6 +7090,101 @@ func TestComputeGCPPSCCondition(t *testing.T) {
 	}
 }
 
+func TestPropagateGCPPSCACMECNAMECondition(t *testing.T) {
+	t.Parallel()
+
+	pscListWith := func(conditions ...metav1.Condition) hyperv1.GCPPrivateServiceConnectList {
+		return hyperv1.GCPPrivateServiceConnectList{
+			Items: []hyperv1.GCPPrivateServiceConnect{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "psc"},
+					Status:     hyperv1.GCPPrivateServiceConnectStatus{Conditions: conditions},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name     string
+		pscList  hyperv1.GCPPrivateServiceConnectList
+		initial  []metav1.Condition
+		expected *metav1.Condition
+	}{
+		{
+			name: "When no PSC reports the condition, it should leave the HostedCluster without it",
+			pscList: pscListWith(metav1.Condition{
+				Type:   string(hyperv1.GCPDNSAvailable),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.GCPSuccessReason,
+			}),
+		},
+		{
+			name: "When a PSC reports the published record, it should copy status and reason",
+			pscList: pscListWith(metav1.Condition{
+				Type:    string(hyperv1.GCPACMECNAMEAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.GCPSuccessReason,
+				Message: "ACME challenge CNAME published",
+			}),
+			expected: &metav1.Condition{
+				Type:    string(hyperv1.GCPACMECNAMEAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.GCPSuccessReason,
+				Message: "ACME challenge CNAME published",
+			},
+		},
+		{
+			name: "When a PSC reports a skipped record, it should preserve the skip reason",
+			pscList: pscListWith(metav1.Condition{
+				Type:    string(hyperv1.GCPACMECNAMEAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.GCPACMECNAMEOutsideBaseDomainReason,
+				Message: "No ACME challenge CNAME was created: the ingress domain is outside the base domain.",
+			}),
+			expected: &metav1.Condition{
+				Type:    string(hyperv1.GCPACMECNAMEAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.GCPACMECNAMEOutsideBaseDomainReason,
+				Message: "No ACME challenge CNAME was created: the ingress domain is outside the base domain.",
+			},
+		},
+		{
+			name:    "When the condition was previously set and no PSC reports it anymore, it should be removed",
+			pscList: pscListWith(),
+			initial: []metav1.Condition{
+				{
+					Type:   string(hyperv1.GCPACMECNAMEAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.GCPSuccessReason,
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{Conditions: tc.initial},
+			}
+			propagateGCPPSCACMECNAMECondition(hcluster, tc.pscList)
+
+			condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.GCPACMECNAMEAvailable))
+			if tc.expected == nil {
+				if condition != nil {
+					t.Errorf("expected no %s condition, got %+v", hyperv1.GCPACMECNAMEAvailable, *condition)
+				}
+				return
+			}
+			if condition == nil {
+				t.Fatalf("expected %s condition to be set", hyperv1.GCPACMECNAMEAvailable)
+			}
+			if condition.Status != tc.expected.Status || condition.Reason != tc.expected.Reason || condition.Message != tc.expected.Message {
+				t.Errorf("expected condition %+v\nbut got %+v", *tc.expected, *condition)
+			}
+		})
+	}
+}
+
 func TestReconcileCustomExternalKubeconfig(t *testing.T) {
 	t.Parallel()
 	hcpNamespace := "test-hcp-ns"
