@@ -34,7 +34,7 @@ The following guidelines will help ensure a smooth contribution process for both
 
 This project uses [Prow](https://docs.ci.openshift.org/) and [GitHub Actions](https://github.com/openshift/hypershift/actions) for CI. Lightweight checks (linting, unit tests, verification) run automatically on pushes and pull requests. E2E tests that consume real cloud infrastructure only run after a reviewer grants `/lgtm`, to avoid unnecessary resource usage on work-in-progress PRs.
 
-**Adding CI targets:** Ensure each new check is reachable from the corresponding GitHub Actions workflow, either through a Makefile entrypoint it already invokes or through a workflow step. For example, `.github/workflows/verify-reusable.yaml` runs `make verify-ci`, which delegates to `verify-serial-targets`; changing that group's contents does not require a separate workflow step. Adding a target only to `verify-parallel-targets` does not automatically include it in that workflow. GitHub Actions provide fast feedback on PRs; Prow runs heavier e2e tests.
+**Adding CI targets:** Include every verification check in the full `make verify` target, which is the gate for both local runs and CI. Local runs and CI use the same pinned tool image and complete workload; existing CI containers execute it directly. Prow's existing `make verify-ci` entry point is a compatibility alias for the same workload. Focused helpers such as `make lint` remain available during development. Keep targets that regenerate module or provider sources sequential and finish them before readers run. See [Code Quality](DEVELOPMENT.md#code-quality) for the coverage inventory, container launcher and performance measurement procedure.
 
 See hack/github-actions-runner/README.md for details.
 

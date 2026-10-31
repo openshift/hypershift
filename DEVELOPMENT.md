@@ -58,9 +58,10 @@ This approach tests production code paths without introducing test-only configur
 ### Code Quality
 
 ```bash
-make lint                     # Run golangci-lint
+make verify                   # Run the complete verification workload locally and in CI
+make lint                     # Focused Go analysis/formatting helper (also included in verify)
 make lint-fix                 # Auto-fix linting issues
-make verify                   # Full verification (generate, update, staticcheck, fmt, vet, lint, codespell, gitlint)
+make verify-generated         # Regenerate content and check for uncommitted differences
 make staticcheck              # Run staticcheck on core packages
 make deadcode                 # Report whole-program dead-code candidates (not a gate)
 make verify-deadcode          # Scan and fail on any dead-code candidate
@@ -69,6 +70,11 @@ make vet                      # Run go vet
 make verify-codespell         # Catch spelling errors in markdown
 make run-gitlint              # Validate commit message format across a commit range
 ```
+
+Run `make verify` from a clean, committed checkout with Podman or Docker running.
+It is the complete gate for local runs, GitHub Actions, Prow and the pre-push hook.
+See the [verification guide](docs/content/contribute/verification.md) for setup,
+check coverage, caches, image updates and performance measurements.
 
 #### Dead-code reporting
 
@@ -82,7 +88,7 @@ The target builds `golang.org/x/tools/cmd/deadcode` pinned to v0.48.0 from the
 vendored tools module, builds the report helper, and runs `generate` for ignored
 mocks. It does not modify tracked source files or delete candidates. `make
 deadcode` remains reporting-only; `make verify-deadcode` runs the same scan and
-fails when any candidate is reported. Neither is part of `verify`, `verify-ci`,
+fails when any candidate is reported. Neither is part of `verify`, `lint`,
 or `pre-commit`; the dedicated `Deadcode` GitHub Actions workflow enforces the
 gate on pull requests to `main`.
 
@@ -237,7 +243,7 @@ make verify-capi-decoupling   # Check the invariants below without a full CI run
 
 Because each provider is a separate module reached through `replace`, `go build ./...` in the root module compiles only the provider subpackages something imports — a broken `exp/api` package stays invisible until CRD generation. It also means the localized `capicore` types and the upstream CAPI types they were copied from are **distinct Go types**: code merged from upstream that names `clusterv1beta1` or `capiv1` where a file already uses `capicore` will not compile, and the error does not say why.
 
-`make verify-capi-decoupling` (`hack/verify-capi-decoupling.sh`) checks this in seconds: no provider module may require or import `sigs.k8s.io/cluster-api`, every subpackage of every provider module must build, and the packages that consume `capicore` types must vet. It runs after `verify-capi-sync` in `verify-serial-targets`, invoked by `verify` and `verify-ci`; run it locally after **any merge or rebase onto main that touched provider types**, which is where the alias mismatch usually arrives from.
+`make verify-capi-decoupling` (`hack/verify-capi-decoupling.sh`) checks this in seconds: no provider module may require or import `sigs.k8s.io/cluster-api`, every subpackage of every provider module must build, and the packages that consume `capicore` types must vet. It runs after `verify-capi-sync` during `verify` (and the compatibility target `verify-ci`); run it locally after **any merge or rebase onto main that touched provider types**, which is where the alias mismatch usually arrives from.
 
 The sync process (`hack/capi-sync-provider.sh`) for each provider:
 1. Downloads the upstream module into the Go module cache via `go mod download`
