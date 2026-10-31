@@ -67,31 +67,6 @@ func TestRunTestBinary(t *testing.T) {
 		assertNoLifecycle(t, report.Suites[0].TestCases[0])
 	})
 
-	t.Run("When the legacy Ginkgo JUnit flag is used, it should write the v2 E2E JUnit contract", func(t *testing.T) {
-		t.Setenv("JUNIT_FIXTURE_BLOCKING_FAILURE", "false")
-		junitPath := filepath.Join(t.TempDir(), "junit.xml")
-		cmd := exec.CommandContext(t.Context(), binary,
-			"--ginkgo.junit-report="+junitPath,
-			"--ginkgo.label-filter=leaf-label",
-		)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("expected the legacy JUnit flag to succeed: %v\n%s", err, output)
-		}
-
-		report := parseJUnit(t, junitPath)
-		if len(report.Suites) != 1 || report.Suites[0].Tests != 1 || len(report.Suites[0].TestCases) != 1 {
-			t.Fatalf("expected one testcase, got %#v", report)
-		}
-		testcase := report.Suites[0].TestCases[0]
-		if !strings.Contains(testcase.Name, "ordinary pass") {
-			t.Fatalf("unexpected selected testcase: %#v", testcase)
-		}
-		if strings.HasPrefix(testcase.Name, "[It] ") || strings.Contains(testcase.Name, "leaf-label") {
-			t.Fatalf("legacy flag enabled Ginkgo's built-in JUnit writer: %#v", testcase)
-		}
-	})
-
 	testRequiredWIF(t, binary)
 }
 

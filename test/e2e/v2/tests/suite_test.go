@@ -50,7 +50,9 @@ func TestE2EV2(t *testing.T) {
 		return
 	}
 	suiteConfig, reporterConfig := GinkgoConfiguration()
-	junitReportPath, reporterConfig = internal.ConfigureJUnitReport(junitReportPath, reporterConfig)
+	// The v2 suite owns JUnit output via --e2e.junit-report; keep Ginkgo's
+	// built-in writer disabled.
+	reporterConfig.JUnitReport = ""
 
 	// Register fail handler with gomega
 	RegisterFailHandler(internal.InformingAwareFailHandler)

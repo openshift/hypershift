@@ -17,18 +17,6 @@ import (
 
 const lifecycleInforming = "informing"
 
-// ConfigureJUnitReport makes Ginkgo's JUnit report flag a backwards-compatible
-// alias for the v2 E2E report destination and disables Ginkgo's built-in JUnit
-// writer. The returned ReporterConfig must be passed to ginkgo.RunSpecs for the
-// change to take effect.
-func ConfigureJUnitReport(dst string, reporterConfig types.ReporterConfig) (string, types.ReporterConfig) {
-	if dst == "" {
-		dst = reporterConfig.JUnitReport
-	}
-	reporterConfig.JUnitReport = ""
-	return dst, reporterConfig
-}
-
 type junitProperties struct {
 	XMLName    xml.Name        `xml:"properties"`
 	Properties []junitProperty `xml:"property"`

@@ -36,7 +36,9 @@ func init() {
 
 func TestJUnitFixture(t *testing.T) {
 	suiteConfig, reporterConfig := GinkgoConfiguration()
-	junitReportPath, reporterConfig = internal.ConfigureJUnitReport(junitReportPath, reporterConfig)
+	// The suite owns JUnit output via --e2e.junit-report; keep Ginkgo's
+	// built-in writer disabled.
+	reporterConfig.JUnitReport = ""
 	RegisterFailHandler(internal.InformingAwareFailHandler)
 	RunSpecs(t, "synthetic-junit-contract", suiteConfig, reporterConfig)
 }
