@@ -17,15 +17,10 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-const (
-	nodePoolAnnotationCurrentConfig        = "hypershift.openshift.io/nodePoolCurrentConfig"
-	nodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
-	hostedClusterUpgradeTestLabel          = "hypershift.openshift.io/upgrade-test"
 )
 
 // TestUpgradeHyperShiftOperator validates that a HyperShift Operator upgrade won't unnecessarily cause a node rollout.
@@ -42,8 +37,8 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 	var hostedCluster *hyperv1.HostedCluster
 	var hcpNameSpace string
 	var nodePoolsMap map[string]*hyperv1.NodePool
-	var machineDeploymentMap map[string]int64
 	var preUpgradeBootstrapState map[string]*bootstrapChainState
+	var workloads map[string]*unstructured.Unstructured
 
 	hyperShiftOperatorLatestImage := globalOpts.HyperShiftOperatorLatestImage
 
@@ -67,18 +62,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 		clusterOpts.NodePoolReplicas = 1
 	}
 
-	clusterOpts.BeforeApply = func(o crclient.Object) {
-		switch obj := o.(type) {
-		case *hyperv1.HostedCluster:
-
-			// Add a label to identify the HostedCluster for upgrade tests in case they're leaked
-			// and need to be cleaned up.
-			if obj.Labels == nil {
-				obj.Labels = make(map[string]string)
-			}
-			obj.Labels[hostedClusterUpgradeTestLabel] = "true"
-		}
-	}
+	clusterOpts.BeforeApply = labelOperatorUpgradeHostedCluster
 
 	operatorImage, err := e2eutil.GetHyperShiftOperatorImage(ctx, client, globalOpts.HOInstallationOptions)
 	g.Expect(err).ToNot(gomega.HaveOccurred(), "Getting HyperShiftOperator image shouldn't return errors")
@@ -121,30 +105,16 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			t.Log("Calculating HyperShift Operator upgrade invariants")
 			g := gomega.NewWithT(t)
 
-			// Get the newly created default NodePool
-			nodepools := &hyperv1.NodePoolList{}
-			err = mgmtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace))
-
-			g.Expect(err).ToNot(gomega.HaveOccurred(), "Listing nodepools in namespace %s shouldn't return errors",
-				hostedCluster.Namespace)
-			g.Expect(nodepools.Items).ToNot(gomega.BeEmpty(), "Should find NodePools in namespace %s",
-				hostedCluster.Namespace)
-
-			nodePoolsMap = make(map[string]*hyperv1.NodePool, len(nodepools.Items))
-			t.Logf("Found %d NodePools", len(nodepools.Items))
-			for i := range nodepools.Items {
-				t.Logf("Found NodePool %s", nodepools.Items[i].Name)
-				nodePoolsMap[nodepools.Items[i].Name] = &nodepools.Items[i]
-			}
-
 			hcpNameSpace = manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-			machineDeploymentMap, err = listMachineDeploymentGenerations(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			g.Expect(len(machineDeploymentMap)).To(gomega.BeEquivalentTo(len(nodepools.Items)),
-				"Number of MachineDeployments and NodePools should match")
-			t.Logf("Found %d MachineDeployments", len(machineDeploymentMap))
+			g.Eventually(func() error {
+				currentNodePools, currentWorkloads, err := captureInitialOperatorUpgradeState(ctx, mgmtClient, hostedCluster.Namespace, hcpNameSpace, useCAPIv1Beta1)
+				if err != nil {
+					return err
+				}
+				nodePoolsMap, workloads = currentNodePools, currentWorkloads
+				return nil
+			}, "10m", "1s").Should(gomega.Succeed(), "Initial NodePool reconciliation should complete before capturing invariants")
 
-			// Capture bootstrap chain state before upgrade to detect replacement during upgrade
 			t.Log("Capturing bootstrap chain state before operator upgrade")
 			preUpgradeBootstrapState, err = captureBootstrapChain(ctx, mgmtClient, hcpNameSpace, nodePoolsMap, useCAPIv1Beta1)
 			g.Expect(err).ToNot(gomega.HaveOccurred(), "Failed to capture pre-upgrade bootstrap state")
@@ -224,27 +194,20 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 					}
 				}
 
-				postUpgradeMachineDeployments, err := listMachineDeploymentGenerations(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
+				postUpgradeWorkloads, err := listOperatorUpgradeWorkloads(ctx, mgmtClient, hcpNameSpace, useCAPIv1Beta1)
 				if err != nil {
 					gomega.StopTrying(fmt.Sprintf("Error listing MachineDeployments: %v", err)).Now()
 				}
 
-				if len(postUpgradeMachineDeployments) != len(machineDeploymentMap) {
-					gomega.StopTrying(fmt.Sprintf("Number of MachineDeployments changed from %d to %d", len(machineDeploymentMap), len(postUpgradeMachineDeployments))).Now()
+				if len(postUpgradeWorkloads) != len(workloads) {
+					gomega.StopTrying(fmt.Sprintf("Number of CAPI workloads changed from %d to %d", len(workloads), len(postUpgradeWorkloads))).Now()
 				}
-				for name, generation := range postUpgradeMachineDeployments {
-					t.Logf("Verifying MachineDeployment %s", name)
-					var ok bool
-					var preUpgradeGeneration int64
-					if preUpgradeGeneration, ok = machineDeploymentMap[name]; !ok {
-						gomega.StopTrying(fmt.Sprintf("MachineDeployment %s not found", name)).Now()
+				for key, before := range workloads {
+					after, ok := postUpgradeWorkloads[key]
+					if !ok {
+						gomega.StopTrying(fmt.Sprintf("CAPI workload %s not found", key)).Now()
 					}
-
-					t.Logf("Generation: Got %d", generation)
-
-					// Check if the machine deployment has been updated
-					g.Expect(generation).To(gomega.Equal(preUpgradeGeneration),
-						"Pre-upgrade and post-upgrade MachineDeployment generations should match")
+					g.Expect(operatorUpgradeWorkloadUnchanged(before, after)).To(gomega.Succeed(), "CAPI workload %s should not roll out", key)
 				}
 				return true
 			}, "5m", "1s").Should(gomega.BeTrue(), "Verification should consistently succeed for 5 minutes")
@@ -300,7 +263,7 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 
 			// Verify complete rollout invariants (NodePool + MachineDeployment + updating conditions)
 			t.Log("Verifying complete rollout invariants after rotation")
-			err = verifyCompleteRolloutInvariants(ctx, mgmtClient, hcpNameSpace, nodePoolsMap, machineDeploymentMap, useCAPIv1Beta1)
+			err = verifyCompleteRolloutInvariants(ctx, mgmtClient, hcpNameSpace, nodePoolsMap, workloads, useCAPIv1Beta1)
 			g.Expect(err).ToNot(gomega.HaveOccurred(), "Rollout invariants should hold after rotation")
 
 			t.Log("✓ Token rotation verification passed - operator upgrade did not break rotation or credential updates")
