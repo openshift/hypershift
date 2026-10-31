@@ -4953,14 +4953,14 @@ Versions used while writing this doc:
 
 !!! important
 
-    To configure a different CNI provider for the Hosted Cluster, you must adjust the `hostedcluster.spec.networking.networkType` to `Other`. By doing so, the Control Plane Operator will skip the deployment of the default CNI provider.
+    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer. `Other` is currently required when using `allocateNodeCIDRs: Enabled` or `disableMultiNetwork: true`.
 
 ## Calico
 ### Deployment
 
 In this scenario we are using the Calico version v3.27.0 which is the last one at the time of this writing. The steps followed rely on the docs by Tigera to deploy Calico on OpenShift.
 
-1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
+1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Calico`.
 
 2. Wait for the HostedCluster's API to be ready. Once it's ready, get the admin kubeconfig.
 
@@ -5084,7 +5084,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 
 In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
-1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
+1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Cilium`.
 
 2. Wait for the HostedCluster's API to be ready. Once it's ready, get the admin kubeconfig.
 
@@ -9082,14 +9082,14 @@ Versions used while writing this doc:
 
 !!! important
 
-    To configure a different CNI provider for the Hosted Cluster, you must adjust the `hostedcluster.spec.networking.networkType` to `Other`. By doing so, the Control Plane Operator will skip the deployment of the default CNI provider.
+    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer. `Other` is currently required when using `allocateNodeCIDRs: Enabled` or `disableMultiNetwork: true`.
 
 ## Calico
 ### Deployment
 
 In this scenario we are using the Calico version v3.27.0 which is the last one at the time of this writing. The steps followed rely on the docs by Tigera to deploy Calico on OpenShift.
 
-1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
+1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Calico`.
 
 2. Wait for the HostedCluster's API to be ready. Once it's ready, get the admin kubeconfig.
 
@@ -9213,7 +9213,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 
 In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
-1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
+1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Cilium`.
 
 2. Wait for the HostedCluster's API to be ready. Once it's ready, get the admin kubeconfig.
 
@@ -34830,14 +34830,14 @@ Versions used while writing this doc:
 
 !!! important
 
-    To configure a different CNI provider for the Hosted Cluster, you must adjust the `hostedcluster.spec.networking.networkType` to `Other`. By doing so, the Control Plane Operator will skip the deployment of the default CNI provider.
+    To configure a different CNI provider for the Hosted Cluster, set `hostedcluster.spec.networking.networkType` to the name of the provider you will install, such as `Calico` or `Cilium`. For any value other than the built-in `OVNKubernetes` or `OpenShiftSDN`, the Control Plane Operator skips deploying a default CNI provider and you are responsible for installing one. `Other` remains supported for compatibility, but using the actual provider name makes the cluster configuration clearer. `Other` is currently required when using `allocateNodeCIDRs: Enabled` or `disableMultiNetwork: true`.
 
 ## Calico
 ### Deployment
 
 In this scenario we are using the Calico version v3.27.0 which is the last one at the time of this writing. The steps followed rely on the docs by Tigera to deploy Calico on OpenShift.
 
-1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
+1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Calico`.
 
 2. Wait for the HostedCluster's API to be ready. Once it's ready, get the admin kubeconfig.
 
@@ -34961,7 +34961,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 
 In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
-1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
+1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Cilium`.
 
 2. Wait for the HostedCluster's API to be ready. Once it's ready, get the admin kubeconfig.
 
@@ -49356,8 +49356,9 @@ in the hosted cluster. This prevents the installation of multus daemon sets in t
 guest cluster and the multus-admission-controller in the management cluster.
 Default is false (Multus is enabled).
 This field is immutable.
-This field can only be set to true when NetworkType is &ldquo;Other&rdquo;. Setting it to true
-with any other NetworkType will result in a validation error during cluster creation.</p>
+This field can only be set to true when networkType is &ldquo;Other&rdquo;. Other third-party provider
+names are not accepted here for rollback compatibility. Setting it to true with any other
+networkType will result in a validation error during cluster creation.</p>
 </td>
 </tr>
 <tr>
@@ -49460,9 +49461,23 @@ NetworkType
 </td>
 <td>
 <em>(Optional)</em>
-<p>networkType specifies the SDN provider used for cluster networking.
+<p>networkType specifies the network provider used for cluster networking.
+HyperShift recognizes exactly &ldquo;OVNKubernetes&rdquo; and &ldquo;OpenShiftSDN&rdquo; as built-in providers.
+OpenShiftSDN is deprecated; new clusters can use it only on the PowerVS platform, and
+clusters using it cannot be upgraded to a new minor version.
+Any other value names a third-party CNI that HyperShift does not deploy; the cluster
+administrator is responsible for installing it. Set this field to the actual CNI provider
+name, such as &ldquo;Calico&rdquo; or &ldquo;Cilium&rdquo;. The value &ldquo;Other&rdquo; remains supported for compatibility.
+The value must be 1-63 characters, start and end with a letter or digit, and contain only
+letters, digits, &lsquo;.&rsquo;, &lsquo;_&rsquo; or &lsquo;-&rsquo;. Provider names are case-sensitive. Case variants of the
+built-in names, such as &ldquo;ovnkubernetes&rdquo;, are rejected. The value &ldquo;Other&rdquo; is currently
+required when allocateNodeCIDRs is &ldquo;Enabled&rdquo; or when
+spec.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork is true.
+This field is authoritative for the cluster network type. Setting networkType within
+spec.configuration.network has no effect; this field alone determines the network type
+propagated to the cluster-network-operator.
 Defaults to OVNKubernetes.
-This field is required and immutable.</p>
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -49492,11 +49507,11 @@ AllocateNodeCIDRsMode
 <td>
 <em>(Optional)</em>
 <p>allocateNodeCIDRs controls whether the kube-controller-manager manages node CIDR allocation.
-When using networkType=Other, it is recommended to set this field to &ldquo;Enabled&rdquo;
-if Flannel is used as the CNI, as it relies on this behavior.
+When networkType is &ldquo;Other&rdquo;, it is recommended to set this field to &ldquo;Enabled&rdquo; if Flannel is
+used as the CNI, as it relies on this behavior.
 Default is &ldquo;Disabled&rdquo;.
-This field can only be set to &ldquo;Enabled&rdquo; when NetworkType is &ldquo;Other&rdquo;. Setting it to &ldquo;Enabled&rdquo;
-with any other NetworkType will result in a validation error during cluster creation.</p>
+This field can only be set to &ldquo;Enabled&rdquo; when networkType is &ldquo;Other&rdquo;. Setting it to &ldquo;Enabled&rdquo;
+with any other networkType will result in a validation error during cluster creation.</p>
 </td>
 </tr>
 </tbody>
@@ -58029,7 +58044,11 @@ NetworkFilter
 <a href="#hypershift.openshift.io/v1beta1.ClusterNetworking">ClusterNetworking</a>)
 </p>
 <p>
-<p>NetworkType specifies the SDN provider used for cluster networking.</p>
+<p>NetworkType specifies the network provider used for cluster networking.
+OVNKubernetes and OpenShiftSDN are the built-in providers recognized by HyperShift and must use
+that exact spelling. Any other value is treated as the name of a third-party CNI; set it to the
+actual provider name you will install, such as Calico or Cilium. The value Other is also supported
+for compatibility. Case variants of the built-in names are rejected.</p>
 </p>
 <table>
 <thead>
@@ -58039,16 +58058,20 @@ NetworkFilter
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;Calico&#34;</p></td>
-<td><p>Calico specifies Calico as the SDN provider</p>
+<td><p>Calico specifies Calico as the network provider. Calico receives no special handling from
+HyperShift; a HostedCluster created with this value behaves identically to &ldquo;Other&rdquo;, a
+third-party CNI that HyperShift does not deploy.</p>
 </td>
 </tr><tr><td><p>&#34;OVNKubernetes&#34;</p></td>
-<td><p>OVNKubernetes specifies OVN as the SDN provider</p>
+<td><p>OVNKubernetes specifies OVN as the network provider. This is the supported built-in provider.</p>
 </td>
 </tr><tr><td><p>&#34;OpenShiftSDN&#34;</p></td>
-<td><p>OpenShiftSDN specifies OpenShiftSDN as the SDN provider</p>
+<td><p>OpenShiftSDN specifies OpenShiftSDN as the network provider.
+OpenShiftSDN is a deprecated built-in provider. New clusters can only use it on the PowerVS platform, and clusters using it cannot be upgraded to a new minor version.</p>
 </td>
 </tr><tr><td><p>&#34;Other&#34;</p></td>
-<td><p>Other specifies an undefined SDN provider</p>
+<td><p>Other specifies a third-party (bring-your-own) network provider. When set, HyperShift skips
+deploying a default CNI and the cluster administrator is responsible for installing one.</p>
 </td>
 </tr></tbody>
 </table>
