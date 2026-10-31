@@ -21,7 +21,7 @@ This directory contains Claude Code skills that are automatically applied when w
 - Conventional commit format: `<type>(<scope>): <description>`
 - All commit types (feat, fix, docs, style, refactor, test, chore, build, ci, perf, revert)
 - Breaking change syntax (`!` and `BREAKING CHANGE` footer)
-- `Signed-off-by` and `Assisted-by` footers
+- `Assisted-by` footers
 - Gitlint validation rules (120 char title, 140 char body)
 - Running `make run-gitlint` for validation
 
