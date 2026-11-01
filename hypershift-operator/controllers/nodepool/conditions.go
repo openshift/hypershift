@@ -795,7 +795,6 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 		}
 	} else {
 		// Aggregate conditions.
-		// TODO (alberto): consider bubbling failureReason / failureMessage.
 		// This a rudimentary approach which aggregates every Machine, until
 		// https://github.com/kubernetes-sigs/cluster-api/pull/6218 and
 		// https://github.com/kubernetes-sigs/cluster-api/pull/6025
@@ -805,6 +804,7 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 
 		numNotReady := 0
 		messageMap := make(map[string][]string)
+		hasInfraFailure := false
 
 		for _, machine := range machines {
 			readyCond := findMachineStatusCondition(machine, string(capiv1.ReadyCondition))
@@ -828,9 +828,24 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 				//		status: "False"
 				//		type: Ready
 				var mapReason, mapMessage string
-				if infraReadyCond != nil && infraReadyCond.Status != metav1.ConditionTrue && !isSetupCounterCondMessage.MatchString(infraReadyCond.Message) {
+				if infraReadyCond != nil && infraReadyCond.Status != metav1.ConditionTrue {
+					// Always use InfrastructureReady reason for classification —
+					// this is where provider-specific failure reasons live
+					// (e.g. InstanceProvisionFailed). The Ready summary condition
+					// often carries a generic reason that hides the actual
+					// provider error, especially when CAPI uses SetSummary with
+					// step-counter options.
 					mapReason = infraReadyCond.Reason
-					mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", machine.Name, infraReadyCond.Reason, infraReadyCond.Message)
+					// For the display message, prefer InfrastructureReady's
+					// message unless it's a step-counter; fall back to Ready's
+					// message.
+					if !isSetupCounterCondMessage.MatchString(infraReadyCond.Message) {
+						mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", machine.Name, infraReadyCond.Reason, infraReadyCond.Message)
+					} else if readyCond.Message != "" && !isSetupCounterCondMessage.MatchString(readyCond.Message) {
+						mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", machine.Name, infraReadyCond.Reason, readyCond.Message)
+					} else {
+						mapMessage = fmt.Sprintf("Machine %s: %s\n", machine.Name, infraReadyCond.Reason)
+					}
 				} else {
 					mapReason = readyCond.Reason
 					if readyCond.Message != "" && !isSetupCounterCondMessage.MatchString(readyCond.Message) {
@@ -840,11 +855,18 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 					}
 				}
 
+				if isTerminalInfraReason(nodePool.Spec.Platform.Type, mapReason) {
+					hasInfraFailure = true
+				}
+
 				messageMap[mapReason] = append(messageMap[mapReason], mapMessage)
 			}
 		}
 		if numNotReady > 0 {
 			reason, message = aggregateMachineReasonsAndMessages(messageMap, numMachines, numNotReady, aggregatorMachineStateReady)
+			if hasInfraFailure {
+				reason = hyperv1.NodePoolInfrastructureFailureReason
+			}
 		}
 	}
 
@@ -857,6 +879,56 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 	}
 
 	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
+}
+
+// terminalInfraReasons maps each platform type to the set of
+// ReadyCondition reasons that indicate a persistent infrastructure
+// failure requiring manual intervention.
+// Reasons are provider-owned; each provider emits its own set of
+// reasons on the InfrastructureReady condition, which CAPI
+// best-effort-converts into the Machine's v1beta2 ReadyCondition
+// reason. We classify on reasons only — message text is not a
+// stable contract and must not be used for classification.
+var terminalInfraReasons = map[hyperv1.PlatformType]map[string]bool{
+	hyperv1.AWSPlatform: {
+		"InstanceTerminated":      true, // CAPA: instance reached terminal state
+		"InstanceProvisionFailed": true, // CAPA: failed to provision instance
+	},
+	hyperv1.AzurePlatform: {
+		// NOTE: CAPZ currently emits the generic "Failed" reason for VM
+		// provisioning errors instead of "VMProvisionFailed". The constant
+		// exists in CAPZ's API but is unused by controllers as of v1.26.
+		// Upstream fix: https://github.com/kubernetes-sigs/cluster-api-provider-azure/pull/6737
+		// This entry will activate once the CAPZ vendor is bumped with
+		// that fix. Using the generic "Failed" reason here would
+		// over-classify transient errors (throttling, capacity) as terminal.
+		"VMProvisionFailed": true, // CAPZ: failed to provision VM
+	},
+	hyperv1.IBMCloudPlatform: {
+		"InstanceProvisionFailed": true, // CAPIBM: failed to provision instance
+		"InstanceErrored":         true, // CAPIBM: instance in error state
+	},
+	hyperv1.PowerVSPlatform: {
+		"InstanceProvisionFailed": true, // CAPIBM PowerVS: failed to provision
+		"InstanceErrored":         true, // CAPIBM PowerVS: instance in error state
+	},
+	hyperv1.OpenStackPlatform: {
+		"InstanceCreateFailed": true, // CAPO: failed to create instance
+		"InstanceStateError":   true, // CAPO: instance in error state
+	},
+	hyperv1.KubevirtPlatform: {
+		"VMCreateFailed": true, // CAPK: failed to create VM
+	},
+}
+
+// isTerminalInfraReason returns true if the given ReadyCondition reason
+// is a known terminal infrastructure failure for the specified platform.
+func isTerminalInfraReason(platform hyperv1.PlatformType, reason string) bool {
+	reasons, ok := terminalInfraReasons[platform]
+	if !ok {
+		return false
+	}
+	return reasons[reason]
 }
 
 type cidrConflictEntry struct {
