@@ -4,7 +4,7 @@ go 1.26.0
 
 require sigs.k8s.io/cluster-api-provider-kubevirt v0.0.0-20261014190453-39d5a24d9f4a
 
-replace sigs.k8s.io/cluster-api-provider-kubevirt => github.com/openshift/cluster-api-provider-kubevirt v0.0.0-20261014190453-39d5a24d9f4a
+replace sigs.k8s.io/cluster-api-provider-kubevirt => github.com/openshift/cluster-api-provider-kubevirt v0.0.0-20261028113314-e7108cdb8ccb
 
 require (
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
