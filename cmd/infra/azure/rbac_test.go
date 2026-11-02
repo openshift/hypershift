@@ -131,6 +131,29 @@ func TestNewRBACManager(t *testing.T) {
 	})
 }
 
+func TestRoleAssignmentsClient(t *testing.T) {
+	t.Run("When a role client is supplied, it should reuse that client", func(t *testing.T) {
+		g := NewWithT(t)
+		mockClient := &mockRoleAssignmentClient{}
+		manager := &RBACManager{roleClient: mockClient}
+
+		client, err := manager.roleAssignmentsClient()
+
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(client).To(BeIdenticalTo(mockClient))
+	})
+
+	t.Run("When no role client is supplied, it should create an Azure SDK client", func(t *testing.T) {
+		g := NewWithT(t)
+		manager := NewRBACManager("test-subscription", testTokenCredential{})
+
+		client, err := manager.roleAssignmentsClient()
+
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(client).To(BeAssignableToTypeOf(&azureauth.RoleAssignmentsClient{}))
+	})
+}
+
 func TestGetObjectIDFromClientID(t *testing.T) {
 	const (
 		clientID = "00000000-0000-0000-0000-000000000001"

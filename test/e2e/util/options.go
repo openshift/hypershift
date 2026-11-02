@@ -139,6 +139,7 @@ type ConfigurableClusterOptions struct {
 	Annotations                           stringMapVar
 	AzureCredentialsFile                  string
 	AzureManagedIdentitiesFile            string
+	AzureKarpenterClientID                string
 	AzureIssuerURL                        string
 	AzureMultiArch                        bool
 	AzureServiceAccountTokenIssuerKeyPath string
@@ -387,6 +388,7 @@ func (o *Options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
 func (o *Options) DefaultAzureOptions() azure.RawCreateOptions {
 	opts := azure.RawCreateOptions{
 		CredentialsFile:                  o.ConfigurableClusterOptions.AzureCredentialsFile,
+		KarpenterClientID:                o.ConfigurableClusterOptions.AzureKarpenterClientID,
 		Location:                         o.ConfigurableClusterOptions.AzureLocation,
 		IssuerURL:                        o.ConfigurableClusterOptions.AzureIssuerURL,
 		ServiceAccountTokenIssuerKeyPath: o.ConfigurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath,

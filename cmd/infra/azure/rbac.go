@@ -67,6 +67,7 @@ type RBACManager struct {
 	creds             azcore.TokenCredential
 	graphClient       httpClient
 	graphRetryBackoff wait.Backoff
+	roleClient        roleAssignmentClient
 }
 
 // ServicePrincipalResponse represents the response from Microsoft Graph API
@@ -87,6 +88,13 @@ func NewRBACManager(subscriptionID string, creds azcore.TokenCredential) *RBACMa
 		graphClient:       &http.Client{},
 		graphRetryBackoff: graphRequestBackoff,
 	}
+}
+
+func (r *RBACManager) roleAssignmentsClient() (roleAssignmentClient, error) {
+	if r.roleClient != nil {
+		return r.roleClient, nil
+	}
+	return azureauth.NewRoleAssignmentsClient(r.subscriptionID, r.creds, nil)
 }
 
 // AssignControlPlaneRoles assigns roles to control plane managed identities
@@ -145,7 +153,7 @@ func (r *RBACManager) AssignKarpenterRoles(ctx context.Context, opts *CreateInfr
 		return err
 	}
 
-	raClient, err := azureauth.NewRoleAssignmentsClient(r.subscriptionID, r.creds, nil)
+	raClient, err := r.roleAssignmentsClient()
 	if err != nil {
 		return fmt.Errorf("failed to create role assignments client: %w", err)
 	}
@@ -166,7 +174,7 @@ func (r *RBACManager) assignRolesForComponents(ctx context.Context, opts *Create
 		return err
 	}
 
-	raClient, err := azureauth.NewRoleAssignmentsClient(r.subscriptionID, r.creds, nil)
+	raClient, err := r.roleAssignmentsClient()
 	if err != nil {
 		return fmt.Errorf("failed to create role assignments client: %w", err)
 	}
