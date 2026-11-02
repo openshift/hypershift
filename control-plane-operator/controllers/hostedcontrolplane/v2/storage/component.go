@@ -75,13 +75,14 @@ func NewComponent() component.ControlPlaneComponent {
 			component.EnableForPlatform(hyperv1.GCPPlatform),
 		).
 		WithDependencies(oapiv2.ComponentName).
-		// Gate the CSO on the HCCO's reconciliation having succeeded so the HCCO
-		// creates the ClusterCSIDriver (with the KMS key when configured) before
-		// the CSO starts. The gate enforces this ordering only on the initial
-		// rollout (while the CSO workload does not exist yet); once the workload
-		// exists, later updates and upgrades are not gated by the condition. This
-		// preserves ordering for all clusters, not only those with a KMS key set.
-		WithGatedPreconditions(enforceOrderingUntilCSOExists, hyperv1.ConfigOperatorReconciliationSucceeded).
+		// Gate the CSO's initial rollout on the HCCO having reconciled (so the
+		// ClusterCSIDriver exists, with the KMS key when configured) and on the
+		// KAS being available. The KAS applies service-network-admin-kubeconfig
+		// before rolling its deployment, so ordering after KAS availability
+		// means the secret has been applied before the CSI operands mount it.
+		// Only enforced while the CSO workload does not exist yet; updates and
+		// upgrades are not gated.
+		WithGatedPreconditions(enforceOrderingUntilCSOExists, hyperv1.ConfigOperatorReconciliationSucceeded, hyperv1.KubeAPIServerAvailable).
 		InjectAvailabilityProberContainer(podspec.AvailabilityProberOpts{
 			KubeconfigVolumeName: "guest-kubeconfig",
 			RequiredAPIs: []schema.GroupVersionKind{

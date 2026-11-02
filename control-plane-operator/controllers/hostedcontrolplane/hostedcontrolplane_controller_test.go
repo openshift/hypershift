@@ -2008,10 +2008,16 @@ func TestControlPlaneComponents(t *testing.T) {
 			},
 		}
 		// Satisfy component preconditions so gated components (e.g. the
-		// cluster-storage-operator, which gates on ConfigOperatorReconciliationSucceeded)
-		// render their full manifest set for fixture comparison.
+		// cluster-storage-operator, which gates on ConfigOperatorReconciliationSucceeded
+		// and KubeAPIServerAvailable) render their full manifest set for fixture
+		// comparison.
 		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
 			Type:   string(hyperv1.ConfigOperatorReconciliationSucceeded),
+			Status: metav1.ConditionTrue,
+			Reason: hyperv1.AsExpectedReason,
+		})
+		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+			Type:   string(hyperv1.KubeAPIServerAvailable),
 			Status: metav1.ConditionTrue,
 			Reason: hyperv1.AsExpectedReason,
 		})
