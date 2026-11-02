@@ -4115,6 +4115,12 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 
 	// Cleanup Platform specifics.
 
+	// Invariant: DeleteCredentials must not invalidate credentials that a platform
+	// controller still needs to clean up the control plane namespace. For GCP, the CPO's
+	// PSC controller runs below (after the HCP is marked for deletion) and authenticates
+	// with the same Workload Identity credentials; removing them here would make PSC
+	// cleanup fail and strand the HCP finalizer. GCP's implementation is currently a no-op
+	// for this reason; any future implementation must wait until the HCP is gone.
 	if err = p.DeleteCredentials(ctx, r.Client, hc,
 		controlPlaneNamespace); err != nil {
 		return false, err
