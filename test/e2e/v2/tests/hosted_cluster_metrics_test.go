@@ -141,6 +141,92 @@ func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
+
+	When("the hosted cluster runs on AWS", func() {
+		var tc *internal.TestContext
+
+		BeforeEach(func() {
+			tc = getTestCtx()
+			tc.SkipIfNotPlatform(hyperv1.AWSPlatform)
+		})
+
+		It("should expose one vCPU gauge per NodePool with its workload type", Label("AWS", internal.InformingLabel), func() {
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "should be able to get the HostedCluster")
+			Expect(hostedCluster.Spec.ClusterID).NotTo(BeEmpty(),
+				"HostedCluster %s/%s should have a cluster ID", hostedCluster.Namespace, hostedCluster.Name)
+
+			npList := &hyperv1.NodePoolList{}
+			Expect(tc.MgmtClient.List(tc.Context, npList, crclient.InNamespace(hostedCluster.Namespace))).To(Succeed(),
+				"should be able to list NodePools for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
+			var nodePools []hyperv1.NodePool
+			for _, np := range npList.Items {
+				if np.Spec.ClusterName == hostedCluster.Name && np.Spec.Platform.Type == hyperv1.AWSPlatform {
+					nodePools = append(nodePools, np)
+				}
+			}
+			if len(nodePools) == 0 {
+				Skip("NodePool vCPU metrics test requires at least one native AWS NodePool")
+			}
+
+			mgmtRestConfig := tc.MgmtRESTConfig
+			Expect(mgmtRestConfig).NotTo(BeNil(), "management cluster REST config should be set on the test context")
+			clientset, err := kubernetes.NewForConfig(mgmtRestConfig)
+			Expect(err).NotTo(HaveOccurred(), "should be able to create kubernetes clientset")
+
+			const hoNamespace = "hypershift"
+			pods := &corev1.PodList{}
+			Expect(tc.MgmtClient.List(tc.Context, pods, crclient.InNamespace(hoNamespace),
+				crclient.MatchingLabels{"app": "operator"})).To(Succeed(), "should be able to list hypershift-operator pods")
+			var runningPodName string
+			for _, pod := range pods.Items {
+				if pod.Status.Phase == corev1.PodRunning {
+					runningPodName = pod.Name
+					break
+				}
+			}
+			Expect(runningPodName).NotTo(BeEmpty(), "a running hypershift-operator pod should exist")
+
+			scrapeCtx, cancelScrape := context.WithTimeout(tc.Context, 30*time.Second)
+			defer cancelScrape()
+			metrics, err := v2util.GetMetricsFromPod(scrapeCtx, clientset, mgmtRestConfig, hoNamespace, runningPodName, "operator", 9000)
+			Expect(err).NotTo(HaveOccurred(), "should be able to fetch metrics from hypershift-operator pod")
+			family := metrics[npmetrics.VCpusCountByNodePoolMetricName]
+			Expect(family).NotTo(BeNil(), "metric %s should exist", npmetrics.VCpusCountByNodePoolMetricName)
+			Expect(family.GetType()).To(Equal(dto.MetricType_GAUGE), "metric %s should be a gauge", npmetrics.VCpusCountByNodePoolMetricName)
+
+			for _, np := range nodePools {
+				matches := 0
+				for _, metric := range family.GetMetric() {
+					labels := map[string]string{}
+					for _, label := range metric.GetLabel() {
+						labels[label.GetName()] = label.GetValue()
+					}
+					if labels["namespace"] != np.Namespace || labels["name"] != np.Name {
+						continue
+					}
+					matches++
+					Expect(labels).To(Equal(map[string]string{
+						"namespace":     np.Namespace,
+						"name":          np.Name,
+						"_id":           hostedCluster.Spec.ClusterID,
+						"cluster_name":  hostedCluster.Name,
+						"platform":      string(hyperv1.AWSPlatform),
+						"workload_type": np.Spec.NodeLabels["node.openshift.io/workload-type"],
+					}), "NodePool %s/%s should have the expected vCPU metric labels", np.Namespace, np.Name)
+					Expect(metric.GetGauge()).NotTo(BeNil(), "NodePool %s/%s should have a vCPU gauge", np.Namespace, np.Name)
+					if np.Status.Replicas == 0 {
+						Expect(metric.GetGauge().GetValue()).To(BeZero(),
+							"NodePool %s/%s with no available replicas should report zero vCPUs", np.Namespace, np.Name)
+					} else {
+						Expect(metric.GetGauge().GetValue()).To(BeNumerically(">", 0),
+							"NodePool %s/%s with available replicas should report positive vCPUs", np.Namespace, np.Name)
+					}
+				}
+				Expect(matches).To(Equal(1), "NodePool %s/%s should have exactly one vCPU metric sample", np.Namespace, np.Name)
+			}
+		})
+	})
 }
 
 func EnsureMetricsForwarderWorkingTest(getTestCtx internal.TestContextGetter) {
