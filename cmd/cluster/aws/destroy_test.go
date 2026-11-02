@@ -21,7 +21,7 @@ import (
 	"github.com/go-logr/logr"
 )
 
-func TestDestroyPlatformSpecificsRunsPostDeleteActionAfterInfra(t *testing.T) {
+func TestDestroyPlatformSpecifics(t *testing.T) {
 	g := NewGomegaWithT(t)
 	originalRunDestroyInfra := runDestroyInfra
 	t.Cleanup(func() { runDestroyInfra = originalRunDestroyInfra })

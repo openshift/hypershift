@@ -963,6 +963,15 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 }
 
 func TestDestroyCloudResources(t *testing.T) {
+	t.Run("When cleanup runs on a non-AWS platform, it should use Kubernetes cleanup", testDestroyCloudResources)
+	t.Run("When the platform is AWS, it should use direct load balancer cleanup", testDestroyCloudResources_WhenPlatformIsAWS_ItShouldUseDirectLoadBalancerCleanup)
+	t.Run("When AWS cleanup has a connection error, it should redact the log", testDestroyCloudResources_WhenAWSCleanupHasConnectionError_ItShouldNotLogRawError)
+	t.Run("When the cleanup eligibility check fails, it should redact the condition and log", testDestroyCloudResources_WhenCleanupEligibilityCheckFails_ItShouldRedactErrorFromConditionAndLog)
+	t.Run("When resource creation blocking has a wrapped connection error, it should track failure and redact details", testDestroyCloudResources_WhenResourceCreationBlockingReturnsWrappedConnectionError_ItShouldTrackFailureAndRedactDetails)
+	t.Run("When AWS cleanup fails, it should redact AWS details from the condition", testDestroyCloudResourcesRedactsAWSDetailsFromCondition)
+}
+
+func testDestroyCloudResources(t *testing.T) {
 	t.Parallel()
 	originalConditionTime := time.Now().Add(-1 * time.Hour)
 	fakeHostedControlPlane := func() *hyperv1.HostedControlPlane {
@@ -1286,7 +1295,7 @@ func TestDestroyCloudResources(t *testing.T) {
 	}
 }
 
-func TestDestroyCloudResources_WhenPlatformIsAWS_ItShouldUseDirectLoadBalancerCleanup(t *testing.T) {
+func testDestroyCloudResources_WhenPlatformIsAWS_ItShouldUseDirectLoadBalancerCleanup(t *testing.T) {
 	t.Parallel()
 	g := NewGomegaWithT(t)
 
@@ -1356,7 +1365,7 @@ func TestDestroyCloudResources_WhenPlatformIsAWS_ItShouldUseDirectLoadBalancerCl
 	g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 }
 
-func TestDestroyCloudResources_WhenAWSCleanupHasConnectionError_ItShouldNotLogRawError(t *testing.T) {
+func testDestroyCloudResources_WhenAWSCleanupHasConnectionError_ItShouldNotLogRawError(t *testing.T) {
 	t.Parallel()
 	g := NewGomegaWithT(t)
 
@@ -1421,7 +1430,7 @@ func TestDestroyCloudResources_WhenAWSCleanupHasConnectionError_ItShouldNotLogRa
 	g.Expect(logOutput.String()).NotTo(ContainSubstring(endpointHost))
 }
 
-func TestDestroyCloudResources_WhenCleanupEligibilityCheckFails_ItShouldRedactErrorFromConditionAndLog(t *testing.T) {
+func testDestroyCloudResources_WhenCleanupEligibilityCheckFails_ItShouldRedactErrorFromConditionAndLog(t *testing.T) {
 	const endpointHost = "private-kas-endpoint.example"
 	fakeHCP := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-namespace", UID: "cleanup-eligibility-hcp-uid"},
@@ -1460,7 +1469,7 @@ func TestDestroyCloudResources_WhenCleanupEligibilityCheckFails_ItShouldRedactEr
 	g.Expect(logOutput.String()).NotTo(ContainSubstring(endpointHost))
 }
 
-func TestDestroyCloudResources_WhenResourceCreationBlockingReturnsWrappedConnectionError_ItShouldTrackFailureAndRedactDetails(t *testing.T) {
+func testDestroyCloudResources_WhenResourceCreationBlockingReturnsWrappedConnectionError_ItShouldTrackFailureAndRedactDetails(t *testing.T) {
 	const endpointHost = "private-guest-endpoint.example"
 	fakeHCP := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-namespace", UID: "resource-creation-hcp-uid"},
@@ -1575,7 +1584,7 @@ func TestNewAWSLoadBalancerClients(t *testing.T) {
 	}
 }
 
-func TestAWSServiceEndpoint(t *testing.T) {
+func TestAwsServiceEndpoint(t *testing.T) {
 	tests := []struct {
 		name        string
 		endpoints   []hyperv1.AWSServiceEndpoint
@@ -2018,7 +2027,7 @@ func TestSaveAWSLoadBalancerCleanupProgress(t *testing.T) {
 	})
 }
 
-func TestPrepareAWSLoadBalancerCleanupStateRepairsOwnerReference(t *testing.T) {
+func TestReconciler_PrepareAWSLoadBalancerCleanupState(t *testing.T) {
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-hcp", UID: "hcp-uid"},
 		Spec: hyperv1.HostedControlPlaneSpec{
@@ -3171,7 +3180,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 	}
 }
 
-func TestDestroyCloudResourcesRedactsAWSDetailsFromCondition(t *testing.T) {
+func testDestroyCloudResourcesRedactsAWSDetailsFromCondition(t *testing.T) {
 	const endpoint = "private-endpoint.example"
 	tests := []struct {
 		name                string

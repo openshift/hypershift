@@ -11,7 +11,12 @@ import (
 	"testing"
 )
 
-func TestAWSConfigForRoleKeepsWebIdentityTokenOnSTSEndpoint(t *testing.T) {
+func TestAwsConfigForRole(t *testing.T) {
+	t.Run("When exchanging a web identity token, it should send the token only to STS", testAWSConfigForRoleKeepsWebIdentityTokenOnSTSEndpoint)
+	t.Run("When default configuration fails, it should include the region in the error", testAWSConfigForRoleWrapsDefaultConfigErrorWithRegion)
+}
+
+func testAWSConfigForRoleKeepsWebIdentityTokenOnSTSEndpoint(t *testing.T) {
 	const projectedToken = "projected-web-identity-token"
 
 	var stsRequests atomic.Int32
@@ -89,7 +94,7 @@ func TestAWSConfigForRoleKeepsWebIdentityTokenOnSTSEndpoint(t *testing.T) {
 	}
 }
 
-func TestAWSConfigForRoleWrapsDefaultConfigErrorWithRegion(t *testing.T) {
+func testAWSConfigForRoleWrapsDefaultConfigErrorWithRegion(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config")
 	if err := os.WriteFile(configPath, []byte("[default"), 0600); err != nil {
 		t.Fatalf("failed to write invalid AWS config: %v", err)

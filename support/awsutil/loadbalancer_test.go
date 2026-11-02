@@ -79,6 +79,17 @@ func TestDeleteLoadBalancers(t *testing.T) {
 }
 
 func TestDeleteLoadBalancersByName(t *testing.T) {
+	t.Run("When names identify load balancers, it should delete only owned resources in the selected VPC", testDeleteLoadBalancersByName)
+	t.Run("When an attached target group remains across retries, it should keep cleanup pending", testDeleteLoadBalancersByNameKeepsAttachedTargetGroupPendingAcrossRetries)
+	t.Run("When orphaned target groups exist, it should clean up owned groups", testDeleteLoadBalancersByNameCleansOrphanedTargetGroups)
+	t.Run("When deleted resources remain visible, it should wait for AWS consistency", testDeleteLoadBalancersByNameWaitsForEventualConsistency)
+	t.Run("When a load balancer is not found, it should consider deletion complete", testDeleteLoadBalancersByNameTreatsNotFoundAsSuccess)
+	t.Run("When target group deletion fails, it should still scan orphaned groups", testDeleteLoadBalancersByNameScansOrphansAfterTargetGroupDeletionFails)
+	t.Run("When ownership tags cannot be read, it should retain the resources", testDeleteLoadBalancersByNameRetainsResourcesWhenTagLookupIsDenied)
+	t.Run("When orphan ownership tags cannot be read, it should retain the target groups", testDeleteLoadBalancersByNameDoesNotDeleteOrphanTargetGroupsWhenTagLookupIsDenied)
+}
+
+func testDeleteLoadBalancersByName(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	elbClient := awsapi.NewMockELBAPI(ctrl)
 	elbv2Client := awsapi.NewMockELBV2API(ctrl)
@@ -214,7 +225,13 @@ func TestDeleteLoadBalancersByName(t *testing.T) {
 	})
 }
 
-func TestDeleteNamedV2LoadBalancerPaginatesDiscovery(t *testing.T) {
+func TestDeleteNamedV2LoadBalancer(t *testing.T) {
+	t.Run("When discovery spans pages, it should discover all dependencies", testDeleteNamedV2LoadBalancerPaginatesDiscovery)
+	t.Run("When a dependency deletion fails, it should continue independent deletions", testDeleteNamedV2LoadBalancerContinuesAfterDeletionFailures)
+	t.Run("When a target group is shared, it should retain that group", testDeleteNamedV2LoadBalancerDoesNotDeleteSharedTargetGroups)
+}
+
+func testDeleteNamedV2LoadBalancerPaginatesDiscovery(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	client := awsapi.NewMockELBV2API(ctrl)
 
@@ -297,7 +314,7 @@ func TestDeleteNamedV2LoadBalancerPaginatesDiscovery(t *testing.T) {
 	}
 }
 
-func TestDeleteNamedV2LoadBalancerContinuesAfterDeletionFailures(t *testing.T) {
+func testDeleteNamedV2LoadBalancerContinuesAfterDeletionFailures(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	client := awsapi.NewMockELBV2API(ctrl)
 
@@ -375,7 +392,7 @@ func TestDeleteNamedV2LoadBalancerContinuesAfterDeletionFailures(t *testing.T) {
 	}
 }
 
-func TestDeleteOwnedV2TargetGroupsContinuesAfterPaginationFailure(t *testing.T) {
+func TestDeleteOwnedV2TargetGroups(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	client := awsapi.NewMockELBV2API(ctrl)
 
@@ -416,7 +433,7 @@ func TestDeleteOwnedV2TargetGroupsContinuesAfterPaginationFailure(t *testing.T) 
 	}
 }
 
-func TestCleanupRecordedLoadBalancersKeepsAttachedTargetGroupPendingAcrossRetries(t *testing.T) {
+func testCleanupRecordedLoadBalancersKeepsAttachedTargetGroupPendingAcrossRetries(t *testing.T) {
 	t.Run("When a deleted load balancer is NotFound but its owned target group remains attached, it should keep cleanup pending", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		client := awsapi.NewMockELBV2API(ctrl)
@@ -534,7 +551,7 @@ func TestCleanupRecordedLoadBalancersKeepsAttachedTargetGroupPendingAcrossRetrie
 	})
 }
 
-func TestDeleteLoadBalancersByNameKeepsAttachedTargetGroupPendingAcrossRetries(t *testing.T) {
+func testDeleteLoadBalancersByNameKeepsAttachedTargetGroupPendingAcrossRetries(t *testing.T) {
 	t.Run("When a deleted load balancer is NotFound but its target group remains attached, it should keep cleanup pending", func(t *testing.T) {
 		client := awsapi.NewMockELBV2API(gomock.NewController(t))
 		const (
@@ -621,6 +638,11 @@ func TestMatchesAttachment(t *testing.T) {
 }
 
 func TestCleanupRecordedLoadBalancers(t *testing.T) {
+	t.Run("When a target group remains attached, it should require an exact recorded load balancer identity", testCleanupRecordedLoadBalancers)
+	t.Run("When a recorded target group remains attached, it should keep cleanup pending across retries", testCleanupRecordedLoadBalancersKeepsAttachedTargetGroupPendingAcrossRetries)
+}
+
+func testCleanupRecordedLoadBalancers(t *testing.T) {
 	const (
 		firstName      = "cluster-lb-a"
 		secondName     = "cluster-lb-b"
@@ -680,7 +702,7 @@ func TestCleanupRecordedLoadBalancers(t *testing.T) {
 	}
 }
 
-func TestDeleteNamedV2LoadBalancerDoesNotDeleteSharedTargetGroups(t *testing.T) {
+func testDeleteNamedV2LoadBalancerDoesNotDeleteSharedTargetGroups(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	client := awsapi.NewMockELBV2API(ctrl)
 	const (
@@ -725,7 +747,7 @@ func TestDeleteNamedV2LoadBalancerDoesNotDeleteSharedTargetGroups(t *testing.T) 
 	}
 }
 
-func TestDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
+func testDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
 	const (
 		name            = "cluster-lb"
 		secondName      = "cluster-lb-b"
@@ -908,7 +930,7 @@ func TestDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
 	}
 }
 
-func TestDeleteNamedClassicLoadBalancersWhenTagLookupFails(t *testing.T) {
+func TestDeleteNamedClassicLoadBalancers(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	client := awsapi.NewMockELBAPI(ctrl)
 	const (
@@ -928,7 +950,7 @@ func TestDeleteNamedClassicLoadBalancersWhenTagLookupFails(t *testing.T) {
 	}
 }
 
-func TestDeleteNamedV2LoadBalancersWhenTagLookupFails(t *testing.T) {
+func TestDeleteNamedV2LoadBalancers(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	client := awsapi.NewMockELBV2API(ctrl)
 	const (
@@ -949,7 +971,7 @@ func TestDeleteNamedV2LoadBalancersWhenTagLookupFails(t *testing.T) {
 	}
 }
 
-func TestDeleteLoadBalancersByNameWaitsForEventualConsistency(t *testing.T) {
+func testDeleteLoadBalancersByNameWaitsForEventualConsistency(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	client := awsapi.NewMockELBAPI(ctrl)
 	const (
@@ -983,7 +1005,7 @@ func TestDeleteLoadBalancersByNameWaitsForEventualConsistency(t *testing.T) {
 	}
 }
 
-func TestDeleteLoadBalancersByNameTreatsNotFoundAsSuccess(t *testing.T) {
+func testDeleteLoadBalancersByNameTreatsNotFoundAsSuccess(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	elbClient := awsapi.NewMockELBAPI(ctrl)
 	elbv2Client := awsapi.NewMockELBV2API(ctrl)
@@ -1109,7 +1131,7 @@ func TestIsNotFound(t *testing.T) {
 	}
 }
 
-func TestDeleteRecordedClassicLoadBalancerRejectsVPCDrift(t *testing.T) {
+func TestDeleteRecordedClassicLoadBalancer(t *testing.T) {
 	tests := []struct {
 		name        string
 		identityVPC string
@@ -1150,7 +1172,7 @@ func TestDeleteRecordedClassicLoadBalancerRejectsVPCDrift(t *testing.T) {
 	}
 }
 
-func TestDeleteRecordedV2LoadBalancerRejectsVPCDrift(t *testing.T) {
+func TestDeleteRecordedV2LoadBalancer(t *testing.T) {
 	tests := []struct {
 		name        string
 		identityVPC string
@@ -1198,7 +1220,7 @@ func TestDeleteRecordedV2LoadBalancerRejectsVPCDrift(t *testing.T) {
 	}
 }
 
-func TestDeleteLoadBalancersByNameScansOrphansAfterTargetGroupDeletionFails(t *testing.T) {
+func testDeleteLoadBalancersByNameScansOrphansAfterTargetGroupDeletionFails(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	elbv2Client := awsapi.NewMockELBV2API(ctrl)
 
@@ -1266,6 +1288,11 @@ func TestDeleteLoadBalancersByNameScansOrphansAfterTargetGroupDeletionFails(t *t
 }
 
 func TestCountLoadBalancerResources(t *testing.T) {
+	t.Run("When resources remain, it should count only the selected cluster resources", testCountLoadBalancerResources)
+	t.Run("When the context is canceled during pagination, it should stop AWS requests", testCountLoadBalancerResourcesStopsPaginationAfterContextCancellation)
+}
+
+func testCountLoadBalancerResources(t *testing.T) {
 	t.Run("When selected resources remain, it should count load balancers and target groups", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		elbClient := awsapi.NewMockELBAPI(ctrl)
@@ -1427,7 +1454,7 @@ func TestLoadBalancerRegionFromHostname(t *testing.T) {
 	}
 }
 
-func TestLoadBalancerTagLookupRejectsAccessDenied(t *testing.T) {
+func TestClassicLoadBalancerHasClusterTag(t *testing.T) {
 	accessDenied := &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "not authorized"}
 
 	t.Run("When classic ELB tag lookup is denied, it should refuse to assume ownership", func(t *testing.T) {
@@ -1444,22 +1471,30 @@ func TestLoadBalancerTagLookupRejectsAccessDenied(t *testing.T) {
 		}
 	})
 
-	t.Run("When ELBv2 tag lookup is denied, it should refuse to assume ownership", func(t *testing.T) {
+	t.Run("When a classic load balancer has a shared cluster tag, it should not be considered owned", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		client := awsapi.NewMockELBV2API(ctrl)
-		client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, accessDenied)
+		client := awsapi.NewMockELBAPI(ctrl)
+		client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancing.DescribeTagsOutput{
+			TagDescriptions: []elbtypes.TagDescription{{
+				LoadBalancerName: aws.String("cluster-lb"),
+				Tags: []elbtypes.Tag{{
+					Key:   aws.String("kubernetes.io/cluster/infra-id"),
+					Value: aws.String("shared"),
+				}},
+			}},
+		}, nil)
 
-		owned, err := v2ResourceHasClusterTag(context.Background(), client, aws.String("arn:load-balancer"), "infra-id")
-		if err == nil || !strings.Contains(err.Error(), "delegated role needs elasticloadbalancing:DescribeTags") {
-			t.Fatalf("expected access denial to prevent ownership verification, got %v", err)
+		owned, err := classicLoadBalancerHasClusterTag(context.Background(), client, aws.String("cluster-lb"), "infra-id")
+		if err != nil {
+			t.Fatalf("expected no tag lookup error, got %v", err)
 		}
 		if owned {
-			t.Fatal("expected an ELBv2 resource with unreadable ownership tags not to be considered owned")
+			t.Fatal("expected a shared load balancer tag not to indicate cluster ownership")
 		}
 	})
 }
 
-func TestDeleteClassicLoadBalancersStopsAfterContextCancellation(t *testing.T) {
+func TestDeleteClassicLoadBalancers(t *testing.T) {
 	t.Run("When deletion cancels its context, it should stop all subsequent AWS requests", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		client := awsapi.NewMockELBAPI(ctrl)
@@ -1489,7 +1524,7 @@ func TestDeleteClassicLoadBalancersStopsAfterContextCancellation(t *testing.T) {
 	})
 }
 
-func TestCountLoadBalancerResourcesStopsPaginationAfterContextCancellation(t *testing.T) {
+func testCountLoadBalancerResourcesStopsPaginationAfterContextCancellation(t *testing.T) {
 	t.Run("When the classic ELB page cancels its context, it should not request more AWS pages", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		client := awsapi.NewMockELBAPI(ctrl)
@@ -1519,7 +1554,7 @@ func TestCountLoadBalancerResourcesStopsPaginationAfterContextCancellation(t *te
 	})
 }
 
-func TestCountV2LoadBalancerResourcesStopsBeforeTargetGroupScanAfterContextCancellation(t *testing.T) {
+func TestCountV2LoadBalancerResources(t *testing.T) {
 	t.Run("When the load balancer page cancels its context, it should not scan target groups", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		client := awsapi.NewMockELBV2API(ctrl)
@@ -1547,7 +1582,7 @@ func TestCountV2LoadBalancerResourcesStopsBeforeTargetGroupScanAfterContextCance
 	})
 }
 
-func TestInspectLoadBalancersByNameStopsAfterContextCancellation(t *testing.T) {
+func TestInspectLoadBalancersByName(t *testing.T) {
 	t.Run("When classic ELB inspection cancels its context, it should not inspect ELBv2", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		elbClient := awsapi.NewMockELBAPI(ctrl)
@@ -1568,7 +1603,7 @@ func TestInspectLoadBalancersByNameStopsAfterContextCancellation(t *testing.T) {
 	})
 }
 
-func TestDeleteNamedV2LoadBalancerDetailedStopsAfterContextCancellation(t *testing.T) {
+func TestDeleteNamedV2LoadBalancerDetailed(t *testing.T) {
 	t.Run("When listener deletion cancels its context, it should not delete the load balancer or target group", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		client := awsapi.NewMockELBV2API(ctrl)
@@ -1645,7 +1680,7 @@ func TestIsOnlyDescribeTagsAccessDenied(t *testing.T) {
 	}
 }
 
-func TestDeleteLoadBalancersByNameRetainsResourcesWhenTagLookupIsDenied(t *testing.T) {
+func testDeleteLoadBalancersByNameRetainsResourcesWhenTagLookupIsDenied(t *testing.T) {
 	t.Run("When ownership tags are inaccessible in a shared VPC, it should not delete the load balancer", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		client := awsapi.NewMockELBAPI(ctrl)
@@ -1704,7 +1739,7 @@ func TestDeleteLoadBalancersByNameRetainsResourcesWhenTagLookupIsDenied(t *testi
 	})
 }
 
-func TestDeleteLoadBalancersByNameDoesNotDeleteOrphanTargetGroupsWhenTagLookupIsDenied(t *testing.T) {
+func testDeleteLoadBalancersByNameDoesNotDeleteOrphanTargetGroupsWhenTagLookupIsDenied(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	client := awsapi.NewMockELBV2API(ctrl)
 	const (
@@ -1738,26 +1773,20 @@ func TestDeleteLoadBalancersByNameDoesNotDeleteOrphanTargetGroupsWhenTagLookupIs
 	}
 }
 
-func TestLoadBalancerTagLookupRequiresOwnedValue(t *testing.T) {
-	t.Run("When a classic load balancer has a shared cluster tag, it should not be considered owned", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		client := awsapi.NewMockELBAPI(ctrl)
-		client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancing.DescribeTagsOutput{
-			TagDescriptions: []elbtypes.TagDescription{{
-				LoadBalancerName: aws.String("cluster-lb"),
-				Tags: []elbtypes.Tag{{
-					Key:   aws.String("kubernetes.io/cluster/infra-id"),
-					Value: aws.String("shared"),
-				}},
-			}},
-		}, nil)
+func TestV2ResourceHasClusterTag(t *testing.T) {
+	accessDenied := &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "not authorized"}
 
-		owned, err := classicLoadBalancerHasClusterTag(context.Background(), client, aws.String("cluster-lb"), "infra-id")
-		if err != nil {
-			t.Fatalf("expected no tag lookup error, got %v", err)
+	t.Run("When ELBv2 tag lookup is denied, it should refuse to assume ownership", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		client := awsapi.NewMockELBV2API(ctrl)
+		client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, accessDenied)
+
+		owned, err := v2ResourceHasClusterTag(context.Background(), client, aws.String("arn:load-balancer"), "infra-id")
+		if err == nil || !strings.Contains(err.Error(), "delegated role needs elasticloadbalancing:DescribeTags") {
+			t.Fatalf("expected access denial to prevent ownership verification, got %v", err)
 		}
 		if owned {
-			t.Fatal("expected a shared load balancer tag not to indicate cluster ownership")
+			t.Fatal("expected an ELBv2 resource with unreadable ownership tags not to be considered owned")
 		}
 	})
 
