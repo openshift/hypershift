@@ -3678,6 +3678,7 @@ func (r *reconciler) reconcileGCPNodeTerminationHandler(ctx context.Context, hcp
 			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"get", "list", "watch", "delete"}},
 			{APIGroups: []string{""}, Resources: []string{"pods/eviction"}, Verbs: []string{"create"}},
 			{APIGroups: []string{""}, Resources: []string{"events"}, Verbs: []string{"create", "patch", "update"}},
+			{APIGroups: []string{"apps"}, Resources: []string{"daemonsets"}, Verbs: []string{"get"}},
 		}
 		return nil
 	}); err != nil {

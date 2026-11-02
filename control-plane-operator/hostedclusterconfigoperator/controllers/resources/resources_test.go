@@ -3880,6 +3880,7 @@ func TestReconcileGCPNodeTerminationHandler(t *testing.T) {
 			if tc.expectClusterRole {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(clusterRole.Rules).To(ContainElement(rbacv1.PolicyRule{APIGroups: []string{""}, Resources: []string{"pods/eviction"}, Verbs: []string{"create"}}))
+				g.Expect(clusterRole.Rules).To(ContainElement(rbacv1.PolicyRule{APIGroups: []string{"apps"}, Resources: []string{"daemonsets"}, Verbs: []string{"get"}}))
 			} else {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
