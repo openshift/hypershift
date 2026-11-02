@@ -29,7 +29,7 @@ func testAWSConfigForRoleKeepsWebIdentityTokenOnSTSEndpoint(t *testing.T) {
 		}
 		stsToken <- r.Form.Get("WebIdentityToken")
 		w.Header().Set("Content-Type", "text/xml")
-		_, _ = io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?>
+		if _, err := io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?>
 <AssumeRoleWithWebIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
   <AssumeRoleWithWebIdentityResult>
     <Credentials>
@@ -44,7 +44,9 @@ func testAWSConfigForRoleKeepsWebIdentityTokenOnSTSEndpoint(t *testing.T) {
     </AssumedRoleUser>
   </AssumeRoleWithWebIdentityResult>
   <ResponseMetadata><RequestId>test-request-id</RequestId></ResponseMetadata>
-</AssumeRoleWithWebIdentityResponse>`)
+</AssumeRoleWithWebIdentityResponse>`); err != nil {
+			t.Errorf("failed to write STS response: %v", err)
+		}
 	}))
 	defer stsServer.Close()
 
