@@ -8335,7 +8335,7 @@ func TestDeleteOrcImagesDuringHostedClusterDeletion(t *testing.T) {
 	}
 }
 
-func TestDeleteGCPPrivateServiceConnectDuringHostedClusterDeletion(t *testing.T) {
+func TestDeleteGCPPrivateServiceConnect(t *testing.T) {
 	// InfraID is left empty so delete() skips the CAPI Cluster step. In production that step
 	// deletes the HCP first, so this covers only the HostedCluster controller's own ordering
 	// for PSC CRs that still carry a finalizer.
