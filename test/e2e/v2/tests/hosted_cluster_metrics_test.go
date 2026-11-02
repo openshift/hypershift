@@ -50,6 +50,7 @@ import (
 )
 
 func expectMetricHasLabel(g Gomega, families map[string]*dto.MetricFamily, metricName, labelName, labelValue string) {
+	GinkgoHelper()
 	family, ok := families[metricName]
 	g.Expect(ok).To(BeTrue(), "metric %s should exist", metricName)
 	hasMatch := false
@@ -139,6 +140,60 @@ func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 						hcmetrics.HostedClusterManagedAzureInfoMetricName)
 				}
 			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+		})
+	})
+
+	When("NodePool vCPU metrics are supported", func() {
+		var tc *internal.TestContext
+		var workloadType string
+
+		BeforeEach(func() {
+			tc = getTestCtx()
+			hostedCluster, err := tc.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "should be able to get the HostedCluster")
+			Expect(hostedCluster).NotTo(BeNil(), "HostedCluster %s/%s should exist", tc.ClusterNamespace, tc.ClusterName)
+			if hostedCluster.Spec.ClusterID == "" {
+				Skip("NodePool vCPU metrics require a HostedCluster with a cluster ID")
+			}
+
+			npList := &hyperv1.NodePoolList{}
+			Expect(tc.MgmtClient.List(tc.Context, npList, crclient.InNamespace(hostedCluster.Namespace))).To(Succeed(),
+				"should be able to list NodePools for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
+			for _, np := range npList.Items {
+				if np.Spec.ClusterName == hostedCluster.Name && np.Spec.Platform.Type == hyperv1.AWSPlatform {
+					workloadType = np.Spec.NodeLabels["node.openshift.io/workload-type"]
+					return
+				}
+			}
+			Skip("NodePool vCPU metrics require at least one native AWS NodePool")
+		})
+
+		It("should expose NodePool vCPU and node-count metrics with workload_type labels", Label(internal.InformingLabel), func() {
+			mgmtRestConfig := tc.MgmtRESTConfig
+			Expect(mgmtRestConfig).NotTo(BeNil(), "management cluster REST config should be set on the test context")
+			clientset, err := kubernetes.NewForConfig(mgmtRestConfig)
+			Expect(err).NotTo(HaveOccurred(), "should be able to create kubernetes clientset")
+
+			const hoNamespace = "hypershift"
+			pods := &corev1.PodList{}
+			Expect(tc.MgmtClient.List(tc.Context, pods, crclient.InNamespace(hoNamespace),
+				crclient.MatchingLabels{"app": "operator"})).To(Succeed(), "should be able to list hypershift-operator pods")
+			var runningPodName string
+			for _, pod := range pods.Items {
+				if pod.Status.Phase == corev1.PodRunning {
+					runningPodName = pod.Name
+					break
+				}
+			}
+			Expect(runningPodName).NotTo(BeEmpty(), "a running hypershift-operator pod should exist")
+
+			scrapeCtx, cancelScrape := context.WithTimeout(tc.Context, 30*time.Second)
+			defer cancelScrape()
+			metrics, err := v2util.GetMetricsFromPod(scrapeCtx, clientset, mgmtRestConfig, hoNamespace, runningPodName, "operator", 9000)
+			Expect(err).NotTo(HaveOccurred(), "should be able to fetch metrics from hypershift-operator pod")
+			for _, metricName := range []string{npmetrics.VCpusCountByNodePoolMetricName, npmetrics.AvailableReplicasMetricName} {
+				expectMetricHasLabel(Default, metrics, metricName, "workload_type", workloadType)
+			}
 		})
 	})
 }
