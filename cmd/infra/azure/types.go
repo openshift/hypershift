@@ -26,6 +26,10 @@ type CreateInfraOptions struct {
 	AssignCustomHCPRoles        bool
 	DisableClusterCapabilities  []string
 	Cloud                       string
+	// OutboundType selects how worker nodes reach the internet. An empty value is treated as
+	// LoadBalancer. Under UserDefinedRouting no outbound rule is created on the cluster Load
+	// Balancer, so the infrastructure created here provides no egress path.
+	OutboundType hyperv1.AzureOutboundType
 }
 
 type CreateInfraOutput struct {
