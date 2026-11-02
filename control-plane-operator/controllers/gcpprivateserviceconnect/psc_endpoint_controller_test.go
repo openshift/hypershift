@@ -2619,7 +2619,7 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 	}
 }
 
-func TestPSCCleanupCredentialSkipReason(t *testing.T) {
+func TestPscCleanupCredentialSkipReason(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -2670,7 +2670,7 @@ func TestPSCCleanupCredentialSkipReason(t *testing.T) {
 	}
 }
 
-func TestPSCCleanupTimeoutSkipReason(t *testing.T) {
+func TestPscCleanupTimeoutSkipReason(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -2750,7 +2750,7 @@ func TestReconcileDelete(t *testing.T) {
 	})
 }
 
-func TestDNSZonesToDelete(t *testing.T) {
+func TestDnsZonesToDelete(t *testing.T) {
 	t.Parallel()
 
 	pscWithStatusZones := func(names ...string) *hyperv1.GCPPrivateServiceConnect {
