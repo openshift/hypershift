@@ -199,6 +199,7 @@ func TestSetOperatorImageReferences(t *testing.T) {
 				"AWS_EBS_DRIVER_OPERATOR_IMAGE",
 				"AWS_EBS_DRIVER_IMAGE",
 				"NODE_DRIVER_REGISTRAR_IMAGE",
+				"VOLUME_DEVICE_EXPORTER_IMAGE",
 			},
 		},
 		{
