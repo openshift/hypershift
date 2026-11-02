@@ -39,15 +39,7 @@ var _ = Describe("[sig-hypershift][Jira:Hypershift] Karpenter",
 			testCtx = internal.GetTestContext()
 			Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
 
-			// Skips unless the Karpenter v1 API is available.
-			// The v1 API exists on 4.23+, but when the operator is built from main and
-			// tested against a 4.22 hosted cluster, set RUN_KARPENTER_TESTS=true to
-			// lower the gate to 4.22.
-			if internal.GetEnvVarValue("RUN_KARPENTER_TESTS") == "true" {
-				testCtx.SkipIfVersionBelow(e2eutil.Version422)
-			} else {
-				testCtx.SkipIfVersionBelow(e2eutil.Version423)
-			}
+			testCtx.SkipIfVersionBelow(v2util.Version422)
 		})
 
 		RegisterKarpenterControlPlaneUpgradeTests(func() *internal.TestContext { return testCtx })

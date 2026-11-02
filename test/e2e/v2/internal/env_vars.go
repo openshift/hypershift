@@ -236,9 +236,4 @@ func init() {
 		"Comma-separated list of test users in user:password format for External OIDC testing. Written by the lifecycle PostCreate.",
 		false,
 	)
-	RegisterEnvVar(
-		"RUN_KARPENTER_TESTS",
-		"When the value is exactly \"true\", it lowers the minimum hosted-cluster version from 4.23 to 4.22.",
-		false,
-	)
 }
