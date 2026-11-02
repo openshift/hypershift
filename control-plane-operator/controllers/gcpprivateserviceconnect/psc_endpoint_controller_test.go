@@ -1485,10 +1485,13 @@ func TestReconcileDNSEndpoint(t *testing.T) {
 }
 
 func TestGetHCPOrCleanupOrphan(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name                  string
 		hcpExists             bool
 		pscHasFinalizer       bool
+		noOwnerReference      bool
 		patchConflict         bool
 		expectHCP             bool
 		expectFinalizerAbsent bool
@@ -1506,6 +1509,12 @@ func TestGetHCPOrCleanupOrphan(t *testing.T) {
 			expectFinalizerAbsent: true,
 		},
 		{
+			name:                  "When the PSC has no HCP owner reference, it should remove the orphaned finalizer instead of wedging",
+			pscHasFinalizer:       true,
+			noOwnerReference:      true,
+			expectFinalizerAbsent: true,
+		},
+		{
 			name:            "When the owning HCP is missing and the PSC has no finalizer, it should return without modifying the PSC",
 			pscHasFinalizer: false,
 		},
@@ -1519,8 +1528,13 @@ func TestGetHCPOrCleanupOrphan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			scheme := newGCPPSCTestScheme(t)
 			psc := newTestGCPPSC("test-psc", "test-ns", tt.pscHasFinalizer)
+			if tt.noOwnerReference {
+				psc.OwnerReferences = nil
+			}
 			objects := []client.Object{psc}
 			if tt.hcpExists {
 				objects = append(objects, newTestHCP("test-hcp", "test-ns"))
@@ -1563,6 +1577,8 @@ func TestGetHCPOrCleanupOrphan(t *testing.T) {
 }
 
 func TestEnsureHCPFinalizer(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name               string
 		finalizers         []string
@@ -1588,6 +1604,8 @@ func TestEnsureHCPFinalizer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			scheme := newGCPPSCTestScheme(t)
 			hcp := newTestHCP("test-hcp", "test-ns")
 			hcp.Finalizers = tt.finalizers
@@ -1618,6 +1636,8 @@ func TestEnsureHCPFinalizer(t *testing.T) {
 }
 
 func TestRemoveHCPFinalizer(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name               string
 		finalizers         []string
@@ -1644,6 +1664,8 @@ func TestRemoveHCPFinalizer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			scheme := newGCPPSCTestScheme(t)
 			hcp := newTestHCP("test-hcp", "test-ns")
 			hcp.Finalizers = tt.finalizers
@@ -1675,12 +1697,16 @@ func TestRemoveHCPFinalizer(t *testing.T) {
 }
 
 func TestReconcileHCPDeletion(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name             string
 		clientFactory    func(*testing.T) func(context.Context) (*compute.Service, error)
 		pscPatchConflict bool
 		hcpConditions    []metav1.Condition
 		deletionAge      time.Duration
+		coldBuilder      bool
+		requireClientRun bool
 		expectError      bool
 		expectRequeue    time.Duration
 		expectHCDeleted  bool
@@ -1740,15 +1766,43 @@ func TestReconcileHCPDeletion(t *testing.T) {
 			expectError:   true,
 		},
 		{
-			name:            "When HCP deletion has exceeded the cleanup timeout, it should skip GCP cleanup and remove PSC and HCP finalizers",
-			clientFactory:   unexpectedGCPClientFactory,
-			deletionAge:     pscCleanupDeletionTimeout + time.Minute,
-			expectHCDeleted: true,
+			name:             "When the client builder is cold and the HCP is deleting, it should initialize from the HCP and clean up",
+			clientFactory:    successfulGCPClientFactory,
+			coldBuilder:      true,
+			requireClientRun: true,
+			expectHCDeleted:  true,
+		},
+		{
+			name:             "When deletion has exceeded the cleanup timeout but cleanup succeeds, it should clean up and remove finalizers",
+			clientFactory:    successfulGCPClientFactory,
+			deletionAge:      pscCleanupDeletionTimeout + time.Minute,
+			requireClientRun: true,
+			expectHCDeleted:  true,
+		},
+		{
+			name: "When cleanup fails after the deletion timeout, it should skip cleanup only after attempting it",
+			clientFactory: func(t *testing.T) func(context.Context) (*compute.Service, error) {
+				return testGCPClientFactory(t, http.StatusInternalServerError, "")
+			},
+			deletionAge:      pscCleanupDeletionTimeout + time.Minute,
+			requireClientRun: true,
+			expectHCDeleted:  true,
+		},
+		{
+			name: "When cleanup is still in progress after the deletion timeout, it should requeue and retain finalizers",
+			clientFactory: func(t *testing.T) func(context.Context) (*compute.Service, error) {
+				return testGCPClientFactory(t, http.StatusOK, "PENDING")
+			},
+			deletionAge:      pscCleanupDeletionTimeout + time.Minute,
+			requireClientRun: true,
+			expectRequeue:    pscEndpointDeletionRequeueDuration,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			scheme := newGCPPSCTestScheme(t)
 			psc := newTestGCPPSC("test-psc", "test-ns", true)
 			hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{hcpGCPPSCFinalizerName})
@@ -1770,14 +1824,25 @@ func TestReconcileHCPDeletion(t *testing.T) {
 			}
 			fakeClient := clientBuilder.Build()
 
-			r := &GCPPrivateServiceConnectReconciler{
-				Client: fakeClient,
-				gcpClientBuilder: gcpClientBuilder{
-					customerProject: "customer-project",
-					region:          "us-central1",
-					initialized:     true,
-					newClient:       tt.clientFactory(t),
+			clientCalled := false
+			rawClientFactory := tt.clientFactory(t)
+			builder := gcpClientBuilder{
+				customerProject: "customer-project",
+				region:          "us-central1",
+				initialized:     !tt.coldBuilder,
+				newClient: func(ctx context.Context) (*compute.Service, error) {
+					clientCalled = true
+					return rawClientFactory(ctx)
 				},
+			}
+			if tt.coldBuilder {
+				builder.customerProject = ""
+				builder.region = ""
+			}
+
+			r := &GCPPrivateServiceConnectReconciler{
+				Client:           fakeClient,
+				gcpClientBuilder: builder,
 			}
 			result, err := r.reconcileHCPDeletion(t.Context(), hcp, testr.New(t))
 			if tt.expectError {
@@ -1786,6 +1851,10 @@ func TestReconcileHCPDeletion(t *testing.T) {
 				require.NoError(t, err)
 			}
 			assert.Equal(t, tt.expectRequeue, result.RequeueAfter)
+			if tt.requireClientRun {
+				assert.True(t, clientCalled,
+					"cleanup must be attempted before the deletion timeout can abandon it, and a cold builder must be initialized before use")
+			}
 
 			updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
 			require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
@@ -1802,9 +1871,7 @@ func TestReconcileHCPDeletion(t *testing.T) {
 			assert.Contains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName)
 		})
 	}
-}
 
-func TestReconcileHCPDeletionDeleteRequests(t *testing.T) {
 	const (
 		fwdRuleSuffix = "/projects/customer-project/regions/us-central1/forwardingRules/test-service-attachment-endpoint"
 		addressSuffix = "/projects/customer-project/regions/us-central1/addresses/test-service-attachment-ip"
@@ -1819,7 +1886,9 @@ func TestReconcileHCPDeletionDeleteRequests(t *testing.T) {
 		t.Fatalf("expected a %s request ending in %q, got: %v", method, suffix, recorded)
 	}
 
-	t.Run("On success it deletes the forwarding rule and reserved IP with the expected project and region", func(t *testing.T) {
+	t.Run("When cleanup succeeds, it should delete the forwarding rule and reserved IP with the expected project and region", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		psc := newTestGCPPSC("test-psc", "test-ns", true)
 		hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{hcpGCPPSCFinalizerName})
@@ -1848,7 +1917,9 @@ func TestReconcileHCPDeletionDeleteRequests(t *testing.T) {
 			"HCP finalizer should be removed and HCP garbage-collected")
 	})
 
-	t.Run("When the reserved IP delete fails, it retains both finalizers", func(t *testing.T) {
+	t.Run("When the reserved IP delete fails, it should retain both finalizers", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		psc := newTestGCPPSC("test-psc", "test-ns", true)
 		hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{hcpGCPPSCFinalizerName})
@@ -1878,10 +1949,46 @@ func TestReconcileHCPDeletionDeleteRequests(t *testing.T) {
 		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
 		assert.Contains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName)
 	})
+
+	t.Run("When the client builder is cold, it should initialize from the HCP before constructing GCP URLs", func(t *testing.T) {
+		t.Parallel()
+
+		scheme := newGCPPSCTestScheme(t)
+		psc := newTestGCPPSC("test-psc", "test-ns", true)
+		hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{hcpGCPPSCFinalizerName})
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp).Build()
+
+		var recorded []string
+		r := &GCPPrivateServiceConnectReconciler{
+			Client: fakeClient,
+			gcpClientBuilder: gcpClientBuilder{
+				// Cold: simulates a controller restart while the HCP is being deleted.
+				initialized: false,
+				newClient:   recordingGCPClientFactory(t, &recorded, http.StatusOK),
+			},
+		}
+
+		result, err := r.reconcileHCPDeletion(t.Context(), hcp, testr.New(t))
+		require.NoError(t, err)
+		assert.Zero(t, result.RequeueAfter)
+
+		// The HCP's project and region are visible only in the request URLs, so these
+		// assertions fail unless the builder was initialized from the HCP first.
+		assertRequested(t, recorded, http.MethodDelete, fwdRuleSuffix)
+		assertRequested(t, recorded, http.MethodDelete, addressSuffix)
+
+		updatedHCP := &hyperv1.HostedControlPlane{}
+		assert.True(t, apierrors.IsNotFound(fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP)),
+			"HCP finalizer should be removed once cleanup completes")
+	})
 }
 
 func TestReconcile(t *testing.T) {
+	t.Parallel()
+
 	t.Run("When the HCP is being deleted, it should not re-add the PSC finalizer", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		psc := newTestGCPPSC("test-psc", "test-ns", false)
 		hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{"other-finalizer"})
@@ -1905,6 +2012,8 @@ func TestReconcile(t *testing.T) {
 	})
 
 	t.Run("When the Service Attachment is unavailable, it should add HCP finalizer and wait", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		psc := newTestGCPPSC("test-psc", "test-ns", true)
 		psc.Finalizers = []string{pscEndpointFinalizer}
@@ -1932,6 +2041,8 @@ func TestReconcile(t *testing.T) {
 	})
 
 	t.Run("When the PSC endpoint IP is unavailable, it should add the HCP finalizer before waiting", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		psc := newReadyServiceAttachmentPSC("test-psc", "test-ns")
 		psc.Finalizers = []string{pscEndpointFinalizer}
@@ -1960,6 +2071,8 @@ func TestReconcile(t *testing.T) {
 	})
 
 	t.Run("When the PSC endpoint is ready, it should add the HCP finalizer", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		psc := newReadyServiceAttachmentPSC("test-psc", "test-ns")
 		psc.Finalizers = []string{pscEndpointFinalizer}
@@ -1987,9 +2100,61 @@ func TestReconcile(t *testing.T) {
 		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
 		assert.Contains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName)
 	})
+
+	t.Run("When a synthetic HCP request has no PSC CR, it should remove the orphaned HCP finalizer", func(t *testing.T) {
+		t.Parallel()
+
+		scheme := newGCPPSCTestScheme(t)
+		hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{hcpGCPPSCFinalizerName, "other-finalizer"})
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp).Build()
+		r := &GCPPrivateServiceConnectReconciler{Client: fakeClient}
+
+		// This is the key mapHCPToPSC enqueues when the HCP is deleting with no PSC CRs.
+		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: "test-hcp" + syntheticPSCRequestSuffix, Namespace: "test-ns"}}
+		result, err := r.Reconcile(t.Context(), req)
+		require.NoError(t, err)
+		assert.Zero(t, result.RequeueAfter)
+
+		updatedHCP := &hyperv1.HostedControlPlane{}
+		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
+		assert.NotContains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName,
+			"a synthetic request with no PSC CR must not strand the HCP finalizer")
+		assert.Contains(t, updatedHCP.Finalizers, "other-finalizer")
+	})
+
+	t.Run("When the HCP is paused, it should add the HCP finalizer and requeue without provisioning", func(t *testing.T) {
+		t.Parallel()
+
+		scheme := newGCPPSCTestScheme(t)
+		psc := newTestGCPPSC("test-psc", "test-ns", true)
+		hcp := newTestGCPHCP("test-hcp", "test-ns")
+		pausedUntil := time.Now().Add(time.Hour).Format(time.RFC3339)
+		hcp.Spec.PausedUntil = &pausedUntil
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(psc, hcp).Build()
+		r := &GCPPrivateServiceConnectReconciler{
+			Client: fakeClient,
+			gcpClientBuilder: gcpClientBuilder{
+				initialized:     true,
+				customerProject: "customer-project",
+				region:          "us-central1",
+				newClient:       successfulGCPClientFactory(t),
+			},
+		}
+
+		result, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(psc)})
+		require.NoError(t, err)
+		assert.Greater(t, result.RequeueAfter, time.Duration(0), "a paused HCP must requeue for the pause duration")
+
+		updatedHCP := &hyperv1.HostedControlPlane{}
+		require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP))
+		assert.Contains(t, updatedHCP.Finalizers, hcpGCPPSCFinalizerName,
+			"the HCP finalizer must be in place before the pause check so deletion still cleans up")
+	})
 }
 
 func TestMapHCPToPSC(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name          string
 		hcpFinalizers []string
@@ -2058,6 +2223,8 @@ func TestMapHCPToPSC(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			scheme := newGCPPSCTestScheme(t)
 			hcp := newTestHCP("test-hcp", "test-ns")
 			hcp.Finalizers = tt.hcpFinalizers
@@ -2089,10 +2256,22 @@ func TestMapHCPToPSC(t *testing.T) {
 			assert.ElementsMatch(t, tt.expectNames, requestNames)
 		})
 	}
+
+	t.Run("When the mapper is called with a non-HCP object, it should return no requests", func(t *testing.T) {
+		t.Parallel()
+
+		r := &GCPPrivateServiceConnectReconciler{}
+		requests := r.mapHCPToPSC()(t.Context(), newTestGCPPSC("test-psc", "test-ns", false))
+		assert.Empty(t, requests)
+	})
 }
 
 func TestHandleOrphanedHCPFinalizer(t *testing.T) {
+	t.Parallel()
+
 	t.Run("When HCP is deleting with finalizer but no PSC CRs, it should remove HCP finalizer", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newTestHCP("test-hcp", "test-ns")
 		hcp.Finalizers = []string{hcpGCPPSCFinalizerName, "other-finalizer"}
@@ -2114,6 +2293,8 @@ func TestHandleOrphanedHCPFinalizer(t *testing.T) {
 	})
 
 	t.Run("When HCP is not deleting, it should not remove finalizer", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newTestHCP("test-hcp", "test-ns")
 		hcp.Finalizers = []string{hcpGCPPSCFinalizerName}
@@ -2133,6 +2314,8 @@ func TestHandleOrphanedHCPFinalizer(t *testing.T) {
 	})
 
 	t.Run("When HCP has no PSC finalizer, it should do nothing", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newTestHCP("test-hcp", "test-ns")
 		hcp.Finalizers = []string{"other-finalizer"}
@@ -2153,6 +2336,8 @@ func TestHandleOrphanedHCPFinalizer(t *testing.T) {
 	})
 
 	t.Run("When no HCP exists in namespace, it should return successfully", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 		r := &GCPPrivateServiceConnectReconciler{Client: fakeClient}
@@ -2162,7 +2347,9 @@ func TestHandleOrphanedHCPFinalizer(t *testing.T) {
 		assert.Equal(t, ctrl.Result{}, result)
 	})
 
-	t.Run("When PSC CRs are still present, it drives cleanup instead of only requeuing", func(t *testing.T) {
+	t.Run("When PSC CRs are still present, it should drive cleanup instead of only requeuing", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{hcpGCPPSCFinalizerName})
 		psc := newTestGCPPSC("test-psc", "test-ns", true)
@@ -2191,7 +2378,9 @@ func TestHandleOrphanedHCPFinalizer(t *testing.T) {
 		assert.NotContains(t, updatedPSC.Finalizers, pscEndpointFinalizer)
 	})
 
-	t.Run("When PSC cleanup is still in progress, it requeues and retains both finalizers", func(t *testing.T) {
+	t.Run("When PSC cleanup is still in progress, it should requeue and retain both finalizers", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newDeletingTestHCP("test-hcp", "test-ns", []string{hcpGCPPSCFinalizerName})
 		psc := newTestGCPPSC("test-psc", "test-ns", true)
@@ -2220,6 +2409,8 @@ func TestHandleOrphanedHCPFinalizer(t *testing.T) {
 }
 
 func TestHandlePSCCRDeletion(t *testing.T) {
+	t.Parallel()
+
 	// clientErr is a factory that always fails to build a GCP client, simulating
 	// unavailable credentials.
 	clientErr := func(*testing.T) func(context.Context) (*compute.Service, error) {
@@ -2237,6 +2428,9 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 		// createHCP controls whether the owning HCP still exists. When false, the HCP is
 		// absent, exercising the orphaned-finalizer removal path.
 		createHCP bool
+		// noOwnerReference clears the CR's owner references, simulating a CR that cannot
+		// be tied to an HCP.
+		noOwnerReference bool
 		// clientFactory injects the GCP client; nil means none is needed (orphan path).
 		clientFactory func(*testing.T) func(context.Context) (*compute.Service, error)
 		// patchConflict makes PSC finalizer patches return a conflict error.
@@ -2244,7 +2438,10 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 		// hcpConditions are set on the owning HCP's status.
 		hcpConditions []metav1.Condition
 		// deletionAge backdates the PSC CR's deletionTimestamp.
-		deletionAge             time.Duration
+		deletionAge time.Duration
+		// requireClientRun asserts that a GCP client was built, proving cleanup was
+		// attempted before any skip decision.
+		requireClientRun        bool
 		expectErr               bool
 		expectRequeueAfter      time.Duration
 		expectFinalizerRetained bool
@@ -2261,6 +2458,12 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 			builderInitialized: true,
 			createHCP:          true,
 			clientFactory:      successfulGCPClientFactory,
+		},
+		{
+			name:             "When the builder is not initialized and the HCP exists, it should initialize from the HCP and clean up",
+			createHCP:        true,
+			clientFactory:    successfulGCPClientFactory,
+			requireClientRun: true,
 		},
 		{
 			name:                    "When the GCP client cannot be created, it should error and retain the finalizer",
@@ -2294,20 +2497,53 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 			hcpConditions:      []metav1.Condition{gcpCredentialCondition(hyperv1.ValidGCPCredentials, metav1.ConditionFalse)},
 		},
 		{
-			name:               "When PSC deletion has exceeded the cleanup timeout, it should skip GCP cleanup and remove the finalizer",
+			name:               "When the PSC CR has no HCP owner reference, it should remove the finalizer instead of wedging",
+			builderInitialized: false,
+			noOwnerReference:   true,
+		},
+		{
+			name:               "When PSC deletion has exceeded the cleanup timeout but cleanup succeeds, it should still clean up and remove the finalizer",
 			builderInitialized: true,
 			createHCP:          true,
-			clientFactory:      unexpectedGCPClientFactory,
+			clientFactory:      successfulGCPClientFactory,
 			deletionAge:        pscCleanupDeletionTimeout + time.Minute,
+			requireClientRun:   true,
+		},
+		{
+			name:               "When cleanup fails after the PSC deletion timeout, it should skip cleanup only after attempting it",
+			builderInitialized: true,
+			createHCP:          true,
+			clientFactory: func(t *testing.T) func(context.Context) (*compute.Service, error) {
+				return testGCPClientFactory(t, http.StatusInternalServerError, "")
+			},
+			deletionAge:      pscCleanupDeletionTimeout + time.Minute,
+			requireClientRun: true,
+		},
+		{
+			name:               "When cleanup is still in progress after the PSC deletion timeout, it should requeue and retain the finalizer",
+			builderInitialized: true,
+			createHCP:          true,
+			clientFactory: func(t *testing.T) func(context.Context) (*compute.Service, error) {
+				return testGCPClientFactory(t, http.StatusOK, "PENDING")
+			},
+			deletionAge:             pscCleanupDeletionTimeout + time.Minute,
+			requireClientRun:        true,
+			expectRequeueAfter:      pscEndpointDeletionRequeueDuration,
+			expectFinalizerRetained: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			scheme := newGCPPSCTestScheme(t)
 			psc := newTestGCPPSC("test-psc", "test-ns", false)
 			psc.Finalizers = []string{pscEndpointFinalizer, "other-finalizer"}
 			psc.Status.EndpointIP = "10.0.0.10"
+			if tt.noOwnerReference {
+				psc.OwnerReferences = nil
+			}
 			psc.DeletionTimestamp = &metav1.Time{Time: time.Now().Add(-tt.deletionAge)}
 
 			var hcp *hyperv1.HostedControlPlane
@@ -2332,6 +2568,7 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 			}
 			fakeClient := clientBuilder.Build()
 
+			clientCalled := false
 			builder := gcpClientBuilder{}
 			if tt.builderInitialized {
 				builder.initialized = true
@@ -2339,7 +2576,11 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 				builder.region = "us-central1"
 			}
 			if tt.clientFactory != nil {
-				builder.newClient = tt.clientFactory(t)
+				rawClientFactory := tt.clientFactory(t)
+				builder.newClient = func(ctx context.Context) (*compute.Service, error) {
+					clientCalled = true
+					return rawClientFactory(ctx)
+				}
 			}
 			r := &GCPPrivateServiceConnectReconciler{Client: fakeClient, gcpClientBuilder: builder}
 
@@ -2350,6 +2591,10 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 				require.NoError(t, err)
 			}
 			assert.Equal(t, tt.expectRequeueAfter, result.RequeueAfter)
+			if tt.requireClientRun {
+				assert.True(t, clientCalled,
+					"cleanup must be attempted before the deletion timeout can abandon it, and a cold builder must be initialized before use")
+			}
 
 			updatedPSC := &hyperv1.GCPPrivateServiceConnect{}
 			require.NoError(t, fakeClient.Get(t.Context(), client.ObjectKeyFromObject(psc), updatedPSC))
@@ -2374,24 +2619,20 @@ func TestHandlePSCCRDeletion(t *testing.T) {
 	}
 }
 
-func TestPSCCleanupSkipReason(t *testing.T) {
+func TestPSCCleanupCredentialSkipReason(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name           string
 		conditions     []metav1.Condition
-		deletionAge    time.Duration
-		noDeletion     bool
 		expectContains string
 	}{
 		{
-			name: "When credentials are valid and deletion just started, it should not skip cleanup",
+			name: "When credentials are valid, it should not skip cleanup",
 			conditions: []metav1.Condition{
 				gcpCredentialCondition(hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionTrue),
 				gcpCredentialCondition(hyperv1.ValidGCPCredentials, metav1.ConditionTrue),
 			},
-		},
-		{
-			name:       "When there is no deletion timestamp, it should not skip cleanup",
-			noDeletion: true,
 		},
 		{
 			name:           "When GCP workload identity is False, it should skip cleanup",
@@ -2410,12 +2651,44 @@ func TestPSCCleanupSkipReason(t *testing.T) {
 				gcpCredentialCondition(hyperv1.ValidGCPCredentials, metav1.ConditionUnknown),
 			},
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			hcp := newTestGCPHCP("test-hcp", "test-ns")
+			hcp.Status.Conditions = tt.conditions
+
+			reason := pscCleanupCredentialSkipReason(hcp)
+			if tt.expectContains == "" {
+				assert.Empty(t, reason)
+			} else {
+				assert.Contains(t, reason, tt.expectContains)
+			}
+		})
+	}
+}
+
+func TestPSCCleanupTimeoutSkipReason(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		deletionAge    time.Duration
+		noDeletion     bool
+		expectContains string
+	}{
 		{
 			name:        "When deletion is younger than the cleanup timeout, it should not skip cleanup",
 			deletionAge: pscCleanupDeletionTimeout - time.Minute,
 		},
 		{
-			name:           "When deletion is older than the cleanup timeout, it should skip cleanup",
+			name:       "When there is no deletion timestamp, it should not skip cleanup",
+			noDeletion: true,
+		},
+		{
+			name:           "When deletion is older than the cleanup timeout, it should report the timeout",
 			deletionAge:    pscCleanupDeletionTimeout + time.Minute,
 			expectContains: "timed out",
 		},
@@ -2423,14 +2696,14 @@ func TestPSCCleanupSkipReason(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			hcp := newTestGCPHCP("test-hcp", "test-ns")
-			hcp.Status.Conditions = tt.conditions
+			t.Parallel()
+
 			var deletionStart *metav1.Time
 			if !tt.noDeletion {
 				deletionStart = &metav1.Time{Time: time.Now().Add(-tt.deletionAge)}
 			}
 
-			reason := pscCleanupSkipReason(hcp, deletionStart)
+			reason := pscCleanupTimeoutSkipReason(deletionStart)
 			if tt.expectContains == "" {
 				assert.Empty(t, reason)
 			} else {
@@ -2441,7 +2714,11 @@ func TestPSCCleanupSkipReason(t *testing.T) {
 }
 
 func TestReconcileDelete(t *testing.T) {
+	t.Parallel()
+
 	t.Run("When no service attachment name was established, it should complete without any GCP calls", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		psc := newTestGCPPSC("test-psc", "test-ns", true)
 		psc.Status.ServiceAttachmentName = "" // endpoint/IP were never provisioned
@@ -2474,6 +2751,8 @@ func TestReconcileDelete(t *testing.T) {
 }
 
 func TestDNSZonesToDelete(t *testing.T) {
+	t.Parallel()
+
 	pscWithStatusZones := func(names ...string) *hyperv1.GCPPrivateServiceConnect {
 		psc := newTestGCPPSC("test-psc", "test-ns", false)
 		for _, n := range names {
@@ -2511,13 +2790,19 @@ func TestDNSZonesToDelete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			assert.ElementsMatch(t, tt.expectedZones, dnsZonesToDelete(tt.psc))
 		})
 	}
 }
 
 func TestCleanupDNS(t *testing.T) {
-	t.Run("It deletes only the zones recorded in status, leaving deterministically-named zones in place", func(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When status records DNS zones, it should delete only those zones and leave deterministically-named zones in place", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newTestGCPHCP("test-hcp", "test-ns")
 		hcp.Spec.DNS.BaseDomain = "example.com"
@@ -2542,7 +2827,9 @@ func TestCleanupDNS(t *testing.T) {
 			"only status-recorded zones should be deleted; deterministically-named zones must be left in place")
 	})
 
-	t.Run("It deletes nothing when status has no recorded zones, leaking rather than cross-deleting an inferred zone", func(t *testing.T) {
+	t.Run("When status records no DNS zones, it should delete nothing rather than infer a zone name", func(t *testing.T) {
+		t.Parallel()
+
 		scheme := newGCPPSCTestScheme(t)
 		hcp := newTestGCPHCP("test-hcp", "test-ns")
 		hcp.Spec.DNS.BaseDomain = "example.com"            // deterministic names are computable, but must not be deleted
@@ -2562,6 +2849,30 @@ func TestCleanupDNS(t *testing.T) {
 
 		require.NoError(t, r.cleanupDNS(t.Context(), psc, hcp))
 		assert.Empty(t, deletes, "with no recorded zones, nothing should be deleted even though deterministic names exist")
+	})
+
+	t.Run("When the GCP client builder has no customer project, it should return an error instead of releasing the finalizer", func(t *testing.T) {
+		t.Parallel()
+
+		scheme := newGCPPSCTestScheme(t)
+		hcp := newTestGCPHCP("test-hcp", "test-ns")
+		psc := newTestGCPPSC("test-psc", "test-ns", false)
+		psc.Status.DNSZones = []hyperv1.DNSZoneStatus{{Name: "recorded-zone"}}
+
+		var deletes []string
+		r := &GCPPrivateServiceConnectReconciler{
+			Client:           fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp, psc).Build(),
+			gcpClientBuilder: gcpClientBuilder{initialized: false},
+			dnsClientFactory: func(context.Context) (*dns.Service, error) {
+				t.Error("DNS client should not be created when the builder has no customer project")
+				return nil, errors.New("unexpected DNS client creation")
+			},
+		}
+
+		err := r.cleanupDNS(t.Context(), psc, hcp)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not initialized")
+		assert.Empty(t, deletes, "no zone may be reported deleted when cleanup never ran")
 	})
 }
 
@@ -2640,7 +2951,9 @@ func newTestGCPHCP(name, namespace string) *hyperv1.HostedControlPlane {
 }
 
 func newDeletingTestHCP(name, namespace string, finalizers []string) *hyperv1.HostedControlPlane {
-	hcp := newTestHCP(name, namespace)
+	// Use a GCP-spec HCP so a cold client builder can be initialized from it during
+	// deletion, mirroring production.
+	hcp := newTestGCPHCP(name, namespace)
 	hcp.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 	hcp.Finalizers = finalizers
 	return hcp
