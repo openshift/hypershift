@@ -45,7 +45,7 @@ func (d *kubectlDrainer) Drain(ctx context.Context, nodeName string, timeout tim
 		Ctx:                 ctx,
 	}
 	if err := drain.RunNodeDrain(drainer, nodeName); err != nil {
-		return fmt.Errorf("failed to drain node")
+		return fmt.Errorf("failed to drain node: %w", err)
 	}
 	return nil
 }
@@ -92,7 +92,7 @@ func (h *handler) isPreempted(ctx context.Context) (bool, error) {
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("metadata request failed")
+		return false, fmt.Errorf("metadata request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -101,7 +101,7 @@ func (h *handler) isPreempted(ctx context.Context) (bool, error) {
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return false, fmt.Errorf("failed to read metadata response")
+		return false, fmt.Errorf("failed to read metadata response: %w", err)
 	}
 
 	return strings.EqualFold(strings.TrimSpace(string(body)), "TRUE"), nil
@@ -111,7 +111,7 @@ func (h *handler) handlePreemption(ctx context.Context) error {
 	nodes := h.kubeClient.CoreV1().Nodes()
 	node, err := nodes.Get(ctx, h.nodeName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to get node")
+		return fmt.Errorf("failed to get node: %w", err)
 	}
 
 	updated := node.DeepCopy()
@@ -138,9 +138,9 @@ func (h *handler) handlePreemption(ctx context.Context) error {
 	if changed {
 		if _, err := nodes.Update(ctx, updated, metav1.UpdateOptions{}); err != nil {
 			if apierrors.IsConflict(err) {
-				return fmt.Errorf("failed to update node due to conflict")
+				return fmt.Errorf("failed to update node due to conflict: %w", err)
 			}
-			return fmt.Errorf("failed to mark node preempted")
+			return fmt.Errorf("failed to mark node preempted: %w", err)
 		}
 	}
 
