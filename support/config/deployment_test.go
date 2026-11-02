@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	configv1 "github.com/openshift/api/config/v1"
+	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 )
 
 func TestTLSArgs(t *testing.T) {
@@ -127,6 +129,93 @@ func TestTLSArgs(t *testing.T) {
 			}
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(result).To(Equal(test.expectedArgs))
+		})
+	}
+}
+
+func TestTLSCurveArgs(t *testing.T) {
+	t.Parallel()
+
+	defaultArgs := []string{"--tls-curve-preferences=4588,29,23,24"}
+	if libgocrypto.IsFIPSEnabled() {
+		defaultArgs = []string{"--tls-curve-preferences=23,24"}
+	}
+
+	type testCase struct {
+		name          string
+		profile       *configv1.TLSSecurityProfile
+		expectedArgs  []string
+		expectedError string
+	}
+	tests := []testCase{
+		{
+			name:         "When the TLS profile is nil, it should return default profile curve arguments",
+			expectedArgs: defaultArgs,
+		},
+		{
+			name: "When custom groups are configured, it should return comma-separated numeric curve IDs in profile order",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+					Groups: []configv1.TLSGroup{configv1.TLSGroupSecP384r1, configv1.TLSGroupSecP256r1},
+				}},
+			},
+			expectedArgs: []string{"--tls-curve-preferences=24,23"},
+		},
+		{
+			name: "When a custom profile omits groups, it should omit the curve argument",
+			profile: &configv1.TLSSecurityProfile{
+				Type:   configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{},
+			},
+		},
+		{
+			name: "When custom groups mix unknown and supported groups, it should include only supported curve IDs",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+					Groups: []configv1.TLSGroup{"unknown", configv1.TLSGroupSecP256r1},
+				}},
+			},
+			expectedArgs: []string{"--tls-curve-preferences=23"},
+		},
+		{
+			name: "When custom groups are all unknown, it should omit the curve argument",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{TLSProfileSpec: configv1.TLSProfileSpec{
+					Groups: []configv1.TLSGroup{"unknown"},
+				}},
+			},
+		},
+		{
+			name: "When a Custom profile has a nil Custom field, it should return an error without arguments",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+			},
+			expectedError: "Custom but Custom field is nil",
+		},
+	}
+	for _, profileType := range []configv1.TLSProfileType{configv1.TLSProfileOldType, configv1.TLSProfileIntermediateType, configv1.TLSProfileModernType} {
+		tests = append(tests, testCase{
+			name:         fmt.Sprintf("When the TLS profile is %s, it should return its predefined curve arguments", profileType),
+			profile:      &configv1.TLSSecurityProfile{Type: profileType},
+			expectedArgs: defaultArgs,
+		})
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			args, err := TLSCurveArgs(context.Background(), tc.profile)
+			if tc.expectedError != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedError)))
+				g.Expect(args).To(BeNil())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(args).To(Equal(tc.expectedArgs))
 		})
 	}
 }

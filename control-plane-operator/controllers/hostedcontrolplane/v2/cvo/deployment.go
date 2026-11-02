@@ -112,9 +112,18 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		})
 	})
 
-	tlsArgs, err := config.TLSArgs(cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile())
+	profile := cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile()
+	tlsArgs, err := config.TLSArgs(profile)
 	if err != nil {
 		return err
+	}
+
+	curveArgs, err := config.TLSCurveArgs(cpContext, profile)
+	if err != nil {
+		return err
+	}
+	if len(curveArgs) > 0 {
+		tlsArgs = append(tlsArgs, curveArgs...)
 	}
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
