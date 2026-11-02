@@ -3751,7 +3751,7 @@ func TestReconcilePlatformSpecificResources(t *testing.T) {
 				clusterRole := gcpnth.ClusterRole()
 				err = c.Get(ctx, client.ObjectKeyFromObject(clusterRole), clusterRole)
 				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(clusterRole.Rules).To(HaveLen(4))
+				g.Expect(clusterRole.Rules).To(HaveLen(5))
 
 				clusterRoleBinding := gcpnth.ClusterRoleBinding()
 				err = c.Get(ctx, client.ObjectKeyFromObject(clusterRoleBinding), clusterRoleBinding)
