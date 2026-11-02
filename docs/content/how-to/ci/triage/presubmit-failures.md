@@ -195,7 +195,7 @@ A test assertion failed. To find which test:
 
 After identifying the failing test, [check the job history](#checking-prow-job-history) to determine if this is specific to your PR.
 
-For more details on reading test artifacts and Ginkgo output, see [Debugging CI Failures](../v2-testing/debugging.md).
+For reading test artifacts and Ginkgo output, see [Verify and debug](../v2-testing/writing-tests.md#verify-and-debug).
 
 ---
 
@@ -299,8 +299,8 @@ Post in [#forum-ocp-hypershift](https://redhat.enterprise.slack.com/archives/C04
 
 ## Further reading
 
-- [Debugging CI Failures](../v2-testing/debugging.md) — Reading JUnit XML, Ginkgo output, and dump-guests artifacts
-- [V2 E2E Testing Overview](../v2-testing/index.md) — Architecture of the v2 test framework
+- [Verify and debug](../v2-testing/writing-tests.md#verify-and-debug) — Reading test results, Ginkgo output, and cluster dumps
+- [V2 E2E Testing Guides](../v2-testing/index.md) — Authoring, migration, execution flow, and CI configuration
 - [CI Pipeline Configuration](../v2-testing/ci-pipeline.md) — How presubmit jobs are configured
 - [Test Flow](../v2-testing/test-flow.md) — End-to-end CI sequence, process boundaries, and inter-process communication
 - [Daily CI Health](daily-health.md) — Monitoring periodic and presubmit job health
