@@ -18,6 +18,8 @@ The recovery procedure consists of the following:
 * If a member has been removed from the etcd cluster, re-add the missing member by executing the `member add` command
 * The administrator should [delete the etcd member's pod and pvc](#single-node-recovery), after which the HyperShift operator will automatically provision a replacement etcd member Pod and PersistentVolume.
 
+If the management-cluster node hosting an etcd pod becomes unreachable, the recovery controller automatically detects this and force-deletes the stuck pod and PVC. Recovery begins approximately 5 minutes after the node goes down, which avoids reacting to transient disruptions.
+
 Once this is done, the `reset-member` init container of the removed pod should be able to complete the recovery.
 
 To disable this default behavior, install HyperShift with `--enable-etcd-recovery=false`
