@@ -2573,6 +2573,60 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			},
 		},
 		{
+			// Exercises the current CAPZ behavior where InfrastructureReady
+			// carries the generic "Failed" reason because the CAPI summary
+			// picks DisksReady (also "Failed") over VMRunning ("VMProvisionFailed").
+			// TODO(CAPZ): Once a follow-up to CAPZ#6737 reorders the summary
+			// so VMRunning takes priority, this test should be updated to
+			// expect "VMProvisionFailed" and "Failed" can be removed from
+			// terminalInfraReasons.
+			name:         "When Azure machine has generic Failed reason on InfrastructureReady it should report InfrastructureFailure",
+			platformType: hyperv1.AzurePlatform,
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "NotReady",
+									Message: "1 of 2 completed",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "Failed",
+									Message: "failed to create virtual machine",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   hyperv1.NodePoolInfrastructureFailureReason,
+				Messages: []string{"1 of 1 machines are not ready", "Machine node1: Failed: failed to create virtual machine"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
 			name: "When machine is in Deleting state it should not report InfrastructureFailure",
 			machinesGenerator: func() []client.Object {
 				return []client.Object{

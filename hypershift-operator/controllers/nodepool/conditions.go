@@ -895,14 +895,18 @@ var terminalInfraReasons = map[hyperv1.PlatformType]map[string]bool{
 		"InstanceProvisionFailed": true, // CAPA: failed to provision instance
 	},
 	hyperv1.AzurePlatform: {
-		// NOTE: CAPZ currently emits the generic "Failed" reason for VM
-		// provisioning errors instead of "VMProvisionFailed". The constant
-		// exists in CAPZ's API but is unused by controllers as of v1.26.
-		// Upstream fix: https://github.com/kubernetes-sigs/cluster-api-provider-azure/pull/6737
-		// This entry will activate once the CAPZ vendor is bumped with
-		// that fix. Using the generic "Failed" reason here would
-		// over-classify transient errors (throttling, capacity) as terminal.
 		"VMProvisionFailed": true, // CAPZ: failed to provision VM
+
+		// TODO(CAPZ): Remove "Failed" once CAPZ surfaces "VMProvisionFailed"
+		// on InfrastructureReady. Today CAPZ sets VMRunning to
+		// "VMProvisionFailed" but the DisksReady condition also fails with
+		// the generic "Failed" reason, and the CAPI summary picks that one
+		// for InfrastructureReady. A follow-up to CAPZ#6737
+		// (https://github.com/kubernetes-sigs/cluster-api-provider-azure/pull/6737)
+		// needs to reorder the summary so VMRunning takes priority.
+		// Until then, "Failed" is the only reason HyperShift can observe
+		// on InfrastructureReady for Azure VM provisioning failures.
+		"Failed": true, // CAPZ: generic failure reason (see TODO above)
 	},
 	hyperv1.IBMCloudPlatform: {
 		"InstanceProvisionFailed": true, // CAPIBM: failed to provision instance
