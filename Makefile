@@ -113,18 +113,43 @@ HYPERSHIFTLINTER_SRC := $(shell find $(TOOLS_DIR)/hypershiftlinter -name '*.go' 
 $(HYPERSHIFTLINTER_PLUGIN): $(TOOLS_DIR)/go.mod $(HYPERSHIFTLINTER_SRC) # Build hypershiftlinter as Go plugin
 	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -a -buildmode=plugin -ldflags '-s -w' -o $(HYPERSHIFTLINTER_PLUGIN) ./hypershiftlinter/cmd/plugin
 
-# When not otherwise set, diff/lint against the upstream main branch.
-# This is always set in OpenShift CI.
 UPSTREAM_REMOTE ?= $(shell git remote -v 2>/dev/null | grep 'openshift/hypershift.*fetch' | head -1 | cut -f1)
-PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(shell git rev-parse $(UPSTREAM_REMOTE)/main),$(shell git rev-parse main))
+ifeq ($(and $(filter-out 0,$(MAKELEVEL)),$(filter $(DIR),$(VERIFICATION_ROOT))),)
+override VERIFICATION_CHECKOUT_SHA := $(shell git rev-parse --verify HEAD 2>/dev/null)
+override VERIFICATION_CONTEXT :=
+endif
+override VERIFICATION_ROOT := $(DIR)
+export VERIFICATION_CHECKOUT_SHA VERIFICATION_CONTEXT VERIFICATION_ROOT
+VERIFICATION_BASE_GOALS := pre-commit verify verify-ci verify-parallel-targets api-lint api-lint-fix lint lint-fix verify-crd-schema test-changed
+VERIFICATION_GOALS := $(VERIFICATION_BASE_GOALS) main-lint-fix run-gitlint
+ifneq ($(filter $(VERIFICATION_GOALS),$(MAKECMDGOALS)),)
+ifeq ($(VERIFICATION_CONTEXT),)
+override VERIFICATION_CONTEXT := $(shell cd $(TOOLS_DIR) && $(GO) run ./verification-context --repo-root='$(subst ','"'"',$(DIR))' --checkout-head='$(subst ','"'"',$(VERIFICATION_CHECKOUT_SHA))' --base-origin='$(origin PULL_BASE_SHA)' --head-origin='$(origin PULL_PULL_SHA)' --base='$(subst ','"'"',$(PULL_BASE_SHA))' --head='$(subst ','"'"',$(PULL_PULL_SHA))' --upstream-remote='$(subst ','"'"',$(UPSTREAM_REMOTE))')
+ifneq ($(.SHELLSTATUS),0)
+$(error verification context resolution failed)
+endif
+endif
+ifneq ($(words $(VERIFICATION_CONTEXT)),5)
+$(error invalid verification context output)
+endif
+override VERIFICATION_BASE_SHA := $(filter-out -,$(word 1,$(VERIFICATION_CONTEXT)))
+override VERIFICATION_HEAD_SHA := $(word 2,$(VERIFICATION_CONTEXT))
+override VERIFICATION_MODE := $(word 3,$(VERIFICATION_CONTEXT))
+override VERIFICATION_COMMIT_BASE_SHA := $(filter-out -,$(word 5,$(VERIFICATION_CONTEXT)))
+ifneq ($(filter $(VERIFICATION_BASE_GOALS),$(MAKECMDGOALS)),)
+ifeq ($(VERIFICATION_BASE_SHA),)
+$(error verification context requires a comparison base for $(MAKECMDGOALS))
+endif
+endif
+endif
 
 .PHONY: api-lint
 api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN) $(HYPERSHIFTLINTER_PLUGIN)
-	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --new-from-rev=${PULL_BASE_SHA}
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --new-from-rev=$(VERIFICATION_BASE_SHA)
 
 .PHONY: api-lint-fix
 api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN) $(HYPERSHIFTLINTER_PLUGIN)
-	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=$(VERIFICATION_BASE_SHA)
 
 .PHONY: precommit-api-lint-fix
 precommit-api-lint-fix: $(GOLANGCI_LINT)
@@ -138,7 +163,7 @@ lint: generate verify-capi-sync $(HYPERSHIFTLINTER_PLUGIN)
 
 .PHONY: main-lint-fix
 main-lint-fix: generate $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
-	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v $(if $(VERIFICATION_BASE_SHA),--new-from-rev=$(VERIFICATION_BASE_SHA) --whole-files)
 
 .PHONY: precommit-main-lint-fix
 precommit-main-lint-fix: $(GOLANGCI_LINT)
@@ -177,7 +202,7 @@ verify-codecov: ## Validate codecov.yml against Codecov's API.
 
 .PHONY: verify-crd-schema
 verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking changes against base branch.
-	$(CRD_SCHEMA_CHECK) --comparison-base=$(PULL_BASE_SHA) \
+	$(CRD_SCHEMA_CHECK) --comparison-base=$(VERIFICATION_BASE_SHA) \
 		--config=hack/tools/crd-schema-check/crdify-config.yaml \
 		--crd-dir=cmd/install/assets/crds/hypershift-operator \
 		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
@@ -185,7 +210,7 @@ verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking change
 # Targets that conflict, such as deleting or mutating a directory another target
 # reads, must move to verify-serial-targets instead of running in parallel here.
 .PHONY: verify-parallel-targets
-verify-parallel-targets: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
+verify-parallel-targets: test-verification-context verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
 
 # Run target checks sequentially after preparation.
 .PHONY: verify-serial-targets
@@ -195,7 +220,7 @@ verify-serial-targets:
 	$(MAKE) verify-capi-decoupling
 
 .PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
+verify-ci: test-verification-context generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
 	$(MAKE) verify-serial-targets
 	$(MAKE) lint
 	$(MAKE) verify-git-clean
@@ -469,11 +494,12 @@ test-e2ev2-unit:
 # types is verified by go build ./... on the root module.
 .PHONY: test-changed
 test-changed:
-	@CHANGED_DIRS=$$(git diff --name-only $(PULL_BASE_SHA)...HEAD -- '*.go' | \
+	@CHANGED_FILES=$$(git diff --name-only $(VERIFICATION_BASE_SHA)...$(VERIFICATION_HEAD_SHA) -- '*.go') || exit $$?; \
+	CHANGED_DIRS=$$(printf '%s\n' "$$CHANGED_FILES" | sed '/^$$/d' | \
 		while IFS= read -r file; do dirname "$$file"; done | \
 		sort -u | sed 's|^|./|' | grep -v '^\./vendor/' | grep -vE '^\./(api|pkg/capi|hack/capi-vendor)(/|$$)' | grep -vE '^\./hack/tools(/|$$)' | grep -vE '^\./test/e2e(/|$$)'); \
 	if [ -z "$$CHANGED_DIRS" ]; then \
-		echo "No Go files changed relative to $(PULL_BASE_SHA), skipping tests."; \
+		echo "No Go files changed relative to $(VERIFICATION_BASE_SHA), skipping tests."; \
 	else \
 		CHANGED_PKGS=""; \
 		for pkg in $$CHANGED_DIRS; do \
@@ -836,19 +862,17 @@ verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependency allowlist and share
 
 .PHONY: run-gitlint
 run-gitlint: $(GITLINT)
-ifdef PULL_BASE_SHA
-	@echo "Linting commits from $(PULL_BASE_SHA) to $(PULL_PULL_SHA) (CI: PR targeting $(PULL_BASE_SHA))"
-	@$(GITLINT) --commits $(PULL_BASE_SHA)..$(PULL_PULL_SHA)
-else
-	$(eval MERGE_BASE := $(shell \
-		git merge-base HEAD origin/HEAD 2>/dev/null || \
-		git merge-base HEAD origin/main 2>/dev/null || \
-		git merge-base HEAD origin/master 2>/dev/null || \
-		echo "HEAD~1" \
-	))
-	@echo "Linting commits from $(MERGE_BASE) to HEAD (local development)"
-	@$(GITLINT) --commits $(MERGE_BASE)..HEAD
-endif
+	@test -n "$(VERIFICATION_COMMIT_BASE_SHA)" || { echo "verification context: no local commit comparison base" >&2; exit 1; }
+	@if [ "$(VERIFICATION_MODE)" = extra-ref-no-pulls ] && [ "$(VERIFICATION_COMMIT_BASE_SHA)" = "$(VERIFICATION_HEAD_SHA)" ]; then \
+		echo "No HyperShift pull commits in workdir extra_ref; empty commit range."; \
+	else \
+		echo "Linting commits from $(VERIFICATION_COMMIT_BASE_SHA) to $(VERIFICATION_HEAD_SHA)"; \
+		$(GITLINT) --commits $(VERIFICATION_COMMIT_BASE_SHA)..$(VERIFICATION_HEAD_SHA); \
+	fi
+
+.PHONY: test-verification-context
+test-verification-context: $(GITLINT) $(CRD_SCHEMA_CHECK)
+	cd $(TOOLS_DIR) && $(GO) test -race ./verification-context -count=1
 
 .PHONY: run-gitlint-commit-msg
 run-gitlint-commit-msg: $(GITLINT)

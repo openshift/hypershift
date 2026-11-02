@@ -55,7 +55,7 @@ func TestTestChanged(t *testing.T) {
 			}
 			git("add", ".")
 			git("-c", "user.name=Fixture", "-c", "user.email=fixture@redhat.com", "commit", "-qm", "fixture change")
-			cmd := exec.CommandContext(t.Context(), "make", "test-changed", "PULL_BASE_SHA="+base)
+			cmd := exec.CommandContext(t.Context(), "make", "test-changed", "TOOLS_DIR="+filepath.Join(repo, "hack/tools"), "PULL_BASE_SHA="+base)
 			cmd.Dir = fixture
 			cmd.Env = append(os.Environ(), "GOPROXY=off", "GOSUMDB=off", "GOOS=", "GOARCH=")
 			out, err := cmd.CombinedOutput()
