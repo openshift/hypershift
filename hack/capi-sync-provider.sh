@@ -88,7 +88,7 @@ allow_prefixes() {
             echo "sigs.k8s.io/cluster-api-provider-aws/v2/api/" ;;
         kubevirt:api/v1alpha1)
             echo "kubevirt.io/api" ;;
-        openstack:api/v1beta1)
+        openstack:api/v1beta1|openstack:api/v1beta2)
             echo "sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/" ;;
         openstack:api/v1alpha1)
             echo "sigs.k8s.io/cluster-api-provider-openstack/api/"
