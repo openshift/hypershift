@@ -77,6 +77,8 @@ func newReconciler(
 			if !ok {
 				return false, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 			}
+			// TODO(OCPSTRAT-3877): registry overrides are not applied to the CPO image here;
+			// metadata lookups may reach the original registry in mirrored environments.
 			controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hostedCluster, releaseProvider, hypershiftOperatorImage, pullSecretBytes)
 			if err != nil {
 				return false, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)

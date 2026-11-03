@@ -78,6 +78,7 @@ import (
 	"github.com/openshift/hypershift/support/tracing"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/util/registryoverride"
 	supportvalidations "github.com/openshift/hypershift/support/validations"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -1483,7 +1484,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return fmt.Errorf("failed to get pull secret: %w", err)
 		}
-		controlPlaneOperatorImage, err = imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+		controlPlaneOperatorImage, err = resolveControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 		}
@@ -3211,6 +3212,35 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 	}
 
 	return nil
+}
+
+// resolveControlPlaneOperatorImage applies the release provider's registry overrides
+// to CPO images from the annotation and override table, which are returned verbatim
+// by GetControlPlaneOperatorImageWithSource.
+//
+// Payload images are skipped because RegistryMirrorProviderDecorator already rewrote
+// them; Replace is not idempotent, so a second pass double-rewrites when a destination
+// matches its own source (e.g. "quay.io=quay.io/cache"). The operator's own image is
+// skipped because it is the running process, not a HostedCluster-requested image.
+//
+// Annotations that already name a mirror are also left alone — setting them was the
+// pre-existing workaround, and those HostedClusters must keep resolving the same image
+// after upgrade.
+func resolveControlPlaneOperatorImage(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithRegistryOverrides, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
+	image, source, err := imageregistry.GetControlPlaneOperatorImageWithSource(ctx, hcluster, releaseProvider, hypershiftOperatorImage, pullSecret)
+	if err != nil {
+		return "", err
+	}
+	switch source {
+	case imageregistry.CPOImageSourceAnnotation, imageregistry.CPOImageSourceOverrideTable:
+		registryOverrides := releaseProvider.GetRegistryOverrides()
+		if registryoverride.HasMirroredPrefix(image, registryOverrides) {
+			return image, nil
+		}
+		return registryoverride.Replace(image, registryOverrides), nil
+	default:
+		return image, nil
+	}
 }
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
