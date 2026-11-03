@@ -2,7 +2,6 @@ aliases:
   api-approvers:
     - enxebre
     - csrwng
-    - sjenning
     - joelspeed
     - everettraven
   tech-leads:
@@ -12,12 +11,14 @@ aliases:
   core-approvers:
     - enxebre
     - csrwng
-    - sjenning
     - muraee
     - bryan-cox
     - cblecker
     - jparrill
     - devguyio
+    - clebs
+    - sdminonne
+    - ironcladlou
   core-reviewers:
     - enxebre
     - csrwng
@@ -28,10 +29,12 @@ aliases:
     - jparrill
     - devguyio
   karpenter-approvers:
+    - LucasAndFlores
     - elmiko
     - enxebre
     - jkyros
     - joelsmith
+    - linkvt
     - maxcao13
     - muraee
   karpenter-reviewers:
