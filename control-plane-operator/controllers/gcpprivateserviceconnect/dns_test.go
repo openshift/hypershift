@@ -728,6 +728,75 @@ func TestCreateZonesIfNeeded(t *testing.T) {
 	})
 }
 
+func TestDeleteZoneIfOwned(t *testing.T) {
+	// fakeDNSService (psc_endpoint_controller_test.go) is used here rather than
+	// fakeZoneServer because it also serves the record-list and change calls that
+	// deleting a zone makes.
+	const otherOwner = "8c7d6e5f-4a3b-4c2d-9e1f-0a1b2c3d4e5f"
+
+	tests := []struct {
+		name            string
+		existing        *dns.ManagedZone
+		expectedErr     error
+		expectedDeletes []string
+	}{
+		{
+			name: "When the zone is owned by this cluster, it should delete it",
+			existing: &dns.ManagedZone{
+				Name:   "my-zone",
+				Labels: map[string]string{ownershipLabelKey: realClusterID},
+			},
+			expectedDeletes: []string{"my-zone"},
+		},
+		{
+			name: "When the zone reports a numeric ID, it should delete by ID rather than by name",
+			existing: &dns.ManagedZone{
+				Name:   "my-zone",
+				Id:     8675309,
+				Labels: map[string]string{ownershipLabelKey: realClusterID},
+			},
+			expectedDeletes: []string{"8675309"},
+		},
+		{
+			name: "When the zone is owned by another cluster, it should return a conflict and delete nothing",
+			existing: &dns.ManagedZone{
+				Name:   "my-zone",
+				Labels: map[string]string{ownershipLabelKey: otherOwner},
+			},
+			expectedErr: errZoneOwnedByOther,
+		},
+		{
+			name:        "When the zone has no ownership label, it should refuse to delete it",
+			existing:    &dns.ManagedZone{Name: "my-zone"},
+			expectedErr: errZoneUnowned,
+		},
+		{
+			name:     "When the zone does not exist, it should be a no-op",
+			existing: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			existing := map[string]*dns.ManagedZone{}
+			if tt.existing != nil {
+				existing[tt.existing.Name] = tt.existing
+			}
+			var deletes []string
+
+			err := deleteZoneIfOwned(t.Context(), fakeDNSService(t, existing, &deletes),
+				testProjectID, "my-zone", realClusterID)
+
+			if tt.expectedErr != nil {
+				require.ErrorIs(t, err, tt.expectedErr)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.ElementsMatch(t, tt.expectedDeletes, deletes)
+		})
+	}
+}
+
 func TestReconcileDNS(t *testing.T) {
 	// ReconcileDNS resolves zone ownership before constructing a DNS client, so the
 	// fail-closed paths are reachable without GCP credentials.
