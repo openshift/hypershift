@@ -7,8 +7,11 @@ import (
 )
 
 const (
+	AccessDenied          = "AccessDenied"
 	AuthFailure           = "AuthFailure"
 	DependencyViolation   = "DependencyViolation"
+	ExpiredTokenException = "ExpiredTokenException"
+	IDPRejectedClaim      = "IDPRejectedClaim"
 	InvalidIdentityToken  = "InvalidIdentityToken"
 	UnauthorizedOperation = "UnauthorizedOperation"
 )
