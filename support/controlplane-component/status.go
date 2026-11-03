@@ -34,12 +34,19 @@ func isEtcdComponent(name string) bool {
 }
 
 var (
+	// componentsExcludedFromKubeAPIServerDependency lists components that must
+	// not wait for the kube-apiserver to roll out: the components the
+	// kube-apiserver itself needs (etcd, featuregate-generator), the operator
+	// running the rollout, and components that historically started before it.
+	// capi-provider is intentionally not in this set: its deployment mounts the
+	// service-network-admin-kubeconfig secret, which the kube-apiserver
+	// component applies, so the deployment must wait for the kube-apiserver
+	// rollout to avoid FailedMount events during initial cluster bootstrap.
 	componentsExcludedFromKubeAPIServerDependency = sets.New(
 		etcdComponentName,
 		featureGateGeneratorComponetName,
 		controlPlaneOperatorComponentName,
 		"cluster-api",
-		"capi-provider",
 		"karpenter-operator",
 		"karpenter",
 		"router",
