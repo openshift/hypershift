@@ -22,6 +22,7 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/util"
+	hostedcontrolplanecontroller "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	capimanagerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager"
 	capiproviderv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_provider"
 	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
@@ -9524,19 +9525,19 @@ func TestDestroyGracePeriod(t *testing.T) {
 }
 
 func TestReconcileDeprecatedConfigurationStatus(t *testing.T) {
+	// hcpDeprecationMessage is an opaque placeholder standing in for any message the HCP
+	// controller reports; this test only verifies that such a message is folded into the
+	// HostedCluster condition, not its exact text.
 	const hcpDeprecationMessage = "The deprecated annotation is set; migrate to the field"
 
-	const metricsForwardingMessage = "The deprecated \"hypershift.openshift.io/enable-metrics-forwarding\" annotation is set; migrate to spec.monitoring.metricsForwarding and remove the annotation"
-
-	const serviceDeprecationMessage = "The deprecated spec.services entry \"OVNSbDb\" is present; remove this entry because the service is no longer used; The deprecated spec.services entry \"OIDC\" is present; remove this entry because the service is no longer used"
-
-	const multiArchDeprecationMessage = "The deprecated spec.platform.aws.multiArch field is set to true; remove it because it is no longer used"
-
-	const aescbcBackupKeyDeprecationMessage = "The deprecated spec.secretEncryption.aescbc.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after status.secretEncryption.activeKey is set"
-
-	const awsKMSBackupKeyDeprecationMessage = "The deprecated spec.secretEncryption.kms.aws.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after status.secretEncryption.activeKey is set"
-
-	const azureKMSBackupKeyDeprecationMessage = "The deprecated spec.secretEncryption.kms.azure.backupKey field is present; it may still be required to decrypt existing secrets until re-encryption completes, so remove it only after status.secretEncryption.activeKey is set"
+	// The remaining messages reference the single source of truth in their producing
+	// controllers so the text is not duplicated here.
+	metricsForwardingMessage := fmt.Sprintf(deprecatedMetricsForwardingMessageFmt, hyperv1.EnableMetricsForwarding)
+	serviceDeprecationMessage := fmt.Sprintf(hostedcontrolplanecontroller.DeprecatedServiceEntryMessageFmt, hyperv1.OVNSbDb) + "; " + fmt.Sprintf(hostedcontrolplanecontroller.DeprecatedServiceEntryMessageFmt, hyperv1.OIDC)
+	multiArchDeprecationMessage := hostedcontrolplanecontroller.DeprecatedMultiArchMessage
+	aescbcBackupKeyDeprecationMessage := hostedcontrolplanecontroller.DeprecatedAESCBCBackupKeyMessage
+	awsKMSBackupKeyDeprecationMessage := hostedcontrolplanecontroller.DeprecatedAWSKMSBackupKeyMessage
+	azureKMSBackupKeyDeprecationMessage := hostedcontrolplanecontroller.DeprecatedAzureKMSBackupKeyMessage
 
 	testCases := []struct {
 		name            string

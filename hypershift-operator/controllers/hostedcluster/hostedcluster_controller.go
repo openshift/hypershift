@@ -1664,6 +1664,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	return result, report.aggregate()
 }
 
+// deprecatedMetricsForwardingMessageFmt is the HostedCluster-only deprecation message surfaced by
+// reconcileDeprecatedConfigurationStatus. It is declared here, where it is produced, so the
+// controller and its test share a single source of truth for the text. It takes a single %q
+// argument identifying the deprecated annotation.
+const deprecatedMetricsForwardingMessageFmt = "The deprecated %q annotation is set; migrate to spec.monitoring.metricsForwarding and remove the annotation"
+
 // reconcileDeprecatedConfigurationStatus aggregates deprecated-configuration warnings
 // from two sources and surfaces them on the generic HostedClusterConfigurationDeprecated
 // condition: mechanisms visible only on the HostedCluster, and those detected by the HCP
@@ -1681,7 +1687,7 @@ func (r *HostedClusterReconciler) reconcileDeprecatedConfigurationStatus(hcluste
 	// scope. Fire on presence so users are guided to migrate even when a newer
 	// field currently overrides the deprecated mechanism.
 	if _, ok := hcluster.Annotations[hyperv1.EnableMetricsForwarding]; ok {
-		messages = append(messages, fmt.Sprintf("The deprecated %q annotation is set; migrate to spec.monitoring.metricsForwarding and remove the annotation", hyperv1.EnableMetricsForwarding))
+		messages = append(messages, fmt.Sprintf(deprecatedMetricsForwardingMessageFmt, hyperv1.EnableMetricsForwarding))
 	}
 
 	// Fold in deprecations detected by the HCP controller.
