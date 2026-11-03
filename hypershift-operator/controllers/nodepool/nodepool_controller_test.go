@@ -940,6 +940,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 	for _, tc := range []struct {
 		name                  string
 		platformType          hyperv1.PlatformType // defaults to "" (NonePlatform-like); set to test platform-specific terminal reasons
+		autoRepair            bool
 		machinesGenerator     func() []client.Object
 		expectedAllMachine    *testCondition
 		expectedAllNodes      *testCondition
@@ -2117,6 +2118,48 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 			},
 		},
 		{
+			name:         "When AWS machine has InstanceTerminated with autoRepair enabled it should include autoRepair guidance",
+			platformType: hyperv1.AWSPlatform,
+			autoRepair:   true,
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []metav1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  metav1.ConditionFalse,
+									Reason:  "InstanceTerminated",
+									Message: "i-0abc123def456 instance is in terminated state",
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: metav1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   hyperv1.NodePoolInfrastructureFailureReason,
+				Messages: []string{"1 of 1 machines are not ready", "Machine node1: InstanceTerminated: i-0abc123def456 instance is in terminated state", "AutoRepair is enabled; the MachineHealthCheck will attempt to replace unhealthy machines unless the number of unhealthy machines exceeds maxUnhealthy (default 2)."},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
 			name:         "When AWS machine has InstanceProvisionFailed reason it should report InfrastructureFailure regardless of message",
 			platformType: hyperv1.AWSPlatform,
 			machinesGenerator: func() []client.Object {
@@ -2832,6 +2875,9 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 					ClusterName: "cluster-name",
 					Platform: hyperv1.NodePoolPlatform{
 						Type: tc.platformType,
+					},
+					Management: hyperv1.NodePoolManagement{
+						AutoRepair: tc.autoRepair,
 					},
 				},
 			}

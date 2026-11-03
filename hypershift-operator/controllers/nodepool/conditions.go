@@ -866,6 +866,9 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 			reason, message = aggregateMachineReasonsAndMessages(messageMap, numMachines, numNotReady, aggregatorMachineStateReady)
 			if hasInfraFailure {
 				reason = hyperv1.NodePoolInfrastructureFailureReason
+				if nodePool.Spec.Management.AutoRepair {
+					message += "\nAutoRepair is enabled; the MachineHealthCheck will attempt to replace unhealthy machines unless the number of unhealthy machines exceeds maxUnhealthy (default 2)."
+				}
 			}
 		}
 	}
