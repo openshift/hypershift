@@ -1,11 +1,5 @@
 approvers:
-- enxebre
-- csrwng
-- sjenning
-- davidvossel
-- muraee
-- bryan-cox
-- jparrill
+- core-approvers
 options: {}
 reviewers:
 - enxebre
