@@ -1530,11 +1530,12 @@ class PRReportGenerator:
     def _get_hs_team(aliases: Dict[str, Set[str]]) -> Set[str]:
         """Compute the HyperShift team set from OWNERS_ALIASES groups.
 
-        Formula: (core-approvers ∪ core-reviewers ∪ konflux-approvers) - gcp-reviewers
+        Formula: (core-approvers ∪ core-reviewers ∪ konflux-approvers ∪ hypershift-advisory-approvers) - gcp-reviewers
         """
         return ((aliases.get('core-approvers', set())
                  | aliases.get('core-reviewers', set())
-                 | aliases.get('konflux-approvers', set()))
+                 | aliases.get('konflux-approvers', set())
+                 | aliases.get('hypershift-advisory-approvers', set()))
                 - aliases.get('gcp-reviewers', set()))
 
     def generate_blog_data(self, output_dir: str):
