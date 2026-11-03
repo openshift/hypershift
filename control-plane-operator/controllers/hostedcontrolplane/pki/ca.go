@@ -176,7 +176,7 @@ func ReconcileEtcdMetricsSignerConfigMap(cm *corev1.ConfigMap, ownerRef config.O
 	return reconcileAggregateCA(cm, ownerRef, etcdMetricsSigner)
 }
 
-func ReconcileRootCAConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, rootCA *corev1.Secret, observedDefaultIngressCert *corev1.ConfigMap) error {
+func ReconcileRootCAConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, rootCA *corev1.Secret, observedDefaultIngressCert *corev1.ConfigMap, namedCertCAs ...*corev1.Secret) error {
 	sources := []*corev1.Secret{rootCA}
 	if observedDefaultIngressCert != nil {
 		sources = append(sources, &corev1.Secret{
@@ -185,7 +185,56 @@ func ReconcileRootCAConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, ro
 			},
 		})
 	}
+	sources = append(sources, namedCertCAs...)
 	return reconcileAggregateCA(cm, ownerRef, sources...)
+}
+
+// FilterCACertificates parses a PEM bundle and returns only the certificates
+// that are valid CAs (IsCA=true). Malformed or non-CA certificates are
+// skipped.
+func FilterCACertificates(certPEM []byte) []byte {
+	var caCerts []byte
+	rest := certPEM
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			continue
+		}
+		if !cert.IsCA {
+			continue
+		}
+		caCerts = append(caCerts, pem.EncodeToMemory(block)...)
+	}
+	return caCerts
+}
+
+// ExtractCACertificatesFromChain parses a PEM-encoded certificate chain and
+// returns a PEM bundle containing only the non-leaf CA certificates.
+// The first CERTIFICATE block (the leaf/server cert) is always skipped.
+// Subsequent certificates that fail to parse or are not CAs are also skipped.
+// If the chain contains only a single certificate, nil is returned.
+func ExtractCACertificatesFromChain(certPEM []byte) []byte {
+	// Skip the first CERTIFICATE PEM block (leaf), then filter the rest.
+	rest := certPEM
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			return nil
+		}
+		if block.Type == "CERTIFICATE" {
+			break
+		}
+	}
+	return FilterCACertificates(rest)
 }
 
 func ReconcileKonnectivityConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signers ...*corev1.Secret) error {
