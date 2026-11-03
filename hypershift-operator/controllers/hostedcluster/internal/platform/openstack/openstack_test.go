@@ -16,8 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	ospcapicore "sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta1"
+	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2"
+	ospcapicore "sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta2"
 
 	"github.com/blang/semver"
 	"github.com/google/go-cmp/cmp"
@@ -78,14 +78,18 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 						}},
 					},
 				},
-				NetworkMTU: ptr.To(1500),
+				ManagedNetwork: &capo.ManagedNetwork{
+					MTU: ptr.To[int32](1500),
+				},
 				ControlPlaneEndpoint: &ospcapicore.APIEndpoint{
 					Host: "api-endpoint",
 					Port: 6443,
 				},
-				DisableAPIServerFloatingIP: ptr.To(true),
+				APIServer: &capo.APIServer{
+					EnableFloatingIP: ptr.To(false),
+				},
 				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
-					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"10.0.0.0/24"}),
+					ClusterNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"10.0.0.0/24"}),
 				},
 				Tags: []string{"openshiftClusterID=cluster-123"},
 			},
@@ -132,9 +136,11 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					Host: "api-endpoint",
 					Port: 6443,
 				},
-				DisableAPIServerFloatingIP: ptr.To(true),
+				APIServer: &capo.APIServer{
+					EnableFloatingIP: ptr.To(false),
+				},
 				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
-					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"192.168.1.0/24"}),
+					ClusterNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"192.168.1.0/24"}),
 				},
 				Tags: []string{"openshiftClusterID=cluster-123"},
 			},
@@ -196,9 +202,11 @@ func TestReconcileOpenStackCluster(t *testing.T) {
 					Host: "api-endpoint",
 					Port: 6443,
 				},
-				DisableAPIServerFloatingIP: ptr.To(true),
+				APIServer: &capo.APIServer{
+					EnableFloatingIP: ptr.To(false),
+				},
 				ManagedSecurityGroups: &capo.ManagedSecurityGroups{
-					AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"192.168.1.0/24"}),
+					ClusterNodesSecurityGroupRules: defaultWorkerSecurityGroupRules([]string{"192.168.1.0/24"}),
 				},
 				Tags: []string{"openshiftClusterID=cluster-123", "hcp-id=123"},
 			},

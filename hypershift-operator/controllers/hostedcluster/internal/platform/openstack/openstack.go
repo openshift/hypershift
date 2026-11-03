@@ -20,8 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	ospcapicore "sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta1"
+	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta2"
+	ospcapicore "sigs.k8s.io/cluster-api-provider-openstack/capicore/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
@@ -105,7 +105,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 					Name:                subnetFilter.Name,
 					Description:         subnetFilter.Description,
 					ProjectID:           subnetFilter.ProjectID,
-					IPVersion:           subnetFilter.IPVersion,
+					IPVersion:           int32(subnetFilter.IPVersion),
 					GatewayIP:           subnetFilter.GatewayIP,
 					CIDR:                subnetFilter.CIDR,
 					IPv6AddressMode:     subnetFilter.IPv6AddressMode,
@@ -152,7 +152,10 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 		}
 	}
 	if openStackPlatform.NetworkMTU != nil {
-		openStackClusterSpec.NetworkMTU = openStackPlatform.NetworkMTU
+		// CAPO v1beta2 moved NetworkMTU onto the ManagedNetwork sub-struct.
+		openStackClusterSpec.ManagedNetwork = &capo.ManagedNetwork{
+			MTU: ptr.To(int32(*openStackPlatform.NetworkMTU)),
+		}
 	}
 	if openStackPlatform.ExternalNetwork != nil {
 		openStackClusterSpec.ExternalNetwork = &capo.NetworkParam{ID: openStackPlatform.ExternalNetwork.ID}
@@ -161,11 +164,15 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 		}
 	}
 	if openStackPlatform.DisableExternalNetwork != nil {
-		openStackClusterSpec.DisableExternalNetwork = openStackPlatform.DisableExternalNetwork
+		// CAPO v1beta2 replaced DisableExternalNetwork with the inverse EnableExternalNetwork.
+		openStackClusterSpec.EnableExternalNetwork = ptr.To(!*openStackPlatform.DisableExternalNetwork)
 	}
-	openStackClusterSpec.DisableAPIServerFloatingIP = ptr.To(true)
+	// CAPO v1beta2 replaced DisableAPIServerFloatingIP with APIServer.EnableFloatingIP (inverse).
+	openStackClusterSpec.APIServer = &capo.APIServer{
+		EnableFloatingIP: ptr.To(false),
+	}
 	openStackClusterSpec.ManagedSecurityGroups = &capo.ManagedSecurityGroups{
-		AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules(machineNetworksToStrings(machineNetworks)),
+		ClusterNodesSecurityGroupRules: defaultWorkerSecurityGroupRules(machineNetworksToStrings(machineNetworks)),
 	}
 
 	// Users are permitted to specify additional tags to be applied to the OpenStack resources
@@ -503,14 +510,14 @@ func defaultWorkerSecurityGroupRules(machineCIDRs []string) []capo.SecurityGroup
 			{
 				Name:         "router-ingress",
 				Protocol:     ptr.To("tcp"),
-				PortRangeMin: ptr.To(1936),
-				PortRangeMax: ptr.To(1936),
+				PortRangeMin: ptr.To[int32](1936),
+				PortRangeMax: ptr.To[int32](1936),
 			},
 			{
 				Name:         "ssh-ingress",
 				Protocol:     ptr.To("tcp"),
-				PortRangeMin: ptr.To(22),
-				PortRangeMax: ptr.To(22),
+				PortRangeMin: ptr.To[int32](22),
+				PortRangeMax: ptr.To[int32](22),
 			},
 			{
 				Name:     "vrrp-ingress",
@@ -531,50 +538,50 @@ func defaultWorkerSecurityGroupRules(machineCIDRs []string) []capo.SecurityGroup
 		{
 			Name:         "http-ingress",
 			Protocol:     ptr.To("tcp"),
-			PortRangeMin: ptr.To(80),
-			PortRangeMax: ptr.To(80),
+			PortRangeMin: ptr.To[int32](80),
+			PortRangeMax: ptr.To[int32](80),
 		},
 		{
 			Name:         "https-ingress",
 			Protocol:     ptr.To("tcp"),
-			PortRangeMin: ptr.To(443),
-			PortRangeMax: ptr.To(443),
+			PortRangeMin: ptr.To[int32](443),
+			PortRangeMax: ptr.To[int32](443),
 		},
 		{
 			Name:         "geneve-ingress",
 			Protocol:     ptr.To("udp"),
-			PortRangeMin: ptr.To(6081),
-			PortRangeMax: ptr.To(6081),
+			PortRangeMin: ptr.To[int32](6081),
+			PortRangeMax: ptr.To[int32](6081),
 		},
 		{
 			Name:         "ike-ingress",
 			Protocol:     ptr.To("udp"),
-			PortRangeMin: ptr.To(500),
-			PortRangeMax: ptr.To(500),
+			PortRangeMin: ptr.To[int32](500),
+			PortRangeMax: ptr.To[int32](500),
 		},
 		{
 			Name:         "ike-nat-ingress",
 			Protocol:     ptr.To("udp"),
-			PortRangeMin: ptr.To(4500),
-			PortRangeMax: ptr.To(4500),
+			PortRangeMin: ptr.To[int32](4500),
+			PortRangeMax: ptr.To[int32](4500),
 		},
 		{
 			Name:         "internal-ingress-tcp",
 			Protocol:     ptr.To("tcp"),
-			PortRangeMin: ptr.To(9000),
-			PortRangeMax: ptr.To(9999),
+			PortRangeMin: ptr.To[int32](9000),
+			PortRangeMax: ptr.To[int32](9999),
 		},
 		{
 			Name:         "internal-ingress-udp",
 			Protocol:     ptr.To("udp"),
-			PortRangeMin: ptr.To(9000),
-			PortRangeMax: ptr.To(9999),
+			PortRangeMin: ptr.To[int32](9000),
+			PortRangeMax: ptr.To[int32](9999),
 		},
 		{
 			Name:         "vxlan-ingress",
 			Protocol:     ptr.To("udp"),
-			PortRangeMin: ptr.To(4789),
-			PortRangeMax: ptr.To(4789),
+			PortRangeMin: ptr.To[int32](4789),
+			PortRangeMax: ptr.To[int32](4789),
 		},
 	}
 	for i, rule := range allIngressRules {
