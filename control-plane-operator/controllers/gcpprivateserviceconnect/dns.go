@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -248,8 +249,49 @@ func deleteAllRecordsFromZone(ctx context.Context, svc *dns.Service, projectID, 
 	return nil
 }
 
+// deleteZoneIfOwned deletes a zone only when it carries this cluster's ownership label.
+//
+// Ownership is verified on the fetched zone before any record is touched. A zone that
+// cannot be proven to belong to this cluster is left completely intact, records included,
+// and the sentinel error is returned so the caller can report it and move on. Removing
+// records first and checking afterwards would already have destroyed another cluster's
+// DNS by the time the mismatch was noticed.
+//
+// A missing zone is a no-op: there is nothing to delete and nothing to protect.
+//
+// Deletion targets the numeric managed-zone ID from the fetch rather than the name. The
+// Cloud DNS managed-zone path parameter accepts either, so using the ID means a zone that
+// was deleted and recreated under the same name between the fetch and the delete is not
+// mistaken for the one whose ownership was verified.
+func deleteZoneIfOwned(ctx context.Context, svc *dns.Service, projectID, zoneName, ownerID string) error {
+	zone, err := getZone(ctx, svc, projectID, zoneName)
+	if err != nil {
+		if isNotFound(err) {
+			return nil // Already deleted
+		}
+		return err
+	}
+
+	if err := verifyZoneOwnership(zone, ownerID); err != nil {
+		return err
+	}
+
+	// Target the fetched zone by ID so a same-name replacement cannot be hit.
+	zoneRef := strconv.FormatUint(zone.Id, 10)
+	if zone.Id == 0 {
+		// Cloud DNS always populates Id. Fall back to the name rather than addressing
+		// zone "0" should a future API version omit it.
+		zoneRef = zone.Name
+	}
+
+	return deleteZone(ctx, svc, projectID, zoneRef)
+}
+
 // deleteZone deletes a Cloud DNS zone.
 // It first removes all custom records, then deletes the zone.
+//
+// Callers on the cluster-deletion path must use deleteZoneIfOwned instead: this function
+// performs no ownership check and will empty and remove whichever zone it is given.
 func deleteZone(ctx context.Context, svc *dns.Service, projectID, zoneName string) error {
 	// First, try to delete all custom records from the zone
 	if err := deleteAllRecordsFromZone(ctx, svc, projectID, zoneName); err != nil {

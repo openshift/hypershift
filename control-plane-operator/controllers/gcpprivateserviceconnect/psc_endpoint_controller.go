@@ -798,7 +798,7 @@ func pscCleanupTimeoutSkipReason(deletionStart *metav1.Time) string {
 // pscGCPResourceNames returns log key/values naming the GCP resources a PSC CR may own,
 // so abandoned cleanup leaves enough detail to remove leaked resources manually.
 func (r *GCPPrivateServiceConnectReconciler) pscGCPResourceNames(gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane) []any {
-	names := []any{"dnsZones", dnsZonesToDelete(gcpPSC)}
+	names := []any{"dnsZones", dnsZonesToDelete(gcpPSC, hcp)}
 	if hcp.Spec.Platform.GCP != nil {
 		names = append(names, "project", hcp.Spec.Platform.GCP.Project, "region", hcp.Spec.Platform.GCP.Region)
 	}
@@ -946,8 +946,8 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 		}
 	}
 
-	// Delete only zones recorded in status; see dnsZonesToDelete for why names aren't inferred.
-	zones := dnsZonesToDelete(gcpPSC)
+	// Status-recorded zones plus the derived names; every one is ownership-checked below.
+	zones := dnsZonesToDelete(gcpPSC, hcp)
 	if len(zones) == 0 {
 		return nil // No DNS zones to clean up
 	}
@@ -957,6 +957,15 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 	// the finalizer and retries instead of releasing it while the zones above are leaked.
 	if !r.gcpClientBuilder.initialized || r.gcpClientBuilder.customerProject == "" {
 		return errors.New("cannot clean up DNS zones: GCP client is not initialized with a customer project")
+	}
+
+	// Resolve the owner before deleting anything. Without it no zone can be proven to
+	// belong to this cluster, so deleting any of them risks destroying another cluster's
+	// DNS. Return an error rather than skipping: an HCP that has not been reconciled yet
+	// may still gain a cluster ID, and a later attempt can succeed.
+	ownerID, err := clusterOwnerID(hcp)
+	if err != nil {
+		return fmt.Errorf("cannot clean up DNS zones: %w", err)
 	}
 
 	customerProject := r.gcpClientBuilder.customerProject
@@ -971,10 +980,25 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 		return fmt.Errorf("failed to create DNS client for cleanup: %w", err)
 	}
 
-	// Delete the status-recorded zones (see dnsZonesToDelete: names are never inferred).
+	// Delete each candidate, gated on ownership.
+	//
+	// A zone this cluster cannot prove it owns is skipped rather than retried. The
+	// mismatch is permanent: no amount of retrying will make another cluster's zone ours,
+	// and returning an error would stall deletion until the cleanup timeout expires and
+	// then abandon it anyway. Skipping leaks the zone, which is the intended trade: a
+	// leaked zone is recoverable by hand, another cluster's deleted DNS is not. The log
+	// carries both owner values so it can be resolved manually.
+	//
+	// Transient failures are still aggregated into an error so the caller retries.
 	var errs []error
 	for _, zoneName := range zones {
-		if err := deleteZone(ctx, svc, customerProject, zoneName); err != nil {
+		err := deleteZoneIfOwned(ctx, svc, customerProject, zoneName, ownerID)
+		switch {
+		case err == nil:
+		case errors.Is(err, errZoneUnowned), errors.Is(err, errZoneOwnedByOther):
+			log.Error(err, "Skipping DNS zone not owned by this cluster; manual cleanup may be required",
+				"zone", zoneName, "project", customerProject, "expectedOwner", ownerID)
+		default:
 			errs = append(errs, fmt.Errorf("failed to delete DNS zone %s: %w", zoneName, err))
 		}
 	}
@@ -986,20 +1010,39 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 	return nil
 }
 
-// dnsZonesToDelete returns the de-duplicated, sorted zone names recorded in status.
-// Deterministic names are never inferred: a name derived from the base domain (for example
-// "<base-domain>-public") is shared by every cluster using that domain in the same project,
-// so deleting an inferred name could delete another cluster's zone. Only names this
-// controller recorded in status are returned.
+// dnsZonesToDelete returns the de-duplicated, sorted zone names to consider deleting:
+// the names recorded in status, plus the three names derived from the HostedControlPlane
+// name and base domain.
 //
-// Note that a recorded shared ingress zone can still be deleted while another cluster uses
-// it. Fixing that requires ownership labeling before zones are deleted; see the PSC DNS
-// ownership-labeling follow-up.
-func dnsZonesToDelete(gcpPSC *hyperv1.GCPPrivateServiceConnect) []string {
+// The derived names recover a zone whose creation succeeded but whose status write did
+// not, which would otherwise be invisible to cleanup and leak. They are candidates only:
+// every name returned here is ownership-checked before anything is deleted, so a derived
+// name that happens to match another cluster's zone, or a zone the customer created, is
+// left alone. Status-recorded names get no additional trust, since a zone can be adopted
+// into status by name.
+//
+// This is a bounded lookup of the names this cluster would itself have created. It is not
+// a project-wide scan; the Cloud DNS list API has no label filter, so discovering
+// arbitrary orphans would mean enumerating every zone in the customer's project.
+func dnsZonesToDelete(gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane) []string {
 	names := map[string]struct{}{}
 	for _, z := range gcpPSC.Status.DNSZones {
 		if z.Name != "" {
 			names[z.Name] = struct{}{}
+		}
+	}
+
+	if hcp != nil {
+		// Ignore the error: an HCP whose name or base domain cannot produce valid zone
+		// names never had zones created from them, so there is nothing to recover.
+		if derived, err := generateZoneNames(hcp.Name, hcp.Spec.DNS.BaseDomain); err == nil {
+			for _, name := range []string{
+				derived.hypershiftLocalZoneName,
+				derived.publicIngressZoneName,
+				derived.privateIngressZoneName,
+			} {
+				names[name] = struct{}{}
+			}
 		}
 	}
 
