@@ -119,9 +119,8 @@ func TestGetDigest(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 
-			provider := &RegistryClientImageMetadataProvider{
-				OpenShiftImageRegistryOverrides: tc.overrides,
-			}
+			provider := &RegistryClientImageMetadataProvider{}
+			provider.SetOpenShiftImageRegistryOverrides(tc.overrides)
 			if tc.setupMock != nil {
 				provider.repoSetupFn = tc.setupMock(ctrl)
 			}
@@ -231,9 +230,8 @@ func TestGetManifest(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 
-			provider := &RegistryClientImageMetadataProvider{
-				OpenShiftImageRegistryOverrides: tc.overrides,
-			}
+			provider := &RegistryClientImageMetadataProvider{}
+			provider.SetOpenShiftImageRegistryOverrides(tc.overrides)
 			if tc.setupMock != nil {
 				provider.repoSetupFn = tc.setupMock(ctrl)
 			}
@@ -514,9 +512,9 @@ func TestSeekOverride(t *testing.T) {
 			g := NewGomegaWithT(t)
 			pullSecret := []byte(`{"auths":{}}`)
 			provider := &RegistryClientImageMetadataProvider{
-				OpenShiftImageRegistryOverrides: tc.overrides,
-				metadataGetter:                  fakeGetter,
+				metadataGetter: fakeGetter,
 			}
+			provider.SetOpenShiftImageRegistryOverrides(tc.overrides)
 			imgRef := provider.seekOverride(ctx, tc.imageRef, pullSecret)
 			g.Expect(imgRef).To(Equal(tc.expectedImgRef), fmt.Sprintf("Expected image reference to be equal to: %v, \nbut got: %v", tc.expectedImgRef, imgRef))
 		})
@@ -545,6 +543,140 @@ func TestGetMetadataGetter(t *testing.T) {
 		g.Expect(getter).ToNot(BeNil())
 		_, _, _, _ = getter(context.Background(), "", nil)
 		g.Expect(called).To(BeTrue())
+	})
+}
+
+func TestRegistryClientImageMetadataProvider_ConcurrentOverrides(t *testing.T) {
+	t.Run("When mirror overrides are refreshed during lookup, it should use synchronized snapshots", func(t *testing.T) {
+		mirrorCache.mutex.Lock()
+		originalMirrorCache := mirrorCache.cache
+		mirrorCache.cache = make(map[string]mirrorCacheEntry)
+		mirrorCache.mutex.Unlock()
+		defer func() {
+			mirrorCache.mutex.Lock()
+			mirrorCache.cache = originalMirrorCache
+			mirrorCache.mutex.Unlock()
+		}()
+
+		const waitTimeout = time.Second
+		const sourceRegistry = "quay.io"
+		const namespace = "registry-lock-test"
+		const oldMirrorRegistry = "mirror-a.registry-lock-test.example.com"
+		const newMirrorRegistry = "mirror-b.registry-lock-test.example.com"
+		oldMirrorImage := oldMirrorRegistry + "/" + namespace + "/image:latest"
+		newMirrorImage := newMirrorRegistry + "/" + namespace + "/image:latest"
+		canonicalImage := sourceRegistry + "/" + namespace + "/image:latest"
+		requestedImages := make([]string, 0, 2)
+		lookupStarted := make(chan struct{}, 1)
+		releaseLookup := make(chan struct{})
+		lookupDone := make(chan struct{})
+		firstResult := make(chan *reference.DockerImageReference, 1)
+		releaseLookupClosed := false
+		defer func() {
+			if !releaseLookupClosed {
+				close(releaseLookup)
+			}
+		}()
+
+		provider := &RegistryClientImageMetadataProvider{
+			metadataGetter: func(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+				requestedImages = append(requestedImages, imageRef)
+				if imageRef == oldMirrorImage {
+					lookupStarted <- struct{}{}
+					select {
+					case <-releaseLookup:
+					case <-ctx.Done():
+						return nil, nil, nil, ctx.Err()
+					}
+					return nil, nil, nil, fmt.Errorf("mirror unavailable")
+				}
+				return nil, nil, nil, nil
+			},
+		}
+		provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+			sourceRegistry: {oldMirrorRegistry},
+		})
+		parsedRef := reference.DockerImageReference{
+			Registry:  sourceRegistry,
+			Namespace: namespace,
+			Name:      "image",
+			Tag:       "latest",
+		}
+
+		go func() {
+			defer close(lookupDone)
+			firstResult <- provider.seekOverride(t.Context(), parsedRef, []byte(`{"auths":{}}`))
+		}()
+
+		select {
+		case <-lookupStarted:
+		case <-time.After(waitTimeout):
+			t.Fatal("timed out waiting for metadata lookup to block")
+		}
+
+		setDone := make(chan struct{})
+		go func() {
+			provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+				sourceRegistry: {newMirrorRegistry},
+			})
+			close(setDone)
+		}()
+
+		select {
+		case <-setDone:
+		case <-time.After(waitTimeout):
+			t.Fatal("override publication waited for the blocked metadata lookup")
+		}
+
+		close(releaseLookup)
+		releaseLookupClosed = true
+		select {
+		case <-lookupDone:
+		case <-time.After(waitTimeout):
+			t.Fatal("timed out waiting for the first metadata lookup to finish")
+		}
+
+		g := NewWithT(t)
+		g.Expect((<-firstResult).String()).To(Equal(canonicalImage))
+		g.Expect(requestedImages).To(Equal([]string{oldMirrorImage}))
+		g.Expect(provider.seekOverride(t.Context(), parsedRef, []byte(`{"auths":{}}`)).String()).To(Equal(newMirrorImage))
+		g.Expect(requestedImages).To(Equal([]string{oldMirrorImage, newMirrorImage}))
+	})
+}
+
+func TestRegistryClientImageMetadataProvider_SetOpenShiftImageRegistryOverrides(t *testing.T) {
+	t.Run("When overrides are cleared, it should preserve nil and empty snapshots", func(t *testing.T) {
+		g := NewWithT(t)
+		provider := &RegistryClientImageMetadataProvider{}
+		g.Expect(provider.GetOpenShiftImageRegistryOverrides()).To(BeNil())
+		for _, overrides := range []map[string][]string{
+			{"quay.io": {"mirror.example.com"}},
+			nil,
+			{},
+			{"quay.io": nil, "registry.example.com": {}},
+		} {
+			provider.SetOpenShiftImageRegistryOverrides(overrides)
+			g.Expect(provider.GetOpenShiftImageRegistryOverrides()).To(Equal(overrides))
+		}
+	})
+
+	t.Run("When the input snapshot is modified, it should preserve the provider state", func(t *testing.T) {
+		g := NewWithT(t)
+		provider := &RegistryClientImageMetadataProvider{}
+		overrides := map[string][]string{
+			"quay.io": {"mirror-a.example.com", "mirror-b.example.com"},
+		}
+
+		provider.SetOpenShiftImageRegistryOverrides(overrides)
+		overrides["quay.io"][0] = "mutated.example.com"
+		delete(overrides, "quay.io")
+		snapshot := provider.GetOpenShiftImageRegistryOverrides()
+		snapshot["quay.io"][0] = "mutated-output.example.com"
+		delete(snapshot, "quay.io")
+
+		g.Expect(provider.GetOpenShiftImageRegistryOverrides()).To(Equal(map[string][]string{
+			"quay.io": {"mirror-a.example.com", "mirror-b.example.com"},
+		}))
 	})
 }
 
@@ -1043,9 +1175,9 @@ func TestSeekOverrideWithCache(t *testing.T) {
 		}
 
 		provider := &RegistryClientImageMetadataProvider{
-			OpenShiftImageRegistryOverrides: overrides,
-			metadataGetter:                  failingGetter,
+			metadataGetter: failingGetter,
 		}
+		provider.SetOpenShiftImageRegistryOverrides(overrides)
 
 		// First call will attempt verification (which will fail via mock)
 		// and cache the result
@@ -1073,20 +1205,20 @@ func TestSeekOverrideWithCache(t *testing.T) {
 
 		// Test with first mirror
 		provider1 := &RegistryClientImageMetadataProvider{
-			OpenShiftImageRegistryOverrides: map[string][]string{
-				"quay.io": {"mirror1.example.com"},
-			},
 			metadataGetter: failingGetter,
 		}
+		provider1.SetOpenShiftImageRegistryOverrides(map[string][]string{
+			"quay.io": {"mirror1.example.com"},
+		})
 		provider1.seekOverride(ctx, parsedRef, []byte(`{"auths":{}}`))
 
 		// Test with second mirror
 		provider2 := &RegistryClientImageMetadataProvider{
-			OpenShiftImageRegistryOverrides: map[string][]string{
-				"quay.io": {"mirror2.example.com"},
-			},
 			metadataGetter: failingGetter,
 		}
+		provider2.SetOpenShiftImageRegistryOverrides(map[string][]string{
+			"quay.io": {"mirror2.example.com"},
+		})
 		provider2.seekOverride(ctx, parsedRef, []byte(`{"auths":{}}`))
 
 		// Both mirrors should be cached separately
@@ -1110,14 +1242,14 @@ func TestSeekOverrideFallsBackWhenMirrorUnavailable(t *testing.T) {
 	ctx := context.Background()
 
 	provider := &RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: map[string][]string{
-			"quay.io": {"nonexistent-mirror.invalid"},
-		},
 		// Mock metadataGetter that simulates an unavailable mirror, avoiding real network calls.
 		metadataGetter: func(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
 			return nil, nil, nil, fmt.Errorf("simulated mirror unavailable")
 		},
 	}
+	provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+		"quay.io": {"nonexistent-mirror.invalid"},
+	})
 
 	parsedRef := reference.DockerImageReference{
 		Registry:  "quay.io",
