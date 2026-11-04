@@ -1,0 +1,51 @@
+# Configuration gaps and platform exclusions in the offline GMP parity check.
+# A waiver is removed when its GMP counterpart is added; stale waivers fail CI.
+scrapeTargets:
+  - component: operator
+    namespace: hypershift
+    selector: name=operator
+    port: 9000
+    path: /metrics
+    scheme: http
+    tracking: GCP-1293
+    reason: The management-level Go constructor has no GMP counterpart yet.
+  - component: external-dns
+    namespace: hypershift
+    selector: name=external-dns
+    port: 7979
+    path: /metrics
+    scheme: http
+    tracking: GCP-1293
+    reason: The management-level Go constructor has no GMP counterpart yet.
+  - component: karpenter
+    namespace: hcp-namespace
+    selector: app=karpenter
+    port: 8080
+    path: /metrics
+    scheme: http
+    tracking: GCP-1294
+    reason: Karpenter is not enabled for GCP HostedClusters.
+  - component: karpenter-operator
+    namespace: hcp-namespace
+    selector: app=karpenter-operator
+    port: 8080
+    path: /metrics
+    scheme: http
+    tracking: GCP-1294
+    reason: Karpenter operator is not enabled for GCP HostedClusters.
+rules:
+  - namespace: hcp-namespace
+    group: hypershift.rules
+    scope: namespace
+    tracking: GCP-1293
+    reason: CPO GMP Rules reconciliation is a runtime follow-up.
+  - namespace: hypershift
+    group: hypershift.rules
+    scope: namespace
+    tracking: GCP-1293
+    reason: Management-level GMP Rules construction is a runtime follow-up.
+  - namespace: openshift-monitoring
+    group: hypershift.rules
+    scope: namespace
+    tracking: GCP-1293
+    reason: SLO rule placement requires a separate GMP scope decision.
