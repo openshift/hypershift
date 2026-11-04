@@ -37,7 +37,10 @@ func trustBundleCM(name, caBundle string) *corev1.ConfigMap {
 
 // The trust bundle is read from key "ca-bundle.crt"; its content feeds the payload-identity hash, so
 // rotating it refreshes the payload behind the current generation (RF#2 at the reconcile level)
-// without rolling, and the hash passed to GetPayload matches its contract.
+// without rolling, and the hash passed to GetPayload matches its contract. Unlike the pull secret
+// (hashed as raw []byte), GetPayload validates the trust bundle hash against HashSimple of the
+// fetched bundle as a string, so the hash handed over must be the stringified form; the []byte form
+// does not match.
 func scenarioTrustBundleRotationMovesIdentity(t *testing.T) {
 	g := NewWithT(t)
 	ctx := context.Background()
@@ -52,7 +55,8 @@ func scenarioTrustBundleRotationMovesIdentity(t *testing.T) {
 	g.Expect(first.Status.Current.RolloutGeneration).To(Equal(int64(1)))
 	userData := first.Status.Current.UserDataSecret.Name
 	g.Expect(fp.calls).To(Equal(1))
-	g.Expect(fp.lastTrustBundleHash).To(Equal(supportutil.HashSimple([]byte("v1"))))
+	g.Expect(fp.lastTrustBundleHash).To(Equal(supportutil.HashSimple("v1")))
+	g.Expect(fp.lastTrustBundleHash).ToNot(Equal(supportutil.HashSimple([]byte("v1"))), "must be the string form the MCO provider validates against, not []byte")
 
 	// Rotate the trust bundle content: identity changes (not rollout) → Policy-A refresh.
 	tb := &corev1.ConfigMap{}
@@ -65,7 +69,7 @@ func scenarioTrustBundleRotationMovesIdentity(t *testing.T) {
 	g.Expect(after.Status.Current.RolloutGeneration).To(Equal(int64(1)), "trust-bundle rotation must not roll")
 	g.Expect(after.Status.Current.UserDataSecret.Name).To(Equal(userData), "same userData Secret (Policy A)")
 	g.Expect(fp.calls).To(Equal(2), "rotation triggers a refresh render")
-	g.Expect(fp.lastTrustBundleHash).To(Equal(supportutil.HashSimple([]byte("v2"))))
+	g.Expect(fp.lastTrustBundleHash).To(Equal(supportutil.HashSimple("v2")))
 }
 
 // A transient missing ConfigMap must requeue (return an error), not flip the CR into a

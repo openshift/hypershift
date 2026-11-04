@@ -203,10 +203,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	gen := genInputs{
-		releaseImage:        cr.Spec.ReleaseImage,
-		customConfig:        joinManifests(resolved),
-		pullSecretHash:      supportutil.HashSimple(inputs.pullSecret),
-		trustBundleHash:     supportutil.HashSimple(inputs.trustBundle),
+		releaseImage:   cr.Spec.ReleaseImage,
+		customConfig:   joinManifests(resolved),
+		pullSecretHash: supportutil.HashSimple(inputs.pullSecret),
+		// HashSimple formats its argument with %v, so it is type-sensitive: HashSimple([]byte(nil))
+		// hashes "[]" while HashSimple("") hashes "". The MCO provider (LocalIgnitionProvider.GetPayload)
+		// validates this against HashSimple(string(...)) of the fetched trust bundle — matching the
+		// legacy token path, which hashed a string. Hash the string form so the two agree; otherwise an
+		// empty (or any) trust bundle never matches and generation fails with "additionalTrustBundle
+		// does not match hash". The pull secret is []byte on both sides, so it needs no conversion.
+		trustBundleHash:     supportutil.HashSimple(string(inputs.trustBundle)),
 		hcConfigurationHash: hcConfigHash,
 		osImageStream:       cr.Spec.OSImageStream.Name,
 		cloudConfigHash:     cloudConfigHash,
