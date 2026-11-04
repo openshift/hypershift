@@ -6,6 +6,11 @@ filters:
     - core-reviewers
     emeritus_approvers:
     - davidvossel
+  # The dedicated Dependabot workflow may approve only supported Go dependency
+  # paths. Its command tool also rejects any PR containing another path.
+  '^(go\.(mod|sum)|hack/tools/go\.(mod|sum)|(hack/tools/)?vendor/(modules\.txt|[^/]+/.+))$':
+    approvers:
+    - redhat-chai-bot
   "^openshift-hypershift-.*":
     approvers:
     - ci-operator-config-approvers
