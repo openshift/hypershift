@@ -209,7 +209,7 @@ func (r *reconciler) reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx 
 		if len(machineAddresses) > 0 {
 			endpointSlice.Endpoints = []discoveryv1.Endpoint{{
 				Addresses:  machineAddresses,
-				Conditions: machinePhaseToEndpointConditions(machine),
+				Conditions: machineToEndpointConditions(machine),
 			}}
 		} else {
 			endpointSlice.Endpoints = []discoveryv1.Endpoint{}
@@ -266,17 +266,47 @@ func (r *reconciler) removeOrphanKubevirtPassthroughEndpointSlices(ctx context.C
 	return nil
 }
 
-func machinePhaseToEndpointConditions(machine *capiv1.Machine) discoveryv1.EndpointConditions {
-	if machine.Status.GetTypedPhase() == capiv1.MachinePhaseRunning {
-		return discoveryv1.EndpointConditions{
-			Ready:       ptr.To(true),
-			Serving:     ptr.To(true),
-			Terminating: ptr.To(false),
+func machineToEndpointConditions(machine *capiv1.Machine) discoveryv1.EndpointConditions {
+	// Either signal marks the machine as going away: the DeletionTimestamp may be
+	// set before the phase transitions to Deleting.
+	deleting := machine.DeletionTimestamp != nil || machine.Status.GetTypedPhase() == capiv1.MachinePhaseDeleting
+	ready := isMachineReady(machine)
+	return discoveryv1.EndpointConditions{
+		Ready:       ptr.To(ready && !deleting),
+		Serving:     ptr.To(ready),
+		Terminating: ptr.To(deleting),
+	}
+}
+
+// isMachineReady determines if the machine is ready to serve traffic.
+// It checks structured conditions first (the canonical signal in CAPI v1beta2),
+// then falls back to phase for backward compatibility with v1beta1-era controllers
+// that may not populate conditions.
+func isMachineReady(machine *capiv1.Machine) bool {
+	if ready, found := getMachineConditionStatus(machine, capiv1.MachineReadyCondition); found {
+		return ready
+	}
+	infraReady, infraFound := getMachineConditionStatus(machine, capiv1.MachineInfrastructureReadyCondition)
+	nodeHealthy, nodeFound := getMachineConditionStatus(machine, capiv1.MachineNodeHealthyCondition)
+	// A secondary condition that is present but not true means the machine is not
+	// ready, even if its companion condition has not been written yet (which can
+	// happen during provisioning). Only fall through to the phase check when no
+	// present secondary condition contradicts readiness; otherwise the phase
+	// fallback could advertise a not-yet-ready machine as ready.
+	if (infraFound && !infraReady) || (nodeFound && !nodeHealthy) {
+		return false
+	}
+	if infraFound && nodeFound {
+		return infraReady && nodeHealthy
+	}
+	return machine.Status.GetTypedPhase() == capiv1.MachinePhaseRunning
+}
+
+func getMachineConditionStatus(machine *capiv1.Machine, conditionType string) (status bool, found bool) {
+	for _, c := range machine.Status.Conditions {
+		if c.Type == conditionType {
+			return c.Status == metav1.ConditionTrue, true
 		}
 	}
-	return discoveryv1.EndpointConditions{
-		Ready:       ptr.To(false),
-		Serving:     ptr.To(false),
-		Terminating: ptr.To(false),
-	}
+	return false, false
 }
