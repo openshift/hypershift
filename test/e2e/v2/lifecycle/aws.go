@@ -159,6 +159,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 			DestroyArgs:  destroyArgs,
 			ReleaseImage: n1Image,
 			CreateArgs: clusterArgs(
+				"--public-only",
 				"--control-plane-availability-policy=HighlyAvailable",
 			),
 		},
@@ -210,13 +211,13 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 			Variant:                 "autoscaling",
 			DestroyArgs:             destroyArgs,
 			InitialNodePoolReplicas: &oneInitialReplica,
-			CreateArgs:              clusterArgs(),
+			CreateArgs:              clusterArgs("--public-only"),
 		},
 		{
 			Variant:                 "external-oidc",
 			DestroyArgs:             destroyArgs,
 			InitialNodePoolReplicas: &oneInitialReplica,
-			CreateArgs:              clusterArgs(),
+			CreateArgs:              clusterArgs("--public-only"),
 		},
 		{
 			// Consumes the trust bundle and imageContentSources written to
@@ -225,6 +226,7 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 			DestroyArgs:             destroyArgs,
 			InitialNodePoolReplicas: &oneInitialReplica,
 			CreateArgs: clusterArgs(
+				"--public-only",
 				"--additional-trust-bundle="+filepath.Join(a.sharedDir, "mirror-registry-ca.pem"),
 				"--image-content-sources="+filepath.Join(a.sharedDir, "mirror-registry-ics.yaml"),
 			),

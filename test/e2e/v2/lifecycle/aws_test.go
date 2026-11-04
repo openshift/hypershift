@@ -27,6 +27,24 @@ import (
 )
 
 func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
+	t.Run("When AWS cluster specs are built, it should use public-only networking except for Karpenter variants", func(t *testing.T) {
+		t.Setenv("EXTRA_ARGS", "")
+		t.Setenv("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS", "")
+		g := NewWithT(t)
+		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
+		g.Expect(specs).To(HaveLen(8))
+		for _, spec := range specs {
+			switch spec.Variant {
+			case "public", "managed-dns", "upgrade", "autoscaling", "external-oidc", "image-mirroring":
+				g.Expect(spec.CreateArgs).To(ContainElement("--public-only"), "variant %s", spec.Variant)
+			case "karpenter", "karpenter-upgrade":
+				g.Expect(spec.CreateArgs).NotTo(ContainElement("--public-only"), "variant %s", spec.Variant)
+				g.Expect(spec.CreateArgs).To(ContainElement("--endpoint-access=PublicAndPrivate"), "variant %s", spec.Variant)
+			default:
+				t.Fatalf("unexpected AWS variant %q", spec.Variant)
+			}
+		}
+	})
 	t.Run("When AWS cluster specs are built, it should omit Azure dump credentials for every variant", func(t *testing.T) {
 		g := NewWithT(t)
 		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
