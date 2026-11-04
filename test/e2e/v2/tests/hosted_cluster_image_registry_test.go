@@ -202,12 +202,14 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 	When("the ImageRegistry capability is disabled", func() {
 		var (
 			tc                  *internal.TestContext
+			hc                  *hyperv1.HostedCluster
 			hostedClusterClient crclient.Client
 		)
 
 		BeforeEach(func() {
 			tc = getTestCtx()
-			hc, err := tc.GetHostedCluster()
+			var err error
+			hc, err = tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 
 			isDisabled := false
@@ -245,6 +247,48 @@ func ImageRegistryCapabilityDisabledTest(getTestCtx internal.TestContextGetter) 
 			}
 			Expect(apierrors.IsNotFound(err)).To(BeTrue(),
 				"openshift-image-registry namespace should not exist when ImageRegistry capability is disabled")
+		})
+
+		// Azure-only assertions live in a scoped Context whose BeforeEach skips non-Azure platforms,
+		// per test/e2e/v2/AGENTS.md §5. The API permits a disabled cluster to retain supplied-but-unused
+		// registry identities, so the general disabled-capability specs above verify that registry
+		// runtime resources are absent without forbidding optional identity settings. The omission
+		// assertion below is scoped to clusters genuinely provisioned without a registry identity.
+		Context("on Azure clusters", Label("Azure", internal.InformingLabel), func() {
+			BeforeEach(func() {
+				tc.SkipIfNotPlatform(hyperv1.AzurePlatform)
+				Expect(hc.Spec.Platform.Azure).NotTo(BeNil(),
+					"Azure platform spec should be set for HostedCluster %s/%s", hc.Namespace, hc.Name)
+			})
+
+			It("should omit Azure registry identities when provisioned without them", func() {
+				authConfig := hc.Spec.Platform.Azure.AzureAuthenticationConfig
+				switch authConfig.AzureAuthenticationConfigType {
+				case hyperv1.AzureAuthenticationTypeManagedIdentities:
+					Expect(authConfig.ManagedIdentities).NotTo(BeNil(),
+						"managed identities should be set for HostedCluster %s/%s", hc.Namespace, hc.Name)
+					suppliedCP := authConfig.ManagedIdentities.ControlPlane.ImageRegistry != hyperv1.ManagedIdentity{}
+					suppliedDP := authConfig.ManagedIdentities.DataPlane.ImageRegistryMSIClientID != ""
+					if suppliedCP || suppliedDP {
+						Skip("HostedCluster retains supplied-but-unused Azure registry managed identities; the API permits this on a disabled cluster")
+					}
+					Expect(authConfig.ManagedIdentities.ControlPlane.ImageRegistry).To(BeZero(),
+						"control-plane image registry identity should be omitted for HostedCluster %s/%s", hc.Namespace, hc.Name)
+					Expect(authConfig.ManagedIdentities.DataPlane.ImageRegistryMSIClientID).To(BeEmpty(),
+						"data-plane image registry identity should be omitted for HostedCluster %s/%s", hc.Namespace, hc.Name)
+				case hyperv1.AzureAuthenticationTypeWorkloadIdentities:
+					Expect(authConfig.WorkloadIdentities).NotTo(BeNil(),
+						"workload identities should be set for HostedCluster %s/%s", hc.Namespace, hc.Name)
+					if authConfig.WorkloadIdentities.ImageRegistry != (hyperv1.WorkloadIdentity{}) {
+						Skip("HostedCluster retains a supplied-but-unused Azure registry workload identity; the API permits this on a disabled cluster")
+					}
+					Expect(authConfig.WorkloadIdentities.ImageRegistry).To(BeZero(),
+						"image registry workload identity should be omitted for HostedCluster %s/%s", hc.Namespace, hc.Name)
+				default:
+					Fail(fmt.Sprintf("unexpected Azure authentication type %q for HostedCluster %s/%s",
+						authConfig.AzureAuthenticationConfigType, hc.Namespace, hc.Name))
+				}
+			})
 		})
 
 		It("should not add ImagePullSecrets to default service accounts", func() {
