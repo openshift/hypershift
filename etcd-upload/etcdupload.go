@@ -153,7 +153,10 @@ func runDir(ctx context.Context, opts options, uploader Uploader) error {
 			return fmt.Errorf("failed to upload shard %q snapshot: %w", shardName, uploadErr)
 		}
 
-		fmt.Printf("uploaded %s: %s\n", shardName, result.URL)
+		// The URL is intentionally not logged: storage URLs can expose bucket
+		// names and object keys. The controller receives them via the
+		// termination log below.
+		fmt.Printf("uploaded shard %s snapshot\n", shardName)
 		snapshots = append(snapshots, shardSnapshot{
 			Name: shardName,
 			URL:  result.URL,
