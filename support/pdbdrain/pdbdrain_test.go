@@ -23,6 +23,14 @@ func TestIsStructurallyBlocking(t *testing.T) {
 		{"desired>expected blocks", pdb(3, 4), true},
 		{"headroom does not block", pdb(3, 2), false},
 		{"no expected pods", pdb(0, 0), false},
+		{"unobserved spec generation is not trusted", &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{Generation: 2},
+			Status:     policyv1.PodDisruptionBudgetStatus{ExpectedPods: 3, DesiredHealthy: 3, ObservedGeneration: 1},
+		}, false},
+		{"observed current spec generation blocks", &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{Generation: 2},
+			Status:     policyv1.PodDisruptionBudgetStatus{ExpectedPods: 3, DesiredHealthy: 3, ObservedGeneration: 2},
+		}, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

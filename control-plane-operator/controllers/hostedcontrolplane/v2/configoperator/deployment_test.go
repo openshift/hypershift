@@ -46,11 +46,21 @@ func TestHcco_AdaptDeployment(t *testing.T) {
 		wantDrainReadinessEnv     bool
 		wantAdditionalPrefixesEnv bool
 		wantIBMControllerOverride bool
+		wantIBMDrainReadiness     bool
 	}{
 		{
 			name:                      "When the platform is IBM Cloud, it should select the supported controllers",
 			platform:                  hyperv1.IBMCloudPlatform,
 			wantIBMControllerOverride: true,
+		},
+		{
+			name:                      "When drain readiness is enabled for IBM Cloud, it should add the controller to the allowlist",
+			platform:                  hyperv1.IBMCloudPlatform,
+			drainReadinessFlag:        "1",
+			drainReadinessOptIn:       true,
+			wantIBMControllerOverride: true,
+			wantIBMDrainReadiness:     true,
+			wantDrainReadinessEnv:     true,
 		},
 		{
 			name:                      "When drain readiness is enabled, it should pass the flag to HCCO",
@@ -66,6 +76,12 @@ func TestHcco_AdaptDeployment(t *testing.T) {
 			platform:           hyperv1.AWSPlatform,
 			drainReadinessFlag: "0",
 			additionalPrefixes: "redhat-",
+		},
+		{
+			name:                      "When drain readiness is enabled for IBM Cloud without cluster opt-in, it should omit the controller and flag",
+			platform:                  hyperv1.IBMCloudPlatform,
+			drainReadinessFlag:        "1",
+			wantIBMControllerOverride: true,
 		},
 		{
 			name:     "When drain readiness is unset, it should omit the flag from HCCO",
@@ -106,8 +122,12 @@ func TestHcco_AdaptDeployment(t *testing.T) {
 
 			container := deployment.Spec.Template.Spec.Containers[0]
 			if tt.wantIBMControllerOverride {
+				controllers := "--controllers=controller-manager-ca,resources,user-ca-bundle,inplaceupgrader,drainer,hcpstatus"
+				if tt.wantIBMDrainReadiness {
+					controllers += ",nodepooldrain"
+				}
 				g.Expect(container.Command).To(ContainElement(
-					"--controllers=controller-manager-ca,resources,user-ca-bundle,inplaceupgrader,drainer,hcpstatus",
+					controllers,
 				))
 			}
 			if tt.wantDrainReadinessEnv {

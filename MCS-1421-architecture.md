@@ -44,11 +44,11 @@ flowchart LR
   HCCO -->|reads| API
 ```
 
-This path keeps guest reads inside an existing per-cluster operator. Only pool names, states, reason codes, and PDB counts cross into HCP/NodePool status. The guest PDB Event contains the PDB name for local diagnosis.
+This path keeps guest reads inside an existing per-cluster operator. New CAPI Machine templates carry the NodePool UID; HO tags existing Machines in place to avoid a rollout. HCCO reads those Machines to verify each guest Node's pool identity. Pool names, UIDs, states, reason codes, and PDB counts cross into HCP/NodePool status. Events and logs use generic messages and contain no customer workload identifiers.
 
 ## Status contract: what the states mean
 
-HCCO writes `status.nodePoolDrain[]` on the HCP. Each entry contains `nodePoolName`, a required `state` (`Blocked` or `Drainable`), an optional `blockingCount`, and an optional bounded `reason`. The array is keyed by pool name in the CRD. HCCO also writes `status.nodePoolDrainLastProbeTime` after a complete scan and sets HCP condition `NodePoolDrainUpToDate=True`. Entries exist only for pools found on guest Nodes labeled `hypershift.openshift.io/nodePool`; an absent entry is unverified, not clear.
+HCCO writes `status.nodePoolDrain[]` on the HCP. Each entry contains `nodePoolName`, `nodePoolUID`, a required `state` (`Blocked` or `Drainable`), an optional `blockingCount`, and an optional bounded `reason`. The array is keyed by pool name in the CRD. HCCO writes the scan start time to `status.nodePoolDrainLastProbeTime` after a complete scan and sets HCP condition `NodePoolDrainUpToDate=True`. Entries exist only for pools whose guest Nodes all map to CAPI Machines carrying one NodePool UID; an absent entry is unverified. The NodePool consumer requires that UID to match the current NodePool, so a recreated pool cannot use its predecessor's result even with clock skew or orphaned Nodes.
 
 An illustrative HCP status fragment:
 
@@ -56,6 +56,7 @@ An illustrative HCP status fragment:
 status:
   nodePoolDrain:
     - nodePoolName: workers-a
+      nodePoolUID: "32cf45d9-9b6c-4b2e-8c1f-4584e66374a7"
       state: Blocked
       blockingCount: 1
       reason: BlockedByPodDisruptionBudget
@@ -80,7 +81,7 @@ The NodePool controller makes this translation:
 | --- | --- | --- | --- |
 | Fresh successful probe, `state=Blocked` | `True` | `BlockedByPodDisruptionBudget` | At least one structural customer PDB applies to a drain candidate Pod on a node in this pool. Message contains the PDB count. |
 | Fresh successful probe, `state=Drainable` | `False` | `Drainable` | This scan found no structural PDB blocker for the pool. It does not guarantee that every drain will succeed. |
-| Freshness missing/false, invalid or expired timestamp, absent pool entry, or absent/unsupported state | `Unknown` | `Unverified`, or `Stale` for an expired timestamp | No current, interpretable result. An enforcement consumer should fail open. |
+| Freshness missing/false, invalid or expired timestamp, absent pool entry, missing or mismatched UID, or absent/unsupported state | `Unknown` | `Unverified`, or `Stale` for an expired timestamp | No current, interpretable result. An enforcement consumer should fail open. |
 | Feature disabled | Condition removed | — | The signal is no longer offered for this cluster. |
 
 “Fresh” requires `NodePoolDrainUpToDate=True`, a nonzero probe timestamp no more than 15 minutes old, and a timestamp no more than one minute in the future. A fresh `Blocked` or `Drainable` result schedules a NodePool reconcile at its 15-minute expiry. This recheck survives early returns from later NodePool validation. While the NodePool controller continues reconciling, a stopped HCCO writer therefore cannot leave a known condition in place indefinitely. Older HCP status with the former `blocked` boolean deserializes without `state` and becomes `Unknown`.
@@ -101,7 +102,7 @@ The NodePool condition is a projection of HCCO's observation, not a separate pro
 | --- | --- | --- |
 | Complete successful scan | Write a new array and probe time; set `NodePoolDrainUpToDate=True`. | `True` or `False` according to this pool's new state; `Unknown` if the pool has no entry. |
 | PDB or Pod placement changes | Next watch-triggered or one-minute probe replaces the result. | Can move between `True` and `False`. |
-| Pod scan exceeds the per-PDB limit | Keep the old array/time; set freshness `False` immediately. | Move to `Unknown` (`Unverified`). |
+| Pod scan exceeds a per-PDB or aggregate limit, times out, or sees unobserved PDB status | Keep the old array/time; set freshness `False` immediately. | Move to `Unknown` (`Unverified`). |
 | Guest read fails briefly | Keep the old array/time and previous freshness condition. | Retain a known state only while the stored time remains fresh. |
 | No successful refresh for 15 minutes | HCCO eventually marks freshness `False` on read errors; the stored time also expires independently. | Move to `Unknown` (`Stale` when age is the deciding check). |
 | Opt-in removed | Per-cluster probe disabled; stored HCP fields may remain. | Remove `DrainBlocked`. |
@@ -111,13 +112,16 @@ The NodePool condition is a projection of HCCO's observation, not a separate pro
 The probe deliberately targets **structural** blockers: PDBs that would allow zero voluntary disruptions even if every expected Pod were healthy. This reduces false alarms from short-lived PDB pressure, at the cost of missing some temporary drain delays.
 
 ```text
-1. List guest Nodes and build node name -> NodePool name from the NodePool label.
-2. List guest PDBs. Skip platform namespaces and PDBs unless:
+1. List guest Nodes and management-cluster CAPI Machines. Match each labeled Node to
+   its Machine and NodePool UID. Omit pools with orphaned or mixed-UID Nodes.
+2. List guest PDBs. Skip platform namespaces and nil selectors. Require other customer PDB status to have
+   observed the current spec generation; otherwise reject the whole scan as unverified.
+   Only evaluate PDBs where:
       status.expectedPods >= 1 AND status.desiredHealthy >= status.expectedPods
 3. For each remaining PDB, list matching Pods in its namespace using its selector.
 4. Skip Pods that the drain would not evict; map each remaining Pod's node to a pool.
 5. Count each PDB once per affected pool, even if it matches several Pods there.
-6. Publish a sorted Blocked/Drainable entry for every pool seen in step 1.
+6. Publish a sorted Blocked/Drainable entry with its UID for every verified pool from step 1.
 ```
 
 The selector and Pod checks matter:
@@ -133,9 +137,9 @@ For example, a one-replica workload with `minAvailable: 1`, one Ready Pod on a l
 
 HCCO watches guest Nodes for create/delete and NodePool-label changes, and watches PDBs. Node heartbeat updates do not trigger a probe. Pods are read through an **uncached**, server-side filtered API reader, so there is no cluster-wide Pod informer. A successful probe schedules another scan after one minute; this catches Pod placement changes that have no Pod watch.
 
-Each matching Pod list is limited to 2,000 Pods **per PDB**. A continuation token or an over-limit list makes the entire scan incomplete. The controller does not publish partial `Drainable` results. It sets HCP `NodePoolDrainUpToDate=False` with reason `PodScanIncomplete`, clears current blocked metrics, and retries in one minute. The old array and timestamp remain stored, but the NodePool controller treats them as `Unknown` because the freshness condition is false.
+Each matching Pod list is limited to 2,000 Pods **per PDB**, with aggregate limits of 10,000 returned Pods and 100 uncached Pod-list requests, plus a two-minute maximum scan time. Each uncached list also has a 30-second timeout. A continuation token, an exceeded limit, or a timeout makes the entire scan incomplete. The controller does not publish partial `Drainable` results. It sets HCP `NodePoolDrainUpToDate=False`, clears current blocked metrics, and retries in one minute. It also rejects relevant customer PDB status whose `observedGeneration` is behind `metadata.generation`, since stale status cannot verify whether the current spec blocks eviction. The old array and timestamp remain stored, but the NodePool controller treats them as `Unknown` because the freshness condition is false.
 
-For a generic guest-read error, HCCO retains the last HCP result during a 15-minute grace window and returns an error for controller-runtime retry. Its in-memory `lastSuccess` clock is seeded on process start, so a startup error does not instantly mark the condition false. If failures continue past the grace window, HCCO sets `NodePoolDrainUpToDate=False` with reason `GuestUnreachable` and clears blocked metrics. Independently, the NodePool controller expires the persisted probe timestamp at 15 minutes. This also covers a stopped or restarted writer and failures to publish HCP status.
+For a generic guest-read error, HCCO retains the last HCP result during a 15-minute grace window and returns an error for controller-runtime retry. Its in-memory `lastSuccess` clock is seeded on process start, so a startup error does not instantly mark the condition false. If failures continue past the grace window, HCCO sets `NodePoolDrainUpToDate=False` with reason `GuestUnreachable` and clears blocked metrics. A failed write of the new drain array also marks freshness `False` when possible, so old data is not left trusted. Independently, the NodePool controller expires the persisted probe timestamp at 15 minutes. This also covers a stopped or restarted writer.
 
 On a complete scan, HCCO patches the HCP array and timestamp, then the HCP freshness condition, using the shared optimistic status-patching helper. The HyperShift operator watches drain-specific HCP status changes, maps the HCP to its NodePools, and updates each condition. The HCP watcher ignores unrelated status updates. `Unknown` is the safe interpretation of any missing, stale, or unsupported value; this POC's HyperShift code does not enforce an upgrade gate.
 
@@ -154,7 +158,7 @@ For this branch POC, the trial HostedCluster also needs `hypershift.openshift.io
 | --- | --- | --- |
 | NodePool `DrainBlocked` condition | `True`, `False`, or `Unknown`, reason, and count-only message | No PDB or Pod identifier. |
 | HCP drain status, timestamp, and `NodePoolDrainUpToDate` | Raw per-pool result and whether it is current | Old array may remain after a failed scan; check freshness and timestamp together. |
-| Guest PDB Warning Event `DrainBlocked` | Newly observed PDB-to-pool block, with the PDB name and pool | Transition tracking is in memory; an HCCO restart can emit it again. |
+| Guest Warning Event `DrainBlocked` | A generic indication that one or more PDBs may block drain | Contains no PDB or NodePool name; inspect guest PDBs for details. Transition tracking is in memory; an HCCO restart can emit it again. |
 | `hypershift_nodepool_drain_blocked{namespace,nodepool}` | Sparse series with value `1` only for currently blocked pools | Series is removed on clear or stale/incomplete scan. |
 | `hypershift_nodepool_drain_uptodate{namespace}` | `1` after success, `0` when HCCO marks stale/incomplete | A transient read error inside the grace window retains the prior value; use the timestamp for age. |
 
@@ -171,7 +175,7 @@ kubectl -n <hc-namespace> get nodepool <nodepool-name> -o json \
 ## POC boundaries and validation to discuss
 
 - This is a prediction from PDB status and current Pod placement. PDB status itself can lag. The probe does not request eviction or guarantee that a later drain succeeds. Workload scaling, Pod movement, PDB edits, and other drain failures can change the outcome between probes.
-- The 2,000-Pod bound is per PDB. A cluster with many structural PDBs can still cause many filtered Pod lists. Measure guest API requests, HCCO memory/CPU, and reconcile duration before broader enablement.
+- The probe has 2,000-Pod per-PDB, 10,000-Pod aggregate, 100-request, 30-second per-list, and two-minute total bounds. Measure guest API requests, HCCO memory/CPU, and reconcile duration before broader enablement.
 - The HCP status schema allows at most 500 per-pool entries. A probe that cannot be published must age out to `Unknown`; validate this limit against target fleet shapes.
 - No alert rule, runbook, or fleet-side enforcement is shipped by this HyperShift POC. The downstream consumer must treat `Unknown` as fail open and define its own policy and override path before enforcement.
 - POC precision cases should include: Ready Pod with a zero budget (`True`); unready Running Pod with `AlwaysAllow` (`False` if no other blocker); Pending/DaemonSet/mirror/completed Pods; a PDB with healthy disruption headroom; a Pod moved to another pool; an over-limit Pod list (`Unknown`); and lost guest access followed by timestamp expiry (`Unknown`). Measure false blocks and missed structural blockers against actual eviction outcomes in a trial cluster.

@@ -1233,7 +1233,7 @@ func (r *NodePoolReconciler) supportedVersionSkewCondition(ctx context.Context, 
 //
 // If the guest-side signal is missing or stale, the condition is set to Unknown
 // so consumers fail open. A known result schedules another reconcile at expiry.
-func (r *NodePoolReconciler) drainBlockedCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+func (r *NodePoolReconciler) drainBlockedCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) time.Time {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	hcp := &hyperv1.HostedControlPlane{}
 	setUnknown := func(reason, msg string) {
@@ -1248,33 +1248,36 @@ func (r *NodePoolReconciler) drainBlockedCondition(ctx context.Context, nodePool
 	if err := r.Client.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: hcluster.Name}, hcp); err != nil {
 		if apierrors.IsNotFound(err) {
 			setUnknown("Unverified", "hosted control plane is not available")
-			return nil, nil
+			return time.Time{}
 		}
 		setUnknown("Unverified", "hosted control plane status could not be read")
-		return &ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
+		// This signal is advisory. Keep the condition Unknown and let the main NodePool
+		// reconcile continue; retry the read later without exposing customer data in logs.
+		return time.Now().Add(time.Minute)
 	}
 
 	// Stale/unverified guest signal -> fail open.
 	if c := meta.FindStatusCondition(hcp.Status.Conditions, hyperv1.HostedControlPlaneNodePoolDrainUpToDate); c == nil || c.Status != metav1.ConditionTrue {
 		setUnknown("Unverified", "drain readiness has not been computed from the guest cluster")
-		return nil, nil
+		return time.Time{}
 	}
 	probeTime := hcp.Status.NodePoolDrainLastProbeTime
 	if probeTime == nil || probeTime.IsZero() {
 		setUnknown("Unverified", "drain readiness has no successful probe timestamp")
-		return nil, nil
+		return time.Time{}
 	}
 	// A future timestamp beyond a small allowance for clock skew is invalid. Without
 	// this bound, a bad clock could keep a stale True signal current indefinitely.
 	now := time.Now()
 	if probeTime.After(now.Add(time.Minute)) {
 		setUnknown("Unverified", "drain readiness probe timestamp is in the future")
-		return nil, nil
+		return time.Time{}
 	}
-	remaining := probeTime.Add(pdbdrain.SignalMaxAge).Sub(now)
+	expiresAt := probeTime.Add(pdbdrain.SignalMaxAge)
+	remaining := expiresAt.Sub(now)
 	if remaining <= 0 {
 		setUnknown("Stale", "drain readiness has not been refreshed recently")
-		return nil, nil
+		return time.Time{}
 	}
 
 	var entry *hyperv1.NodePoolDrain
@@ -1286,12 +1289,16 @@ func (r *NodePoolReconciler) drainBlockedCondition(ctx context.Context, nodePool
 	}
 	if entry == nil {
 		setUnknown("Unverified", "no drain readiness computed for this NodePool yet")
-		return nil, nil
+		return time.Time{}
+	}
+	if nodePool.UID == "" || entry.NodePoolUID == "" || entry.NodePoolUID != string(nodePool.UID) {
+		setUnknown("Unverified", "drain readiness belongs to another NodePool incarnation")
+		return time.Time{}
 	}
 
 	if entry.State == "" {
 		setUnknown("Unverified", "drain readiness result has no state")
-		return nil, nil
+		return time.Time{}
 	}
 	if entry.State == hyperv1.NodePoolDrainStateBlocked {
 		reason := entry.Reason
@@ -1305,11 +1312,11 @@ func (r *NodePoolReconciler) drainBlockedCondition(ctx context.Context, nodePool
 			Message:            fmt.Sprintf("%d PodDisruptionBudget(s) would block node drain during an upgrade", ptr.Deref(entry.BlockingCount, 0)),
 			ObservedGeneration: nodePool.Generation,
 		})
-		return &ctrl.Result{RequeueAfter: remaining}, nil
+		return expiresAt
 	}
 	if entry.State != hyperv1.NodePoolDrainStateDrainable {
 		setUnknown("Unverified", "drain readiness result has an unsupported state")
-		return nil, nil
+		return time.Time{}
 	}
 	reason := entry.Reason
 	if reason == "" {
@@ -1322,5 +1329,5 @@ func (r *NodePoolReconciler) drainBlockedCondition(ctx context.Context, nodePool
 		Reason:             reason,
 		ObservedGeneration: nodePool.Generation,
 	})
-	return &ctrl.Result{RequeueAfter: remaining}, nil
+	return expiresAt
 }

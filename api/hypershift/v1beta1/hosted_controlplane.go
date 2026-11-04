@@ -325,7 +325,7 @@ type HostedControlPlaneStatus struct {
 
 	// nodePoolDrain reports per-NodePool drain readiness computed from guest-cluster
 	// PodDisruptionBudgets by the HCCO. Status-only; does not gate rollout in HyperShift.
-	// Carries only a state, reason, and count — never customer workload identifiers.
+	// Carries only a pool name and UID, state, reason, and count — never customer workload identifiers.
 	// +optional
 	// +listType=map
 	// +listMapKey=nodePoolName
@@ -333,9 +333,9 @@ type HostedControlPlaneStatus struct {
 	// +kubebuilder:validation:MinItems=1
 	NodePoolDrain []NodePoolDrain `json:"nodePoolDrain,omitempty"`
 
-	// nodePoolDrainLastProbeTime is the time of the last successful guest-cluster
-	// drain-readiness computation. Consumers must expire nodePoolDrain data when
-	// this timestamp is absent or too old, even if the up-to-date condition is True.
+	// nodePoolDrainLastProbeTime is the start time of the last successful guest-cluster
+	// drain-readiness computation. Consumers must expire nodePoolDrain data when this
+	// timestamp is absent or too old. Each result's NodePool UID identifies its incarnation.
 	// +optional
 	NodePoolDrainLastProbeTime *metav1.Time `json:"nodePoolDrainLastProbeTime,omitempty"`
 

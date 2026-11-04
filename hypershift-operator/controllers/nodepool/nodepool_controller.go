@@ -322,13 +322,20 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 //nolint:gocyclo
 func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (result ctrl.Result, err error) {
 	log := ctrl.LoggerFrom(ctx)
-	var drainProbeRequeueAfter time.Duration
+	var drainReadinessRequeueAt time.Time
 	defer func() {
 		// Keep the freshness deadline even when later validation returns early.
 		// Errors and immediate requeues already cause another reconcile.
-		if err == nil && !result.Requeue && drainProbeRequeueAfter > 0 &&
-			(result.RequeueAfter == 0 || drainProbeRequeueAfter < result.RequeueAfter) {
-			result.RequeueAfter = drainProbeRequeueAfter
+		if err == nil && !result.Requeue && !drainReadinessRequeueAt.IsZero() {
+			remaining := time.Until(drainReadinessRequeueAt)
+			if remaining <= 0 {
+				result.Requeue = true
+				result.RequeueAfter = 0
+				return
+			}
+			if result.RequeueAfter == 0 || remaining < result.RequeueAfter {
+				result.RequeueAfter = remaining
+			}
 		}
 	}()
 
@@ -348,14 +355,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// Drain readiness is status-only. Check it before validations that can stop
 	// reconciliation so an old True condition is still cleared on expiry. When
 	// disabled, remove any condition left by a previous enabled deployment.
-	if os.Getenv("ENABLE_NODEPOOL_DRAIN_READINESS") == "1" && hcluster.Annotations[hyperv1.NodePoolDrainReadinessAnnotation] == "true" {
-		drainResult, err := r.drainBlockedCondition(ctx, nodePool, hcluster)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if drainResult != nil {
-			drainProbeRequeueAfter = drainResult.RequeueAfter
-		}
+	drainReadinessEnabled := os.Getenv("ENABLE_NODEPOOL_DRAIN_READINESS") == "1" && hcluster.Annotations[hyperv1.NodePoolDrainReadinessAnnotation] == "true"
+	if drainReadinessEnabled {
+		drainReadinessRequeueAt = r.drainBlockedCondition(ctx, nodePool, hcluster)
 	} else if FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolDrainBlockedConditionType) != nil {
 		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolDrainBlockedConditionType)
 	}
@@ -369,6 +371,15 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		log.Error(err, "Failed to get Machines for status aggregation")
 	} else {
+		if drainReadinessEnabled {
+			if err := r.annotateNodePoolMachinesForDrainReadiness(ctx, nodePool, machines); err != nil {
+				log.Error(err, "Failed to mark Machines for drain readiness")
+				retryAt := time.Now().Add(time.Minute)
+				if drainReadinessRequeueAt.IsZero() || retryAt.Before(drainReadinessRequeueAt) {
+					drainReadinessRequeueAt = retryAt
+				}
+			}
+		}
 		// Aggregate node version and health information into NodesInfo status.
 		// This is done before the conditions loop so that nodesInfo stays accurate
 		// even when later validations (e.g. release image) short-circuit the reconcile.
@@ -565,6 +576,30 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// annotateNodePoolMachinesForDrainReadiness marks Machines in place, avoiding a
+// MachineDeployment or MachineSet template change that would roll the pool. A
+// Machine from an older NodePool with the same name must retain its old identity.
+func (r *NodePoolReconciler) annotateNodePoolMachinesForDrainReadiness(ctx context.Context, nodePool *hyperv1.NodePool, machines []*capiv1.Machine) error {
+	if nodePool.UID == "" || nodePool.CreationTimestamp.IsZero() {
+		return nil
+	}
+	for _, machine := range machines {
+		if machine.Annotations[hyperv1.NodePoolUIDAnnotation] != "" ||
+			!machine.CreationTimestamp.After(nodePool.CreationTimestamp.Time) {
+			continue
+		}
+		original := machine.DeepCopy()
+		if machine.Annotations == nil {
+			machine.Annotations = map[string]string{}
+		}
+		machine.Annotations[hyperv1.NodePoolUIDAnnotation] = string(nodePool.UID)
+		if err := r.Patch(ctx, machine, client.MergeFrom(original)); err != nil {
+			return fmt.Errorf("mark CAPI Machine with NodePool UID: %w", err)
+		}
+	}
+	return nil
 }
 
 func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*Token, error) {

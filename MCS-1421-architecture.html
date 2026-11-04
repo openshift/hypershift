@@ -520,26 +520,29 @@ examined by the probe.</td>
   <figcaption id="architecture-caption">Figure 1. Probe ownership and status propagation. Guest workload identifiers stay in the guest cluster.</figcaption>
 </figure>
 <p>This path keeps guest reads inside an existing per-cluster operator.
-Only pool names, states, reason codes, and PDB counts cross into
-HCP/NodePool status. The guest PDB Event contains the PDB name for local
-diagnosis.</p>
+New CAPI Machine templates carry the NodePool UID; HO tags existing Machines
+in place to avoid a rollout. HCCO reads those Machines to verify each guest Node. Pool names, UIDs, states, reason
+codes, and PDB counts cross into HCP/NodePool status. Events and management-cluster logs use generic messages
+and contain no customer workload identifiers.</p>
 <h2 id="status-contract-what-the-states-mean">Status contract: what the
 states mean</h2>
 <p>HCCO writes <code>status.nodePoolDrain[]</code> on the HCP. Each
-entry contains <code>nodePoolName</code>, a required <code>state</code>
+entry contains <code>nodePoolName</code>, <code>nodePoolUID</code>, and a required <code>state</code>
 (<code>Blocked</code> or <code>Drainable</code>), an optional
 <code>blockingCount</code>, and an optional bounded <code>reason</code>.
-The array is keyed by pool name in the CRD. HCCO also writes
+The array is keyed by pool name in the CRD. HCCO writes the scan start time to
 <code>status.nodePoolDrainLastProbeTime</code> after a complete scan and
 sets HCP condition <code>NodePoolDrainUpToDate=True</code>. Entries
-exist only for pools found on guest Nodes labeled
-<code>hypershift.openshift.io/nodePool</code>; an absent entry is
-unverified, not clear.</p>
+exist only for pools whose guest Nodes all map to CAPI Machines carrying
+one NodePool UID; an absent entry is unverified. The NodePool consumer
+requires that UID to match the current NodePool, so a recreated pool cannot
+use its predecessor's result even with clock skew or orphaned Nodes.</p>
 <p>An illustrative HCP status fragment:</p>
 <div class="sourceCode" id="cb2"><pre
 class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">status</span><span class="kw">:</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">nodePoolDrain</span><span class="kw">:</span></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> </span><span class="fu">nodePoolName</span><span class="kw">:</span><span class="at"> workers-a</span></span>
+<span id="cb2-3a"><a href="#cb2-3a" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">nodePoolUID</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;32cf45d9-9b6c-4b2e-8c1f-4584e66374a7&quot;</span></span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">state</span><span class="kw">:</span><span class="at"> Blocked</span></span>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">blockingCount</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
 <span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">reason</span><span class="kw">:</span><span class="at"> BlockedByPodDisruptionBudget</span></span>
@@ -558,15 +561,17 @@ from the guest cluster.</li>
 <li><code>status: "True"</code> means the latest probe completed and
 HCCO published its result. <code>False</code> means the result is not
 currently verified; for example, HCCO uses
-<code>PodScanIncomplete</code> when a matching Pod list exceeds the
-safety limit and <code>GuestUnreachable</code> after guest reads have
-failed past the grace period.</li>
+<code>PodScanIncomplete</code> when a Pod scan exceeds its safety limits,
+<code>PDBStatusUnobserved</code> when a customer PDB has stale status, and
+<code>GuestUnreachable</code> after guest reads have failed past the grace
+period.</li>
 <li><code>reason: AsExpected</code> is the short success reason for a
 completed probe. It does not mean every NodePool is drainable.</li>
 </ul>
 <p>To interpret <code>workers-a</code>, read its <code>state</code> in
 <code>status.nodePoolDrain[]</code>. The NodePool controller also checks
-that the probe timestamp is present and no more than 15 minutes old. So
+that the probe timestamp is present and no more than 15 minutes old, and
+that the entry UID matches the current NodePool. So
 <code>NodePoolDrainUpToDate=True</code> by itself is not enough to treat
 an old result as current.</p>
 <p>The NodePool controller makes this translation:</p>
@@ -601,8 +606,8 @@ Pod on a node in this pool. Message contains the PDB count.</td>
 guarantee that every drain will succeed.</td>
 </tr>
 <tr>
-<td>Freshness missing/false, invalid or expired timestamp, absent pool
-entry, or absent/unsupported state</td>
+<td>Freshness missing/false, invalid or expired timestamp, absent pool entry,
+missing or mismatched UID, or absent/unsupported state</td>
 <td><code>Unknown</code></td>
 <td><code>Unverified</code>, or <code>Stale</code> for an expired
 timestamp</td>
@@ -665,7 +670,8 @@ state; <code>Unknown</code> if the pool has no entry.</td>
 <td>Can move between <code>True</code> and <code>False</code>.</td>
 </tr>
 <tr>
-<td>Pod scan exceeds the per-PDB limit</td>
+<td>Pod scan exceeds a per-list or aggregate limit, times out, or sees
+unobserved PDB status</td>
 <td>Keep the old array/time; set freshness <code>False</code>
 immediately.</td>
 <td>Move to <code>Unknown</code> (<code>Unverified</code>).</td>
@@ -694,13 +700,17 @@ deciding check).</td>
 PDBs that would allow zero voluntary disruptions even if every expected
 Pod were healthy. This reduces false alarms from short-lived PDB
 pressure, at the cost of missing some temporary drain delays.</p>
-<pre class="text"><code>1. List guest Nodes and build node name -&gt; NodePool name from the NodePool label.
-2. List guest PDBs. Skip platform namespaces and PDBs unless:
+<pre class="text"><code>1. List guest Nodes and management-cluster CAPI Machines. Match each labeled Node
+   to its Machine and NodePool UID. Omit pools with orphaned or mixed-UID Nodes.
+2. List guest PDBs. Skip platform namespaces and nil selectors. Require other
+   customer PDB status to have observed the current spec generation; otherwise
+   reject the scan as unverified.
+   Only evaluate PDBs where:
       status.expectedPods &gt;= 1 AND status.desiredHealthy &gt;= status.expectedPods
 3. For each remaining PDB, list matching Pods in its namespace using its selector.
 4. Skip Pods that the drain would not evict; map each remaining Pod&#39;s node to a pool.
 5. Count each PDB once per affected pool, even if it matches several Pods there.
-6. Publish a sorted Blocked/Drainable entry for every pool seen in step 1.</code></pre>
+6. Publish a sorted Blocked/Drainable entry with its UID for every verified pool.</code></pre>
 <p>The selector and Pod checks matter:</p>
 <ul>
 <li>A <code>nil</code> PDB selector matches nothing; an empty
@@ -738,14 +748,18 @@ filtered API reader, so there is no cluster-wide Pod informer. A
 successful probe schedules another scan after one minute; this catches
 Pod placement changes that have no Pod watch.</p>
 <p>Each matching Pod list is limited to 2,000 Pods <strong>per
-PDB</strong>. A continuation token or an over-limit list makes the
-entire scan incomplete. The controller does not publish partial
+PDB</strong>, with aggregate limits of 10,000 returned Pods and 100 uncached
+Pod-list requests, plus a two-minute maximum scan time. Each uncached Pod list has a 30-second timeout. A continuation
+token, exceeded limit, or timeout makes the entire scan incomplete. The
+controller does not publish partial
 <code>Drainable</code> results. It sets HCP
 <code>NodePoolDrainUpToDate=False</code> with reason
 <code>PodScanIncomplete</code>, clears current blocked metrics, and
 retries in one minute. The old array and timestamp remain stored, but
 the NodePool controller treats them as <code>Unknown</code> because the
-freshness condition is false.</p>
+freshness condition is false. An unobserved customer PDB also makes the
+probe unverified. If publishing a complete scan fails, HCCO marks freshness
+<code>False</code> with reason <code>StatusWriteFailed</code> when possible.</p>
 <p>For a generic guest-read error, HCCO retains the last HCP result
 during a 15-minute grace window and returns an error for
 controller-runtime retry. Its in-memory <code>lastSuccess</code> clock
@@ -813,9 +827,9 @@ timestamp together.</td>
 </tr>
 <tr>
 <td>Guest PDB Warning Event <code>DrainBlocked</code></td>
-<td>Newly observed PDB-to-pool block, with the PDB name and pool</td>
-<td>Transition tracking is in memory; an HCCO restart can emit it
-again.</td>
+<td>A generic indication that one or more PDBs may block worker drain</td>
+<td>Contains no PDB or NodePool name; inspect guest PDBs for details.
+Transition tracking is in memory; an HCCO restart can emit it again.</td>
 </tr>
 <tr>
 <td><code>hypershift_nodepool_drain_blocked{namespace,nodepool}</code></td>
@@ -845,9 +859,9 @@ validation to discuss</h2>
 status itself can lag. The probe does not request eviction or guarantee
 that a later drain succeeds. Workload scaling, Pod movement, PDB edits,
 and other drain failures can change the outcome between probes.</li>
-<li>The 2,000-Pod bound is per PDB. A cluster with many structural PDBs
-can still cause many filtered Pod lists. Measure guest API requests,
-HCCO memory/CPU, and reconcile duration before broader enablement.</li>
+<li>The probe has 2,000-Pod per-PDB, 10,000-Pod aggregate, 100-request, 30-second
+per-list, and two-minute total bounds. Measure guest API requests, HCCO
+memory/CPU, and reconcile duration before broader enablement.</li>
 <li>The HCP status schema allows at most 500 per-pool entries. A probe
 that cannot be published must age out to <code>Unknown</code>; validate
 this limit against target fleet shapes.</li>

@@ -22,7 +22,7 @@ func TestHostedControlPlaneDrainStatusSerializationCompatibility(t *testing.T) {
 	}
 
 	probeTime := metav1.NewTime(time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC))
-	entry := NodePoolDrain{NodePoolName: "pool-a", State: NodePoolDrainStateBlocked}
+	entry := NodePoolDrain{NodePoolName: "pool-a", NodePoolUID: "uid-pool-a", State: NodePoolDrainStateBlocked}
 	for _, tc := range []struct {
 		name      string
 		current   HostedControlPlaneStatus
@@ -75,6 +75,9 @@ func TestHostedControlPlaneDrainStatusSerializationCompatibility(t *testing.T) {
 			}
 			if len(roundTripped.NodePoolDrain) > 0 && roundTripped.NodePoolDrain[0].State != "" {
 				t.Fatalf("N-1 status unexpectedly acquired a drain state: %+v", roundTripped.NodePoolDrain[0])
+			}
+			if len(roundTripped.NodePoolDrain) > 0 && roundTripped.NodePoolDrain[0].NodePoolUID != "" {
+				t.Fatalf("N-1 status unexpectedly acquired a NodePool UID: %+v", roundTripped.NodePoolDrain[0])
 			}
 		})
 	}

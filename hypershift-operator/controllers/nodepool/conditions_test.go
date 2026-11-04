@@ -22,11 +22,14 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/blang/semver"
 )
@@ -37,17 +40,22 @@ func TestDrainBlockedConditionFreshness(t *testing.T) {
 	stale := metav1.NewTime(now.Add(-30 * time.Minute))
 	future := metav1.NewTime(now.Add(2 * time.Minute))
 	for _, tc := range []struct {
-		name         string
-		probeTime    *metav1.Time
-		upToDate     metav1.ConditionStatus
-		blocked      bool
-		missingEntry bool
-		missingState bool
-		invalidState bool
-		missingHCP   bool
-		wantStatus   corev1.ConditionStatus
-		wantReason   string
-		wantRequeue  bool
+		name                  string
+		probeTime             *metav1.Time
+		upToDate              metav1.ConditionStatus
+		blocked               bool
+		missingEntry          bool
+		missingState          bool
+		invalidState          bool
+		missingHCP            bool
+		hcpReadError          bool
+		probePredatesNodePool bool
+		missingUID            bool
+		entryUID              string
+		wantStatus            corev1.ConditionStatus
+		wantReason            string
+		wantRequeue           bool
+		wantRetry             bool
 	}{
 		{name: "fresh blocked", probeTime: &fresh, upToDate: metav1.ConditionTrue, blocked: true, wantStatus: corev1.ConditionTrue, wantRequeue: true},
 		{name: "fresh drainable", probeTime: &fresh, upToDate: metav1.ConditionTrue, wantStatus: corev1.ConditionFalse, wantRequeue: true},
@@ -59,10 +67,18 @@ func TestDrainBlockedConditionFreshness(t *testing.T) {
 		{name: "legacy result without state", probeTime: &fresh, upToDate: metav1.ConditionTrue, missingState: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
 		{name: "unsupported state", probeTime: &fresh, upToDate: metav1.ConditionTrue, invalidState: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
 		{name: "missing HCP", missingHCP: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
+		{name: "When an HCP read fails, it should keep the result unknown and request a retry", hcpReadError: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified", wantRetry: true},
+		{name: "matching UID remains valid across clock skew", probeTime: &fresh, upToDate: metav1.ConditionTrue, blocked: true, probePredatesNodePool: true, wantStatus: corev1.ConditionTrue, wantRequeue: true},
+		{name: "recreated NodePool ignores an old UID despite a fresh post-creation probe", probeTime: &fresh, upToDate: metav1.ConditionTrue, blocked: true, entryUID: "uid-previous", wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
+		{name: "missing UID is unverified", probeTime: &fresh, upToDate: metav1.ConditionTrue, missingUID: true, wantStatus: corev1.ConditionUnknown, wantReason: "Unverified"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			hcluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster", Namespace: "clusters"}}
-			nodePool := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "pool-a", Namespace: "clusters"}}
+			createdAt := metav1.NewTime(now.Add(-time.Hour))
+			if tc.probePredatesNodePool {
+				createdAt = metav1.NewTime(now.Add(-time.Minute))
+			}
+			nodePool := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "pool-a", Namespace: "clusters", UID: types.UID("uid-current"), CreationTimestamp: createdAt}}
 			// A previous True result must be replaced when the signal expires.
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type: hyperv1.NodePoolDrainBlockedConditionType, Status: corev1.ConditionTrue, Reason: "BlockedByPodDisruptionBudget",
@@ -79,7 +95,13 @@ func TestDrainBlockedConditionFreshness(t *testing.T) {
 				if tc.blocked {
 					state = hyperv1.NodePoolDrainStateBlocked
 				}
-				entry := hyperv1.NodePoolDrain{NodePoolName: nodePool.Name, State: state}
+				entry := hyperv1.NodePoolDrain{NodePoolName: nodePool.Name, NodePoolUID: string(nodePool.UID), State: state}
+				if tc.missingUID {
+					entry.NodePoolUID = ""
+				}
+				if tc.entryUID != "" {
+					entry.NodePoolUID = tc.entryUID
+				}
 				if tc.missingState {
 					entry.State = ""
 				}
@@ -92,22 +114,31 @@ func TestDrainBlockedConditionFreshness(t *testing.T) {
 			if !tc.missingHCP {
 				builder = builder.WithObjects(hcp)
 			}
-			r := &NodePoolReconciler{Client: builder.Build()}
-
-			result, err := r.drainBlockedCondition(t.Context(), nodePool, hcluster)
-			if err != nil {
-				t.Fatal(err)
+			if tc.hcpReadError {
+				builder = fake.NewClientBuilder().WithScheme(api.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+						return fmt.Errorf("temporary read failure")
+					},
+				})
 			}
+			r := &NodePoolReconciler{Client: builder.Build()}
+			requeueAt := r.drainBlockedCondition(t.Context(), nodePool, hcluster)
 			condition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolDrainBlockedConditionType)
 			if condition == nil || condition.Status != tc.wantStatus || (tc.wantReason != "" && condition.Reason != tc.wantReason) {
 				t.Errorf("DrainBlocked=%+v, want status=%s reason=%s", condition, tc.wantStatus, tc.wantReason)
 			}
 			if tc.wantRequeue {
-				if result == nil || result.RequeueAfter < 9*time.Minute || result.RequeueAfter > pdbdrain.SignalMaxAge {
-					t.Errorf("requeue=%v, want expiry in about 10m", result)
+				remaining := time.Until(requeueAt)
+				if requeueAt.IsZero() || remaining < 9*time.Minute || remaining > pdbdrain.SignalMaxAge {
+					t.Errorf("requeueAt=%v, want expiry in about 10m", requeueAt)
 				}
-			} else if result != nil && result.RequeueAfter != 0 {
-				t.Errorf("unexpected expiry requeue: %v", result)
+			} else if tc.wantRetry {
+				remaining := time.Until(requeueAt)
+				if requeueAt.IsZero() || remaining <= 0 || remaining > time.Minute {
+					t.Errorf("retryAt=%v, want retry within one minute", requeueAt)
+				}
+			} else if !requeueAt.IsZero() {
+				t.Errorf("unexpected requeue at %v", requeueAt)
 			}
 		})
 	}
@@ -129,7 +160,7 @@ func TestDrainBlockedExpiryRequeueSurvivesEarlyValidationReturn(t *testing.T) {
 		// Missing ignition endpoint makes the condition loop return early.
 	}
 	nodePool := &hyperv1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{Name: "pool-a", Namespace: hcluster.Namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: "pool-a", Namespace: hcluster.Namespace, UID: types.UID("uid-current"), CreationTimestamp: metav1.NewTime(time.Now().Add(-time.Hour))},
 		Spec: hyperv1.NodePoolSpec{
 			ClusterName: hcluster.Name,
 			Release:     hyperv1.Release{Image: hcluster.Spec.Release.Image},
@@ -148,7 +179,7 @@ func TestDrainBlockedExpiryRequeueSurvivesEarlyValidationReturn(t *testing.T) {
 		Reason: hyperv1.AsExpectedReason, LastTransitionTime: metav1.Now(),
 	}}
 	hcp.Status.NodePoolDrainLastProbeTime = &probeTime
-	hcp.Status.NodePoolDrain = []hyperv1.NodePoolDrain{{NodePoolName: nodePool.Name, State: hyperv1.NodePoolDrainStateBlocked}}
+	hcp.Status.NodePoolDrain = []hyperv1.NodePoolDrain{{NodePoolName: nodePool.Name, NodePoolUID: string(nodePool.UID), State: hyperv1.NodePoolDrainStateBlocked}}
 	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: hcluster.Namespace}, Data: map[string][]byte{
 		corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io":{"auth":"","email":""}}}`),
 	}}
@@ -1594,5 +1625,42 @@ func TestReachedIgnitionEndpointCondition(t *testing.T) {
 			g.Expect(condition.Status).To(Equal(corev1.ConditionTrue))
 			g.Expect(condition.Reason).To(Equal(hyperv1.AsExpectedReason))
 		})
+	}
+}
+
+func TestAnnotateNodePoolMachinesForDrainReadiness(t *testing.T) {
+	createdAt := metav1.NewTime(time.Now().Add(-time.Hour))
+	nodePool := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "clusters", Name: "pool-a", UID: types.UID("uid-current"), CreationTimestamp: createdAt,
+	}}
+	machine := func(name string, at time.Time, uid string) *v1beta2.Machine {
+		annotations := map[string]string{hyperv1.NodePoolLabel: "clusters/pool-a"}
+		if uid != "" {
+			annotations[hyperv1.NodePoolUIDAnnotation] = uid
+		}
+		return &v1beta2.Machine{ObjectMeta: metav1.ObjectMeta{
+			Namespace: "clusters-cluster", Name: name, CreationTimestamp: metav1.NewTime(at), Annotations: annotations,
+		}}
+	}
+	old := machine("old", createdAt.Add(-time.Minute), "")
+	current := machine("current", createdAt.Add(time.Minute), "")
+	priorUID := machine("prior-uid", createdAt.Add(time.Minute), "uid-previous")
+	sameTime := machine("same-time", createdAt.Time, "")
+	r := &NodePoolReconciler{Client: fake.NewClientBuilder().WithScheme(api.Scheme).
+		WithObjects(old, current, priorUID, sameTime).Build()}
+	if err := r.annotateNodePoolMachinesForDrainReadiness(t.Context(), nodePool,
+		[]*v1beta2.Machine{old, current, priorUID, sameTime}); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"old": "", "current": "uid-current", "prior-uid": "uid-previous", "same-time": "",
+	} {
+		got := &v1beta2.Machine{}
+		if err := r.Get(t.Context(), client.ObjectKey{Namespace: "clusters-cluster", Name: name}, got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Annotations[hyperv1.NodePoolUIDAnnotation] != want {
+			t.Errorf("Machine %s UID annotation = %q, want %q", name, got.Annotations[hyperv1.NodePoolUIDAnnotation], want)
+		}
 	}
 }

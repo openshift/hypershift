@@ -62,6 +62,9 @@ func PlatformNamespacePrefixes(additional string) []string {
 // blocking PDBs (e.g. minAvailable with some pods already unhealthy) are deliberately NOT
 // flagged here — those are the PodDisruptionBudgetLimitSRE alert's domain.
 func IsStructurallyBlocking(pdb *policyv1.PodDisruptionBudget) bool {
+	if pdb.Status.ObservedGeneration < pdb.Generation {
+		return false
+	}
 	return pdb.Status.ExpectedPods >= 1 && pdb.Status.DesiredHealthy >= pdb.Status.ExpectedPods
 }
 

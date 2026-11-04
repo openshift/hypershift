@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -35,15 +38,20 @@ const (
 	resyncInterval = time.Minute
 	// staleAfter is the grace window before declaring the signal stale on repeated guest-read failures.
 	staleAfter = pdbdrain.SignalMaxAge
-	// maxPodsPerPDB bounds the (uncached) pod list per PDB so a pathological namespace cannot spike
-	// HCCO load. A truncated list invalidates the whole probe rather than publishing partial data.
-	maxPodsPerPDB = 2000
+	// Pod lists are uncached. Bound both each list and the total cost of a probe so many matching
+	// PDBs cannot create unbounded guest API work.
+	maxPodsPerPDB              = 2000
+	maxPodsPerProbe            = 10000
+	maxPodListRequestsPerProbe = 100
+	podListTimeout             = 30 * time.Second
+	maxPodScanTime             = 2 * time.Minute
 
 	reasonBlocked   = "BlockedByPodDisruptionBudget"
 	reasonDrainable = "Drainable"
 )
 
-var errPodScanIncomplete = errors.New("pod scan exceeded the per-PDB limit")
+var errPodScanIncomplete = errors.New("pod scan exceeded a safety limit")
+var errPDBStatusUnobserved = errors.New("PDB status has not observed its current spec")
 
 // drainBlockedGauge is sparse: a series exists only while a pool is blocked (set to 1), and is
 // deleted when the pool is drainable again — so the fleet-wide alert is a simple `== 1` and the
@@ -64,10 +72,9 @@ func init() {
 	metrics.Registry.MustRegister(drainBlockedGauge, drainUpToDateGauge)
 }
 
-// blockInfo carries the (name-bearing) detail for one blocking PDB, used only for in-guest Events
-// and never persisted to HCP status or written to management-cluster logs.
+// blockInfo carries pool names for in-memory transition deduplication. PDB keys remain private to
+// the reconciler and are never written to events, status, or logs.
 type blockInfo struct {
-	pdb   *policyv1.PodDisruptionBudget
 	pools []string
 }
 
@@ -89,12 +96,15 @@ func (r *reconciler) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 	log := ctrl.LoggerFrom(ctx)
 	hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: r.hcpNamespace, Name: r.hcpName}}
 
+	probeStartedAt := metav1.Now()
 	drain, blocking, err := r.computeDrain(ctx)
 	if err != nil {
 		r.mu.Lock()
 		stale := time.Since(r.lastSuccess) > staleAfter
 		r.mu.Unlock()
-		incomplete := errors.Is(err, errPodScanIncomplete)
+		podScanIncomplete := errors.Is(err, errPodScanIncomplete)
+		pdbStatusUnobserved := errors.Is(err, errPDBStatusUnobserved)
+		incomplete := podScanIncomplete || pdbStatusUnobserved
 		if incomplete {
 			stale = true
 		}
@@ -103,9 +113,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 			drainBlockedGauge.DeletePartialMatch(prometheus.Labels{"namespace": r.hcpNamespace})
 			reason := "GuestUnreachable"
 			message := fmt.Sprintf("drain readiness has not refreshed for more than %s; check HCCO logs", staleAfter)
-			if incomplete {
+			if podScanIncomplete {
 				reason = "PodScanIncomplete"
-				message = fmt.Sprintf("drain readiness scan exceeded the %d-pod safety limit; check HCCO logs", maxPodsPerPDB)
+				message = fmt.Sprintf("drain readiness scan exceeded a safety limit (%d pods total, %d per PDB, %d lists); check HCCO logs", maxPodsPerProbe, maxPodsPerPDB, maxPodListRequestsPerProbe)
+			} else if pdbStatusUnobserved {
+				reason = "PDBStatusUnobserved"
+				message = "drain readiness could not verify the current PodDisruptionBudget status; check HCCO logs"
 			}
 			if patchErr := statuspatching.PatchStatusCondition(ctx, r.mgtClusterClient, hcp, &hcp.Status.Conditions, metav1.Condition{
 				Type:    hyperv1.HostedControlPlaneNodePoolDrainUpToDate,
@@ -123,12 +136,24 @@ func (r *reconciler) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 		return reconcile.Result{}, fmt.Errorf("compute nodepool drain: %w", err)
 	}
 
-	probeTime := metav1.Now()
 	if err := statuspatching.PatchStatus(ctx, r.mgtClusterClient, hcp, func() error {
 		hcp.Status.NodePoolDrain = drain
-		hcp.Status.NodePoolDrainLastProbeTime = &probeTime
+		// Store the scan start time for freshness checks. Per-entry UIDs identify the
+		// NodePool incarnation independently of clocks and pool names.
+		hcp.Status.NodePoolDrainLastProbeTime = &probeStartedAt
 		return nil
 	}); err != nil {
+		drainUpToDateGauge.WithLabelValues(r.hcpNamespace).Set(0)
+		drainBlockedGauge.DeletePartialMatch(prometheus.Labels{"namespace": r.hcpNamespace})
+		conditionErr := statuspatching.PatchStatusCondition(ctx, r.mgtClusterClient, hcp, &hcp.Status.Conditions, metav1.Condition{
+			Type:    hyperv1.HostedControlPlaneNodePoolDrainUpToDate,
+			Status:  metav1.ConditionFalse,
+			Reason:  "StatusWriteFailed",
+			Message: "nodepool drain readiness could not be published",
+		})
+		if conditionErr != nil {
+			return reconcile.Result{}, fmt.Errorf("patch nodepool drain status and mark it unverified: %w", errors.Join(err, conditionErr))
+		}
 		return reconcile.Result{}, fmt.Errorf("patch nodepool drain status: %w", err)
 	}
 	if err := statuspatching.PatchStatusCondition(ctx, r.mgtClusterClient, hcp, &hcp.Status.Conditions, metav1.Condition{
@@ -151,34 +176,104 @@ func (r *reconciler) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 }
 
 // computeDrain probes the guest and returns per-NodePool drain readiness (name-free, for HCP status)
-// plus blocking detail (with names, for in-guest Events only), keyed by namespace/name.
+// plus private blocking keys for transition deduplication.
 func (r *reconciler) computeDrain(ctx context.Context) ([]hyperv1.NodePoolDrain, map[string]blockInfo, error) {
+	scanCtx, cancelScan := context.WithTimeout(ctx, maxPodScanTime)
+	defer cancelScan()
+
 	var nodes corev1.NodeList
-	if err := r.guestClient.List(ctx, &nodes); err != nil {
+	if err := r.guestClient.List(scanCtx, &nodes); err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(scanCtx.Err(), context.DeadlineExceeded) {
+			return nil, nil, errPodScanIncomplete
+		}
 		return nil, nil, fmt.Errorf("list nodes: %w", err)
 	}
-	nodeToPool := map[string]string{}
-	pools := map[string]bool{}
+	var machines capiv1.MachineList
+	if err := r.mgtClusterClient.List(scanCtx, &machines, crclient.InNamespace(r.hcpNamespace)); err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(scanCtx.Err(), context.DeadlineExceeded) {
+			return nil, nil, errPodScanIncomplete
+		}
+		return nil, nil, errors.New("list machines for drain readiness failed")
+	}
+	machineByName := make(map[string]*capiv1.Machine, len(machines.Items))
+	for i := range machines.Items {
+		machineByName[machines.Items[i].Name] = &machines.Items[i]
+	}
+	// A pool with any unlabeled, orphaned, or differently identified Node is
+	// unverified. This includes old Nodes left behind by a deleted NodePool.
+	poolUIDs := map[string]string{}
+	unverifiedPools := map[string]bool{}
 	for i := range nodes.Items {
-		if pool := nodes.Items[i].Labels[hyperv1.NodePoolLabel]; pool != "" {
-			nodeToPool[nodes.Items[i].Name] = pool
-			pools[pool] = true
+		node := &nodes.Items[i]
+		pool := node.Labels[hyperv1.NodePoolLabel]
+		if pool == "" {
+			continue
+		}
+		machineName := node.Annotations[capiv1.MachineAnnotation]
+		machine := machineByName[machineName]
+		if node.Annotations[capiv1.ClusterNamespaceAnnotation] != r.hcpNamespace ||
+			machine == nil || machineName == "" || machine.Annotations[hyperv1.NodePoolLabel] == "" ||
+			!strings.HasSuffix(machine.Annotations[hyperv1.NodePoolLabel], "/"+pool) ||
+			machine.Annotations[hyperv1.NodePoolUIDAnnotation] == "" ||
+			(machine.Status.NodeRef.IsDefined() && machine.Status.NodeRef.Name != node.Name) {
+			unverifiedPools[pool] = true
+			continue
+		}
+		uid := machine.Annotations[hyperv1.NodePoolUIDAnnotation]
+		if previous := poolUIDs[pool]; previous != "" && previous != uid {
+			unverifiedPools[pool] = true
+		} else {
+			poolUIDs[pool] = uid
+		}
+	}
+	nodeToPool := map[string]string{}
+	for i := range nodes.Items {
+		node := &nodes.Items[i]
+		pool := node.Labels[hyperv1.NodePoolLabel]
+		if pool != "" && !unverifiedPools[pool] && poolUIDs[pool] != "" {
+			nodeToPool[node.Name] = pool
 		}
 	}
 
 	var pdbs policyv1.PodDisruptionBudgetList
-	if err := r.guestClient.List(ctx, &pdbs); err != nil {
+	if err := r.guestClient.List(scanCtx, &pdbs); err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(scanCtx.Err(), context.DeadlineExceeded) {
+			return nil, nil, errPodScanIncomplete
+		}
 		return nil, nil, fmt.Errorf("list pdbs: %w", err)
 	}
 
 	blockingCount := map[string]int32{}
 	blocking := map[string]blockInfo{}
+	listedPods := 0
+	podListRequests := 0
 	for i := range pdbs.Items {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		if scanCtx.Err() != nil {
+			return nil, nil, errPodScanIncomplete
+		}
 		pdb := &pdbs.Items[i]
-		if pdbdrain.IsPlatformNamespace(pdb.Namespace, r.platformNSPrefixes) || !pdbdrain.IsStructurallyBlocking(pdb) {
+		if pdbdrain.IsPlatformNamespace(pdb.Namespace, r.platformNSPrefixes) {
 			continue
 		}
 		if pdb.Spec.Selector == nil { // nil selector matches nothing (LabelSelectorAsSelector semantics)
+			continue
+		}
+		if pdb.Status.ObservedGeneration < pdb.Generation {
+			return nil, nil, errPDBStatusUnobserved
+		}
+		if !pdbdrain.IsStructurallyBlocking(pdb) {
 			continue
 		}
 		sel, err := metav1.LabelSelectorAsSelector(pdb.Spec.Selector) // empty {} selector -> Everything (intended)
@@ -187,15 +282,38 @@ func (r *reconciler) computeDrain(ctx context.Context) ([]hyperv1.NodePoolDrain,
 		}
 
 		// Uncached, server-side filtered, bounded pod list — no cluster-wide informer, bounded cost.
-		var pods corev1.PodList
-		if err := r.guestAPIReader.List(ctx, &pods,
-			crclient.InNamespace(pdb.Namespace), crclient.MatchingLabelsSelector{Selector: sel},
-			crclient.Limit(maxPodsPerPDB)); err != nil {
-			return nil, nil, errors.New("list pods for a blocking PDB failed")
-		}
-		if pods.Continue != "" || len(pods.Items) > maxPodsPerPDB {
+		remaining := maxPodsPerProbe - listedPods
+		if remaining <= 0 || podListRequests >= maxPodListRequestsPerProbe {
 			return nil, nil, errPodScanIncomplete
 		}
+		podListRequests++
+		listLimit := min(maxPodsPerPDB, remaining)
+		var pods corev1.PodList
+		podCtx, cancelPodList := context.WithTimeout(scanCtx, podListTimeout)
+		listErr := r.guestAPIReader.List(podCtx, &pods,
+			crclient.InNamespace(pdb.Namespace), crclient.MatchingLabelsSelector{Selector: sel},
+			crclient.Limit(int64(listLimit)))
+		podListTimedOut := errors.Is(podCtx.Err(), context.DeadlineExceeded)
+		cancelPodList()
+		if listErr != nil {
+			if ctx.Err() != nil {
+				return nil, nil, ctx.Err()
+			}
+			if errors.Is(listErr, context.DeadlineExceeded) || podListTimedOut || errors.Is(scanCtx.Err(), context.DeadlineExceeded) {
+				return nil, nil, errPodScanIncomplete
+			}
+			return nil, nil, errors.New("list pods for a blocking PDB failed")
+		}
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		if podListTimedOut || scanCtx.Err() != nil {
+			return nil, nil, errPodScanIncomplete
+		}
+		if pods.Continue != "" || len(pods.Items) > listLimit {
+			return nil, nil, errPodScanIncomplete
+		}
+		listedPods += len(pods.Items)
 
 		affected := map[string]bool{}
 		for j := range pods.Items {
@@ -216,14 +334,23 @@ func (r *reconciler) computeDrain(ctx context.Context) ([]hyperv1.NodePoolDrain,
 			poolList = append(poolList, pool)
 		}
 		sort.Strings(poolList)
-		blocking[pdb.Namespace+"/"+pdb.Name] = blockInfo{pdb: pdb, pools: poolList}
+		blocking[pdb.Namespace+"/"+pdb.Name] = blockInfo{pools: poolList}
+	}
+	if ctx.Err() != nil {
+		return nil, nil, ctx.Err()
+	}
+	if scanCtx.Err() != nil {
+		return nil, nil, errPodScanIncomplete
 	}
 
-	out := make([]hyperv1.NodePoolDrain, 0, len(pools))
-	for pool := range pools {
+	out := make([]hyperv1.NodePoolDrain, 0, len(poolUIDs))
+	for pool, uid := range poolUIDs {
+		if unverifiedPools[pool] {
+			continue
+		}
 		n := blockingCount[pool]
 		blocked := n > 0
-		e := hyperv1.NodePoolDrain{NodePoolName: pool, State: hyperv1.NodePoolDrainStateDrainable, Reason: reasonDrainable}
+		e := hyperv1.NodePoolDrain{NodePoolName: pool, NodePoolUID: uid, State: hyperv1.NodePoolDrainStateDrainable, Reason: reasonDrainable}
 		if blocked {
 			e.BlockingCount = ptr.To(n)
 			e.State = hyperv1.NodePoolDrainStateBlocked
@@ -235,9 +362,8 @@ func (r *reconciler) computeDrain(ctx context.Context) ([]hyperv1.NodePoolDrain,
 	return out, blocking, nil
 }
 
-// emitTransitions records a guest Event when a PDB newly blocks a pool. Customer workload names
-// stay in the guest Event; management-cluster logs contain pool names only. The recorder resolves
-// the involvedObject GVK via the manager scheme.
+// emitTransitions records a generic guest Event when a PDB newly blocks a pool. PDB and NodePool
+// names are kept out of event objects, event messages, and management-cluster logs.
 func (r *reconciler) emitTransitions(log logr.Logger, blocking map[string]blockInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -246,6 +372,7 @@ func (r *reconciler) emitTransitions(log logr.Logger, blocking map[string]blockI
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	newlyBlockedPools := 0
 	for _, key := range keys {
 		info := blocking[key]
 		previousPools := r.lastBlocking[key]
@@ -256,10 +383,14 @@ func (r *reconciler) emitTransitions(log logr.Logger, blocking map[string]blockI
 			}
 		}
 		if len(newPools) > 0 {
-			r.recorder.Eventf(info.pdb, corev1.EventTypeWarning, "DrainBlocked",
-				"PodDisruptionBudget %s prevents draining NodePool(s) %v during cluster upgrades; relax minAvailable/maxUnavailable or scale the workload", key, newPools)
-			log.Info("nodepool drain blocked by a customer PodDisruptionBudget", "nodepools", newPools)
+			newlyBlockedPools += len(newPools)
 		}
+	}
+	if newlyBlockedPools > 0 {
+		genericEventObject := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: metav1.NamespaceDefault}}
+		r.recorder.Eventf(genericEventObject, corev1.EventTypeWarning, "DrainBlocked",
+			"One or more PodDisruptionBudgets may block worker node drain during an upgrade.")
+		log.Info("nodepool drain readiness is blocked", "count", newlyBlockedPools, "reason", reasonBlocked)
 	}
 	next := make(map[string]map[string]bool, len(blocking))
 	for key, info := range blocking {

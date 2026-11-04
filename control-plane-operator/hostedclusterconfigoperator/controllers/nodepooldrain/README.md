@@ -33,16 +33,26 @@ setting also propagates to the hosted cluster config operator for opted-in
 clusters. Pod placement is not watched; a successful probe repeats every minute
 to bound how long a move between pools can leave the signal unchanged.
 
-A PDB matching more than 2,000 pods makes the probe incomplete. The controller
-sets the HCP `NodePoolDrainUpToDate` condition to `False` with reason
-`PodScanIncomplete` and retries after one minute. The NodePool condition then
-becomes `Unknown`; consumers should fail open. HCP status messages contain no
-customer namespace or PDB names. Inspect HCCO logs for generic probe errors and
-the guest cluster's PDB Events for blocking details. Management-cluster logs do
-not contain customer namespace or PDB names.
+The probe is incomplete if a matching PDB selects more than 2,000 pods, the
+aggregate scan reaches 10,000 returned pods or 100 uncached Pod-list requests
+before all blocking PDBs are checked, any Pod list exceeds its 30-second
+timeout, or the full scan exceeds two minutes. If a relevant customer PDB's
+status has not observed its current spec generation, the probe
+also fails open instead of reporting `Drainable`. In each case the HCP
+`NodePoolDrainUpToDate` condition becomes `False` and the controller retries
+after one minute. The NodePool condition then becomes `Unknown`.
 
-Each HCP `status.nodePoolDrain` entry has a `state` of `Blocked` or `Drainable`.
-The NodePool controller reports `Unknown` if that state is absent or unsupported,
-which also handles status written by an older HCCO using the previous boolean
-field. The NodePool `DrainBlocked` condition remains `True` for `Blocked` and
-`False` for `Drainable`.
+HCP status contains NodePool names and UIDs because results are keyed by pool.
+It does not contain customer namespaces, PDB names, or Pod names. Events and
+management-cluster logs contain no customer or NodePool identifiers. A guest
+`DrainBlocked` Event is generic; inspect PDBs in the guest cluster to identify
+the workload. HCCO logs contain only a fixed reason and count.
+
+Each HCP `status.nodePoolDrain` entry has a `state` of `Blocked` or `Drainable`
+and a NodePool UID. HCCO matches guest Nodes to CAPI Machines tagged with that
+UID. New Machine templates carry the UID; existing Machines are tagged in place
+without rolling the pool. A pool with orphaned or mixed-incarnation Nodes has no
+entry. The NodePool controller reports `Unknown` when the UID does not match
+the current NodePool, or when the state is absent or unsupported. This also
+handles status written by an older HCCO. The NodePool `DrainBlocked`
+condition remains `True` for `Blocked` and `False` for `Drainable`.
