@@ -14138,6 +14138,32 @@ control plane namespace. A stopped approver or a mismatch between the CSR and
 the CAPI Machine identity can block registration. Follow the
 kubelet CSR approval checks.
 
+## Collect worker diagnostics
+
+To collect Azure worker diagnostics with `hypershift dump cluster`, supply
+`--azure-creds` with a credentials file. The Azure identity needs
+`Microsoft.Compute/virtualMachines/read` and
+`Microsoft.Compute/virtualMachines/retrieveBootDiagnosticsData/action` on the
+worker VM resource groups. Enable boot diagnostics before the failure you want
+to investigate. In CI, mount the credentials in both test and dump steps; consult
+the platform configuration
+for the current credential configuration.
+
+Journal collection through the hosted API requires privileged node-log access.
+For optional SSH fallback, provision the worker public key at cluster creation
+with `--ssh-key` and set `AZURE_JOURNAL_SSH_KEY` to the matching private key file.
+Provide port 22 reachability from the collector or a jump host. Configure
+jump-host authentication separately and supply trusted host keys; host-key
+verification is required. Collection uses existing network access and does not
+provision a bastion. See the
+SSH options
+for current jump-host and known-hosts configuration.
+
+Check collection warnings when diagnostics are missing. Successful teardown does
+not establish that logs were collected. Consult the
+diagnostics collector
+for artifact formats and collection behavior.
+
 ## Create a bastion to SSH to a node
 If the machines look like they have been provisioned correctly, you can directly access the virtual machines related to your nodes through a bastion.
 
@@ -15667,7 +15693,7 @@ A test assertion failed. To find which test:
 
 After identifying the failing test, check the job history to determine if this is specific to your PR.
 
-For more details on reading test artifacts and Ginkgo output, see Debugging CI Failures.
+For reading test artifacts and Ginkgo output, see Verify and debug.
 
 ---
 
@@ -15771,8 +15797,8 @@ Post in #forum-ocp-hypershift and tag `@hypershift-engineering-ic` with:
 
 ## Further reading
 
-- Debugging CI Failures — Reading JUnit XML, Ginkgo output, and dump-guests artifacts
-- V2 E2E Testing Overview — Architecture of the v2 test framework
+- Verify and debug — Reading test results, Ginkgo output, and cluster dumps
+- V2 E2E Testing Guides — Authoring, migration, execution flow, and CI configuration
 - CI Pipeline Configuration — How presubmit jobs are configured
 - Test Flow — End-to-end CI sequence, process boundaries, and inter-process communication
 - Daily CI Health — Monitoring periodic and presubmit job health
@@ -15942,441 +15968,56 @@ Or find the run in the Prow job history :octicons-link-external-16:.
 
 # CI Pipeline Configuration
 
-This page explains how v2 tests run in CI, covering the two-repo model, step registry structure, CI binaries, and how to add or modify CI jobs.
-
-## Two-Repo Model
-
-The HyperShift v2 testing architecture spans two repositories:
-
-- **openshift/hypershift**: Owns test code, test binaries, and the CLI
-- **openshift/release**: Owns job definitions, step registry, and CI orchestration
-
-The `hypershift-tests` image is the bridge between these repos. Built from `Dockerfile.e2e`, it ships compiled test binaries to `/hypershift/bin/`. The image contains both v1 and v2 test binaries; this page covers only v2.
-
-When you add a new v2 test to the hypershift repo and tag it with an existing Ginkgo label filter, it automatically runs in CI the next time the job executes. No release repo changes are needed unless you're adding a new cluster variant, label filter, or platform.
-
-## Step Registry Anatomy
-
-Prow jobs are built from a hierarchy of reusable components in the openshift/release step registry. We'll use the Azure self-managed job as a concrete example.
-
-### Workflow
-
-The top-level workflow orchestrates the entire job. For Azure self-managed v2 tests, this is `hypershift-azure-e2e-v2-self-managed-workflow.yaml`:
-
-```yaml
-workflow:
-  as: hypershift-azure-e2e-v2-self-managed
-  steps:
-    pre:
-    - ref: hypershift-azure-create-selfmanaged-guests
-    test:
-    - ref: hypershift-azure-run-e2e-v2-selfmanaged
-    post:
-    - ref: hypershift-azure-dump-selfmanaged-guests
-    - ref: hypershift-azure-destroy-selfmanaged-guests
-  env:
-  - name: HYPERSHIFT_PLATFORM
-    default: "azure"
-```
-
-The workflow sets `HYPERSHIFT_PLATFORM: "azure"` to tell the CI binaries which `PlatformConfig` to load, then chains together four steps: create → run → dump → destroy.
-
-### Steps
-
-The workflow references individual refs (using `ref:` directives), which may themselves be part of larger chains. In the step registry, a **ref** is a single step (a shell script that calls a binary), while a **chain** groups multiple refs together. The Azure self-managed v2 workflow references refs directly, but those refs may also appear in shared chains used by other jobs.
-
-The four logical phases are:
-
-- **Create** (shared with v1): Provisions management cluster infrastructure, installs HyperShift operator
-- **Run** (v2-specific): Executes the test matrix
-- **Dump** (shared with v1): Collects must-gather artifacts
-- **Destroy** (shared with v1): Tears down clusters and infrastructure
-
-Only the workflow and run ref are v2-specific. The create, dump, and destroy refs are shared between v1 and v2 jobs.
-
-### Ref Scripts
-
-Each ref is a thin shell script that invokes a Go binary from the `hypershift-tests` image. Here's the typical pattern:
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-HYPERSHIFT_BINARY="${HYPERSHIFT_BINARY:-/hypershift/bin/hypershift}"
-
-/hypershift/bin/create-guests
-```
-
-The ref script sets up the environment, then calls the compiled binary. All v2-specific logic lives in the binary, not the shell script.
-
-For the full Azure self-managed step registry, see openshift/release#79347.
-
-### Step Execution Order
-
-```mermaid
-flowchart LR
-    A["create-selfmanaged-guests"] --> B["run-e2e-v2-selfmanaged"]
-    B --> C["dump-selfmanaged-guests"]
-    C --> D["destroy-selfmanaged-guests"]
-```
-
-The `pre` steps run before tests (setup), `test` steps run the actual tests, and `post` steps run after tests regardless of test outcome (cleanup).
-
-## The Four CI Binaries
-
-All v2 CI logic is implemented in Go binaries built from `test/e2e/v2/cmd/` and shipped in the `hypershift-tests` image at `/hypershift/bin/`. For how these binaries fit into the overall CI sequence — process boundaries, parallelism, and inter-process communication — see Test Flow.
-
-### `create-guests`
-
-**Source:** `test/e2e/v2/cmd/create-guests/`
-**Shipped as:** `/hypershift/bin/create-guests`
-
-Creates the hosted clusters selected by the resolved `TestPlan` in parallel, runs
-platform-specific hooks, waits for availability and version rollout, and writes
-the cluster manifest and platform configuration to `SHARED_DIR` for downstream
-steps. Cluster names are derived from `PROW_JOB_ID` via SHA-256 hashing:
-`{variant}-{sha256(prowJobID)[:10]}`. Rollout failures emit JUnit XML and fail
-the step.
-
-If any cluster fails to create or roll out, the binary exits non-zero and the job fails fast.
-
-### `run-tests`
-
-**Source:** `test/e2e/v2/cmd/run-tests/`
-**Shipped as:** `/hypershift/bin/run-tests`
-
-Reads cluster names from `SHARED_DIR` files, then executes the resolved `TestPlan`. For each `TestGroup`:
-
-```bash
-bin/test-e2e-v2 \
-  --ginkgo.label-filter="<filter>" \
-  --e2e.junit-report="<junit-file>" \
-  --ginkgo.timeout="3h" \
-  --ginkgo.skip="<skip-pattern>" \
-  --ginkgo.v
-```
-
-with `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` set to the selected cluster. The JUnit filename is derived as `junit_<TestGroup.Name>.xml`. The `--ginkgo.timeout` defaults to `3h` (overridable via `GINKGO_TIMEOUT` env var) and `--ginkgo.skip` is included when the `TestGroup.Skip` field is non-empty.
-
-Before running any tests, `run-tests` calls `platform.SetupTestEnv(sharedDir)` to let the platform configure any environment variables needed by tests (for example, reading subnet IDs or other infrastructure details from `SHARED_DIR` files).
-
-By default, the binaries use `PlatformConfig.DefaultTestPlan()`. Set `TEST_PLAN` to a JSON or YAML file to provide a custom plan. The plan's `TestMatrix` determines whether a group runs in parallel or sequentially:
-
-```go
-type TestMatrix struct {
-    Parallel   []TestGroup       // all run concurrently
-    Sequential []SequentialGroup // each group runs its Steps in order
-}
-```
-
-**`Parallel`** groups run concurrently. The default Azure plan assigns these
-groups to different clusters; custom plans must not assign one variant to
-multiple concurrent lanes.
-
-**`Sequential`** groups run their `Steps` one after another on the same cluster. If any step fails, remaining steps in that group are skipped. Use sequential groups for ordered workflows like upgrade → validate → downgrade.
-
-See Labels for how to control which tests run in each group.
-
-### `dump-guests`
-
-**Source:** `test/e2e/v2/cmd/dump-guests/`
-**Shipped as:** `/hypershift/bin/dump-guests`
-
-Calls `hypershift dump cluster` in parallel for all clusters, collecting must-gather artifacts to `ARTIFACT_DIR`. Unlike `create` and `destroy`, the dump command is platform-agnostic (no platform subcommand).
-
-For Azure clusters, each variant's `ClusterSpec.DumpArgs` passes `--azure-creds` to `hypershift dump cluster`. It uses `AZURE_CREDS` (default: `/etc/hypershift-ci-jobs-self-managed-azure/credentials.json`) as the credentials file path. The dump command collects Azure machine diagnostics before the general cluster dump. Both the v2 test and dump steps must mount this credential bundle. Its identity needs `Microsoft.Compute/virtualMachines/read` and `Microsoft.Compute/virtualMachines/retrieveBootDiagnosticsData/action` on worker VM resource groups. Azure E2E cluster creation enables managed boot diagnostics before workers boot; the production NodePool default remains disabled.
-
-The helper discovers workers from AzureMachines, including machines that never register a Node, and collects serial logs before journals. Missing diagnostics settings are resolved against the actual VM instead of assumed enabled. Journals are collected first through `oc adm node-logs`, using the hosted API and its localhost kubeconfig through a management API port-forward. This requires privileged node-log access. If API access fails or yields empty output, the helper tries SSH only when `AZURE_JOURNAL_SSH_KEY` points to a configured private key. `AZURE_JOURNAL_SSH_JUMP_HOST` optionally sets a jump host and `AZURE_JOURNAL_SSH_KNOWN_HOSTS` sets the known-hosts file; otherwise the normal SSH known-hosts configuration applies. Host-key verification is required. Provision the matching worker public key at cluster creation with `--ssh-key=/path/to/worker.pub`, and provide port 22 reachability from the collector or jump host. Configure jump-host authentication separately in SSH client configuration. SSH uses the `core` account and existing network reachability; the helper does not create a bastion, open network rules, or install a VM agent.
-
-Artifacts include `machine-console-logs/<AzureMachine>.log`, compressed `machine-journals/<AzureMachine>.{journal,kubelet,crio}.log.gz`, and `machine-diagnostics.json`. The summary records each machine's diagnostics state, transport attempts, outcomes, paths, and uncompressed byte counts. Journals cover the current boot, up to 100,000 lines per stream and a 32 MiB byte limit; reached limits are recorded as truncation. Output beyond the byte bound is discarded while stdout is drained and the command exit status is validated. Failed commands discard partial artifacts. Commands and serial retrieval have two-minute operation limits, with four concurrent machines and a ten-minute per-cluster collection budget. SAS URLs are used only for downloads and are never saved or logged. Missing permissions, unavailable diagnostics, empty output, and collection failures remain nonfatal during teardown.
-
-The `azure-machine-diagnostics` E2E checks are blocking and inspect fresh serial, journal, kubelet and CRI-O artifacts for expected workers. The v2 public and private test groups select these checks. The public lifecycle lane also selects `azure-machine-diagnostics-bootstrap`, which boots an isolated worker with kubelet masked and verifies a serial-console marker without Node registration. Cleanup still runs after diagnostics failures. A successful teardown or an empty artifact directory is not sufficient evidence that diagnostics collection works.
-
-This binary **always exits 0** to ensure cleanup steps run even if dump fails.
-
-### `destroy-guests`
-
-**Source:** `test/e2e/v2/cmd/destroy-guests/`
-**Shipped as:** `/hypershift/bin/destroy-guests`
-
-Calls `hypershift destroy cluster <platform>` in parallel for all clusters.
-
-Exits non-zero if any cluster fails to destroy. Logs `ACTION REQUIRED` messages to stdout for orphaned resources, which appear in job logs for manual cleanup.
-
-## When to Create New CI Clusters
-
-Not every test needs its own cluster. Use this decision framework:
-
-```mermaid
-flowchart TD
-    A["Does your test mutate cluster state?"] -->|No| B["Add to existing cluster"]
-    A -->|Yes| C["Can it share with other mutating tests?"]
-    C -->|Yes| D["Reuse existing cluster"]
-    C -->|No| E["New ClusterSpec needed<br>~15-20 min added to job"]
-```
-
-### Examples
-
-- **Read-only health check**: Add to existing public cluster. No mutation, so safe to share.
-- **Autoscaling + nodepool lifecycle**: Share an existing cluster variant. Both tests mutate NodePools, but in non-conflicting ways.
-- **Upgrade test** (needs N-1 image, HA control plane): New cluster variant required. Upgrade state cannot be shared.
-
-### Adding a New ClusterSpec
-
-If you need a new cluster variant, add it to `ClusterSpecs()` and include it in the default plan's `TestMatrix()` in your platform's lifecycle file (e.g., `test/e2e/v2/lifecycle/azure.go`):
-
-```diff
-// ClusterSpecs() — cluster lifecycle parameters
-+{
-+    Variant:     "my-new-variant",
-+    CreateArgs:  []string{"--my-flag=value"},
-+    DestroyArgs: []string{"--my-destroy-flag=value"},
-+},
-
-// TestMatrix() — test execution parameters
-+{
-+    Name:        "my-new-variant",
-+    Variant:     "my-new-variant",
-+    LabelFilter: "my-new-label",
-+    // Optional fields:
-+    // Skip: "regex-of-tests-to-skip",
-+},
-```
-
-JUnit filenames are derived from `TestGroup.Name` by `TestGroup.JUnitFile()` and do not need to be configured separately.
-
-Each new `ClusterSpec` adds approximately 15–20 minutes to the job runtime (cluster creation + rollout + deletion). Only add new variants when state sharing is impossible.
-
-## Adding a Test to an Existing CI Job
-
-When you write a new v2 test and want it to run in CI, the process depends on whether your test's label is already in an existing label filter.
-
-### Case 1: Label Already Exists in a Matrix Filter
-
-If your test uses a label that's already in a `TestGroup.LabelFilter`, **no changes are needed**. The test automatically runs the next time the job executes.
-
-### Case 2: New or Independently Sharded Label
-
-If your test introduces a new label, add it to the appropriate `TestGroup.LabelFilter` in the platform's test matrix. Suites such as NodePool lifecycle retain a broad parent label for non-lifecycle CI filtering, but long specs also have fine-grained labels so the Azure lifecycle job can assign them independently:
-
-```diff
- {
-     Name:        "oauth-lb-nodepool-config",
-     Variant:     "oauth-lb",
--    LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout",
-+    LabelFilter: "nodepool-nto-replace-rollout || nodepool-nto-inplace-rollout || nodepool-performance-profile || nodepool-mirror-config || my-new-rollout",
- },
-```
-
-**No release repo changes are needed in either case.** The test matrix lives in the hypershift repo, and the `hypershift-tests` image is rebuilt for every PR.
-
-## Adding a New CI Job for a New Platform
-
-Adding v2 support for a new platform requires changes in both repositories.
-
-### Step 1: Implement PlatformConfig (hypershift repo)
-
-Create `test/e2e/v2/lifecycle/<platform>.go` implementing the `PlatformConfig` interface. Use `azure.go` as a reference:
-
-```go
-// Abbreviated — see platform.go for the full interface.
-type PlatformConfig interface {
-    ClusterSpecs(releaseImage, n1Image string) []ClusterSpec
-    DefaultTestPlan() TestPlan
-    TestMatrix() TestMatrix
-    PostCreate(ctx context.Context, cl crclient.WithWatch, namespace string, clusterNames map[string]string) error
-    // Also: Name(), DefaultBaseDomain(), SetupTestEnv(sharedDir)
-}
-```
-
-See `test/e2e/v2/lifecycle/platform.go` for the full `PlatformConfig` interface, including `Name()`, `DefaultBaseDomain()`, and `SetupTestEnv()`. Cluster creation and destruction flags are declared in `ClusterSpec.CreateArgs` and `ClusterSpec.DestroyArgs`.
-
-Register your platform in the `NewPlatformConfig()` switch in `test/e2e/v2/lifecycle/platform.go`:
-
-```diff
- func NewPlatformConfig(platform, sharedDir string) (PlatformConfig, error) {
-     switch platform {
-     case "azure", "":
-         return NewAzurePlatformConfig(sharedDir), nil
-+    case "my-platform":
-+        return NewMyPlatformConfig(sharedDir), nil
-     default:
-         return nil, fmt.Errorf("unsupported platform %q (supported: azure)", platform)
-     }
- }
-```
-
-### Step 2: Add Step Registry Components (release repo)
-
-Create a workflow, chain, and ref in the openshift/release step registry:
-
-1. **Workflow**: `hypershift-<platform>-e2e-v2-<variant>-workflow.yaml`
-2. **Ref**: `hypershift-<platform>-run-e2e-v2-<variant>.yaml` (shell script that calls `/hypershift/bin/run-tests`)
-
-Reuse existing create/dump/destroy chains where possible (they're usually platform-specific but v1/v2-agnostic).
-
-### Step 3: Wire into Job Definition
-
-Add the job to `ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml`:
-
-```yaml
-- as: e2e-<platform>-v2-<variant>
-  steps:
-    workflow: hypershift-<platform>-e2e-v2-<variant>
-  always_run: false
-  skip_if_only_changed: "^docs/|^contrib/|^\.github/|^.*\\.md$"
-```
-
-Regenerate CI config with `make jobs WHAT=openshift/hypershift` from the release repo root.
-
-For a complete example, see the Azure self-managed v2 implementation in openshift/hypershift#8527.
-
-## Job Configuration Knobs
-
-Common CI configuration points and where to find them:
-
-| Knob | File | Description |
-|------|------|-------------|
-| `always_run` | `ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml` | `true` runs the job on every PR; `false` requires `/test <job-name>` |
-| `skip_if_only_changed` | `ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml` | Regex of file paths that skip the job when they're the only changes |
-| Image dependencies | Workflow/ref YAML | `release:latest`, `release:n1minor` provide OpenShift release images as environment variables |
-| Timeout | Ref YAML `timeout` field | Per-step timeout (e.g., `150m` for lifecycle tests that create clusters) |
-| `HYPERSHIFT_PLATFORM` | Workflow YAML `env` | Tells CI binaries which `PlatformConfig` to load from `test/e2e/v2/lifecycle/` |
-
-All step registry YAML lives in openshift/release. Job definitions live in ci-operator/config/openshift/hypershift/.
-
-After editing job config, regenerate with `make jobs WHAT=openshift/hypershift` from the release repo root, then submit a PR to openshift/release.
-
-
----
-
-## Source: docs/content/how-to/ci/v2-testing/debugging.md
-
-# Debugging CI Failures
-
-This guide explains how to diagnose failing v2 CI jobs by tracing test failures to their source clusters and reading diagnostic artifacts. For background on the overall CI pipeline sequence and process boundaries, see Test Flow.
-
-## Finding Test Results
-
-Each `TestGroup` produces a JUnit XML file named `junit_<TestGroup.Name>.xml` by `TestGroup.JUnitFile()`. These land in `ARTIFACT_DIR` in the Prow job artifacts.
-
-For example, the Azure self-managed job produces:
-
-- `junit_public.xml`
-- `junit_public-nodepool-rollouts.xml`
-- `junit_private.xml`
-- `junit_oauth-lb.xml`
-- `junit_oauth-lb-nodepool-config.xml`
-- `junit_autoscaling-nodepool-machineconfig.xml`
-- `junit_autoscaling-balancing.xml`
-- `junit_external-oidc.xml`
-- `junit_external-oidc-autoscaling.xml`
-- `junit_external-oidc-trust-bundle.xml`
-- `junit_upgrade.xml`
-- `junit_post-upgrade-health.xml`
-- `junit_control-plane-tls.xml`
-- `junit_etcd-chaos.xml`
-
-When a group has informing test failures, the suite also emits a supplemental
-`junit_<TestGroup.Name>_informing.xml` file for lifecycle-aware reporting.
-
-Additionally, `create-guests` emits `junit_hosted_cluster_{name}.xml` during
-version-rollout handling, recording either success or failure. On failure, the
-JUnit file contains the `HostedCluster` and `NodePool` conditions at the time
-of failure. On success, it records a passing test case confirming the rollout
-completed.
-
-## Mapping Failures to Clusters
-
-To find which cluster a failing test ran against, trace the path:
-
-1. **JUnit file name** → `TestGroup.Name` (e.g., `junit_public-nodepool-rollouts.xml` → `"public-nodepool-rollouts"`)
-2. **TestGroup.Name** → `TestGroup.Variant` (e.g., `"public-nodepool-rollouts"` → `"public"`)
-3. **Variant** → cluster name derived from `PROW_JOB_ID` + variant (e.g., `public-a1b2c3d4e5`)
-
-The `run-tests` step log shows the mapping explicitly:
-
-```text
-Running public tests against public-a1b2c3d4e5...
-Running private tests against private-f6e7d8c9b0...
-```
-
-To find the cluster name for a failing test, search the `run-tests` step log for the line matching the test group name.
-
-## Reading Ginkgo Verbose Output
-
-The `--ginkgo.v` flag produces verbose output that maps test failures to their source code structure.
-
-When a test is running, Ginkgo prints the full test description. The exact format depends on the Ginkgo version; with Ginkgo v2 it looks approximately like:
-
-```text
-Control Plane Workloads Deployment generation kube-apiserver should not indicate rapid rollouts
-```
-
-This maps to the nested test block structure:
-
-```go
-Describe("Control Plane Workloads") →
-    Context("Deployment generation") →
-        Context("kube-apiserver") →
-            It("should not indicate rapid rollouts")
-```
-
-On failure, Ginkgo prints:
-
-- The exact `It` block description
-- The assertion that failed (e.g., `Expected <5> to be <= <3>`)
-- File path and line number (e.g., `control_plane_workloads_test.go:42`)
-- Full label set (e.g., `[control-plane-workloads]`)
-
-Use this information to locate the failing test in the codebase and understand what condition was violated.
-
-## create-guests Failures
-
-The most common failure point in v2 jobs is version rollout in `create-guests`. When this happens:
-
-1. **Check for JUnit XML**: Look for `junit_hosted_cluster_*.xml` in artifacts
-2. **Read conditions**: The JUnit file contains `HostedCluster` and `NodePool` conditions at the time of failure
-3. **No JUnit file?**: If no JUnit file exists, the failure happened before version rollout — check the `create-guests` step log for earlier stages
-
-Common failures before version rollout:
-
-- **Cluster creation**: `hypershift create cluster` command failure — check for invalid flags or missing credentials
-- **Platform hooks**: Platform-specific setup failure — check for API errors when patching resources or applying day-2 configuration
-- **Wait for Available**: Timeout waiting for the `HostedClusterAvailable` condition — indicates control plane startup failure
-- **Shared state**: Failure writing the cluster manifest or platform configuration to `SHARED_DIR` — typically caused by filesystem or permissions errors
-
-## dump-guests Artifacts
-
-`hypershift dump cluster` collects must-gather, events, pod logs, and other diagnostics. These appear in the Prow artifact directory under `artifacts/<step-name>/`.
-
-The `dump-guests` binary exits non-zero if required environment variables (`PROW_JOB_ID`, `ARTIFACT_DIR`) are missing. Once environment setup succeeds, it **always exits 0** even if individual cluster dumps fail, so missing artifacts indicate a dump failure for that cluster. To diagnose:
-
-1. Check the `dump-guests` step log for `WARNING` messages
-2. Look for timeout or API errors when fetching resources
-3. Verify the cluster still existed when dump ran (it may have been deleted by an earlier cleanup step)
-
-Common artifacts to check:
-
-- `namespaces/<control-plane-namespace>/pods/` — pod logs for control plane components
-- `cluster-scoped-resources/events/` — cluster events showing resource creation/deletion
-- `namespaces/<control-plane-namespace>/core/events.yaml` — control plane events
-- `namespaces/openshift-*/` — hosted cluster namespace logs
-
-## Understanding Informing Test Skips
-
-When a test labeled `Informing` fails, the custom fail handler converts it to a skip. It appears as "skipped" (not "failed") in JUnit reports.
-
-To see the actual failure reason, look at the Ginkgo verbose output in the `run-tests` step log. The skip message includes the original failure:
-
-```text
-[SKIP] informing test failure: Expected <false> to be true
-```
-
-The test failure does not block CI or appear in the JUnit summary. This is by design — `Informing` tests are informational only.
-
-!!! warning "Informing tests are invisible to Sippy"
-    Informing test failures do not appear in Sippy or Component Readiness dashboards. If you need a test to be tracked by these tools, do not use the `Informing` label.
+Use this page when adding or changing CI jobs. For test authoring and selection
+in existing jobs, follow Writing V2 Tests. For execution and
+process boundaries, see Test Flow.
+
+## Repository ownership
+
+openshift/hypershift owns the tests,
+platform configuration, lifecycle orchestration, and
+test image definition.
+openshift/release owns the CI jobs and step
+registry that consume that image.
+
+Use the current source for implementation details:
+
+- Lifecycle commands:
+  creation, test execution, diagnostic collection, and teardown.
+- Platform configuration
+  and test plans:
+  supported interfaces and plan validation.
+- HyperShift step registry
+  and job configurations:
+  workflows, credentials, images, timeouts, and job selection.
+
+For registry conventions and workflow, chain, and ref definitions, follow the
+OpenShift CI step registry documentation.
+
+## Add or change a job
+
+1. Identify whether the change concerns test selection or CI infrastructure.
+   Follow the authoring guide
+   for labels, cluster prerequisites, and plans. Adding coverage to an existing
+   selection does not require a release repository change.
+2. If platform or framework work is needed, agree on the approach through the
+   advance discussion procedure,
+   then implement it in HyperShift using the current interfaces above.
+3. In the release repository, reuse an appropriate workflow and its existing
+   steps where possible. Add or update registry components when the job needs
+   different infrastructure. Ensure the steps receive the required images,
+   credentials, and configuration. For Azure diagnostic access, see
+   worker diagnostic prerequisites.
+4. Add or update the job under `ci-operator/config/openshift/hypershift/`.
+   Review triggers, change filters, image dependencies, and timeouts against the
+   intended coverage. Use current neighboring jobs as examples instead of copying
+   an old configuration fragment.
+5. From the release repository root, run `make jobs WHAT=openshift/hypershift`
+   and the applicable repository validation. Review generated changes and submit
+   the release PR with references to any corresponding HyperShift changes.
+
+Validate that the resulting job selects and exercises the intended coverage;
+use Verify and debug to inspect its results.
 
 
 ---
@@ -16385,107 +16026,16 @@ The test failure does not block CI or appear in the JUnit summary. This is by de
 
 # V2 E2E Test Framework
 
-## Why V2
+The v2 framework uses Ginkgo to test hosted clusters, with individual spec results
+for CI reporting and Component Readiness.
 
-The v1 framework produced test results where a single test case failure appeared as 4–5 separate failures due to how tests were structured. This made Sippy triage impossible and prevented HyperShift from being represented in Component Readiness. The v2 framework (Ginkgo v2 + structured JUnit reporting) produces one JUnit entry per `It` block, which these tools consume directly.
-
-## Architecture
-
-```mermaid
-flowchart TD
-    Prow[Prow Job Trigger] --> CIO[ci-operator]
-    CIO --> Build[Build hypershift-tests image]
-
-    Build --> Image[hypershift-tests image]
-
-    subgraph "openshift/hypershift repo"
-        Tests[test/e2e/v2/tests/]
-        CMD[test/e2e/v2/cmd/]
-        Platform[test/e2e/v2/lifecycle/]
-        Dockerfile[Dockerfile.e2e]
-    end
-
-    subgraph "openshift/release repo"
-        StepRegistry[Step Registry]
-        JobConfig[Job Config]
-        Workflow[workflow YAML]
-        Chain[chain YAML]
-        Ref[ref YAML]
-
-        Workflow --> Chain
-        Chain --> Ref
-    end
-
-    Tests --> Dockerfile
-    CMD --> Dockerfile
-    Platform --> Dockerfile
-    Dockerfile --> Image
-
-    Image --> Binaries["hypershift/bin/<br>create-guests, run-tests,<br>dump-guests, destroy-guests,<br>test-e2e-v2"]
-
-    Binaries --> Ref
-    StepRegistry --> Workflow
-    JobConfig --> Workflow
-
-    style Image fill:#e1f5ff
-    style Binaries fill:#ffe1e1
-```
-
-!!! note "Image contents"
-    The `hypershift-tests` image ships both v1 and v2 test binaries. This documentation covers only the v2 components.
-
-## Key Concepts
-
-- **Ginkgo labels** — Tags on `Describe`/`It` blocks (e.g., `hosted-cluster-health`, `lifecycle`) used by `--ginkgo.label-filter` to select which tests run on which cluster.
-
-- **TestPlan** — Declarative selection of cluster variants and their test matrix. The platform supplies a default plan, or CI can load a JSON/YAML plan through `TEST_PLAN`.
-
-- **PlatformConfig** — Interface in `test/e2e/v2/lifecycle/platform.go` that encapsulates all platform-specific configuration. Implement this to add a new platform.
-
-- **TestContext** — Shared context initialized in `BeforeSuite` from environment variables. Provides management client (created eagerly in `SetupTestContextFromEnv`) and hosted cluster client (lazy-loaded via `sync.Once` in `GetHostedClusterClient`), along with cluster name/namespace.
-
-- **Informing tests** — Tests labeled `Informing` that convert failures to skips via the custom fail handler. They appear as "skipped" in the main JUnit report and don't fail CI; a supplemental lifecycle report makes informing failures available to Component Readiness.
-
-- **CI binaries** — Four compiled Go programs (`create-guests`, `run-tests`, `dump-guests`, `destroy-guests`) that replace inline bash in the release repo step registry.
-
-- **Step registry** — The openshift/release repo's hierarchy of workflow → chain → ref YAML files that define CI job steps.
-
-## Test Execution Flow
-
-1. Prow triggers the CI job (e.g., `e2e-azure-v2-self-managed`)
-2. ci-operator builds the `hypershift-tests` image from `Dockerfile.e2e`
-3. **create-guests** creates the clusters selected by the `TestPlan` in parallel, runs platform hooks, waits for Available and version rollout, and writes the cluster manifest to `SHARED_DIR`. Emits JUnit XML to `ARTIFACT_DIR` recording success or failure for each cluster's version rollout.
-4. **run-tests** invokes `bin/test-e2e-v2` once per `TestGroup` with a different `--ginkgo.label-filter` and cluster identity. Whether groups run concurrently or sequentially is determined by placement in the resolved `TestPlan`'s `TestMatrix` — groups in `TestMatrix.Parallel` run concurrently, while groups in `TestMatrix.Sequential` run their steps one after another on the same cluster.
-5. **dump-guests** collects diagnostic artifacts in parallel. Always exits 0.
-6. **destroy-guests** tears down all clusters in parallel. Exits non-zero if any destroy fails.
-
-For the complete end-to-end sequence — including process boundaries, inter-process communication, and Ginkgo lifecycle details — see Test Flow.
-
-!!! info "Key insight"
-    `run-tests` doesn't run tests itself — it invokes the same compiled `bin/test-e2e-v2` binary multiple times with different label filters and cluster targets.
-
-## Directory Structure
-
-```text
-test/e2e/v2/
-├── tests/           — All Ginkgo test files + suite_test.go entry point
-├── internal/        — Framework internals (TestContext, env vars, fail handler, workload registry)
-├── lifecycle/       — Platform-specific config (PlatformConfig interface + implementations)
-├── cmd/             — CI binary source (create-guests, run-tests, dump-guests, destroy-guests)
-├── util/            — Shared test utilities (pod exec, metrics)
-└── backuprestore/   — Backup/restore test helpers (Velero, prober, CLI wrappers)
-```
-
-!!! note
-    This structure may expand as the framework evolves.
-
-## Scope
-
-Azure self-managed is the reference implementation used throughout these docs. The framework is platform-agnostic — AWS, GCP HCP, and other platforms will follow the same patterns by implementing the `PlatformConfig` interface.
-
-## Framework Conventions
-
-For detailed coding standards, test patterns, and framework conventions, see the v2 framework AGENTS.md.
+- Writing V2 Tests: Authoring invariants, test selection,
+  local verification, and debugging.
+- Migrating from V1 to V2: Procedure for transferring test
+  responsibility and retiring the corresponding v1 execution.
+- Test Flow: Execution flow, process boundaries, and test isolation.
+- CI Pipeline Configuration: Job infrastructure and integration
+  with the openshift/release step registry.
 
 
 ---
@@ -16673,230 +16223,6 @@ Accepted commits provide the historical record. Track remaining v1 execution by
 platform and record intentional removals separately from ports. These observations
 describe migration work remaining; they do not imply a percentage of semantic
 equivalence. No permanent inventory of semantic identities is required.
-
-## The Fundamental Shift
-
-The v1 and v2 test frameworks differ fundamentally in how they manage cluster lifecycle, not just in syntax or test organization.
-
-In v1, each test owns its cluster lifecycle. `e2eutil.NewHypershiftTest(...).Execute(...)` creates a fresh cluster, runs the test function, then tears down the cluster. Tests are self-contained units that manage their own infrastructure:
-
-```go
-func TestMyFeature(t *testing.T) {
-    ctx, cancel := context.WithCancel(testContext)
-    defer cancel()
-
-    clusterOpts := globalOpts.DefaultClusterOptions(t)
-
-    e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-        // Test logic here - cluster is created, live, and will be destroyed after
-    }).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "my-feature", globalOpts.ServiceAccountSigningKey)
-}
-```
-
-In v2, clusters are pre-created infrastructure shared across tests. The `create-guests` binary provisions clusters before any tests run, and tests consume them as read-only resources via `TestContext`. Tests do not create or destroy clusters:
-
-```go
-var _ = Describe("My Feature", Label("my-feature"), func() {
-    var testCtx *internal.TestContext
-
-    BeforeEach(func() {
-        testCtx = internal.GetTestContext()
-        Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-        testCtx.ValidateHostedCluster()
-    })
-
-    It("should work correctly", func() {
-        // Test logic here - cluster already exists, test is read-only
-    })
-})
-```
-
-!!! note "Simplified example"
-    This example omits the `RegisterXxxTests` + `TestContextGetter` pattern used by real tests. See the canonical test pattern for the full structure.
-
-This architectural change has several implications for migration:
-
-- **Remove all cluster creation/teardown logic** - `e2eutil.NewHypershiftTest`, `Execute()`, and `globalOpts` are v1-only constructs.
-- **Tests that customized cluster creation need new infrastructure** - If your v1 test created clusters with special NodePool configurations, specific release images, or non-default platform settings, you need to define a new `ClusterSpec` variant in the platform's `PlatformConfig` (see Adding a New ClusterSpec).
-- **Test setup shifts from imperative to declarative** - Instead of building a test object with options, you acquire a `TestContext` pointing to pre-existing infrastructure.
-
-## V1 vs V2 at a Glance
-
-| Aspect | V1 | V2 |
-|--------|----|----|
-| Framework | `testing.T` + Gomega | Ginkgo v2 + Gomega |
-| Test structure | `func TestFoo(t *testing.T)` + `e2eutil.NewHypershiftTest` | `Describe`/`It` blocks + `TestContext` |
-| Subtests | `t.Run()` | Nested `It` blocks |
-| Test selection | Separate binaries / build tags | Ginkgo labels + `--label-filter` |
-| Cluster lifecycle | Per-test creation via `e2eutil.NewHypershiftTest(...).Execute(...)` | Pre-created by `create-guests`, shared via `TestContext` |
-| CI scripts | Inline bash in release repo | Compiled Go binaries in hypershift repo |
-| Reporting | Ad-hoc (single failure → 4-5 reported failures) | Structured JUnit, one entry per `It` (Sippy/CR compatible) |
-| Build tag | `e2e` | `e2ev2` (or `e2ev2 && backuprestore`) |
-
-## Migrating Shared Helpers (Prerequisite)
-
-Before porting a test, check if it calls shared helper functions in `test/e2e/util/`. V2 code must not reference `test/e2e/util` or its subpackages: the `e2eutilallowlist` analyzer denies new references, and only a per-file, per-scope baseline in `hack/tools/hypershiftlinter/analyzers/e2eutilallowlist/allowlist.go` covers references that existed when the rule was introduced.
-
-Recommended workflow:
-
-1. Identify all shared helpers your test calls (e.g., `util.EnsureNoCrashingPods`, `util.EnsureNodeCountMatchesNodePoolReplicas`)
-2. Move the behavior into `test/e2e/v2/util`, using v2 packages and Ginkgo-native assertions
-3. Port the test against the v2 helper
-
-Do not widen a legacy helper's signature just so v2 code can call it. Remove the corresponding entry from `allowlist.go` as each caller migrates.
-
-!!! warning "Helpers that call `t.Run()` need deeper refactoring"
-    Ginkgo's `GinkgoTB()` does not implement `Run()`, so a helper that calls `t.Run()` internally cannot be reused from v2. Restructure helpers moved into `test/e2e/v2/util` to drop internal `t.Run()` calls -- for example, by having the helper return results that the caller asserts in separate `It` blocks, or by splitting the helper into smaller functions that do not need subtests.
-
-## Porting Step-by-Step
-
-Follow this checklist when migrating a test from v1 to v2:
-
-1. **Remove cluster lifecycle management** - Delete `e2eutil.NewHypershiftTest`, `Execute()`, and `globalOpts` calls. Your test no longer creates or destroys clusters.
-
-2. **Replace test function with `Describe` block** - Change from:
-    ```go
-    func TestFoo(t *testing.T) { ... }
-    ```
-    to:
-    ```go
-    var _ = Describe("Feature", Label("my-label"), func() { ... })
-    ```
-
-3. **Add `BeforeEach` setup** - Acquire and validate `TestContext`:
-    ```go
-    var testCtx *internal.TestContext
-
-    BeforeEach(func() {
-        testCtx = internal.GetTestContext()
-        Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-        testCtx.ValidateHostedCluster()
-    })
-    ```
-
-4. **Replace `t.Run()` subtests with `It` blocks** - Nested `t.Run()` calls become separate `It` specs:
-    ```go
-    // V1
-    t.Run("subtest A", func(t *testing.T) { ... })
-    t.Run("subtest B", func(t *testing.T) { ... })
-
-    // V2
-    It("should pass subtest A", func() { ... })
-    It("should pass subtest B", func() { ... })
-    ```
-
-5. **Replace `t.Fatal`/`t.Errorf` with Gomega assertions** - If your v1 test still uses raw `testing.T` assertions (not Gomega), convert to `Expect().To()` and `Eventually()`:
-    ```go
-    // V1
-    if err != nil {
-        t.Fatalf("operation failed: %v", err)
-    }
-
-    // V2
-    Expect(err).NotTo(HaveOccurred(), "operation failed")
-    ```
-
-6. **Add appropriate labels** - Every `Describe` and `It` block should have labels for filtering. See writing tests: labels for the label taxonomy.
-
-7. **Change build tag** - Update from:
-    ```go
-    //go:build e2e
-    ```
-    to:
-    ```go
-    //go:build e2ev2
-    ```
-    (or `//go:build e2ev2 && backuprestore` for backup-restore tests)
-
-8. **Add `Register*Tests()` export function** - Follow the canonical test pattern to make your test suite discoverable:
-    ```go
-    func RegisterMyFeatureTests(getTestCtx internal.TestContextGetter) {
-        It("should do something", func() {
-            tc := getTestCtx()
-            // test specs using tc
-        })
-    }
-    ```
-
-!!! tip "Real-World Examples"
-    PR openshift/hypershift#8527 demonstrates all these steps in practice, porting the lifecycle tests from v1 to v2.
-
-## Common Pitfalls
-
-### `testing.TB` lacks `Run()`
-
-The `testing.TB` interface does not include the `Run()` method, so `t.Run()` subtests cannot be called from Ginkgo tests. You must restructure subtest logic as separate `It` blocks:
-
-```go
-// WRONG - GinkgoTB() does not support Run()
-t := GinkgoTB()
-t.Run("subtest", func(t *testing.T) { ... })
-
-// RIGHT - use separate It blocks
-It("should pass subtest", func() { ... })
-```
-
-### `BeforeEach` runs per `It`
-
-`BeforeEach` hooks execute before every `It` spec. If you need one-time setup that should not repeat, use `BeforeAll` inside an `Ordered` container:
-
-```go
-var _ = Describe("Feature", Ordered, func() {
-    var expensiveResource *SomeResource
-
-    BeforeAll(func() {
-        expensiveResource = createExpensiveResource()
-    })
-
-    It("test A", func() { /* uses expensiveResource */ })
-    It("test B", func() { /* uses expensiveResource */ })
-})
-```
-
-### `Eventually` needs explicit timeouts
-
-Always pass `.WithTimeout()` and `.WithPolling()` to `Eventually` assertions. Without them, Gomega uses short defaults that may not suit cluster operations:
-
-```go
-// WRONG - relies on default 1s timeout
-Eventually(func() error { return checkCondition() }).Should(Succeed())
-
-// RIGHT - explicit timeouts for cluster ops
-Eventually(func() error { return checkCondition() }).
-    WithTimeout(5*time.Minute).
-    WithPolling(10*time.Second).
-    Should(Succeed())
-```
-
-### Build tag
-
-Do not forget to change the build tag. Tests with the wrong tag will not be compiled by the v2 test binaries:
-
-```go
-// WRONG - v1 tag
-//go:build e2e
-
-// RIGHT - v2 tag
-//go:build e2ev2
-```
-
-For backup-restore tests, use the combined tag:
-
-```go
-//go:build e2ev2 && backuprestore
-```
-
-## What Stays in V1
-
-V1 tests still exist and are actively running in CI. Not all tests have been migrated to v2, and some may remain in v1 indefinitely.
-
-Tests remain in v1 when:
-
-- **They depend heavily on `t.Run()` subtest trees** - Complex nested subtest logic that does not map cleanly to Ginkgo `It` blocks.
-- **They call helper functions that still require `*testing.T`** - Helpers that have not yet been widened to accept `testing.TB`.
-- **They require unique cluster configurations** - Tests that need custom NodePool settings, specific platform configurations, or particular release images for which no `ClusterSpec` variant has been defined yet in the platform's `PlatformConfig`.
-
-See `test/e2e/` for current v1 test locations. There is no exhaustive backlog of tests to migrate - tests are ported to v2 as platforms transition to the v2 framework and as test maintainers see value in the migration.
 
 
 ---
@@ -17351,401 +16677,195 @@ flowchart LR
 
 # Writing V2 Tests
 
-This guide teaches developers how to add new v2 tests to the HyperShift test suite.
+Follow these invariants when adding or migrating v2 E2E tests. Existing tests
+that violate them are migration debt, not examples to copy.
 
-## Test file conventions
+## Choose the test boundary
 
-Every v2 test file must follow these conventions:
+Tests consume pre-created, fully operational hosted clusters. Provisioning,
+initial readiness, and teardown belong to lifecycle orchestration. Do not add
+startup polling to specs or suite setup to compensate for incomplete provisioning.
 
-- Start with `//go:build e2ev2` build tag
-- Live in package `tests` under `test/e2e/v2/tests/`
-- Be named `feature_area_test.go` (e.g., `hosted_cluster_health_test.go`)
-- Export a `RegisterXxxTests(getTestCtx internal.TestContextGetter)` function
+Non-lifecycle tests only inspect existing state. Skip when a required platform
+or configuration precondition is absent; never mutate the cluster to manufacture
+it. API failures must fail the test rather than become precondition skips.
 
-!!! note "Backup-restore tests"
-    Tests that perform backup and restore operations use a combined build tag `//go:build e2ev2 && backuprestore`. These tests compile into a separate binary `bin/test-backuprestore` (via `make backuprestore-e2e`), not `bin/test-e2e-v2`. This separation allows backup-restore tests to run with different concurrency settings and lifecycle requirements.
+Lifecycle tests may mutate state and wait for transitions they initiate. Label
+them `lifecycle` so that read-only runs can exclude them. Capture original state
+before mutation and register restoration. Register `DeferCleanup` immediately
+after creating a resource, even when the scenario later deletes it explicitly.
+Cleanup must tolerate resources already being absent while surfacing other errors.
+If a resource already exists, reconcile it to the required state or fail with a
+diagnostic; silently accepting it can invalidate the test baseline.
 
-## Suite bootstrap
+## Structure coverage
 
-The test suite bootstraps through `suite_test.go` in the `test/e2e/v2/tests/` package:
+Put feature-scoped specs in `test/e2e/v2/tests/` and shared utilities in `util/`.
+Use the registration pattern in
+`control_plane_workloads_test.go`:
+register specs during Ginkgo tree construction and obtain the runtime test
+context inside hooks or specs. Do not register specs inside `BeforeEach` or `It`.
 
-```go
-//go:build e2ev2
-
-package tests
-
-import (
-    "context"
-    "testing"
-
-    . "github.com/onsi/ginkgo/v2"
-    . "github.com/onsi/gomega"
-
-    "github.com/openshift/hypershift/test/e2e/v2/internal"
-    ctrl "sigs.k8s.io/controller-runtime"
-    zap "sigs.k8s.io/controller-runtime/pkg/log/zap"
-)
-
-func TestE2EV2(t *testing.T) {
-    if internal.GetEnvVarValue("E2E_SHOW_ENV_HELP") != "" {
-        internal.PrintEnvVarHelp()
-        return
-    }
-    RegisterFailHandler(internal.InformingAwareFailHandler)
-    RunSpecs(t, "HyperShift End To End Test Suite")
-}
-
-var _ = BeforeSuite(func() {
-    ctx := context.Background()
-    ctrl.SetLogger(zap.New())
-    testCtx, err := internal.SetupTestContextFromEnv(ctx)
-    Expect(err).NotTo(HaveOccurred(), "failed to setup test context")
-    Expect(testCtx).NotTo(BeNil(), "test context should not be nil")
-    internal.SetTestContext(testCtx)
-})
-```
-
-Key points:
-
-- `RegisterFailHandler(internal.InformingAwareFailHandler)` installs the custom handler that converts `Informing`-labeled test failures to skips
-- `BeforeSuite` reads `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` from environment and creates a shared `TestContext`
-
-## Canonical test pattern
-
-Tests follow this standard pattern, based on `DeploymentGenerationTest` in `control_plane_workloads_test.go`:
-
-```go
-func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
-    Context("Deployment generation", func() {
-        BeforeEach(func() {
-            testCtx := getTestCtx()
-            hostedCluster := testCtx.GetHostedCluster()
-            if hostedCluster == nil || hostedCluster.CreationTimestamp.IsZero() ||
-                time.Since(hostedCluster.CreationTimestamp.Time) > 4*time.Hour {
-                Skip("Deployment generation test is only for recently created hosted clusters")
-            }
-        })
-
-        for _, workload := range workloads {
-            if workload.Type != "Deployment" { continue }
-            Context(workload.Name, func() {
-                It("should not indicate rapid rollouts", func() {
-                    testCtx := getTestCtx()
-                    hostedCluster := testCtx.GetHostedCluster()
-                    if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
-                        Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
-                    }
-                    // ... get deployment, check generation ...
-                    Expect(deployment.Generation).To(BeNumerically("<=", maxAllowedGeneration),
-                        "Deployment %s has generation %d which exceeds max allowed %d",
-                        workload.Name, deployment.Generation, maxAllowedGeneration)
-                })
-            })
-        }
-    })
-}
-
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:ControlPlaneWorkloads] Control Plane Workloads", Label("control-plane-workloads"), func() {
-    var testCtx *internal.TestContext
-    BeforeEach(func() {
-        testCtx = internal.GetTestContext()
-        Expect(testCtx).NotTo(BeNil(), "test context should be set up in BeforeSuite")
-        testCtx.ValidateHostedCluster()
-    })
-    RegisterControlPlaneWorkloadsTests(func() *internal.TestContext { return testCtx })
-})
-```
-
-The pattern:
-
-1. `Register*Tests` functions take a `TestContextGetter` parameter
-2. The top-level `Describe` block uses `Label(...)` for test filtering
-3. The `Describe` block calls the register function to add test cases
-4. `BeforeEach` in the top-level block validates the hosted cluster exists
-
-## Labels (two-layer model)
-
-The v2 framework uses a two-layer labeling model for test organization and filtering.
-
-### Layer 1: Labels on test blocks
-
-Labels are attached to `Describe` or `Context` blocks to categorize tests:
-
-| Category | Labels |
-|----------|--------|
-| Lifecycle | `lifecycle`, `control-plane-upgrade`, `nodepool-lifecycle`, `nodepool-autoscaling`, fine-grained NodePool shard labels, `etcd-chaos`, `backup-restore` |
-| Health/Compliance | `hosted-cluster-health`, `hosted-cluster-compliance`, `hosted-cluster-security`, `hosted-cluster-dns`, `hosted-cluster-metrics`, `hosted-cluster-image-registry`, `hosted-cluster-ccm`, `control-plane-workloads`, `routes` |
-| Platform-specific | `Azure`, `GCP`, `hosted-cluster-azure`, `self-managed-azure-public`, `self-managed-azure-private`, `self-managed-azure-oauth-lb` |
-| Meta | `Informing` |
-
-### Layer 2: Label-filter expressions
-
-The CI pipeline uses label-filter expressions in TestMatrix configurations to select which tests run for each cluster configuration. The following is a simplified example based on the Azure TestMatrix:
-
-```go
-Sequential: []SequentialGroup{
-    {
-        Name: "public",
-        Steps: []TestGroup{
-            {
-                Name:        "public",
-                Variant:     "public",
-                LabelFilter: "self-managed-azure-public || control-plane-workloads",
-            },
-            {
-                Name:        "public-nodepool-rollouts",
-                Variant:     "public",
-                LabelFilter: "nodepool-vm-size-rollout || nodepool-replace-version-upgrade",
-            },
-        },
-    },
-    {
-        Name: "upgrade-and-chaos",
-        Steps: []TestGroup{
-            {
-                Name:        "upgrade",
-                Variant:     "upgrade",
-                LabelFilter: "control-plane-upgrade",
-            },
-            // additional steps run in order within this group
-        },
-    },
-},
-```
-
-`Parallel` groups all run concurrently. Each `SequentialGroup` also runs concurrently with everything else, but its internal `Steps` run one after another -- if any step fails, subsequent steps are skipped.
-
-JUnit filenames are derived from each `TestGroup.Name`; configure the group name rather than a separate filename.
-
-When multiple filters target the same hosted-cluster variant, put them in the same `SequentialGroup`. Never add separate `Parallel` groups for one variant, because that launches concurrent test processes against the same hosted cluster.
-
-!!! tip "Adding a test with an existing label"
-    If your test uses a label already in a filter expression (e.g., `hosted-cluster-health`), it runs automatically in the appropriate CI jobs. If you introduce a new label, you must add it to existing filter expressions in the TestMatrix configuration in the hypershift repository (not the release repository).
-
-## Sippy/CR test name annotations
-
-All test name strings must include annotations for Sippy Component Readiness (CR) mapping. These are parsed from the full Ginkgo test path and enable automatic Jira component assignment and per-feature regression tracking.
-
-**Required annotations:**
-
-1. **`[sig-hypershift][Jira:Hypershift]`** — on every top-level `Describe` block. Maps all tests to the Hypershift Jira component.
-2. **`[Feature:XYZ]`** — maps to a specific feature/capability. Placement depends on the file:
-    - **On the `Describe`** when the entire file tests one cohesive feature (most files).
-    - **On individual `Context`/`When` blocks** when a file covers multiple distinct capabilities.
-
-Feature names use PascalCase with no spaces (e.g., `BackupRestore`, `AzurePrivateLink`, `NodePoolLifecycle`).
-
-**Single-feature file:**
-
-```go
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:Health] Hosted Cluster Health", Label("hosted-cluster-health"), func() {
-    // all tests in this file map to Feature:Health
-})
-```
-
-**Multi-feature file** (e.g., platform-specific files covering multiple capabilities):
-
-```go
-var _ = Describe("[sig-hypershift][Jira:Hypershift] Hosted Cluster Azure", Label("hosted-cluster-azure"), func() {
-    // Jira component set at Describe level, Feature set per Context
-})
-
-Context("[Feature:AzureWorkloadIdentity] Azure Public Cluster", Label("Azure"), func() {
-    It("should mutate pods with workload identity federated credentials", func() { ... })
-})
-
-Context("[Feature:AzurePrivateLink] Azure Private Topology", Label("Azure"), func() {
-    It("should create AzurePrivateLinkService CR with PLS alias", func() { ... })
-})
-```
-
-!!! warning "Do not rename tests after Sippy import"
-    Renaming tests after Sippy imports them loses historical data and requires manual re-mapping. Add annotations before tests are imported.
-
-Check existing Feature names before adding new ones:
-
-```bash
-grep -r '\Feature:' test/e2e/v2/tests/
-```
-
-## Platform guards
-
-Use `Skip` in `BeforeEach` to skip tests when platform preconditions are not met:
+The suite supplies a shared
+`TestContext`.
+Fetch the HostedCluster and assert the returned error before testing platform or
+configuration preconditions:
 
 ```go
 BeforeEach(func() {
-    testCtx := getTestCtx()
-    hostedCluster := testCtx.GetHostedCluster()
-    if hostedCluster == nil || hostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
-        Skip("Azure-specific test; skipping on non-Azure cluster")
+    tc := getTestCtx()
+    hc, err := tc.GetHostedCluster()
+    Expect(err).NotTo(HaveOccurred())
+    if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
+        Skip("test requires AWS")
     }
 })
 ```
 
-### Informing skip-conversion
+Re-fetch objects when checking mutations; do not assert against stale state.
 
-The `Informing` label marks tests as informational. When an `Informing`-labeled test fails, the custom failure handler converts it to a skip instead of a failure:
+Tests iterating over control plane workloads belong in
+`control_plane_workloads_test.go`, with separate specs per workload so failures
+identify the affected component. Add new workloads to the manually maintained
+`workload_registry.go`
+to extend existing compliance coverage, using its platform filtering where needed.
+
+## Assert the intended behavior
+
+Assert current state directly. Poll only for asynchronous behavior or transitions
+the test initiates. Choose timeouts and polling intervals appropriate to the
+operation. Use `tc.Context` for API calls and polling so both use the context
+provided by the framework.
+
+Assertion helpers must preserve the caller's failure handling. A direct call
+uses Gomega's `Default`; inside a polling callback, pass that callback's Gomega
+instance through every helper. Nested callbacks use their own instance. Global
+assertions inside polling callbacks bypass retry handling and may prematurely
+fail or skip an informing spec. This applies to setup and cleanup helpers that
+assert internally, too. See
+Gomega's helper guidance.
+
+For example, an assertion helper fetches current state and uses the supplied
+Gomega instance:
 
 ```go
-func InformingAwareFailHandler(message string, callerSkip ...int) {
-    labels := CurrentSpecReport().Labels()
-    if slices.Contains(labels, "Informing") {
-        Skip("informing test failure: " + message, callerSkip...)
-    }
-    Fail(message, callerSkip...)
+func expectReplicas(g Gomega, tc *internal.TestContext, key crclient.ObjectKey, want int32) {
+    GinkgoHelper()
+    np := &hyperv1.NodePool{}
+    g.Expect(tc.MgmtClient.Get(tc.Context, key, np)).To(Succeed())
+    g.Expect(np.Status.Replicas).To(Equal(want))
 }
 ```
 
-This allows tests to run and report failures without blocking CI jobs.
-
-## TestContext
-
-The `TestContext` struct provides access to the hosted cluster and clients:
-
-| Field/Method | Description |
-|-------------|-------------|
-| `MgmtClient` | Management cluster controller-runtime client |
-| `GetHostedCluster()` | Returns `*HostedCluster`, cached via `sync.Once`. Returns nil if not configured. **Panics** on fetch failure. |
-| `GetHostedClusterClient()` | Returns hosted cluster controller-runtime client. Lazy-loaded. Returns nil if the HostedCluster is not available or its KubeConfig status is not set. **Panics** on other initialization failures. |
-| `ClusterName` / `ClusterNamespace` | HostedCluster name and namespace from environment |
-| `ControlPlaneNamespace` | Derived: `{namespace}-{name}` (e.g., `clusters-my-cluster`). Dots in the name are replaced with hyphens. |
-| `ArtifactDir` | Directory for test artifacts, from the `ARTIFACT_DIR` environment variable |
-| `ValidateHostedCluster()` | Skips if no cluster configured; panics if fetch fails |
-| `ValidateHostedClusterClient()` | Calls `ValidateHostedCluster()`, then panics if the hosted cluster client is nil (e.g., kubeconfig not ready) |
-| `HostedClusterConfigured` | `bool` — `true` when both `ClusterName` and `ClusterNamespace` are populated. This is what `ValidateHostedCluster()` checks internally to decide between skip and fetch. |
-| `GetHostedClusterRESTConfig()` | Returns `*rest.Config` for the hosted cluster, lazy-loaded via `sync.Once`. Useful when a test needs a `kubernetes.Interface` client or a custom REST client beyond what `GetHostedClusterClient()` provides. |
-| `Context` | Embedded `context.Context` — use for all API calls |
-
-!!! warning "Panic-on-failure"
-    `GetHostedCluster()`, `GetHostedClusterClient()`, and `ValidateHostedCluster()` panic on API failures (not just missing configuration). This ensures test failures are loud and visible rather than silently skipping important checks. Use `ValidateHostedCluster()` in top-level `BeforeEach` blocks to fail fast when the cluster is missing.
-
-## Environment variables
-
-The v2 framework maintains a registry of environment variables. To add a new variable:
+Inside a spec, choose a direct check or polling according to the behavior under
+test:
 
 ```go
-// In env_vars.go init()
-RegisterEnvVar("E2E_MY_NEW_VAR", "Description of what it does", false)
+// Check state that should already hold.
+expectReplicas(Default, tc, key, want)
 
-// In test code
-value := internal.GetEnvVarValue("E2E_MY_NEW_VAR")  // panics if unregistered
+// Wait for convergence after a lifecycle test changes replicas.
+Eventually(func(g Gomega) {
+    expectReplicas(g, tc, key, want)
+}).WithContext(tc.Context).
+    WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(Succeed())
 ```
 
-To see the full current list of registered environment variables:
+Derive expected values from configuration when testing relationships between
+resources. Assert the outcome the scenario promises: an updated desired release
+alone does not establish that an upgrade completed. Identify affected resources
+and failed expectations in diagnostics.
 
-```bash
-E2E_SHOW_ENV_HELP=1 bin/test-e2e-v2
-```
+Establish that the intended subjects were actually checked. Empty selections,
+unmatched searches, or early returns must not silently produce a passing test
+when they bypass the behavior it claims to verify.
 
-## Assertions and gotchas
+## Select tests and preserve their meaning
 
-### Direct Gomega assertions
+All new tests, including migrated tests, start informing. Apply
+`internal.InformingLabel` to the new spec or inherit it from a container containing
+only informing tests. When extending an existing blocking container, label the
+new coverage without changing existing tests. Promotion to blocking is a separate,
+deliberate change. The migration procedure defines the exception
+for transferring existing blocking responsibility atomically.
 
-```go
-Expect(x).To(Equal(y))
-Expect(ptr).NotTo(BeNil())
-```
+Feature labels select coverage; the informing label controls failure handling.
+Use labels on `Describe` and `It`; label `Context` only with explicit selection
+intent, including informing status. Choose feature identities that represent
+distinct capabilities and check existing names before adding one. Preserve test
+names after Sippy import because renaming loses history and requires remapping.
 
-### Eventually for async checks
+Informing assertion failures are reported without failing the process; genuine
+precondition skips remain skipped. A successful exit therefore does not mean all
+assertions passed. Use `--e2e.junit-report` for the suite's custom reporting.
+See the reporting contract
+for the downstream format.
 
-```go
-Eventually(func() bool {
-    // ... check condition ...
-    return condition
-}).WithTimeout(5*time.Minute).WithPolling(10*time.Second).Should(BeTrue())
-```
+## Supply prerequisites and CI selection
 
-For pointer safety, vacuous pass prevention, IPv6 URL construction, and the non-lifecycle vs. lifecycle mutation rule, see [AGENTS.md conventions #11, #13, #15, #16.
+Reuse an existing cluster variant when its configuration and state are compatible
+with the test. A mutating test does not automatically need its own cluster;
+isolate it when its prerequisites or effects cannot be shared safely.
 
-## Lifecycle vs non-lifecycle tests
+Define cluster variants explicitly, keeping configuration differences visible.
+Variant names are a contract with external plans: the catalog must be fixed at
+compile time and must not change with runtime conditions. Resolve runtime values
+separately where practical. Put provisioning and day-2 mutations in lifecycle
+hooks, and selection and ordering in `TestPlan`/`TestMatrix`. Consult
+`platform.go`
+for interfaces and hook timing.
 
-### Non-lifecycle tests
+A test runs wherever a plan's filter selects its labels. Update filters in the
+HyperShift repository when adding coverage that existing filters do not select.
+For job infrastructure changes, see CI Pipeline Configuration.
 
-Non-lifecycle tests are read-only and skip when preconditions are missing. They must not modify cluster state to create preconditions — see AGENTS.md Convention #13 for the full rule and examples.
+Groups targeting the same cluster must share one sequential lane; separate lanes
+run concurrently. A failed step prevents later steps in its lane from running.
+Ensure the plan selects the intended configurations and post-mutation checks.
 
-### Lifecycle tests
+Register test-suite environment variables in
+`env_vars.go`
+before reading them. Use built-in help for the current variables.
 
-Lifecycle tests may modify cluster state but must:
+## Verify and debug
 
-- Use the `lifecycle` label
-- Capture and restore original state in cleanup
-- Check `IsNotFound()` in cleanup to handle missing resources gracefully
-
-```go
-var _ = Describe("[sig-hypershift][Jira:Hypershift][Feature:NodePoolLifecycle] NodePool Lifecycle", Label("lifecycle", "nodepool-lifecycle"), func() {
-    var originalReplicas int32
-    BeforeEach(func() {
-        // Capture original state
-        nodePool := getNodePool()
-        Expect(nodePool.Spec.Replicas).NotTo(BeNil(),
-            "nodePool %s/%s should have replicas set", nodePool.Namespace, nodePool.Name)
-        originalReplicas = *nodePool.Spec.Replicas
-    })
-    AfterEach(func() {
-        // Restore original state
-        nodePool := getNodePool()
-        nodePool.Spec.Replicas = &originalReplicas
-        if err := mgmtClient.Update(ctx, nodePool); err != nil && !apierrors.IsNotFound(err) {
-            Fail(fmt.Sprintf("failed to restore nodepool replicas: %v", err))
-        }
-    })
-    // ... test cases ...
-})
-```
-
-### Backup-restore tests
-
-Backup-restore tests are a special case:
-
-- Use combined build tag `//go:build e2ev2 && backuprestore`
-- Use `Ordered, Serial` decorators to ensure sequential execution
-- Compile into separate binary `bin/test-backuprestore` (via `make backuprestore-e2e`)
-- Run with reduced parallelism to avoid resource contention
-
-## Adding a workload to the registry
-
-To add a new control plane workload to the compliance tests, add a `WorkloadSpec` entry to the slice returned by `GetControlPlaneWorkloads()` in `test/e2e/v2/internal/workload_registry.go`:
-
-```go
-{Name: "my-new-component", Type: "Deployment", PodSelector: map[string]string{"app": "my-new-component"}},
-```
-
-All existing compliance tests (pod security, resource requests/limits, image verification, etc.) automatically cover the new workload.
-
-For platform-specific workloads, use the `Platform` field:
-
-```go
-azurePlatform := hyperv1.AzurePlatform
-// ...
-{Name: "azure-cloud-controller-manager", Type: "Deployment", PodSelector: map[string]string{"app": "cloud-controller-manager"}, Platform: &azurePlatform},
-```
-
-## Running tests locally
-
-Set the required environment variables and run the test binary:
+Run against an already provisioned hosted cluster:
 
 ```bash
 export KUBECONFIG=/path/to/management-cluster-kubeconfig
 export E2E_HOSTED_CLUSTER_NAME=my-cluster
 export E2E_HOSTED_CLUSTER_NAMESPACE=clusters
-
 make e2ev2
-bin/test-e2e-v2 --ginkgo.label-filter="hosted-cluster-health" --ginkgo.v
-
-# For backup-restore tests
-make backuprestore-e2e
-bin/test-backuprestore --ginkgo.label-filter="backup-restore" --ginkgo.v
-
-# See all registered environment variables
 E2E_SHOW_ENV_HELP=1 bin/test-e2e-v2
+bin/test-e2e-v2 --ginkgo.label-filter="hosted-cluster-health" \
+    --ginkgo.v --e2e.junit-report=/tmp/junit.xml
 ```
 
-Use `--ginkgo.label-filter` to run specific test categories. Use `--ginkgo.v` for verbose output. Use `--ginkgo.focus` to run a single test by name:
+Use `--ginkgo.focus` to narrow execution by description. Inspect actual selection,
+skips, assertion results, and cleanup; a successful exit or skipped path is not
+evidence that the intended behavior ran.
 
-```bash
-# Run a single test by name (regex match against the full description path)
-bin/test-e2e-v2 --ginkgo.focus="should not indicate rapid rollouts" --ginkgo.v
-```
+In CI, find the group's JUnit report in `ARTIFACT_DIR`. Use the plan and
+`run-tests` log to identify its cluster. Check verbose Ginkgo output for the
+assertion and source location, and distinguish informing failures from genuine
+skips.
+
+For provisioning failures, inspect the `create-guests` log and rollout JUnit
+conditions. Use `dump-guests` logs to locate events and pod logs or diagnose
+missing artifacts. Successful teardown does not establish that collection
+succeeded.
+
+## Discuss framework changes first
+
+Before submitting changes beyond adding test cases, discuss the proposal with
+`#forum-ocp-hypershift` and agree on the approach. This includes platform
+interfaces, lifecycle orchestration, shared helpers, selection, and reporting.
+Explain why existing facilities are insufficient, consider alternatives and
+cross-platform effects, and reference the agreement in the PR.
+
+If no established pattern fits a new test area, consult
+`#wg-hypershift-e2e-v2` before establishing a convention and update this guide
+after agreement.
 
 
 ---

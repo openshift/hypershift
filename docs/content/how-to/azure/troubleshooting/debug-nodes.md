@@ -35,6 +35,32 @@ control plane namespace. A stopped approver or a mismatch between the CSR and
 the CAPI Machine identity can block registration. Follow the
 [kubelet CSR approval checks](../../../reference/cluster-startup-roadmap.md#kubelet-csr-approval).
 
+## Collect worker diagnostics
+
+To collect Azure worker diagnostics with `hypershift dump cluster`, supply
+`--azure-creds` with a credentials file. The Azure identity needs
+`Microsoft.Compute/virtualMachines/read` and
+`Microsoft.Compute/virtualMachines/retrieveBootDiagnosticsData/action` on the
+worker VM resource groups. Enable boot diagnostics before the failure you want
+to investigate. In CI, mount the credentials in both test and dump steps; consult
+the [platform configuration](https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/azure.go)
+for the current credential configuration.
+
+Journal collection through the hosted API requires privileged node-log access.
+For optional SSH fallback, provision the worker public key at cluster creation
+with `--ssh-key` and set `AZURE_JOURNAL_SSH_KEY` to the matching private key file.
+Provide port 22 reachability from the collector or a jump host. Configure
+jump-host authentication separately and supply trusted host keys; host-key
+verification is required. Collection uses existing network access and does not
+provision a bastion. See the
+[SSH options](https://github.com/openshift/hypershift/blob/main/cmd/consolelogs/azure/journals.go)
+for current jump-host and known-hosts configuration.
+
+Check collection warnings when diagnostics are missing. Successful teardown does
+not establish that logs were collected. Consult the
+[diagnostics collector](https://github.com/openshift/hypershift/tree/main/cmd/consolelogs/azure)
+for artifact formats and collection behavior.
+
 ## Create a bastion to SSH to a node
 If the machines look like they have been provisioned correctly, you can directly access the virtual machines related to your nodes through a bastion.
 
