@@ -164,6 +164,8 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 				if deployment.Spec.Replicas != nil {
 					desired = *deployment.Spec.Replicas
 				}
+				g.Expect(desired).To(BeNumerically(">=", 1),
+					"cluster-image-registry-operator deployment should want at least one replica")
 				g.Expect(deployment.Status.UpdatedReplicas).To(Equal(desired),
 					"cluster-image-registry-operator deployment should have all replicas updated")
 				g.Expect(deployment.Status.Replicas).To(Equal(desired),
