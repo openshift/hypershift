@@ -138,15 +138,27 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 		})
 
 		It("should have a ready cluster-image-registry-operator deployment", func() {
-			By("waiting for the cluster-image-registry-operator deployment to have a ready replica")
+			By("waiting for the cluster-image-registry-operator deployment to be Available")
 			Eventually(func(g Gomega) {
 				deployment := &appsv1.Deployment{}
 				g.Expect(tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 					Namespace: tc.ControlPlaneNamespace,
 					Name:      "cluster-image-registry-operator",
 				}, deployment)).To(Succeed(), "failed to get cluster-image-registry-operator deployment")
-				g.Expect(deployment.Status.ReadyReplicas).To(BeNumerically(">=", 1),
-					"cluster-image-registry-operator deployment should have at least one ready replica")
+
+				g.Expect(deployment.Status.ObservedGeneration).To(BeNumerically(">=", deployment.Generation),
+					"cluster-image-registry-operator deployment status should observe the latest generation")
+
+				var available *appsv1.DeploymentCondition
+				for i := range deployment.Status.Conditions {
+					if deployment.Status.Conditions[i].Type == appsv1.DeploymentAvailable {
+						available = &deployment.Status.Conditions[i]
+					}
+				}
+				g.Expect(available).NotTo(BeNil(),
+					"cluster-image-registry-operator deployment should have an Available condition")
+				g.Expect(available.Status).To(Equal(corev1.ConditionTrue),
+					"Available should be True, got reason: %s, message: %s", available.Reason, available.Message)
 			}).WithContext(tc.Context).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
