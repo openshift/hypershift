@@ -1,7 +1,12 @@
 options:
   no_parent_owners: true
-approvers:
-- api-approvers
-- redhat-chai-bot
-labels:
-- area/api
+filters:
+  ".*":
+    approvers:
+    - api-approvers
+    labels:
+    - area/api
+  # Keep approval authority on the API module's Go dependency files.
+  '^(go\.(mod|sum)|vendor/(modules\.txt|[^/]+/.+))$':
+    approvers:
+    - redhat-chai-bot
