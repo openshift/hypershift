@@ -1482,6 +1482,61 @@ func TestCheckEtcdHealth(t *testing.T) {
 		g.Expect(msg).To(ContainSubstring("1/3"))
 	})
 
+	// Scaled-to-zero must not be reported as healthy: desired == 0 makes the
+	// ready-replica comparison trivially true, but the snapshot init container
+	// would target pods that do not exist and the backup Job would fail.
+	t.Run("When a shard StatefulSet is scaled to zero it should return unhealthy", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		shardSTS := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
+			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(int32(0))},
+			Status:     appsv1.StatefulSetStatus{ReadyReplicas: 0},
+		}
+		r := newReconciler(hcp, defaultSTS, shardSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeFalse())
+		g.Expect(msg).To(ContainSubstring("etcd-events"))
+		g.Expect(msg).To(ContainSubstring("scaled to zero"))
+	})
+
+	// A nil Replicas pointer defaults to 1, so it must never be treated as
+	// scaled-to-zero.
+	t.Run("When a shard StatefulSet has no replicas set it should use the default of one", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		shardSTS := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
+			// Replicas deliberately left nil.
+			Status: appsv1.StatefulSetStatus{ReadyReplicas: 0},
+		}
+		r := newReconciler(hcp, defaultSTS, shardSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeFalse())
+		g.Expect(msg).To(ContainSubstring("etcd-events"))
+		g.Expect(msg).To(ContainSubstring("0/1"))
+	})
+
 	t.Run("When a shard StatefulSet is not found it should return unhealthy", func(t *testing.T) {
 		g := NewWithT(t)
 		hcp := newHostedControlPlane()

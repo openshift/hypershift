@@ -507,6 +507,15 @@ func (r *HCPEtcdBackupReconciler) checkEtcdHealth(ctx context.Context, hcp *hype
 			return false, "", err
 		}
 		desired := ptr.Deref(sts.Spec.Replicas, 1)
+		// A shard scaled to zero is not backable: the snapshot init container
+		// would target pods that do not exist and the Job would fail. Gate it
+		// here instead, on the same non-terminal EtcdUnhealthy path as other
+		// not-ready states, so the backup retries once the shard is scaled
+		// back up. (Note ptr.Deref above: a nil Replicas pointer defaults to 1,
+		// so desired == 0 can only mean an explicit scale-down.)
+		if desired == 0 {
+			return false, fmt.Sprintf("etcd StatefulSet %q is scaled to zero", shard.name), nil
+		}
 		if sts.Status.ReadyReplicas < desired {
 			return false, fmt.Sprintf("etcd StatefulSet %q not fully ready: %d/%d replicas ready",
 				shard.name, sts.Status.ReadyReplicas, desired), nil
