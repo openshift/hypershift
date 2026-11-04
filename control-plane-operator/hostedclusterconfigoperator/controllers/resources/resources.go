@@ -2905,7 +2905,7 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 			err = withCloudResourceCleanupComponent(cloudResourceCleanupComponentAWSLoadBalancers, err)
 			if isConnectionError(err) {
 				hasConnectionError = true
-				log.Info("Connection error while removing AWS load balancers")
+				log.Info("Connection error while removing AWS load balancers", "error", safeCloudResourcesDestroyedErrorMessage(err))
 			}
 			errs = append(errs, err)
 		}

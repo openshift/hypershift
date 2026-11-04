@@ -178,7 +178,8 @@ func safeCloudResourcesDestroyedErrorMessage(err error) string {
 const (
 	describeTagsAccessDeniedCleanupMessage = "AWS load balancer ownership verification was denied; the delegated role needs elasticloadbalancing:DescribeTags, Kubernetes cleanup was requested, and AWS resources may remain"
 	mixedDescribeTagsCleanupMessage        = "AWS cleanup remains incomplete; the delegated role needs elasticloadbalancing:DescribeTags, and other cleanup failures or ownership issues may also be present"
-	genericCloudResourceCleanupMessage     = "cloud resource cleanup failed; error details were omitted to avoid exposing sensitive resource or endpoint information"
+	genericCloudResourceCleanupMessage     = "cloud resource cleanup failed; error details were omitted to avoid exposing sensitive resource or endpoint information. " +
+		"Check hosted-cluster-config-operator logs in the control plane namespace for cleanup progress; verify the failing component's credentials, permissions, and connectivity"
 )
 
 type cloudResourceCleanupErrorSummary struct {
@@ -509,6 +510,9 @@ func (r *reconciler) cleanupAWSLoadBalancersWithoutVPC(ctx context.Context, stat
 }
 
 func (r *reconciler) ensureAWSLoadBalancerClients(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	// Clients retain their initial region, role, and endpoint configuration, which
+	// must remain stable during teardown. The SDK refreshes credentials and rereads
+	// the projected token file when credentials expire.
 	if r.awsLoadBalancerClients.ELB != nil && r.awsLoadBalancerClients.ELBV2 != nil {
 		return nil
 	}
@@ -900,8 +904,19 @@ func (r *reconciler) saveAWSLoadBalancerCleanupProgress(ctx context.Context, con
 		if err := progressReader.Get(ctx, progressKey, latest); err != nil {
 			return err
 		}
-		if latest.Data == nil {
-			latest.Data = map[string]string{}
+		// A retry must not overwrite progress that changed identity or ownership
+		// after the initial validation.
+		latestProgress := &awsLoadBalancerCleanupProgress{}
+		if err := json.Unmarshal([]byte(latest.Data[awsLoadBalancerProgressDataKey]), latestProgress); err != nil {
+			return newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress is invalid", err)
+		}
+		if latestProgress.HCPUID != progress.HCPUID || latestProgress.InfraID != progress.InfraID ||
+			(latestProgress.Region != "" && latestProgress.Region != progress.Region) ||
+			(latestProgress.VPCID != "" && latestProgress.VPCID != progress.VPCID) {
+			return newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress identity changed before update", nil)
+		}
+		if len(latest.OwnerReferences) > 1 || (len(latest.OwnerReferences) == 1 && latest.OwnerReferences[0].UID != progress.HCPUID) {
+			return newSafeLoadBalancerCleanupError("AWS load balancer cleanup progress ConfigMap has an unexpected owner", nil)
 		}
 		latest.Data[awsLoadBalancerProgressDataKey] = string(serialized)
 		latest.OwnerReferences = configMap.OwnerReferences
@@ -1055,10 +1070,14 @@ func (r *reconciler) requestLoadBalancerServiceDeletion(ctx context.Context, del
 	if err := r.client.List(ctx, remaining); err != nil {
 		return false, err
 	}
+	pendingServiceCount := 0
 	for i := range remaining.Items {
 		if waitKeys.Has(client.ObjectKeyFromObject(&remaining.Items[i])) {
-			return true, nil
+			pendingServiceCount++
 		}
 	}
-	return false, nil
+	if pendingServiceCount > 0 {
+		ctrl.LoggerFrom(ctx).Info("Waiting for Kubernetes load balancer Service deletion", "pendingServiceCount", pendingServiceCount)
+	}
+	return pendingServiceCount > 0, nil
 }

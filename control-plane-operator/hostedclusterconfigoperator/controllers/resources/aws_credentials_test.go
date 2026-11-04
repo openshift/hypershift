@@ -14,6 +14,42 @@ import (
 func TestAwsConfigForRole(t *testing.T) {
 	t.Run("When exchanging a web identity token, it should send the token only to STS", testAWSConfigForRoleKeepsWebIdentityTokenOnSTSEndpoint)
 	t.Run("When default configuration fails, it should include the region in the error", testAWSConfigForRoleWrapsDefaultConfigErrorWithRegion)
+	t.Run("When the projected token is missing, it should fail credential retrieval before contacting STS", func(t *testing.T) {
+		var stsRequests atomic.Int32
+		stsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			stsRequests.Add(1)
+			http.Error(w, "unexpected STS request", http.StatusInternalServerError)
+		}))
+		defer stsServer.Close()
+		configDir := t.TempDir()
+		t.Setenv("AWS_ENDPOINT_URL", "")
+		t.Setenv("AWS_ENDPOINT_URL_STS", stsServer.URL)
+		t.Setenv("AWS_CONFIG_FILE", filepath.Join(configDir, "config"))
+		t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(configDir, "credentials"))
+		t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+		t.Setenv("AWS_ACCESS_KEY_ID", "")
+		t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+		t.Setenv("AWS_SESSION_TOKEN", "")
+		t.Setenv("AWS_PROFILE", "")
+
+		tokenFile := filepath.Join(configDir, "missing-token")
+		config, err := awsConfigForRole(t.Context(), "us-east-1", "arn:aws:iam::123456789012:role/test-role", tokenFile, "")
+		if err != nil {
+			t.Fatalf("expected lazy credential configuration to succeed, got %v", err)
+		}
+		_, err = config.Credentials.Retrieve(t.Context())
+		if err == nil {
+			t.Fatal("expected missing token to prevent credential retrieval")
+		}
+		for _, detail := range []string{"failed to retrieve jwt", "unable to read file", tokenFile} {
+			if !strings.Contains(err.Error(), detail) {
+				t.Errorf("expected missing-token error to contain %q, got %v", detail, err)
+			}
+		}
+		if got := stsRequests.Load(); got != 0 {
+			t.Errorf("expected no STS request without a token, got %d", got)
+		}
+	})
 }
 
 func testAWSConfigForRoleKeepsWebIdentityTokenOnSTSEndpoint(t *testing.T) {

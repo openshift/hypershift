@@ -127,6 +127,8 @@ func (s loadBalancerCleanupScope) matchesAttachment(targetGroup elbv2types.Targe
 }
 
 // DeleteLoadBalancers deletes load balancers and target groups selected by their VPC.
+// It does not check cluster ownership tags and is intended for full infrastructure
+// teardown. Shared-VPC cleanup must use the named or recorded cleanup helpers.
 func DeleteLoadBalancers(ctx context.Context, clients LoadBalancerClients, selector LoadBalancerSelector, log logr.Logger) []error {
 	if err := selector.validate(); err != nil {
 		return []error{err}
@@ -338,7 +340,7 @@ func cleanupNamedLoadBalancers(ctx context.Context, clients LoadBalancerClients,
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		remaining, verifyErr := countTargetGroupsByARN(ctx, clients.ELBV2, selector, result.OrphanTargetGroupARNs)
+		remaining, verifyErr := countTargetGroupsByARN(ctx, clients.ELBV2, result.OrphanTargetGroupARNs)
 		if verifyErr != nil {
 			result.OrphanTargetGroupErr = errors.Join(result.OrphanTargetGroupErr, verifyErr)
 		}
@@ -506,7 +508,7 @@ func CleanupRecordedLoadBalancers(ctx context.Context, clients LoadBalancerClien
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
-		remaining, verifyErr := countTargetGroupsByARN(ctx, clients.ELBV2, selector, result.OrphanTargetGroupARNs)
+		remaining, verifyErr := countTargetGroupsByARN(ctx, clients.ELBV2, result.OrphanTargetGroupARNs)
 		result.OrphanTargetGroupErr = verifyErr
 		result.OrphanTargetGroupScanSuccess = verifyErr == nil && remaining == 0
 	}
@@ -1306,7 +1308,10 @@ func countNamedLoadBalancerResources(ctx context.Context, clients LoadBalancerCl
 	return count, errors.Join(errs...)
 }
 
-func countTargetGroupsByARN(ctx context.Context, client awsapi.ELBV2API, selector LoadBalancerSelector, targetGroupARNs sets.Set[string]) (int, error) {
+// countTargetGroupsByARN verifies disappearance of exact ARNs selected earlier.
+// A tag or VPC mismatch does not prove deletion. This count never authorizes
+// deletion; discovery and deletion retain their ownership checks.
+func countTargetGroupsByARN(ctx context.Context, client awsapi.ELBV2API, targetGroupARNs sets.Set[string]) (int, error) {
 	arns := make([]string, 0, len(targetGroupARNs))
 	for arn := range targetGroupARNs {
 		arns = append(arns, arn)
@@ -1332,15 +1337,6 @@ func countTargetGroupsByARN(ctx context.Context, client awsapi.ELBV2API, selecto
 				continue
 			}
 			count++
-			if selector.VPCID != aws.ToString(targetGroup.VpcId) {
-				continue
-			}
-			if appendContextError(ctx, &errs) {
-				return count, errors.Join(errs...)
-			}
-			if _, err := v2ResourceHasClusterTag(ctx, client, targetGroup.TargetGroupArn, selector.InfraID); err != nil {
-				errs = append(errs, fmt.Errorf("failed to verify target group tags: %w", err))
-			}
 		}
 	}
 	appendContextError(ctx, &errs)

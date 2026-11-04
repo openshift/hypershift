@@ -1428,6 +1428,8 @@ func testDestroyCloudResources_WhenAWSCleanupHasConnectionError_ItShouldNotLogRa
 	g.Expect(r.cleanupTracker.GetFailureCount(client.ObjectKeyFromObject(fakeHCP).String())).To(Equal(1), "the component wrapper should preserve connection-error classification")
 	g.Expect(err.Error()).NotTo(ContainSubstring(endpointHost))
 	g.Expect(logOutput.String()).NotTo(ContainSubstring(endpointHost))
+	g.Expect(logOutput.String()).To(ContainSubstring(`"error":"AWS load balancer cleanup failed`))
+	g.Expect(logOutput.String()).To(ContainSubstring("verify the failing component's credentials, permissions, and connectivity"))
 }
 
 func testDestroyCloudResources_WhenCleanupEligibilityCheckFails_ItShouldRedactErrorFromConditionAndLog(t *testing.T) {
@@ -2025,6 +2027,141 @@ func TestSaveAWSLoadBalancerCleanupProgress(t *testing.T) {
 		g.Expect(json.Unmarshal([]byte(updated.Data[awsLoadBalancerProgressDataKey]), persisted)).To(Succeed())
 		g.Expect(persisted.Services).To(HaveKey("service-uid"))
 	})
+
+	tests := []struct {
+		name         string
+		mutate       func(*awsLoadBalancerCleanupProgress, *corev1.ConfigMap)
+		dataOverride *string
+	}{
+		{
+			name: "When a conflict changes the HCP UID, it should preserve the foreign progress",
+			mutate: func(progress *awsLoadBalancerCleanupProgress, _ *corev1.ConfigMap) {
+				progress.HCPUID = "other-hcp-uid"
+			},
+		},
+		{
+			name: "When a conflict changes the InfraID, it should preserve the foreign progress",
+			mutate: func(progress *awsLoadBalancerCleanupProgress, _ *corev1.ConfigMap) {
+				progress.InfraID = "other-infra-id"
+			},
+		},
+		{
+			name: "When a conflict changes the AWS region, it should preserve the foreign progress",
+			mutate: func(progress *awsLoadBalancerCleanupProgress, _ *corev1.ConfigMap) {
+				progress.Region = "us-west-2"
+			},
+		},
+		{
+			name: "When a conflict changes the VPC, it should preserve the foreign progress",
+			mutate: func(progress *awsLoadBalancerCleanupProgress, _ *corev1.ConfigMap) {
+				progress.VPCID = "other-vpc"
+			},
+		},
+		{
+			name: "When a conflict changes the owner, it should preserve the foreign owner",
+			mutate: func(_ *awsLoadBalancerCleanupProgress, configMap *corev1.ConfigMap) {
+				configMap.OwnerReferences[0].UID = "other-hcp-uid"
+			},
+		},
+		{
+			name: "When a conflict adds another owner, it should preserve both owners",
+			mutate: func(_ *awsLoadBalancerCleanupProgress, configMap *corev1.ConfigMap) {
+				foreign := configMap.OwnerReferences[0]
+				foreign.UID = "other-owner"
+				foreign.Controller = ptr.To(false)
+				configMap.OwnerReferences = append(configMap.OwnerReferences, foreign)
+			},
+		},
+		{name: "When a conflict corrupts progress data, it should leave the invalid record untouched", dataOverride: ptr.To("{")},
+		{name: "When a conflict clears progress data, it should leave the invalid record untouched", dataOverride: ptr.To("")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			ctx := t.Context()
+			hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", Namespace: "test-hcp", UID: "hcp-uid"}}
+			progress := &awsLoadBalancerCleanupProgress{
+				HCPUID: hcp.UID, InfraID: "infra-id", Region: "us-east-1", VPCID: "vpc-owned",
+				Services: map[string]awsLoadBalancerServiceProof{},
+			}
+			serialized, err := json.Marshal(progress)
+			g.Expect(err).NotTo(HaveOccurred())
+			original := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID),
+					OwnerReferences: []metav1.OwnerReference{testHostedControlPlaneOwnerReference(hcp)},
+				},
+				Data: map[string]string{awsLoadBalancerProgressDataKey: string(serialized)},
+			}
+			managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(original).Build()
+			updateCalls := 0
+			var concurrent *corev1.ConfigMap
+			writer := interceptor.NewClient(managementClient, interceptor.Funcs{
+				Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+					updateCalls++
+					if updateCalls > 1 {
+						return c.Update(ctx, obj, opts...)
+					}
+					concurrent = &corev1.ConfigMap{}
+					g.Expect(c.Get(ctx, client.ObjectKeyFromObject(original), concurrent)).To(Succeed())
+					changedProgress := &awsLoadBalancerCleanupProgress{}
+					g.Expect(json.Unmarshal([]byte(concurrent.Data[awsLoadBalancerProgressDataKey]), changedProgress)).To(Succeed())
+					if test.mutate != nil {
+						test.mutate(changedProgress, concurrent)
+					}
+					changedData, err := json.Marshal(changedProgress)
+					g.Expect(err).NotTo(HaveOccurred())
+					concurrent.Data[awsLoadBalancerProgressDataKey] = string(changedData)
+					if test.dataOverride != nil {
+						concurrent.Data[awsLoadBalancerProgressDataKey] = *test.dataOverride
+					}
+					g.Expect(c.Update(ctx, concurrent)).To(Succeed())
+					return apierrors.NewConflict(schema.GroupResource{Resource: "configmaps"}, obj.GetName(), errors.New("injected conflict"))
+				},
+			})
+			r := &reconciler{cpClient: writer, cpAPIReader: managementClient}
+
+			err = r.saveAWSLoadBalancerCleanupProgress(ctx, original, true, progress)
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(updateCalls).To(Equal(1), "retry must reject changed identity or ownership before another update")
+			persisted := &corev1.ConfigMap{}
+			g.Expect(managementClient.Get(ctx, client.ObjectKeyFromObject(original), persisted)).To(Succeed())
+			g.Expect(persisted.Data).To(Equal(concurrent.Data))
+			g.Expect(persisted.OwnerReferences).To(Equal(concurrent.OwnerReferences))
+		})
+	}
+}
+
+func TestEnsureAWSLoadBalancerProgressOwnerReference(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Name: "test-hcp", UID: "hcp-uid"}}
+	expected := testHostedControlPlaneOwnerReference(hcp)
+	foreign := expected
+	foreign.UID = "other-owner"
+	foreign.Controller = ptr.To(false)
+	tests := []struct {
+		name    string
+		owners  []metav1.OwnerReference
+		wantErr bool
+	}{
+		{name: "When the expected owner is present, it should preserve it", owners: []metav1.OwnerReference{expected}},
+		{name: "When a foreign owner is present, it should reject without mutation", owners: []metav1.OwnerReference{foreign}, wantErr: true},
+		{name: "When multiple owners are present, it should reject without mutation", owners: []metav1.OwnerReference{expected, foreign}, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			configMap := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{OwnerReferences: test.owners}}
+			before := configMap.DeepCopy()
+			changed, err := ensureAWSLoadBalancerProgressOwnerReference(configMap, hcp)
+			g := NewGomegaWithT(t)
+			if test.wantErr {
+				g.Expect(err).To(MatchError("AWS load balancer cleanup progress ConfigMap has an unexpected owner"))
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+			g.Expect(changed).To(BeFalse())
+			g.Expect(configMap).To(Equal(before))
+		})
+	}
 }
 
 func TestReconciler_PrepareAWSLoadBalancerCleanupState(t *testing.T) {
@@ -2157,7 +2294,7 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
 		g := NewGomegaWithT(t)
 		g.Expect(removed).To(BeFalse())
-		g.Expect(err).To(MatchError("cloud resource cleanup failed; error details were omitted to avoid exposing sensitive resource or endpoint information"))
+		g.Expect(err).To(MatchError(genericCloudResourceCleanupMessage))
 		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), &corev1.Service{})).To(Succeed())
 	})
 
@@ -2311,7 +2448,15 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 				},
 				Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
 			}
-			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
+			removedService := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "removed", Namespace: "default", UID: "removed-service-uid"},
+				Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+			}
+			unrelatedService := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Name: "unrelated", Namespace: "default"},
+				Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP},
+			}
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service, removedService, unrelatedService).Build()
 			ctrl := gomock.NewController(t)
 			elbClient := awsapi.NewMockELBAPI(ctrl)
 			elbv2Client := awsapi.NewMockELBV2API(ctrl)
@@ -2351,11 +2496,18 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 				},
 			}
 
-			removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+			var logOutput bytes.Buffer
+			logCore := zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&logOutput), zapcore.InfoLevel)
+			ctx := logr.NewContext(t.Context(), zapr.NewLogger(zap.New(logCore)))
+			removed, err := r.ensureAWSLoadBalancersRemoved(ctx, hcp)
 			g := NewGomegaWithT(t)
 			g.Expect(removed).To(BeFalse())
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(factoryCalls).To(BeZero())
+			g.Expect(logOutput.String()).To(ContainSubstring("Waiting for Kubernetes load balancer Service deletion"))
+			g.Expect(logOutput.String()).To(ContainSubstring(`"pendingServiceCount":1`))
+			g.Expect(apierrors.IsNotFound(guestClient.Get(t.Context(), client.ObjectKeyFromObject(removedService), &corev1.Service{}))).To(BeTrue())
+			g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(unrelatedService), &corev1.Service{})).To(Succeed())
 			remaining := &corev1.Service{}
 			g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
 			g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeFalse())
@@ -2630,7 +2782,9 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeTrue())
 	})
 
-	t.Run("When a verified identity cannot be persisted, it should not delete the AWS resource", func(t *testing.T) {
+	t.Run("When cancellation prevents persisting a verified identity, it should not delete AWS resources", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
 		service := &corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{Name: "load-balancer", Namespace: "default", UID: "identity-write-failure-service-uid"},
 			Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
@@ -2663,18 +2817,31 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(progressConfigMap).Build()
 		guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(service).Build()
 		elbClient := &progressTestELBClient{name: "cluster-lb", vpcID: "vpc-owned", infraID: "infra-id", present: true}
+		elbv2Client := &progressTestELBV2Client{}
+		writer := interceptor.NewClient(managementClient, interceptor.Funcs{
+			Update: func(ctx context.Context, _ client.WithWatch, _ client.Object, _ ...client.UpdateOption) error {
+				cancel()
+				return ctx.Err()
+			},
+		})
 		r := &reconciler{
 			client:   guestClient,
-			cpClient: &failingProgressWriteClient{Client: managementClient, err: errors.New("management API unavailable")},
+			cpClient: writer,
 			awsLoadBalancerClients: awsutil.LoadBalancerClients{
-				ELB: elbClient, ELBV2: &progressTestELBV2Client{},
+				ELB: elbClient, ELBV2: elbv2Client,
 			},
 		}
 
-		removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+		removed, err := r.ensureAWSLoadBalancersRemoved(ctx, hcp)
 		g.Expect(removed).To(BeFalse())
 		g.Expect(err).To(MatchError("failed to persist verified AWS identities; no AWS deletion was attempted"))
+		g.Expect(errors.Is(err, context.Canceled)).To(BeTrue())
+		g.Expect(elbClient.describeCalls).To(Equal(1), "cancellation must occur after ownership inspection")
 		g.Expect(elbClient.deleteCalls).To(Equal(0))
+		g.Expect(elbv2Client.targetGroupScanCalls).To(BeZero())
+		persisted := &corev1.ConfigMap{}
+		g.Expect(managementClient.Get(t.Context(), client.ObjectKeyFromObject(progressConfigMap), persisted)).To(Succeed())
+		g.Expect(persisted.Data).To(Equal(progressConfigMap.Data), "canceled persistence must not record uncommitted identities")
 		remaining := &corev1.Service{}
 		g.Expect(guestClient.Get(t.Context(), client.ObjectKeyFromObject(service), remaining)).To(Succeed())
 		g.Expect(remaining.DeletionTimestamp.IsZero()).To(BeTrue())
@@ -2799,6 +2966,78 @@ func TestEnsureAWSLoadBalancersRemoved(t *testing.T) {
 		g.Expect(elbv2Client.targetGroupScanCalls).To(Equal(2))
 		g.Expect(apierrors.IsNotFound(managementClient.Get(t.Context(), progressKey, &corev1.ConfigMap{}))).To(BeTrue())
 	})
+
+	for _, test := range []struct {
+		name      string
+		withProof bool
+	}{
+		{name: "When empty progress retirement fails, it should remain incomplete and retry without AWS calls"},
+		{name: "When completed proof retirement fails, it should retain the proof and retry", withProof: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			progress := awsLoadBalancerCleanupProgress{
+				HCPUID: hcp.UID, InfraID: hcp.Spec.InfraID, Region: "us-east-1", VPCID: "vpc-owned",
+				Services: map[string]awsLoadBalancerServiceProof{},
+			}
+			if test.withProof {
+				progress.Services["absent-service-uid"] = awsLoadBalancerServiceProof{
+					Namespace: "default", Name: "load-balancer",
+					Candidates: []awsLoadBalancerCandidate{{Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com", Name: "cluster-lb", Region: "us-east-1"}},
+					Identities: []awsutil.LoadBalancerIdentity{{Name: "cluster-lb", Type: awsutil.ClassicLoadBalancerResource, VPCID: "vpc-owned"}},
+				}
+			}
+			serialized, err := json.Marshal(progress)
+			g.Expect(err).NotTo(HaveOccurred())
+			configMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: hcp.Namespace, Name: awsLoadBalancerProgressConfigMapName(hcp.UID),
+					OwnerReferences: []metav1.OwnerReference{testHostedControlPlaneOwnerReference(hcp)},
+				},
+				Data: map[string]string{awsLoadBalancerProgressDataKey: string(serialized)},
+			}
+			managementClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(configMap).Build()
+			deleteErr := errors.New("request to https://private-management.example failed")
+			failDelete := true
+			writer := interceptor.NewClient(managementClient, interceptor.Funcs{
+				Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+					if failDelete {
+						return deleteErr
+					}
+					return c.Delete(ctx, obj, opts...)
+				},
+			})
+			elbClient := &progressTestELBClient{}
+			elbv2Client := &progressTestELBV2Client{}
+			r := &reconciler{
+				client: fake.NewClientBuilder().WithScheme(api.Scheme).Build(), cpClient: writer, cpAPIReader: managementClient,
+				awsLoadBalancerClients: awsutil.LoadBalancerClients{ELB: elbClient, ELBV2: elbv2Client},
+			}
+
+			removed, err := r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+			g.Expect(removed).To(BeFalse())
+			g.Expect(errors.Is(err, deleteErr)).To(BeTrue())
+			g.Expect(err.Error()).To(ContainSubstring("failed to retire"))
+			g.Expect(err.Error()).NotTo(ContainSubstring("private-management.example"))
+			persisted := &corev1.ConfigMap{}
+			g.Expect(managementClient.Get(t.Context(), client.ObjectKeyFromObject(configMap), persisted)).To(Succeed())
+			g.Expect(persisted.Data).To(Equal(configMap.Data))
+
+			failDelete = false
+			removed, err = r.ensureAWSLoadBalancersRemoved(t.Context(), hcp)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(removed).To(BeTrue())
+			g.Expect(apierrors.IsNotFound(managementClient.Get(t.Context(), client.ObjectKeyFromObject(configMap), &corev1.ConfigMap{}))).To(BeTrue())
+			g.Expect(elbClient.deleteCalls).To(BeZero())
+			if test.withProof {
+				g.Expect(elbv2Client.targetGroupScanCalls).To(Equal(2), "each retry with a proof must scan for orphan target groups")
+			} else {
+				g.Expect(elbClient.describeCalls).To(BeZero())
+				g.Expect(elbv2Client.loadBalancerDescribeCalls).To(BeZero())
+				g.Expect(elbv2Client.targetGroupScanCalls).To(BeZero())
+			}
+		})
+	}
 
 	t.Run("When a recorded ELBV2 ARN is NotFound on retry, it should verify that exact resource after the orphan scan", func(t *testing.T) {
 		service := &corev1.Service{
@@ -3199,7 +3438,7 @@ func testDestroyCloudResourcesRedactsAWSDetailsFromCondition(t *testing.T) {
 		{
 			name:        "When a raw cleanup error contains endpoint details, it should publish a generic safe message",
 			cleanupErr:  fmt.Errorf("request sent to https://%s", endpoint),
-			wantMessage: "cloud resource cleanup failed; error details were omitted to avoid exposing sensitive resource or endpoint information",
+			wantMessage: "Check hosted-cluster-config-operator logs in the control plane namespace for cleanup progress; verify the failing component's credentials, permissions, and connectivity",
 			wantComponents: []string{
 				"AWS load balancer cleanup failed",
 			},
@@ -3369,8 +3608,9 @@ func TestLoadBalancerNamesFromServices(t *testing.T) {
 		name                string
 		services            []corev1.Service
 		want                []string
-		wantClassedServices int
-		wantPendingServices int
+		wantNamedServices   []client.ObjectKey
+		wantClassedServices []client.ObjectKey
+		wantPendingServices []client.ObjectKey
 	}{
 		{
 			name: "When Services have AWS hostnames, it should return unique load balancer names",
@@ -3381,12 +3621,13 @@ func TestLoadBalancerNamesFromServices(t *testing.T) {
 				{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"ingresscontroller.operator.openshift.io/owning-ingresscontroller": "default"}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "ingress-lb-789.us-east-1.elb.amazonaws.com"}}}}},
 				{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"ingresscontroller.operator.openshift.io/owning-ingresscontroller": "default"}}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}, Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{Hostname: "ingress-label-lb-789.us-east-1.elb.amazonaws.com"}}}}},
 			},
-			want: []string{"cluster-lb"},
+			want:              []string{"cluster-lb"},
+			wantNamedServices: []client.ObjectKey{{Namespace: "default", Name: "service-1"}, {Namespace: "default", Name: "service-2"}},
 		},
 		{
 			name:                "When a LoadBalancer Service has no hostname, it should be returned for Kubernetes cleanup",
 			services:            []corev1.Service{{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}}},
-			wantPendingServices: 1,
+			wantPendingServices: []client.ObjectKey{{Namespace: "default", Name: "service-0"}},
 		},
 		{
 			name: "When a LoadBalancer Service has a non-AWS hostname, it should be returned for Kubernetes cleanup",
@@ -3396,7 +3637,7 @@ func TestLoadBalancerNamesFromServices(t *testing.T) {
 					Hostname: "lb.example.com",
 				}}}},
 			}},
-			wantPendingServices: 1,
+			wantPendingServices: []client.ObjectKey{{Namespace: "default", Name: "service-0"}},
 		},
 		{
 			name: "When only some ingress hostnames resolve to AWS names, it should keep the Service pending",
@@ -3408,7 +3649,7 @@ func TestLoadBalancerNamesFromServices(t *testing.T) {
 				}}},
 			}},
 			want:                []string{"cluster-lb"},
-			wantPendingServices: 1,
+			wantPendingServices: []client.ObjectKey{{Namespace: "default", Name: "service-0"}},
 		},
 		{
 			name: "When a Service has a custom load balancer class, it should defer cloud cleanup to that controller",
@@ -3416,16 +3657,32 @@ func TestLoadBalancerNamesFromServices(t *testing.T) {
 				Type:              corev1.ServiceTypeLoadBalancer,
 				LoadBalancerClass: ptr.To("example.com/custom-lb"),
 			}}},
-			wantClassedServices: 1,
+			wantClassedServices: []client.ObjectKey{{Namespace: "default", Name: "service-0"}},
+		},
+		{
+			name: "When a custom-class Service has an AWS hostname, it should still defer cleanup to that controller",
+			services: []corev1.Service{{
+				Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer, LoadBalancerClass: ptr.To("example.com/custom-lb")},
+				Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{
+					Hostname: "cluster-lb-123.us-east-1.elb.amazonaws.com",
+				}}}},
+			}},
+			wantClassedServices: []client.ObjectKey{{Namespace: "default", Name: "service-0"}},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			names, _, servicesWithLoadBalancerClass, servicesWithoutNames := loadBalancerNamesFromServices(test.services)
-			NewGomegaWithT(t).Expect(names).To(ConsistOf(test.want))
-			NewGomegaWithT(t).Expect(servicesWithLoadBalancerClass).To(HaveLen(test.wantClassedServices))
-			NewGomegaWithT(t).Expect(servicesWithoutNames).To(HaveLen(test.wantPendingServices))
+			for i := range test.services {
+				test.services[i].Namespace = "default"
+				test.services[i].Name = fmt.Sprintf("service-%d", i)
+			}
+			names, servicesWithNames, servicesWithLoadBalancerClass, servicesWithoutNames := loadBalancerNamesFromServices(test.services)
+			g := NewGomegaWithT(t)
+			g.Expect(names).To(ConsistOf(test.want))
+			g.Expect(servicesWithNames.UnsortedList()).To(ConsistOf(test.wantNamedServices))
+			g.Expect(servicesWithLoadBalancerClass.UnsortedList()).To(ConsistOf(test.wantClassedServices))
+			g.Expect(servicesWithoutNames.UnsortedList()).To(ConsistOf(test.wantPendingServices))
 		})
 	}
 }
