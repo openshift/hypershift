@@ -76,7 +76,7 @@ func TestKeyGeneration(t *testing.T) {
 	})
 }
 
-func TestRunValidation(t *testing.T) {
+func TestRun(t *testing.T) {
 	t.Run("When neither snapshot-path nor snapshot-dir is set it should return an error", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		opts := options{

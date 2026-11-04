@@ -535,6 +535,141 @@ func TestReconcile(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(result).To(Equal(ctrl.Result{}))
 	})
+
+	// Formerly the top-level TestReconcileConcurrentBackupSerialization.
+	newOtherBackupJob := func(name, backupName string, conditions ...batchv1.JobCondition) *batchv1.Job {
+		return &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: testHONamespace,
+				Labels: map[string]string{
+					LabelApp:          LabelName,
+					LabelHCPNamespace: testHCPNamespace,
+					LabelBackupName:   backupName,
+				},
+			},
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers:    []corev1.Container{{Name: "test", Image: "test:latest"}},
+						RestartPolicy: corev1.RestartPolicyNever,
+					},
+				},
+			},
+			Status: batchv1.JobStatus{
+				Conditions: conditions,
+			},
+		}
+	}
+
+	t.Run("When another backup's fresh Job is invisible to the cache it should reject", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+
+		// The cache client (what the reconciler's cached Client sees) has no
+		// Jobs at all; the API reader sees a Job for another backup that was
+		// just created and has no status yet (Active == 0, no conditions).
+		r := newReconciler(backup, hcp, sts)
+		r.APIReader = fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithObjects(newOtherBackupJob("etcd-backup-first", "first-backup")).
+			Build()
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.Reason).To(Equal(hyperv1.BackupRejectedReason))
+		g.Expect(cond.Message).To(ContainSubstring("etcd-backup-first"))
+		g.Expect(isTerminal(updated)).To(BeTrue(), "a rejected backup must be terminal so retention can clean it up")
+
+		// No Job may have been created for the rejected backup.
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(BeEmpty())
+	})
+
+	t.Run("When another backup's Job already completed it should proceed", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
+		}
+
+		// A completed Job for a prior backup is visible only via the API
+		// reader; it must not block a new backup.
+		r := newReconciler(backup, hcp, sts, pullSecret, credSecret)
+		r.APIReader = fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithObjects(newOtherBackupJob("etcd-backup-prior", "prior-backup",
+				batchv1.JobCondition{Type: batchv1.JobComplete, Status: corev1.ConditionTrue})).
+			Build()
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Reason).To(Equal(hyperv1.BackupInProgressReason))
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+	})
+
+	t.Run("When its own Job is invisible to the cache it should not create a duplicate", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+
+		// The backup's own Job exists on the API server but is not yet in the
+		// cache. findJobForBackup performs a quorum read, so the reconciler
+		// must adopt the existing Job rather than create a duplicate.
+		ownJob := newOtherBackupJob("etcd-backup-own", backup.Name)
+		ownJob.Labels[LabelBackupName] = backup.Name
+		r := newReconciler(backup, hcp, sts)
+		r.APIReader = fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithObjects(ownJob).
+			Build()
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		// Job is neither Complete nor Failed: the reconciler monitors it and requeues.
+		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
+
+		// No duplicate Job was created through the cached client.
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(BeEmpty())
+	})
 }
 
 func TestIsTerminal(t *testing.T) {
@@ -659,6 +794,32 @@ func TestEnsureNetworkPolicy(t *testing.T) {
 		g.Expect(np.Spec.Ingress[0].From[0].NamespaceSelector.MatchLabels).To(HaveKeyWithValue("kubernetes.io/metadata.name", testHONamespace))
 		g.Expect(np.Spec.Ingress[0].Ports[0].Port.IntValue()).To(Equal(2379))
 		g.Expect(np.Spec.PolicyTypes).To(ContainElement(networkingv1.PolicyTypeIngress))
+	})
+
+	// Formerly the top-level TestEnsureNetworkPolicyMultiShard.
+	t.Run("When shards are configured the NetworkPolicy should include shard app labels", func(t *testing.T) {
+		g := NewWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		r := newReconciler(backup, hcp)
+		ctx := context.Background()
+
+		err := r.ensureNetworkPolicy(ctx, backup, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		np := &networkingv1.NetworkPolicy{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: NetworkPolicyName, Namespace: testHCPNamespace}, np)).To(Succeed())
+		g.Expect(np.Spec.PodSelector.MatchExpressions).To(HaveLen(1))
+		values := np.Spec.PodSelector.MatchExpressions[0].Values
+		g.Expect(values).To(ContainElement("etcd"))
+		g.Expect(values).To(ContainElement("etcd-events"))
 	})
 }
 
@@ -1269,6 +1430,77 @@ func TestCheckEtcdHealth(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(healthy).To(BeFalse())
 		g.Expect(msg).To(ContainSubstring("2/3"))
+	})
+
+	// Formerly the top-level TestCheckEtcdHealthMultiShard.
+	t.Run("When all shard StatefulSets are ready it should return healthy", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		shardSTS := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
+			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(int32(3))},
+			Status:     appsv1.StatefulSetStatus{ReadyReplicas: 3},
+		}
+		r := newReconciler(hcp, defaultSTS, shardSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeTrue())
+		g.Expect(msg).To(BeEmpty())
+	})
+
+	t.Run("When a shard StatefulSet is not ready it should return unhealthy", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		shardSTS := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
+			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(int32(3))},
+			Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+		}
+		r := newReconciler(hcp, defaultSTS, shardSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeFalse())
+		g.Expect(msg).To(ContainSubstring("etcd-events"))
+		g.Expect(msg).To(ContainSubstring("1/3"))
+	})
+
+	t.Run("When a shard StatefulSet is not found it should return unhealthy", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		// No shard StatefulSet
+		r := newReconciler(hcp, defaultSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeFalse())
+		g.Expect(msg).To(ContainSubstring("etcd-events"))
+		g.Expect(msg).To(ContainSubstring("not found"))
 	})
 }
 
@@ -2786,148 +3018,6 @@ func TestReconcileHappyPathWithSTS(t *testing.T) {
 	})
 }
 
-// TestReconcileConcurrentBackupSerialization covers the check-then-create race
-// found in the PR #9146 live verification: two HCPEtcdBackup resources submitted
-// together both passed the active-Job guard because the guard read the informer
-// cache, which had not yet observed the first backup's Job. The guard now
-// performs a quorum read via the API reader, so the second backup must be
-// rejected even while the first backup's Job is invisible to the cache.
-func TestReconcileConcurrentBackupSerialization(t *testing.T) {
-	newOtherBackupJob := func(name, backupName string, conditions ...batchv1.JobCondition) *batchv1.Job {
-		return &batchv1.Job{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: testHONamespace,
-				Labels: map[string]string{
-					LabelApp:          LabelName,
-					LabelHCPNamespace: testHCPNamespace,
-					LabelBackupName:   backupName,
-				},
-			},
-			Spec: batchv1.JobSpec{
-				Template: corev1.PodTemplateSpec{
-					Spec: corev1.PodSpec{
-						Containers:    []corev1.Container{{Name: "test", Image: "test:latest"}},
-						RestartPolicy: corev1.RestartPolicyNever,
-					},
-				},
-			},
-			Status: batchv1.JobStatus{
-				Conditions: conditions,
-			},
-		}
-	}
-
-	t.Run("When another backup's fresh Job is invisible to the cache it should reject", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		backup := newHCPEtcdBackup()
-		hcp := newHostedControlPlane()
-		sts := newEtcdStatefulSet(3, 3)
-
-		// The cache client (what the reconciler's cached Client sees) has no
-		// Jobs at all; the API reader sees a Job for another backup that was
-		// just created and has no status yet (Active == 0, no conditions).
-		r := newReconciler(backup, hcp, sts)
-		r.APIReader = fake.NewClientBuilder().
-			WithScheme(newScheme()).
-			WithObjects(newOtherBackupJob("etcd-backup-first", "first-backup")).
-			Build()
-		ctx := context.Background()
-
-		result, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
-		})
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(result).To(Equal(ctrl.Result{}))
-
-		updated := &hyperv1.HCPEtcdBackup{}
-		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
-		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
-		g.Expect(cond).ToNot(BeNil())
-		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-		g.Expect(cond.Reason).To(Equal(hyperv1.BackupRejectedReason))
-		g.Expect(cond.Message).To(ContainSubstring("etcd-backup-first"))
-		g.Expect(isTerminal(updated)).To(BeTrue(), "a rejected backup must be terminal so retention can clean it up")
-
-		// No Job may have been created for the rejected backup.
-		jobList := &batchv1.JobList{}
-		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
-		g.Expect(jobList.Items).To(BeEmpty())
-	})
-
-	t.Run("When another backup's Job already completed it should proceed", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		backup := newHCPEtcdBackup()
-		hcp := newHostedControlPlane()
-		sts := newEtcdStatefulSet(3, 3)
-		pullSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
-			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
-		}
-		credSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
-			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
-		}
-
-		// A completed Job for a prior backup is visible only via the API
-		// reader; it must not block a new backup.
-		r := newReconciler(backup, hcp, sts, pullSecret, credSecret)
-		r.APIReader = fake.NewClientBuilder().
-			WithScheme(newScheme()).
-			WithObjects(newOtherBackupJob("etcd-backup-prior", "prior-backup",
-				batchv1.JobCondition{Type: batchv1.JobComplete, Status: corev1.ConditionTrue})).
-			Build()
-		ctx := context.Background()
-
-		result, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
-		})
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
-
-		updated := &hyperv1.HCPEtcdBackup{}
-		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
-		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
-		g.Expect(cond).ToNot(BeNil())
-		g.Expect(cond.Reason).To(Equal(hyperv1.BackupInProgressReason))
-
-		jobList := &batchv1.JobList{}
-		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
-		g.Expect(jobList.Items).To(HaveLen(1))
-	})
-
-	t.Run("When its own Job is invisible to the cache it should not create a duplicate", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		backup := newHCPEtcdBackup()
-		hcp := newHostedControlPlane()
-		sts := newEtcdStatefulSet(3, 3)
-
-		// The backup's own Job exists on the API server but is not yet in the
-		// cache. findJobForBackup performs a quorum read, so the reconciler
-		// must adopt the existing Job rather than create a duplicate.
-		ownJob := newOtherBackupJob("etcd-backup-own", backup.Name)
-		ownJob.Labels[LabelBackupName] = backup.Name
-		r := newReconciler(backup, hcp, sts)
-		r.APIReader = fake.NewClientBuilder().
-			WithScheme(newScheme()).
-			WithObjects(ownJob).
-			Build()
-		ctx := context.Background()
-
-		result, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
-		})
-		g.Expect(err).ToNot(HaveOccurred())
-		// Job is neither Complete nor Failed: the reconciler monitors it and requeues.
-		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
-
-		// No duplicate Job was created through the cached client.
-		jobList := &batchv1.JobList{}
-		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
-		g.Expect(jobList.Items).To(BeEmpty())
-	})
-}
-
 func TestReconcileHappyPathWithAzureWI(t *testing.T) {
 	t.Run("When Azure Workload Identity credentials it should annotate SA and create Job via full Reconcile", func(t *testing.T) {
 		g := NewGomegaWithT(t)
@@ -3331,78 +3421,6 @@ func TestEtcdShards(t *testing.T) {
 	})
 }
 
-func TestCheckEtcdHealthMultiShard(t *testing.T) {
-	t.Run("When all shard StatefulSets are ready it should return healthy", func(t *testing.T) {
-		g := NewWithT(t)
-		hcp := newHostedControlPlane()
-		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
-			Shards: []hyperv1.ManagedEtcdShardSpec{{
-				Name:     "events",
-				Replicas: 3,
-				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
-			}},
-		}
-		defaultSTS := newEtcdStatefulSet(3, 3)
-		shardSTS := &appsv1.StatefulSet{
-			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
-			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(int32(3))},
-			Status:     appsv1.StatefulSetStatus{ReadyReplicas: 3},
-		}
-		r := newReconciler(hcp, defaultSTS, shardSTS)
-
-		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(healthy).To(BeTrue())
-		g.Expect(msg).To(BeEmpty())
-	})
-
-	t.Run("When a shard StatefulSet is not ready it should return unhealthy", func(t *testing.T) {
-		g := NewWithT(t)
-		hcp := newHostedControlPlane()
-		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
-			Shards: []hyperv1.ManagedEtcdShardSpec{{
-				Name:     "events",
-				Replicas: 3,
-				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
-			}},
-		}
-		defaultSTS := newEtcdStatefulSet(3, 3)
-		shardSTS := &appsv1.StatefulSet{
-			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
-			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(int32(3))},
-			Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
-		}
-		r := newReconciler(hcp, defaultSTS, shardSTS)
-
-		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(healthy).To(BeFalse())
-		g.Expect(msg).To(ContainSubstring("etcd-events"))
-		g.Expect(msg).To(ContainSubstring("1/3"))
-	})
-
-	t.Run("When a shard StatefulSet is not found it should return unhealthy", func(t *testing.T) {
-		g := NewWithT(t)
-		hcp := newHostedControlPlane()
-		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
-			Shards: []hyperv1.ManagedEtcdShardSpec{{
-				Name:     "events",
-				Replicas: 3,
-				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
-			}},
-		}
-		defaultSTS := newEtcdStatefulSet(3, 3)
-		// No shard StatefulSet
-		r := newReconciler(hcp, defaultSTS)
-
-		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(healthy).To(BeFalse())
-		g.Expect(msg).To(ContainSubstring("etcd-events"))
-		g.Expect(msg).To(ContainSubstring("not found"))
-	})
-}
-
 func TestBuildSnapshotInitContainers(t *testing.T) {
 	t.Parallel()
 
@@ -3500,32 +3518,5 @@ func TestParseShardSnapshots(t *testing.T) {
 		snapshots, err := parseShardSnapshots("some stray log line from the upload container")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(snapshots).To(BeNil())
-	})
-}
-
-func TestEnsureNetworkPolicyMultiShard(t *testing.T) {
-	t.Run("When shards are configured the NetworkPolicy should include shard app labels", func(t *testing.T) {
-		g := NewWithT(t)
-		backup := newHCPEtcdBackup()
-		hcp := newHostedControlPlane()
-		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
-			Shards: []hyperv1.ManagedEtcdShardSpec{{
-				Name:     "events",
-				Replicas: 3,
-				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
-			}},
-		}
-		r := newReconciler(backup, hcp)
-		ctx := context.Background()
-
-		err := r.ensureNetworkPolicy(ctx, backup, hcp)
-		g.Expect(err).ToNot(HaveOccurred())
-
-		np := &networkingv1.NetworkPolicy{}
-		g.Expect(r.Get(ctx, types.NamespacedName{Name: NetworkPolicyName, Namespace: testHCPNamespace}, np)).To(Succeed())
-		g.Expect(np.Spec.PodSelector.MatchExpressions).To(HaveLen(1))
-		values := np.Spec.PodSelector.MatchExpressions[0].Values
-		g.Expect(values).To(ContainElement("etcd"))
-		g.Expect(values).To(ContainElement("etcd-events"))
 	})
 }

@@ -1045,7 +1045,7 @@ func TestReconcileIgnitionServer(t *testing.T) {
 	}
 }
 
-func TestEtcdRestoredCondition(t *testing.T) {
+func TestHostedControlPlaneReconciler_EtcdRestoredConditionForSTS(t *testing.T) {
 	t.Parallel()
 	testsCases := []struct {
 		name              string
