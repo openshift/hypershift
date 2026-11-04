@@ -1323,8 +1323,8 @@ func deleteAzureVM(ctx context.Context, hc *hyperv1.HostedCluster, providerID, n
 	Expect(vmName).NotTo(BeEmpty(), "could not parse VM name from ProviderID %q", providerID)
 	GinkgoWriter.Printf("Deleting Azure VM %s in resource group %s (node %s)\n", vmName, resourceGroup, nodeName)
 
-	azureCredsFile := internal.GetEnvVarValue("E2E_AZURE_CREDENTIALS_FILE")
-	Expect(azureCredsFile).NotTo(BeEmpty(), "E2E_AZURE_CREDENTIALS_FILE must be set")
+	azureCredsFile := internal.GetEnvVarValue("AZURE_CREDS")
+	Expect(azureCredsFile).NotTo(BeEmpty(), "AZURE_CREDS must be set")
 	_, azureCreds, err := cmdutil.SetupAzureCredentials(ctrl.Log.WithName("e2e"), nil, azureCredsFile)
 	Expect(err).NotTo(HaveOccurred(), "failed to setup Azure credentials")
 
