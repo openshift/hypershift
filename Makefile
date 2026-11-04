@@ -190,6 +190,8 @@ verify-parallel-targets: verify-codespell verify-codecov verify-api-deps verify-
 # Run target checks sequentially after preparation.
 .PHONY: verify-serial-targets
 verify-serial-targets:
+	# GMP assets are generated from the CoreOS monitors; verify them serially.
+	$(MAKE) verify-gmp-config
 	# Sync regenerates provider sources that decoupling builds and lint reads.
 	$(MAKE) verify-capi-sync
 	$(MAKE) verify-capi-decoupling
@@ -263,6 +265,14 @@ $(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
 .PHONY: generate
 generate: $(MOCKGEN) $(CONTROLLER_GEN)
 	$(GO) generate ./...
+
+.PHONY: generate-gmp-config
+generate-gmp-config: ## Regenerate GMP PodMonitoring assets from CoreOS ServiceMonitor/PodMonitor assets.
+	$(GO) run ./hack/gmp-config-gen
+
+.PHONY: verify-gmp-config
+verify-gmp-config: ## Fail when generated GMP PodMonitoring assets are stale.
+	$(GO) run ./hack/gmp-config-gen --verify
 
 .PHONY: gmp-sync
 gmp-sync: $(CONTROLLER_GEN)
