@@ -5,8 +5,32 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/config"
+
+	"github.com/spf13/cobra"
 )
+
+// TestDisableClusterCapabilitiesFlagHelp verifies the shared --disable-cluster-capabilities help
+// on its actual consumers describes the implemented ImageRegistry-only behavior and does not claim
+// that every disabled capability suppresses an identity.
+func TestDisableClusterCapabilitiesFlagHelp(t *testing.T) { //nolint:hypershiftlinter // verifies the shared --disable-cluster-capabilities help wired by both azure create commands (NewCreateCommand, NewCreateIAMCommand)
+	t.Parallel()
+	g := NewWithT(t)
+
+	consumers := map[string]*cobra.Command{
+		"create iam azure":   NewCreateIAMCommand(),
+		"create infra azure": NewCreateCommand(),
+	}
+	for name, cmd := range consumers {
+		flag := cmd.Flags().Lookup("disable-cluster-capabilities")
+		g.Expect(flag).ToNot(BeNil(), "%s must expose --disable-cluster-capabilities", name)
+		g.Expect(flag.Usage).To(Equal(util.DisableClusterCapabilitiesDescription), "%s must use the shared description", name)
+		g.Expect(flag.Usage).To(ContainSubstring("ImageRegistry"), "%s help should name the ImageRegistry capability", name)
+		g.Expect(flag.Usage).ToNot(ContainSubstring("Disabled capabilities will not have corresponding workload identities created"),
+			"%s help must not claim that all disabled capabilities suppress identities", name)
+	}
+}
 
 func TestCreateIAMOptionsValidate(t *testing.T) {
 	tests := map[string]struct {
@@ -26,6 +50,33 @@ func TestCreateIAMOptionsValidate(t *testing.T) {
 			},
 			expectedError: false,
 			description:   "Should pass when all required fields are provided",
+		},
+		"When supported disabled capabilities are provided it should pass validation": {
+			opts: CreateIAMOptions{
+				Name:                       "test-cluster",
+				InfraID:                    "test-infra-id",
+				CredentialsFile:            "/path/to/creds.json",
+				ResourceGroupName:          "test-rg",
+				OIDCIssuerURL:              "https://issuer.example.com",
+				OutputFile:                 "/path/to/output.json",
+				DisableClusterCapabilities: append([]string(nil), supportedDisabledClusterCapabilities...),
+			},
+			expectedError: false,
+			description:   "Should accept the same disabled capabilities as cluster creation",
+		},
+		"When a disabled capability is misspelled it should return an error": {
+			opts: CreateIAMOptions{
+				Name:                       "test-cluster",
+				InfraID:                    "test-infra-id",
+				CredentialsFile:            "/path/to/creds.json",
+				ResourceGroupName:          "test-rg",
+				OIDCIssuerURL:              "https://issuer.example.com",
+				OutputFile:                 "/path/to/output.json",
+				DisableClusterCapabilities: []string{"ImageRegstry"},
+			},
+			expectedError: true,
+			errorContains: "unknown disabled capability: ImageRegstry",
+			description:   "Should reject misspelled disabled capabilities before Azure mutations",
 		},
 		"When name is empty it should return an error": {
 			opts: CreateIAMOptions{
