@@ -139,17 +139,6 @@ e2e-v2-gke/
 │                   └── monitoring.coreos.com/
 │                       ├── podmonitors/
 │                       └── servicemonitors/
-├── hypershift-k8sgpt/  # K8sGPT AI-powered analysis per namespace
-│   └── artifacts/
-│       ├── hostedcluster/
-│       │   └── result.json
-│       └── namespaces/
-│           ├── clusters/
-│           │   └── result.json
-│           ├── clusters-<hc-name>/
-│           │   └── result.json
-│           └── hypershift/
-│               └── result.json
 ├── hypershift-debug/  # generates quick-access debug links
 │   └── artifacts/
 │       └── custom-link-tools.html
@@ -175,8 +164,6 @@ e2e-v2-gke/
 | CAPI machines | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/clusters-<hc-name>/cluster.x-k8s.io/machines/` |
 | HyperShift operator pods | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/hypershift/core/pods/` |
 | HyperShift operator deployments | `artifacts/e2e-v2-gke/dump/artifacts/<hc-name>/namespaces/hypershift/apps/deployments/` |
-| K8sGPT analysis (control plane) | `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/clusters-<hc-name>/result.json` |
-| K8sGPT analysis (operator) | `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/hypershift/result.json` |
 | Cluster version-rollout result | `artifacts/e2e-v2-gke/hypershift-gcp-create-guests/artifacts/junit_hosted_cluster_<hc-name>.xml` |
 | Test results | `artifacts/e2e-v2-gke/tests/artifacts/junit_<test-group>.xml` |
 
@@ -191,14 +178,3 @@ e2e-v2-gke/
 | `artifacts/e2e-v2-gke/hypershift-gcp-create-guests/artifacts/junit_hosted_cluster_<hc-name>.xml` | Per-cluster version-rollout result; emitted only after the cluster becomes Available, so creation and availability failures appear in the step log instead |
 | `artifacts/e2e-v2-gke/tests/artifacts/junit_<test-group>.xml` | Ginkgo v2 results for one `TestGroup` (the default GCP plan has a single group, `default`) |
 | `artifacts/junit_operator.xml` | CI operator-level results |
-
-## K8sGPT Analysis
-
-The `hypershift-k8sgpt` step produces AI-powered analysis per scope:
-
-| File | Scope |
-|------|-------|
-| `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/hostedcluster/result.json` | HostedCluster |
-| `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/clusters/result.json` | `clusters` namespace |
-| `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/clusters-<hc-name>/result.json` | Control plane namespace |
-| `artifacts/e2e-v2-gke/hypershift-k8sgpt/artifacts/namespaces/hypershift/result.json` | `hypershift` namespace |
