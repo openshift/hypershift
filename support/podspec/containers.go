@@ -153,15 +153,22 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 // which prevents PDB from treating it as healthy during eviction decisions.
 // This uses /livez (not /readyz) to avoid a circular dependency: KAS /readyz checks
 // aggregated API servers, which include OAS and OAuth API Server.
+//
+// PID 1 must reap orphaned children: processes spawned by the exec probe (e.g. curl)
+// are reparented to PID 1 when the probe is killed on timeout. A bare `sleep` never
+// calls wait(), so those processes would accumulate as zombies, each pinning its
+// seccomp BPF filter until the memlock limit is exhausted. Bash blocked in `wait`
+// reaps any child via waitpid(-1), and the TERM trap lets the container exit promptly.
 func KASReadinessCheckContainer(kasLivezURL string) corev1.Container {
 	return corev1.Container{
 		Name:    "kas-readiness-check",
 		Image:   "cli",
-		Command: []string{"/bin/bash", "-c", "sleep infinity"},
+		Command: []string{"/bin/bash", "-c", "trap 'exit 0' TERM; while true; do sleep 3600 & wait $!; done"},
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				Exec: &corev1.ExecAction{
-					Command: []string{"/bin/bash", "-c", fmt.Sprintf("curl -kfs %s > /dev/null", kasLivezURL)},
+					// --max-time keeps curl from outliving the probe's TimeoutSeconds.
+					Command: []string{"/bin/bash", "-c", fmt.Sprintf("curl -kfs --max-time 4 %s > /dev/null", kasLivezURL)},
 				},
 			},
 			FailureThreshold: 3,
