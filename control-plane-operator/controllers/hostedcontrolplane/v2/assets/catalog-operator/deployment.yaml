@@ -45,6 +45,8 @@ spec:
             - /srv-cert/tls.key
             - --client-ca
             - /client-ca/ca.crt
+            - --client-ca-authorization=true
+            - --client-ca-allowed-cn=system:serviceaccount:hypershift:prometheus
             - --kubeconfig
             - /etc/openshift/kubeconfig/kubeconfig
           image: operator-lifecycle-manager

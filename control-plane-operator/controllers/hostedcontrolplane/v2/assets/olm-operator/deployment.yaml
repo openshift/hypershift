@@ -40,6 +40,8 @@ spec:
             - /srv-cert/tls.key
             - --client-ca
             - /client-ca/ca.crt
+            - --client-ca-authorization=true
+            - --client-ca-allowed-cn=system:serviceaccount:hypershift:prometheus
           image: operator-lifecycle-manager
           imagePullPolicy: IfNotPresent
           ports:

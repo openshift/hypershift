@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 825ae26349315c2f1f18c6e8676d8a8b1cdfea3499181f59229877951a48a913
+    hypershift.openshift.io/desired-state-hash: e12ade23733f4f227b36fe299fd5bf922dbeed78372c7759e2d05e70762827c0
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: catalog-operator
@@ -77,6 +77,8 @@ spec:
         - /srv-cert/tls.key
         - --client-ca
         - /client-ca/ca.crt
+        - --client-ca-authorization=true
+        - --client-ca-allowed-cn=system:serviceaccount:hypershift:prometheus
         - --kubeconfig
         - /etc/openshift/kubeconfig/kubeconfig
         command:
