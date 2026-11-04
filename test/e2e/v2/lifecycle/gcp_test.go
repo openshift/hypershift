@@ -135,8 +135,7 @@ func TestGCPClusterSpecs(t *testing.T) {
 	}
 
 	// Each flag encodes a distinct cluster-creation contract that a
-	// regression could silently drop. The default variant must also
-	// reproduce today's single-cluster e2e-v2-gke behavior exactly:
+	// regression could silently drop. The default variant must keep
 	// Console and Ingress disabled, TechPreviewNoUpgrade, and a
 	// per-cluster base domain (see TestGCPVariantBaseDomain).
 	wantArgs := append(testGCPInfra().args(), []string{
