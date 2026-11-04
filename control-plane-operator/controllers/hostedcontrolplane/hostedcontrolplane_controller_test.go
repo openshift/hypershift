@@ -1051,6 +1051,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 		name              string
 		sts               *appsv1.StatefulSet
 		pods              []corev1.Pod
+		expectNil         bool
 		expectedCondition metav1.Condition
 	}{
 		{
@@ -1134,9 +1135,114 @@ func TestEtcdRestoredCondition(t *testing.T) {
 				},
 			},
 			expectedCondition: metav1.Condition{
-				Type:   string(hyperv1.EtcdSnapshotRestored),
-				Status: metav1.ConditionFalse,
-				Reason: "somethingfailed",
+				Type:    string(hyperv1.EtcdSnapshotRestored),
+				Status:  metav1.ConditionFalse,
+				Reason:  "somethingfailed",
+				Message: "etcd-init container failed (exit code 1)",
+			},
+		},
+		{
+			name: "When init container is failing and the StatefulSet is not ready it should return condition false",
+			// This is the PR #9146 verification finding: a failing etcd-init
+			// container prevents the StatefulSet from ever becoming ready, so
+			// failure detection must not be gated on StatefulSet readiness.
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd-configmaps",
+					Namespace: "thens",
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](1),
+				},
+				Status: appsv1.StatefulSetStatus{
+					Replicas:      1,
+					ReadyReplicas: 0,
+				},
+			},
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-configmaps-0",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd-configmaps",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: false,
+								State: corev1.ContainerState{
+									Waiting: &corev1.ContainerStateWaiting{
+										Reason:  "CrashLoopBackOff",
+										Message: "back-off 5m0s restarting failed container",
+									},
+								},
+								LastTerminationState: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{
+										ExitCode: 1,
+										Reason:   "Error",
+										Message:  "failed to download snapshot: NoSuchKey",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:    string(hyperv1.EtcdSnapshotRestored),
+				Status:  metav1.ConditionFalse,
+				Reason:  "Error",
+				Message: "etcd-init container failed (exit code 1): failed to download snapshot: NoSuchKey",
+			},
+		},
+		{
+			name: "When init container terminated with a non-zero exit code in its current state it should return condition false",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: "thens",
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](1),
+				},
+				Status: appsv1.StatefulSetStatus{
+					Replicas:      1,
+					ReadyReplicas: 0,
+				},
+			},
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-0",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: false,
+								State: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{
+										ExitCode: 1,
+										Reason:   "Error",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:    string(hyperv1.EtcdSnapshotRestored),
+				Status:  metav1.ConditionFalse,
+				Reason:  "Error",
+				Message: "etcd-init container failed (exit code 1)",
 			},
 		},
 		{
@@ -1213,7 +1319,49 @@ func TestEtcdRestoredCondition(t *testing.T) {
 				Reason: hyperv1.AsExpectedReason,
 			},
 		},
+		{
+			// A restore still in progress (no termination states, StatefulSet
+			// not ready) must not produce a condition.
+			name:      "When init container is still running and the StatefulSet is not ready it should return nil",
+			expectNil: true,
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: "thens",
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](1),
+				},
+				Status: appsv1.StatefulSetStatus{
+					Replicas:      1,
+					ReadyReplicas: 0,
+				},
+			},
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-0",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: false,
+								State: corev1.ContainerState{
+									Running: &corev1.ContainerStateRunning{},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
+
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
@@ -1228,6 +1376,10 @@ func TestEtcdRestoredCondition(t *testing.T) {
 			}
 
 			conditionPtr := r.etcdRestoredConditionForSTS(t.Context(), tc.sts, tc.sts.Name)
+			if tc.expectNil {
+				g.Expect(conditionPtr).To(BeNil())
+				return
+			}
 			g.Expect(conditionPtr).ToNot(BeNil())
 			g.Expect(*conditionPtr).To(Equal(tc.expectedCondition))
 		})
@@ -4417,6 +4569,89 @@ func TestAggregateEtcdRestoredCondition(t *testing.T) {
 			expectedStatus:  metav1.ConditionFalse,
 			expectedReason:  "CurlFailed",
 			expectedMessage: `shard "etcd-events"`,
+		},
+		{
+			// The PR #9146 verification scenario: the named shard's etcd-init
+			// fails while its StatefulSet can never become ready, and the
+			// default shard is still mid-restore. The failure must surface
+			// (with the shard named) instead of being masked by the incomplete
+			// default shard.
+			name: "When named shard init container fails while StatefulSet is not ready, it should return False naming the shard",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+						Managed: &hyperv1.ManagedEtcdSpec{
+							Storage: hyperv1.ManagedEtcdStorageSpec{
+								RestoreSnapshotURL: []string{"https://example.com/default.db"},
+							},
+							Shards: []hyperv1.ManagedEtcdShardSpec{
+								{
+									Name:               "configmaps",
+									RestoreSnapshotURL: "https://example.com/configmaps.db",
+									Replicas:           1,
+								},
+							},
+						},
+					},
+				},
+			},
+			objects: []client.Object{
+				// Default shard exists but is not ready yet (restore in progress).
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 0},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-0",
+						Namespace: ns,
+						Labels:    map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: false,
+								State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+							},
+						},
+					},
+				},
+				// Named shard: init container crash-looping, StatefulSet not ready.
+				&appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd-configmaps", Namespace: ns},
+					Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To[int32](1)},
+					Status:     appsv1.StatefulSetStatus{ReadyReplicas: 0},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-configmaps-0",
+						Namespace: ns,
+						Labels:    map[string]string{"app": "etcd-configmaps"},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: false,
+								LastTerminationState: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{
+										ExitCode: 1,
+										Reason:   "Error",
+										Message:  "download failed: NoSuchKey",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedStatus:  metav1.ConditionFalse,
+			expectedReason:  "Error",
+			expectedMessage: `shard "etcd-configmaps": etcd-init container failed (exit code 1): download failed: NoSuchKey`,
 		},
 		{
 			name: "When only named shard has restore URL, it should ignore default shard",
