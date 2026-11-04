@@ -376,8 +376,8 @@ flowchart TD
 ```mermaid
 flowchart LR
     subgraph "SHARED_DIR (filesystem)"
-        F1["cluster-name-{variant}<br/>(one per cluster)"]
-        F2["management_cluster_kubeconfig"]
+        F1["cluster-manifests.json<br/>(one entry per cluster)"]
+        F2["management cluster kubeconfig"]
         F3["platform-specific config<br/>(OIDC bundles, subnet IDs, etc.)"]
     end
 
@@ -389,24 +389,27 @@ flowchart LR
     RT -->|"env vars"| TB["test-e2e-v2<br/>(subprocess)"]
     TB -->|"JUnit XML"| AD["ARTIFACT_DIR"]
 
-    DG["destroy-guests"] -->|"derives names from<br/>PROW_JOB_ID + sha256"| MC["Management Cluster"]
+    DG["destroy-guests"] -->|"reads"| F1
+    DG -->|"destroys"| MC["Management Cluster"]
 
 ```
 
 - **SHARED_DIR**: Filesystem directory shared across all CI steps within a job.
-  [`create-guests`][create-guests] writes cluster names and platform-specific
-  config; [`run-tests`][run-tests] reads them. This is the primary IPC mechanism
-  between CI steps.
+  [`create-guests`][create-guests] writes the cluster manifest
+  (`cluster-manifests.json`) and platform-specific config; [`run-tests`][run-tests]
+  and [`destroy-guests`][destroy-guests] read them. This is the primary IPC
+  mechanism between CI steps.
 - **Environment variables**: `run-tests` passes cluster identity to each `test-e2e-v2`
   subprocess via `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` env vars.
-- **PROW_JOB_ID + SHA256**: [`destroy-guests`][destroy-guests] does not read
-  SHARED_DIR cluster names. Instead, it re-derives cluster names deterministically
-  from `PROW_JOB_ID` using the same [`DeriveClusterName()`][platform] function as
-  `create-guests`. This makes teardown idempotent and independent of whether creation
-  succeeded.
-- **KUBECONFIG**: All processes authenticate to the management cluster via the
-  kubeconfig file at `${SHARED_DIR}/management_cluster_kubeconfig`, set up by the
-  nested management cluster provisioning step.
+- **Cluster manifest**: `create-guests` derives each cluster name deterministically
+  from `PROW_JOB_ID` using [`DeriveClusterName()`][platform] and writes it, together
+  with the per-cluster destroy arguments, to `${SHARED_DIR}/cluster-manifests.json`
+  before any infrastructure is provisioned. Both `run-tests` and `destroy-guests`
+  read that manifest, so teardown does not depend on whether creation succeeded.
+- **KUBECONFIG**: All processes authenticate to the management cluster via a
+  kubeconfig in `${SHARED_DIR}` (`management_cluster_kubeconfig` for the AWS and
+  Azure self-managed workflows, `kubeconfig` for the GCP workflow), set up by the
+  management cluster provisioning step.
 - **Exit codes**: `run-tests` collects exit codes from all `test-e2e-v2` subprocesses
   and exits non-zero if any group failed.
 - **JUnit XML**: Each `test-e2e-v2` process writes a separate JUnit report to
