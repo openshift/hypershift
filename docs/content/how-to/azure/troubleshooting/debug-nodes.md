@@ -16,7 +16,7 @@ oc get machinedeployment -n $CONTROL_PLANE_NAMESPACE
 oc get machineset -n $CONTROL_PLANE_NAMESPACE
 ```
 
-In the case that no machinedeployment was created, look at the logs of the hypershift 
+In the case that no machinedeployment was created, look at the logs of the hypershift
 operator:
 ```
 oc logs -l app=operator -n hypershift --tail=$NUMBER_OF_LINES
@@ -27,10 +27,18 @@ If the machines exist but have not been provisioned, check the log of the cluste
 oc logs deployment/capi-provider -c manager -n $CONTROL_PLANE_NAMESPACE
 ```
 
-## Create a bastion to SSH to a node
-If the machines look like they have been provisioned correctly, you can directly access the virtual machines related to your nodes through a bastion. 
+## Check kubelet CSR approval
 
-### Prerequisites 
+If first-boot configuration completed but no node has registered, check pending
+kubelet CSRs in the hosted cluster and the `machine-approver` deployment in the
+control plane namespace. A stopped approver or a mismatch between the CSR and
+the CAPI Machine identity can block registration. Follow the
+[kubelet CSR approval checks](../../../reference/cluster-startup-roadmap.md#kubelet-csr-approval).
+
+## Create a bastion to SSH to a node
+If the machines look like they have been provisioned correctly, you can directly access the virtual machines related to your nodes through a bastion.
+
+### Prerequisites
 - Download the `az` cli
 - Add the following extensions to the cli:
   - `az extension update --name bastionaz extension update --name bastion`
