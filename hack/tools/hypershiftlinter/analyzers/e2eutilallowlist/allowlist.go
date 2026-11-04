@@ -471,10 +471,6 @@ var allowlist = map[string]map[string][]string{
 		},
 	},
 	"test/e2e/v2/tests/karpenter_control_plane_upgrade_test.go": {
-		"Describe(\"[sig-hypershift][Jira:Hypershift] Karpenter\")#1/BeforeEach()#1": {
-			"Version422",
-			"Version423",
-		},
 		"KarpenterUpgradeTest/Context(\"[Feature:AutoNode] Karpenter Upgrade\")#1/It(\"should upgrade the control plane and drift Karpenter nodes to the new version\")#1": {
 			"UpdateObject",
 		},
@@ -485,10 +481,6 @@ var allowlist = map[string]map[string][]string{
 		},
 	},
 	"test/e2e/v2/tests/karpenter_test.go": {
-		"Describe(\"[sig-hypershift][Jira:Hypershift] Karpenter\")#1/BeforeEach()#1": {
-			"Version422",
-			"Version423",
-		},
 		"KarpenterARM64ProvisioningTest/Context(\"[Feature:AutoNode] ARM64 instance provisioning\")#1/It(\"should provision and deprovision ARM64 nodes\")#1": {
 			"WaitForReadyNodesByLabels",
 		},
