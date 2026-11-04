@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	supportutil "github.com/openshift/hypershift/support/util"
 
 	imagev1 "github.com/openshift/api/image/v1"
 
@@ -101,6 +102,48 @@ func TestSeedRolloutAnnotation(t *testing.T) {
 	}
 
 	for _, strategy := range []hyperv1.UpgradeType{hyperv1.UpgradeTypeReplace, hyperv1.UpgradeTypeInPlace} {
+		for _, baseline := range []string{"legacy", "absent", "current"} {
+			t.Run("When a completed "+string(strategy)+" pool has a "+baseline+" rollout baseline after an operator upgrade, it should retain its bootstrap payload", func(t *testing.T) {
+				g := NewWithT(t)
+				f := newRolloutFixture(t, strategy)
+				c := f.capi
+				deployedHash := f.bootstrapHash()
+				nodePoolSpec := c.nodePool.Spec.DeepCopy()
+				hostedClusterSpec := c.hostedCluster.Spec.DeepCopy()
+
+				// #8698 (f5e967b312) stored this formula without endpointConfig.
+				// Its revert (#9797) stopped maintaining the annotation but did not
+				// remove it from existing NodePools, even after later rollouts.
+				legacyRolloutHash := supportutil.HashSimple(c.rolloutMcoRawConfig + c.pullSecretName + c.additionalTrustBundleName + c.rolloutGlobalConfig + c.rhelStream)
+
+				// #9818 includes the already-existing endpoint in its rollout hash.
+				// Model #9988's management-only payload change separately; no HC or
+				// NodePool spec (including the requested release) has changed.
+				c.endpointConfig = "private=false,addr=172.20.0.1,port=6443,server=10.0.0.100:6443"
+				c.mcoRawConfig = "user-config-A + haproxy-B"
+				g.Expect(c.RolloutHashWithoutVersion()).NotTo(Equal(legacyRolloutHash))
+				g.Expect(c.Hash()).NotTo(Equal(deployedHash))
+				switch baseline {
+				case "legacy":
+					c.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = legacyRolloutHash
+				case "absent":
+					delete(c.nodePool.Annotations, nodePoolAnnotationCurrentRolloutConfig)
+				case "current":
+					c.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = c.RolloutHashWithoutVersion()
+				}
+
+				for i := 0; i < 3; i++ {
+					changed := f.reconcile(t)
+					g.Expect(f.bootstrapHash()).To(Equal(deployedHash), "operator-only changes must not replace the deployed bootstrap payload")
+					g.Expect(changed).To(BeFalse(), "operator-only changes must not start a rollout")
+					g.Expect(c.nodePool.Spec).To(Equal(*nodePoolSpec))
+					g.Expect(c.hostedCluster.Spec).To(Equal(*hostedClusterSpec))
+					g.Expect(c.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(Equal(deployedHash))
+					g.Expect(c.nodePool.Annotations).NotTo(HaveKey(nodePoolAnnotationInProgressRolloutConfig))
+					f.expectActiveToken(t, deployedHash, c.Version())
+				}
+			})
+		}
 		for _, kind := range []string{"config", "version"} {
 			for _, requestedVersion := range []string{"4.18.7", "4.18.5"} {
 				t.Run("When migration finds an active "+string(strategy)+" "+kind+" rollout and release "+requestedVersion+" is already requested, it should deliver that release", func(t *testing.T) {
