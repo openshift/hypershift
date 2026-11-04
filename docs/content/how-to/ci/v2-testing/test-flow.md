@@ -159,7 +159,7 @@ sequenceDiagram
     CG->>MC: Watch for version rollout completion<br/>(VersionState=Completed on all history entries)
     MC-->>CG: All 6 clusters rolled out
 
-    CG->>CG: Write cluster names and<br/>platform-specific config to SHARED_DIR
+    CG->>CG: Write cluster manifest to SHARED_DIR<br/>(plus platform config on AWS/Azure)
     deactivate CG
 
     Note over Prow,MC: Phase 3: Test Execution (run-tests binary)
@@ -167,7 +167,7 @@ sequenceDiagram
     CIO->>RT: Run run-e2e-v2-selfmanaged step<br/>(KUBECONFIG=management_cluster_kubeconfig)
 
     activate RT
-    Note over RT: Reads HYPERSHIFT_PLATFORM → resolves the default TestPlan or TEST_PLAN<br/>Reads cluster names and platform config from SHARED_DIR
+    Note over RT: Reads HYPERSHIFT_PLATFORM → resolves the default TestPlan or TEST_PLAN<br/>Reads the cluster manifest and platform config from SHARED_DIR
 
     RT->>RT: PlatformConfig.SetupTestEnv()<br/>(set env vars from SHARED_DIR files)
 
@@ -282,7 +282,7 @@ sequenceDiagram
 |---------|--------|-----------|---------------|
 | **ci-operator** | CI infrastructure | Manages the entire [job][ci-job-config] | Runs [workflow steps][workflow] as pods |
 | **Step shell** | bash | One per CI step | Sets KUBECONFIG, runs Go binaries ([create][create-guests-sh], [run][run-tests-chain], [destroy][destroy-guests-chain]) |
-| **[create-guests][]** | `/hypershift/bin/create-guests` | Runs once in pre step | Forks `hypershift` CLI via `exec.Command`, writes cluster names and platform-specific config to `SHARED_DIR` |
+| **[create-guests][]** | `/hypershift/bin/create-guests` | Runs once in pre step | Forks `hypershift` CLI via `exec.Command`, writes the cluster manifest, plus platform-specific config on AWS and Azure, to `SHARED_DIR` |
 | **[run-tests][]** | `/hypershift/bin/run-tests` | Runs once in test step | Forks one `test-e2e-v2` process per test group via `exec.Command`. Env vars pass cluster name + config. Collects exit codes. |
 | **test-e2e-v2** | `/hypershift/bin/test-e2e-v2` | One process per test group; sequential lanes run one group at a time | Reads env vars for cluster identity. Talks to management + hosted cluster APIs via kubeconfig. Writes JUnit XML to `ARTIFACT_DIR`. Entry point: [`suite_test.go`][suite-test]. |
 | **[destroy-guests][]** | `/hypershift/bin/destroy-guests` | Runs once in post step | Forks `hypershift` CLI via `exec.Command` for each cluster (parallel goroutines). |
@@ -382,7 +382,8 @@ flowchart LR
     end
 
     CG["create-guests"] -->|"writes"| F1
-    CG -->|"writes"| F3
+    CG -->|"writes (AWS, Azure)"| F3
+    PS["CI provisioning steps"] -->|"writes (GCP)"| F3
 
     RT["run-tests"] -->|"reads"| F1
     RT -->|"reads"| F3
@@ -390,15 +391,17 @@ flowchart LR
     TB -->|"JUnit XML"| AD["ARTIFACT_DIR"]
 
     DG["destroy-guests"] -->|"reads"| F1
-    DG -->|"destroys"| MC["Management Cluster"]
+    DG -->|"destroys"| HC["Hosted Clusters"]
 
 ```
 
 - **SHARED_DIR**: Filesystem directory shared across all CI steps within a job.
   [`create-guests`][create-guests] writes the cluster manifest
-  (`cluster-manifests.json`) and platform-specific config; [`run-tests`][run-tests]
-  and [`destroy-guests`][destroy-guests] read them. This is the primary IPC
-  mechanism between CI steps.
+  (`cluster-manifests.json`). On AWS and Azure it also writes platform-specific
+  config (mirror-registry and external-OIDC files); on GCP the CI provisioning
+  steps write the infrastructure files and `GCPPlatformConfig` reads them.
+  [`run-tests`][run-tests] and [`destroy-guests`][destroy-guests] read this
+  directory. This is the primary IPC mechanism between CI steps.
 - **Environment variables**: `run-tests` passes cluster identity to each `test-e2e-v2`
   subprocess via `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` env vars.
 - **Cluster manifest**: `create-guests` derives each cluster name deterministically
