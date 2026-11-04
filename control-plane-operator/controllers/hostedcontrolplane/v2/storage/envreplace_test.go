@@ -199,6 +199,7 @@ func TestSetOperatorImageReferences(t *testing.T) {
 				"AWS_EBS_DRIVER_OPERATOR_IMAGE",
 				"AWS_EBS_DRIVER_IMAGE",
 				"NODE_DRIVER_REGISTRAR_IMAGE",
+				"VOLUME_DEVICE_EXPORTER_IMAGE",
 			},
 		},
 		{
@@ -235,6 +236,18 @@ func TestSetOperatorImageReferences(t *testing.T) {
 			},
 			expectedValues: map[string]string{
 				"KUBE_RBAC_PROXY_IMAGE": "user-registry.io/kube-rbac-proxy:v1",
+			},
+		},
+		{
+			name: "When VOLUME_DEVICE_EXPORTER_IMAGE is set, it should use userReleaseImageProvider as a data plane ref",
+			releaseImages: map[string]string{
+				"csi-volume-device-exporter": "release-registry.io/csi-volume-device-exporter:v1",
+			},
+			userReleaseImages: map[string]string{
+				"csi-volume-device-exporter": "user-registry.io/csi-volume-device-exporter:v1",
+			},
+			expectedValues: map[string]string{
+				"VOLUME_DEVICE_EXPORTER_IMAGE": "user-registry.io/csi-volume-device-exporter:v1",
 			},
 		},
 		{
