@@ -73,3 +73,27 @@ func writeMirrorRegistryResult(sharedDir string, result *mirrorregistry.Result) 
 	}
 	return nil
 }
+
+// Files that the openshift/release step hypershift-mirror-registry-ca-generate
+// writes to SHARED_DIR for the registry overrides job. The management cluster
+// and the HyperShift operator trust this CA before the tests deploy the mirror.
+const (
+	registryOverridesCACertFile = "mirror-registry-ho-ca.crt"
+	registryOverridesCAKeyFile  = "mirror-registry-ho-ca.key"
+)
+
+// setupRegistryOverridesTestEnv points the registry overrides tests at the
+// mirror CA when the job provides it. Each variable is set only if its file
+// exists, so a job without the CA leaves both unset and the tests skip, while
+// a job that provides only one half makes them fail.
+func setupRegistryOverridesTestEnv(sharedDir string) {
+	for name, file := range map[string]string{
+		"E2E_REGISTRY_OVERRIDES_CA_CERT_FILE": registryOverridesCACertFile,
+		"E2E_REGISTRY_OVERRIDES_CA_KEY_FILE":  registryOverridesCAKeyFile,
+	} {
+		path := filepath.Join(sharedDir, file)
+		if _, err := os.Stat(path); err == nil {
+			os.Setenv(name, path)
+		}
+	}
+}
