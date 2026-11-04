@@ -54267,7 +54267,7 @@ Current condition types are: &ldquo;Available&rdquo;</p>
 <em>(Optional)</em>
 <p>nodePoolDrain reports per-NodePool drain readiness computed from guest-cluster
 PodDisruptionBudgets by the HCCO. Status-only; does not gate rollout in HyperShift.
-Carries only a state, reason, and count — never customer workload identifiers.</p>
+Carries only a pool name and UID, state, reason, and count — never customer workload identifiers.</p>
 </td>
 </tr>
 <tr>
@@ -54281,9 +54281,9 @@ Kubernetes meta/v1.Time
 </td>
 <td>
 <em>(Optional)</em>
-<p>nodePoolDrainLastProbeTime is the time of the last successful guest-cluster
-drain-readiness computation. Consumers must expire nodePoolDrain data when
-this timestamp is absent or too old, even if the up-to-date condition is True.</p>
+<p>nodePoolDrainLastProbeTime is the start time of the last successful guest-cluster
+drain-readiness computation. Consumers must expire nodePoolDrain data when this
+timestamp is absent or too old. Each result&rsquo;s NodePool UID identifies its incarnation.</p>
 </td>
 </tr>
 <tr>
@@ -57817,9 +57817,8 @@ int64
 </p>
 <p>
 <p>NodePoolDrain reports whether a NodePool&rsquo;s nodes can currently be drained during an upgrade.</p>
-<p>It deliberately carries NO customer workload identifiers (namespace/PDB/pod names): only a
-state, a bounded reason, and a count. Customer-facing detail is surfaced in-guest as a
-Kubernetes Event on the offending PDB. Management-cluster logs contain no workload names.</p>
+<p>It carries no customer workload identifiers (namespace/PDB/pod names). The NodePool UID
+distinguishes recreated pools with the same name. A generic in-guest Event reports transitions.</p>
 </p>
 <table>
 <thead>
@@ -57839,6 +57838,19 @@ string
 <td>
 <p>nodePoolName is the NodePool these nodes belong to, from the node label
 hypershift.openshift.io/nodePool.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodePoolUID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodePoolUID is the UID of the NodePool incarnation that owns these nodes.
+Consumers must treat absent or mismatched UIDs as unverified.</p>
 </td>
 </tr>
 <tr>

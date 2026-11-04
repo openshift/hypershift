@@ -3850,6 +3850,7 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 						lastSeenIndex = expectedIndex
 					}
 				}
+				g.Expect(FindStatusCondition(tt.nodePool.Status.Conditions, hyperv1.NodePoolDrainBlockedConditionType)).To(BeNil())
 			}
 
 			// For the early exit test, verify the function exited early from the condition loop

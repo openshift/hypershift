@@ -35,6 +35,8 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 	kubeVersion := versions["kubernetes"]
 	hcp := cpContext.HCP
 	openShiftVersion := cpContext.ReleaseImageProvider.Version()
+	drainReadinessEnabled := os.Getenv("ENABLE_NODEPOOL_DRAIN_READINESS") == "1" &&
+		hcp.Annotations[hyperv1.NodePoolDrainReadinessAnnotation] == "true"
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Command = append(c.Command,
@@ -49,7 +51,11 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 		)
 
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			c.Command = append(c.Command, "--controllers=controller-manager-ca,resources,user-ca-bundle,inplaceupgrader,drainer,hcpstatus")
+			controllers := "controller-manager-ca,resources,user-ca-bundle,inplaceupgrader,drainer,hcpstatus"
+			if drainReadinessEnabled {
+				controllers += ",nodepooldrain"
+			}
+			c.Command = append(c.Command, "--controllers="+controllers)
 		}
 
 		c.Env = append(c.Env, []corev1.EnvVar{
@@ -84,7 +90,7 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 				},
 			)
 		}
-		if os.Getenv("ENABLE_NODEPOOL_DRAIN_READINESS") == "1" && hcp.Annotations[hyperv1.NodePoolDrainReadinessAnnotation] == "true" {
+		if drainReadinessEnabled {
 			c.Env = append(c.Env, corev1.EnvVar{
 				Name:  "ENABLE_NODEPOOL_DRAIN_READINESS",
 				Value: "1",

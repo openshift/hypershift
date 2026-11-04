@@ -62,8 +62,28 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to watch guest Nodes: %w", err)
 	}
 	if err := c.Watch(source.Kind[crclient.Object](opts.Manager.GetCache(), &policyv1.PodDisruptionBudget{},
-		handler.EnqueueRequestsFromMapFunc(toHCP))); err != nil {
+		handler.EnqueueRequestsFromMapFunc(toHCP), nodePoolDrainPDBPredicate())); err != nil {
 		return fmt.Errorf("failed to watch guest PodDisruptionBudgets: %w", err)
 	}
 	return nil
+}
+
+func nodePoolDrainPDBPredicate() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return true },
+		DeleteFunc:  func(event.DeleteEvent) bool { return true },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldPDB, oldOK := e.ObjectOld.(*policyv1.PodDisruptionBudget)
+			newPDB, newOK := e.ObjectNew.(*policyv1.PodDisruptionBudget)
+			if !oldOK || !newOK {
+				// Unknown event objects should trigger a safe rescan instead of being dropped.
+				return true
+			}
+			return oldPDB.Generation != newPDB.Generation ||
+				oldPDB.Status.ObservedGeneration != newPDB.Status.ObservedGeneration ||
+				oldPDB.Status.ExpectedPods != newPDB.Status.ExpectedPods ||
+				oldPDB.Status.DesiredHealthy != newPDB.Status.DesiredHealthy
+		},
+	}
 }
