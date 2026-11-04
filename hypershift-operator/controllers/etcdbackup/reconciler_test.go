@@ -74,7 +74,10 @@ func newReconciler(objs ...client.Object) *HCPEtcdBackupReconciler {
 		Build()
 
 	return &HCPEtcdBackupReconciler{
-		Client:                  fakeClient,
+		Client: fakeClient,
+		// The fake client plays both the cached client and the API server, so
+		// point the quorum reader at it to exercise the non-cache read paths.
+		APIReader:               fakeClient,
 		OperatorNamespace:       testHONamespace,
 		ReleaseProvider:         &fakeReleaseProvider{},
 		HypershiftOperatorImage: "quay.io/hypershift/hypershift:latest",
@@ -1270,24 +1273,17 @@ func TestCheckEtcdHealth(t *testing.T) {
 }
 
 func TestFindActiveJob(t *testing.T) {
-	t.Run("When no active jobs exist it should return nil", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		r := newReconciler()
+	backup := newHCPEtcdBackup()
 
-		job, err := r.findActiveJob(context.Background(), testHCPNamespace)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(job).To(BeNil())
-	})
-
-	t.Run("When active job exists it should return it", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		activeJob := &batchv1.Job{
+	newJob := func(name, backupName string, conditions ...batchv1.JobCondition) *batchv1.Job {
+		return &batchv1.Job{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "etcd-backup-active",
+				Name:      name,
 				Namespace: testHONamespace,
 				Labels: map[string]string{
 					LabelApp:          LabelName,
 					LabelHCPNamespace: testHCPNamespace,
+					LabelBackupName:   backupName,
 				},
 			},
 			Spec: batchv1.JobSpec{
@@ -1299,15 +1295,90 @@ func TestFindActiveJob(t *testing.T) {
 				},
 			},
 			Status: batchv1.JobStatus{
-				Active: 1,
+				Conditions: conditions,
 			},
 		}
+	}
+
+	t.Run("When no active jobs exist it should return nil", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(job).To(BeNil())
+	})
+
+	t.Run("When active job exists it should return it", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		activeJob := newJob("etcd-backup-active", "other-backup")
+		activeJob.Status.Active = 1
 		r := newReconciler(activeJob)
 
-		job, err := r.findActiveJob(context.Background(), testHCPNamespace)
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(job).ToNot(BeNil())
 		g.Expect(job.Name).To(Equal("etcd-backup-active"))
+	})
+
+	t.Run("When a job was just created and has no status yet it should return it", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		// Simulates the window between Job creation and the job controller
+		// setting status.active: no conditions, Active == 0. The serialization
+		// guard must still treat this Job as active.
+		freshJob := newJob("etcd-backup-fresh", "other-backup")
+		r := newReconciler(freshJob)
+
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(job).ToNot(BeNil())
+		g.Expect(job.Name).To(Equal("etcd-backup-fresh"))
+	})
+
+	t.Run("When the only job belongs to this backup it should return nil", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ownJob := newJob("etcd-backup-own", backup.Name)
+		ownJob.Status.Active = 1
+		r := newReconciler(ownJob)
+
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(job).To(BeNil())
+	})
+
+	t.Run("When terminated jobs exist they should not count as active", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		completed := newJob("etcd-backup-completed", "other-backup",
+			batchv1.JobCondition{Type: batchv1.JobComplete, Status: corev1.ConditionTrue})
+		failed := newJob("etcd-backup-failed", "another-backup",
+			batchv1.JobCondition{Type: batchv1.JobFailed, Status: corev1.ConditionTrue})
+		r := newReconciler(completed, failed)
+
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(job).To(BeNil())
+	})
+
+	t.Run("When a job is only visible to the API reader it should return it", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		// Simulates informer cache lag: the Job was created against the API
+		// server but is not yet in the cache the reconciler's Client reads from.
+		cacheClient := fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithStatusSubresource(&hyperv1.HCPEtcdBackup{}, &hyperv1.HostedControlPlane{}, &hyperv1.HostedCluster{}).
+			Build()
+		apiClient := fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithObjects(newJob("etcd-backup-lagging", "other-backup")).
+			Build()
+		r := newReconciler()
+		r.Client = cacheClient
+		r.APIReader = apiClient
+
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(job).ToNot(BeNil())
+		g.Expect(job.Name).To(Equal("etcd-backup-lagging"))
 	})
 }
 
@@ -2712,6 +2783,148 @@ func TestReconcileHappyPathWithSTS(t *testing.T) {
 			Name:  "AWS_ROLE_ARN",
 			Value: "arn:aws:iam::123456789012:role/etcd-backup",
 		}))
+	})
+}
+
+// TestReconcileConcurrentBackupSerialization covers the check-then-create race
+// found in the PR #9146 live verification: two HCPEtcdBackup resources submitted
+// together both passed the active-Job guard because the guard read the informer
+// cache, which had not yet observed the first backup's Job. The guard now
+// performs a quorum read via the API reader, so the second backup must be
+// rejected even while the first backup's Job is invisible to the cache.
+func TestReconcileConcurrentBackupSerialization(t *testing.T) {
+	newOtherBackupJob := func(name, backupName string, conditions ...batchv1.JobCondition) *batchv1.Job {
+		return &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: testHONamespace,
+				Labels: map[string]string{
+					LabelApp:          LabelName,
+					LabelHCPNamespace: testHCPNamespace,
+					LabelBackupName:   backupName,
+				},
+			},
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers:    []corev1.Container{{Name: "test", Image: "test:latest"}},
+						RestartPolicy: corev1.RestartPolicyNever,
+					},
+				},
+			},
+			Status: batchv1.JobStatus{
+				Conditions: conditions,
+			},
+		}
+	}
+
+	t.Run("When another backup's fresh Job is invisible to the cache it should reject", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+
+		// The cache client (what the reconciler's cached Client sees) has no
+		// Jobs at all; the API reader sees a Job for another backup that was
+		// just created and has no status yet (Active == 0, no conditions).
+		r := newReconciler(backup, hcp, sts)
+		r.APIReader = fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithObjects(newOtherBackupJob("etcd-backup-first", "first-backup")).
+			Build()
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.Reason).To(Equal(hyperv1.BackupRejectedReason))
+		g.Expect(cond.Message).To(ContainSubstring("etcd-backup-first"))
+		g.Expect(isTerminal(updated)).To(BeTrue(), "a rejected backup must be terminal so retention can clean it up")
+
+		// No Job may have been created for the rejected backup.
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(BeEmpty())
+	})
+
+	t.Run("When another backup's Job already completed it should proceed", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
+		}
+
+		// A completed Job for a prior backup is visible only via the API
+		// reader; it must not block a new backup.
+		r := newReconciler(backup, hcp, sts, pullSecret, credSecret)
+		r.APIReader = fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithObjects(newOtherBackupJob("etcd-backup-prior", "prior-backup",
+				batchv1.JobCondition{Type: batchv1.JobComplete, Status: corev1.ConditionTrue})).
+			Build()
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Reason).To(Equal(hyperv1.BackupInProgressReason))
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+	})
+
+	t.Run("When its own Job is invisible to the cache it should not create a duplicate", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+
+		// The backup's own Job exists on the API server but is not yet in the
+		// cache. findJobForBackup performs a quorum read, so the reconciler
+		// must adopt the existing Job rather than create a duplicate.
+		ownJob := newOtherBackupJob("etcd-backup-own", backup.Name)
+		ownJob.Labels[LabelBackupName] = backup.Name
+		r := newReconciler(backup, hcp, sts)
+		r.APIReader = fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithObjects(ownJob).
+			Build()
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		// Job is neither Complete nor Failed: the reconciler monitors it and requeues.
+		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
+
+		// No duplicate Job was created through the cached client.
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(BeEmpty())
 	})
 }
 

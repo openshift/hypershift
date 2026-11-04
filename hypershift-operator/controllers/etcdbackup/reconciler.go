@@ -96,10 +96,27 @@ const (
 // etcd snapshot and upload Jobs in the HyperShift Operator namespace.
 type HCPEtcdBackupReconciler struct {
 	client.Client
+	// APIReader performs quorum reads that bypass the informer cache. It is used
+	// for the serialization guard and own-Job lookup so a Job created moments ago
+	// by another reconcile is visible immediately. Without it, the guard can
+	// observe a stale cache during the create-to-cache-propagation window and
+	// admit a second concurrent backup for the same HCP (check-then-create race).
+	// When unset, the cached Client is used (e.g. in unit tests where the fake
+	// client plays both roles).
+	APIReader               client.Reader
 	OperatorNamespace       string
 	ReleaseProvider         releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
 	HypershiftOperatorImage string
 	MaxBackupCount          int
+}
+
+// apiReader returns the reader used for quorum (non-cache) reads, falling back
+// to the cached Client when no dedicated API reader is configured.
+func (r *HCPEtcdBackupReconciler) apiReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
 }
 
 func (r *HCPEtcdBackupReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -375,7 +392,7 @@ func (r *HCPEtcdBackupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Serial execution guard: reject if another backup's Job is already active.
 	// This runs after findJobForBackup so we don't reject our own Job.
-	activeJob, err := r.findActiveJob(ctx, backup.Namespace)
+	activeJob, err := r.findActiveJob(ctx, backup, backup.Namespace)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to check for active jobs: %w", err)
 	}
@@ -498,12 +515,20 @@ func (r *HCPEtcdBackupReconciler) checkEtcdHealth(ctx context.Context, hcp *hype
 	return true, "", nil
 }
 
-// findActiveJob checks if any backup Job is currently active for the given HCP namespace.
-// Callers must check for their own backup's Job first (via findJobForBackup) to avoid
-// self-rejection when re-reconciling after Job creation.
-func (r *HCPEtcdBackupReconciler) findActiveJob(ctx context.Context, hcpNamespace string) (*batchv1.Job, error) {
+// findActiveJob checks if any backup Job is currently active for the given HCP
+// namespace. It uses a quorum read (bypassing the informer cache) so a Job
+// created moments ago by another reconcile is already visible, and it skips
+// Jobs belonging to the given backup so a backup is never rejected by its own
+// Job (its own Job is handled earlier via findJobForBackup).
+//
+// A Job counts as active when it has not yet reached a terminal state
+// (Complete or Failed). A freshly created Job carries no terminal condition
+// until the job controller asynchronously sets status.active, so keying on
+// status.active alone would leave a window in which two concurrent backups
+// could both pass this guard.
+func (r *HCPEtcdBackupReconciler) findActiveJob(ctx context.Context, backup *hyperv1.HCPEtcdBackup, hcpNamespace string) (*batchv1.Job, error) {
 	jobList := &batchv1.JobList{}
-	if err := r.List(ctx, jobList,
+	if err := r.apiReader().List(ctx, jobList,
 		client.InNamespace(r.OperatorNamespace),
 		client.MatchingLabels{
 			LabelApp:          LabelName,
@@ -515,11 +540,29 @@ func (r *HCPEtcdBackupReconciler) findActiveJob(ctx context.Context, hcpNamespac
 
 	for i := range jobList.Items {
 		job := &jobList.Items[i]
-		if job.Status.Active > 0 {
+		if job.Labels[LabelBackupName] == backup.Name {
+			continue
+		}
+		if !jobHasTerminated(job) {
 			return job, nil
 		}
 	}
 	return nil, nil
+}
+
+// jobHasTerminated reports whether a backup Job has reached a terminal state
+// (Complete or Failed). Jobs without a terminal condition are pending or
+// running, and count as active for serialization purposes.
+func jobHasTerminated(job *batchv1.Job) bool {
+	for _, cond := range job.Status.Conditions {
+		if cond.Status != corev1.ConditionTrue {
+			continue
+		}
+		if cond.Type == batchv1.JobComplete || cond.Type == batchv1.JobFailed {
+			return true
+		}
+	}
+	return false
 }
 
 // hasNonTerminalBackup checks if any other HCPEtcdBackup in the same namespace
@@ -544,10 +587,13 @@ func (r *HCPEtcdBackupReconciler) hasNonTerminalBackup(ctx context.Context, curr
 	return false, "", nil
 }
 
-// findJobForBackup finds the Job created for this specific backup.
+// findJobForBackup finds the Job created for this specific backup. It uses a
+// quorum read so a Job created by an earlier reconcile is found even before
+// the informer cache has observed it, preventing duplicate Job creation
+// during the cache-lag window.
 func (r *HCPEtcdBackupReconciler) findJobForBackup(ctx context.Context, backup *hyperv1.HCPEtcdBackup) (*batchv1.Job, error) {
 	jobList := &batchv1.JobList{}
-	if err := r.List(ctx, jobList,
+	if err := r.apiReader().List(ctx, jobList,
 		client.InNamespace(r.OperatorNamespace),
 		client.MatchingLabels{
 			LabelBackupName:   backup.Name,
