@@ -28,6 +28,20 @@ func TestValidateInputs(t *testing.T) {
 			jwksContent:   `{"keys": [{"kty": "RSA", "use": "sig", "kid": "test-key"}]}`,
 		},
 		{
+			name:          "When infra-id starts with gcp-, it should reject IAM creation",
+			opts:          &CreateIAMOptions{InfraID: "gcp-demo", ProjectID: "openshift-gcp", OIDCIssuerURL: "https://hypershift-gcp-demo-oidc"},
+			expectedError: "generated IAM IDs would use a reserved prefix",
+		},
+		{
+			name:          "When infra-id is gcp, it should reject IAM creation",
+			opts:          &CreateIAMOptions{InfraID: "gcp", ProjectID: "openshift-gcp", OIDCIssuerURL: "https://hypershift-gcp-oidc"},
+			expectedError: "generated IAM IDs would use a reserved prefix",
+		},
+		{
+			name: "When infra-id ends with gcp, it should allow IAM creation",
+			opts: &CreateIAMOptions{InfraID: "demo-gcp", ProjectID: "openshift-gcp", OIDCIssuerURL: "https://hypershift-demo-gcp-oidc"},
+		},
+		{
 			name: "When infra-id is missing it should return error",
 			opts: &CreateIAMOptions{
 				InfraID:   "",
