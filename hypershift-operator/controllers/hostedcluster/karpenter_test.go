@@ -2,6 +2,9 @@ package hostedcluster
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -19,11 +22,15 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -36,6 +43,19 @@ var autoNode = hyperv1.AutoNode{
 	},
 }
 
+type karpenterFinalizerTestCase struct {
+	name            string
+	hc              *hyperv1.HostedCluster
+	objects         []crclient.Object
+	expectFinalizer *bool
+	expectError     bool
+	invalidAWS      bool
+	hcpReadError    error
+	kasReadError    error
+	patchError      error
+	concurrentWrite bool
+}
+
 func TestResolveKarpenterFinalizer(t *testing.T) {
 	const (
 		hcNamespace = "clusters"
@@ -43,13 +63,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		cpNamespace = "clusters-test-cluster" // manifests.HostedControlPlaneNamespace(hcNamespace, hcName)
 	)
 
-	tests := []struct {
-		name            string
-		hc              *hyperv1.HostedCluster
-		objects         []crclient.Object
-		expectFinalizer *bool // nil = don't check (HCP doesn't exist), true/false = check
-		expectError     bool
-	}{
+	tests := []karpenterFinalizerTestCase{
 		{
 			name: "When karpenter is not enabled and HCP has no finalizer it should no-op",
 			hc: &hyperv1.HostedCluster{
@@ -154,36 +168,287 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			ctx := context.Background()
-
-			fakeClient := fake.NewClientBuilder().
-				WithScheme(api.Scheme).
-				WithObjects(tc.objects...).
-				Build()
-
-			r := &HostedClusterReconciler{
-				Client: fakeClient,
+	conditionStatuses := []metav1.ConditionStatus{metav1.ConditionTrue, metav1.ConditionFalse, metav1.ConditionUnknown, ""}
+	for _, oidcStatus := range conditionStatuses {
+		for _, identityStatus := range conditionStatuses {
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec: hyperv1.HostedClusterSpec{
+					AutoNode: autoNode,
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+				},
 			}
-
-			err := r.resolveKarpenterFinalizer(ctx, tc.hc)
-			if tc.expectError {
-				g.Expect(err).To(HaveOccurred())
-				return
+			for conditionType, status := range map[string]metav1.ConditionStatus{
+				string(hyperv1.ValidOIDCConfiguration):   oidcStatus,
+				string(hyperv1.ValidAWSIdentityProvider): identityStatus,
+			} {
+				if status != "" {
+					hc.Status.Conditions = append(hc.Status.Conditions, metav1.Condition{Type: string(conditionType), Status: status})
+				}
 			}
-			g.Expect(err).ToNot(HaveOccurred())
-
-			if tc.expectFinalizer != nil {
-				hcp := &hyperv1.HostedControlPlane{}
-				err := fakeClient.Get(ctx, crclient.ObjectKey{Namespace: cpNamespace, Name: hcName}, hcp)
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(controllerutil.ContainsFinalizer(hcp, karpenterutil.KarpenterFinalizer)).To(Equal(*tc.expectFinalizer),
-					"finalizer presence mismatch")
-			}
-		})
+			invalid := oidcStatus == metav1.ConditionFalse || identityStatus == metav1.ConditionFalse
+			tests = append(tests, karpenterFinalizerTestCase{
+				name: fmt.Sprintf("When AWS OIDC is %q and identity is %q with available KAS, it should retain the finalizer only without explicit invalidity", oidcStatus, identityStatus),
+				hc:   hc, invalidAWS: invalid,
+				objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)},
+				expectFinalizer: ptr.To(!invalid),
+			})
+		}
 	}
+
+	readError := errors.New("injected read failure")
+	patchError := errors.New("injected patch failure")
+	conflictError := apierrors.NewConflict(schema.GroupResource{Group: hyperv1.GroupVersion.Group, Resource: "hostedcontrolplanes"}, hcName, errors.New("stale resource version"))
+	for _, platform := range []hyperv1.PlatformType{hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform} {
+		for _, credentialStatus := range []metav1.ConditionStatus{metav1.ConditionTrue, metav1.ConditionFalse, metav1.ConditionUnknown, ""} {
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: platform}},
+			}
+			if credentialStatus != "" {
+				hc.Status.Conditions = []metav1.Condition{
+					{Type: string(hyperv1.ValidOIDCConfiguration), Status: credentialStatus},
+					{Type: string(hyperv1.ValidAWSIdentityProvider), Status: credentialStatus},
+				}
+			}
+			invalid := platform == hyperv1.AWSPlatform && credentialStatus == metav1.ConditionFalse
+			prefix := fmt.Sprintf("When platform is %s and credentials are %q", platform, credentialStatus)
+			tests = append(tests, karpenterFinalizerTestCase{
+				name: prefix + " with available KAS, it should retain the finalizer unless explicitly invalid AWS",
+				hc:   hc, invalidAWS: invalid,
+				objects: []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, true)}, expectFinalizer: ptr.To(!invalid),
+			})
+			for _, availability := range []corev1.ConditionStatus{corev1.ConditionFalse, corev1.ConditionUnknown, "", "missing"} {
+				objects := []crclient.Object{hcpWithFinalizer(hcName, cpNamespace)}
+				if availability != "missing" {
+					deployment := kasDeployment(cpNamespace, false)
+					deployment.Status.Conditions[0].Status = availability
+					if availability == "" {
+						deployment.Status.Conditions = nil
+					}
+					objects = append(objects, deployment)
+				}
+				tests = append(tests, karpenterFinalizerTestCase{
+					name: fmt.Sprintf("%s and KAS availability is %q, it should remove only the target finalizer", prefix, availability),
+					hc:   hc, invalidAWS: invalid, objects: objects, expectFinalizer: ptr.To(false),
+				})
+			}
+			for _, enabled := range []bool{false, true} {
+				configuredHC := hc.DeepCopy()
+				if !enabled {
+					configuredHC.Spec.AutoNode = hyperv1.AutoNode{}
+				}
+				for _, kasPresent := range []bool{false, true} {
+					objects := []crclient.Object{hcpWithFinalizer(hcName, cpNamespace)}
+					if kasPresent {
+						objects = append(objects, kasDeployment(cpNamespace, true))
+					}
+					tests = append(tests, karpenterFinalizerTestCase{
+						name: fmt.Sprintf("%s with enabled=%t and KAS present=%t and a read failure, it should require KAS only for the normal gate", prefix, enabled, kasPresent),
+						hc:   configuredHC, invalidAWS: invalid, objects: objects, kasReadError: readError,
+						expectFinalizer: ptr.To(enabled && !invalid), expectError: enabled && !invalid,
+					})
+				}
+			}
+			for _, targetPresent := range []bool{false, true} {
+				objects := []crclient.Object{}
+				var expectFinalizer *bool
+				if targetPresent {
+					objects = append(objects, &hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: cpNamespace}})
+					expectFinalizer = ptr.To(false)
+				}
+				tests = append(tests, karpenterFinalizerTestCase{
+					name: fmt.Sprintf("%s with HCP present=%t and no target, it should skip KAS and patch", prefix, targetPresent),
+					hc:   hc, invalidAWS: invalid, objects: objects, expectFinalizer: expectFinalizer, kasReadError: readError,
+				})
+			}
+			tests = append(tests, karpenterFinalizerTestCase{
+				name: prefix + " and an HCP read error, it should propagate the error without patching",
+				hc:   hc, invalidAWS: invalid, objects: []crclient.Object{hcpWithFinalizer(hcName, cpNamespace)},
+				hcpReadError: readError, expectError: true, expectFinalizer: ptr.To(true),
+			})
+		}
+	}
+	for _, removalPath := range []string{"invalid AWS", "KAS down", "AutoNode disabled"} {
+		for _, failure := range []string{"patch error", "conflict", "concurrent write"} {
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
+			}
+			if removalPath == "invalid AWS" {
+				hc.Status.Conditions = []metav1.Condition{{Type: string(hyperv1.ValidAWSIdentityProvider), Status: metav1.ConditionFalse}}
+			}
+			if removalPath == "AutoNode disabled" {
+				hc.Spec.AutoNode = hyperv1.AutoNode{}
+			}
+			injectedError := patchError
+			switch failure {
+			case "conflict":
+				injectedError = conflictError
+			case "concurrent write":
+				injectedError = nil
+			}
+			tests = append(tests, karpenterFinalizerTestCase{
+				name: fmt.Sprintf("When removing through %s encounters %s, it should preserve stored finalizers and return the error", removalPath, failure),
+				hc:   hc, invalidAWS: removalPath == "invalid AWS",
+				objects:         []crclient.Object{hcpWithFinalizer(hcName, cpNamespace), kasDeployment(cpNamespace, removalPath != "KAS down")},
+				expectFinalizer: ptr.To(true), expectError: true, patchError: injectedError, concurrentWrite: failure == "concurrent write",
+			})
+		}
+	}
+
+	for _, tc := range tests {
+		for _, hcpDeleting := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/HCP deleting=%t", tc.name, hcpDeleting), func(t *testing.T) {
+				runKarpenterFinalizerCase(t, tc, hcpDeleting)
+			})
+		}
+	}
+}
+
+func runKarpenterFinalizerCase(t *testing.T, tc karpenterFinalizerTestCase, hcpDeleting bool) {
+	t.Helper()
+	const (
+		hcName      = "test-cluster"
+		cpNamespace = "clusters-test-cluster"
+	)
+	g := NewWithT(t)
+	ctx := context.Background()
+	hc := tc.hc.DeepCopy()
+	now := metav1.Now()
+	hc.DeletionTimestamp = &now
+	hc.Finalizers = []string{"test.hypershift.openshift.io/hostedcluster"}
+	objects := []crclient.Object{hc}
+	var expectedHCP *hyperv1.HostedControlPlane
+	for _, object := range tc.objects {
+		copyObject := object.DeepCopyObject().(crclient.Object)
+		if hcp, ok := copyObject.(*hyperv1.HostedControlPlane); ok {
+			hcp.Finalizers = append(hcp.Finalizers, "test.hypershift.openshift.io/unrelated")
+			hcp.Annotations = map[string]string{"test.hypershift.openshift.io/preserved": "value"}
+			if hcpDeleting {
+				hcp.DeletionTimestamp = &now
+			}
+			expectedHCP = hcp.DeepCopy()
+		}
+		objects = append(objects, copyObject)
+	}
+	backingClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(objects...).
+		Build()
+	g.Expect(backingClient.Get(ctx, crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())
+	if expectedHCP != nil {
+		g.Expect(backingClient.Get(ctx, crclient.ObjectKeyFromObject(expectedHCP), expectedHCP)).To(Succeed())
+	}
+	expectedHC := hc.DeepCopy()
+	kasReads, patches := 0, 0
+	testClient := interceptor.NewClient(backingClient, interceptor.Funcs{
+		Get: func(ctx context.Context, delegate crclient.WithWatch, key crclient.ObjectKey, object crclient.Object, opts ...crclient.GetOption) error {
+			switch object.(type) {
+			case *hyperv1.HostedControlPlane:
+				if tc.hcpReadError != nil {
+					return tc.hcpReadError
+				}
+			case *appsv1.Deployment:
+				kasReads++
+				if tc.kasReadError != nil {
+					return tc.kasReadError
+				}
+			}
+			return delegate.Get(ctx, key, object, opts...)
+		},
+		Patch: func(ctx context.Context, delegate crclient.WithWatch, object crclient.Object, patch crclient.Patch, opts ...crclient.PatchOption) error {
+			patches++
+			g.Expect(object).To(BeAssignableToTypeOf(&hyperv1.HostedControlPlane{}))
+			g.Expect(patch.Type()).To(Equal(types.MergePatchType))
+			data, err := patch.Data(object)
+			g.Expect(err).ToNot(HaveOccurred())
+			var patchBody map[string]map[string]json.RawMessage
+			g.Expect(json.Unmarshal(data, &patchBody)).To(Succeed())
+			g.Expect(patchBody).To(HaveLen(1))
+			g.Expect(patchBody["metadata"]).To(HaveLen(2))
+			var version string
+			g.Expect(json.Unmarshal(patchBody["metadata"]["resourceVersion"], &version)).To(Succeed())
+			g.Expect(version).ToNot(BeEmpty())
+			current := &hyperv1.HostedControlPlane{}
+			g.Expect(delegate.Get(ctx, crclient.ObjectKeyFromObject(object), current)).To(Succeed())
+			g.Expect(version).To(Equal(current.ResourceVersion))
+			var finalizers []string
+			g.Expect(json.Unmarshal(patchBody["metadata"]["finalizers"], &finalizers)).To(Succeed())
+			expectedFinalizers := current.DeepCopy()
+			controllerutil.RemoveFinalizer(expectedFinalizers, karpenterutil.KarpenterFinalizer)
+			g.Expect(finalizers).To(ConsistOf(expectedFinalizers.Finalizers))
+			if tc.concurrentWrite {
+				controllerutil.AddFinalizer(current, "test.hypershift.openshift.io/concurrent")
+				current.Annotations["test.hypershift.openshift.io/concurrent"] = fmt.Sprint(patches)
+				g.Expect(delegate.Update(ctx, current)).To(Succeed())
+				expectedHCP = current.DeepCopy()
+			}
+			if tc.patchError != nil {
+				return tc.patchError
+			}
+			return delegate.Patch(ctx, object, patch, opts...)
+		},
+	})
+	r := &HostedClusterReconciler{Client: testClient}
+	for attempt := 0; attempt < 3; attempt++ {
+		g.Expect(backingClient.Get(ctx, crclient.ObjectKeyFromObject(hc), hc)).To(Succeed())
+		needsKAS := expectedHCP != nil && controllerutil.ContainsFinalizer(expectedHCP, karpenterutil.KarpenterFinalizer) && tc.hcpReadError == nil && karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) && !tc.invalidAWS
+		previousKASReads, previousPatches := kasReads, patches
+		err := r.resolveKarpenterFinalizer(ctx, hc)
+		assertKarpenterFinalizerError(t, tc, err)
+		if needsKAS {
+			g.Expect(kasReads - previousKASReads).To(Equal(1))
+		} else {
+			g.Expect(kasReads).To(Equal(previousKASReads))
+		}
+		shouldPatch := expectedHCP != nil && controllerutil.ContainsFinalizer(expectedHCP, karpenterutil.KarpenterFinalizer) && tc.hcpReadError == nil && (!needsKAS || tc.kasReadError == nil) && (tc.expectFinalizer != nil && !*tc.expectFinalizer || tc.patchError != nil || tc.concurrentWrite)
+		if shouldPatch {
+			g.Expect(patches - previousPatches).To(Equal(1))
+		} else {
+			g.Expect(patches).To(Equal(previousPatches))
+		}
+		storedHC := &hyperv1.HostedCluster{}
+		g.Expect(backingClient.Get(ctx, crclient.ObjectKeyFromObject(hc), storedHC)).To(Succeed())
+		g.Expect(storedHC).To(Equal(expectedHC))
+		hcp := &hyperv1.HostedControlPlane{}
+		err = backingClient.Get(ctx, crclient.ObjectKey{Namespace: cpNamespace, Name: hcName}, hcp)
+		if expectedHCP == nil {
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			continue
+		}
+		g.Expect(err).ToNot(HaveOccurred())
+		if tc.expectFinalizer != nil {
+			g.Expect(controllerutil.ContainsFinalizer(hcp, karpenterutil.KarpenterFinalizer)).To(Equal(*tc.expectFinalizer))
+			if !*tc.expectFinalizer {
+				controllerutil.RemoveFinalizer(expectedHCP, karpenterutil.KarpenterFinalizer)
+			}
+		}
+		expectedHCP.ResourceVersion = hcp.ResourceVersion
+		g.Expect(hcp).To(Equal(expectedHCP))
+	}
+}
+
+func assertKarpenterFinalizerError(t *testing.T, tc karpenterFinalizerTestCase, err error) {
+	t.Helper()
+	g := NewWithT(t)
+	if !tc.expectError {
+		g.Expect(err).ToNot(HaveOccurred())
+		return
+	}
+	g.Expect(err).To(HaveOccurred())
+	if tc.concurrentWrite || apierrors.IsConflict(tc.patchError) {
+		g.Expect(apierrors.IsConflict(err)).To(BeTrue())
+		return
+	}
+	expectedError := tc.hcpReadError
+	if expectedError == nil {
+		expectedError = tc.kasReadError
+	}
+	if expectedError == nil {
+		expectedError = tc.patchError
+	}
+	g.Expect(errors.Is(err, expectedError)).To(BeTrue())
 }
 
 func TestIsKASAvailable(t *testing.T) {
