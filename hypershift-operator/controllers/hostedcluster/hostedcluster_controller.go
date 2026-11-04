@@ -2927,6 +2927,11 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.KubeAPIServerGoAwayChance,
 		hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration,
 		hyperv1.HostedClusterRestoredFromBackupAnnotation,
+		// Mirrored so controllers that only see the HCP (e.g. the etcd backup
+		// controller resolving the helper image for backup Jobs) resolve the
+		// same CPO image that is actually deployed in the control plane
+		// namespace, instead of falling back to the release payload image.
+		hyperv1.ControlPlaneOperatorImageAnnotation,
 		// TODO: Remove this once the input is in the HostedCluster AWS API.
 		"hypershift.openshift.io/aws-termination-handler-queue-url",
 		hyperv1.SwiftPodNetworkInstanceAnnotation,
