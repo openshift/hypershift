@@ -159,6 +159,17 @@ func ImageRegistryCapabilityEnabledTest(getTestCtx internal.TestContextGetter) {
 					"cluster-image-registry-operator deployment should have an Available condition")
 				g.Expect(available.Status).To(Equal(corev1.ConditionTrue),
 					"Available should be True, got reason: %s, message: %s", available.Reason, available.Message)
+
+				desired := int32(1)
+				if deployment.Spec.Replicas != nil {
+					desired = *deployment.Spec.Replicas
+				}
+				g.Expect(deployment.Status.UpdatedReplicas).To(Equal(desired),
+					"cluster-image-registry-operator deployment should have all replicas updated")
+				g.Expect(deployment.Status.Replicas).To(Equal(desired),
+					"cluster-image-registry-operator deployment should have no surge or terminating replicas")
+				g.Expect(deployment.Status.AvailableReplicas).To(Equal(desired),
+					"cluster-image-registry-operator deployment should have all replicas available")
 			}).WithContext(tc.Context).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 		})
 
