@@ -2354,9 +2354,8 @@ type EtcdShardResource struct {
 // ManagedEtcdShardSpec defines the configuration for a single etcd shard
 // within a managed etcd deployment.
 // +kubebuilder:validation:XValidation:rule="has(oldSelf.storage) == has(self.storage)",message="storage cannot be added or removed after creation"
-//nolint:gci // CEL single-quoted empty strings ('') are valid; gci incorrectly parses them as import formatting issues
-// +kubebuilder:validation:XValidation:rule="!has(self.restoreSnapshotURL) || self.restoreSnapshotURL == '' || !has(self.storage) || self.storage.type != 'EmptyDir'",message="restoreSnapshotURL is not supported for EmptyDir shards"
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.restoreSnapshotURL) || oldSelf.restoreSnapshotURL == '' || (has(self.restoreSnapshotURL) && self.restoreSnapshotURL != '')",message="restoreSnapshotURL cannot be removed once set"
+// +kubebuilder:validation:XValidation:rule="!has(self.restoreSnapshotURL) || !has(self.storage) || self.storage.type != 'EmptyDir'",message="restoreSnapshotURL is not supported for EmptyDir shards"
+// +kubebuilder:validation:XValidation:rule="has(oldSelf.restoreSnapshotURL) == has(self.restoreSnapshotURL)",message="restoreSnapshotURL cannot be added or removed after creation"
 type ManagedEtcdShardSpec struct {
 	// name is a unique identifier for this shard. It is used to derive
 	// resource names (e.g., StatefulSet "etcd-{name}", Service
@@ -2413,14 +2412,18 @@ type ManagedEtcdShardSpec struct {
 	// restoreSnapshotURL allows an optional URL to be provided where an etcd
 	// snapshot for this shard can be downloaded. This snapshot will be restored
 	// on initial startup, only when the shard's PV is empty.
-	// Only meaningful for PersistentVolume-backed shards; EmptyDir shards are
-	// ephemeral and restoring into them would be lost on pod restart.
+	// When set, it must be between 1 and 1024 characters.
+	// When omitted, the shard starts with an empty data directory and no
+	// snapshot is restored.
+	// It must be a URL with scheme https or s3.
+	// It is not allowed when storage.type is EmptyDir, because EmptyDir shards
+	// are ephemeral and a restored snapshot would be lost on pod restart.
+	// It cannot be added or removed after creation.
 	// +optional
-	// +immutable
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=1024
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="restoreSnapshotURL is immutable"
-	// +kubebuilder:validation:XValidation:rule="self == '' || self.matches('^(https|s3)://.*')",message="restoreSnapshotURL must be a valid URL with scheme https or s3"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="restoreSnapshotURL must be a valid URL with scheme https or s3"
 	RestoreSnapshotURL string `json:"restoreSnapshotURL,omitempty"`
 }
 

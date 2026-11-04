@@ -10205,7 +10205,9 @@ Must be a valid URL with scheme https or s3.</p>
 <p>shardSnapshots contains the snapshot URLs for each etcd shard that was
 backed up. When etcd sharding is not enabled, this list contains a single
 entry for the default shard. Each entry maps a shard name to its snapshot URL.
-MaxItems is 11: 1 default shard + up to 10 named shards.</p>
+It contains between 1 and 11 entries (1 default shard plus up to 10 named
+shards). When omitted, no backup has completed yet: the field is only
+populated by the backup controller after a successful upload.</p>
 </td>
 </tr>
 <tr>
@@ -10335,7 +10337,8 @@ string
 </em>
 </td>
 <td>
-<p>name is the shard name (e.g., &ldquo;etcd&rdquo; for the default, &ldquo;etcd-events&rdquo; for a named shard).</p>
+<p>name is the shard name (e.g., &ldquo;etcd&rdquo; for the default, &ldquo;etcd-events&rdquo; for a named shard).
+It must be between 1 and 63 characters.</p>
 </td>
 </tr>
 <tr>
@@ -10347,7 +10350,7 @@ string
 </td>
 <td>
 <p>snapshotURL is the URL of the snapshot in cloud storage.
-Must be a valid URL with scheme https or s3.</p>
+Must be a valid URL with scheme https or s3, and between 1 and 2048 characters.</p>
 </td>
 </tr>
 </tbody>
@@ -14414,8 +14417,13 @@ string
 <p>restoreSnapshotURL allows an optional URL to be provided where an etcd
 snapshot for this shard can be downloaded. This snapshot will be restored
 on initial startup, only when the shard&rsquo;s PV is empty.
-Only meaningful for PersistentVolume-backed shards; EmptyDir shards are
-ephemeral and restoring into them would be lost on pod restart.</p>
+When set, it must be between 1 and 1024 characters.
+When omitted, the shard starts with an empty data directory and no
+snapshot is restored.
+It must be a URL with scheme https or s3.
+It is not allowed when storage.type is EmptyDir, because EmptyDir shards
+are ephemeral and a restored snapshot would be lost on pod restart.
+It cannot be added or removed after creation.</p>
 </td>
 </tr>
 </tbody>

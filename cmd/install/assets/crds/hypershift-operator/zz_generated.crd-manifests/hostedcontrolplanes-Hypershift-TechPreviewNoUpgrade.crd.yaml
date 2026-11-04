@@ -3672,8 +3672,13 @@ spec:
                                 restoreSnapshotURL allows an optional URL to be provided where an etcd
                                 snapshot for this shard can be downloaded. This snapshot will be restored
                                 on initial startup, only when the shard's PV is empty.
-                                Only meaningful for PersistentVolume-backed shards; EmptyDir shards are
-                                ephemeral and restoring into them would be lost on pod restart.
+                                When set, it must be between 1 and 1024 characters.
+                                When omitted, the shard starts with an empty data directory and no
+                                snapshot is restored.
+                                It must be a URL with scheme https or s3.
+                                It is not allowed when storage.type is EmptyDir, because EmptyDir shards
+                                are ephemeral and a restored snapshot would be lost on pod restart.
+                                It cannot be added or removed after creation.
                               maxLength: 1024
                               minLength: 1
                               type: string
@@ -3682,7 +3687,7 @@ spec:
                                 rule: self == oldSelf
                               - message: restoreSnapshotURL must be a valid URL with
                                   scheme https or s3
-                                rule: self == '' || self.matches('^(https|s3)://.*')
+                                rule: self.matches('^(https|s3)://.*')
                             scheduling:
                               description: |-
                                 scheduling configures per-shard pod placement constraints. These
@@ -3816,13 +3821,11 @@ spec:
                             rule: has(oldSelf.storage) == has(self.storage)
                           - message: restoreSnapshotURL is not supported for EmptyDir
                               shards
-                            rule: '!has(self.restoreSnapshotURL) || self.restoreSnapshotURL
-                              == '''' || !has(self.storage) || self.storage.type !=
-                              ''EmptyDir'''
-                          - message: restoreSnapshotURL cannot be removed once set
-                            rule: '!has(oldSelf.restoreSnapshotURL) || oldSelf.restoreSnapshotURL
-                              == '''' || (has(self.restoreSnapshotURL) && self.restoreSnapshotURL
-                              != '''')'
+                            rule: '!has(self.restoreSnapshotURL) || !has(self.storage)
+                              || self.storage.type != ''EmptyDir'''
+                          - message: restoreSnapshotURL cannot be added or removed
+                              after creation
+                            rule: has(oldSelf.restoreSnapshotURL) == has(self.restoreSnapshotURL)
                         maxItems: 10
                         minItems: 1
                         type: array

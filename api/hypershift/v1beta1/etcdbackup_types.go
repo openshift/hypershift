@@ -218,11 +218,13 @@ type HCPEtcdBackupStatus struct {
 	// shardSnapshots contains the snapshot URLs for each etcd shard that was
 	// backed up. When etcd sharding is not enabled, this list contains a single
 	// entry for the default shard. Each entry maps a shard name to its snapshot URL.
+	// It contains between 1 and 11 entries (1 default shard plus up to 10 named
+	// shards). When omitted, no backup has completed yet: the field is only
+	// populated by the backup controller after a successful upload.
 	// +optional
 	// +listType=map
 	// +listMapKey=name
 	// +kubebuilder:validation:MinItems=1
-	// MaxItems is 11: 1 default shard + up to 10 named shards.
 	// +kubebuilder:validation:MaxItems=11
 	ShardSnapshots []HCPEtcdShardSnapshot `json:"shardSnapshots,omitempty"`
 
@@ -235,13 +237,14 @@ type HCPEtcdBackupStatus struct {
 // HCPEtcdShardSnapshot represents the snapshot URL for a single etcd shard.
 type HCPEtcdShardSnapshot struct {
 	// name is the shard name (e.g., "etcd" for the default, "etcd-events" for a named shard).
+	// It must be between 1 and 63 characters.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	Name string `json:"name,omitempty"`
 
 	// snapshotURL is the URL of the snapshot in cloud storage.
-	// Must be a valid URL with scheme https or s3.
+	// Must be a valid URL with scheme https or s3, and between 1 and 2048 characters.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
