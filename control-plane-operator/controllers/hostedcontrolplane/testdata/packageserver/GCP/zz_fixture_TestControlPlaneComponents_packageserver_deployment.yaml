@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d326c84933c46c1010742567fff2973eb53f4a79441253895f4ca1c86d9d4864
+    hypershift.openshift.io/desired-state-hash: 31f4c742f72dbdda4d2943215a4a00d36e0be96ba6a410272538326ab484b588
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: packageserver
@@ -153,7 +153,7 @@ spec:
       - command:
         - /bin/bash
         - -c
-        - sleep infinity
+        - trap 'exit 0' TERM; while true; do sleep 3600 & wait $!; done
         image: cli
         imagePullPolicy: IfNotPresent
         name: kas-readiness-check
@@ -162,7 +162,7 @@ spec:
             command:
             - /bin/bash
             - -c
-            - curl -kfs https://kube-apiserver:6443/livez > /dev/null
+            - curl -kfs --max-time 4 https://kube-apiserver:6443/livez > /dev/null
           failureThreshold: 3
           periodSeconds: 10
           timeoutSeconds: 5
