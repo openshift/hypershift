@@ -83,8 +83,11 @@ vendored tools module, builds the report helper, and runs `generate` for ignored
 mocks. It does not modify tracked source files or delete candidates. `make
 deadcode` remains reporting-only; `make verify-deadcode` runs the same scan and
 fails when any candidate is reported. Neither is part of `verify`, `verify-ci`,
-or `pre-commit`; the dedicated `Deadcode` GitHub Actions workflow enforces the
-gate on pull requests to `main`.
+or `pre-commit`; the dedicated `Deadcode` GitHub Actions workflow temporarily
+runs the gate as an advisory check on pull requests to `main` using
+`continue-on-error: true`.
+[CNTRLPLANE-4936](https://redhat.atlassian.net/browse/CNTRLPLANE-4936) tracks
+policy agreement for staged feature PRs and restoring mandatory enforcement.
 
 Analysis loads root-module `./...`, all executable entry points, and test
 executables (`-test`) using tags `integration,e2e,reqserving,e2ev2,backuprestore`.
@@ -120,8 +123,9 @@ Non-generated test declarations in the root module remain eligible findings.
 
 Completed analysis exits zero both with candidates and without them. Tool-build,
 mock-generation, package/type-check, malformed-output, and report-writing errors
-exit nonzero with diagnostic logs; do not suppress these failures. The helper
-invalidates old reports before scanning, stages new reports, and publishes the
+exit nonzero with diagnostic logs. The temporary advisory CI setting also makes
+these failures nonblocking; inspect the logs when reports are unavailable. The
+helper invalidates old reports before scanning, stages new reports, and publishes the
 completion summary last. Use a fresh artifact directory for each run: a failed
 Make prerequisite can leave artifacts from an earlier invocation untouched.
 
@@ -134,7 +138,7 @@ The analyzer defaults to `GOMEMLIMIT=6GiB` and `GOGC=50`; explicit environment
 values override these defaults and are recorded in the summary. A Go memory
 limit is **not** an RSS or container memory limit. Whole-program analysis can
 require substantial memory. The `Deadcode` GitHub Actions workflow runs the gate
-on pull requests to `main` on an ARC runner with a 45-minute timeout and uploads
+in advisory mode on pull requests to `main` on an ARC runner with a 45-minute timeout and uploads
 the artifact directory on success and failure.
 
 Candidates require human review, not automatic deletion. An unreachable method
