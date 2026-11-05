@@ -48,6 +48,11 @@ type HTTPSOptions struct {
 	// before worker nodes are present in the cluster.
 	// See https://github.com/openshift/hypershift/pull/1601
 	ConnectDirectlyToCloudAPIs *bool
+	// ResolveFromManagementClusterDNS tells the dialer to fallback to the management
+	// cluster's DNS (and direct dialer) initially until the konnectivity tunnel is available.
+	// Once the konnectivity tunnel is available, it no longer falls back on the management
+	// cluster.
+	ResolveFromManagementClusterDNS *bool
 	// PreferIPv4 filters DNS results to IPv4 for single-stack IPv4 data planes.
 	PreferIPv4 *bool
 }
@@ -161,6 +166,9 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 		}
 		if value := opts.HTTPSOptions.ConnectDirectlyToCloudAPIs; value != nil {
 			args = append(args, fmt.Sprintf("--connect-directly-to-cloud-apis=%t", *value))
+		}
+		if value := opts.HTTPSOptions.ResolveFromManagementClusterDNS; value != nil {
+			args = append(args, fmt.Sprintf("--resolve-from-management-cluster-dns=%t", *value))
 		}
 		if value := opts.HTTPSOptions.PreferIPv4; value != nil {
 			args = append(args, fmt.Sprintf("--prefer-ipv4=%t", *value))

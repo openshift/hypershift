@@ -14,6 +14,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/pkg/manifests"
+	"github.com/openshift/hypershift/support/podspec"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	v2util "github.com/openshift/hypershift/test/e2e/v2/util"
 
@@ -22,6 +23,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/clientcmd"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -145,27 +147,6 @@ func externalOIDCTransitionComplete(ctx context.Context, cl crclient.Client, con
 		}
 	}
 
-	authConfigMap := &corev1.ConfigMap{}
-	if err := cl.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: "auth-config"}, authConfigMap); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("getting ConfigMap %s/auth-config: %w", controlPlaneNamespace, err)
-	}
-	var authConfig struct {
-		JWT []struct {
-			Issuer struct {
-				URL string `json:"url"`
-			} `json:"issuer"`
-		} `json:"jwt"`
-	}
-	if err := json.Unmarshal([]byte(authConfigMap.Data["auth.json"]), &authConfig); err != nil {
-		return false, fmt.Errorf("parsing ConfigMap %s/auth-config auth.json: %w", controlPlaneNamespace, err)
-	}
-	if len(authConfig.JWT) == 0 || authConfig.JWT[0].Issuer.URL != issuerURL {
-		return false, nil
-	}
-
 	kasConfigMap := &corev1.ConfigMap{}
 	if err := cl.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: "kas-config"}, kasConfigMap); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -174,12 +155,73 @@ func externalOIDCTransitionComplete(ctx context.Context, cl crclient.Client, con
 		return false, fmt.Errorf("getting ConfigMap %s/kas-config: %w", controlPlaneNamespace, err)
 	}
 	var kasConfig struct {
-		APIServerArguments map[string]json.RawMessage `json:"apiServerArguments"`
+		APIServerArguments map[string][]string `json:"apiServerArguments"`
 	}
 	if err := json.Unmarshal([]byte(kasConfigMap.Data["config.json"]), &kasConfig); err != nil {
 		return false, fmt.Errorf("parsing ConfigMap %s/kas-config config.json: %w", controlPlaneNamespace, err)
 	}
-	if _, hasWebhook := kasConfig.APIServerArguments["authentication-token-webhook-config-file"]; hasWebhook {
+
+	// Inspect the running control plane's configuration rather than this test
+	// binary's feature gates, so transitions work with either OIDC architecture.
+	usesWebhook := len(kasConfig.APIServerArguments["authentication-token-webhook-config-file"]) > 0
+	usesDirectOIDC := len(kasConfig.APIServerArguments["authentication-config"]) > 0
+	if usesWebhook == usesDirectOIDC {
+		return false, nil
+	}
+	authConfigName, authConfigKey := "auth-config", "auth.json"
+	if usesWebhook {
+		authConfigName, authConfigKey = "external-oidc-webhook-auth-config", "auth-config.json"
+		deployment := &appsv1.Deployment{}
+		if err := cl.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: "external-oidc-webhook"}, deployment); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return false, fmt.Errorf("getting Deployment %s/external-oidc-webhook: %w", controlPlaneNamespace, err)
+		}
+		if deployment.Status.AvailableReplicas == 0 || !podspec.IsDeploymentReady(ctx, deployment) {
+			return false, nil
+		}
+
+		secret := &corev1.Secret{}
+		if err := cl.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: "kas-authentication-token-webhook-config"}, secret); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
+			return false, fmt.Errorf("getting Secret %s/kas-authentication-token-webhook-config: %w", controlPlaneNamespace, err)
+		}
+		kubeconfig, err := clientcmd.Load(secret.Data["kubeconfig"])
+		if err != nil {
+			return false, fmt.Errorf("parsing token webhook kubeconfig in namespace %s: %w", controlPlaneNamespace, err)
+		}
+		currentContext := kubeconfig.Contexts[kubeconfig.CurrentContext]
+		if currentContext == nil {
+			return false, nil
+		}
+		cluster := kubeconfig.Clusters[currentContext.Cluster]
+		expectedURL := fmt.Sprintf("https://external-oidc-webhook.%s.svc:443/apis/oauth.openshift.io/v1/tokenreviews", controlPlaneNamespace)
+		if cluster == nil || cluster.Server != expectedURL {
+			return false, nil
+		}
+	}
+
+	authConfigMap := &corev1.ConfigMap{}
+	if err := cl.Get(ctx, crclient.ObjectKey{Namespace: controlPlaneNamespace, Name: authConfigName}, authConfigMap); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("getting ConfigMap %s/%s: %w", controlPlaneNamespace, authConfigName, err)
+	}
+	var authConfig struct {
+		JWT []struct {
+			Issuer struct {
+				URL string `json:"url"`
+			} `json:"issuer"`
+		} `json:"jwt"`
+	}
+	if err := json.Unmarshal([]byte(authConfigMap.Data[authConfigKey]), &authConfig); err != nil {
+		return false, fmt.Errorf("parsing ConfigMap %s/%s %s: %w", controlPlaneNamespace, authConfigName, authConfigKey, err)
+	}
+	if len(authConfig.JWT) == 0 || authConfig.JWT[0].Issuer.URL != issuerURL {
 		return false, nil
 	}
 
