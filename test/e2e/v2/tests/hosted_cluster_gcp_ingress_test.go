@@ -115,6 +115,11 @@ func routeAdmittedHost(route *routev1.Route) string {
 // the Ingress capability enabled: the guest dns.config must point at the
 // CPO-managed ingress zones, and the guest ingress operator must serve a
 // workload through the default ingress controller.
+//
+// Both specs run as Informing while the variant stabilizes, so a failure is
+// recorded in the junit without failing the job. Drop the label once they have
+// run clean for a few weeks, so the coverage becomes blocking (tracked in
+// GCP-1404).
 func GCPIngressTests(getTestCtx internal.TestContextGetter) {
 	When("the hosted cluster is on GCP with the Ingress capability enabled", func() {
 		BeforeEach(func() {

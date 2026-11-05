@@ -148,6 +148,7 @@ type GCPNetworkConfig struct {
 // certificate of a GCP hosted cluster.
 //
 // +kubebuilder:validation:MinProperties=1
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.acmeChallengeTarget) || has(self.acmeChallengeTarget)",message="acmeChallengeTarget cannot be removed once set"
 type GCPDNSDelegationSpec struct {
 	// acmeChallengeTarget delegates the ACME DNS-01 challenge for the ingress
 	// wildcard certificate (*.apps) to a solver running outside the cluster.
@@ -163,11 +164,12 @@ type GCPDNSDelegationSpec struct {
 	// end with a dot, and is limited to 253 characters.
 	//
 	// The record is only created when the cluster's ingress domain
-	// (apps.<baseDomainPrefix>.<baseDomain> by default, or the
-	// spec.configuration.ingress domain or appsDomain override when set) is
-	// within the cluster's base domain, and when the target differs from the
-	// record name. When the record is not created, the GCPACMECNAMEAvailable
-	// condition on the HostedCluster reports why.
+	// (apps.<name>.<baseDomain> by default, apps.<baseDomainPrefix>.<baseDomain>
+	// when spec.dns.baseDomainPrefix is set, or the spec.configuration.ingress
+	// domain or appsDomain override when set) is within the cluster's base
+	// domain, and when the target differs from the record name. When the record
+	// is not created, the GCPACMECNAMEAvailable condition on the HostedCluster
+	// reports why.
 	//
 	// When this field is not set, no record is created and the deployment is
 	// responsible for issuing the ingress wildcard certificate, solving its
@@ -528,8 +530,8 @@ type GCPServiceAccountsEmails struct {
 	// without credentials and cannot publish the *.apps DNS records. Because
 	// the field is immutable, such a cluster cannot be fixed after creation.
 	// When the Ingress capability is disabled, this field is ignored. The email
-	// must belong to the GCP project in spec.project, and it can only be set at
-	// creation time.
+	// must belong to the GCP project in spec.platform.gcp.project, and it can
+	// only be set at creation time.
 	//
 	// This is a user-provided value referencing a pre-created Google Service Account.
 	// Typically obtained from the output of `hypershift infra create gcp` which creates

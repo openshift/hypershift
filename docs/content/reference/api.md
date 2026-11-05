@@ -8604,11 +8604,12 @@ challenge TXT records to. It must be lowercase, must start with the
 _acme-challenge. label, must contain at least two further labels, must not
 end with a dot, and is limited to 253 characters.</p>
 <p>The record is only created when the cluster&rsquo;s ingress domain
-(apps.<baseDomainPrefix>.<baseDomain> by default, or the
-spec.configuration.ingress domain or appsDomain override when set) is
-within the cluster&rsquo;s base domain, and when the target differs from the
-record name. When the record is not created, the GCPACMECNAMEAvailable
-condition on the HostedCluster reports why.</p>
+(apps.<name>.<baseDomain> by default, apps.<baseDomainPrefix>.<baseDomain>
+when spec.dns.baseDomainPrefix is set, or the spec.configuration.ingress
+domain or appsDomain override when set) is within the cluster&rsquo;s base
+domain, and when the target differs from the record name. When the record
+is not created, the GCPACMECNAMEAvailable condition on the HostedCluster
+reports why.</p>
 <p>When this field is not set, no record is created and the deployment is
 responsible for issuing the ingress wildcard certificate, solving its
 DNS-01 challenge in the ingress zone itself.</p>
@@ -9720,8 +9721,8 @@ IngressCredentialsFound condition: the guest ingress operator runs
 without credentials and cannot publish the *.apps DNS records. Because
 the field is immutable, such a cluster cannot be fixed after creation.
 When the Ingress capability is disabled, this field is ignored. The email
-must belong to the GCP project in spec.project, and it can only be set at
-creation time.</p>
+must belong to the GCP project in spec.platform.gcp.project, and it can
+only be set at creation time.</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
 Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
 the required service accounts with appropriate IAM roles and WIF bindings.</p>

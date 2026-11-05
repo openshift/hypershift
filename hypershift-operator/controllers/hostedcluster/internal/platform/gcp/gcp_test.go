@@ -472,8 +472,9 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 		},
 		{
 			// The ingress service account is deliberately not validated here:
-			// it is enforced at creation time by CEL on the HostedClusterSpec,
-			// and a missing account on an existing cluster is surfaced as the
+			// it is enforced at creation time by the CLI
+			// (cmd/cluster/gcp/create.go), and a missing account on an existing
+			// cluster is surfaced as the
 			// non-blocking IngressCredentialsFound condition instead (see
 			// TestReconcileIngressCredentialsCondition) so the critical
 			// PlatformCredentials step is not blocked.
