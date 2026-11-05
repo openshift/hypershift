@@ -292,11 +292,9 @@ Use conventional commit format. The installed `commit-msg` hook validates the pe
 <type>(<scope>): <description>
 
 [optional body]
-
-Signed-off-by: <name> <email>
 ```
 
-Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `build`, `ci`, `perf`, `revert`. Title max 120 chars, body lines max 140 chars. Include a `Signed-off-by` footer — get name/email from `git config user.name` and `git config user.email`.
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `build`, `ci`, `perf`, `revert`. Title max 120 chars, body lines max 140 chars.
 
 Use the `git-commit-format` skill for full details and examples.
 

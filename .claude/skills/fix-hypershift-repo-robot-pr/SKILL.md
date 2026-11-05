@@ -134,7 +134,6 @@ git status --porcelain
    git add go.mod go.sum
    git commit -m "chore(deps): update go.mod dependencies
 
-   Signed-off-by: ...
    Commit-Message-Assisted-by: Claude (via Claude Code)"
    ```
 
@@ -143,7 +142,6 @@ git status --porcelain
    git add vendor/
    git commit -m "chore(deps): update vendored dependencies
 
-   Signed-off-by: ...
    Commit-Message-Assisted-by: Claude (via Claude Code)"
    ```
 
@@ -152,7 +150,6 @@ git status --porcelain
    git add api/go.mod api/go.sum api/vendor/
    git commit -m "chore(api): update api module dependencies
 
-   Signed-off-by: ...
    Commit-Message-Assisted-by: Claude (via Claude Code)"
    ```
 
@@ -161,7 +158,6 @@ git status --porcelain
    git add cmd/install/assets/
    git commit -m "chore: regenerate CRD manifests
 
-   Signed-off-by: ...
    Commit-Message-Assisted-by: Claude (via Claude Code)"
    ```
 
@@ -170,7 +166,6 @@ git status --porcelain
    git add -A
    git commit -m "chore: additional changes from make verify
 
-   Signed-off-by: ...
    Commit-Message-Assisted-by: Claude (via Claude Code)"
    ```
 
