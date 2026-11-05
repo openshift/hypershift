@@ -388,15 +388,15 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 				if tc.expectedError != nil {
 					g.Expect(err).To(MatchError(tc.expectedError))
 				} else {
-					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(err).ToNot(HaveOccurred(), "resolving Karpenter finalizer")
 				}
 				if tc.expectFinalizer != nil {
 					hcp := &hyperv1.HostedControlPlane{}
 					err := fakeClient.Get(ctx, crclient.ObjectKey{Namespace: cpNamespace, Name: hcName}, hcp)
-					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(err).ToNot(HaveOccurred(), "reading persisted HCP")
 					g.Expect(controllerutil.ContainsFinalizer(hcp, karpenterutil.KarpenterFinalizer)).To(Equal(*tc.expectFinalizer),
 						"finalizer presence mismatch")
-					g.Expect(hcp.Finalizers).To(ContainElement("test.hypershift.openshift.io/unrelated"))
+					g.Expect(hcp.Finalizers).To(ContainElement("test.hypershift.openshift.io/unrelated"), "unrelated HCP finalizer must be preserved")
 				}
 			}
 		})
