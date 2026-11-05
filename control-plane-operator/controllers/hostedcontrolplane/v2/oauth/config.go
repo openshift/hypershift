@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	cpoauth "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	cpomanifests "github.com/openshift/hypershift/pkg/manifests/cpo"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
@@ -85,10 +86,7 @@ func adaptOAuthConfig(cpContext component.WorkloadContext, cfg *osinv1.OsinServe
 		return err
 	}
 
-	masterUrl := (&url.URL{
-		Scheme: "https",
-		Host:   net.JoinHostPort(cpContext.InfraStatus.OAuthHost, strconv.Itoa(int(cpContext.InfraStatus.OAuthPort))),
-	}).String()
+	masterUrl := cpoauth.ExternalURL(cpContext.InfraStatus.OAuthHost, cpContext.InfraStatus.OAuthPort)
 	controlPlaneEndpoint := cpContext.HCP.Status.ControlPlaneEndpoint
 	cfg.OAuthConfig.MasterURL = fmt.Sprintf("https://%s:%d", getOAuthServiceDNS(cpContext.HCP.Namespace), OAuthServerPort)
 	cfg.OAuthConfig.MasterPublicURL = masterUrl

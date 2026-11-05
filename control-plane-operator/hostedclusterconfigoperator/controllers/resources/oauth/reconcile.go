@@ -3,10 +3,8 @@ package oauth
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
-	"net"
-	"strconv"
 
+	cpoauth "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/certs"
 
@@ -23,7 +21,7 @@ func ReconcileOAuthServerCertCABundle(cm *corev1.ConfigMap, sourceBundle *corev1
 }
 
 func oauthRedirectURI(path, externalHost string, externalPort int32) string {
-	return fmt.Sprintf("https://%s%s", net.JoinHostPort(externalHost, strconv.Itoa(int(externalPort))), path)
+	return cpoauth.ExternalURL(externalHost, externalPort) + path
 }
 
 func ReconcileBrowserClient(client *oauthv1.OAuthClient, externalHost string, externalPort int32) error {

@@ -99,6 +99,12 @@ func TestReconcileBrowserClient(t *testing.T) {
 			externalPort: 32047,
 			wantURIs:     []string{"https://[fd2e:6f44:5dd8:c956::14]:32047/oauth/token/display"},
 		},
+		{
+			name:         "When OAuth port is 443, it should omit the port in the redirect URI",
+			externalHost: "oauth-clusters-example.apps.mgmt.example.com",
+			externalPort: 443,
+			wantURIs:     []string{"https://oauth-clusters-example.apps.mgmt.example.com/oauth/token/display"},
+		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -129,6 +135,12 @@ func TestReconcileChallengingClient(t *testing.T) {
 			externalHost: "fd2e:6f44:5dd8:c956::14",
 			externalPort: 32047,
 			wantURIs:     []string{"https://[fd2e:6f44:5dd8:c956::14]:32047/oauth/token/implicit"},
+		},
+		{
+			name:         "When OAuth port is 443, it should omit the port in the redirect URI",
+			externalHost: "oauth-clusters-example.apps.mgmt.example.com",
+			externalPort: 443,
+			wantURIs:     []string{"https://oauth-clusters-example.apps.mgmt.example.com/oauth/token/implicit"},
 		},
 	}
 	for _, tc := range testsCases {
