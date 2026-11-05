@@ -19,11 +19,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -40,11 +38,24 @@ type proxyRecordingConn struct {
 
 type proxyCloseTrackingConn struct {
 	net.Conn
-	closed bool
+	closed atomic.Bool
+}
+
+type proxyDeadlineErrorConn struct {
+	net.Conn
+	calls, failOn int
+}
+
+func (conn *proxyDeadlineErrorConn) SetDeadline(deadline time.Time) error {
+	conn.calls++
+	if conn.calls == conn.failOn {
+		return errors.New("synthetic deadline error")
+	}
+	return conn.Conn.SetDeadline(deadline)
 }
 
 func (conn *proxyCloseTrackingConn) Close() error {
-	conn.closed = true
+	conn.closed.Store(true)
 	return conn.Conn.Close()
 }
 
@@ -117,17 +128,13 @@ func serveProxyTestConn(ctx context.Context, raw net.Conn, certificate tls.Certi
 }
 
 func TestKonnectivityProxy_DialContext(t *testing.T) {
-	if mode := os.Getenv("HYPERSHIFT_PROXY_TEST_MODE"); mode != "" {
-		runProxyDialContextChild(t, mode)
-		return
-	}
 	for _, testCase := range []struct {
 		name, scheme, host, user, mode string
 		missingCA, wrongHost           bool
 	}{
 		{name: "When the HTTPS proxy has a trusted IP certificate, it should encrypt CONNECT and tunnel traffic", scheme: "https", host: "127.0.0.1", user: "synthetic-user:synthetic-password", mode: "success"},
 		{name: "When the HTTPS proxy has a trusted DNS certificate, it should verify the proxy hostname", scheme: "https", host: "localhost", user: "synthetic-user:synthetic-password", mode: "success"},
-		{name: "When the proxy CA is missing from system roots, it should fail closed", scheme: "https", host: "127.0.0.1", user: "synthetic-user:synthetic-password", mode: "untrusted", missingCA: true},
+		{name: "When the proxy CA is missing from trusted roots, it should fail closed", scheme: "https", host: "127.0.0.1", user: "synthetic-user:synthetic-password", mode: "untrusted", missingCA: true},
 		{name: "When the trusted proxy certificate has the wrong hostname, it should fail closed", scheme: "https", host: "localhost", user: "synthetic-user:synthetic-password", mode: "hostname", wrongHost: true},
 		{name: "When the proxy uses HTTP, it should preserve CONNECT authentication", scheme: "http", host: "127.0.0.1", user: "synthetic-user:synthetic-password", mode: "success"},
 		{name: "When the HTTP proxy has no userinfo, it should omit authentication", scheme: "http", host: "127.0.0.1", mode: "success"},
@@ -135,14 +142,9 @@ func TestKonnectivityProxy_DialContext(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			certificate, caPEM := proxyTestCertificate(t, testCase.wrongHost)
-			caDir := t.TempDir()
-			caFile := filepath.Join(caDir, "additional-ca-bundle.pem")
-			if err := os.WriteFile(caFile, caPEM, 0600); err != nil {
-				t.Fatal(err)
-			}
-			rootDir := caDir
-			if testCase.missingCA {
-				rootDir = t.TempDir()
+			roots := x509.NewCertPool()
+			if !testCase.missingCA && !roots.AppendCertsFromPEM(caPEM) {
+				t.Fatal("cannot load synthetic proxy CA")
 			}
 			listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp4", "127.0.0.1:0")
 			if err != nil {
@@ -183,16 +185,18 @@ func TestKonnectivityProxy_DialContext(t *testing.T) {
 					}
 				}
 			}()
-			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-			defer cancel()
-			command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestKonnectivityProxy_DialContext$")
-			command.Env = []string{
-				"HYPERSHIFT_PROXY_TEST_MODE=" + testCase.mode,
-				"HYPERSHIFT_PROXY_TEST_CA=" + caFile,
-				"HTTPS_PROXY=" + proxyURL.String(), "NO_PROXY=*",
-				"SSL_CERT_DIR=" + rootDir, "SSL_CERT_FILE=" + filepath.Join(t.TempDir(), "missing.pem"),
+			t.Cleanup(func() { listener.Close(); <-done })
+			dialer := &konnectivityProxy{
+				connectDirectlyToCloudAPIs: true,
+				ca:                         caPEM, clientCert: []byte("unused synthetic client certificate"), clientKey: []byte("unused synthetic client key"),
 			}
-			output, childErr := command.CombinedOutput()
+			dialer.log = logr.Discard()
+			dialer.httpDialerOnce.Do(func() {
+				proxyDialer := newHTTPDialer(proxyURL)
+				proxyDialer.rootCAs = roots
+				dialer.httpDialer = proxyDialer
+			})
+			runProxyDialContext(t, testCase.mode, dialer)
 			listener.Close()
 			<-done
 			if accepted != 1 || len(captures) != 1 {
@@ -209,9 +213,6 @@ func TestKonnectivityProxy_DialContext(t *testing.T) {
 					}
 				}
 			}
-			if childErr != nil {
-				t.Fatalf("proxy subprocess failed: %v\n%s", childErr, output)
-			}
 			expectedConnects := 1
 			if testCase.mode != "success" {
 				expectedConnects = 0
@@ -223,18 +224,11 @@ func TestKonnectivityProxy_DialContext(t *testing.T) {
 	}
 }
 
-func runProxyDialContextChild(t *testing.T, mode string) {
+func runProxyDialContext(t *testing.T, mode string, dialer *konnectivityProxy) {
 	t.Helper()
-	caPEM, err := os.ReadFile(os.Getenv("HYPERSHIFT_PROXY_TEST_CA"))
-	if err != nil {
-		t.Fatalf("cannot load synthetic konnectivity CA: %v", err)
-	}
-	dialer := &konnectivityProxy{
-		connectDirectlyToCloudAPIs: true,
-		ca:                         caPEM, clientCert: []byte("unused synthetic client certificate"), clientKey: []byte("unused synthetic client key"),
-	}
-	dialer.log = logr.Discard()
-	conn, err := dialer.DialContext(t.Context(), "tcp", proxyTestAuthority)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	conn, err := dialer.DialContext(ctx, "tcp", proxyTestAuthority)
 	if mode != "success" {
 		if conn != nil {
 			conn.Close()
@@ -268,6 +262,25 @@ func runProxyDialContextChild(t *testing.T, mode string) {
 }
 
 func TestHttpProxyDialer_Dial(t *testing.T) {
+	t.Run("When Dial has no caller context, it should apply the finite production setup bound", func(t *testing.T) {
+		proxyURL := &url.URL{Scheme: "https", Host: "localhost"}
+		dialer := newHTTPDialer(proxyURL)
+		if dialer.rootCAs != nil {
+			t.Fatal("production must use system roots by default")
+		}
+		failure := errors.New("synthetic forward failure")
+		dialer.forwardDial = func(ctx context.Context, network, address string) (net.Conn, error) {
+			deadline, ok := ctx.Deadline()
+			remaining := time.Until(deadline)
+			if !ok || remaining <= 59*time.Second || remaining > 60*time.Second {
+				t.Error("default setup context must have a sixty-second bound")
+			}
+			return nil, failure
+		}
+		if conn, err := dialer.Dial("tcp", proxyTestAuthority); conn != nil || !errors.Is(err, failure) {
+			t.Fatal("Dial did not preserve forward error")
+		}
+	})
 	t.Run("When the TLS handshake fails, it should close the TCP connection before returning", func(t *testing.T) {
 		certificate, _ := proxyTestCertificate(t, false)
 		server := httptest.NewUnstartedServer(nil)
@@ -279,8 +292,8 @@ func TestHttpProxyDialer_Dial(t *testing.T) {
 			t.Fatal(err)
 		}
 		var tracked *proxyCloseTrackingConn
-		dialer := &httpProxyDialer{proxyURL: proxyURL, forwardDial: func(network, address string) (net.Conn, error) {
-			conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(t.Context(), network, address)
+		dialer := &httpProxyDialer{proxyURL: proxyURL, forwardDial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, address)
 			if err != nil {
 				return nil, err
 			}
@@ -293,14 +306,14 @@ func TestHttpProxyDialer_Dial(t *testing.T) {
 		}}
 		conn, err := dialer.Dial("tcp", proxyTestAuthority)
 		var unknownCA x509.UnknownAuthorityError
-		if conn != nil || !errors.As(err, &unknownCA) || tracked == nil || !tracked.closed {
+		if conn != nil || !errors.As(err, &unknownCA) || tracked == nil || !tracked.closed.Load() {
 			t.Fatal("TLS verification failure did not close the underlying connection before returning")
 		}
 	})
 	t.Run("When TCP dialing fails, it should return the error without retrying", func(t *testing.T) {
 		failure := errors.New("synthetic dial failure")
 		calls := 0
-		dialer := &httpProxyDialer{proxyURL: &url.URL{Scheme: "https", Host: "localhost"}, forwardDial: func(network, address string) (net.Conn, error) {
+		dialer := &httpProxyDialer{proxyURL: &url.URL{Scheme: "https", Host: "localhost"}, forwardDial: func(ctx context.Context, network, address string) (net.Conn, error) {
 			calls++
 			if network != "tcp" || address != "localhost:443" {
 				t.Error("unexpected forward dial address")
@@ -312,6 +325,293 @@ func TestHttpProxyDialer_Dial(t *testing.T) {
 			t.Fatal("TCP failure was not preserved")
 		}
 	})
+}
+
+func serveStalledProxy(ctx context.Context, server net.Conn, certificate tls.Certificate, scheme, stage string, reached chan<- struct{}, release <-chan struct{}) error {
+	defer server.Close()
+	if err := server.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return err
+	}
+	conn := server
+	if scheme == "https" && stage != "TLS" {
+		tlsConn := tls.Server(server, &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			return err
+		}
+		conn = tlsConn
+	}
+	if stage == "TLS" || stage == "CONNECT write" {
+		close(reached)
+		select {
+		case <-release:
+			return nil
+		case <-time.After(5 * time.Second):
+			return errors.New("test did not release stalled proxy")
+		}
+	}
+	if _, err := http.ReadRequest(bufio.NewReader(conn)); err != nil {
+		return err
+	}
+	close(reached)
+	_, err := io.Copy(io.Discard, conn)
+	return err
+}
+
+func runProxySetupStall(t *testing.T, scheme, stage, trigger string) {
+	t.Helper()
+	client, server := net.Pipe()
+	tracked := &proxyCloseTrackingConn{Conn: client}
+	t.Cleanup(func() { client.Close(); server.Close() })
+	certificate, caPEM := proxyTestCertificate(t, false)
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		t.Fatal("cannot load proxy root")
+	}
+	reached := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	serverDone := make(chan error, 1)
+	serverExited := make(chan struct{})
+	if stage != "TCP" {
+		t.Cleanup(func() {
+			client.Close()
+			server.Close()
+			select {
+			case <-serverExited:
+			case <-time.After(5 * time.Second):
+				t.Error("server goroutine did not finish")
+			}
+		})
+		go func() {
+			defer close(serverExited)
+			serverDone <- serveStalledProxy(t.Context(), server, certificate, scheme, stage, reached, release)
+		}()
+	}
+	dialer := &httpProxyDialer{
+		proxyURL: &url.URL{Scheme: scheme, Host: "localhost"}, rootCAs: roots,
+		forwardDial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			if stage == "TCP" {
+				close(reached)
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}
+			return tracked, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	switch trigger {
+	case "caller deadline":
+		cancel()
+		ctx, cancel = context.WithTimeout(t.Context(), 200*time.Millisecond)
+	case "setup timeout":
+		dialer.setupTimeout = 200 * time.Millisecond
+	}
+	defer cancel()
+	consumer := &konnectivityProxy{connectDirectlyToCloudAPIs: true}
+	consumer.log = logr.Discard()
+	consumer.httpDialerOnce.Do(func() { consumer.httpDialer = dialer })
+	finished := make(chan error, 1)
+	dialDone := make(chan struct{})
+	t.Cleanup(func() {
+		cancel()
+		client.Close()
+		server.Close()
+		select {
+		case <-dialDone:
+		case <-time.After(5 * time.Second):
+			t.Error("dial goroutine did not finish")
+		}
+	})
+	go func() {
+		defer close(dialDone)
+		conn, err := consumer.DialContext(ctx, "tcp", proxyTestAuthority)
+		if conn != nil {
+			conn.Close()
+			finished <- errors.New("stalled setup returned a connection")
+			return
+		}
+		finished <- err
+	}()
+	select {
+	case <-reached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("setup did not reach stall")
+	}
+	if trigger == "caller cancellation" {
+		cancel()
+	}
+	select {
+	case err := <-finished:
+		var timeout net.Error
+		if trigger == "caller cancellation" {
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("expected cancellation, got %v", err)
+			}
+		} else if !errors.Is(err, context.DeadlineExceeded) && !(errors.As(err, &timeout) && timeout.Timeout()) {
+			t.Fatalf("expected timeout, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("setup ignored cancellation or timeout")
+	}
+	if stage != "TCP" && !tracked.closed.Load() {
+		t.Fatal("failed setup did not close raw connection")
+	}
+	if stage == "CONNECT response" {
+		select {
+		case err := <-serverDone:
+			if err != nil {
+				t.Fatalf("failed setup did not close connection: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("server remained connected after setup failure")
+		}
+	}
+}
+
+func runProxySetupSuccess(t *testing.T, scheme string) {
+	t.Helper()
+	certificate, caPEM := proxyTestCertificate(t, false)
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		t.Fatal("cannot load proxy root")
+	}
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	proxyURL := &url.URL{Scheme: scheme, Host: listener.Addr().String()}
+	serverDone := make(chan error, 1)
+	serverExited := make(chan struct{})
+	t.Cleanup(func() {
+		listener.Close()
+		select {
+		case <-serverExited:
+		case <-time.After(6 * time.Second):
+			t.Error("server goroutine did not finish")
+		}
+	})
+	go func() {
+		defer close(serverExited)
+		raw, err := listener.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		_, _, err = serveProxyTestConn(t.Context(), raw, certificate, proxyURL, "")
+		serverDone <- err
+	}()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	dialer := newHTTPDialer(proxyURL)
+	dialer.rootCAs = roots
+	dialer.setupTimeout = 100 * time.Millisecond
+	conn, err := dialer.DialContext(ctx, "tcp", proxyTestAuthority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	cancel()
+	<-time.After(150 * time.Millisecond)
+	payload := []byte("tunnel remains usable after setup cancellation")
+	finished := make(chan error, 1)
+	go func() {
+		if _, err := conn.Write(payload); err != nil {
+			finished <- err
+			return
+		}
+		echo := make([]byte, len(payload))
+		_, err := io.ReadFull(conn, echo)
+		if err == nil && !bytes.Equal(echo, payload) {
+			err = errors.New("tunnel payload mismatch")
+		}
+		finished <- err
+	}()
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("established tunnel stalled")
+	}
+	conn.Close()
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server did not finish")
+	}
+}
+
+func TestHttpProxyDialer_DialContext(t *testing.T) {
+	for _, scheme := range []string{"http", "https"} {
+		for _, stage := range []string{"TCP", "TLS", "CONNECT write", "CONNECT response"} {
+			if scheme == "http" && stage == "TLS" {
+				continue
+			}
+			for _, trigger := range []string{"caller deadline", "caller cancellation", "setup timeout"} {
+				t.Run("When "+scheme+" "+stage+" stalls with "+trigger+", it should close setup promptly", func(t *testing.T) {
+					runProxySetupStall(t, scheme, stage, trigger)
+				})
+			}
+		}
+		t.Run("When "+scheme+" CONNECT succeeds, it should detach cancellation and clear the setup deadline", func(t *testing.T) {
+			runProxySetupSuccess(t, scheme)
+		})
+	}
+	for _, testCase := range []struct {
+		name, response string
+		failDeadlineOn int
+	}{
+		{name: "When setting the setup deadline fails, it should close the connection", failDeadlineOn: 1},
+		{name: "When clearing the setup deadline fails, it should close instead of returning a tunnel", response: "HTTP/1.1 200 Connection Established\r\n\r\n", failDeadlineOn: 2},
+		{name: "When CONNECT returns a rejection without a reason phrase, it should close without panicking", response: "HTTP/1.1 407\r\nContent-Length: 0\r\n\r\n"},
+		{name: "When CONNECT returns a malformed response, it should close the connection", response: "malformed\r\n\r\n"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			client, server := net.Pipe()
+			tracked := &proxyCloseTrackingConn{Conn: &proxyDeadlineErrorConn{Conn: client, failOn: testCase.failDeadlineOn}}
+			serverDone := make(chan struct{})
+			t.Cleanup(func() {
+				client.Close()
+				server.Close()
+				select {
+				case <-serverDone:
+				case <-time.After(5 * time.Second):
+					t.Error("server goroutine did not finish")
+				}
+			})
+			go func() {
+				defer close(serverDone)
+				defer server.Close()
+				if err := server.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+					return
+				}
+				if _, err := http.ReadRequest(bufio.NewReader(server)); err != nil {
+					return
+				}
+				if _, err := io.WriteString(server, testCase.response); err != nil {
+					return
+				}
+				if _, err := io.Copy(io.Discard, server); err != nil {
+					return
+				}
+			}()
+			dialer := &httpProxyDialer{
+				proxyURL:    &url.URL{Scheme: "http", Host: "localhost"},
+				forwardDial: func(ctx context.Context, network, address string) (net.Conn, error) { return tracked, nil },
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			conn, err := dialer.DialContext(ctx, "tcp", proxyTestAuthority)
+			if conn != nil || err == nil || !tracked.closed.Load() {
+				t.Fatalf("setup failure must close and return no connection: %v", err)
+			}
+		})
+	}
 }
 
 func TestHostPortNoPort(t *testing.T) {
