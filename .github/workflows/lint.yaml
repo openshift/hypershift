@@ -8,6 +8,8 @@ on:
 
 jobs:
   lint:
-    uses: openshift/hypershift/.github/workflows/lint-reusable.yaml@main
+    uses: ./.github/workflows/verify-reusable.yaml
+    with:
+      target: lint
     permissions:
       contents: read

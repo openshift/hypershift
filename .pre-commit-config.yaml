@@ -70,10 +70,10 @@ repos:
         language: system
         stages: [post-checkout]
         always_run: true
-      - id: make-verify-quick
-        name: Run make verify-quick
-        description: Regenerates code and checks for uncommitted diffs (lightweight push smoke check).
-        entry: make verify-quick
+      - id: make-verify
+        name: Run make verify
+        description: Runs the complete verification workload in the shared pinned tool image.
+        entry: make verify
         language: system
         pass_filenames: false
         stages: [pre-push]

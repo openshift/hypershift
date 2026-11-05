@@ -1,0 +1,18 @@
+# Keep the Go toolchain separate from the runtime so verification does not carry
+# Go Toolset's build packages or GitHub Actions runner software.
+FROM registry.access.redhat.com/ubi9/go-toolset:1.26.4 AS go
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7
+
+RUN microdnf install -y --setopt=install_weak_deps=0 \
+        --disablerepo='*' --enablerepo=ubi-9-baseos-rpms --enablerepo=ubi-9-appstream-rpms \
+        bash ca-certificates curl-minimal diffutils findutils gcc git-core \
+        glibc-devel gzip jq make python3 python3-pip python3-setuptools tar \
+    && microdnf clean all
+
+COPY --from=go /usr/lib/golang /usr/lib/golang
+ENV PATH="/usr/lib/golang/bin:${PATH}"
+
+# CI may assign an arbitrary UID; the common launcher supplies writable HOME and
+# cache directories. Local verification explicitly uses the caller's UID/GID.
+USER 1001:0
+CMD ["make", "verify"]

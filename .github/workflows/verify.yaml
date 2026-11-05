@@ -8,6 +8,8 @@ on:
 
 jobs:
   verify:
-    uses: openshift/hypershift/.github/workflows/verify-reusable.yaml@main
+    uses: ./.github/workflows/verify-reusable.yaml
+    with:
+      target: verify-repository
     permissions:
       contents: read

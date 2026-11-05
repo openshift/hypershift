@@ -2,14 +2,40 @@ name: Verify (Reusable)
 
 on:
   workflow_call:
+    inputs:
+      target:
+        type: string
+        default: verify
 
 permissions:
   contents: read
 
 jobs:
-  verify:
-    name: Verify
+  image:
+    name: Resolve verification image
     runs-on: arc-runner-set
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: image
+        shell: bash
+        run: |
+          image=$(./hack/verify-image.sh)
+          printf 'image=%s\n' "$image" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: ${{ inputs.target == 'lint' && 'Lint' || 'Verify' }}
+    needs: image
+    runs-on: arc-verify-runner-set
+    container:
+      image: ${{ needs.image.outputs.image }}
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -17,7 +43,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: |
-          if [ -n "${{ github.base_ref }}" ]; then
-            git fetch origin "${{ github.base_ref }}:${{ github.base_ref }}"
+          if [ -n "$BASE_REF" ]; then
+            git fetch origin "$BASE_REF:$BASE_REF"
           fi
-      - run: make verify-ci
+        env:
+          BASE_REF: ${{ github.base_ref }}
+      - run: make "$VERIFY_TARGET"
+        env:
+          VERIFY_CONTAINER: "0"
+          VERIFY_TARGET: ${{ inputs.target }}
+          PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PULL_PULL_SHA: ${{ github.event.pull_request.head.sha }}

@@ -1,0 +1,46 @@
+# Install separately from arc-runner-set, in arc-verify-runners. Only verification
+# uses these runners; existing workflows keep their current runner environment.
+githubConfigUrl: "https://github.com/openshift/hypershift"
+githubConfigSecret: "github-app-secret"
+runnerScaleSetName: arc-verify-runner-set
+minRunners: 0
+maxRunners: 10
+
+# Job files are copied between pods by the runner hooks. No Docker daemon or
+# per-runner PVC is required, and jobs without a container fail closed.
+containerMode:
+  type: kubernetes-novolume
+
+template:
+  spec:
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:2.338.0@sha256:4ffadc0002b2581327e06101fc8c06cd189232baf79fe561fac9caeb76f5e807
+        command: ["/home/runner/run.sh"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          # run.sh writes run-helper.sh beside itself; registration and logging
+          # also write under /home/runner. Keep this runner filesystem writable.
+          readOnlyRootFilesystem: false
+        env:
+          - name: ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE
+            value: /home/runner/job-template/content
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+        volumeMounts:
+          - name: job-template
+            mountPath: /home/runner/job-template
+            readOnly: true
+    volumes:
+      - name: job-template
+        configMap:
+          name: arc-verify-job-template

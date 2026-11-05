@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arc-verify-job-template
+  namespace: arc-verify-runners
+data:
+  content: |
+    spec:
+      # PR code does not need the runner's Kubernetes API permissions.
+      automountServiceAccountToken: false
+      containers:
+        - name: "$job"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          # ARC supplies writable /__w, /__e and /github volumes. Verification
+          # also needs temporary storage for its private HOME and tool caches.
+          volumeMounts:
+            - name: verification-tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: "4"
+              memory: "16Gi"
+            limits:
+              cpu: "4"
+              memory: "16Gi"
+      volumes:
+        - name: verification-tmp
+          emptyDir: {}
