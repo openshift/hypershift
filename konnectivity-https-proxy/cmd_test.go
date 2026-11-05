@@ -2,14 +2,19 @@ package konnectivityhttpsproxy
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -25,6 +30,91 @@ func TestNewStartCommand(t *testing.T) {
 
 	g.Expect(flag).NotTo(BeNil())
 	g.Expect(flag.DefValue).To(Equal("false"))
+}
+
+func TestDialThroughProxyFunc(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		trusted bool
+	}{
+		{name: "When the data-plane HTTPS proxy is trusted, it should tunnel authenticated traffic", trusted: true},
+		{name: "When the data-plane HTTPS proxy is untrusted, it should reject its certificate"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			finished := make(chan error, 1)
+			server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				conn, _, err := writer.(http.Hijacker).Hijack()
+				if err != nil {
+					finished <- fmt.Errorf("proxy hijack: %w", err)
+					return
+				}
+				defer conn.Close()
+				if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+					finished <- fmt.Errorf("proxy deadline: %w", err)
+					return
+				}
+				valid := request.Method == http.MethodConnect && request.Host == "synthetic.invalid:443" &&
+					request.Header.Get("Proxy-Authorization") == "Basic "+base64.StdEncoding.EncodeToString([]byte("synthetic-user:synthetic-password"))
+				if !valid {
+					finished <- errors.New("unexpected CONNECT or authentication")
+					return
+				}
+				if _, err := io.WriteString(conn, "HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
+					finished <- fmt.Errorf("proxy response: %w", err)
+					return
+				}
+				_, err = io.Copy(conn, conn)
+				finished <- err
+			}))
+			defer server.Close()
+			roots := x509.NewCertPool()
+			if testCase.trusted {
+				roots.AddCert(server.Certificate())
+			}
+			httpProxy := goproxy.NewProxyHttpServer()
+			httpProxy.Tr = &http.Transport{
+				TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
+				DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+					conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, address)
+					if err == nil {
+						err = conn.SetDeadline(time.Now().Add(5 * time.Second))
+						if err != nil {
+							conn.Close()
+							return nil, err
+						}
+					}
+					return conn, err
+				},
+			}
+			conn, err := dialThroughProxyFunc(httpProxy, server.URL, url.UserPassword("synthetic-user", "synthetic-password"))("tcp", "synthetic.invalid:443")
+			if !testCase.trusted {
+				if conn != nil {
+					conn.Close()
+				}
+				var unknownCA x509.UnknownAuthorityError
+				if conn != nil || !errors.As(err, &unknownCA) {
+					t.Fatal("untrusted data-plane proxy did not fail verification")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("trusted data-plane proxy failed: %v", err)
+			}
+			t.Cleanup(func() {
+				conn.Close()
+				if serveErr := <-finished; serveErr != nil {
+					t.Errorf("data-plane proxy failed: %v", serveErr)
+				}
+			})
+			if _, err := io.WriteString(conn, "synthetic traffic"); err != nil {
+				t.Fatal("data-plane tunnel write failed")
+			}
+			echo := make([]byte, len("synthetic traffic"))
+			if _, err := io.ReadFull(conn, echo); err != nil || string(echo) != "synthetic traffic" {
+				t.Fatal("data-plane tunnel echo failed")
+			}
+		})
+	}
 }
 
 func TestShouldDialDirectFunc(t *testing.T) {
