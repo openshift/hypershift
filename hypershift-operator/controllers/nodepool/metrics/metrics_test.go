@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,6 +31,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -473,6 +475,307 @@ func TestCollect(t *testing.T) {
 		g.Expect(deadlineSeen).To(BeTrue())
 		g.Expect(listErr).To(MatchError(context.DeadlineExceeded))
 		g.Expect(time.Since(start)).To(BeNumerically("<", time.Second))
+	})
+
+	newFixtures := func() (*hyperv1.HostedCluster, *hyperv1.NodePool) {
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "rosa-cluster", Namespace: "clusters"},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "d1b8d336-52c5-4a4d-9d9f-81e947c6ea7b",
+				Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+			},
+		}
+		np := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Name: "workers", Namespace: hc.Namespace},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: hc.Name,
+				Replicas:    ptr.To[int32](10),
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AWSPlatform,
+					AWS:  &hyperv1.AWSNodePoolPlatform{InstanceType: "m5.xlarge"},
+				},
+			},
+			Status: hyperv1.NodePoolStatus{Replicas: 2},
+		}
+		return hc, np
+	}
+	gaugeHeader := func(name, help string) string {
+		return fmt.Sprintf("# HELP %s %s\n# TYPE %s gauge\n", name, help, name)
+	}
+	poolSample := func(hc *hyperv1.HostedCluster, np *hyperv1.NodePool, workloadType string, vcpus float64) string {
+		return fmt.Sprintf("%s{_id=%q,cluster_name=%q,name=%q,namespace=%q,platform=%q,workload_type=%q} %g\n",
+			npmetrics.VCpusCountByNodePoolMetricName, hc.Spec.ClusterID, hc.Name, np.Name, np.Namespace,
+			string(np.Spec.Platform.Type), workloadType, vcpus)
+	}
+
+	for _, tc := range []struct {
+		name                 string
+		configure            func(*hyperv1.HostedCluster, *hyperv1.NodePool)
+		ec2Err               error
+		configMapData        map[string]string
+		omitHostedCluster    bool
+		expectedPoolVCpus    *float64
+		expectedWorkloadType string
+		expectedClusterVCpus float64
+		expectedError        error
+	}{
+		{
+			name:                 "When a NodePool has no workload label, it should report available vCPUs with an empty workload type",
+			expectedPoolVCpus:    ptr.To(8.0),
+			expectedClusterVCpus: 8,
+		},
+		{
+			name: "When a NodePool is labeled for virt, it should report its workload type and instance capacity",
+			configure: func(_ *hyperv1.HostedCluster, np *hyperv1.NodePool) {
+				np.Spec.NodeLabels = map[string]string{nodePoolWorkloadTypeLabel: "virt"}
+				np.Spec.Platform.AWS.InstanceType = "m5.metal"
+				np.Status.Replicas = 3
+			},
+			expectedPoolVCpus:    ptr.To(288.0),
+			expectedWorkloadType: "virt",
+			expectedClusterVCpus: 288,
+		},
+		{
+			name: "When workload labels conflict, it should pass through the node label without interpreting its value",
+			configure: func(_ *hyperv1.HostedCluster, np *hyperv1.NodePool) {
+				np.Labels = map[string]string{nodePoolWorkloadTypeLabel: "virt"}
+				np.Spec.NodeLabels = map[string]string{nodePoolWorkloadTypeLabel: "isv"}
+			},
+			expectedPoolVCpus:    ptr.To(8.0),
+			expectedWorkloadType: "isv",
+			expectedClusterVCpus: 8,
+		},
+		{
+			name: "When only metadata has a workload label, it should report an empty workload type",
+			configure: func(_ *hyperv1.HostedCluster, np *hyperv1.NodePool) {
+				np.Labels = map[string]string{nodePoolWorkloadTypeLabel: "virt"}
+			},
+			expectedPoolVCpus:    ptr.To(8.0),
+			expectedClusterVCpus: 8,
+		},
+		{
+			name: "When a NodePool has zero available replicas, it should report zero without resolving the instance type",
+			configure: func(_ *hyperv1.HostedCluster, np *hyperv1.NodePool) {
+				np.Status.Replicas = 0
+			},
+			expectedPoolVCpus: ptr.To(0.0),
+		},
+		{
+			name: "When a NodePool is autoscaled, it should use available replicas without a desired replica count",
+			configure: func(_ *hyperv1.HostedCluster, np *hyperv1.NodePool) {
+				np.Spec.Replicas = nil
+			},
+			expectedPoolVCpus:    ptr.To(8.0),
+			expectedClusterVCpus: 8,
+		},
+		{
+			name:                 "When EC2 fails but the ConfigMap has capacity, it should use the fallback for both metrics",
+			ec2Err:               newAWSError("InvalidInstanceType", "the instance type is not recognized"),
+			configMapData:        map[string]string{"m5.xlarge": "8"},
+			expectedPoolVCpus:    ptr.To(16.0),
+			expectedClusterVCpus: 16,
+		},
+		{
+			name: "When capacity resolution fails, it should emit -1 for the pool and preserve the cluster error",
+			configure: func(_ *hyperv1.HostedCluster, np *hyperv1.NodePool) {
+				np.Spec.NodeLabels = map[string]string{nodePoolWorkloadTypeLabel: "virt"}
+				np.Status.Replicas = 3
+			},
+			ec2Err:               fmt.Errorf("EC2 is unavailable"),
+			expectedPoolVCpus:    ptr.To(-1.0),
+			expectedWorkloadType: "virt",
+			expectedClusterVCpus: -1,
+			expectedError:        errRosaCPUsInstanceTypesConfigNotFound,
+		},
+		{
+			name: "When the platform is not AWS, it should omit pool usage and preserve unsupported platform reporting",
+			configure: func(hc *hyperv1.HostedCluster, np *hyperv1.NodePool) {
+				hc.Spec.Platform.Type = hyperv1.KubevirtPlatform
+				np.Spec.Platform = hyperv1.NodePoolPlatform{Type: hyperv1.KubevirtPlatform}
+			},
+			expectedClusterVCpus: -1,
+			expectedError:        errUnsupportedPlatform,
+		},
+		{
+			name: "When the AWS platform spec is missing, it should emit -1 for the pool and preserve the cluster error",
+			configure: func(_ *hyperv1.HostedCluster, np *hyperv1.NodePool) {
+				np.Spec.Platform.AWS = nil
+			},
+			expectedPoolVCpus:    ptr.To(-1.0),
+			expectedClusterVCpus: -1,
+			expectedError:        errMissingAWSPlatformSpec,
+		},
+		{
+			name: "When a non-AWS NodePool has zero replicas, it should omit pool usage without resolving capacity",
+			configure: func(hc *hyperv1.HostedCluster, np *hyperv1.NodePool) {
+				hc.Spec.Platform.Type = hyperv1.KubevirtPlatform
+				np.Spec.Platform = hyperv1.NodePoolPlatform{Type: hyperv1.KubevirtPlatform}
+				np.Status.Replicas = 0
+			},
+		},
+		{
+			name:              "When the HostedCluster is missing, it should omit unattributable pool usage without resolving capacity",
+			omitHostedCluster: true,
+		},
+		{
+			name: "When the HostedCluster ID is empty, it should omit pool usage without changing the cluster metric",
+			configure: func(hc *hyperv1.HostedCluster, _ *hyperv1.NodePool) {
+				hc.Spec.ClusterID = ""
+			},
+			expectedClusterVCpus: 8,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			hc, np := newFixtures()
+			if tc.configure != nil {
+				tc.configure(hc, np)
+			}
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(np)
+			if !tc.omitHostedCluster {
+				builder = builder.WithObjects(hc)
+			}
+			if tc.configMapData != nil {
+				builder = builder.WithObjects(&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Name: rosaCPUsInstanceTypeConfigMapName, Namespace: rosaCPUInstanceTypeConfigMapNamespace},
+					Data:       tc.configMapData,
+				})
+			}
+			ec2Calls := 0
+			ec2Mock := &Ec2ClientMock{
+				MockedDescribeInstanceTypesFunc: func(_ context.Context, input *ec2v2.DescribeInstanceTypesInput, _ ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+					ec2Calls++
+					if tc.ec2Err != nil {
+						return nil, tc.ec2Err
+					}
+					instanceType := string(input.InstanceTypes[0])
+					vcpus := map[string]int32{"m5.xlarge": 4, "m5.metal": 96}[instanceType]
+					return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{initInstanceTypeInfo(instanceType, vcpus)}), nil
+				},
+			}
+			reg := prometheus.NewRegistry()
+			reg.MustRegister(createNodePoolsMetricsCollector(builder.Build(), ec2Mock, clock.RealClock{}))
+
+			var expected string
+			if tc.expectedPoolVCpus != nil {
+				expected += gaugeHeader(npmetrics.VCpusCountByNodePoolMetricName, vCpusCountByNodePoolMetricHelp)
+				expected += poolSample(hc, np, tc.expectedWorkloadType, *tc.expectedPoolVCpus)
+			}
+			if !tc.omitHostedCluster {
+				expected += gaugeHeader(npmetrics.VCpusCountByHClusterMetricName, VCpusCountByHClusterMetricHelp)
+				expected += fmt.Sprintf("%s{_id=%q,name=%q,namespace=%q,platform=%q} %g\n",
+					npmetrics.VCpusCountByHClusterMetricName, hc.Spec.ClusterID, hc.Name, hc.Namespace, string(hc.Spec.Platform.Type), tc.expectedClusterVCpus)
+			}
+			if tc.expectedError != nil {
+				expected += gaugeHeader(npmetrics.VCpusComputationErrorByHClusterMetricName, VCpusComputationErrorByHClusterMetricHelp)
+				expected += fmt.Sprintf("%s{_id=%q,name=%q,namespace=%q,platform=%q,reason=%q} 1\n",
+					npmetrics.VCpusComputationErrorByHClusterMetricName, hc.Spec.ClusterID, hc.Name, hc.Namespace, string(hc.Spec.Platform.Type), tc.expectedError.Error())
+			}
+			g.Expect(testutil.GatherAndCompare(reg, strings.NewReader(expected),
+				npmetrics.VCpusCountByNodePoolMetricName, npmetrics.VCpusCountByHClusterMetricName, npmetrics.VCpusComputationErrorByHClusterMetricName)).To(Succeed())
+			if np.Status.Replicas == 0 {
+				g.Expect(ec2Calls).To(BeZero(), "zero-replica NodePool %s/%s should not resolve instance capacity", np.Namespace, np.Name)
+			}
+		})
+	}
+
+	t.Run("When some pools fail capacity resolution, it should report healthy pools independently and retain the first cluster error", func(t *testing.T) {
+		g := NewWithT(t)
+		hc, invalid := newFixtures()
+		hc.Status.AutoNode.VCPUs = ptr.To[int32](20)
+		invalid.Name = "a-invalid"
+		invalid.Spec.Platform.AWS.InstanceType = "unknown.metal"
+		virt := invalid.DeepCopy()
+		virt.Name = "b-virt"
+		virt.Spec.NodeLabels = map[string]string{nodePoolWorkloadTypeLabel: "virt"}
+		virt.Spec.Platform.AWS.InstanceType = "m5.metal"
+		virt.Status.Replicas = 3
+		secondInvalid := invalid.DeepCopy()
+		secondInvalid.Name = "c-invalid"
+		secondInvalid.Spec.Platform.AWS.InstanceType = "invalid.xlarge"
+		secondInvalid.Status.Replicas = 5
+		app := invalid.DeepCopy()
+		app.Name = "d-app"
+		app.Spec.Platform.AWS.InstanceType = "m5.xlarge"
+		app.Status.Replicas = 10
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
+			WithObjects(hc, invalid, virt, secondInvalid, app, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: rosaCPUsInstanceTypeConfigMapName, Namespace: rosaCPUInstanceTypeConfigMapNamespace},
+				Data:       map[string]string{"invalid.xlarge": "not-a-number"},
+			}).Build()
+		ec2Mock := &Ec2ClientMock{
+			MockedDescribeInstanceTypesFunc: func(_ context.Context, input *ec2v2.DescribeInstanceTypesInput, _ ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				instanceType := string(input.InstanceTypes[0])
+				vcpus, ok := map[string]int32{"m5.xlarge": 4, "m5.metal": 96}[instanceType]
+				if !ok {
+					return nil, newAWSError("InvalidInstanceType", "the instance type is not recognized")
+				}
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{initInstanceTypeInfo(instanceType, vcpus)}), nil
+			},
+		}
+		reg := prometheus.NewRegistry()
+		reg.MustRegister(createNodePoolsMetricsCollector(fakeClient, ec2Mock, clock.RealClock{}))
+		expected := gaugeHeader(npmetrics.VCpusCountByNodePoolMetricName, vCpusCountByNodePoolMetricHelp)
+		expected += poolSample(hc, invalid, "", -1) + poolSample(hc, virt, "virt", 288)
+		expected += poolSample(hc, secondInvalid, "", -1) + poolSample(hc, app, "", 40)
+		expected += gaugeHeader(npmetrics.VCpusCountByHClusterMetricName, VCpusCountByHClusterMetricHelp)
+		expected += fmt.Sprintf("%s{_id=%q,name=%q,namespace=%q,platform=\"AWS\"} -1\n",
+			npmetrics.VCpusCountByHClusterMetricName, hc.Spec.ClusterID, hc.Name, hc.Namespace)
+		expected += gaugeHeader(npmetrics.VCpusComputationErrorByHClusterMetricName, VCpusComputationErrorByHClusterMetricHelp)
+		expected += fmt.Sprintf("%s{_id=%q,name=%q,namespace=%q,platform=\"AWS\",reason=%q} 1\n",
+			npmetrics.VCpusComputationErrorByHClusterMetricName, hc.Spec.ClusterID, hc.Name, hc.Namespace, errUnknownInstanceType.Error())
+		g.Expect(testutil.GatherAndCompare(reg, strings.NewReader(expected),
+			npmetrics.VCpusCountByNodePoolMetricName, npmetrics.VCpusCountByHClusterMetricName, npmetrics.VCpusComputationErrorByHClusterMetricName)).To(Succeed())
+	})
+
+	t.Run("When pools or workload labels change after registration, it should emit only current series", func(t *testing.T) {
+		g := NewWithT(t)
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+		ec2Mock := &Ec2ClientMock{
+			MockedDescribeInstanceTypesFunc: func(_ context.Context, input *ec2v2.DescribeInstanceTypesInput, _ ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				if input.InstanceTypes[0] != ec2typesv2.InstanceTypeM5Xlarge {
+					return nil, newAWSError("InvalidInstanceType", "the instance type is not recognized")
+				}
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{initInstanceTypeInfo("m5.xlarge", 4)}), nil
+			},
+		}
+		reg := prometheus.NewRegistry()
+		reg.MustRegister(createNodePoolsMetricsCollector(fakeClient, ec2Mock, clock.RealClock{}))
+		g.Expect(testutil.GatherAndCompare(reg, strings.NewReader(""), npmetrics.VCpusCountByNodePoolMetricName)).To(Succeed())
+		hc, np := newFixtures()
+		g.Expect(fakeClient.Create(context.Background(), hc)).To(Succeed())
+		g.Expect(fakeClient.Create(context.Background(), np)).To(Succeed())
+		for _, workloadType := range []string{"virt", "isv", ""} {
+			np.Spec.NodeLabels = map[string]string{nodePoolWorkloadTypeLabel: workloadType}
+			if workloadType == "" {
+				np.Spec.NodeLabels = nil
+			}
+			g.Expect(fakeClient.Update(context.Background(), np)).To(Succeed())
+			expected := gaugeHeader(npmetrics.VCpusCountByNodePoolMetricName, vCpusCountByNodePoolMetricHelp) + poolSample(hc, np, workloadType, 8)
+			g.Expect(testutil.GatherAndCompare(reg, strings.NewReader(expected), npmetrics.VCpusCountByNodePoolMetricName)).To(Succeed())
+		}
+		np.Spec.Platform.AWS.InstanceType = "unknown.metal"
+		g.Expect(fakeClient.Update(context.Background(), np)).To(Succeed())
+		expected := gaugeHeader(npmetrics.VCpusCountByNodePoolMetricName, vCpusCountByNodePoolMetricHelp) + poolSample(hc, np, "", -1)
+		expected += gaugeHeader(npmetrics.VCpusCountByHClusterMetricName, VCpusCountByHClusterMetricHelp)
+		expected += fmt.Sprintf("%s{_id=%q,name=%q,namespace=%q,platform=\"AWS\"} -1\n",
+			npmetrics.VCpusCountByHClusterMetricName, hc.Spec.ClusterID, hc.Name, hc.Namespace)
+		expected += gaugeHeader(npmetrics.VCpusComputationErrorByHClusterMetricName, VCpusComputationErrorByHClusterMetricHelp)
+		expected += fmt.Sprintf("%s{_id=%q,name=%q,namespace=%q,platform=\"AWS\",reason=%q} 1\n",
+			npmetrics.VCpusComputationErrorByHClusterMetricName, hc.Spec.ClusterID, hc.Name, hc.Namespace, errRosaCPUsInstanceTypesConfigNotFound.Error())
+		metricNames := []string{npmetrics.VCpusCountByNodePoolMetricName, npmetrics.VCpusCountByHClusterMetricName, npmetrics.VCpusComputationErrorByHClusterMetricName}
+		g.Expect(testutil.GatherAndCompare(reg, strings.NewReader(expected), metricNames...)).To(Succeed())
+		g.Expect(fakeClient.Create(context.Background(), &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: rosaCPUsInstanceTypeConfigMapName, Namespace: rosaCPUInstanceTypeConfigMapNamespace},
+			Data:       map[string]string{"unknown.metal": "4"},
+		})).To(Succeed())
+		expected = gaugeHeader(npmetrics.VCpusCountByNodePoolMetricName, vCpusCountByNodePoolMetricHelp) + poolSample(hc, np, "", 8)
+		expected += gaugeHeader(npmetrics.VCpusCountByHClusterMetricName, VCpusCountByHClusterMetricHelp)
+		expected += fmt.Sprintf("%s{_id=%q,name=%q,namespace=%q,platform=\"AWS\"} 8\n",
+			npmetrics.VCpusCountByHClusterMetricName, hc.Spec.ClusterID, hc.Name, hc.Namespace)
+		g.Expect(testutil.GatherAndCompare(reg, strings.NewReader(expected), metricNames...)).To(Succeed())
+		g.Expect(fakeClient.Delete(context.Background(), np)).To(Succeed())
+		g.Expect(testutil.GatherAndCompare(reg, strings.NewReader(""), npmetrics.VCpusCountByNodePoolMetricName)).To(Succeed())
 	})
 }
 

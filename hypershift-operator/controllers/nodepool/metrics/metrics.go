@@ -51,6 +51,12 @@ const (
 
 	availableReplicasMetricHelp = "Number of available replicas associated with a given NodePool"
 
+	vCpusCountByNodePoolMetricHelp = "Number of vCPUs for a given NodePool, derived from instance type vCPU count multiplied by available replicas. " +
+		"-1 if this number cannot be computed."
+
+	nodePoolWorkloadTypeLabel = "node.openshift.io/workload-type"
+	workloadTypeMetricLabel   = "workload_type"
+
 	deletingDurationMetricHelp = "Time in seconds it is taking to delete the NodePool since the beginning of the delete. " +
 		"Undefined if the node pool is not deleting or no longer exists."
 )
@@ -112,6 +118,11 @@ var (
 		npmetrics.AvailableReplicasMetricName,
 		availableReplicasMetricHelp,
 		nodePoolLabels, nil)
+
+	vCpusCountByNodePoolMetricDesc = prometheus.NewDesc(
+		npmetrics.VCpusCountByNodePoolMetricName,
+		vCpusCountByNodePoolMetricHelp,
+		append(nodePoolLabels, workloadTypeMetricLabel), nil)
 
 	deletingDurationMetricDesc = prometheus.NewDesc(
 		npmetrics.DeletingDurationMetricName,
@@ -361,15 +372,40 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 		c.aggregateFailureConditions(nodePool, platform, platformToFailureConditionToNodePoolsCount)
 
-		if hcData := hclusterPathToData[nodePool.Namespace+"/"+nodePool.Spec.ClusterName]; hcData != nil {
+		var nodePoolVCpus int32
+		hcData := hclusterPathToData[nodePool.Namespace+"/"+nodePool.Spec.ClusterName]
+		if hcData != nil {
 			hclusterId = hcData.id
 			hcData.nodePoolsCount += 1
-			c.aggregateVCpus(context.Background(), nodePool, hcData)
+			if nodePool.Status.Replicas > 0 {
+				nodeVCpus, err := c.retrieveVCpusDetailsPerNode(context.Background(), nodePool)
+				if err != nil {
+					nodePoolVCpus = -1
+				} else {
+					nodePoolVCpus = nodeVCpus * nodePool.Status.Replicas
+				}
+				if hcData.vCpusCountErr == nil {
+					if err != nil {
+						hcData.vCpusCount = -1
+						hcData.vCpusCountErr = err
+					} else {
+						hcData.vCpusCount += nodePoolVCpus
+					}
+				}
+			}
 		}
 
 		c.observeTransitionDurations(nodePool, currentCollectTime)
 
 		nodePoolLabelValues := []string{nodePool.Namespace, nodePool.Name, hclusterId, nodePool.Spec.ClusterName, string(nodePool.Spec.Platform.Type)}
+		if platform == hyperv1.AWSPlatform && hclusterId != "" {
+			ch <- prometheus.MustNewConstMetric(
+				vCpusCountByNodePoolMetricDesc,
+				prometheus.GaugeValue,
+				float64(nodePoolVCpus),
+				append(nodePoolLabelValues, nodePool.Spec.NodeLabels[nodePoolWorkloadTypeLabel])...,
+			)
+		}
 		c.collectPerNodePoolMetrics(ch, nodePool, nodePoolLabelValues, machineSetPathToReplicasCount, machineDeploymentPathToReplicasCount)
 	}
 
@@ -448,18 +484,6 @@ func (c *nodePoolsMetricsCollector) aggregateFailureConditions(nodePool *hyperv1
 				failureCondPrefix = "not_"
 			}
 			(*failureConditionToNodePoolsCount)[failureCondPrefix+condition.Type] += 1
-		}
-	}
-}
-
-func (c *nodePoolsMetricsCollector) aggregateVCpus(ctx context.Context, nodePool *hyperv1.NodePool, hcData *hclusterData) {
-	if hcData.vCpusCount >= 0 && nodePool.Status.Replicas > 0 {
-		nodeVCpus, err := c.retrieveVCpusDetailsPerNode(ctx, nodePool)
-		if err != nil {
-			hcData.vCpusCount = -1
-			hcData.vCpusCountErr = err
-		} else {
-			hcData.vCpusCount += nodeVCpus * nodePool.Status.Replicas
 		}
 	}
 }
