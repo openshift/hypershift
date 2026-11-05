@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 40cf6c56bfc2aa1093bacee76950ed2e9e40b8bc960f66d1f68dfc0a47ef24af
+    hypershift.openshift.io/desired-state-hash: 418dd8695026c64a93c30e1d111bda9c65d996dc9f92c47ed1ff3c0b013abc21
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-autoscaler
@@ -72,11 +72,11 @@ spec:
         - --kube-client-qps=200
         - --kube-client-burst=300
         - --clusterapi-cloud-config-authoritative
-        - --skip-nodes-with-local-storage=false
         - --alsologtostderr
         - --leader-elect-lease-duration=137s
         - --leader-elect-retry-period=26s
         - --leader-elect-renew-deadline=107s
+        - --skip-nodes-with-local-storage=false
         - --balance-similar-node-groups=true
         - --v=4
         - --expander=priority,least-waste
