@@ -90,7 +90,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		{
 			name: "When AWS conditions are missing and KAS is available, it should retain the finalizer",
 			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
 			},
 			objects: []crclient.Object{
@@ -165,7 +165,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		{
 			name: "When AWS OIDC is invalid, it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
 				Status: hyperv1.HostedClusterStatus{
 					Conditions: []metav1.Condition{
@@ -180,7 +180,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		{
 			name: "When AWS identity is invalid, it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
 				Status: hyperv1.HostedClusterStatus{
 					Conditions: []metav1.Condition{
@@ -195,7 +195,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		{
 			name: "When both AWS credentials are invalid on a deleting HCP, it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
 				Status: hyperv1.HostedClusterStatus{
 					Conditions: []metav1.Condition{
@@ -217,7 +217,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		{
 			name: "When AWS credentials are valid, it should retain the finalizer",
 			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
 				Status: hyperv1.HostedClusterStatus{
 					Conditions: []metav1.Condition{
@@ -232,7 +232,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		{
 			name: "When AWS OIDC is unknown and identity is missing, it should retain the finalizer",
 			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
 				Status: hyperv1.HostedClusterStatus{
 					Conditions: []metav1.Condition{
@@ -246,7 +246,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		{
 			name: "When AWS OIDC is missing and identity is invalid, it should remove the finalizer",
 			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
 				Status: hyperv1.HostedClusterStatus{
 					Conditions: []metav1.Condition{
@@ -275,7 +275,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		{
 			name: "When a deleting HCP has valid AWS credentials, it should retain the finalizer",
 			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
 				Status: hyperv1.HostedClusterStatus{
 					Conditions: []metav1.Condition{
@@ -329,7 +329,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		{
 			name: "When removing an invalid AWS finalizer fails, it should retain it and return the patch error",
 			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
 				Status: hyperv1.HostedClusterStatus{
 					Conditions: []metav1.Condition{
@@ -347,7 +347,7 @@ func TestResolveKarpenterFinalizer(t *testing.T) {
 		{
 			name: "When removing an invalid AWS finalizer conflicts, it should retain it and return the conflict",
 			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace},
+				ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcNamespace, DeletionTimestamp: &now},
 				Spec:       hyperv1.HostedClusterSpec{AutoNode: autoNode, Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform}},
 				Status: hyperv1.HostedClusterStatus{
 					Conditions: []metav1.Condition{
