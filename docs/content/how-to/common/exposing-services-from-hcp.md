@@ -95,3 +95,5 @@ spec:
 ```
 
 If you wanna know more about how to expose the ingress service in the Data Plane side, please access [the Recipes section](../../recipes/index.md) to see how to do it with MetalLB.
+
+To request a specific load balancer address for the kube-apiserver at cluster creation time, see [Deterministic LoadBalancer IP Assignment for the Kube API Server](../common/deterministic-loadbalancer-ip.md). The feature is Technology Preview and does not support changing the address on a running cluster.

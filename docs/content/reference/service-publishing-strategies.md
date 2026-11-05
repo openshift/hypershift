@@ -45,6 +45,25 @@ Understanding the following terms is essential for configuring service publishin
 1. **Unique Hostnames**: Each service must have a unique hostname if a hostname is specified in the publishing strategy
 2. **Route Publishing**: Services using the `Route` publishing strategy can be exposed either through the management cluster's ingress controller (requires OpenShift) or through HyperShift's dedicated HCP router (a router deployed in the hosted control plane namespace, scoped to the specific hosted cluster, which works on any Kubernetes cluster)
 
+## Deterministic LoadBalancer IP assignment
+
+For `APIServer` services published with the `LoadBalancer` strategy, HyperShift can pass a load
+balancer class and a set of annotations to the kube-apiserver Service. This lets you request a
+specific address before the cluster exists. The feature is Technology Preview, requires the
+`DeterministicLBIP` management cluster feature gate, and is applied at cluster creation time
+only.
+
+The fields are available under `spec.services[*].servicePublishingStrategy.loadBalancer`:
+
+| Field | Description |
+|-------|-------------|
+| `loadBalancerClass` | Maps to `Service.spec.loadBalancerClass`. Selects the controller that provisions the Service. |
+| `serviceAnnotations` | Annotation passthrough. Keys are restricted to known load balancer provider prefixes. |
+
+Only the `APIServer` service is processed. Other services accept the fields but ignore them.
+For the full procedure, validation rules, provider examples, and Day 2 limitations, see
+[Deterministic LoadBalancer IP Assignment for the Kube API Server](../how-to/common/deterministic-loadbalancer-ip.md).
+
 ## Platform-Specific Configurations
 
 ### AWS
