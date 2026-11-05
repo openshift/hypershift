@@ -1506,6 +1506,7 @@ func PlatformTypes() []PlatformType {
 // and is used to configure platform specific behavior.
 //
 // +openshift:validation:FeatureGateAwareXValidation:featureGate=GCPPlatform,rule="(has(self.gcp) && has(self.gcp.resourceTags)) == (has(oldSelf.gcp) && has(oldSelf.gcp.resourceTags))",message="resourceTags may only be configured during installation"
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=GCPPlatform,rule="!has(oldSelf.gcp) || !has(oldSelf.gcp.delegation) || (has(self.gcp) && has(self.gcp.delegation))",message="delegation cannot be removed once set"
 type PlatformSpec struct {
 	// type is the type of infrastructure provider for the cluster.
 	//

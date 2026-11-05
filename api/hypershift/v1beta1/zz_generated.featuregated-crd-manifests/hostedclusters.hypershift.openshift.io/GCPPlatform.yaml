@@ -7058,6 +7058,9 @@ spec:
                 - message: resourceTags may only be configured during installation
                   rule: (has(self.gcp) && has(self.gcp.resourceTags)) == (has(oldSelf.gcp)
                     && has(oldSelf.gcp.resourceTags))
+                - message: delegation cannot be removed once set
+                  rule: '!has(oldSelf.gcp) || !has(oldSelf.gcp.delegation) || (has(self.gcp)
+                    && has(self.gcp.delegation))'
               pullSecret:
                 description: |-
                   pullSecret is a local reference to a Secret that must have a ".dockerconfigjson" key whose content must be a valid Openshift pull secret JSON.
