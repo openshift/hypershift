@@ -38,13 +38,13 @@ changed. This catches title and body formatting issues before the commit is crea
 
 ## What runs on push (pre-push stage)
 
-These are a fast smoke check (~3-8 minutes) designed to catch the most common "this will fail CI" mistakes:
+These hooks run verification and tests before the branch is pushed:
 
-- **make verify-quick** — runs code generation (`go generate`, CRD generation, client generation, docs aggregation) and checks for uncommitted diffs. This catches stale fixtures, mocks, and generated code.
+- **make verify** — runs the complete [native verification pipeline](native-verification.md), including generation, lint, and checks for uncommitted generated output. `verify-quick` remains a compatibility alias for this full pipeline.
 - **make test-changed** — runs unit tests only for Go packages with changes relative to `upstream/main`. Skips entirely if no Go files changed.
 
-Full verification (staticcheck, golangci-lint, go vet, CRD schema checks, etc.) and the complete unit test suite
-run in GitHub Actions on your pull request.
+GitHub Actions runs the same full verification pipeline and the complete unit test suite
+on your pull request.
 
 ## Uninstalling precommit hooks
 Sometimes it might be useful to turn off the precommit hooks briefly.
