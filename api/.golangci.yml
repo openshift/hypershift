@@ -10,14 +10,14 @@ linters:
   settings:
     custom:
       hypershiftlinter:
-        path: ../hack/tools/bin/hypershiftlinter.so
+        type: module
         description: "Enforces HyperShift unit test function structure"
         settings:
           analyzers:
             enable:
               - testfuncstructure
       kubeapilinter:
-        path: ../hack/tools/bin/kube-api-linter.so
+        type: module
         description: kubeapilinter is the Kube-API-Linter and lints Kube like APIs based on API conventions and best practices.
         settings:
           linters:
