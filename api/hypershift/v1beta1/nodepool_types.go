@@ -284,7 +284,7 @@ const (
 
 // OSImageStreamReference references an OSImageStream by name.
 type OSImageStreamReference struct {
-	// name is a required reference to an OSImageStream to be used for the pool.
+	// name is a required reference to an OSImageStream. Valid values are "rhel-9" and "rhel-10".
 	//
 	// +required
 	// +kubebuilder:validation:Enum=rhel-9;rhel-10
