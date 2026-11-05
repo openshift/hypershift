@@ -2,6 +2,8 @@ package konnectivityproxy
 
 import (
 	"bufio"
+	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"net"
@@ -28,6 +30,18 @@ func (hpd *httpProxyDialer) Dial(network string, addr string) (net.Conn, error) 
 	conn, err := hpd.forwardDial(network, hostPort)
 	if err != nil {
 		return nil, err
+	}
+
+	if hpd.proxyURL.Scheme == "https" {
+		tlsConn := tls.Client(conn, &tls.Config{
+			ServerName: hpd.proxyURL.Hostname(),
+			MinVersion: tls.VersionTLS12,
+		})
+		if err := tlsConn.HandshakeContext(context.Background()); err != nil {
+			tlsConn.Close()
+			return nil, err
+		}
+		conn = tlsConn
 	}
 
 	connectHeader := make(http.Header)
