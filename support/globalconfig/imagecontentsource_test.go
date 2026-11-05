@@ -2,6 +2,7 @@ package globalconfig
 
 import (
 	"slices"
+	"sync"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -203,15 +204,15 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 
 	// Define test cases
 	testCases := []struct {
-		name                    string
-		capChecker              capabilities.CapabiltyChecker
-		registryOverrides       map[string]string
-		idms                    *configv1.ImageDigestMirrorSetList
-		icsp                    *operatorv1alpha1.ImageContentSourcePolicyList
-		expectedOverrides       map[string][]string
+		name                      string
+		capChecker                capabilities.CapabiltyChecker
+		registryOverrides         map[string]string
+		idms                      *configv1.ImageDigestMirrorSetList
+		icsp                      *operatorv1alpha1.ImageContentSourcePolicyList
+		expectedOverrides         map[string][]string
 		expectedRegistryOverrides map[string]string
-		expectedError           error
-		expectedErrorMatch      string
+		expectedError             error
+		expectedErrorMatch        string
 	}{
 		{
 			name: "Test with ICSP and IDMS capabilities",
@@ -337,13 +338,25 @@ func TestCommonRegistryProviderConcurrentReconcileAndRead(t *testing.T) {
 	})
 	g.Expect(err).ToNot(HaveOccurred())
 
-	done := make(chan struct{})
+	const (
+		reconcileIterations = 200
+		readerCount         = 4
+	)
+
+	var readersReady, start, readersDone sync.WaitGroup
+	readersReady.Add(readerCount)
+	start.Add(1)
+	readersDone.Add(readerCount)
+
+	writerDone := make(chan struct{})
 	reconcileErr := make(chan error, 1)
 
-	// Writer: continuously reconcile mirror data
+	// Writer: continuously reconcile mirror data after all readers are ready.
 	go func() {
-		defer close(done)
-		for i := 0; i < 200; i++ {
+		defer close(writerDone)
+		readersReady.Wait()
+		start.Done()
+		for i := 0; i < reconcileIterations; i++ {
 			if err := provider.Reconcile(t.Context(), fakeClient); err != nil {
 				reconcileErr <- err
 				return
@@ -351,26 +364,29 @@ func TestCommonRegistryProviderConcurrentReconcileAndRead(t *testing.T) {
 		}
 	}()
 
-	// Readers: concurrently read overrides from both providers
-	for i := 0; i < 4; i++ {
+	// Readers: concurrently read overrides from both providers while Reconcile runs.
+	for i := 0; i < readerCount; i++ {
 		go func() {
+			defer readersDone.Done()
+			readersReady.Done()
+			start.Wait()
 			for {
 				select {
-				case <-done:
+				case <-writerDone:
 					return
 				default:
-					overrides := provider.GetReleaseProvider().GetOpenShiftImageRegistryOverrides()
-					_ = overrides
+					_ = provider.GetReleaseProvider().GetOpenShiftImageRegistryOverrides()
+					_ = provider.GetReleaseProvider().GetMirroredReleaseImage()
 
 					metadataImpl := provider.GetMetadataProvider().(*imageregistry.RegistryClientImageMetadataProvider)
-					metaOverrides := metadataImpl.GetOpenShiftImageRegistryOverrides()
-					_ = metaOverrides
+					_ = metadataImpl.GetOpenShiftImageRegistryOverrides()
 				}
 			}
 		}()
 	}
 
-	<-done
+	<-writerDone
+	readersDone.Wait()
 
 	select {
 	case err := <-reconcileErr:

@@ -3,6 +3,7 @@ package imageregistry
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -1183,4 +1184,88 @@ func TestCacheCleanupOnExpiration(t *testing.T) {
 	testCache.mutex.RUnlock()
 
 	g.Expect(remainingEntries).To(Equal(1))
+}
+
+func TestRegistryClientImageMetadataProvider_GetOverrideConcurrentWithSet(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	imageRef := "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64"
+	provider := &RegistryClientImageMetadataProvider{
+		// Avoid network: treat every mirror as available so seekOverride returns quickly.
+		metadataGetter: func(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+			return &dockerv1client.DockerImageConfig{}, nil, nil, nil
+		},
+	}
+	provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+		"quay.io": {"mirror.example.com"},
+	})
+
+	const (
+		setIterations = 100
+		readerCount   = 4
+	)
+
+	var readersReady, start, readersDone sync.WaitGroup
+	readersReady.Add(readerCount)
+	start.Add(1)
+	readersDone.Add(readerCount)
+
+	writerDone := make(chan struct{})
+	readErr := make(chan error, readerCount)
+	pullSecret := []byte(`{"auths":{}}`)
+
+	go func() {
+		defer close(writerDone)
+		readersReady.Wait()
+		start.Done()
+		for i := 0; i < setIterations; i++ {
+			if i%2 == 0 {
+				provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+					"quay.io": {"mirror.example.com"},
+				})
+			} else {
+				provider.SetOpenShiftImageRegistryOverrides(map[string][]string{
+					"registry.ci.openshift.org": {"mirror.internal.example.com"},
+				})
+			}
+		}
+	}()
+
+	for i := 0; i < readerCount; i++ {
+		go func() {
+			defer readersDone.Done()
+			readersReady.Done()
+			start.Wait()
+			for {
+				select {
+				case <-writerDone:
+					return
+				default:
+					ref, err := provider.GetOverride(t.Context(), imageRef, pullSecret)
+					if err != nil {
+						readErr <- err
+						return
+					}
+					if ref == nil {
+						readErr <- fmt.Errorf("GetOverride returned nil reference")
+						return
+					}
+					_ = provider.GetOpenShiftImageRegistryOverrides()
+				}
+			}
+		}()
+	}
+
+	<-writerDone
+	readersDone.Wait()
+
+	select {
+	case err := <-readErr:
+		t.Fatalf("GetOverride failed under concurrent Set: %v", err)
+	default:
+	}
+
+	ref, err := provider.GetOverride(t.Context(), imageRef, pullSecret)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(ref).ToNot(BeNil())
 }
