@@ -2903,6 +2903,9 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 		removed, err = r.ensureAWSLoadBalancersRemoved(ctx, hcp)
 		if err != nil {
 			err = withCloudResourceCleanupComponent(cloudResourceCleanupComponentAWSLoadBalancers, err)
+			if errors.Is(err, awsutil.ErrDescribeTagsAccessDenied) {
+				log.Info("AWS load balancer ownership verification requires additional permission", "error", safeCloudResourcesDestroyedErrorMessage(err))
+			}
 			if isConnectionError(err) {
 				hasConnectionError = true
 				log.Info("Connection error while removing AWS load balancers", "error", safeCloudResourcesDestroyedErrorMessage(err))

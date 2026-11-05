@@ -113,7 +113,7 @@ func testDeleteLoadBalancersByName(t *testing.T) {
 	}, gomock.Any()).Return(&elasticloadbalancing.DescribeTagsOutput{
 		TagDescriptions: []elbtypes.TagDescription{{
 			LoadBalancerName: aws.String(name),
-			Tags:             []elbtypes.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:             []elbtypes.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	classicDelete := elbClient.EXPECT().DeleteLoadBalancer(gomock.Any(), &elasticloadbalancing.DeleteLoadBalancerInput{
@@ -133,7 +133,7 @@ func testDeleteLoadBalancersByName(t *testing.T) {
 	}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(v2ARN),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	v2TargetGroups := elbv2Client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{
@@ -146,7 +146,7 @@ func testDeleteLoadBalancersByName(t *testing.T) {
 	}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(targetGroupARN),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	v2Listeners := elbv2Client.EXPECT().DescribeListeners(gomock.Any(), &elasticloadbalancingv2.DescribeListenersInput{
@@ -257,7 +257,7 @@ func testDeleteNamedV2LoadBalancerPaginatesDiscovery(t *testing.T) {
 	}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(targetGroupARNOne),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	targetGroupsPageTwo := client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{
@@ -271,7 +271,7 @@ func testDeleteNamedV2LoadBalancerPaginatesDiscovery(t *testing.T) {
 	}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(targetGroupARNTwo),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	listenersPageOne := client.EXPECT().DescribeListeners(gomock.Any(), &elasticloadbalancingv2.DescribeListenersInput{
@@ -345,7 +345,7 @@ func testDeleteNamedV2LoadBalancerContinuesAfterDeletionFailures(t *testing.T) {
 	}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(targetGroupARNOne),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	describeTargetGroupTwoTags := client.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancingv2.DescribeTagsInput{
@@ -353,7 +353,7 @@ func testDeleteNamedV2LoadBalancerContinuesAfterDeletionFailures(t *testing.T) {
 	}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(targetGroupARNTwo),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	describeListeners := client.EXPECT().DescribeListeners(gomock.Any(), &elasticloadbalancingv2.DescribeListenersInput{
@@ -413,7 +413,7 @@ func TestDeleteOwnedV2TargetGroups(t *testing.T) {
 	}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(targetGroupARN),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	secondPage := client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{
@@ -457,7 +457,7 @@ func testCleanupRecordedLoadBalancersKeepsAttachedTargetGroupPendingAcrossRetrie
 		}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 			TagDescriptions: []elbv2types.TagDescription{{
 				ResourceArn: aws.String(loadBalancerARN),
-				Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+				Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 			}},
 		}, nil)
 		describeTargetGroupsForLoadBalancer := client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{
@@ -474,7 +474,7 @@ func testCleanupRecordedLoadBalancersKeepsAttachedTargetGroupPendingAcrossRetrie
 		}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 			TagDescriptions: []elbv2types.TagDescription{{
 				ResourceArn: aws.String(targetGroupARN),
-				Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+				Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 			}},
 		}, nil)
 		describeListeners := client.EXPECT().DescribeListeners(gomock.Any(), &elasticloadbalancingv2.DescribeListenersInput{
@@ -498,7 +498,7 @@ func testCleanupRecordedLoadBalancersKeepsAttachedTargetGroupPendingAcrossRetrie
 		}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 			TagDescriptions: []elbv2types.TagDescription{{
 				ResourceArn: aws.String(targetGroupARN),
-				Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+				Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 			}},
 		}, nil)
 		verifyDeletedLoadBalancer := client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
@@ -519,7 +519,7 @@ func testCleanupRecordedLoadBalancersKeepsAttachedTargetGroupPendingAcrossRetrie
 		}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 			TagDescriptions: []elbv2types.TagDescription{{
 				ResourceArn: aws.String(targetGroupARN),
-				Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+				Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 			}},
 		}, nil)
 		retryVerifyLoadBalancer := client.EXPECT().DescribeLoadBalancers(gomock.Any(), &elasticloadbalancingv2.DescribeLoadBalancersInput{
@@ -577,7 +577,7 @@ func testDeleteLoadBalancersByNameKeepsAttachedTargetGroupPendingAcrossRetries(t
 		client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{TargetGroupArns: []string{targetGroupARN}}, gomock.Any()).Return(targetGroups, nil)
 		for resourceARN, calls := range map[string]int{loadBalancerARN: 1, targetGroupARN: 4} {
 			client.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancingv2.DescribeTagsInput{ResourceArns: []string{resourceARN}}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
-				TagDescriptions: []elbv2types.TagDescription{{ResourceArn: aws.String(resourceARN), Tags: []elbv2types.Tag{{Key: aws.String(ClusterTag(infraID)), Value: aws.String("owned")}}}},
+				TagDescriptions: []elbv2types.TagDescription{{ResourceArn: aws.String(resourceARN), Tags: []elbv2types.Tag{{Key: aws.String(ClusterTag(infraID)), Value: aws.String(ClusterTagOwnedValue)}}}},
 			}, nil).Times(calls)
 		}
 		client.EXPECT().DescribeListeners(gomock.Any(), &elasticloadbalancingv2.DescribeListenersInput{LoadBalancerArn: aws.String(loadBalancerARN)}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeListenersOutput{}, nil)
@@ -648,7 +648,7 @@ func TestCleanupRecordedLoadBalancers(t *testing.T) {
 		gomock.InOrder(
 			client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{}, gomock.Any()).Return(targetGroups, nil),
 			client.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancingv2.DescribeTagsInput{ResourceArns: []string{targetGroupARN}}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
-				TagDescriptions: []elbv2types.TagDescription{{ResourceArn: aws.String(targetGroupARN), Tags: []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/infra-id"), Value: aws.String("owned")}}}},
+				TagDescriptions: []elbv2types.TagDescription{{ResourceArn: aws.String(targetGroupARN), Tags: []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/infra-id"), Value: aws.String(ClusterTagOwnedValue)}}}},
 			}, nil),
 			client.EXPECT().DeleteTargetGroup(gomock.Any(), &elasticloadbalancingv2.DeleteTargetGroupInput{TargetGroupArn: aws.String(targetGroupARN)}, gomock.Any()).Return(&elasticloadbalancingv2.DeleteTargetGroupOutput{}, nil),
 			client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{TargetGroupArns: []string{targetGroupARN}}, gomock.Any()).Return(targetGroups, nil),
@@ -710,7 +710,7 @@ func testCleanupRecordedLoadBalancers(t *testing.T) {
 				client.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancingv2.DescribeTagsInput{
 					ResourceArns: []string{targetGroupARN},
 				}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
-					TagDescriptions: []elbv2types.TagDescription{{ResourceArn: aws.String(targetGroupARN), Tags: []elbv2types.Tag{{Key: aws.String(ClusterTag(infraID)), Value: aws.String("owned")}}}},
+					TagDescriptions: []elbv2types.TagDescription{{ResourceArn: aws.String(targetGroupARN), Tags: []elbv2types.Tag{{Key: aws.String(ClusterTag(infraID)), Value: aws.String(ClusterTagOwnedValue)}}}},
 				}, nil)
 			}
 			client.EXPECT().DeleteTargetGroup(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
@@ -797,13 +797,13 @@ func testDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
 	}{
 		{
 			name:             "When an orphaned target group is owned, it should be deleted",
-			tagValue:         "owned",
+			tagValue:         ClusterTagOwnedValue,
 			deleteGroup:      true,
 			inspectGroupTags: true,
 		},
 		{
 			name:               "When a named load balancer is deleted, it should also remove its orphaned target groups",
-			tagValue:           "owned",
+			tagValue:           ClusterTagOwnedValue,
 			loadBalancerExists: true,
 			deleteGroup:        true,
 			inspectGroupTags:   true,
@@ -815,20 +815,20 @@ func testDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
 		},
 		{
 			name:             "When an absent named load balancer still has an owned attachment, it should keep cleanup pending",
-			tagValue:         "owned",
+			tagValue:         ClusterTagOwnedValue,
 			loadBalancerARNs: []string{loadBalancerARN},
 			inspectGroupTags: true,
 			pending:          true,
 		},
 		{
 			name:               "When an owned group is attached to another load balancer, it should not block selected cleanup",
-			tagValue:           "owned",
+			tagValue:           ClusterTagOwnedValue,
 			loadBalancerExists: true,
 			loadBalancerARNs:   []string{otherARN},
 		},
 		{
 			name:               "When an owned group is attached to the selected load balancer, it should keep cleanup pending",
-			tagValue:           "owned",
+			tagValue:           ClusterTagOwnedValue,
 			loadBalancerExists: true,
 			loadBalancerARNs:   []string{loadBalancerARN},
 			inspectGroupTags:   true,
@@ -836,7 +836,7 @@ func testDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
 		},
 		{
 			name:               "When an owned group is attached to the second selected load balancer, it should keep cleanup pending",
-			tagValue:           "owned",
+			tagValue:           ClusterTagOwnedValue,
 			loadBalancerExists: true,
 			loadBalancerARNs:   []string{secondARN},
 			inspectGroupTags:   true,
@@ -849,7 +849,7 @@ func testDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
 
 		{
 			name:               "When any attachment matches the selected load balancer, it should keep cleanup pending",
-			tagValue:           "owned",
+			tagValue:           ClusterTagOwnedValue,
 			loadBalancerExists: true,
 			loadBalancerARNs:   []string{otherARN, loadBalancerARN},
 			inspectGroupTags:   true,
@@ -886,7 +886,7 @@ func testDeleteLoadBalancersByNameCleansOrphanedTargetGroups(t *testing.T) {
 					}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 						TagDescriptions: []elbv2types.TagDescription{{
 							ResourceArn: aws.String(candidateARN),
-							Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+							Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 						}},
 					}, nil)
 					describeTargetGroupsForLoadBalancer := client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{
@@ -1009,7 +1009,7 @@ func testDeleteLoadBalancersByNameWaitsForEventualConsistency(t *testing.T) {
 	loadBalancer := elbtypes.LoadBalancerDescription{LoadBalancerName: aws.String(name), VPCId: aws.String(vpcID)}
 	tagOutput := &elasticloadbalancing.DescribeTagsOutput{TagDescriptions: []elbtypes.TagDescription{{
 		LoadBalancerName: aws.String(name),
-		Tags:             []elbtypes.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+		Tags:             []elbtypes.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 	}}}
 
 	describeForDelete := client.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancing.DescribeLoadBalancersOutput{
@@ -1054,7 +1054,7 @@ func testDeleteLoadBalancersByNameTreatsNotFoundAsSuccess(t *testing.T) {
 	classicTags := elbClient.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancing.DescribeTagsOutput{
 		TagDescriptions: []elbtypes.TagDescription{{
 			LoadBalancerName: aws.String(name),
-			Tags:             []elbtypes.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:             []elbtypes.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	classicDelete := elbClient.EXPECT().DeleteLoadBalancer(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, notFound)
@@ -1066,7 +1066,7 @@ func testDeleteLoadBalancersByNameTreatsNotFoundAsSuccess(t *testing.T) {
 	v2Tags := elbv2Client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(v2ARN),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	v2TargetGroups := elbv2Client.EXPECT().DescribeTargetGroups(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeTargetGroupsOutput{
@@ -1075,7 +1075,7 @@ func testDeleteLoadBalancersByNameTreatsNotFoundAsSuccess(t *testing.T) {
 	v2TargetGroupTags := elbv2Client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(targetGroupARN),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	v2Listeners := elbv2Client.EXPECT().DescribeListeners(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeListenersOutput{}, nil)
@@ -1210,7 +1210,7 @@ func TestDeleteRecordedV2LoadBalancer(t *testing.T) {
 		}, nil)
 		for _, arn := range []string{lbARN, tgARN} {
 			client.EXPECT().DescribeTags(gomock.Any(), &elasticloadbalancingv2.DescribeTagsInput{ResourceArns: []string{arn}}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
-				TagDescriptions: []elbv2types.TagDescription{{ResourceArn: aws.String(arn), Tags: []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/infra-id"), Value: aws.String("owned")}}}},
+				TagDescriptions: []elbv2types.TagDescription{{ResourceArn: aws.String(arn), Tags: []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/infra-id"), Value: aws.String(ClusterTagOwnedValue)}}}},
 			}, nil)
 		}
 		client.EXPECT().DescribeTargetGroups(gomock.Any(), &elasticloadbalancingv2.DescribeTargetGroupsInput{LoadBalancerArn: aws.String(lbARN)}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTargetGroupsOutput{
@@ -1297,7 +1297,7 @@ func testDeleteLoadBalancersByNameScansOrphansAfterTargetGroupDeletionFails(t *t
 	v2Tags := elbv2Client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(v2ARN),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	v2TargetGroups := elbv2Client.EXPECT().DescribeTargetGroups(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeTargetGroupsOutput{
@@ -1306,7 +1306,7 @@ func testDeleteLoadBalancersByNameScansOrphansAfterTargetGroupDeletionFails(t *t
 	v2TargetGroupTags := elbv2Client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(targetGroupARN),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	v2Listeners := elbv2Client.EXPECT().DescribeListeners(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeListenersOutput{
@@ -1324,7 +1324,7 @@ func testDeleteLoadBalancersByNameScansOrphansAfterTargetGroupDeletionFails(t *t
 	}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 		TagDescriptions: []elbv2types.TagDescription{{
 			ResourceArn: aws.String(targetGroupARN),
-			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+			Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 		}},
 	}, nil)
 	v2RetryDeleteTargetGroup := elbv2Client.EXPECT().DeleteTargetGroup(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DeleteTargetGroupOutput{}, nil)
@@ -1573,27 +1573,36 @@ func TestClassicLoadBalancerHasClusterTag(t *testing.T) {
 		}
 	})
 
-	t.Run("When a classic load balancer has a shared cluster tag, it should not be considered owned", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		client := awsapi.NewMockELBAPI(ctrl)
-		client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancing.DescribeTagsOutput{
-			TagDescriptions: []elbtypes.TagDescription{{
-				LoadBalancerName: aws.String("cluster-lb"),
-				Tags: []elbtypes.Tag{{
-					Key:   aws.String("kubernetes.io/cluster/infra-id"),
-					Value: aws.String("shared"),
+	for _, test := range []struct {
+		name      string
+		tagValue  string
+		wantOwned bool
+	}{
+		{name: "When a classic load balancer has an owned cluster tag, it should be considered owned", tagValue: "owned", wantOwned: true},
+		{name: "When a classic load balancer has a shared cluster tag, it should not be considered owned", tagValue: "shared"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			client := awsapi.NewMockELBAPI(ctrl)
+			client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancing.DescribeTagsOutput{
+				TagDescriptions: []elbtypes.TagDescription{{
+					LoadBalancerName: aws.String("cluster-lb"),
+					Tags: []elbtypes.Tag{{
+						Key:   aws.String("kubernetes.io/cluster/infra-id"),
+						Value: aws.String(test.tagValue),
+					}},
 				}},
-			}},
-		}, nil)
+			}, nil)
 
-		owned, err := classicLoadBalancerHasClusterTag(context.Background(), client, aws.String("cluster-lb"), "infra-id")
-		if err != nil {
-			t.Fatalf("expected no tag lookup error, got %v", err)
-		}
-		if owned {
-			t.Fatal("expected a shared load balancer tag not to indicate cluster ownership")
-		}
-	})
+			owned, err := classicLoadBalancerHasClusterTag(context.Background(), client, aws.String("cluster-lb"), "infra-id")
+			if err != nil {
+				t.Fatalf("expected no tag lookup error, got %v", err)
+			}
+			if owned != test.wantOwned {
+				t.Fatalf("expected ownership %t for tag value %q, got %t", test.wantOwned, test.tagValue, owned)
+			}
+		})
+	}
 }
 
 func TestDeleteClassicLoadBalancers(t *testing.T) {
@@ -1729,7 +1738,7 @@ func TestDeleteNamedV2LoadBalancerDetailed(t *testing.T) {
 		}, gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
 			TagDescriptions: []elbv2types.TagDescription{{
 				ResourceArn: aws.String(targetGroupARN),
-				Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String("owned")}},
+				Tags:        []elbv2types.Tag{{Key: aws.String("kubernetes.io/cluster/" + infraID), Value: aws.String(ClusterTagOwnedValue)}},
 			}},
 		}, nil)
 		client.EXPECT().DescribeListeners(gomock.Any(), &elasticloadbalancingv2.DescribeListenersInput{
@@ -1892,25 +1901,34 @@ func TestV2ResourceHasClusterTag(t *testing.T) {
 		}
 	})
 
-	t.Run("When an ELBv2 resource has a shared cluster tag, it should not be considered owned", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		client := awsapi.NewMockELBV2API(ctrl)
-		client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
-			TagDescriptions: []elbv2types.TagDescription{{
-				ResourceArn: aws.String("arn:load-balancer"),
-				Tags: []elbv2types.Tag{{
-					Key:   aws.String("kubernetes.io/cluster/infra-id"),
-					Value: aws.String("shared"),
+	for _, test := range []struct {
+		name      string
+		tagValue  string
+		wantOwned bool
+	}{
+		{name: "When an ELBv2 resource has an owned cluster tag, it should be considered owned", tagValue: "owned", wantOwned: true},
+		{name: "When an ELBv2 resource has a shared cluster tag, it should not be considered owned", tagValue: "shared"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			client := awsapi.NewMockELBV2API(ctrl)
+			client.EXPECT().DescribeTags(gomock.Any(), gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeTagsOutput{
+				TagDescriptions: []elbv2types.TagDescription{{
+					ResourceArn: aws.String("arn:load-balancer"),
+					Tags: []elbv2types.Tag{{
+						Key:   aws.String("kubernetes.io/cluster/infra-id"),
+						Value: aws.String(test.tagValue),
+					}},
 				}},
-			}},
-		}, nil)
+			}, nil)
 
-		owned, err := v2ResourceHasClusterTag(context.Background(), client, aws.String("arn:load-balancer"), "infra-id")
-		if err != nil {
-			t.Fatalf("expected no tag lookup error, got %v", err)
-		}
-		if owned {
-			t.Fatal("expected a shared ELBv2 resource tag not to indicate cluster ownership")
-		}
-	})
+			owned, err := v2ResourceHasClusterTag(context.Background(), client, aws.String("arn:load-balancer"), "infra-id")
+			if err != nil {
+				t.Fatalf("expected no tag lookup error, got %v", err)
+			}
+			if owned != test.wantOwned {
+				t.Fatalf("expected ownership %t for tag value %q, got %t", test.wantOwned, test.tagValue, owned)
+			}
+		})
+	}
 }

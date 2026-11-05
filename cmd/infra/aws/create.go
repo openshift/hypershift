@@ -92,7 +92,7 @@ const (
 	basePrivateSubnetCIDR = "10.0.128.0/20"
 	basePublicSubnetCIDR  = "10.0.0.0/20"
 
-	clusterTagValue         = "owned"
+	clusterTagValue         = supportawsutil.ClusterTagOwnedValue
 	hypershiftLocalZoneName = "hypershift.local"
 )
 

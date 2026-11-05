@@ -1,6 +1,9 @@
 package awsutil
 
 const (
+	// ClusterTagOwnedValue marks resources owned exclusively by the tagged cluster.
+	ClusterTagOwnedValue = "owned"
+
 	HypershiftClusterNameTagKey = "hypershift.openshift.io/cluster-name"
 	HypershiftInfraIDTagKey     = "hypershift.openshift.io/infra-id"
 	HypershiftSourceTagKey      = "hypershift.openshift.io/source"

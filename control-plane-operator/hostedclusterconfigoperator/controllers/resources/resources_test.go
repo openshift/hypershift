@@ -3428,12 +3428,14 @@ func testDestroyCloudResourcesRedactsAWSDetailsFromCondition(t *testing.T) {
 		persistentVolumeErr error
 		wantMessage         string
 		wantComponents      []string
+		wantDescribeTagsLog bool
 	}{
 		{
-			name:            "When DescribeTags is denied, it should preserve the specific safe explanation",
-			describeTagsErr: &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "request sent to https://" + endpoint},
-			wantMessage:     "AWS load balancer ownership verification was denied; the delegated role needs elasticloadbalancing:DescribeTags, Kubernetes cleanup was requested, and AWS resources may remain",
-			wantComponents:  []string{"AWS load balancer cleanup failed"},
+			name:                "When DescribeTags is denied, it should preserve the specific safe explanation",
+			describeTagsErr:     &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "request sent to https://" + endpoint},
+			wantMessage:         "AWS load balancer ownership verification was denied; the delegated role needs elasticloadbalancing:DescribeTags, Kubernetes cleanup was requested, and AWS resources may remain",
+			wantComponents:      []string{"AWS load balancer cleanup failed"},
+			wantDescribeTagsLog: true,
 		},
 		{
 			name:        "When a raw cleanup error contains endpoint details, it should publish a generic safe message",
@@ -3450,13 +3452,21 @@ func testDestroyCloudResourcesRedactsAWSDetailsFromCondition(t *testing.T) {
 				awsutil.ErrDescribeTagsAccessDenied,
 				errors.New("DeleteLoadBalancer failed"),
 			),
-			wantMessage:    "AWS cleanup remains incomplete; the delegated role needs elasticloadbalancing:DescribeTags, and other cleanup failures or ownership issues may also be present",
+			wantMessage:         "AWS cleanup remains incomplete; the delegated role needs elasticloadbalancing:DescribeTags, and other cleanup failures or ownership issues may also be present",
+			wantComponents:      []string{"AWS load balancer cleanup failed"},
+			wantDescribeTagsLog: true,
+		},
+		{
+			name:           "When an unrelated AWS operation is denied, it should not log a DescribeTags permission problem",
+			cleanupErr:     &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "DeleteLoadBalancer request sent to https://" + endpoint},
+			wantMessage:    genericCloudResourceCleanupMessage,
 			wantComponents: []string{"AWS load balancer cleanup failed"},
 		},
 		{
 			name:                "When AWS tag verification and persistent volume cleanup both fail, it should report both components safely",
 			describeTagsErr:     &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "request sent to https://" + endpoint},
 			persistentVolumeErr: fmt.Errorf("request sent to https://%s/volume", endpoint),
+			wantDescribeTagsLog: true,
 			wantMessage:         "AWS load balancer ownership verification was denied; the delegated role needs elasticloadbalancing:DescribeTags, Kubernetes cleanup was requested, and AWS resources may remain",
 			wantComponents: []string{
 				"AWS load balancer cleanup failed",
@@ -3525,7 +3535,10 @@ func testDestroyCloudResourcesRedactsAWSDetailsFromCondition(t *testing.T) {
 				}
 			}
 
-			result, err := r.destroyCloudResources(t.Context(), hcp)
+			var logOutput bytes.Buffer
+			logCore := zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.AddSync(&logOutput), zapcore.InfoLevel)
+			ctx := logr.NewContext(t.Context(), zapr.NewLogger(zap.New(logCore)))
+			result, err := r.destroyCloudResources(ctx, hcp)
 			g := NewGomegaWithT(t)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result.RequeueAfter).To(Equal(30 * time.Second))
@@ -3539,6 +3552,15 @@ func testDestroyCloudResourcesRedactsAWSDetailsFromCondition(t *testing.T) {
 				g.Expect(condition.Message).To(ContainSubstring(component))
 			}
 			g.Expect(condition.Message).NotTo(ContainSubstring(endpoint))
+			g.Expect(logOutput.String()).NotTo(ContainSubstring(endpoint))
+			const permissionMessage = "AWS load balancer ownership verification requires additional permission"
+			if test.wantDescribeTagsLog {
+				g.Expect(logOutput.String()).To(ContainSubstring(permissionMessage))
+				g.Expect(logOutput.String()).To(ContainSubstring(test.wantMessage))
+			} else {
+				g.Expect(logOutput.String()).NotTo(ContainSubstring(permissionMessage))
+				g.Expect(logOutput.String()).NotTo(ContainSubstring("elasticloadbalancing:DescribeTags"))
+			}
 		})
 	}
 }

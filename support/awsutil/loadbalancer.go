@@ -1373,7 +1373,7 @@ func classicLoadBalancerHasClusterTag(ctx context.Context, client awsapi.ELBAPI,
 			continue
 		}
 		for _, tag := range description.Tags {
-			if aws.ToString(tag.Key) == tagKey && aws.ToString(tag.Value) == "owned" {
+			if aws.ToString(tag.Key) == tagKey && aws.ToString(tag.Value) == ClusterTagOwnedValue {
 				return true, nil
 			}
 		}
@@ -1398,7 +1398,7 @@ func v2ResourceHasClusterTag(ctx context.Context, client awsapi.ELBV2API, arn *s
 			continue
 		}
 		for _, tag := range description.Tags {
-			if aws.ToString(tag.Key) == tagKey && aws.ToString(tag.Value) == "owned" {
+			if aws.ToString(tag.Key) == tagKey && aws.ToString(tag.Value) == ClusterTagOwnedValue {
 				return true, nil
 			}
 		}
