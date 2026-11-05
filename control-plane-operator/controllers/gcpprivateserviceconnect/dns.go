@@ -440,8 +440,10 @@ func ensureZones(ctx context.Context, svc *dns.Service, createZones bool, projec
 
 // reconcileRecords ensures required DNS records exist with correct values.
 // All record operations are idempotent (similar to AWS Route53 UPSERT).
-// It returns the outcome of the opt-in ACME challenge CNAME reconciliation so
-// the caller can report it in the GCPPrivateServiceConnect status.
+// It returns the outcome of the opt-in ACME challenge CNAME reconciliation,
+// including any error, so the caller can report it in the
+// GCPPrivateServiceConnect status. ACME failures are deliberately not returned
+// as errors.
 func reconcileRecords(ctx context.Context, svc *dns.Service, projectID, hypershiftZone, publicZone, hypershiftDNSName, ingressDomain, baseDomain, acmeChallengeTarget, pscEndpointIP string) (ACMECNAMEOutcome, error) {
 	// Create api A record in hypershift.local zone pointing to PSC endpoint
 	apiRecordName := fmt.Sprintf("api.%s", hypershiftDNSName)
@@ -461,13 +463,17 @@ func reconcileRecords(ctx context.Context, svc *dns.Service, projectID, hypershi
 	// remove the record an earlier controller revision (which created it
 	// unconditionally) left at the legacy name: a leftover CNAME blocks the TXT
 	// records an in-zone DNS-01 solver needs to write.
+	// The delegation record is an opt-in feature and the legacy cleanup is best
+	// effort, so neither failure is returned. Reporting them through the outcome
+	// keeps a failure of this optional path from flipping GCPDNSAvailable and
+	// skipping the NS delegation and zone status the cluster depends on.
 	acmeOutcome := acmeChallengeRecord(ingressDomain, baseDomain, acmeChallengeTarget)
 	if acmeOutcome.RecordName != "" {
 		if err := createCNAMERecord(ctx, svc, projectID, publicZone, acmeOutcome.RecordName, acmeOutcome.Target, 300); err != nil {
-			return acmeOutcome, fmt.Errorf("failed to reconcile ACME challenge CNAME: %w", err)
+			acmeOutcome.Error = fmt.Errorf("failed to reconcile ACME challenge CNAME: %w", err)
 		}
 	} else if err := deleteCNAMERecord(ctx, svc, projectID, publicZone, legacyAcmeRecordName(baseDomain), legacyAcmeCNAMETarget(baseDomain)); err != nil {
-		return acmeOutcome, fmt.Errorf("failed to clean up legacy ACME challenge CNAME: %w", err)
+		acmeOutcome.Error = fmt.Errorf("failed to clean up legacy ACME challenge CNAME: %w", err)
 	}
 
 	return acmeOutcome, nil
@@ -486,6 +492,11 @@ type ACMECNAMEOutcome struct {
 	SkipReason string
 	// Message explains SkipReason in terms the cluster owner can act on.
 	Message string
+	// Error reports that the record could not be published or that the legacy
+	// record could not be cleaned up. It is not returned to the caller: a
+	// failure of this optional feature must not take DNS down, so it is
+	// surfaced through the GCPACMECNAMEAvailable condition instead.
+	Error error
 }
 
 // acmeChallengeRecord returns the CNAME record delegating the ingress
@@ -494,8 +505,9 @@ type ACMECNAMEOutcome struct {
 //
 // The record name is the DNS-01 challenge name of the ingress wildcard
 // certificate (_acme-challenge prefixed to the cluster's ingress domain,
-// apps.<baseDomainPrefix>.<baseDomain> by default, or the
-// spec.configuration.ingress override when set), created in the public
+// apps.<name>.<baseDomain> by default, apps.<baseDomainPrefix>.<baseDomain>
+// when spec.dns.baseDomainPrefix is set, or the spec.configuration.ingress
+// override when set), created in the public
 // ingress zone this operator manages in the cluster's project. Pointing it at
 // the configured target lets an external certificate issuer with a DNS-01
 // solver for the target's zone (and CNAME following) solve the challenge for
@@ -680,8 +692,9 @@ func ReconcileDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane, pscEndpo
 
 	// The ingress wildcard's ACME challenge is delegated to an external solver
 	// only when the deployment configures an explicit target; the record name
-	// follows the cluster's ingress domain (apps.<baseDomainPrefix>.<baseDomain>
-	// by default, or the spec.configuration.ingress override when set).
+	// follows the cluster's ingress domain (apps.<name>.<baseDomain> by default,
+	// apps.<baseDomainPrefix>.<baseDomain> when spec.dns.baseDomainPrefix is
+	// set, or the spec.configuration.ingress override when set).
 	ingressDomain := globalconfig.IngressDomain(hcp)
 	acmeChallengeTarget := gcpSpec.Delegation.ACMEChallengeTarget
 
@@ -701,10 +714,11 @@ func ReconcileDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane, pscEndpo
 	}
 
 	// The ACME challenge CNAME is only created when the deployment configured
-	// a delegation target (see acmeChallengeRecord); report it in the status
-	// only then, so it never lists a record that does not exist.
+	// a delegation target (see acmeChallengeRecord) and the publish succeeded;
+	// report it in the status only then, so it never lists a record that does
+	// not exist.
 	publicIngressCreatedRecords := []string{}
-	if acmeOutcome.RecordName != "" {
+	if acmeOutcome.RecordName != "" && acmeOutcome.Error == nil {
 		publicIngressCreatedRecords = append(publicIngressCreatedRecords, acmeOutcome.RecordName)
 	}
 

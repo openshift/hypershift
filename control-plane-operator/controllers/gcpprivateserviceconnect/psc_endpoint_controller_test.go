@@ -1514,6 +1514,22 @@ func TestReconcileACMECNAMECondition(t *testing.T) {
 				Message: "No ACME challenge CNAME was created: the ingress domain apps.other.example.org is not within the cluster base domain example.com.",
 			},
 		},
+		{
+			// A failure to publish the record must not fail the reconcile: it is
+			// reported on the condition, so GCPDNSAvailable stays intact.
+			name: "When publishing the record failed, it should report the error instead of failing",
+			outcome: ACMECNAMEOutcome{
+				Target:     "_acme-challenge.central.example.com",
+				RecordName: "_acme-challenge.apps.example.com",
+				Error:      errors.New("failed to reconcile ACME challenge CNAME: boom"),
+			},
+			expected: &metav1.Condition{
+				Type:    string(hyperv1.GCPACMECNAMEAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.GCPErrorReason,
+				Message: "failed to reconcile ACME challenge CNAME: boom",
+			},
+		},
 	}
 
 	for _, tt := range tests {
