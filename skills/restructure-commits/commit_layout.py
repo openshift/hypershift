@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Plan, stage, and verify HyperShift component-based commit layouts.
 
-The ownership rules live in ownership.json next to this script; generate_ownership.py
+The ownership rules live in ownership.json next to this script; the Go verification driver
 derives them from the repository (make update), so never edit them by hand.
 Only the Python 3 standard library and the git CLI are required.
 """

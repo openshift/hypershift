@@ -27,12 +27,9 @@ repos:
         stages: [pre-commit]
       - id: cpo-containerfiles-in-sync
         name: Keep cpo-containerfiles-in-sync
-        entry: ./hack/tools/git-hooks/cpo-containerfiles-in-sync.sh
-        language: script
+        entry: make cpo-container-sync
+        language: system
         pass_filenames: false
-        args:
-          - Containerfile.control-plane
-          - Dockerfile.control-plane
         description: Ensures the CPO container files stay in sync
         stages: [pre-commit]
       - id: api-lint-fix
@@ -71,9 +68,9 @@ repos:
         stages: [post-checkout]
         always_run: true
       - id: make-verify-quick
-        name: Run make verify-quick
-        description: Regenerates code and checks for uncommitted diffs (lightweight push smoke check).
-        entry: make verify-quick
+        name: Run make verify
+        description: Runs the same native Go verification as CI.
+        entry: make verify
         language: system
         pass_filenames: false
         stages: [pre-push]

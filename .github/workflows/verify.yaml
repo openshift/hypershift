@@ -8,6 +8,16 @@ on:
 
 jobs:
   verify:
-    uses: openshift/hypershift/.github/workflows/verify-reusable.yaml@main
+    uses: ./.github/workflows/verify-reusable.yaml
+    with:
+      target: verify-repository
+    permissions:
+      contents: read
+  verify-macos:
+    if: github.base_ref == 'main'
+    uses: ./.github/workflows/verify-reusable.yaml
+    with:
+      runner: macos-15
+      target: verify-repository
     permissions:
       contents: read

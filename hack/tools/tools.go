@@ -19,7 +19,6 @@ import (
 	_ "sigs.k8s.io/kube-api-linter"
 
 	_ "github.com/ahmetb/gen-crd-api-reference-docs"
-	_ "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
 	_ "github.com/mikefarah/yq/v4"
 	_ "go.uber.org/mock/mockgen"
 	_ "golang.org/x/tools/cmd/deadcode"

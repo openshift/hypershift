@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/testfuncstructure"
 	"github.com/openshift/hypershift/hack/tools/hypershiftlinter/analyzers/vacuouspass"
 
+	"github.com/golangci/plugin-module-register/register"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -92,4 +93,28 @@ func decodeSettings(raw any) (settings, error) {
 		return settings{}, err
 	}
 	return s, nil
+}
+
+func init() {
+	register.Plugin("hypershiftlinter", newPlugin)
+}
+
+type plugin struct {
+	analyzers []*analysis.Analyzer
+}
+
+func newPlugin(settings any) (register.LinterPlugin, error) {
+	analyzers, err := BuildAnalyzers(settings)
+	if err != nil {
+		return nil, err
+	}
+	return &plugin{analyzers: analyzers}, nil
+}
+
+func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
+	return p.analyzers, nil
+}
+
+func (p *plugin) GetLoadMode() string {
+	return register.LoadModeTypesInfo
 }

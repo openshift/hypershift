@@ -1,24 +1,20 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
-	gogit "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kyaml "sigs.k8s.io/yaml"
 
 	"sigs.k8s.io/crdify/pkg/config"
-	gitloader "sigs.k8s.io/crdify/pkg/loaders/git"
 	"sigs.k8s.io/crdify/pkg/runner"
 	"sigs.k8s.io/crdify/pkg/validations"
+	kyaml "sigs.k8s.io/yaml"
 )
 
 // crdDirs is a custom flag type that collects multiple --crd-dir values.
@@ -55,14 +51,7 @@ func run() error {
 		return fmt.Errorf("finding repository root: %w", err)
 	}
 
-	repo, err := gogit.PlainOpenWithOptions(repoRoot, &gogit.PlainOpenOptions{
-		EnableDotGitCommonDir: true,
-	})
-	if err != nil {
-		return fmt.Errorf("opening git repository at %s: %w", repoRoot, err)
-	}
-
-	baseHash, err := resolveBaseHash(repo, *comparisonBase)
+	baseHash, err := resolveBaseHash(repoRoot, *comparisonBase)
 	if err != nil {
 		return fmt.Errorf("resolving comparison base %q: %w", *comparisonBase, err)
 	}
@@ -87,7 +76,7 @@ func run() error {
 			absDir = filepath.Join(repoRoot, dir)
 		}
 
-		results, err := checkCRDsInDir(repoRoot, absDir, repo, baseHash, crdifyRunner)
+		results, err := checkCRDsInDir(repoRoot, absDir, baseHash, crdifyRunner)
 		if err != nil {
 			return fmt.Errorf("checking CRDs in %s: %w", dir, err)
 		}
@@ -128,7 +117,7 @@ type checkResults struct {
 // isCRDYAML content-based filtering. Featuregate CRD variants (-Default and
 // -TechPreviewNoUpgrade) are also skipped; only the CustomNoUpgrade superset
 // variant is checked to avoid false positives when fields move between gates.
-func checkCRDsInDir(repoRoot, dir string, repo *gogit.Repository, baseHash *plumbing.Hash, crdifyRunner *runner.Runner) (checkResults, error) {
+func checkCRDsInDir(repoRoot, dir string, baseHash string, crdifyRunner *runner.Runner) (checkResults, error) {
 	var results checkResults
 
 	entries, err := os.ReadDir(dir)
@@ -140,7 +129,7 @@ func checkCRDsInDir(repoRoot, dir string, repo *gogit.Repository, baseHash *plum
 		path := filepath.Join(dir, entry.Name())
 
 		if entry.IsDir() {
-			subResults, err := checkCRDsInDir(repoRoot, path, repo, baseHash, crdifyRunner)
+			subResults, err := checkCRDsInDir(repoRoot, path, baseHash, crdifyRunner)
 			if err != nil {
 				return results, err
 			}
@@ -179,7 +168,7 @@ func checkCRDsInDir(repoRoot, dir string, repo *gogit.Repository, baseHash *plum
 			return results, fmt.Errorf("computing relative path for %s: %w", path, err)
 		}
 
-		oldCRD, err := loadCRDFromCommit(repo, baseHash, relPath)
+		oldCRD, err := loadCRDFromCommit(repoRoot, baseHash, relPath)
 		if err != nil {
 			return results, fmt.Errorf("loading CRD from base commit for %s: %w", relPath, err)
 		}
@@ -231,41 +220,49 @@ func collectPropertyResults(results *checkResults, relPath, versionLabel string,
 	}
 }
 
-// resolveBaseHash resolves a git reference to a commit hash.
-func resolveBaseHash(repo *gogit.Repository, ref string) (*plumbing.Hash, error) {
-	hash, err := repo.ResolveRevision(plumbing.Revision(ref))
+// resolveBaseHash uses Git's revision and repository handling, including linked
+// worktrees and branch configuration that go-git's parser does not accept.
+func resolveBaseHash(repoRoot, ref string) (string, error) {
+	data, err := gitOutput(repoRoot, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}")
 	if err != nil {
-		return nil, fmt.Errorf("resolving revision %q: %w", ref, err)
+		return "", err
 	}
-	return hash, nil
+	return strings.TrimSpace(string(data)), nil
 }
 
-// loadCRDFromCommit reads a CRD YAML file from a specific git commit using
-// crdify's git loader.
-// Returns (nil, nil) if the file doesn't exist in the commit (new file).
-//
-// Known limitation: lookup is path-based — if a CRD file is moved or renamed
-// between the base commit and HEAD (e.g., during a directory restructure), the
-// new-path file will appear as "new" and skip comparison entirely. This matches
-// the approach used in openshift/api and is acceptable in practice; use
-// `/override verify-crd-schema` for legitimate moves.
-func loadCRDFromCommit(repo *gogit.Repository, hash *plumbing.Hash, path string) (*apiextensionsv1.CustomResourceDefinition, error) {
-	if hash == nil {
+// loadCRDFromCommit retains the path-based comparison: a new or renamed CRD
+// has no base at that path and is not compared. Git is used only to read blobs;
+// schema parsing and compatibility validation remain in Go.
+func loadCRDFromCommit(repoRoot, hash, path string) (*apiextensionsv1.CustomResourceDefinition, error) {
+	if hash == "" {
 		return nil, nil
 	}
-
-	crd, err := gitloader.LoadCRDFileFromRepositoryWithRef(repo, hash, path)
+	path = filepath.ToSlash(path)
+	entry, err := gitOutput(repoRoot, "ls-tree", "-z", "--full-tree", hash, "--", ":(literal)"+path)
 	if err != nil {
-		if errors.Is(err, object.ErrFileNotFound) ||
-			errors.Is(err, object.ErrDirectoryNotFound) ||
-			errors.Is(err, object.ErrEntryNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("reading file %s from base commit: %w", path, err)
+		return nil, err
 	}
-
-	crd = filterVersionsWithSchema(crd)
-	return crd, nil
+	if len(entry) == 0 {
+		return nil, nil
+	}
+	data, err := gitOutput(repoRoot, "show", hash+":"+path)
+	if err != nil {
+		return nil, err
+	}
+	crd, err := readCRD(data)
+	if err != nil {
+		return nil, err
+	}
+	return filterVersionsWithSchema(crd), nil
+}
+func gitOutput(repoRoot string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = repoRoot
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, out)
+	}
+	return out, nil
 }
 
 // readCRD unmarshals YAML data into a CustomResourceDefinition.

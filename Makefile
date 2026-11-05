@@ -3,9 +3,6 @@ DIR := ${CURDIR}
 # Image URL to use all building/pushing image targets
 IMG ?= hypershift:latest
 
-# Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
-CRD_OPTIONS ?= "crd"
-
 # Runtime CLI to use for building and pushing images
 RUNTIME ?= $(shell sh hack/utils.sh get_container_engine)
 
@@ -13,30 +10,16 @@ ARTIFACT_DIR ?= /tmp/artifacts
 TOOLS_DIR=./hack/tools
 BIN_DIR=bin
 TOOLS_BIN_DIR := $(TOOLS_DIR)/$(BIN_DIR)
-CONTROLLER_GEN := $(abspath $(TOOLS_BIN_DIR)/controller-gen)
-CODE_GEN := $(abspath $(TOOLS_BIN_DIR)/codegen)
-STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
 DEADCODE := $(abspath $(TOOLS_BIN_DIR)/deadcode)
 DEADCODE_REPORT := $(abspath $(TOOLS_BIN_DIR)/deadcode-report)
 DEADCODE_REPORT_SRC := $(wildcard $(TOOLS_DIR)/deadcode-report/*.go)
-GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
 YQ := $(abspath $(TOOLS_BIN_DIR)/yq)
-VERIFY_API_DEPS := $(abspath $(TOOLS_BIN_DIR)/verify-api-deps)
-VERIFY_API_DEPS_SRC := $(shell find $(TOOLS_DIR)/verify-api-deps -name '*.go' ! -name '*_test.go' 2>/dev/null)
-CRD_SCHEMA_CHECK := $(abspath $(TOOLS_BIN_DIR)/crd-schema-check)
 
-CODESPELL_VER := 2.4.1
-CODESPELL_BIN := codespell
-GITLINT_VER := 0.19.1
-GITLINT_BIN := gitlint
-PYYAML_VER := 6.0.3
 PYTEST_VER := 8.3.5
 
 PYTHON_VENV := $(TOOLS_BIN_DIR)/python-venv
 PYTHON_VENV_STAMP := $(PYTHON_VENV)/.installed
-CODESPELL := $(PYTHON_VENV)/bin/$(CODESPELL_BIN)
-GITLINT := $(PYTHON_VENV)/bin/$(GITLINT_BIN)
 
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
@@ -51,7 +34,6 @@ ENVTEST_KUBE_ASSETS_DIR ?= $(abspath $(TOOLS_BIN_DIR)/envtest-kube)
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go
-GOWS=GO111MODULE=on GOWORK=$(shell pwd)/hack/workspace/go.work GOFLAGS=-mod=vendor go
 COMMIT_HASH ?= $(shell git rev-parse HEAD 2>/dev/null)
 VERSION_PKG=github.com/openshift/hypershift/support/supportedversion
 GO_LDFLAGS=-ldflags '-X $(VERSION_PKG).commitHash=$(COMMIT_HASH)'
@@ -97,21 +79,20 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator kar
 CAPI_PROVIDERS := agent aws azure gcp ibmcloud kubevirt openstack
 
 .PHONY: update
-update: api-deps workspace-sync capi-sync deps api api-docs clients docs-aggregate
-	$(MAKE) ownership-rules
+update:
+	$(VERIFY) update
 
 GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
-$(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
-	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GOLANGCI_LINT) github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+# Recursive Make wildcard keeps even the launcher independent of find.
+rwildcard = $(foreach path,$(wildcard $(1)/*),$(call rwildcard,$(path),$(2)) $(filter $(subst *,%,$(2)),$(path)))
+GOLANGCI_LINT_SRC = $(call rwildcard,$(TOOLS_DIR)/cmd/golangci-lint,*.go) $(call rwildcard,$(TOOLS_DIR)/hypershiftlinter,*.go)
+$(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod $(TOOLS_DIR)/go.sum $(TOOLS_DIR)/vendor/modules.txt $(GOLANGCI_LINT_SRC)
+	cd $(TOOLS_DIR); CGO_ENABLED=0 $(GO) build -tags=tools -o $(GOLANGCI_LINT) ./cmd/golangci-lint
 
-KUBEAPILINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/kube-api-linter.so)
-$(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugin
-	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -buildmode=plugin -ldflags '-s -w' -o $(KUBEAPILINTER_PLUGIN) sigs.k8s.io/kube-api-linter/pkg/plugin
+.PHONY: golangci-lint
+golangci-lint: $(GOLANGCI_LINT) ## Build the native linter with both custom linters compiled in.
 
-HYPERSHIFTLINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/hypershiftlinter.so)
-HYPERSHIFTLINTER_SRC := $(shell find $(TOOLS_DIR)/hypershiftlinter -name '*.go' 2>/dev/null)
-$(HYPERSHIFTLINTER_PLUGIN): $(TOOLS_DIR)/go.mod $(HYPERSHIFTLINTER_SRC) # Build hypershiftlinter as Go plugin
-	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -a -buildmode=plugin -ldflags '-s -w' -o $(HYPERSHIFTLINTER_PLUGIN) ./hypershiftlinter/cmd/plugin
+api-lint api-lint-fix lint main-lint-fix lint-fix hypershift-lint-all: export CGO_ENABLED=0
 
 # When not otherwise set, diff/lint against the upstream main branch.
 # This is always set in OpenShift CI.
@@ -119,11 +100,11 @@ UPSTREAM_REMOTE ?= $(shell git remote -v 2>/dev/null | grep 'openshift/hypershif
 PULL_BASE_SHA ?= $(if $(UPSTREAM_REMOTE),$(shell git rev-parse $(UPSTREAM_REMOTE)/main),$(shell git rev-parse main))
 
 .PHONY: api-lint
-api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN) $(HYPERSHIFTLINTER_PLUGIN)
+api-lint: $(GOLANGCI_LINT)
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --new-from-rev=${PULL_BASE_SHA}
 
 .PHONY: api-lint-fix
-api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN) $(HYPERSHIFTLINTER_PLUGIN)
+api-lint-fix: $(GOLANGCI_LINT)
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
 
 .PHONY: precommit-api-lint-fix
@@ -131,13 +112,11 @@ precommit-api-lint-fix: $(GOLANGCI_LINT)
 	cd api && $(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(patsubst api/%,%,$(FILES))
 
 .PHONY: lint
-lint: generate verify-capi-sync $(HYPERSHIFTLINTER_PLUGIN)
-	$(MAKE) api-lint; api_rc=$$?; \
-	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v; main_rc=$$?; \
-	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
+lint:
+	$(VERIFY) lint
 
 .PHONY: main-lint-fix
-main-lint-fix: generate $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
+main-lint-fix: generate $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v $(if $(PULL_BASE_SHA),--new-from-rev=$(PULL_BASE_SHA) --whole-files)
 
 .PHONY: precommit-main-lint-fix
@@ -145,82 +124,45 @@ precommit-main-lint-fix: $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(FILES)
 
 .PHONY: lint-fix
-lint-fix: generate $(HYPERSHIFTLINTER_PLUGIN)
+lint-fix: generate $(GOLANGCI_LINT)
 	$(MAKE) api-lint-fix; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v; main_rc=$$?; \
 	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
 
 .PHONY: hypershift-lint-all
-hypershift-lint-all: $(GOLANGCI_LINT) $(HYPERSHIFTLINTER_PLUGIN)
+hypershift-lint-all: $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --enable-only hypershiftlinter
 
 .PHONY: test-linter
 test-linter:
-	cd $(TOOLS_DIR) && $(GO) test ./hypershiftlinter/... -count=1
+	cd $(TOOLS_DIR) && CGO_ENABLED=0 $(GO) test ./hypershiftlinter/... ./cmd/golangci-lint ./verify/... ./crd-schema-check -count=1
 
 .PHONY: verify-git-clean
 verify-git-clean:
-	git update-index --refresh
-	git diff-index --cached --quiet --ignore-submodules HEAD --
-	git diff-files --quiet --ignore-submodules
-	git diff --exit-code HEAD --
-	$(eval STATUS = $(shell git status -s))
-	$(if $(strip $(STATUS)),$(error untracked files detected: ${STATUS}))
+	$(VERIFY) verify-git-clean
 
 .PHONY: verify-codecov
-verify-codecov: ## Validate codecov.yml against Codecov's API.
-	@curl --silent --show-error \
-		--connect-timeout 5 --max-time 30 \
-		--retry 3 --retry-all-errors --retry-delay 1 \
-		--data-binary @codecov.yml https://codecov.io/validate \
-		| tee /dev/stderr | grep -q "^Valid!"
+verify-codecov:
+	$(VERIFY) verify-codecov
 
 .PHONY: verify-crd-schema
-verify-crd-schema: $(CRD_SCHEMA_CHECK) ## Verify CRD schemas for breaking changes against base branch.
-	$(CRD_SCHEMA_CHECK) --comparison-base=$(PULL_BASE_SHA) \
-		--config=hack/tools/crd-schema-check/crdify-config.yaml \
-		--crd-dir=cmd/install/assets/crds/hypershift-operator \
-		--crd-dir=karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests
+verify-crd-schema:
+	$(VERIFY) verify-crd-schema
 
-# Targets that conflict, such as deleting or mutating a directory another target
-# reads, must move to verify-serial-targets instead of running in parallel here.
-.PHONY: verify-parallel-targets
-verify-parallel-targets: verify-codespell verify-codecov verify-api-deps verify-crd-schema lint cpo-container-sync run-gitlint verify-docs-nav verify-tekton-pipeline-pairs
+# All verification runs use the native Go driver and the tool versions in go.mod.
+# verify-ci and verify-quick remain compatibility aliases for existing callers.
+VERIFY = GOOS= GOARCH= CGO_ENABLED=0 GOWORK=off GOFLAGS=-mod=vendor go -C $(TOOLS_DIR) run ./cmd/verify
 
-# Run target checks sequentially after preparation.
-.PHONY: verify-serial-targets
-verify-serial-targets:
-	# Sync regenerates provider sources that decoupling builds and lint reads.
-	$(MAKE) verify-capi-sync
-	$(MAKE) verify-capi-decoupling
+.PHONY: verify verify-ci verify-quick
+verify verify-ci verify-quick:
+	$(VERIFY) verify
 
-.PHONY: verify-ci
-verify-ci: generate update staticcheck fmt vet verify-api-deps verify-crd-schema verify-docs-nav verify-tekton-pipeline-pairs ## Run the same checks as the GHA verify workflow.
-	$(MAKE) verify-serial-targets
-	$(MAKE) lint
-	$(MAKE) verify-git-clean
-
-.PHONY: verify
-verify: generate update staticcheck fmt vet
-	$(MAKE) verify-serial-targets
-	$(MAKE) -j verify-parallel-targets
-	$(MAKE) verify-git-clean
-
-.PHONY: verify-quick
-verify-quick: generate update
-	$(MAKE) verify-git-clean
-
-$(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod # Build controller-gen from tools folder.
-	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
+.PHONY: verify-repository
+verify-repository: ## Run generation and repository checks; CI runs lint separately.
+	$(VERIFY) verify-repository
 
 $(YQ): $(TOOLS_DIR)/go.mod # Build yq v4 from tools folder.
 	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/yq github.com/mikefarah/yq/v4
-
-$(CODE_GEN): $(TOOLS_DIR)/go.mod # Build code-gen from tools folder.
-	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/codegen github.com/openshift/api/tools/codegen/cmd
-
-$(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
-	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/staticcheck honnef.co/go/tools/cmd/staticcheck
 
 $(DEADCODE): $(TOOLS_DIR)/go.mod $(TOOLS_DIR)/go.sum $(TOOLS_DIR)/tools.go $(TOOLS_DIR)/vendor/modules.txt
 	cd $(TOOLS_DIR); GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) CGO_ENABLED=0 $(GO) build -o $(DEADCODE) golang.org/x/tools/cmd/deadcode
@@ -248,21 +190,9 @@ deadcode-gate: ## Fail if the last deadcode scan reported any candidate.
 verify-deadcode: deadcode ## Run a whole-program dead-code scan and fail on any candidate.
 	@$(MAKE) --no-print-directory deadcode-gate
 
-$(GENAPIDOCS): $(TOOLS_DIR)/go.mod
-	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
-
-$(MOCKGEN): ${TOOLS_DIR}/go.mod
-	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
-
-$(VERIFY_API_DEPS): $(TOOLS_DIR)/go.mod $(VERIFY_API_DEPS_SRC) # Build verify-api-deps tool
-	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/verify-api-deps ./verify-api-deps
-
-$(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
-	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/crd-schema-check ./crd-schema-check
-
 .PHONY: generate
-generate: $(MOCKGEN)
-	$(GO) generate ./...
+generate:
+	$(VERIFY) generate
 
 # Compile all tests
 .PHONY: tests
@@ -280,12 +210,8 @@ karpenter-operator:
 
 .PHONY: karpenter-api
 # Sync upstream CRDs from vendor, apply OpenShift CEL/schema adjustments, then generate OpenshiftEC2NodeClass from api/karpenter.
-karpenter-api: $(CONTROLLER_GEN) $(YQ)
-	karpenter-operator/hack/crds-sync.sh
-	karpenter-operator/hack/adjust-cel.sh
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/karpenter/..." output:crd:artifacts:config=karpenter-operator/controllers/karpenter/assets
-	cp karpenter-operator/controllers/karpenter/assets/karpenter.hypershift.openshift.io_openshiftec2nodeclasses.yaml karpenter-operator/controllers/karpenter/assets/zz_generated.crd-manifests/openshiftec2nodeclasses.crd.yaml
-	$(GO) run ./hack/kubelet-ratcheting-gen/main.go
+karpenter-api:
+	$(VERIFY) karpenter-api
 
 .PHONY: control-plane-operator
 control-plane-operator:
@@ -325,101 +251,25 @@ product-cli-release:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-gcp cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent cluster-api-provider-azure cluster-api-provider-openstack karpenter-api api-docs
+api:
+	$(VERIFY) api
 
 .PHONY: hypershift-api
-hypershift-api: workspace-sync $(CONTROLLER_GEN) $(CODE_GEN)
-	# Clean up autogenerated files.
-	rm -rf ./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests
-	rm -rf ./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests.yaml
-	# Clean generated assets but preserve tests/ (envtest suites).
-	find cmd/install/assets/crds/hypershift-operator/ -maxdepth 1 -not -name 'hypershift-operator' -not -name 'tests' -not -name 'doc.go' | xargs rm -rf
+hypershift-api:
+	$(VERIFY) hypershift-api
 
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
-
-	# These consolidate with the 3 steps used to generate CRDs by openshift/api.
-	(cd ./api && $(CODE_GEN) empty-partial-schemas)
-	(cd ./api && $(CODE_GEN) schemapatch)
-	(cd ./api && $(CODE_GEN) crd-manifest-merge --manifest-merge:payload-manifest-path ./hypershift/v1beta1/featuregates)
-
-	# Move final CRDs to the install folder.
-	mv ./api/hypershift/v1beta1/zz_generated.crd-manifests cmd/install/assets/crds/hypershift-operator/
-
-	# Copy featuregate manifests alongside CRDs for envtest.
-	mkdir -p cmd/install/assets/crds/hypershift-operator/payload-manifests/featuregates
-	cp ./api/hypershift/v1beta1/featuregates/*.yaml cmd/install/assets/crds/hypershift-operator/payload-manifests/featuregates/
-
-	# Remove SelfManagedHA CRDs
-	rm -rf cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/hostedclusters-SelfManagedHA-*.yaml
-	rm -rf cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-SelfManagedHA-*.yaml
-	
-	# HyperShift doesn't have a notion of CustomNoUpgrade, so remove any CustomNoUpgrade CRDs.
-	rm -rf cmd/install/assets/crds/hypershift-operator/zz_generated.crd-manifests/*-CustomNoUpgrade.crd.yaml
-
-	# Generate additional CRDs.
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/scheduling/..." output:crd:artifacts:config=cmd/install/assets/crds/hypershift-operator
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/certificates/..." output:crd:artifacts:config=cmd/install/assets/crds/hypershift-operator
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/auditlogpersistence/..." output:crd:artifacts:config=cmd/install/assets/crds/hypershift-operator
-
-# CRD targets stage output in a temp dir and only swap it into place on
-# success, so a failed generation cannot leave shipped manifests deleted.
-CAPI_CRD_GEN = $(DIR)/hack/capi-crd-gen.sh
-
-.PHONY: cluster-api
-cluster-api: $(CONTROLLER_GEN)
-	$(CAPI_CRD_GEN) --no-workspace $(DIR)/cmd/install/assets/crds/cluster-api $(CONTROLLER_GEN) $(CRD_OPTIONS) \
-		paths="./vendor/sigs.k8s.io/cluster-api/api/core/..." \
-		paths="./vendor/sigs.k8s.io/cluster-api/api/ipam/v1beta1" \
-		paths="./vendor/sigs.k8s.io/cluster-api/api/ipam/v1beta2" \
-		paths="./vendor/sigs.k8s.io/cluster-api/api/addons/..."
-
-# CAPI provider CRD targets run controller-gen inside a temporary Go workspace
-# because each pkg/capi/<provider> is a separate Go module with a minimal go.mod.
-
-.PHONY: cluster-api-provider-aws
-cluster-api-provider-aws: $(CONTROLLER_GEN)
-	$(CAPI_CRD_GEN) $(DIR)/cmd/install/assets/crds/cluster-api-provider-aws $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="sigs.k8s.io/cluster-api-provider-aws/v2/..."
-# remove ROSA CRDs
-	rm -rf cmd/install/assets/crds/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_rosa*.yaml
-# remove EKS CRDs
-	rm -rf cmd/install/assets/crds/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmanaged*.yaml
-	rm -rf cmd/install/assets/crds/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsfargateprofiles.yaml
-
-.PHONY: cluster-api-provider-gcp
-cluster-api-provider-gcp: $(CONTROLLER_GEN)
-	$(CAPI_CRD_GEN) $(DIR)/cmd/install/assets/crds/cluster-api-provider-gcp $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="sigs.k8s.io/cluster-api-provider-gcp/..."
-
-.PHONY: cluster-api-provider-ibmcloud
-cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
-	$(CAPI_CRD_GEN) $(DIR)/cmd/install/assets/crds/cluster-api-provider-ibmcloud $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="sigs.k8s.io/cluster-api-provider-ibmcloud/..."
-
-.PHONY: cluster-api-provider-kubevirt
-cluster-api-provider-kubevirt: $(CONTROLLER_GEN)
-	$(CAPI_CRD_GEN) $(DIR)/cmd/install/assets/crds/cluster-api-provider-kubevirt $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="sigs.k8s.io/cluster-api-provider-kubevirt/..."
-
-.PHONY: cluster-api-provider-agent
-cluster-api-provider-agent: $(CONTROLLER_GEN)
-	$(CAPI_CRD_GEN) $(DIR)/cmd/install/assets/crds/cluster-api-provider-agent $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="github.com/openshift/cluster-api-provider-agent/api/..."
-
-.PHONY: cluster-api-provider-azure
-cluster-api-provider-azure: $(CONTROLLER_GEN)
-	$(CAPI_CRD_GEN) $(DIR)/cmd/install/assets/crds/cluster-api-provider-azure $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="sigs.k8s.io/cluster-api-provider-azure/..."
-# remove CAPZ managed CRDS
-	rm -rf cmd/install/assets/crds/cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremanaged*.yaml
-
-.PHONY: cluster-api-provider-openstack
-cluster-api-provider-openstack: $(CONTROLLER_GEN)
-	$(CAPI_CRD_GEN) $(DIR)/cmd/install/assets/crds/cluster-api-provider-openstack $(CONTROLLER_GEN) $(CRD_OPTIONS) \
-		paths="sigs.k8s.io/cluster-api-provider-openstack/..." \
-		paths="github.com/k-orc/openstack-resource-controller/..."
+# Provider CRDs are staged by the Go driver before replacing shipped manifests.
+.PHONY: cluster-api $(foreach p,$(CAPI_PROVIDERS),cluster-api-provider-$(p))
+cluster-api $(foreach p,$(CAPI_PROVIDERS),cluster-api-provider-$(p)):
+	$(VERIFY) $@
 
 .PHONY: api-docs
-api-docs: workspace-sync $(GENAPIDOCS)
-	hack/gen-api-docs.sh $(GENAPIDOCS) $(DIR)
+api-docs:
+	$(VERIFY) api-docs
 
 .PHONY: clients
-clients: workspace-sync delegating_client
-	GOWORK=off GO=GO111MODULE=on GOFLAGS=-mod=readonly hack/update-codegen.sh
+clients:
+	$(VERIFY) clients
 
 .PHONY: release
 release:
@@ -427,7 +277,7 @@ release:
 
 .PHONY: docs-aggregate
 docs-aggregate:
-	$(GO) run ./hack/tools/docs-aggregator/main.go
+	$(VERIFY) docs-aggregate
 
 .PHONY: delegating_client
 delegating_client:
@@ -449,7 +299,7 @@ setup-envtest: $(SETUP_ENVTEST) ## Setup envtest binaries (etcd, kube-apiserver)
 .PHONY: test
 
 # Determine the number of CPU cores
-NUM_CORES := $(shell getconf _NPROCESSORS_ONLN || echo 1)
+NUM_CORES = $(shell getconf _NPROCESSORS_ONLN || echo 1)
 GO_TEST_FLAGS ?= -race
 
 test: generate test-e2ev2-unit
@@ -652,12 +502,12 @@ test-cross-cluster-restore: backuprestore-e2e
 # Run go fmt against code
 .PHONY: fmt
 fmt:
-	$(GO) fmt ./...
+	$(VERIFY) fmt
 
 # Run go vet against code
 .PHONY: vet
 vet:
-	$(GO) vet -tags integration,e2e,reqserving,e2ev2,backuprestore,envtest ./...
+	$(VERIFY) vet
 
 # jparrill: The RHTAP tool is breaking the RHTAP builds from Feb 27th, so we're stop using it for now
 # more info here https://redhat-internal.slack.com/archives/C031USXS2FJ/p1710177462151639
@@ -671,99 +521,34 @@ vet:
 
 # Updates Go modules
 .PHONY: deps
-deps: workspace-sync
-	$(GO) mod tidy
-	$(GO) mod vendor
-	$(GO) mod verify
-	$(GO) list -m -mod=readonly -json all > /dev/null
-	(cd hack/tools && $(GO) mod tidy && $(GO) mod vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
+deps:
+	$(VERIFY) deps
 
 .PHONY: api-deps
 api-deps:
-	cd api && \
-	  $(GO) mod tidy && \
-	  $(GO) mod vendor && \
-	  $(GO) mod verify && \
-	  $(GO) list -m -mod=readonly -json all > /dev/null
+	$(VERIFY) api-deps
 
-CAPI_SYNC_STAMPS := $(foreach p,$(CAPI_PROVIDERS),$(DIR)/pkg/capi/$(p)/.synced)
-
-# Per-provider sync: re-run when any sync input changes.
-$(DIR)/pkg/capi/%/.synced: \
-	$(DIR)/hack/capi-vendor/%/go.mod \
-	$(DIR)/hack/capi-vendor/%/vendor_imports.go \
-	$(DIR)/hack/capi-sync-provider.sh \
-	$(DIR)/hack/copy-capi-types/main.go \
-	$(CONTROLLER_GEN)
-	@echo "Resolving CAPI provider deps: $*"
-	cd $(DIR)/hack/capi-vendor/$* && $(GO) mod tidy && $(GO) mod download
-	@echo "Syncing CAPI provider: $*"
-	CONTROLLER_GEN=$(CONTROLLER_GEN) $(DIR)/hack/capi-sync-provider.sh $*
-	@touch $@
-
-.PHONY: capi-deps
-capi-deps:
-	@for p in $(CAPI_PROVIDERS); do \
-	  echo "Resolving CAPI provider deps: $$p"; \
-	  (cd $(DIR)/hack/capi-vendor/$$p && $(GO) mod tidy && $(GO) mod download) || exit 1; \
-	done
-
-.PHONY: capi-sync
-capi-sync: $(CAPI_SYNC_STAMPS)
-
-# Per-provider convenience target: make capi-sync-aws, make capi-sync-azure, etc.
-.PHONY: $(foreach p,$(CAPI_PROVIDERS),capi-sync-$(p))
-$(foreach p,$(CAPI_PROVIDERS),capi-sync-$(p)): capi-sync-%:
-	@rm -f $(DIR)/pkg/capi/$*/.synced
-	@$(MAKE) $(DIR)/pkg/capi/$*/.synced
-
-.PHONY: capi-sync-force
-capi-sync-force:
-	@rm -f $(CAPI_SYNC_STAMPS)
-	@$(MAKE) capi-sync
-
-.PHONY: verify-capi-sync
-verify-capi-sync: generate
-	@rm -f $(CAPI_SYNC_STAMPS)
-	@$(MAKE) capi-sync
-	@if [ -n "$$(git diff --name-only -- pkg/capi/)" ] || [ -n "$$(git ls-files --others --exclude-standard -- pkg/capi/)" ]; then \
-	  echo "ERROR: pkg/capi/ is out of sync with hack/capi-vendor/. Run 'make capi-sync-force' and commit the result." >&2; \
-	  git diff --stat -- pkg/capi/; \
-	  git ls-files --others --exclude-standard -- pkg/capi/; \
-	  exit 1; \
-	fi
+.PHONY: capi-sync capi-sync-force verify-capi-sync $(foreach p,$(CAPI_PROVIDERS),capi-sync-$(p))
+capi-sync capi-sync-force verify-capi-sync $(foreach p,$(CAPI_PROVIDERS),capi-sync-$(p)):
+	$(VERIFY) $@
 
 # Guards the invariants of the localized provider modules: that they stay free
 # of upstream CAPI, that all of their subpackages build (the root module only
 # compiles the ones it imports), and that packages consuming the localized
 # types still compile. Faster than staticcheck and points at the cause.
 .PHONY: verify-capi-decoupling
-verify-capi-decoupling: verify-capi-sync
-	@CAPI_PROVIDERS="$(CAPI_PROVIDERS)" $(DIR)/hack/verify-capi-decoupling.sh
+verify-capi-decoupling:
+	$(VERIFY) verify-capi-decoupling
 
 .PHONY: workspace-sync
-workspace-sync: api-deps
-	cd hack/workspace && \
-	  $(GOWS) work sync
-	cd api && $(GO) mod download all && $(GO) mod vendor
+workspace-sync:
+	$(VERIFY) workspace-sync
 
 # Run staticcheck
 # How to ignore failures https://staticcheck.io/docs/configuration#line-based-linter-directives
 .PHONY: staticcheck
-staticcheck: $(STATICCHECK)
-	$(STATICCHECK) \
-		./control-plane-operator/... \
-		./control-plane-pki-operator/... \
-		./hypershift-operator/controllers/... \
-		./ignition-server/... \
-		./cmd/... \
-		./support/certs/... \
-		./support/releaseinfo/... \
-		./support/upsert/... \
-		./konnectivity-socks5-proxy/... \
-		./contrib/... \
-		./availability-prober/... \
-		./test/integration/... \
+staticcheck:
+	$(VERIFY) staticcheck
 
 # Build the docker image with official golang image
 .PHONY: docker-build
@@ -789,22 +574,12 @@ run-operator-locally-aws-dev:
 	@$(RUN_OPERATOR_LOCALLY_AWS)
 
 .PHONY: verify-docs-nav
-verify-docs-nav: $(PYTHON_VENV_STAMP) ## Verify docs nav entries are sorted alphabetically.
-	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
-		$(PYTHON_VENV)/bin/python3 hack/verify-docs-nav-order.py; \
-	else \
-		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-docs-nav-order.py; \
-	fi
+verify-docs-nav:
+	$(VERIFY) verify-docs-nav
 
 .PHONY: verify-tekton-pipeline-pairs
-verify-tekton-pipeline-pairs: $(PYTHON_VENV_STAMP) ## Verify paired Tekton PipelineRun files (PR-branch vs main-branch pipeline) stay in sync.
-	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
-		$(PYTHON_VENV)/bin/python3 -m pytest -q hack/verify-tekton-pipeline-pairs_test.py && \
-		$(PYTHON_VENV)/bin/python3 hack/verify-tekton-pipeline-pairs.py; \
-	else \
-		PYTHONPATH=$(PYTHON_VENV) python3 -m pytest -q hack/verify-tekton-pipeline-pairs_test.py && \
-		PYTHONPATH=$(PYTHON_VENV) python3 hack/verify-tekton-pipeline-pairs.py; \
-	fi
+verify-tekton-pipeline-pairs:
+	$(VERIFY) verify-tekton-pipeline-pairs
 
 COMMIT_LAYOUT := skills/restructure-commits/commit_layout.py
 
@@ -814,11 +589,12 @@ verify-commit-layout: ## Verify component commit layout of BASE..HEAD_REF (restr
 	@python3 $(COMMIT_LAYOUT) verify --base "$(BASE)" --head "$(or $(HEAD_REF),HEAD)" $(if $(EXPECT_TREE),--expect-tree "$(EXPECT_TREE)")
 
 .PHONY: ownership-rules
-ownership-rules: ## Regenerate the restructure-commits ownership.json and SKILL.md table from repository facts.
-	python3 skills/restructure-commits/generate_ownership.py
+ownership-rules:
+	$(VERIFY) ownership-rules
 
 .PHONY: test-commit-layout
-test-commit-layout: $(PYTHON_VENV_STAMP) ## Test the restructure-commits layout tool and ownership generator.
+test-commit-layout: $(PYTHON_VENV_STAMP) ## Test commit layout and Go ownership generation.
+	CGO_ENABLED=0 $(GO) -C $(TOOLS_DIR) test ./verify -count=1
 	@if [ -x $(PYTHON_VENV)/bin/python3 ]; then \
 		$(PYTHON_VENV)/bin/python3 -m pytest -q -p no:cacheprovider skills/restructure-commits; \
 	else \
@@ -826,40 +602,24 @@ test-commit-layout: $(PYTHON_VENV_STAMP) ## Test the restructure-commits layout 
 	fi
 
 .PHONY: verify-codespell
-verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*,./pkg/capi/*,./hack/capi-vendor/*"
+verify-codespell:
+	$(VERIFY) verify-codespell
 
 .PHONY: verify-api-deps
-verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependency allowlist and shared requirements/replacements.
-	cd $(TOOLS_DIR) && $(GO) test ./verify-api-deps -count=1
-	@$(VERIFY_API_DEPS)
+verify-api-deps:
+	$(VERIFY) verify-api-deps
 
 .PHONY: run-gitlint
-run-gitlint: $(GITLINT)
-ifdef PULL_BASE_SHA
-	@echo "Linting commits from $(PULL_BASE_SHA) to $(PULL_PULL_SHA) (CI: PR targeting $(PULL_BASE_SHA))"
-	@$(GITLINT) --commits $(PULL_BASE_SHA)..$(PULL_PULL_SHA)
-else
-	$(eval MERGE_BASE := $(shell \
-		git merge-base HEAD origin/HEAD 2>/dev/null || \
-		git merge-base HEAD origin/main 2>/dev/null || \
-		git merge-base HEAD origin/master 2>/dev/null || \
-		echo "HEAD~1" \
-	))
-	@echo "Linting commits from $(MERGE_BASE) to HEAD (local development)"
-	@$(GITLINT) --commits $(MERGE_BASE)..HEAD
-endif
+run-gitlint:
+	$(VERIFY) run-gitlint
 
 .PHONY: run-gitlint-commit-msg
-run-gitlint-commit-msg: $(GITLINT)
-	@test -n "$(COMMIT_MSG_FILE)" || { echo "COMMIT_MSG_FILE must be set" >&2; exit 1; }
-	@echo "Linting pending commit message from $(COMMIT_MSG_FILE)"
-	@$(GITLINT) --msg-filename "$(COMMIT_MSG_FILE)"
+run-gitlint-commit-msg:
+	COMMIT_MSG_FILE="$(COMMIT_MSG_FILE)" $(VERIFY) run-gitlint-commit-msg
 
 .PHONY: cpo-container-sync
 cpo-container-sync:
-	@echo "Syncing CPO container images"
-	./hack/tools/git-hooks/cpo-containerfiles-in-sync.sh ./Containerfile.control-plane ./Dockerfile.control-plane
+	$(VERIFY) cpo-container-sync
 
 ## Run Karpenter upstream e2e tests. Requires:
 # - KARPENTER_CORE_DIR to be set to the path of the karpenter-core repository
@@ -873,35 +633,8 @@ karpenter-upstream-e2e: $(YQ)
 ## Tooling Binaries
 ## --------------------------------------
 
-##@ Python tooling (codespell, gitlint, pyyaml)
+# Python is used only by the optional commit-restructuring test suite.
 $(PYTHON_VENV_STAMP):
-	rm -rf $(PYTHON_VENV) && \
-	if command -v uv >/dev/null 2>&1; then \
-		uv venv $(PYTHON_VENV) && \
-		uv pip install --python=$(PYTHON_VENV)/bin/python \
-			codespell==$(CODESPELL_VER) \
-			gitlint==$(GITLINT_VER) \
-			pyyaml==$(PYYAML_VER) \
-			pytest==$(PYTEST_VER); \
-	else \
-		mkdir -p $(PYTHON_VENV) && \
-		python3 -m pip install --target=$(PYTHON_VENV) \
-			codespell==$(CODESPELL_VER) \
-			gitlint==$(GITLINT_VER) \
-			pyyaml==$(PYYAML_VER) \
-			pytest==$(PYTEST_VER) --upgrade && \
-		for cmd in $(CODESPELL_BIN) $(GITLINT_BIN); do \
-			mv $(PYTHON_VENV)/bin/$$cmd $(PYTHON_VENV)/$$cmd.py && \
-			printf '#!/bin/sh\nexport PYTHONPATH="%s$${PYTHONPATH:+:$$PYTHONPATH}"\nexec python3 "%s/%s.py" "$$@"\n' \
-				$(abspath $(PYTHON_VENV)) $(abspath $(PYTHON_VENV)) "$$cmd" \
-				> $(PYTHON_VENV)/bin/$$cmd && \
-			chmod +x $(PYTHON_VENV)/bin/$$cmd; \
-		done; \
-	fi && \
+	python3 -m venv $(PYTHON_VENV)
+	$(PYTHON_VENV)/bin/python -m pip install pytest==$(PYTEST_VER)
 	touch $@
-
-codespell: $(CODESPELL) ## Build a local copy of codespell.
-$(CODESPELL): $(PYTHON_VENV_STAMP)
-
-gitlint: $(GITLINT) ## Install local copy of gitlint.
-$(GITLINT): $(PYTHON_VENV_STAMP)

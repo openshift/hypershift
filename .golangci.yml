@@ -24,7 +24,7 @@ linters:
   settings:
     custom:
       hypershiftlinter:
-        path: hack/tools/bin/hypershiftlinter.so
+        type: module
         description: "Enforces HyperShift test conventions and HC/HCP status-writing rules"
         settings:
           analyzers:

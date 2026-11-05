@@ -1,15 +1,19 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
-	kyaml "sigs.k8s.io/yaml"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	"sigs.k8s.io/crdify/pkg/config"
 	"sigs.k8s.io/crdify/pkg/runner"
+	kyaml "sigs.k8s.io/yaml"
 )
 
 func TestIsCRDYAML(t *testing.T) {
@@ -154,27 +158,29 @@ func TestCompareCRDs_BreakingChanges(t *testing.T) {
 	crdifyRunner := newCrdifyRunner(t)
 
 	tests := []struct {
-		name string
-		old  string
-		new  string
+		name        string
+		old         string
+		new         string
+		wantFailure bool
 	}{
 		{
-			name: "When removing a field it should detect the breaking change",
+			name: "When removing a field, it should warn under repository policy",
 			old:  crdWithFields([]fieldSpec{{name: "fieldA", fieldType: "string"}, {name: "fieldB", fieldType: "string"}}),
 			new:  crdWithFields([]fieldSpec{{name: "fieldA", fieldType: "string"}}),
 		},
 		{
-			name: "When removing an enum value it should detect the breaking change",
+			name: "When removing an enum value, it should warn under repository policy",
 			old:  crdWithEnum("status", []string{"Active", "Inactive", "Pending"}),
 			new:  crdWithEnum("status", []string{"Active", "Inactive"}),
 		},
 		{
-			name: "When adding a new required field it should detect the breaking change",
-			old:  crdWithRequiredFields([]fieldSpec{{name: "fieldA", fieldType: "string"}}, []string{"fieldA"}),
-			new:  crdWithRequiredFields([]fieldSpec{{name: "fieldA", fieldType: "string"}, {name: "fieldB", fieldType: "string"}}, []string{"fieldA", "fieldB"}),
+			name:        "When adding a new required field, it should reject the breaking change",
+			wantFailure: true,
+			old:         crdWithRequiredFields([]fieldSpec{{name: "fieldA", fieldType: "string"}}, []string{"fieldA"}),
+			new:         crdWithRequiredFields([]fieldSpec{{name: "fieldA", fieldType: "string"}, {name: "fieldB", fieldType: "string"}}, []string{"fieldA", "fieldB"}),
 		},
 		{
-			name: "When changing a field type it should detect the breaking change",
+			name: "When changing a field type, it should warn under repository policy",
 			old:  crdWithFields([]fieldSpec{{name: "fieldA", fieldType: "string"}}),
 			new:  crdWithFields([]fieldSpec{{name: "fieldA", fieldType: "integer"}}),
 		},
@@ -188,7 +194,14 @@ func TestCompareCRDs_BreakingChanges(t *testing.T) {
 			newCRD := mustUnmarshalCRD(t, tt.new)
 
 			results := compareCRDs(oldCRD, newCRD, crdifyRunner)
-			g.Expect(results.HasFailures()).To(BeTrue(), "expected breaking change to be detected")
+			g.Expect(results.HasFailures()).To(Equal(tt.wantFailure))
+			if !tt.wantFailure {
+				var collected checkResults
+				for _, version := range results.SameVersionValidation {
+					collectPropertyResults(&collected, "fixture", version.Version, version.PropertyComparisons)
+				}
+				g.Expect(collected.warnings).NotTo(BeEmpty(), "warn-only policy must still report the schema change")
+			}
 		})
 	}
 }
@@ -393,4 +406,96 @@ spec:
       status: {}
 `
 	return yaml
+}
+
+func TestLoadCRDFromCommit(t *testing.T) {
+	// Hooks export repository-local Git variables. The fixture must discover its
+	// own repository rather than reinitialize the checkout running the hook.
+	for _, value := range os.Environ() {
+		key, _, _ := strings.Cut(value, "=")
+		if strings.HasPrefix(key, "GIT_") {
+			t.Setenv(key, value[len(key)+1:])
+			if err := os.Unsetenv(key); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	repo := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "--initial-branch=main")
+	// Avoid inheriting repository hooks and signing configuration in this fixture.
+	git("config", "core.hooksPath", filepath.Join(repo, "no-hooks"))
+	git("config", "commit.gpgsign", "false")
+	git("config", "user.name", "HyperShift Tests")
+	git("config", "user.email", "hypershift-tests@redhat.com")
+	data := []byte(`apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: clusters.hypershift.openshift.io
+spec:
+  versions:
+  - name: v1beta1
+    schema:
+      openAPIV3Schema:
+        type: object
+`)
+	path := "cluster [v1].yaml"
+	if err := os.WriteFile(filepath.Join(repo, path), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	git("add", path)
+	git("commit", "-m", "fixture")
+	// This is legal to Git, but go-git rejects it with 'branch config: invalid merge'.
+	git("config", "branch.unrelated.merge", "not-a-branch-ref")
+	hash, err := resolveBaseHash(repo, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, hash, path string
+		missing, invalid bool
+	}{
+		{"When a committed path contains glob characters, it should read it literally", hash, path, false, false},
+		{"When a CRD is new, it should return no base", hash, "missing.yaml", true, false},
+		{"When no base is provided, it should return no CRD", "", path, true, false},
+		{"When the base hash is invalid, it should fail", "invalid-base", path, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			crd, err := loadCRDFromCommit(repo, tc.hash, tc.path)
+			if tc.invalid {
+				if err == nil {
+					t.Fatal("invalid revision accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.missing {
+				if crd != nil {
+					t.Fatal("expected no base")
+				}
+			} else if crd == nil || crd.Name != "clusters.hypershift.openshift.io" || len(crd.Spec.Versions) != 1 {
+				t.Fatalf("unexpected CRD: %v", crd)
+			}
+		})
+	}
+	if _, err := resolveBaseHash(repo, "does-not-exist"); err == nil {
+		t.Fatal("missing ref accepted")
+	}
+	// Exercise the same lookup from a linked worktree.
+	worktree := filepath.Join(t.TempDir(), "linked")
+	git("worktree", "add", "--detach", worktree, "HEAD")
+	if got, err := resolveBaseHash(worktree, "main"); err != nil || got != hash {
+		t.Fatalf("linked worktree: %q, %v", got, err)
+	}
 }

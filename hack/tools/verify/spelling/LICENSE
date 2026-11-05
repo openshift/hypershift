@@ -1,0 +1,10 @@
+The codespell dictionary files are derivative works of English Wikipedia and
+are licensed under the Creative Commons Attribution-ShareAlike 3.0 Unported
+license: https://creativecommons.org/licenses/by-sa/3.0/
+
+Attribution: English Wikipedia contributors and codespell contributors.
+Original source and history:
+https://github.com/codespell-project/codespell/tree/v2.4.1/codespell_lib/data
+https://en.wikipedia.org/wiki/Wikipedia:Lists_of_common_misspellings
+
+No changes have been made to the dictionary data.

@@ -11,6 +11,12 @@ import (
 )
 
 func TestBuildAnalyzers(t *testing.T) {
+	t.Run("When an analyzer is unknown, it should reject the configuration", func(t *testing.T) {
+		if _, err := BuildAnalyzers(map[string]any{"analyzers": map[string]any{"enable": []string{"unknown"}}}); err == nil {
+			t.Fatal("unknown analyzer was accepted")
+		}
+	})
+
 	t.Run("When hcpstatuspatch is enabled, it should select the HC and HCP analyzer", func(t *testing.T) {
 		raw := map[string]any{
 			"analyzers": map[string]any{"enable": []any{"hcpstatuspatch"}},

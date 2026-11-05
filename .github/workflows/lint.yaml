@@ -8,6 +8,16 @@ on:
 
 jobs:
   lint:
-    uses: openshift/hypershift/.github/workflows/lint-reusable.yaml@main
+    uses: ./.github/workflows/verify-reusable.yaml
+    with:
+      target: lint
+    permissions:
+      contents: read
+  lint-macos:
+    if: github.base_ref == 'main'
+    uses: ./.github/workflows/verify-reusable.yaml
+    with:
+      target: lint
+      runner: macos-15
     permissions:
       contents: read

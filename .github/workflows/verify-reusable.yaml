@@ -2,22 +2,39 @@ name: Verify (Reusable)
 
 on:
   workflow_call:
+    inputs:
+      target:
+        type: string
+        default: verify
+      runner:
+        type: string
+        default: arc-runner-set
 
 permissions:
   contents: read
 
 jobs:
   verify:
-    name: Verify
-    runs-on: arc-runner-set
+    name: ${{ inputs.target == 'lint' && 'Lint' || 'Verify' }}
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - run: |
-          if [ -n "${{ github.base_ref }}" ]; then
-            git fetch origin "${{ github.base_ref }}:${{ github.base_ref }}"
-          fi
-      - run: make verify-ci
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: inputs.runner == 'macos-15'
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            api/go.sum
+            hack/tools/go.sum
+      - run: make test-linter
+        if: inputs.runner == 'macos-15' && inputs.target == 'lint'
+      - run: make "$VERIFY_TARGET"
+        env:
+          VERIFY_TARGET: ${{ inputs.target }}
+          PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PULL_PULL_SHA: ${{ github.event.pull_request.head.sha }}

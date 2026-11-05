@@ -61,14 +61,15 @@ The plugin ships 10 analyzers, scoped so each rule only fires where it applies.
 
 ## How it's built and run
 
-The plugin builds as a Go shared library (`.so`) via
-`go build -buildmode=plugin`. The plugin and the golangci-lint host binary must
-be compiled from the same `hack/tools/go.mod` — a `golang.org/x/tools` version
-mismatch causes `plugin.Open()` to fail at runtime.
+The analyzer is compiled into our native golangci-lint executable using the
+[module plugin system](https://golangci-lint.run/docs/plugins/module-plugins/),
+alongside kube-api-linter. Both custom linters and the upstream linters use the
+versions in `hack/tools/go.mod`. The executable is built with `CGO_ENABLED=0`;
+it does not load `.so` libraries or require a C compiler.
 
 Relevant Makefile targets:
 
-- `make hypershiftlinter.so` — build the plugin shared library.
+- `make golangci-lint` — build the native executable with both custom linters.
 - `make hypershift-lint-all` — run the enabled custom analyzers against the
   current tree.
 - `make lint` — run normal lint checks, including these analyzers.
