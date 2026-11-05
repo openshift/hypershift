@@ -130,9 +130,10 @@ require (
 	sigs.k8s.io/karpenter v1.13.0
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96
 	sigs.k8s.io/secrets-store-csi-driver v1.6.1
-	sigs.k8s.io/structured-merge-diff/v6 v6.4.2
 	sigs.k8s.io/yaml v1.6.0
 )
+
+require sigs.k8s.io/structured-merge-diff/v6 v6.4.2
 
 require (
 	cel.dev/expr v0.25.2 // indirect
