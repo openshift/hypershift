@@ -21,6 +21,10 @@ jobs:
           path: hack/tools/bin
           key: deadcode-tools-${{ hashFiles('Makefile', 'hack/tools/go.mod', 'hack/tools/go.sum', 'hack/tools/tools.go', 'hack/tools/vendor/modules.txt', 'hack/tools/deadcode-report/**/*.go') }}
       - name: Run deadcode gate
+        # Advisory while staged feature PRs can introduce intentionally unreachable code.
+        # https://redhat.atlassian.net/browse/CNTRLPLANE-4936 will restore mandatory
+        # enforcement once a policy is agreed upon and implemented.
+        continue-on-error: true
         env:
           ARTIFACT_DIR: ${{ runner.temp }}/deadcode
         run: make verify-deadcode
