@@ -163,6 +163,16 @@ You can monitor rollout progress through the following NodePool conditions:
 
 These conditions are set to `True` while the corresponding rollout is in progress and are cleared when it completes.
 
+### Cluster API UpToDate Status for Replace NodePools
+
+With Cluster API (CAPI) v1.14 or later, Replace NodePools can report `UpToDate=False` on their Machines and `status.upToDateReplicas=0` on their MachineDeployment even after the rollout completes and the replacement Nodes are Ready.
+
+CAPI compares `Node.status.nodeInfo.kubeletVersion` with `Machine.spec.version` when calculating the Machine's `UpToDate` condition. HyperShift sets `Machine.spec.version` to the **OCP release version**, such as `4.20.3`, while the Node reports a **Kubernetes kubelet version**, such as `v1.33.5+<hash>`. These values differ, so the CAPI fields can continue to indicate that the Machines are not up to date.
+
+HyperShift determines Replace rollout completion from MachineDeployment and MachineSet state instead of `upToDateReplicas`: the desired replicas must be available, the current-revision MachineSet must be fully rolled out, older MachineSets must have no replicas, and the MachineDeployment must have observed its current generation. This completion check does not change CAPI's `UpToDate` condition or `upToDateReplicas` counter.
+
+Use the NodePool's `UpdatingVersion`, `UpdatingConfig`, and `UpdatingPlatformMachineTemplate` conditions above to monitor rollout progress. For a release rollout, also confirm that `NodePool.status.version` matches the target OCP version. A false Machine `UpToDate` condition or a zero `upToDateReplicas` counter alone does not mean that a NodePool rollout is incomplete.
+
 ## Summary Table
 
 | Change | Triggers Rollout | Affects |
