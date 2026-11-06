@@ -283,19 +283,9 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 		return p.dialDirectWithProxy(network, requestAddress)
 	}
 
-	// return a dial direct function ignoring any proxy environment settings
-	// Check if konnectivity is unhealthy (based on DNS resolution failures)
-	// IMPORTANT: Never bypass konnectivity for DNS connections (port 53), as we need to
-	// attempt DNS resolution through konnectivity to check if it has recovered.
-	// The DNS server is in the guest cluster and unreachable from management cluster.
-	isDNSConnection := requestPort == "53"
-	if !isDNSConnection && !p.konnectivityHealth.isHealthy() && p.resolveFromManagementClusterDNS {
-		log.Info("Konnectivity is unhealthy, dialing direct via management cluster")
-		return p.dialDirectWithoutProxy(ctx, network, requestAddress)
-	}
-
 	// Resolve hostname to IPs when needed (HTTPS proxy path).
-	// Resolve() stores fallback IPs in ctx for the loop below.
+	// Resolve before choosing the route so DNS failures can trigger fallback and
+	// debounced guest DNS retries can detect recovery. Resolve() also stores fallback IPs.
 	if p.resolveBeforeDial && !p.disableResolver && !isIP(requestHost) {
 		log.Info("Host name must be resolved before dialing", "host", requestHost)
 		var ip net.IP
@@ -305,6 +295,36 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 		}
 		log.Info("Host name resolved", "ip", ip.String())
 		requestAddress = net.JoinHostPort(ip.String(), requestPort)
+	}
+
+	// return a dial direct function ignoring any proxy environment settings
+	// Check if konnectivity is unhealthy (based on DNS resolution failures)
+	// IMPORTANT: Never bypass konnectivity for DNS connections (port 53), as we need to
+	// attempt DNS resolution through konnectivity to check if it has recovered.
+	// The DNS server is in the guest cluster and unreachable from management cluster.
+	isDNSConnection := requestPort == "53"
+	if !isDNSConnection && !p.konnectivityHealth.isHealthy() && p.resolveFromManagementClusterDNS {
+		// IP destinations (including upstream proxies) skip name resolution, so
+		// give them a debounced opportunity to detect tunnel recovery as well.
+		if p.konnectivityHealth.beginRetry() {
+			conn, dialErr := func() (net.Conn, error) {
+				defer p.konnectivityHealth.endRetry()
+				const recoveryTimeout = 5 * time.Second
+				retryCtx, cancel := context.WithTimeout(ctx, recoveryTimeout)
+				defer cancel()
+				conn, err := p.dialThroughKonnectivity(retryCtx, requestAddress, requestHost)
+				if err == nil {
+					p.konnectivityHealth.markSuccess()
+				}
+				return conn, err
+			}()
+			if dialErr == nil {
+				return conn, nil
+			}
+			log.Info("Tunnel recovery attempt failed, retaining management cluster fallback")
+		}
+		log.Info("Konnectivity is unhealthy, dialing direct via management cluster")
+		return p.dialDirectWithoutProxy(ctx, network, requestAddress)
 	}
 
 	// Build address list: primary address + any fallback IPs from context.
@@ -434,14 +454,14 @@ func (p *konnectivityProxy) dialDirectWithProxy(network, addr string) (net.Conn,
 	return p.httpDialer.Dial(network, addr)
 }
 
-// konnectivityHealth tracks the health of the konnectivity tunnel based on DNS resolution success/failure.
+// konnectivityHealth tracks tunnel health based on DNS resolution and debounced connection retries.
 // DNS lookup through konnectivity is used as a health indicator - if it fails, it typically means
 // konnectivity is down (usually because there are no workers in the data plane).
 type konnectivityHealth struct {
 	fallbackToMC    bool          // Whether to fallback to management cluster DNS resolution and direct dialer
 	lastFailureTime time.Time     // Time of last DNS resolution failure
-	lastRetryTime   time.Time     // Time of last DNS resolution retry
-	retryInterval   time.Duration // Interval between DNS resolution retries
+	lastRetryTime   time.Time     // Time of last recovery retry
+	retryInterval   time.Duration // Interval between recovery retries
 	activeRetry     bool          // Whether a retry is currently in progress, prevents multiple simultaneous retries
 	mutex           sync.RWMutex  // Mutex to protect the health state
 }
@@ -453,7 +473,7 @@ func newKonnectivityHealth() *konnectivityHealth {
 }
 
 // beginRetry determines if a retry attempt should proceed.
-// Returns true if the caller should attempt guest DNS resolution.
+// Returns true if the caller should attempt guest DNS resolution or a tunnel connection.
 // Returns false if we're in fallback mode and either:
 // - Another goroutine is already retrying, or
 // - Not enough time has passed since the last retry
@@ -485,7 +505,7 @@ func (kh *konnectivityHealth) endRetry() {
 	kh.mutex.Unlock()
 }
 
-// markSuccess records that guest DNS succeeded (konnectivity is healthy)
+// markSuccess records that guest DNS or a tunnel connection succeeded.
 func (kh *konnectivityHealth) markSuccess() {
 	kh.mutex.Lock()
 	defer kh.mutex.Unlock()
