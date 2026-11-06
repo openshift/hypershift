@@ -598,7 +598,7 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream, false)
 }
 
 // hostedClusterFromHCP creates a barebones in-memory HostedCluster from a HostedControlPlane.

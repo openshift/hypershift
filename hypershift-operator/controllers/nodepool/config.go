@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -53,6 +54,22 @@ type ConfigGenerator struct {
 	// This field is intentionally outside rolloutConfig because it does not
 	// participate in the config hash that drives rollouts.
 	resolvedRHELStreamForBootImage string
+	// The trust-bundle fields below are only populated when the selected CPO advertises
+	// rendered-trust-bundle-validation. Older CPOs keep the legacy name-based hash.
+	//
+	// additionalTrustBundleHash and proxyTrustedCAHash hash the ca-bundle.crt content of the
+	// ConfigMaps referenced by hostedCluster.spec.additionalTrustBundle and
+	// hostedCluster.spec.configuration.proxy.trustedCA.
+	additionalTrustBundleHash string
+	proxyTrustedCAHash        string
+	// trustBundleContentHash identifies the combined trust-bundle content. It is compared
+	// against the NodePool trust-bundle baseline annotation to decide whether the content
+	// participates in the config hash.
+	trustBundleContentHash string
+	// renderedTrustBundleHash is the hash of the aggregate bundle the CPO renders into the
+	// machine-config-server config. The ignition server validates against it before
+	// generating a payload so that it never caches a payload with stale CA content.
+	renderedTrustBundleHash string
 	*rolloutConfig
 }
 
@@ -64,6 +81,11 @@ type rolloutConfig struct {
 	releaseImage              *releaseinfo.ReleaseImage
 	pullSecretName            string
 	additionalTrustBundleName string
+	// trustBundleRolloutInput is empty while the trust-bundle content matches the baseline
+	// recorded on the NodePool (or no baseline exists yet), keeping the hash identical to the
+	// legacy name-based formula. Once the content diverges from the baseline it holds the
+	// content hash, so a ca-bundle.crt edit produces a new config hash and rolls out.
+	trustBundleRolloutInput string
 	// globalConfig represents input from hostedCluster.spec.config that requires a NodePool rollout.
 	globalConfig string
 	// rawConfig is an mco consumable version of NodePool.spec.config, tuneConfig and any hypershift core machine config.
@@ -84,7 +106,10 @@ type rolloutConfig struct {
 }
 
 // NewConfigGenerator is the contract to create a new ConfigGenerator.
-func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string, controlPlaneNamespace string, resolvedRHELStream string) (*ConfigGenerator, error) {
+// cpoHasRenderedTrustBundleValidation indicates whether the selected CPO advertises the
+// rendered-trust-bundle-validation capability. When false, trust-bundle content is not
+// read and the legacy name-based hash is used, so older CPOs keep their existing behavior.
+func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string, controlPlaneNamespace string, resolvedRHELStream string, cpoHasRenderedTrustBundleValidation bool) (*ConfigGenerator, error) {
 	if client == nil {
 		return nil, fmt.Errorf("client can't be nil")
 	}
@@ -140,6 +165,12 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		cg.rolloutConfig.additionalTrustBundleName = hostedCluster.Spec.AdditionalTrustBundle.Name
 	}
 
+	if cpoHasRenderedTrustBundleValidation {
+		if err := cg.computeTrustBundleHashes(ctx); err != nil {
+			return nil, err
+		}
+	}
+
 	mcoRawConfig, err := cg.generateMCORawConfig(ctx, hostedCluster.Spec.Capabilities)
 	if err != nil {
 		return nil, err
@@ -164,7 +195,7 @@ func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 // TODO(alberto): hash the struct directly instead of the string representation field by field.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) Hash() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig + cg.rhelStream)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.trustBundleRolloutInput + cg.globalConfig + cg.rhelStream)
 }
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
@@ -172,7 +203,131 @@ func (cg *ConfigGenerator) Hash() string {
 // TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) HashWithoutVersion() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName + cg.rhelStream)
+	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName + cg.trustBundleRolloutInput + cg.rhelStream)
+}
+
+// TrustBundleContentHash returns the identity of the current trust-bundle content, or an
+// empty string when the selected CPO does not support rendered trust-bundle validation.
+// Callers persist it as the trust-bundle baseline when none is recorded yet.
+func (cg *ConfigGenerator) TrustBundleContentHash() string {
+	return cg.trustBundleContentHash
+}
+
+// computeTrustBundleHashes reads the trust-bundle ConfigMaps referenced by the HostedCluster
+// and derives the content, rendered and rollout identities from a single snapshot.
+func (cg *ConfigGenerator) computeTrustBundleHashes(ctx context.Context) error {
+	hc := cg.hostedCluster
+	var err error
+	if hc.Spec.AdditionalTrustBundle != nil && hc.Spec.AdditionalTrustBundle.Name != "" {
+		cg.additionalTrustBundleHash, err = configMapCABundleHash(ctx, cg.Client, hc.Namespace, hc.Spec.AdditionalTrustBundle.Name)
+		if err != nil {
+			return err
+		}
+	}
+	if proxyTrustedCAName := proxyTrustedCAName(hc); proxyTrustedCAName != "" {
+		cg.proxyTrustedCAHash, err = configMapCABundleHash(ctx, cg.Client, hc.Namespace, proxyTrustedCAName)
+		if err != nil {
+			return err
+		}
+	}
+	cg.renderedTrustBundleHash, err = renderedTrustBundleHash(ctx, cg.Client, hc, cg.additionalTrustBundleHash, cg.proxyTrustedCAHash)
+	if err != nil {
+		return err
+	}
+	cg.trustBundleContentHash = supportutil.HashSimple("additional:" + cg.additionalTrustBundleHash + ",proxy:" + cg.proxyTrustedCAHash)
+
+	// Content matching the baseline (or no baseline yet) keeps the legacy hash so that
+	// upgrading the HyperShift Operator does not replace existing nodes.
+	baseline := cg.nodePool.GetAnnotations()[nodePoolAnnotationTrustBundleBaseline]
+	if baseline != "" && baseline != cg.trustBundleContentHash {
+		cg.rolloutConfig.trustBundleRolloutInput = cg.trustBundleContentHash
+	}
+	return nil
+}
+
+func proxyTrustedCAName(hc *hyperv1.HostedCluster) string {
+	if hc != nil && hc.Spec.Configuration != nil && hc.Spec.Configuration.Proxy != nil {
+		return hc.Spec.Configuration.Proxy.TrustedCA.Name
+	}
+	return ""
+}
+
+func additionalTrustBundleName(hc *hyperv1.HostedCluster) string {
+	if hc != nil && hc.Spec.AdditionalTrustBundle != nil {
+		return hc.Spec.AdditionalTrustBundle.Name
+	}
+	return ""
+}
+
+// TrustBundleConfigError indicates a HostedCluster-referenced trust-bundle ConfigMap
+// (additionalTrustBundle or proxy.trustedCA) is missing or malformed. Callers should
+// surface this as ValidMachineConfig=False and soft-fail reconcile so transient
+// ConfigMap delete/recreate windows do not hard-fail the NodePool reconcile loop.
+type TrustBundleConfigError struct {
+	err error
+}
+
+func (e *TrustBundleConfigError) Error() string {
+	return e.err.Error()
+}
+
+func (e *TrustBundleConfigError) Unwrap() error {
+	return e.err
+}
+
+// getConfigMapWithCABundle fetches a ConfigMap that must contain certs.UserCABundleMapKey.
+// Used by both rollout content hashing and getAdditionalTrustBundle.
+func getConfigMapWithCABundle(ctx context.Context, c client.Client, namespace, name string) (*corev1.ConfigMap, error) {
+	cm := &corev1.ConfigMap{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, cm); err != nil {
+		return nil, err
+	}
+	if _, ok := cm.Data[certs.UserCABundleMapKey]; !ok {
+		return nil, fmt.Errorf("ConfigMap %s/%s missing %q key", namespace, name, certs.UserCABundleMapKey)
+	}
+	return cm, nil
+}
+
+func configMapCABundleHash(ctx context.Context, c client.Client, namespace, name string) (string, error) {
+	cm, err := getConfigMapWithCABundle(ctx, c, namespace, name)
+	if err != nil {
+		return "", &TrustBundleConfigError{err: fmt.Errorf("cannot get ConfigMap %s/%s: %w", namespace, name, err)}
+	}
+	return supportutil.HashSimple(cm.Data[certs.UserCABundleMapKey]), nil
+}
+
+// renderedTrustBundleHash returns the hash of the aggregate trust bundle the CPO renders
+// for the machine-config-server: additional trust bundle followed by proxy trustedCA.
+// Each ConfigMap is re-read and compared with the hash already computed so that all
+// derived identities come from the same content snapshot.
+func renderedTrustBundleHash(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, additionalHash, proxyHash string) (string, error) {
+	refs := []struct{ name, hash string }{
+		{additionalTrustBundleName(hc), additionalHash},
+		{proxyTrustedCAName(hc), proxyHash},
+	}
+	var bundle string
+	for _, ref := range refs {
+		if ref.name == "" {
+			continue
+		}
+		cm, err := getConfigMapWithCABundle(ctx, c, hc.Namespace, ref.name)
+		if err != nil {
+			return "", &TrustBundleConfigError{err: err}
+		}
+		data := cm.Data[certs.UserCABundleMapKey]
+		if supportutil.HashSimple(data) != ref.hash {
+			return "", &TrustBundleConfigError{err: fmt.Errorf("ConfigMap %s/%s changed while computing trust bundle hashes; retrying", hc.Namespace, ref.name)}
+		}
+		// Match the CPO's additional-then-proxy concatenation, including duplicate refs.
+		bundle += data
+	}
+	return supportutil.HashSimple(bundle), nil
+}
+
+// hostedClusterReferencesConfigMap reports whether the HostedCluster references the named
+// ConfigMap as a trust bundle.
+func hostedClusterReferencesConfigMap(hc *hyperv1.HostedCluster, configMapName string) bool {
+	return configMapName != "" && (additionalTrustBundleName(hc) == configMapName || proxyTrustedCAName(hc) == configMapName)
 }
 
 func (cg *ConfigGenerator) Version() string {

@@ -36,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
@@ -56,6 +57,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/blang/semver"
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 )
 
@@ -70,6 +72,12 @@ const (
 	nodePoolAnnotationUpgradeInProgressTrue  = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
 	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
 	nodePoolAnnotationMaxUnavailable         = "hypershift.openshift.io/nodePoolMaxUnavailable"
+	// nodePoolAnnotationTrustBundleBaseline records the trust-bundle content identity
+	// (additionalTrustBundle and proxy.trustedCA ca-bundle.crt) that is already reflected
+	// by the NodePool's current config hash. It is seeded once, without a rollout, the first
+	// time the selected CPO supports rendered trust-bundle validation. Content that differs
+	// from the baseline is folded into the config hash and rolls out the NodePool.
+	nodePoolAnnotationTrustBundleBaseline = "hypershift.openshift.io/nodePoolTrustBundleBaseline"
 
 	// ec2InstanceMetadataHTTPTokensAnnotation can be set to change the instance metadata options of the nodepool underlying EC2 instances
 	// possible values are 'required' (i.e. IMDSv2) or 'optional' which is the default.
@@ -92,6 +100,9 @@ const (
 	ContainerRuntimeConfigConfigMapLabel                 = "hypershift.openshift.io/containerruntimeconfig-config"
 	KubeletConfigConfigMapLabel                          = "hypershift.openshift.io/kubeletconfig-config"
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
+	// controlPlaneOperatorManagesRenderedTrustBundleValidation is advertised by CPO images whose
+	// ignition server validates the rendered trust bundle before generating a payload.
+	controlPlaneOperatorManagesRenderedTrustBundleValidation = "io.openshift.hypershift.control-plane-operator-manages.rendered-trust-bundle-validation"
 
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
 
@@ -119,6 +130,7 @@ type NotReadyError struct {
 }
 
 type CPOCapabilities struct {
+	RenderedTrustBundleValidation bool
 	DecompressAndDecodeConfig     bool
 	CreateDefaultAWSSecurityGroup bool
 }
@@ -392,15 +404,18 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
-	}
 
 	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hcluster)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to detect CPO capabilities: %w", err)
 	}
+
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream, cpoCapabilities.RenderedTrustBundleValidation)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
+	}
+	seedTrustBundleBaseline(log, nodePool, configGenerator)
+
 	token, err := NewToken(ctx, configGenerator, cpoCapabilities)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to create token: %w", err)
@@ -495,20 +510,42 @@ func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.Hosted
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate config: %w", err)
-	}
 
 	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hcluster)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect CPO capabilities: %w", err)
+	}
+
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream, cpoCapabilities.RenderedTrustBundleValidation)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate config: %w", err)
 	}
 	token, err := NewToken(ctx, configGenerator, cpoCapabilities)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create token: %w", err)
 	}
 	return token, nil
+}
+
+// seedTrustBundleBaseline records the current trust-bundle content as the NodePool baseline
+// when the selected CPO supports rendered trust-bundle validation and no baseline exists yet.
+// Seeding never changes the config hash: an absent baseline and a baseline equal to the current
+// content both keep the legacy hash. This lets existing NodePools adopt content tracking after
+// a HyperShift Operator or CPO upgrade without replacing nodes, while subsequent ca-bundle.crt
+// edits produce a new config hash and roll out.
+func seedTrustBundleBaseline(log logr.Logger, nodePool *hyperv1.NodePool, cg *ConfigGenerator) {
+	contentHash := cg.TrustBundleContentHash()
+	if contentHash == "" {
+		return
+	}
+	if _, ok := nodePool.Annotations[nodePoolAnnotationTrustBundleBaseline]; ok {
+		return
+	}
+	if nodePool.Annotations == nil {
+		nodePool.Annotations = make(map[string]string)
+	}
+	nodePool.Annotations[nodePoolAnnotationTrustBundleBaseline] = contentHash
+	log.Info("Seeded trust bundle baseline", "baseline", contentHash)
 }
 
 func isArchAndPlatformSupported(nodePool *hyperv1.NodePool) bool {
@@ -955,6 +992,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj 
 	}
 
 	// Otherwise reconcile NodePools which are referencing the given ConfigMap.
+	seen := sets.New[string]()
 	for key := range nodePoolList.Items {
 		reconcileNodePool := false
 		for _, v := range nodePoolList.Items[key].Spec.Config {
@@ -974,11 +1012,42 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj 
 			}
 		}
 		if reconcileNodePool {
-			result = append(result,
-				reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
-			)
+			req := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])}
+			seen.Insert(req.String())
+			result = append(result, req)
 		}
 
+	}
+
+	// Reconcile NodePools when a trust-bundle ConfigMap referenced by their HostedCluster
+	// (spec.additionalTrustBundle or spec.configuration.proxy.trustedCA) changes in place.
+	hcCache := map[string]*hyperv1.HostedCluster{}
+	for key := range nodePoolList.Items {
+		np := &nodePoolList.Items[key]
+		req := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(np)}
+		if seen.Has(req.String()) {
+			continue
+		}
+		hc, ok := hcCache[np.Spec.ClusterName]
+		if !ok {
+			hc = &hyperv1.HostedCluster{}
+			if err := r.Get(ctx, client.ObjectKey{Namespace: np.Namespace, Name: np.Spec.ClusterName}, hc); err != nil {
+				if !apierrors.IsNotFound(err) {
+					ctrl.LoggerFrom(ctx).Error(err, "Failed to get HostedCluster; skipping NodePool enqueue",
+						"hostedCluster", np.Spec.ClusterName,
+						"nodePool", client.ObjectKeyFromObject(np))
+				}
+				// Continue so a transient error for one HostedCluster does not drop
+				// enqueue requests for NodePools belonging to other HostedClusters.
+				continue
+			}
+			hcCache[np.Spec.ClusterName] = hc
+		}
+		if !hostedClusterReferencesConfigMap(hc, cm.Name) {
+			continue
+		}
+		seen.Insert(req.String())
+		result = append(result, req)
 	}
 
 	return result
@@ -1087,16 +1156,23 @@ func validateInfraID(infraID string) error {
 }
 
 func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*CPOCapabilities, error) {
+	return DetectCPOCapabilities(ctx, r.Client, hostedCluster, r.ReleaseProvider, r.ImageMetadataProvider, r.HypershiftOperatorImage)
+}
+
+// DetectCPOCapabilities reads the capabilities of the selected CPO image for all
+// bootstrap consumers, including NodePools and Karpenter NodeClasses.
+func DetectCPOCapabilities(ctx context.Context, c client.Client, hostedCluster *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, imageMetadataProvider supportutil.ImageMetadataProvider, hypershiftOperatorImage string) (*CPOCapabilities, error) {
+	r := &NodePoolReconciler{Client: c}
 	pullSecretBytes, err := r.getPullSecretBytes(ctx, hostedCluster)
 	if err != nil {
 		return nil, err
 	}
-	controlPlaneOperatorImage, err := supportutil.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := supportutil.GetControlPlaneOperatorImage(ctx, hostedCluster, releaseProvider, hypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
 
-	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImageMetadata, err := imageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
@@ -1104,6 +1180,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 	imageLabels := supportutil.ImageLabels(controlPlaneOperatorImageMetadata)
 	result := &CPOCapabilities{}
 	_, result.DecompressAndDecodeConfig = imageLabels[controlPlaneOperatorManagesDecompressAndDecodeConfig]
+	_, result.RenderedTrustBundleValidation = imageLabels[controlPlaneOperatorManagesRenderedTrustBundleValidation]
 	_, result.CreateDefaultAWSSecurityGroup = imageLabels[controlPlaneOperatorCreatesDefaultAWSSecurityGroup]
 
 	return result, nil
@@ -1138,12 +1215,9 @@ func getPullSecretName(ctx context.Context, crclient client.Client, hostedCluste
 }
 
 func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*corev1.ConfigMap, error) {
-	additionalTrustBundle := &corev1.ConfigMap{}
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.AdditionalTrustBundle.Name}, additionalTrustBundle); err != nil {
-		return additionalTrustBundle, fmt.Errorf("cannot get additionalTrustBundle %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name, err)
-	}
-	if _, hasKey := additionalTrustBundle.Data["ca-bundle.crt"]; !hasKey {
-		return additionalTrustBundle, fmt.Errorf(" additionalTrustBundle %s/%s missing %q key", additionalTrustBundle.Namespace, additionalTrustBundle.Name, "ca-bundle.crt")
+	additionalTrustBundle, err := getConfigMapWithCABundle(ctx, r.Client, hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name)
+	if err != nil {
+		return &corev1.ConfigMap{}, fmt.Errorf("cannot get additionalTrustBundle %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name, err)
 	}
 	return additionalTrustBundle, nil
 }
