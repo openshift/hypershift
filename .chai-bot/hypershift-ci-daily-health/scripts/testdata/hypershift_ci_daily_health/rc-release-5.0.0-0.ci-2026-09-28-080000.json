@@ -1,0 +1,12 @@
+{
+  "name": "5.0.0-0.ci-2026-09-28-080000",
+  "phase": "Accepted",
+  "results": {
+    "blockingJobs": {
+      "hypershift-e2e": {
+        "state": "Succeeded",
+        "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/y"
+      }
+    }
+  }
+}

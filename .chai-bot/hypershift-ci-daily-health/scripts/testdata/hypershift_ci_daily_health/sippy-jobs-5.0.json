@@ -1,0 +1,14 @@
+[
+  {
+    "name": "periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-cr-perma",
+    "variants": [
+      "JobTier:standard"
+    ]
+  },
+  {
+    "name": "periodic-ci-openshift-hypershift-release-5.0-periodics-e2e-ok-aws",
+    "variants": [
+      "JobTier:candidate"
+    ]
+  }
+]

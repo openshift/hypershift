@@ -1,0 +1,108 @@
+{
+  "responses": [
+    {
+      "pattern": "/api/job-registry$",
+      "file": "job-registry.json"
+    },
+    {
+      "pattern": "job-history/.*/pull-ci-openshift-hypershift-main-e2e-streak(?:\\?.*)?$",
+      "file": "prow-main-streak.html"
+    },
+    {
+      "pattern": "job-history/.*/pull-ci-openshift-hypershift-release-5\\.0-e2e-veto(?:\\?.*)?$",
+      "file": "prow-release-veto.html"
+    },
+    {
+      "pattern": "/310/prowjob\\.json$",
+      "file": "prowjob-310.json"
+    },
+    {
+      "pattern": "/309/prowjob\\.json$",
+      "file": "prowjob-309.json"
+    },
+    {
+      "pattern": "/308/prowjob\\.json$",
+      "file": "prowjob-308.json"
+    },
+    {
+      "pattern": "/410/prowjob\\.json$",
+      "file": "prowjob-410.json"
+    },
+    {
+      "pattern": "/409/prowjob\\.json$",
+      "file": "prowjob-409.json"
+    },
+    {
+      "pattern": "/408/prowjob\\.json$",
+      "file": "prowjob-408.json"
+    },
+    {
+      "pattern": "/api/v1/releasestream/5\\.1\\.0-0\\.ci/tags$",
+      "file": "rc-tags-5.1.0-0.ci.json"
+    },
+    {
+      "pattern": "/api/v1/releasestream/5\\.0\\.0-0\\.ci/tags$",
+      "file": "rc-tags-5.0.0-0.ci.json"
+    },
+    {
+      "pattern": "/api/v1/releasestream/5\\.1\\.0-0\\.ci/release/5\\.1\\.0-0\\.ci-2026-09-28-090000$",
+      "file": "rc-release-5.1.0-0.ci-2026-09-28-090000.json"
+    },
+    {
+      "pattern": "/api/v1/releasestream/5\\.0\\.0-0\\.ci/release/5\\.0\\.0-0\\.ci-2026-09-28-080000$",
+      "file": "rc-release-5.0.0-0.ci-2026-09-28-080000.json"
+    },
+    {
+      "pattern": "/api/jobs/analysis\\?.*periodic-ci-openshift-hypershift-release-4\\.21-periodics-e2e-nulls",
+      "status": 500
+    },
+    {
+      "pattern": "/api/jobs/analysis\\?.*periodic-ci-openshift-hypershift-release-5\\.1-periodics-e2e-perma-aws",
+      "file": "sippy-analysis-perma-aws.json"
+    },
+    {
+      "pattern": "/api/jobs/analysis\\?.*periodic-ci-openshift-hypershift-release-5\\.0-periodics-e2e-ok-aws",
+      "file": "sippy-analysis-ok-aws.json"
+    },
+    {
+      "pattern": "/api/jobs/analysis\\?.*periodic-ci-openshift-hypershift-release-4\\.22-periodics-e2e-both",
+      "file": "sippy-analysis-both.json"
+    },
+    {
+      "pattern": "/api/jobs/analysis\\?.*periodic-ci-openshift-hypershift-release-5\\.0-periodics-e2e-cr-perma",
+      "file": "sippy-analysis-cr-perma.json"
+    },
+    {
+      "pattern": "/api/jobs/analysis\\?.*periodic-ci-openshift-hypershift-release-4\\.20-periodics-e2e-cr-ok",
+      "file": "sippy-analysis-cr-ok.json"
+    },
+    {
+      "pattern": "/api/jobs/analysis\\?.*pull-ci-openshift-hypershift-main-e2e-streak",
+      "file": "sippy-analysis-streak.json"
+    },
+    {
+      "pattern": "/api/jobs\\?.*release=5\\.1&",
+      "file": "sippy-jobs-5.1.json"
+    },
+    {
+      "pattern": "/api/jobs\\?.*release=5\\.0&",
+      "file": "sippy-jobs-5.0.json"
+    },
+    {
+      "pattern": "/api/jobs\\?.*release=4\\.22&",
+      "file": "sippy-jobs-4.22.json"
+    },
+    {
+      "pattern": "/api/jobs\\?.*release=4\\.21&",
+      "file": "sippy-jobs-4.21.json"
+    },
+    {
+      "pattern": "/api/jobs\\?.*release=4\\.20&",
+      "file": "sippy-jobs-4.20.json"
+    },
+    {
+      "pattern": "/api/tests/recent_failures",
+      "file": "sippy-recent-failures.json"
+    }
+  ]
+}
