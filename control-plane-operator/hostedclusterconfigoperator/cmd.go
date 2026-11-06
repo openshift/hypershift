@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/globalps"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/hcpstatus"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/nodepooldrain"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/machine"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/node"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/nodecount"
@@ -73,6 +74,7 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	nodecount.ControllerName:         nodecount.Setup,
 	"machine":                        machine.Setup,
 	"drainer":                        drainer.Setup,
+	nodepooldrain.ControllerName:     nodepooldrain.Setup,
 	hcpstatus.ControllerName:         hcpstatus.Setup,
 	spotremediation.ControllerName:   spotremediation.Setup,
 	reencryption.ControllerName:      reencryption.Setup,
@@ -175,6 +177,11 @@ func allControllers() []string {
 	controllers := make([]string, 0, len(controllerFuncs))
 	for name := range controllerFuncs {
 		if name == nodecount.ControllerName && os.Getenv("ENABLE_SIZE_TAGGING") != "1" {
+			continue
+		}
+		// Feature-gated: the NodePool drain-readiness controller ships observe-only and is
+		// opted in per deployment until it has soaked.
+		if name == nodepooldrain.ControllerName && os.Getenv("ENABLE_NODEPOOL_DRAIN_READINESS") != "1" {
 			continue
 		}
 		controllers = append(controllers, name)

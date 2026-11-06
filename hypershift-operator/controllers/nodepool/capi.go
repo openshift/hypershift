@@ -456,6 +456,13 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 ) error {
 	nodePool := c.nodePool
 	capiClusterName := c.capiClusterName
+	// Keep existing templates stable to avoid a rollout when drain readiness is enabled.
+	// New deployments stamp the UID at creation, including Machines created in the
+	// same timestamp second as the NodePool.
+	templateNodePoolUID := machineDeployment.Spec.Template.Annotations[hyperv1.NodePoolUIDAnnotation]
+	if machineDeployment.CreationTimestamp.IsZero() && nodePool.UID != "" {
+		templateNodePoolUID = string(nodePool.UID)
+	}
 
 	c.setMachineDeploymentMetadata(machineDeployment, capiClusterName)
 
@@ -506,6 +513,9 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 				NodeVolumeDetachTimeoutSeconds: durationToSeconds(nodePool.Spec.NodeVolumeDetachTimeout),
 			},
 		},
+	}
+	if templateNodePoolUID != "" {
+		machineDeployment.Spec.Template.Annotations[hyperv1.NodePoolUIDAnnotation] = templateNodePoolUID
 	}
 
 	// This label must be on the MachineDeployment template so the spot MHC can select machines
@@ -1086,6 +1096,10 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 ) error {
 	nodePool := c.nodePool
 	capiClusterName := c.capiClusterName
+	templateNodePoolUID := machineSet.Spec.Template.Annotations[hyperv1.NodePoolUIDAnnotation]
+	if machineSet.CreationTimestamp.IsZero() && nodePool.UID != "" {
+		templateNodePoolUID = string(nodePool.UID)
+	}
 
 	log := ctrl.LoggerFrom(ctx)
 	// Set annotations and labels
@@ -1157,6 +1171,9 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 				NodeVolumeDetachTimeoutSeconds: durationToSeconds(nodePool.Spec.NodeVolumeDetachTimeout),
 			},
 		},
+	}
+	if templateNodePoolUID != "" {
+		machineSet.Spec.Template.Annotations[hyperv1.NodePoolUIDAnnotation] = templateNodePoolUID
 	}
 
 	// Add interruptible-instance label for spot instances

@@ -22,6 +22,7 @@ import (
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
@@ -49,6 +50,51 @@ func cacheLabelSelector() labels.Selector {
 		panic(err)
 	}
 	return selector
+}
+
+func guestCacheByObject(ingressEnabled bool) map[client.Object]cache.ByObject {
+	allSelector := cache.ByObject{Label: labels.Everything()}
+	byObject := map[client.Object]cache.ByObject{
+		&corev1.Namespace{}:           allSelector,
+		&configv1.Infrastructure{}:    allSelector,
+		&configv1.DNS{}:               allSelector,
+		&configv1.Ingress{}:           allSelector,
+		&operatorv1.Network{}:         allSelector,
+		&configv1.Network{}:           allSelector,
+		&configv1.Proxy{}:             allSelector,
+		&configv1.Build{}:             allSelector,
+		&configv1.Image{}:             allSelector,
+		&configv1.Project{}:           allSelector,
+		&configv1.ClusterVersion{}:    allSelector,
+		&configv1.FeatureGate{}:       allSelector,
+		&configv1.ClusterOperator{}:   allSelector,
+		&configv1.OperatorHub{}:       allSelector,
+		&configv1.Authentication{}:    allSelector,
+		&operatorv1.CloudCredential{}: allSelector,
+		&admissionregistrationv1.ValidatingWebhookConfiguration{}: allSelector,
+		&admissionregistrationv1.MutatingWebhookConfiguration{}:   allSelector,
+		&operatorv1.Storage{}:               allSelector,
+		&operatorv1.CSISnapshotController{}: allSelector,
+		&operatorv1.ClusterCSIDriver{}:      allSelector,
+		&operatorv1.OpenShiftAPIServer{}:    allSelector,
+
+		// Needed for inplace upgrader and NodePool drain readiness.
+		&corev1.Node{}: allSelector,
+
+		// Customer PDBs do not carry the HCCO managed label.
+		&policyv1.PodDisruptionBudget{}: allSelector,
+
+		// Needed for resource cleanup.
+		&corev1.Service{}:               allSelector,
+		&corev1.PersistentVolume{}:      allSelector,
+		&corev1.PersistentVolumeClaim{}: allSelector,
+		&imageregistryv1.Config{}:       allSelector,
+	}
+
+	if ingressEnabled {
+		byObject[&operatorv1.IngressController{}] = allSelector
+	}
+	return byObject
 }
 
 type ControllerSetupFunc func(context.Context, *HostedClusterConfigOperatorConfig) error
@@ -101,48 +147,6 @@ func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpN
 	}
 
 	cfg.UserAgent = config.HCCOUserAgent
-	allSelector := cache.ByObject{
-		Label: labels.Everything(),
-	}
-
-	byObject := map[client.Object]cache.ByObject{
-		&corev1.Namespace{}:           allSelector,
-		&configv1.Infrastructure{}:    allSelector,
-		&configv1.DNS{}:               allSelector,
-		&configv1.Ingress{}:           allSelector,
-		&operatorv1.Network{}:         allSelector,
-		&configv1.Network{}:           allSelector,
-		&configv1.Proxy{}:             allSelector,
-		&configv1.Build{}:             allSelector,
-		&configv1.Image{}:             allSelector,
-		&configv1.Project{}:           allSelector,
-		&configv1.ClusterVersion{}:    allSelector,
-		&configv1.FeatureGate{}:       allSelector,
-		&configv1.ClusterOperator{}:   allSelector,
-		&configv1.OperatorHub{}:       allSelector,
-		&configv1.Authentication{}:    allSelector,
-		&operatorv1.CloudCredential{}: allSelector,
-		&admissionregistrationv1.ValidatingWebhookConfiguration{}: allSelector,
-		&admissionregistrationv1.MutatingWebhookConfiguration{}:   allSelector,
-		&operatorv1.Storage{}:               allSelector,
-		&operatorv1.CSISnapshotController{}: allSelector,
-		&operatorv1.ClusterCSIDriver{}:      allSelector,
-		&operatorv1.OpenShiftAPIServer{}:    allSelector,
-
-		// Needed for inplace upgrader.
-		&corev1.Node{}: allSelector,
-
-		// Needed for resource cleanup
-		&corev1.Service{}:               allSelector,
-		&corev1.PersistentVolume{}:      allSelector,
-		&corev1.PersistentVolumeClaim{}: allSelector,
-		&imageregistryv1.Config{}:       allSelector,
-	}
-
-	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
-		byObject[&operatorv1.IngressController{}] = allSelector
-	}
-
 	leaseDuration := time.Second * 60
 	renewDeadline := time.Second * 40
 	retryPeriod := time.Second * 15
@@ -173,7 +177,7 @@ func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpN
 		},
 		Cache: cache.Options{
 			DefaultLabelSelector: cacheLabelSelector(),
-			ByObject:             byObject,
+			ByObject:             guestCacheByObject(capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities)),
 		},
 		Scheme: api.Scheme,
 	})

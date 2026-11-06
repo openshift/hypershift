@@ -1013,9 +1013,11 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			name: "When Swift annotation is set on HC it should mirror to HCP",
 			hcAnnotations: map[string]string{
 				hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
+				hyperv1.NodePoolDrainReadinessAnnotation:  "true",
 			},
 			expectedAnnotations: map[string]string{
 				hyperv1.SwiftPodNetworkInstanceAnnotation:          "swift-network-instance",
+				hyperv1.NodePoolDrainReadinessAnnotation:           "true",
 				k8sutil.HostedClusterAnnotation:                    hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
