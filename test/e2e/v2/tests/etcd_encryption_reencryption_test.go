@@ -326,6 +326,17 @@ func rotateAndWait(g Gomega, ctx context.Context, tc *internal.TestContext, hcKe
 	if string(patchData) == "{}" {
 		return
 	}
+	// The admission policy rejects spec.secretEncryption changes while
+	// EtcdDataEncryptionUpToDate=False. Wait for any in-progress rotation to
+	// complete before patching — this matters most in DeferCleanup, where the
+	// test may have timed out mid-rotation. The 30-minute timeout exceeds the
+	// maximum rotation duration; if it expires, Gomega reports the cluster as stuck.
+	waitForReEncryptionComplete(g, ctx, tc.MgmtClient, hcKey, 30*time.Minute)
+	// Re-fetch after waiting: resource version and spec change as the rotation
+	// completes, so the earlier base snapshot is stale.
+	g.Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
+	base = hc.DeepCopy()
+	mutate(hc)
 	g.Expect(tc.MgmtClient.Patch(ctx, hc, crclient.MergeFrom(base))).To(Succeed())
 	waitForReEncryptionStarted(g, ctx, tc.MgmtClient, hcKey, 5*time.Minute)
 	waitForReEncryptionComplete(g, ctx, tc.MgmtClient, hcKey, 25*time.Minute)
