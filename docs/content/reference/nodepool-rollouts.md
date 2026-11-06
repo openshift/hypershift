@@ -161,7 +161,7 @@ You can monitor rollout progress through the following NodePool conditions:
 | `UpdatingConfig` | A configuration rollout is in progress |
 | `UpdatingPlatformMachineTemplate` | A platform machine template rollout is in progress |
 
-These conditions are set to `True` while the corresponding rollout is in progress and are cleared when it completes.
+These conditions normally report `True` while the corresponding rollout is in progress and `False` when it completes. The migration exception for `UpdatingConfig` is described below.
 
 ### Cluster API UpToDate Status for Replace NodePools
 
@@ -172,6 +172,10 @@ CAPI compares `Node.status.nodeInfo.kubeletVersion` with `Machine.spec.version` 
 HyperShift determines Replace rollout completion from MachineDeployment and MachineSet state instead of `upToDateReplicas`: the desired replicas must be available, the current-revision MachineSet must be fully rolled out, older MachineSets must have no replicas, and the MachineDeployment must have observed its current generation. This completion check does not change CAPI's `UpToDate` condition or `upToDateReplicas` counter.
 
 Use the NodePool's `UpdatingVersion`, `UpdatingConfig`, and `UpdatingPlatformMachineTemplate` conditions above to monitor rollout progress. For a release rollout, also confirm that `NodePool.status.version` matches the target OCP version. A false Machine `UpToDate` condition or a zero `upToDateReplicas` counter alone does not mean that a NodePool rollout is incomplete.
+
+!!! note
+
+    During an operator upgrade, a NodePool without the `hypershift.openshift.io/nodePoolCurrentRolloutConfig` annotation adopts the currently requested configuration as its rollout baseline. This can include a pending configuration change, so `UpdatingConfig=False` alone does not prove that the Replace rollout has completed. First confirm that the MachineDeployment's machine template references the user-data Secret for the requested configuration, the expected OCP version, and the expected infrastructure template. Then check the MachineDeployment and MachineSet completion criteria described above.
 
 ## Summary Table
 
