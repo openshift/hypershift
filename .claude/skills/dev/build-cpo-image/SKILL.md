@@ -1,5 +1,5 @@
 ---
-name: Build CPO Image
+name: build-cpo-image
 description: "Build and push control-plane-operator container image. Auto-applies when testing CPO changes that require deploying to a live cluster."
 ---
 
