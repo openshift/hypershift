@@ -14,6 +14,8 @@ import (
 )
 
 func TestSeedRolloutAnnotation(t *testing.T) {
+	t.Run("When CPO gains validation capability, it should preserve nodes until the next CA edit", testSeedRolloutAnnotationCapabilityUpgrade)
+	t.Run("When trust bundle hashing changes, it should preserve migration and subsequent rollout behavior", testSeedRolloutAnnotationTrustBundleMigration)
 	config := &rolloutConfig{
 		releaseImage: &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.18.5"}}},
 	}
@@ -96,6 +98,7 @@ func TestSeedRolloutAnnotation(t *testing.T) {
 				deployedBootstrapHash: tc.deployedHash,
 			}
 			seedRolloutAnnotation(token)
+			tc.expected[nodePoolAnnotationConfigHashVersion] = CurrentConfigHashVersion
 			NewWithT(t).Expect(nodePool.Annotations).To(Equal(tc.expected))
 		})
 	}

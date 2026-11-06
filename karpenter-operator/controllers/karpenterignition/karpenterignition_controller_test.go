@@ -211,16 +211,18 @@ kind: Config`),
 		WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
 		Build()
 
+	recordingProvider := &recordingCPOImageProvider{FakeRegistryClientImageMetadataProvider: *fakeImageMetadataProvider}
 	r := &KarpenterIgnitionReconciler{
-		ManagementClient:        fakeManagementClient,
-		GuestClient:             fakeGuestClient,
-		ReleaseProvider:         mockedReleaseProvider,
-		VersionResolver:         &fakeVersionResolver{},
-		ImageMetadataProvider:   fakeImageMetadataProvider,
-		HypershiftOperatorImage: "test-hypershift-operator-image",
-		IgnitionEndpoint:        testIgnitionEndpoint,
-		Namespace:               testNamespace,
-		CreateOrUpdateProvider:  upsert.New(false),
+		ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+		ManagementClient:          fakeManagementClient,
+		GuestClient:               fakeGuestClient,
+		ReleaseProvider:           mockedReleaseProvider,
+		VersionResolver:           &fakeVersionResolver{},
+		ImageMetadataProvider:     recordingProvider,
+		HypershiftOperatorImage:   "test-hypershift-operator-image",
+		IgnitionEndpoint:          testIgnitionEndpoint,
+		Namespace:                 testNamespace,
+		CreateOrUpdateProvider:    upsert.New(false),
 	}
 
 	ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -230,6 +232,7 @@ kind: Config`),
 		NamespacedName: client.ObjectKey{Name: testNodeClassName},
 	})
 	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(recordingProvider.image).To(Equal(r.ControlPlaneOperatorImage), "capability detection must inspect the running CPO, not the release image")
 
 	expectedNodePoolName := karpenterutil.KarpenterNodePoolName(nodeClass)
 	tokenPrefix := "token-" + expectedNodePoolName + "-"
@@ -386,6 +389,45 @@ kind: Config`),
 	// https://github.com/openshift/hypershift/blob/825484eb33d14b4ab849b428d134582320655fcf/hypershift-operator/controllers/nodepool/token.go#L197
 	g.Expect(len(tokenSecrets)).To(Equal(3), "should have 3 token secrets, got: %v", tokenSecrets)
 	g.Expect(len(userDataSecrets)).To(Equal(2), "should have 2 user-data secrets, got: %v", userDataSecrets)
+
+	for _, field := range []string{"additional", "proxy"} {
+		t.Run("When a legacy NodeClass migrates with "+field+" CA content, it should retain identity until the next edit", func(t *testing.T) {
+			g := NewWithT(t)
+			recordingProvider.Result.Config.Labels["io.openshift.hypershift.control-plane-operator-manages.rendered-trust-bundle-validation"] = "true"
+			g.Expect(fakeGuestClient.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			retained := nodeClass.Annotations[configVersionAnnotation]
+			delete(nodeClass.Annotations, openshiftEC2NodeClassAnnotationCurrentRolloutConfig)
+			nodeClass.Annotations["hypershift.openshift.io/nodeClassCurrentRolloutConfig"] = "legacy-name-based-baseline"
+			g.Expect(fakeGuestClient.Update(ctx, nodeClass)).To(Succeed())
+			bundle := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "migration-" + field, Namespace: testNamespace}, Data: map[string]string{"ca-bundle.crt": "pre-upgrade-content"}}
+			g.Expect(fakeManagementClient.Create(ctx, bundle)).To(Succeed())
+			g.Expect(fakeManagementClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)).To(Succeed())
+			if field == "additional" {
+				hcp.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: bundle.Name}
+			} else {
+				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{Proxy: &configv1.ProxySpec{TrustedCA: configv1.ConfigMapNameReference{Name: bundle.Name}}}
+			}
+			g.Expect(fakeManagementClient.Update(ctx, hcp)).To(Succeed())
+			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(nodeClass)})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(fakeGuestClient.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			g.Expect(nodeClass.Annotations[configVersionAnnotation]).To(Equal(retained))
+			baseline := nodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentRolloutConfig]
+			g.Expect(baseline).NotTo(BeEmpty())
+			retainedUserData := &corev1.Secret{}
+			g.Expect(fakeManagementClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: userDataPrefix + retained}, retainedUserData)).To(Succeed())
+			g.Expect(string(retainedUserData.Data["value"])).To(ContainSubstring(retained))
+			// Restart the controller; the durable baseline must still detect the edit.
+			restarted := *r
+			bundle.Data["ca-bundle.crt"] = "post-migration-content"
+			g.Expect(fakeManagementClient.Update(ctx, bundle)).To(Succeed())
+			_, err = restarted.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(nodeClass)})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(fakeGuestClient.Get(ctx, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			g.Expect(nodeClass.Annotations[configVersionAnnotation]).NotTo(Equal(retained))
+			g.Expect(nodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentRolloutConfig]).NotTo(Equal(baseline))
+		})
+	}
 }
 
 func TestReconcileVersionResolution(t *testing.T) {
@@ -531,15 +573,16 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
-			CreateOrUpdateProvider:  upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			ReleaseProvider:           mockedReleaseProvider,
+			VersionResolver:           resolver,
+			ImageMetadataProvider:     fakeImageMetadataProvider,
+			HypershiftOperatorImage:   "test-hypershift-operator-image",
+			IgnitionEndpoint:          testIgnitionEndpoint,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -577,15 +620,16 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
-			CreateOrUpdateProvider:  upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			ReleaseProvider:           mockedReleaseProvider,
+			VersionResolver:           resolver,
+			ImageMetadataProvider:     fakeImageMetadataProvider,
+			HypershiftOperatorImage:   "test-hypershift-operator-image",
+			IgnitionEndpoint:          testIgnitionEndpoint,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -624,15 +668,16 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
-			CreateOrUpdateProvider:  upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			ReleaseProvider:           mockedReleaseProvider,
+			VersionResolver:           resolver,
+			ImageMetadataProvider:     fakeImageMetadataProvider,
+			HypershiftOperatorImage:   "test-hypershift-operator-image",
+			IgnitionEndpoint:          testIgnitionEndpoint,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -685,15 +730,16 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         resolver,
-			ImageMetadataProvider:   fakeImageMetadataProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
-			CreateOrUpdateProvider:  upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			ReleaseProvider:           mockedReleaseProvider,
+			VersionResolver:           resolver,
+			ImageMetadataProvider:     fakeImageMetadataProvider,
+			HypershiftOperatorImage:   "test-hypershift-operator-image",
+			IgnitionEndpoint:          testIgnitionEndpoint,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -756,7 +802,8 @@ func TestResolveVersion(t *testing.T) {
 		hcp := baseHCP()
 		resolver := &fakeVersionResolver{image: "should-not-be-called"}
 
-		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
+		r := &KarpenterIgnitionReconciler{
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest", VersionResolver: resolver}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		image, err := r.resolveReleaseImage(ctx, hcp, "")
@@ -771,7 +818,8 @@ func TestResolveVersion(t *testing.T) {
 		resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
 		resolver := &fakeVersionResolver{image: resolvedImage}
 
-		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
+		r := &KarpenterIgnitionReconciler{
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest", VersionResolver: resolver}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		image, err := r.resolveReleaseImage(ctx, hcp, "4.17.0")
@@ -822,7 +870,8 @@ func TestResolveVersion(t *testing.T) {
 		resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:skewed"
 		resolver := &fakeVersionResolver{image: resolvedImage}
 
-		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
+		r := &KarpenterIgnitionReconciler{
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest", VersionResolver: resolver}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		// validateVersion should pass (4.16.0 is valid, just outside skew policy)
@@ -844,7 +893,8 @@ func TestResolveVersion(t *testing.T) {
 		hcp := baseHCP()
 		resolver := &fakeVersionResolver{err: fmt.Errorf("Cincinnati API unavailable")}
 
-		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
+		r := &KarpenterIgnitionReconciler{
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest", VersionResolver: resolver}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		_, err := r.resolveReleaseImage(ctx, hcp, "4.17.0")
@@ -894,7 +944,8 @@ func TestUpdateVersionStatus(t *testing.T) {
 			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
 			Build()
 
-		r := &KarpenterIgnitionReconciler{GuestClient: fakeGuestClient}
+		r := &KarpenterIgnitionReconciler{
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest", GuestClient: fakeGuestClient}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		hcpImage := "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64"
@@ -921,7 +972,8 @@ func TestUpdateVersionStatus(t *testing.T) {
 			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
 			Build()
 
-		r := &KarpenterIgnitionReconciler{GuestClient: fakeGuestClient}
+		r := &KarpenterIgnitionReconciler{
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest", GuestClient: fakeGuestClient}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
@@ -950,7 +1002,8 @@ func TestUpdateVersionStatus(t *testing.T) {
 			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
 			Build()
 
-		r := &KarpenterIgnitionReconciler{GuestClient: fakeGuestClient}
+		r := &KarpenterIgnitionReconciler{
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest", GuestClient: fakeGuestClient}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		resolveErr := fmt.Errorf("Cincinnati API unavailable")
@@ -977,7 +1030,8 @@ func TestUpdateVersionStatus(t *testing.T) {
 			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
 			Build()
 
-		r := &KarpenterIgnitionReconciler{GuestClient: fakeGuestClient}
+		r := &KarpenterIgnitionReconciler{
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest", GuestClient: fakeGuestClient}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		hcpImage := "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64"
@@ -1513,10 +1567,11 @@ func TestReconcileKubeletConfigMapOrphanCleanup(t *testing.T) {
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			GuestClient:            fakeGuestClient,
-			Namespace:              testNamespace,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -1562,10 +1617,11 @@ func TestReconcileKubeletConfigMapOrphanCleanup(t *testing.T) {
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp).Build(),
-			GuestClient:            fakeGuestClient,
-			Namespace:              testNamespace,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp).Build(),
+			GuestClient:               fakeGuestClient,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -1598,10 +1654,11 @@ func TestReconcileKubeletConfigMapOrphanCleanup(t *testing.T) {
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			GuestClient:            fakeGuestClient,
-			Namespace:              testNamespace,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -1748,15 +1805,16 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:        fakeManagementClient,
-			GuestClient:             fakeGuestClient,
-			ReleaseProvider:         mockedReleaseProvider,
-			VersionResolver:         &fakeVersionResolver{},
-			ImageMetadataProvider:   fakeImgProvider,
-			HypershiftOperatorImage: "test-hypershift-operator-image",
-			IgnitionEndpoint:        testIgnitionEndpoint,
-			Namespace:               testNamespace,
-			CreateOrUpdateProvider:  upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			ReleaseProvider:           mockedReleaseProvider,
+			VersionResolver:           &fakeVersionResolver{},
+			ImageMetadataProvider:     fakeImgProvider,
+			HypershiftOperatorImage:   "test-hypershift-operator-image",
+			IgnitionEndpoint:          testIgnitionEndpoint,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 		return r, fakeGuestClient
 	}
@@ -1919,10 +1977,11 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			GuestClient:            fakeGuestClient,
-			Namespace:              testNamespace,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -1976,10 +2035,11 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			GuestClient:            fakeGuestClient,
-			Namespace:              testNamespace,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -2020,10 +2080,11 @@ kind: Config`),
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			GuestClient:            fakeGuestClient,
-			Namespace:              testNamespace,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			GuestClient:               fakeGuestClient,
+			Namespace:                 testNamespace,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		ctx := log.IntoContext(t.Context(), testr.New(t))
@@ -2040,7 +2101,8 @@ kind: Config`),
 }
 
 func TestCreateInMemoryNodePool(t *testing.T) {
-	r := &KarpenterIgnitionReconciler{}
+	r := &KarpenterIgnitionReconciler{
+		ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest"}
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-hcp",
@@ -2122,8 +2184,9 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 		hcp := &hyperv1.HostedControlPlane{
 			ObjectMeta: metav1.ObjectMeta{
@@ -2159,8 +2222,9 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 		hcp := &hyperv1.HostedControlPlane{
 			ObjectMeta: metav1.ObjectMeta{
@@ -2219,8 +2283,9 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 		hcp := &hyperv1.HostedControlPlane{
 			ObjectMeta: metav1.ObjectMeta{
@@ -2280,8 +2345,9 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 		hcp := &hyperv1.HostedControlPlane{
 			ObjectMeta: metav1.ObjectMeta{
@@ -2316,8 +2382,9 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 			Build()
 
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 		hcp := &hyperv1.HostedControlPlane{
 			ObjectMeta: metav1.ObjectMeta{
@@ -2377,8 +2444,9 @@ func TestReconcileTaintConfigMap(t *testing.T) {
 
 		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		err := r.reconcileTaintConfigMap(ctx, hcp)
@@ -2423,8 +2491,9 @@ func TestReconcileTaintConfigMap(t *testing.T) {
 		}
 		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingCM).Build()
 		r := &KarpenterIgnitionReconciler{
-			ManagementClient:       fakeManagementClient,
-			CreateOrUpdateProvider: upsert.New(false),
+			ControlPlaneOperatorImage: "quay.io/hypershift/control-plane-operator:latest",
+			ManagementClient:          fakeManagementClient,
+			CreateOrUpdateProvider:    upsert.New(false),
 		}
 
 		err := r.reconcileTaintConfigMap(ctx, hcp)

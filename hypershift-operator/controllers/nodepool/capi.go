@@ -645,7 +645,7 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 	// at a secret that was never created (Token.isOutdated() skips creation for
 	// management-side-only changes).
 	versionChanged := specUpdated // at this point, specUpdated is true only if version changed
-	currentRolloutConfigHash := c.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+	currentRolloutConfigHash := c.nodePool.Annotations[c.RolloutConfigAnnotation()]
 	rolloutConfigChanged := currentRolloutConfigHash != "" && c.RolloutHashWithoutVersion() != currentRolloutConfigHash
 	inProgressRollout := c.rolloutTargetHash()
 	revertPending := inProgressRollout != "" && c.RolloutHash() != inProgressRollout
@@ -662,14 +662,14 @@ func (c *CAPI) propagateVersionAndTemplate(log logr.Logger, machineDeployment *c
 		if c.nodePool.Annotations == nil {
 			c.nodePool.Annotations = make(map[string]string)
 		}
-		c.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = c.RolloutHash()
+		c.nodePool.Annotations[c.rolloutAnnotationKey(nodePoolAnnotationInProgressRolloutConfig)] = c.RolloutHash()
 	}
 	// Persist request identity with the bootstrap reference, including when
 	// adopting an existing workload. This is metadata, not template content.
 	if machineDeployment.Annotations == nil {
 		machineDeployment.Annotations = make(map[string]string)
 	}
-	machineDeployment.Annotations[nodePoolAnnotationTargetRolloutConfig] = c.RolloutHash()
+	machineDeployment.Annotations[c.rolloutAnnotationKey(nodePoolAnnotationTargetRolloutConfig)] = c.RolloutHash()
 
 	// Infrastructure template: compared against the MachineDeployment's current
 	// infrastructure ref. A mismatch means a platform-level change (e.g. AMI,
@@ -706,7 +706,7 @@ func (c *CAPI) propagateVersionAndTemplateToMachineSet(log logr.Logger, machineS
 	// when a spec-driven change occurred. See propagateVersionAndTemplate for
 	// full rationale.
 	versionChanged := specUpdated
-	currentRolloutConfigHash := c.nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+	currentRolloutConfigHash := c.nodePool.Annotations[c.RolloutConfigAnnotation()]
 	rolloutConfigChanged := currentRolloutConfigHash != "" && c.RolloutHashWithoutVersion() != currentRolloutConfigHash
 	inProgressRollout := c.rolloutTargetHash()
 	revertPending := inProgressRollout != "" && c.RolloutHash() != inProgressRollout
@@ -737,12 +737,12 @@ func (c *CAPI) propagateVersionAndTemplateToMachineSet(log logr.Logger, machineS
 		if c.nodePool.Annotations == nil {
 			c.nodePool.Annotations = make(map[string]string)
 		}
-		c.nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = c.RolloutHash()
+		c.nodePool.Annotations[c.rolloutAnnotationKey(nodePoolAnnotationInProgressRolloutConfig)] = c.RolloutHash()
 	}
 	if machineSet.Annotations == nil {
 		machineSet.Annotations = make(map[string]string)
 	}
-	machineSet.Annotations[nodePoolAnnotationTargetRolloutConfig] = c.RolloutHash()
+	machineSet.Annotations[c.rolloutAnnotationKey(nodePoolAnnotationTargetRolloutConfig)] = c.RolloutHash()
 
 	// Infrastructure template: compared against the MachineSet's current
 	// infrastructure ref.
@@ -794,11 +794,11 @@ func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Lo
 		}
 
 		rolloutConfigUpdated := false
-		previousRolloutConfig := nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+		previousRolloutConfig := nodePool.Annotations[c.RolloutConfigAnnotation()]
 		if previousRolloutConfig != targetRolloutConfigHash {
 			log.Info("Rollout config update complete",
 				"previous", previousRolloutConfig, "new", targetRolloutConfigHash)
-			nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
+			nodePool.Annotations[c.RolloutConfigAnnotation()] = targetRolloutConfigHash
 			// seedRolloutAnnotation guarantees the rollout annotation is
 			// present by the time this runs (it is seeded in the main reconcile
 			// before CAPI reconciliation), so a change here is always a
@@ -825,7 +825,7 @@ func (c *CAPI) reconcileMachineDeploymentStatus(ctx context.Context, log logr.Lo
 		if deployedHash := extractHashFromSecretName(ptr.Deref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "")); deployedHash != "" {
 			nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = deployedHash
 		}
-		delete(nodePool.Annotations, nodePoolAnnotationInProgressRolloutConfig)
+		delete(nodePool.Annotations, c.rolloutAnnotationKey(nodePoolAnnotationInProgressRolloutConfig))
 
 		if nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] != machineTemplateCR.GetName() {
 			log.Info("Rolling upgrade complete",
@@ -1239,11 +1239,11 @@ func (c *CAPI) reconcileMachineSetStatus(log logr.Logger, machineSet *capiv1.Mac
 	}
 
 	rolloutConfigUpdated := false
-	previousRolloutConfig := nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]
+	previousRolloutConfig := nodePool.Annotations[c.RolloutConfigAnnotation()]
 	if previousRolloutConfig != targetRolloutConfigHash {
 		log.Info("Rollout config upgrade complete",
 			"previous", previousRolloutConfig, "new", targetRolloutConfigHash)
-		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
+		nodePool.Annotations[c.RolloutConfigAnnotation()] = targetRolloutConfigHash
 		// seedRolloutAnnotation guarantees the rollout annotation is present
 		// by the time this runs (it is seeded in the main reconcile before
 		// CAPI reconciliation), so a change here is always a completed
@@ -1269,7 +1269,7 @@ func (c *CAPI) reconcileMachineSetStatus(log logr.Logger, machineSet *capiv1.Mac
 	if deployedHash := extractHashFromSecretName(ptr.Deref(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, "")); deployedHash != "" {
 		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = deployedHash
 	}
-	delete(nodePool.Annotations, nodePoolAnnotationInProgressRolloutConfig)
+	delete(nodePool.Annotations, c.rolloutAnnotationKey(nodePoolAnnotationInProgressRolloutConfig))
 
 	if nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] != machineTemplateCR.GetName() {
 		log.Info("Rolling upgrade complete",

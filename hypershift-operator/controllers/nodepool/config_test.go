@@ -16,6 +16,7 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -418,8 +419,8 @@ spec:
 		},
 		{
 			name:                       "When additionalTrustBundle is specified it should be included in rolloutConfig",
-			expectedHash:               "632801f8",
-			expectedHashWithoutVersion: "71375893",
+			expectedHash:               "1d823653",
+			expectedHashWithoutVersion: "7b5702f4",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test",
@@ -440,6 +441,15 @@ spec:
 					},
 					Data: map[string]string{
 						TokenSecretConfigKey: machineConfig,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "additional-trust-bundle",
+						Namespace: "test",
+					},
+					Data: map[string]string{
+						certs.UserCABundleMapKey: "test-ca-bundle",
 					},
 				},
 			},
@@ -491,7 +501,7 @@ spec:
 					resolvedStream = s
 				}
 			}
-			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test", resolvedStream)
+			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "", "test-test", resolvedStream, true)
 			if tc.error != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.error.Error()))
@@ -506,7 +516,7 @@ spec:
 			}
 			g.Expect(cg.pullSecretName).To(Equal(tc.hostedCluster.Spec.PullSecret.Name))
 			if tc.hostedCluster.Spec.AdditionalTrustBundle != nil {
-				g.Expect(cg.additionalTrustBundleName).To(Equal("additional-trust-bundle"))
+				g.Expect(cg.additionalTrustBundleHash).To(Equal(supportutil.HashSimple("test-ca-bundle")))
 			}
 
 			if tc.hostedCluster.Spec.Configuration != nil {
@@ -519,6 +529,84 @@ spec:
 			g.Expect(cg.HashWithoutVersion()).To(Equal(tc.expectedHashWithoutVersion))
 		})
 	}
+
+	t.Run("When_CPO_lacks_rendered_trust_bundle_validation_capability_it_should_skip_validation", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hostedCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-test"},
+			Spec: hyperv1.HostedClusterSpec{
+				PullSecret:            corev1.LocalObjectReference{Name: "pull-secret"},
+				AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "test-ca-bundle"},
+				Configuration: &hyperv1.ClusterConfiguration{
+					Authentication: &configv1.AuthenticationSpec{},
+					Image:          &configv1.ImageSpec{},
+					Proxy:          &configv1.ProxySpec{},
+				},
+			},
+			Status: hyperv1.HostedClusterStatus{
+				KubeConfig: &corev1.LocalObjectReference{Name: "admin-kubeconfig"},
+			},
+		}
+
+		trustBundleConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-ca-bundle", Namespace: "test-test"},
+			Data:       map[string]string{certs.UserCABundleMapKey: "test-ca-bundle-data"},
+		}
+
+		nodePool := &hyperv1.NodePool{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-test"}}
+
+		kubeconfigSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "admin-kubeconfig", Namespace: "test-test"},
+			Data: map[string][]byte{"kubeconfig": []byte(`apiVersion: v1
+clusters:
+- cluster:
+    server: https://api.example.com:6443
+  name: test-cluster
+contexts:
+- context:
+    cluster: test-cluster
+  name: admin
+current-context: admin
+kind: Config
+preferences: {}
+users:
+- name: admin
+  user:
+    token: test-token`)},
+		}
+		pullSecretObj := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test-test"},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+
+		objects := append([]crclient.Object{}, coreConfigMaps...)
+		objects = append(objects, hostedCluster, trustBundleConfigMap, nodePool, kubeconfigSecret, pullSecretObj)
+
+		builder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...)
+		client := builder.Build()
+
+		releaseImage := &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{ObjectMeta: metav1.ObjectMeta{Name: "4.14.0"}},
+		}
+
+		// With CPO capability enabled: rendered trust bundle validation runs
+		cg, err := NewConfigGenerator(context.Background(), client, hostedCluster, nodePool, releaseImage, "", "test-test", "", true)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cg).NotTo(BeNil())
+		g.Expect(cg.additionalTrustBundleHash).NotTo(BeEmpty())
+		g.Expect(cg.renderedTrustBundleHash).NotTo(BeEmpty())
+
+		// With CPO capability disabled: validation is skipped, rendered hash empty but content hash still computed
+		cg, err = NewConfigGenerator(context.Background(), client, hostedCluster, nodePool, releaseImage, "", "test-test", "", false)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cg).NotTo(BeNil())
+		g.Expect(cg.additionalTrustBundleHash).NotTo(BeEmpty()) // Should still compute content hash for v2 fallback
+		g.Expect(cg.renderedTrustBundleHash).To(BeEmpty())      // Should be empty when capability is disabled
+		g.Expect(cg.ConfigHashVersion()).To(Equal(ConfigHashVersionV1))
+		g.Expect(cg.Hash()).To(Equal(cg.hashAtVersion(ConfigHashVersionV1)))
+		g.Expect(cg.HashWithoutVersion()).To(Equal(cg.hashWithoutVersionAtVersion(ConfigHashVersionV1)))
+	})
 }
 
 func TestCompressedAndEncoded(t *testing.T) {
@@ -609,83 +697,102 @@ func TestHash(t *testing.T) {
 	baseCaseMCORawConfig := "test config"
 	baseCaseReleaseVersion := "4.7.0"
 	baseCasePullSecretName := "pull-secret"
-	baseCaseAdditionalTrustBundleName := "trust-bundle"
+	baseCaseAdditionalTrustBundleHash := "trust-bundle-hash"
+	baseCaseProxyTrustedCAHash := ""
 	baseCaseGlobalConfig := "global config"
-	baseCaseHash := "bb196408"
+	baseCaseHash := "bf2008f3"
 
 	testCases := []struct {
 		name                      string
 		mcoRawConfig              string
 		releaseVersion            string
 		pullSecretName            string
-		additionalTrustBundleName string
+		additionalTrustBundleHash string
+		proxyTrustedCAHash        string
 		globalConfig              string
 		rhelStream                string
 		expected                  string
 	}{
 		{
-			name:                      "When base case inputs are used, it should produce the base case hash",
+			name:                      "When base rollout config is used, it should produce the expected hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
 			expected:                  baseCaseHash,
 		},
 		{
-			name:                      "When a different version is used, it should change the hash",
+			name:                      "When release version differs, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            "4.8.0",
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
-			expected:                  "27bb7699",
+			expected:                  "8c635f74",
 		},
 		{
-			name:                      "When a different mcoRawConfig is used, it should change the hash",
+			name:                      "When mcoRawConfig differs, it should change the hash",
 			mcoRawConfig:              "different",
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
-			expected:                  "25f99ac5",
+			expected:                  "1a019fa0",
 		},
 		{
-			name:                      "When a different pullSecretName is used, it should change the hash",
+			name:                      "When pullSecretName differs, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            "different",
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
-			expected:                  "d0d6f6e9",
+			expected:                  "338f02c4",
 		},
 		{
-			name:                      "When a different trust-bundle is used, it should change the hash",
+			name:                      "When additionalTrustBundleHash differs, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: "different",
+			additionalTrustBundleHash: "different",
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
 			expected:                  "42d42744",
 		},
 		{
-			name:                      "When a different globalConfig is used, it should change the hash",
+			name:                      "When proxyTrustedCAHash differs, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        "different",
+			globalConfig:              baseCaseGlobalConfig,
+			expected:                  "42a01974",
+		},
+		{
+			name:                      "When globalConfig differs, it should change the hash",
+			mcoRawConfig:              baseCaseMCORawConfig,
+			releaseVersion:            baseCaseReleaseVersion,
+			pullSecretName:            baseCasePullSecretName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              "different",
-			expected:                  "e916ddfe",
+			expected:                  "52c0d495",
 		},
 		{
 			name:                      "When rhelStream is a non-default stream, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
 			rhelStream:                "rhel-10",
-			expected:                  "2dbbd41b",
+			expected:                  "4702e8a6",
 		},
 	}
 
@@ -703,17 +810,17 @@ func TestHash(t *testing.T) {
 				rolloutConfig: &rolloutConfig{
 					mcoRawConfig:              tc.mcoRawConfig,
 					pullSecretName:            tc.pullSecretName,
-					additionalTrustBundleName: tc.additionalTrustBundleName,
+					additionalTrustBundleHash: tc.additionalTrustBundleHash,
+					proxyTrustedCAHash:        tc.proxyTrustedCAHash,
 					globalConfig:              tc.globalConfig,
 					rhelStream:                tc.rhelStream,
 					releaseImage:              releaseImage,
 				},
 			}
-
 			hash := cg.Hash()
 			g.Expect(hash).ToNot(BeEmpty())
 			g.Expect(hash).To(Equal(tc.expected))
-			if tc.name != "When base case inputs are used, it should produce the base case hash" {
+			if tc.name != "When base rollout config is used, it should produce the expected hash" {
 				g.Expect(hash).ToNot(Equal(baseCaseHash))
 			}
 		})
@@ -724,72 +831,90 @@ func TestHashWithoutVersion(t *testing.T) {
 	baseCaseMCORawConfig := "test config"
 	baseCaseReleaseVersion := "4.7.0"
 	baseCasePullSecretName := "pull-secret"
-	baseCaseAdditionalTrustBundleName := "trust-bundle"
+	baseCaseAdditionalTrustBundleHash := "trust-bundle-hash"
+	baseCaseProxyTrustedCAHash := ""
 	baseCaseGlobalConfig := "global config"
-	baseCaseHash := "85234650"
+	baseCaseHash := "7d347237"
 	testCases := []struct {
 		name                      string
 		mcoRawConfig              string
 		releaseVersion            string
 		pullSecretName            string
-		additionalTrustBundleName string
+		additionalTrustBundleHash string
+		proxyTrustedCAHash        string
 		globalConfig              string
 		rhelStream                string
 		expected                  string
 	}{
 		{
-			name:                      "When base case inputs are used, it should produce the base case hash",
+			name:                      "When base rollout config is used, it should produce the expected hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
 			expected:                  baseCaseHash,
 		},
 		{
-			name:                      "When a different version is used, it should not change the hash",
+			name:                      "When release version differs, it should not change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            "4.8.0",
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
 			expected:                  baseCaseHash,
 		},
 		{
-			name:                      "When a different mcoRawConfig is used, it should change the hash",
+			name:                      "When mcoRawConfig differs, it should change the hash",
 			mcoRawConfig:              "different",
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
-			expected:                  "5ea671c5",
+			expected:                  "c3130a68",
 		},
 		{
-			name:                      "When a different pullSecretName is used, it should change the hash",
+			name:                      "When pullSecretName differs, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            "different",
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
-			expected:                  "f6e82eb7",
+			expected:                  "ede3a372",
 		},
 		{
-			name:                      "When a different trust-bundle is used, it should change the hash",
+			name:                      "When additionalTrustBundleHash differs, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: "different",
+			additionalTrustBundleHash: "different",
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
 			expected:                  "935c3492",
 		},
 		{
-			// TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
-			// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
-			name:                      "When a different globalConfig is used, it should NOT change the hash",
+			name:                      "When proxyTrustedCAHash differs, it should change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        "different",
+			globalConfig:              baseCaseGlobalConfig,
+			expected:                  "727bd5c8",
+		},
+		{
+			// TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
+			// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
+			name:                      "When globalConfig differs, it should not change the hash",
+			mcoRawConfig:              baseCaseMCORawConfig,
+			releaseVersion:            baseCaseReleaseVersion,
+			pullSecretName:            baseCasePullSecretName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              "different",
 			expected:                  baseCaseHash,
 		},
@@ -798,10 +923,11 @@ func TestHashWithoutVersion(t *testing.T) {
 			mcoRawConfig:              baseCaseMCORawConfig,
 			releaseVersion:            baseCaseReleaseVersion,
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
+			proxyTrustedCAHash:        baseCaseProxyTrustedCAHash,
 			globalConfig:              baseCaseGlobalConfig,
 			rhelStream:                "rhel-10",
-			expected:                  "671fe083",
+			expected:                  "9240abaa",
 		},
 	}
 
@@ -819,7 +945,8 @@ func TestHashWithoutVersion(t *testing.T) {
 				rolloutConfig: &rolloutConfig{
 					mcoRawConfig:              tc.mcoRawConfig,
 					pullSecretName:            tc.pullSecretName,
-					additionalTrustBundleName: tc.additionalTrustBundleName,
+					additionalTrustBundleHash: tc.additionalTrustBundleHash,
+					proxyTrustedCAHash:        tc.proxyTrustedCAHash,
 					globalConfig:              tc.globalConfig,
 					rhelStream:                tc.rhelStream,
 					releaseImage:              releaseImage,
@@ -837,7 +964,7 @@ func TestRolloutHash(t *testing.T) {
 	baseCaseUserConfig := "test config"
 	baseCaseReleaseVersion := "4.7.0"
 	baseCasePullSecretName := "pull-secret"
-	baseCaseAdditionalTrustBundleName := "trust-bundle"
+	baseCaseAdditionalTrustBundleHash := "trust-bundle"
 	baseCaseGlobalConfig := "global config"
 	baseCaseRolloutGlobalConfig := "rollout global config"
 	baseCaseHAProxyRawConfig := "haproxy static pod manifest with image digest"
@@ -849,7 +976,7 @@ func TestRolloutHash(t *testing.T) {
 			mcoRawConfig:              baseCaseHAProxyRawConfig + "\n---\n" + baseCaseUserConfig,
 			rolloutMcoRawConfig:       baseCaseUserConfig,
 			pullSecretName:            baseCasePullSecretName,
-			additionalTrustBundleName: baseCaseAdditionalTrustBundleName,
+			additionalTrustBundleHash: baseCaseAdditionalTrustBundleHash,
 			globalConfig:              baseCaseGlobalConfig,
 			rolloutGlobalConfig:       baseCaseRolloutGlobalConfig,
 			haproxyRawConfig:          baseCaseHAProxyRawConfig,
@@ -895,8 +1022,8 @@ func TestRolloutHash(t *testing.T) {
 			expectChanged: true,
 		},
 		{
-			name:          "When the additionalTrustBundleName changes it should change the RolloutHash",
-			modify:        func(rc *rolloutConfig) { rc.additionalTrustBundleName = "different-trust-bundle" },
+			name:          "When the additionalTrustBundleHash changes it should change the RolloutHash",
+			modify:        func(rc *rolloutConfig) { rc.additionalTrustBundleHash = "different-trust-bundle" },
 			expectChanged: true,
 		},
 		{
@@ -971,7 +1098,7 @@ func TestRolloutHashAnnotationSeeding(t *testing.T) {
 			},
 		}
 
-		g.Expect(isUpdatingConfig(nodePool, "abc123")).To(BeFalse(),
+		g.Expect(isUpdatingConfig(nodePool, "abc123", nodePoolAnnotationCurrentRolloutConfig)).To(BeFalse(),
 			"absent annotation should not signal a config update")
 	})
 
@@ -987,7 +1114,7 @@ func TestRolloutHashAnnotationSeeding(t *testing.T) {
 			},
 		}
 
-		g.Expect(isUpdatingConfig(nodePool, rolloutHash)).To(BeFalse(),
+		g.Expect(isUpdatingConfig(nodePool, rolloutHash, nodePoolAnnotationCurrentRolloutConfig)).To(BeFalse(),
 			"matching hashes should not signal a config update")
 	})
 
@@ -1002,7 +1129,7 @@ func TestRolloutHashAnnotationSeeding(t *testing.T) {
 			},
 		}
 
-		g.Expect(isUpdatingConfig(nodePool, "newHash")).To(BeTrue(),
+		g.Expect(isUpdatingConfig(nodePool, "newHash", nodePoolAnnotationCurrentRolloutConfig)).To(BeTrue(),
 			"differing hashes should signal a config update")
 	})
 }
@@ -1238,7 +1365,7 @@ func TestIsOutdated(t *testing.T) {
 				rolloutConfig: &rolloutConfig{
 					rolloutMcoRawConfig:       "config",
 					pullSecretName:            "pull",
-					additionalTrustBundleName: "trust",
+					additionalTrustBundleHash: "trust",
 					rolloutGlobalConfig:       "global",
 					releaseImage: &releaseinfo.ReleaseImage{
 						ImageStream: &imageapi.ImageStream{

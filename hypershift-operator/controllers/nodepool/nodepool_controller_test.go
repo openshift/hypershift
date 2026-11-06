@@ -96,7 +96,7 @@ func TestIsUpdatingConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			g := NewWithT(t)
-			g.Expect(isUpdatingConfig(tc.nodePool, tc.target)).To(Equal(tc.expect))
+			g.Expect(isUpdatingConfig(tc.nodePool, tc.target, nodePoolAnnotationCurrentRolloutConfig)).To(Equal(tc.expect))
 		})
 	}
 }

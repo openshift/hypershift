@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	fakeimagemetadataprovider "github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
+	configv1 "github.com/openshift/api/config/v1"
 	docker10 "github.com/openshift/api/image/docker10"
 
 	corev1 "k8s.io/api/core/v1"
@@ -51,11 +52,15 @@ func TestReconcile(t *testing.T) {
 		patchErr    error
 		providerErr error
 		fallback    bool
+		trustBundle string
 	}{
 		{name: "When AWS supplies native capacity and the legacy provider is absent, it should persist NodePool labels and taints through the full reconcile path"},
 		{name: "When patching scheduling metadata conflicts, it should return the conflict for controller backoff", patchErr: apierrors.NewConflict(schema.GroupResource{Group: capiv1.GroupVersion.Group, Resource: "machinedeployments"}, "workers", fmt.Errorf("resource version changed"))},
 		{name: "When capacity discovery fails transiently, it should retain the thirty second retry", providerErr: fmt.Errorf("capacity API unavailable")},
 		{name: "When AWS has no native capacity, it should persist dual-key fallback without changing rollout inputs", fallback: true},
+		{name: "When an older CPO uses an additional trust bundle, it should continue CAPI reconciliation", trustBundle: "additional"},
+		{name: "When an older CPO uses a proxy trust bundle, it should continue CAPI reconciliation", trustBundle: "proxy"},
+		{name: "When an older CPO uses both trust bundles, it should continue CAPI reconciliation", trustBundle: "both"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -90,6 +95,15 @@ func TestReconcile(t *testing.T) {
 			ca.Data = map[string][]byte{corev1.TLSCertKey: []byte("unit-test-ca")}
 			pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: hc.Spec.PullSecret.Name, Namespace: hc.Namespace}, Data: map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)}}
 			objects := []client.Object{hc, np, ca, pullSecret, withKubeconfig(hc)}
+			if tc.trustBundle != "" {
+				if tc.trustBundle != "proxy" {
+					hc.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: "user-ca"}
+				}
+				if tc.trustBundle != "additional" {
+					hc.Spec.Configuration = &hyperv1.ClusterConfiguration{Proxy: &configv1.ProxySpec{TrustedCA: configv1.ConfigMapNameReference{Name: "user-ca"}}}
+				}
+				objects = append(objects, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "user-ca", Namespace: hc.Namespace}, Data: map[string]string{"ca-bundle.crt": "test-ca"}})
+			}
 			for _, name := range []string{"fips", "ssh", "apiserver-haproxy"} {
 				objects = append(objects, &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ca.Namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}},
@@ -152,6 +166,38 @@ func TestReconcile(t *testing.T) {
 				g.Expect(md.Annotations).To(HaveKeyWithValue(capiMemoryKey, "16384Mi"))
 				g.Expect(md.Annotations).To(HaveKeyWithValue(capiGPUCountKey, "1"))
 				g.Expect(md.Annotations).To(HaveKeyWithValue(capiGPUTypeKey, "nvidia.com/gpu"))
+			}
+			if tc.trustBundle != "" {
+				g.Expect(currentNodePool.Annotations[nodePoolAnnotationConfigHashVersion]).To(Equal(ConfigHashVersionV1))
+				g.Expect(currentNodePool.Annotations).NotTo(HaveKey(nodePoolAnnotationCurrentRolloutConfig))
+				currentNodePool.Spec.AutoScaling = nil
+				currentNodePool.Spec.Replicas = ptr.To[int32](2)
+				g.Expect(c.Update(t.Context(), currentNodePool)).To(Succeed())
+				_, err = r.Reconcile(t.Context(), request)
+				g.Expect(err).NotTo(HaveOccurred(), "older CPO must still allow replica changes with trust bundles")
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(md), md)).To(Succeed())
+				g.Expect(ptr.Deref(md.Spec.Replicas, 0)).To(Equal(int32(2)))
+				previousBootstrap := ptr.Deref(md.Spec.Template.Spec.Bootstrap.DataSecretName, "")
+				customConfig := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Name: "custom-config", Namespace: np.Namespace},
+					Data:       map[string]string{TokenSecretConfigKey: "apiVersion: machineconfiguration.openshift.io/v1\nkind: MachineConfig\nmetadata:\n  name: custom\nspec:\n  config:\n    ignition:\n      version: 3.2.0\n"},
+				}
+				g.Expect(c.Create(t.Context(), customConfig)).To(Succeed())
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(np), currentNodePool)).To(Succeed())
+				currentNodePool.Spec.Config = []corev1.LocalObjectReference{{Name: customConfig.Name}}
+				g.Expect(c.Update(t.Context(), currentNodePool)).To(Succeed())
+				_, err = r.Reconcile(t.Context(), request)
+				g.Expect(err).NotTo(HaveOccurred(), "older CPO must still allow configuration updates with trust bundles")
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(md), md)).To(Succeed())
+				g.Expect(ptr.Deref(md.Spec.Template.Spec.Bootstrap.DataSecretName, "")).NotTo(Equal(previousBootstrap))
+				r.ReleaseProvider = &fakereleaseprovider.FakeReleaseProvider{Version: "4.22.16"}
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(np), currentNodePool)).To(Succeed())
+				currentNodePool.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.22.16-x86_64"
+				g.Expect(c.Update(t.Context(), currentNodePool)).To(Succeed())
+				_, err = r.Reconcile(t.Context(), request)
+				g.Expect(err).NotTo(HaveOccurred(), "older CPO must still allow release updates with trust bundles")
+				g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(md), md)).To(Succeed())
+				g.Expect(md.Spec.Template.Spec.Version).To(Equal("4.22.16"))
 			}
 		})
 	}

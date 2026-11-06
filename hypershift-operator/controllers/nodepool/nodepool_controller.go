@@ -41,6 +41,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
@@ -74,8 +75,8 @@ const (
 	nodePoolAnnotationCurrentConfig           = "hypershift.openshift.io/nodePoolCurrentConfig"
 	nodePoolAnnotationCurrentConfigVersion    = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 	nodePoolAnnotationTargetConfigVersion     = "hypershift.openshift.io/nodePoolTargetConfigVersion"
-	nodePoolAnnotationCurrentRolloutConfig    = "hypershift.openshift.io/nodePoolCurrentRolloutConfig"
-	nodePoolAnnotationInProgressRolloutConfig = "hypershift.openshift.io/nodePoolInProgressRolloutConfig"
+	nodePoolAnnotationCurrentRolloutConfig    = "hypershift.openshift.io/nodePoolCurrentRolloutConfigV2"
+	nodePoolAnnotationInProgressRolloutConfig = "hypershift.openshift.io/nodePoolInProgressRolloutConfigV2"
 	nodePoolAnnotationUpgradeInProgressTrue   = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
 	nodePoolAnnotationUpgradeInProgressFalse  = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
 	nodePoolAnnotationMaxUnavailable          = "hypershift.openshift.io/nodePoolMaxUnavailable"
@@ -83,7 +84,7 @@ const (
 	// Stored on the CAPI workload's metadata with its bootstrap reference, so
 	// request identity survives a failed subsequent NodePool patch. Keeping it
 	// off the machine template avoids triggering a rollout when it is seeded.
-	nodePoolAnnotationTargetRolloutConfig = "hypershift.openshift.io/nodePoolTargetRolloutConfig"
+	nodePoolAnnotationTargetRolloutConfig = "hypershift.openshift.io/nodePoolTargetRolloutConfigV2"
 
 	// ec2InstanceMetadataHTTPTokensAnnotation can be set to change the instance metadata options of the nodepool underlying EC2 instances
 	// possible values are 'required' (i.e. IMDSv2) or 'optional' which is the default.
@@ -128,6 +129,7 @@ type NotReadyError struct {
 }
 
 type CPOCapabilities struct {
+	RenderedTrustBundleValidation bool
 	DecompressAndDecodeConfig     bool
 	CreateDefaultAWSSecurityGroup bool
 }
@@ -434,14 +436,15 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
-	}
 
 	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hcluster)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to detect CPO capabilities: %w", err)
+	}
+
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream, cpoCapabilities.RenderedTrustBundleValidation)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
 	}
 	token, err := NewToken(ctx, configGenerator, cpoCapabilities)
 	if err != nil {
@@ -455,12 +458,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 	}
 
-	// If reconciliation is paused we return before modifying any state
 	capi, err := newCAPI(token, infraID)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	capi.scaleFromZeroPlatform = r.ScaleFromZeroPlatform
+
+	// If reconciliation is paused we return before modifying any state
 	if isPaused, duration := reconcilerpolicy.IsReconciliationPaused(log, nodePool.Spec.PausedUntil); isPaused {
 		if err := capi.Pause(ctx); err != nil {
 			return ctrl.Result{}, fmt.Errorf("error pausing CAPI: %w", err)
@@ -499,7 +503,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
 		}
 		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetPayloadConfigHash
-		nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = targetRolloutConfigHash
+		nodePool.Annotations[token.RolloutConfigAnnotation()] = targetRolloutConfigHash
 		return ctrl.Result{}, nil
 	}
 
@@ -550,14 +554,15 @@ func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.Hosted
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate config: %w", err)
-	}
 
 	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hcluster)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect CPO capabilities: %w", err)
+	}
+
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream, cpoCapabilities.RenderedTrustBundleValidation)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate config: %w", err)
 	}
 	token, err := NewToken(ctx, configGenerator, cpoCapabilities)
 	if err != nil {
@@ -598,7 +603,7 @@ func (r *NodePoolReconciler) resolveDeployedBootstrapHash(ctx context.Context, t
 		} else if md.Spec.Template.Spec.Bootstrap.DataSecretName != nil {
 			deployedBootstrapHash = extractHashFromSecretName(*md.Spec.Template.Spec.Bootstrap.DataSecretName)
 			deployedVersion = md.Spec.Template.Spec.Version
-			deployedRolloutConfig = md.Annotations[nodePoolAnnotationTargetRolloutConfig]
+			deployedRolloutConfig = md.Annotations[token.rolloutAnnotationKey(nodePoolAnnotationTargetRolloutConfig)]
 		}
 	case hyperv1.UpgradeTypeInPlace:
 		ms := capi.machineSet()
@@ -609,7 +614,7 @@ func (r *NodePoolReconciler) resolveDeployedBootstrapHash(ctx context.Context, t
 		} else if ms.Spec.Template.Spec.Bootstrap.DataSecretName != nil {
 			deployedBootstrapHash = extractHashFromSecretName(*ms.Spec.Template.Spec.Bootstrap.DataSecretName)
 			deployedVersion = ms.Spec.Template.Spec.Version
-			deployedRolloutConfig = ms.Annotations[nodePoolAnnotationTargetRolloutConfig]
+			deployedRolloutConfig = ms.Annotations[token.rolloutAnnotationKey(nodePoolAnnotationTargetRolloutConfig)]
 		}
 	}
 	token.SetDeployedBootstrapHash(deployedBootstrapHash)
@@ -889,8 +894,8 @@ func isUpdatingVersion(nodePool *hyperv1.NodePool, targetVersion string) bool {
 // mutation landing before the first reconcile is absorbed the same way: the
 // initial rollout still delivers it, but UpdatingConfig never transitions to
 // True.
-func isUpdatingConfig(nodePool *hyperv1.NodePool, targetConfigHash string) bool {
-	currentHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentRolloutConfig]
+func isUpdatingConfig(nodePool *hyperv1.NodePool, targetConfigHash, rolloutAnnotation string) bool {
+	currentHash := nodePool.GetAnnotations()[rolloutAnnotation]
 	if currentHash == "" {
 		return false
 	}
@@ -1034,15 +1039,16 @@ func seedRolloutAnnotation(token *Token) {
 	if nodePool.Annotations == nil {
 		nodePool.Annotations = make(map[string]string)
 	}
+	nodePool.Annotations[nodePoolAnnotationConfigHashVersion] = token.ConfigHashVersion()
 	completedHash := nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]
 	rolloutInProgress := token.deployedBootstrapHash != "" && token.deployedBootstrapHash != completedHash
-	hasInProgressMarker := nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] != ""
+	hasInProgressMarker := nodePool.Annotations[token.rolloutAnnotationKey(nodePoolAnnotationInProgressRolloutConfig)] != ""
 	if token.deployedRolloutConfig != "" && (rolloutInProgress || token.Version() != nodePool.Status.Version || hasInProgressMarker) {
 		// Recover tracking from the workload if its write succeeded but the
 		// NodePool patch failed. This also replaces a stale previous request.
-		nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = token.deployedRolloutConfig
+		nodePool.Annotations[token.rolloutAnnotationKey(nodePoolAnnotationInProgressRolloutConfig)] = token.deployedRolloutConfig
 	}
-	if _, ok := nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig]; ok {
+	if _, ok := nodePool.Annotations[token.RolloutConfigAnnotation()]; ok {
 		return
 	}
 
@@ -1050,14 +1056,14 @@ func seedRolloutAnnotation(token *Token) {
 	// are absorbed into the baseline because an opaque full-hash comparison
 	// cannot distinguish user config changes from management-only drift.
 	// Once seeded, the standard rollout-hash comparison detects future changes.
-	nodePool.Annotations[nodePoolAnnotationCurrentRolloutConfig] = token.RolloutHashWithoutVersion()
+	nodePool.Annotations[token.RolloutConfigAnnotation()] = token.RolloutHashWithoutVersion()
 
 	versionMatches := token.deployedVersion == "" || token.deployedVersion == token.Version()
-	if rolloutInProgress && nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] == "" && versionMatches {
+	if rolloutInProgress && nodePool.Annotations[token.rolloutAnnotationKey(nodePoolAnnotationInProgressRolloutConfig)] == "" && versionMatches {
 		// The deployed target predates this operator and has not completed.
 		// Record the request we adopted now: without this marker, a later
 		// spec change would be mistaken for another adoption of the old payload.
-		nodePool.Annotations[nodePoolAnnotationInProgressRolloutConfig] = token.RolloutHash()
+		nodePool.Annotations[token.rolloutAnnotationKey(nodePoolAnnotationInProgressRolloutConfig)] = token.RolloutHash()
 	}
 }
 
@@ -1168,6 +1174,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj 
 	}
 
 	// Otherwise reconcile NodePools which are referencing the given ConfigMap.
+	seen := sets.New[string]()
 	for key := range nodePoolList.Items {
 		reconcileNodePool := false
 		for _, v := range nodePoolList.Items[key].Spec.Config {
@@ -1187,11 +1194,41 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj 
 			}
 		}
 		if reconcileNodePool {
-			result = append(result,
-				reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
-			)
+			req := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])}
+			seen.Insert(req.String())
+			result = append(result, req)
 		}
 
+	}
+
+	// Reconcile NodePools when a ConfigMap referenced by the HostedCluster changes in place.
+	hcCache := map[string]*hyperv1.HostedCluster{}
+	for key := range nodePoolList.Items {
+		np := &nodePoolList.Items[key]
+		req := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(np)}
+		if seen.Has(req.String()) {
+			continue
+		}
+		hc, ok := hcCache[np.Spec.ClusterName]
+		if !ok {
+			hc = &hyperv1.HostedCluster{}
+			if err := r.Get(ctx, client.ObjectKey{Namespace: np.Namespace, Name: np.Spec.ClusterName}, hc); err != nil {
+				if !apierrors.IsNotFound(err) {
+					ctrl.LoggerFrom(ctx).Error(err, "Failed to get HostedCluster; skipping NodePool enqueue",
+						"hostedCluster", np.Spec.ClusterName,
+						"nodePool", client.ObjectKeyFromObject(np))
+				}
+				// Continue so a transient error for one HostedCluster does not drop
+				// enqueue requests for NodePools belonging to other HostedClusters.
+				continue
+			}
+			hcCache[np.Spec.ClusterName] = hc
+		}
+		if !hostedClusterReferencesConfigMap(hc, cm.Name) {
+			continue
+		}
+		seen.Insert(req.String())
+		result = append(result, req)
 	}
 
 	return result
@@ -1300,16 +1337,23 @@ func validateInfraID(infraID string) error {
 }
 
 func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*CPOCapabilities, error) {
+	return DetectCPOCapabilities(ctx, r.Client, hostedCluster, r.ReleaseProvider, r.ImageMetadataProvider, r.HypershiftOperatorImage)
+}
+
+// DetectCPOCapabilities reads the capabilities of the selected CPO image for all
+// bootstrap consumers, including NodePools and Karpenter NodeClasses.
+func DetectCPOCapabilities(ctx context.Context, c client.Client, hostedCluster *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, imageMetadataProvider imageregistry.ImageMetadataProvider, hypershiftOperatorImage string) (*CPOCapabilities, error) {
+	r := &NodePoolReconciler{Client: c}
 	pullSecretBytes, err := r.getPullSecretBytes(ctx, hostedCluster)
 	if err != nil {
 		return nil, err
 	}
-	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hostedCluster, releaseProvider, hypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
 
-	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImageMetadata, err := imageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
@@ -1317,6 +1361,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 	imageLabels := imageregistry.ImageLabels(controlPlaneOperatorImageMetadata)
 	result := &CPOCapabilities{}
 	_, result.DecompressAndDecodeConfig = imageLabels[controlPlaneOperatorManagesDecompressAndDecodeConfig]
+	_, result.RenderedTrustBundleValidation = imageLabels["io.openshift.hypershift.control-plane-operator-manages.rendered-trust-bundle-validation"]
 	_, result.CreateDefaultAWSSecurityGroup = imageLabels[controlPlaneOperatorCreatesDefaultAWSSecurityGroup]
 
 	return result, nil
@@ -1351,12 +1396,9 @@ func getPullSecretName(ctx context.Context, crclient client.Client, hostedCluste
 }
 
 func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*corev1.ConfigMap, error) {
-	additionalTrustBundle := &corev1.ConfigMap{}
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.AdditionalTrustBundle.Name}, additionalTrustBundle); err != nil {
-		return additionalTrustBundle, fmt.Errorf("cannot get additionalTrustBundle %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name, err)
-	}
-	if _, hasKey := additionalTrustBundle.Data["ca-bundle.crt"]; !hasKey {
-		return additionalTrustBundle, fmt.Errorf(" additionalTrustBundle %s/%s missing %q key", additionalTrustBundle.Namespace, additionalTrustBundle.Name, "ca-bundle.crt")
+	additionalTrustBundle, err := getConfigMapWithCABundle(ctx, r.Client, hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name)
+	if err != nil {
+		return &corev1.ConfigMap{}, fmt.Errorf("cannot get additionalTrustBundle %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name, err)
 	}
 	return additionalTrustBundle, nil
 }

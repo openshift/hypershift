@@ -46,25 +46,26 @@ import (
 
 const (
 	openshiftEC2NodeClassAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodeClassCurrentConfigVersion"
-	openshiftEC2NodeClassAnnotationCurrentRolloutConfig = "hypershift.openshift.io/nodeClassCurrentRolloutConfig"
+	openshiftEC2NodeClassAnnotationCurrentRolloutConfig = "hypershift.openshift.io/nodeClassCurrentRolloutConfigV2"
 
 	// nodePoolAnnotationCurrentConfigVersion mirrors the annotation from nodepool_controller.go
 	// It's used to track the current config version for outdated token cleanup
 	nodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
-	nodePoolAnnotationCurrentRolloutConfig = "hypershift.openshift.io/nodePoolCurrentRolloutConfig"
+	nodePoolAnnotationCurrentRolloutConfig = "hypershift.openshift.io/nodePoolCurrentRolloutConfigV2"
 
 	kubeletConfigFinalizer = "hypershift.openshift.io/karpenter-kubelet-config-finalizer"
 )
 
 type KarpenterIgnitionReconciler struct {
-	ManagementClient        client.Client
-	GuestClient             client.Client
-	ReleaseProvider         releaseinfo.Provider
-	VersionResolver         releaseinfo.VersionResolver
-	ImageMetadataProvider   imageregistry.ImageMetadataProvider
-	HypershiftOperatorImage string
-	IgnitionEndpoint        string
-	Namespace               string
+	ControlPlaneOperatorImage string
+	ManagementClient          client.Client
+	GuestClient               client.Client
+	ReleaseProvider           releaseinfo.Provider
+	VersionResolver           releaseinfo.VersionResolver
+	ImageMetadataProvider     imageregistry.ImageMetadataProvider
+	HypershiftOperatorImage   string
+	IgnitionEndpoint          string
+	Namespace                 string
 	upsert.CreateOrUpdateProvider
 }
 
@@ -300,9 +301,11 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 		return fmt.Errorf("failed to build config generator: %w", err)
 	}
 
-	token, err := nodepool.NewToken(ctx, cg, &nodepool.CPOCapabilities{
-		DecompressAndDecodeConfig: true,
-	})
+	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hostedCluster)
+	if err != nil {
+		return fmt.Errorf("failed to detect CPO capabilities: %w", err)
+	}
+	token, err := nodepool.NewToken(ctx, cg, cpoCapabilities)
 	if err != nil {
 		return fmt.Errorf("failed to create token: %w", err)
 	}
@@ -312,11 +315,15 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 	// On first reconcile (no stored state), leave annotations absent so isOutdated()
 	// returns true and creates the initial secrets.
 	currentConfigVersion := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationCurrentConfigVersion]
-	currentRolloutConfig := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationCurrentRolloutConfig]
+	rolloutAnnotation := openshiftEC2NodeClassAnnotationCurrentRolloutConfig
+	if cg.ConfigHashVersion() == nodepool.ConfigHashVersionV1 {
+		rolloutAnnotation = strings.TrimSuffix(rolloutAnnotation, "V2")
+	}
+	currentRolloutConfig := openshiftEC2NodeClass.GetAnnotations()[rolloutAnnotation]
 	if currentConfigVersion != "" {
 		np.Annotations[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
 		if currentRolloutConfig != "" {
-			np.Annotations[nodePoolAnnotationCurrentRolloutConfig] = currentRolloutConfig
+			np.Annotations[cg.RolloutConfigAnnotation()] = currentRolloutConfig
 		}
 		if openshiftEC2NodeClass.Status.Version != "" {
 			np.Status.Version = openshiftEC2NodeClass.Status.Version
@@ -330,6 +337,15 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 		token.SetDeployedBootstrapHash(currentConfigVersion)
 	}
 
+	// Persist the selected formula's baseline before refreshing bootstrap secrets.
+	// Retries must not absorb another content edit if a later write fails.
+	if currentConfigVersion != "" && currentRolloutConfig == "" {
+		currentRolloutConfig = cg.RolloutHashWithoutVersion()
+		if err := r.updateConfigAnnotations(ctx, openshiftEC2NodeClass, currentConfigVersion, currentRolloutConfig, rolloutAnnotation); err != nil {
+			return err
+		}
+		np.Annotations[cg.RolloutConfigAnnotation()] = currentRolloutConfig
+	}
 	if err := token.Reconcile(ctx); err != nil {
 		return fmt.Errorf("failed to reconcile token: %w", err)
 	}
@@ -347,13 +363,28 @@ func (r *KarpenterIgnitionReconciler) reconcileNodeClassToken(
 	shouldSeedAnnotation := currentRolloutConfig == "" && currentConfigVersion != ""
 
 	if versionChanged || rolloutConfigChanged || shouldSeedAnnotation {
-		if err := r.updateConfigAnnotations(ctx, openshiftEC2NodeClass, hashToRecord, cg.RolloutHashWithoutVersion()); err != nil {
+		if err := r.updateConfigAnnotations(ctx, openshiftEC2NodeClass, hashToRecord, cg.RolloutHashWithoutVersion(), rolloutAnnotation); err != nil {
 			return err
 		}
 		log.Info("Updated config version annotation", "oldVersion", currentConfigVersion, "newVersion", hashToRecord)
 	}
 
 	return nil
+}
+
+// detectCPOCapabilities uses the CPO image supplied by the running control plane.
+// The synthesized HostedCluster does not carry the original HC's image override,
+// so resolving from its release can select a different image from the one serving ignition.
+func (r *KarpenterIgnitionReconciler) detectCPOCapabilities(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*nodepool.CPOCapabilities, error) {
+	if r.ControlPlaneOperatorImage == "" {
+		return nil, fmt.Errorf("control plane operator image is required for capability detection")
+	}
+	cluster := hostedCluster.DeepCopy()
+	if cluster.Annotations == nil {
+		cluster.Annotations = make(map[string]string)
+	}
+	cluster.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = r.ControlPlaneOperatorImage
+	return nodepool.DetectCPOCapabilities(ctx, r.ManagementClient, cluster, r.ReleaseProvider, r.ImageMetadataProvider, r.HypershiftOperatorImage)
 }
 
 func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
@@ -648,7 +679,13 @@ func (r *KarpenterIgnitionReconciler) buildConfigGenerator(
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve RHEL stream for boot image: %w", err)
 	}
-	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream)
+
+	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hostedCluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect CPO capabilities: %w", err)
+	}
+
+	return nodepool.NewConfigGenerator(ctx, r.ManagementClient, hostedCluster, np, releaseImage, haproxyRawConfig, controlPlaneNamespace, resolvedRHELStream, cpoCapabilities.RenderedTrustBundleValidation)
 }
 
 // hostedClusterFromHCP creates a barebones in-memory HostedCluster from a HostedControlPlane.
@@ -732,13 +769,13 @@ func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane, ignitionEndpoint stri
 	return hc, nil
 }
 
-func (r *KarpenterIgnitionReconciler) updateConfigAnnotations(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, configVersion, rolloutConfig string) error {
+func (r *KarpenterIgnitionReconciler) updateConfigAnnotations(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, configVersion, rolloutConfig, rolloutAnnotation string) error {
 	original := openshiftEC2NodeClass.DeepCopy()
 	if openshiftEC2NodeClass.Annotations == nil {
 		openshiftEC2NodeClass.Annotations = make(map[string]string)
 	}
 	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = configVersion
-	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentRolloutConfig] = rolloutConfig
+	openshiftEC2NodeClass.Annotations[rolloutAnnotation] = rolloutConfig
 	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("failed to update config annotations on OpenshiftEC2NodeClass: %w", err)
 	}
