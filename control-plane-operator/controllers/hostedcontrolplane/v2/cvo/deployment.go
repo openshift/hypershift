@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"slices"
+	"strconv"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -19,6 +21,7 @@ import (
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/features"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -107,9 +110,28 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		})
 	})
 
-	tlsArgs, err := config.TLSArgs(cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile())
+	profile := cpContext.HCP.Spec.Configuration.GetTLSSecurityProfile()
+	tlsArgs, err := config.TLSArgs(profile)
 	if err != nil {
 		return err
+	}
+
+	featureGates, err := config.FeatureGatesFromConfigMap(cpContext.Context, cpContext.Client, cpContext.HCP.Namespace)
+	if err != nil {
+		return err
+	}
+	if slices.Contains(featureGates, string(features.FeatureGateTLSGroupPreferences)+"=true") {
+		curveIDs, err := config.CurvePreferences(cpContext.Context, profile)
+		if err != nil {
+			return err
+		}
+		if len(curveIDs) > 0 {
+			curvePreferences := make([]string, 0, len(curveIDs))
+			for _, curveID := range curveIDs {
+				curvePreferences = append(curvePreferences, strconv.Itoa(int(curveID)))
+			}
+			tlsArgs = append(tlsArgs, fmt.Sprintf("--tls-curve-preferences=%s", strings.Join(curvePreferences, ",")))
+		}
 	}
 
 	podspec.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
