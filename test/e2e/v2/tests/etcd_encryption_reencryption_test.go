@@ -486,6 +486,9 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				"first rotation must produce a new history entry with a later CompletionTime than the pre-rotation baseline")
 
 			verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas1Baseline)
+			mgmtKubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
+			Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes clientset")
+			verifyKASLogsNoDecryptionErrors(Default, ctx, mgmtKubeClient, tc.ControlPlaneNamespace)
 			Eventually(func(g Gomega) {
 				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
 			}, 2*time.Minute, 10*time.Second).Should(Succeed())
@@ -507,8 +510,6 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 				"second rotation must produce a new history entry with a later CompletionTime than the first rotation's entry")
 
 			verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas2Baseline)
-			mgmtKubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
-			Expect(err).NotTo(HaveOccurred(), "failed to create management cluster kubernetes clientset")
 			verifyKASLogsNoDecryptionErrors(Default, ctx, mgmtKubeClient, tc.ControlPlaneNamespace)
 
 			Eventually(func(g Gomega) {
