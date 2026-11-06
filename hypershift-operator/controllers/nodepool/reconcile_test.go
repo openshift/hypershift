@@ -45,7 +45,8 @@ func (c *schedulingPatchClient) Patch(ctx context.Context, obj client.Object, pa
 	return c.Client.Patch(ctx, obj, patch, opts...)
 }
 
-func TestReconcile(t *testing.T) {
+func testReconcileScheduling(t *testing.T) {
+	t.Helper()
 	tests := []struct {
 		name        string
 		patchErr    error

@@ -93,7 +93,8 @@ func setupTestTracing(t *testing.T) (*testSpanExporter, *sdktrace.TracerProvider
 	return exporter, tp
 }
 
-func TestNodePoolReconcileTracingSpanAttributes(t *testing.T) {
+func testNodePoolReconcileTracingSpanAttributes(t *testing.T) {
+	t.Helper()
 	g := NewWithT(t)
 	exporter, tp := setupTestTracing(t)
 
@@ -176,7 +177,8 @@ func TestNodePoolReconcileTracingSpanAttributes(t *testing.T) {
 	g.Expect(val).To(Equal("infra-123"))
 }
 
-func TestNodePoolReconcileTracingNotFoundSkipsSpan(t *testing.T) {
+func testNodePoolReconcileTracingNotFoundSkipsSpan(t *testing.T) {
+	t.Helper()
 	g := NewWithT(t)
 	exporter, tp := setupTestTracing(t)
 
@@ -198,7 +200,8 @@ func TestNodePoolReconcileTracingNotFoundSkipsSpan(t *testing.T) {
 		"When the NodePool is not found, it should not create a reconcile span")
 }
 
-func TestNodePoolReconcileTracingRecordsError(t *testing.T) {
+func testNodePoolReconcileTracingRecordsError(t *testing.T) {
+	t.Helper()
 	g := NewWithT(t)
 	exporter, tp := setupTestTracing(t)
 
@@ -254,7 +257,8 @@ func TestNodePoolReconcileTracingRecordsError(t *testing.T) {
 		"When reconcile returns an error, the span should have an 'exception' event")
 }
 
-func TestNodePoolReconcileTracingDeletingNodePool(t *testing.T) {
+func testNodePoolReconcileTracingDeletingNodePool(t *testing.T) {
+	t.Helper()
 	g := NewWithT(t)
 	exporter, tp := setupTestTracing(t)
 
@@ -308,7 +312,8 @@ func TestNodePoolReconcileTracingDeletingNodePool(t *testing.T) {
 		"When the NodePool has a deletion timestamp, it should set nodepool.deleting=true")
 }
 
-func TestNodePoolReconcileTracingSpanLinkFromTraceparent(t *testing.T) {
+func testNodePoolReconcileTracingSpanLinkFromTraceparent(t *testing.T) {
+	t.Helper()
 	g := NewWithT(t)
 	exporter, tp := setupTestTracing(t)
 

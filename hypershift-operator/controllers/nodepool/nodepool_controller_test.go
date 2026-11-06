@@ -2,10 +2,12 @@ package nodepool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -33,12 +35,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
@@ -421,7 +426,8 @@ func TestGetNodePoolNamespacedName(t *testing.T) {
 	}
 }
 
-func TestNodepoolDeletionDoesntRequireHCluster(t *testing.T) {
+func testNodePoolDeletionDoesntRequireHCluster(t *testing.T) {
+	t.Helper()
 	t.Parallel()
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
@@ -3871,6 +3877,269 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 					}
 				}
 			}
+		})
+	}
+}
+
+func TestNodePoolReconciler_Reconcile(t *testing.T) {
+	t.Run("When reconciling scheduling metadata, it should preserve scheduling and retry behavior", testReconcileScheduling)
+	t.Run("When deleting a NodePool without a HostedCluster, it should complete deletion", testNodePoolDeletionDoesntRequireHCluster)
+	t.Run("When reconciling a NodePool, it should record tracing span attributes", testNodePoolReconcileTracingSpanAttributes)
+	t.Run("When the NodePool is missing, it should skip the tracing span", testNodePoolReconcileTracingNotFoundSkipsSpan)
+	t.Run("When reconciliation fails, it should record the tracing error", testNodePoolReconcileTracingRecordsError)
+	t.Run("When deleting a NodePool, it should record deletion in the tracing span", testNodePoolReconcileTracingDeletingNodePool)
+	t.Run("When a traceparent is present, it should link the tracing span", testNodePoolReconcileTracingSpanLinkFromTraceparent)
+
+	for _, testCase := range []struct {
+		name        string
+		upgradeType hyperv1.UpgradeType
+	}{
+		{name: "When Replace workload persistence fails, it should preserve previous Ready and persist earlier conditions", upgradeType: hyperv1.UpgradeTypeReplace},
+		{name: "When InPlace workload persistence fails, it should preserve previous Ready and persist earlier conditions", upgradeType: hyperv1.UpgradeTypeInPlace},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			upgradeType := testCase.upgradeType
+			g := NewWithT(t)
+			injectedErr := errors.New("injected workload persistence failure")
+			const (
+				namespace         = "myns"
+				hostedClusterName = "cluster-name"
+				nodePoolName      = "test-nodepool"
+			)
+
+			maxUnavailable := intstr.FromInt(0)
+			maxSurge := intstr.FromInt(1)
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       nodePoolName,
+					Namespace:  namespace,
+					Generation: 17,
+					Finalizers: []string{finalizer},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: hostedClusterName,
+					Replicas:    ptr.To[int32](5),
+					Release: hyperv1.Release{
+						Image: "quay.io/openshift-release-dev/ocp-release:4.18.0-x86_64",
+					},
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: &maxUnavailable,
+								MaxSurge:       &maxSurge,
+							},
+						},
+					},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "ami-1234567890abcdef0",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{
+					Version: "4.18.0",
+					Conditions: []hyperv1.NodePoolCondition{{
+						Type:               "ExistingUnrelatedCondition",
+						Status:             corev1.ConditionTrue,
+						Reason:             hyperv1.AsExpectedReason,
+						Message:            "preserve this condition",
+						ObservedGeneration: 16,
+						LastTransitionTime: metav1.NewTime(time.Unix(100, 0)),
+					}},
+				},
+			}
+			originalCondition := nodePool.Status.Conditions[0]
+			originalReady := hyperv1.NodePoolCondition{
+				Type: hyperv1.NodePoolReadyConditionType, Status: corev1.ConditionFalse,
+				Reason: "ScalingUp", Message: "waiting for requested replicas", ObservedGeneration: 16,
+				LastTransitionTime: metav1.NewTime(time.Unix(100, 0)),
+			}
+			nodePool.Status.Conditions = append(nodePool.Status.Conditions, originalReady)
+			if upgradeType == hyperv1.UpgradeTypeInPlace {
+				nodePool.Spec.Management = hyperv1.NodePoolManagement{UpgradeType: upgradeType, InPlace: &hyperv1.InPlaceUpgrade{}}
+			}
+
+			hostedCluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.SkipReleaseImageValidation: "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: hostedClusterName,
+					Release: hyperv1.Release{Image: nodePool.Spec.Release.Image},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:              "us-east-1",
+							EndpointAccess:      hyperv1.Public,
+							CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{},
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					IgnitionEndpoint: "ignition.example.com",
+					KubeConfig:       &corev1.LocalObjectReference{Name: "kk"},
+					Version: &hyperv1.ClusterVersionStatus{History: []configv1.UpdateHistory{{
+						State:   configv1.CompletedUpdate,
+						Version: "4.18.0",
+					}}},
+					Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{
+						DefaultWorkerSecurityGroupID: "sg-1234567890abcdef0",
+					}},
+				},
+			}
+
+			pullSecret, ignitionCA, _, ignitionConfig1, ignitionConfig2, ignitionConfig3 := setupTestObjects()
+			kubeconfigSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: namespace},
+				Data: map[string][]byte{"kubeconfig": []byte(`apiVersion: v1
+clusters:
+- cluster:
+    server: https://kubeconfig-host:443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    user: ""
+  name: cluster
+current-context: cluster
+kind: Config`)},
+			}
+			controlPlaneNamespace := "myns-cluster-name"
+			machineDeployment := &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Name: nodePoolName, Namespace: controlPlaneNamespace},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: ptr.To[int32](3),
+					Template: capiv1.MachineTemplateSpec{Spec: capiv1.MachineSpec{
+						Bootstrap: capiv1.Bootstrap{DataSecretName: ptr.To("previous-user-data")},
+						InfrastructureRef: capiv1.ContractVersionedObjectReference{
+							APIGroup: "infrastructure.cluster.x-k8s.io",
+							Kind:     "AWSMachineTemplate",
+							Name:     "previous-template",
+						},
+						Version: "4.18.0",
+					}},
+				},
+				Status: capiv1.MachineDeploymentStatus{
+					AvailableReplicas: ptr.To[int32](3),
+					Conditions: []metav1.Condition{{
+						Type:    capiv1.MachinesReadyCondition,
+						Status:  metav1.ConditionTrue,
+						Reason:  "MachinesReady",
+						Message: "all machines are ready",
+					}},
+				},
+			}
+
+			objects := []client.Object{
+				nodePool,
+				hostedCluster,
+				pullSecret,
+				ignitionCA,
+				ignitionConfig1,
+				ignitionConfig2,
+				ignitionConfig3,
+				kubeconfigSecret,
+			}
+			testClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				WithStatusSubresource(nodePool).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+						switch obj.(type) {
+						case *capiv1.MachineDeployment, *capiv1.MachineSet:
+							return injectedErr
+						}
+						return c.Patch(ctx, obj, patch, opts...)
+					},
+				}).
+				Build()
+
+			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
+				Version: "4.18.0",
+				Components: map[string]string{
+					"haproxy-router": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234",
+				},
+				CanonicalComponents: map[string]string{
+					"haproxy-router": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1234",
+				},
+			}
+			r := &NodePoolReconciler{
+				Client:                  testClient,
+				ReleaseProvider:         releaseProvider,
+				HypershiftOperatorImage: "quay.io/hypershift/hypershift-operator:latest",
+				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{Labels: map[string]string{}}},
+				},
+				CreateOrUpdateProvider: upsert.New(false),
+				recorder:               record.NewFakeRecorder(1),
+			}
+			token, err := r.token(t.Context(), hostedCluster, nodePool)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to construct the NodePool token")
+			capi, err := newCAPI(token, hostedCluster.Spec.InfraID)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to construct CAPI for the NodePool")
+			machineTemplate, err := capi.machineTemplateBuilders(t.Context())
+			g.Expect(err).NotTo(HaveOccurred(), "failed to build the expected machine template")
+			machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = ptr.To(capi.UserDataSecret().Name)
+			machineDeployment.Spec.Template.Spec.InfrastructureRef.Name = machineTemplate.GetName()
+			machineDeployment.Spec.Template.Spec.Version = capi.Version()
+			var workload client.Object = machineDeployment
+			if upgradeType == hyperv1.UpgradeTypeInPlace {
+				workload = &capiv1.MachineSet{
+					ObjectMeta: metav1.ObjectMeta{Name: nodePoolName, Namespace: controlPlaneNamespace, Annotations: map[string]string{
+						nodePoolAnnotationCurrentConfigVersion: capi.Hash(), nodePoolAnnotationTargetConfigVersion: capi.Hash(),
+					}},
+					Spec:   capiv1.MachineSetSpec{Replicas: ptr.To[int32](3), Template: machineDeployment.Spec.Template},
+					Status: capiv1.MachineSetStatus{AvailableReplicas: ptr.To[int32](3), Conditions: machineDeployment.Status.Conditions},
+				}
+			}
+			g.Expect(testClient.Create(t.Context(), workload)).To(Succeed(), "failed to create the workload")
+
+			result, err := r.Reconcile(t.Context(), reconcile.Request{NamespacedName: client.ObjectKeyFromObject(nodePool)})
+			g.Expect(errors.Is(err, injectedErr)).To(BeTrue(), "NodePool reconciliation should preserve the injected workload patch error")
+			g.Expect(err).To(MatchError(ContainSubstring(client.ObjectKeyFromObject(workload).String())), "workload error should include its identity")
+			g.Expect(testClient.Get(t.Context(), client.ObjectKeyFromObject(workload), workload)).To(Succeed())
+			switch persisted := workload.(type) {
+			case *capiv1.MachineDeployment:
+				g.Expect(ptr.Deref(persisted.Spec.Replicas, 0)).To(Equal(int32(3)))
+			case *capiv1.MachineSet:
+				g.Expect(ptr.Deref(persisted.Spec.Replicas, 0)).To(Equal(int32(3)))
+			}
+			g.Expect(result).To(Equal(ctrl.Result{}), "failed NodePool reconciliation should return an empty result")
+
+			persistedNodePool := &hyperv1.NodePool{}
+			g.Expect(testClient.Get(t.Context(), client.ObjectKeyFromObject(nodePool), persistedNodePool)).To(Succeed(), "failed to retrieve the NodePool after reconciliation failed")
+			g.Expect(FindStatusCondition(persistedNodePool.Status.Conditions, originalCondition.Type)).To(Equal(&originalCondition), "patching returned CAPI conditions on error should preserve unrelated condition fields and transition time")
+			machineTemplates := &capiaws.AWSMachineTemplateList{}
+			g.Expect(testClient.List(t.Context(), machineTemplates, client.InNamespace(controlPlaneNamespace))).To(Succeed(), "failed to list reconciled machine templates")
+			g.Expect(machineTemplates.Items).To(HaveLen(1), "reconciliation should persist exactly one machine template before the workload patch error")
+
+			g.Expect(persistedNodePool.Generation).To(Equal(int64(17)))
+			g.Expect(ptr.Deref(persistedNodePool.Spec.Replicas, 0)).To(Equal(int32(5)))
+			g.Expect(FindStatusCondition(persistedNodePool.Status.Conditions, hyperv1.NodePoolReadyConditionType)).To(Equal(&originalReady), "failed workload persistence must not replace previous Ready")
+			platformCondition := FindStatusCondition(persistedNodePool.Status.Conditions, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
+			g.Expect(platformCondition).NotTo(BeNil())
+			g.Expect(platformCondition.LastTransitionTime.IsZero()).To(BeFalse())
+			platformCondition.LastTransitionTime = metav1.Time{}
+			g.Expect(*platformCondition).To(Equal(hyperv1.NodePoolCondition{
+				Type: hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType, Status: corev1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            fmt.Sprintf("platform machine template update in progress. Target template: %s", machineTemplates.Items[0].Name),
+				ObservedGeneration: nodePool.Generation,
+			}), "conditions computed before workload persistence must survive failure")
 		})
 	}
 }
