@@ -149,4 +149,6 @@ const (
 	AWSResourceTagConflictDetectedReason  = "TagConflictDetected"
 	AWSResourceTagNoConflictReason        = "NoTagConflict"
 	ManagementConfigDriftReason           = "ManagementConfigDrift"
+
+	NodePoolInfrastructureFailureReason = "InfrastructureFailure"
 )
