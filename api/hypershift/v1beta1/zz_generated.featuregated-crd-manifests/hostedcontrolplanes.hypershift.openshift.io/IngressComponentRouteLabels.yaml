@@ -2718,10 +2718,10 @@ spec:
                                 anyOf:
                                 - type: integer
                                 - type: string
-                                default: 8Gi
+                                default: 32Gi
                                 description: |-
                                   size is the minimum size of the data volume for each etcd member.
-                                  Default is 8Gi.
+                                  Default is 32Gi.
                                   This field is immutable
                                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                 x-kubernetes-int-or-string: true

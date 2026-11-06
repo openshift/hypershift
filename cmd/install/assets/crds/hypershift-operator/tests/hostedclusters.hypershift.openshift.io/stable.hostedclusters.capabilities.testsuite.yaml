@@ -16,7 +16,7 @@ tests:
             storage:
               type: "PersistentVolume"
               persistentVolume:
-                size: "8Gi"
+                size: "32Gi"
         dns:
           baseDomain: example.hypershift.devcluster.openshift.com
         serviceAccountSigningKey:
@@ -778,7 +778,7 @@ tests:
           managed:
             storage:
               persistentVolume:
-                size: 8Gi
+                size: 32Gi
               type: PersistentVolume
           managementType: Managed
         infrastructureAvailabilityPolicy: SingleReplica
