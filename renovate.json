@@ -100,6 +100,16 @@
             "matchUpdateTypes": [
                 "patch"
             ]
+        },
+        {
+            "description": "Disable updates (including vulnerability fixes) to the GMP API source pin; bump it deliberately with make gmp-sync, see support/gmpmonitoring/README.md",
+            "matchManagers": [
+                "gomod"
+            ],
+            "matchFileNames": [
+                "hack/gmp-api-source/go.mod"
+            ],
+            "enabled": false
         }
     ]
 }
