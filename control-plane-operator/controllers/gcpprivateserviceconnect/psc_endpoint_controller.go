@@ -88,8 +88,9 @@ const (
 	hcpGCPPSCFinalizerName = "hypershift.openshift.io/gcp-psc-cleanup"
 
 	// pscCleanupDeletionTimeout bounds how long deletion waits for PSC GCP cleanup before
-	// releasing the finalizers anyway, so a permanent GCP failure cannot block deletion
-	// forever. Matches the CPO's awsEndpointServiceDeletionTimeout.
+	// releasing the finalizers anyway, so neither a permanent GCP failure nor an operation
+	// that never completes can block deletion forever. Matches the CPO's
+	// awsEndpointServiceDeletionTimeout.
 	pscCleanupDeletionTimeout = 10 * time.Minute
 )
 
@@ -734,12 +735,17 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupPSCGCPResources(
 // release the PSC finalizer. done is true when cleanup completed or was deliberately
 // abandoned; when done is false the caller must return result and err and retry.
 //
-// The deletion timeout is deliberately consulted only after a cleanup attempt has failed:
+// Cleanup is always attempted, even when the HCP reports invalid GCP credentials: those
+// conditions are cached health signals, not proof that a delete call will fail, and a skip
+// would release the finalizer without ever trying.
+//
+// pscCleanupDeletionTimeout is the only release valve, and it is consulted only after a
+// cleanup attempt, never up front:
 //   - Checking it up front would abandon cleanup without ever trying when deletionStart
 //     predates this controller's start (for example after a restart).
-//   - A reconcile that returns a requeue (non-zero result, nil error) is still making
-//     progress on an asynchronous GCP operation and must never be abandoned. Only a failed
-//     attempt shows that retrying cannot succeed.
+//   - It must cover both failure and progress, otherwise an operation that stays PENDING
+//     (or a delete that is DONE while the resource is still present) retains the HCP
+//     finalizer forever.
 func (r *GCPPrivateServiceConnectReconciler) cleanupPSCOrSkip(
 	ctx context.Context,
 	gcpPSC *hyperv1.GCPPrivateServiceConnect,
@@ -747,40 +753,24 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupPSCOrSkip(
 	deletionStart *metav1.Time,
 	log logr.Logger,
 ) (ctrl.Result, error, bool) {
-	if reason := pscCleanupCredentialSkipReason(hcp); reason != "" {
-		logSkippedPSCCleanup(log, r.pscGCPResourceNames(gcpPSC, hcp), reason)
+	result, err := r.cleanupPSCGCPResources(ctx, gcpPSC, hcp, log)
+	if err == nil && result.IsZero() {
 		return ctrl.Result{}, nil, true
 	}
 
-	result, err := r.cleanupPSCGCPResources(ctx, gcpPSC, hcp, log)
+	if reason := pscCleanupTimeoutSkipReason(deletionStart); reason != "" {
+		logSkippedPSCCleanup(log, r.pscGCPResourceNames(gcpPSC, hcp), reason)
+		return ctrl.Result{}, nil, true
+	}
 	if err != nil {
-		if reason := pscCleanupTimeoutSkipReason(deletionStart); reason != "" {
-			logSkippedPSCCleanup(log, r.pscGCPResourceNames(gcpPSC, hcp), reason)
-			return ctrl.Result{}, nil, true
-		}
 		return ctrl.Result{}, err, false
 	}
-	if !result.IsZero() {
-		return result, nil, false
-	}
-	return ctrl.Result{}, nil, true
-}
-
-// pscCleanupCredentialSkipReason returns a non-empty reason when cleanup cannot succeed
-// because the HCP reports invalid GCP credentials. Only an explicit False counts; Unknown
-// or missing still tries, since cleanup is best effort.
-func pscCleanupCredentialSkipReason(hcp *hyperv1.HostedControlPlane) string {
-	for _, condType := range []hyperv1.ConditionType{hyperv1.ValidGCPWorkloadIdentity, hyperv1.ValidGCPCredentials} {
-		if cond := meta.FindStatusCondition(hcp.Status.Conditions, string(condType)); cond != nil && cond.Status == metav1.ConditionFalse {
-			return fmt.Sprintf("%s is False (%s)", condType, cond.Reason)
-		}
-	}
-	return ""
+	return result, nil, false
 }
 
 // pscCleanupTimeoutSkipReason returns a non-empty reason when deletion has been outstanding
 // for longer than pscCleanupDeletionTimeout. Callers must consult it only after a cleanup
-// attempt has failed; see cleanupPSCOrSkip.
+// attempt; see cleanupPSCOrSkip.
 //
 // The clock starts at deletionTimestamp, so a controller that starts deleting late (for
 // example, after a restart) gets a shorter cleanup window. A durable first-attempt
@@ -987,14 +977,16 @@ func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcp
 }
 
 // dnsZonesToDelete returns the de-duplicated, sorted zone names recorded in status.
-// Deterministic names are never inferred: a name derived from the base domain (for example
-// "<base-domain>-public") is shared by every cluster using that domain in the same project,
-// so deleting an inferred name could delete another cluster's zone. Only names this
-// controller recorded in status are returned.
+// Deterministic names are never inferred. A derived name is not proof of ownership: in a
+// self-managed deployment the base domain is chosen by the operator and can be shared by
+// several clusters in the same project, so an inferred name such as
+// "<base-domain>-public" could belong to another cluster. Only names this controller
+// recorded in status are returned.
 //
 // Note that a recorded shared ingress zone can still be deleted while another cluster uses
 // it. Fixing that requires ownership labeling before zones are deleted; see the PSC DNS
-// ownership-labeling follow-up.
+// ownership-labeling follow-up. Until then a zone this controller created but failed to
+// record is not deleted.
 func dnsZonesToDelete(gcpPSC *hyperv1.GCPPrivateServiceConnect) []string {
 	names := map[string]struct{}{}
 	for _, z := range gcpPSC.Status.DNSZones {
