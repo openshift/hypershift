@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/imageregistry"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
@@ -23,6 +24,7 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -110,9 +112,19 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to create guest kubeconfig: %w", err)
 	}
 
+	hcp, err := karpenterutil.GetHCP(ctx, managementCluster.GetAPIReader(), namespace)
+	if err != nil {
+		return fmt.Errorf("failed to get HCP: %w", err)
+	}
+
+	nodeClassGroupKind, err := resolveNodeClassGroupKind(hcp.Spec.Platform.Type)
+	if err != nil {
+		return fmt.Errorf("failed to resolve NodeClass group and kind: %w", err)
+	}
+
 	if standaloneAdapter {
 		// In standalone mode the standalone karpenter-operator reconciles the Karpenter CRDs we need
-		if err := waitForKarpenterCRDs(ctx, guestKubeconfig); err != nil {
+		if err := waitForKarpenterCRDs(ctx, guestKubeconfig, hcp.Spec.Platform.Type); err != nil {
 			return fmt.Errorf("failed waiting for standalone Karpenter CRDs: %w", err)
 		}
 	}
@@ -120,6 +132,12 @@ func run(ctx context.Context) error {
 	managerOptions := ctrl.Options{
 		Scheme:         scheme,
 		LeaderElection: false,
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				// Reuse the controller's informer for unstructured NodeClass reads.
+				Unstructured: true,
+			},
+		},
 	}
 	if standaloneAdapter {
 		// TODO(linkvt): Both the standalone operator and the adapter expose metrics on :8080, check if adapter metrics are needed
@@ -165,6 +183,12 @@ func run(ctx context.Context) error {
 		}
 	}
 
+	// Embedded mode installs NodeClass CRDs during controller setup; discover only after installation.
+	nodeClassGVK, err := waitForNodeClassGVK(ctx, mgr.GetRESTMapper(), nodeClassGroupKind)
+	if err != nil {
+		return fmt.Errorf("failed to resolve NodeClass GVK: %w", err)
+	}
+
 	imageRegistryOverrides := map[string][]string{}
 	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
 	if ok {
@@ -195,6 +219,7 @@ func run(ctx context.Context) error {
 	}
 
 	kir := karpenterignition.KarpenterIgnitionReconciler{
+		NodeClassGVK:            nodeClassGVK,
 		ReleaseProvider:         releaseProvider,
 		VersionResolver:         releaseinfo.NewCincinnatiVersionResolver(),
 		ImageMetadataProvider:   imageMetaDataProvider,
