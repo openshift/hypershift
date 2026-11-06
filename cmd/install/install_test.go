@@ -1970,6 +1970,15 @@ func TestValidateMonitoringConfig(t *testing.T) {
 }
 
 func TestValidateMiscConfig(t *testing.T) {
+	t.Run("When CAPO requires conversion, it should reject disabling conversion only for selected OpenStack CRDs", func(t *testing.T) {
+		for _, platforms := range [][]string{nil, {"OpenStack"}, {"openstack", "AWS"}, {"AWS"}} {
+			options := Options{DisableCAPIConversionWebhook: true, PlatformsToInstall: platforms}
+			shouldReject := len(platforms) != 1 || platforms[0] != "AWS"
+			if (len(options.validateMiscConfig()) != 0) != shouldReject {
+				t.Fatalf("unexpected conversion validation for %v", platforms)
+			}
+		}
+	})
 	tests := []struct {
 		name        string
 		opts        Options
@@ -2714,7 +2723,11 @@ func TestHyperShiftOperatorManifests_WebhookFlags(t *testing.T) {
 					g.Expect(crd.Spec.Conversion).NotTo(BeNil(), "CRD %s should have conversion", crd.Name)
 					g.Expect(crd.Spec.Conversion.Strategy).To(Equal(apiextensionsv1.WebhookConverter), "CRD %s conversion strategy", crd.Name)
 					g.Expect(crd.Spec.Conversion.Webhook).NotTo(BeNil(), "CRD %s should have webhook config", crd.Name)
-					g.Expect(crd.Spec.Conversion.Webhook.ConversionReviewVersions).To(ConsistOf("v1beta1", "v1beta2"), "CRD %s review versions", crd.Name)
+					if crd.Spec.Group == "infrastructure.cluster.x-k8s.io" {
+						g.Expect(crd.Spec.Conversion.Webhook.ConversionReviewVersions).To(ConsistOf("v1", "v1beta1"))
+					} else {
+						g.Expect(crd.Spec.Conversion.Webhook.ConversionReviewVersions).To(ConsistOf("v1beta1", "v1beta2"), "CRD %s review versions", crd.Name)
+					}
 				} else {
 					g.Expect(crd.Spec.Conversion).To(BeNil(), "CRD %s should not have conversion when CAPI conversion is disabled", crd.Name)
 				}

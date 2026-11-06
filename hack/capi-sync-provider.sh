@@ -88,7 +88,7 @@ allow_prefixes() {
             echo "sigs.k8s.io/cluster-api-provider-aws/v2/api/" ;;
         kubevirt:api/v1alpha1)
             echo "kubevirt.io/api" ;;
-        openstack:api/v1beta1)
+        openstack:api/v1beta1|openstack:api/v1beta2)
             echo "sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/" ;;
         openstack:api/v1alpha1)
             echo "sigs.k8s.io/cluster-api-provider-openstack/api/"
@@ -168,7 +168,8 @@ done < <(prune_globs "$PROVIDER")
 # Remove upstream test files and conversion machinery — HyperShift uses the
 # copied types for CRD generation and controller references, not for CAPI's
 # conversion webhooks or upstream tests.
-find "$DST_DIR" \( -name '*_test.go' -o -name '*conversion*' \) -exec rm -f {} +
+find "$DST_DIR" \( -name '*_test.go' -o -name '*conversion*' \) \
+    ! -path "$DST_DIR/pkg/utils/optional/conversion.go" -exec rm -f {} +
 
 # Extract the CAPI declarations these types need into the provider module and
 # repoint the imports at them, so the module carries no dependency on

@@ -99,6 +99,10 @@ func testInstalledCAPIConversions(t *testing.T, scheme *runtime.Scheme, registry
 			t.Fatalf("selected reference version %s is not served by %s", selectedVersion, crd.Name)
 		})
 		switch crd.Spec.Group {
+		case "infrastructure.cluster.x-k8s.io":
+			if _, found := registry.GetConverter(groupKind); !found {
+				continue
+			}
 		case "cluster.x-k8s.io", "ipam.cluster.x-k8s.io", "addons.cluster.x-k8s.io":
 		default:
 			continue

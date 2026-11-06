@@ -7,6 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/openstackconversion"
 	"github.com/openshift/hypershift/support/supportedversion"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -206,6 +207,9 @@ func newCAPIConversionRegistry(scheme *runtime.Scheme) (conversion.Registry, err
 		if err := registry.RegisterConverter(groupKind, converter); err != nil {
 			return nil, fmt.Errorf("unable to register CAPI conversion for %s: %w", groupKind, err)
 		}
+	}
+	if err := openstackconversion.Register(registry); err != nil {
+		return nil, err
 	}
 	return registry, nil
 }
