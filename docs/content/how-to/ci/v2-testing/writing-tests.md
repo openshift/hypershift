@@ -3,6 +3,9 @@
 Follow these invariants when adding or migrating v2 E2E tests. Existing tests
 that violate them are migration debt, not examples to copy.
 
+For hooks, decorators, and filtering, consult the
+[Ginkgo documentation](https://onsi.github.io/ginkgo/).
+
 ## Choose the test boundary
 
 Tests consume pre-created, fully operational hosted clusters. Provisioning,
@@ -29,7 +32,8 @@ Use the registration pattern in
 register specs during Ginkgo tree construction and obtain the runtime test
 context inside hooks or specs. Do not register specs inside `BeforeEach` or `It`.
 
-The suite supplies a shared
+The [suite](https://github.com/openshift/hypershift/blob/main/test/e2e/v2/tests/suite_test.go)
+supplies a shared
 [`TestContext`](https://github.com/openshift/hypershift/blob/main/test/e2e/v2/internal/test_context.go).
 Fetch the HostedCluster and assert the returned error before testing platform or
 configuration preconditions:
