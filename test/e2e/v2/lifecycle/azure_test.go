@@ -84,6 +84,11 @@ func TestAzurePlatformConfigClusterSpecs(t *testing.T) {
 			variant: "external-oidc",
 			want:    1,
 		},
+		{
+			name:    "When etcd sharded Azure variant is configured, it should request two initial replicas",
+			variant: "etcd-sharded",
+			want:    2,
+		},
 	}
 
 	if len(specsByVariant) != len(tests) {
