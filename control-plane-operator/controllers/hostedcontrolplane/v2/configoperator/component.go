@@ -43,7 +43,7 @@ func NewComponent(registryOverrides map[string]string, openShiftImageRegistryOve
 
 	availabilityProberOpts := hccpAvailabilityProberOpts(caps)
 
-	return component.NewDeploymentComponent(ComponentName, hcco).
+	builder := component.NewDeploymentComponent(ComponentName, hcco).
 		WithAdaptFunction(hcco.adaptDeployment).
 		WithManifestAdapter(
 			"podmonitor.yaml",
@@ -53,8 +53,15 @@ func NewComponent(registryOverrides map[string]string, openShiftImageRegistryOve
 			"role.yaml",
 			component.WithAdaptFunction(adaptRole),
 		).
-		InjectAvailabilityProberContainer(availabilityProberOpts).
-		Build()
+		InjectAvailabilityProberContainer(availabilityProberOpts)
+	return builder.InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+		TokenType:               component.CloudToken,
+		ServiceAccountName:      "kube-controller-manager",
+		ServiceAccountNameSpace: "kube-system",
+		// HCCO currently needs cloud credentials only on AWS for load balancer cleanup.
+		// Expand this list when HCCO adds cloud-resource cleanup for other platforms.
+		PlatformTypes: []hyperv1.PlatformType{hyperv1.AWSPlatform},
+	}).Build()
 }
 
 func hccpAvailabilityProberOpts(caps *hyperv1.Capabilities) podspec.AvailabilityProberOpts {

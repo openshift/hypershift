@@ -479,6 +479,9 @@ func (c *elasticloadbalancingClient) DescribeLoadBalancerPolicies(ctx context.Co
 func (c *elasticloadbalancingClient) DescribeLoadBalancers(ctx context.Context, input *elasticloadbalancing.DescribeLoadBalancersInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeLoadBalancersOutput, error) {
 	return c.cloudController.elasticloadbalancingClient.DescribeLoadBalancers(ctx, input, optFns...)
 }
+func (c *elasticloadbalancingClient) DescribeTags(ctx context.Context, input *elasticloadbalancing.DescribeTagsInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeTagsOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.DescribeTags(ctx, input, optFns...)
+}
 func (c *elasticloadbalancingClient) DetachLoadBalancerFromSubnets(ctx context.Context, input *elasticloadbalancing.DetachLoadBalancerFromSubnetsInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DetachLoadBalancerFromSubnetsOutput, error) {
 	return c.cloudController.elasticloadbalancingClient.DetachLoadBalancerFromSubnets(ctx, input, optFns...)
 }
@@ -535,6 +538,9 @@ func (c *elasticloadbalancingv2Client) DescribeLoadBalancerAttributes(ctx contex
 }
 func (c *elasticloadbalancingv2Client) DescribeLoadBalancers(ctx context.Context, input *elasticloadbalancingv2.DescribeLoadBalancersInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeLoadBalancersOutput, error) {
 	return c.cloudController.elasticloadbalancingv2Client.DescribeLoadBalancers(ctx, input, optFns...)
+}
+func (c *elasticloadbalancingv2Client) DescribeTags(ctx context.Context, input *elasticloadbalancingv2.DescribeTagsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTagsOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.DescribeTags(ctx, input, optFns...)
 }
 func (c *elasticloadbalancingv2Client) DescribeTargetGroupAttributes(ctx context.Context, input *elasticloadbalancingv2.DescribeTargetGroupAttributesInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTargetGroupAttributesOutput, error) {
 	return c.cloudController.elasticloadbalancingv2Client.DescribeTargetGroupAttributes(ctx, input, optFns...)
