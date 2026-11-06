@@ -30,9 +30,11 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 	t.Run("When AWS cluster specs are built, it should use public-only networking except for Karpenter variants", func(t *testing.T) {
 		t.Setenv("EXTRA_ARGS", "")
 		t.Setenv("HYPERSHIFT_STORAGE_KMS_KEY_ALIAS", "")
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", "eipalloc-test")
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", "subnet-test")
 		g := NewWithT(t)
 		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
-		g.Expect(specs).To(HaveLen(8))
+		g.Expect(specs).To(HaveLen(9))
 		for _, spec := range specs {
 			switch spec.Variant {
 			case "public", "managed-dns", "upgrade", "autoscaling", "external-oidc", "image-mirroring":
@@ -40,6 +42,11 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 			case "karpenter", "karpenter-upgrade":
 				g.Expect(spec.CreateArgs).NotTo(ContainElement("--public-only"), "variant %s", spec.Variant)
 				g.Expect(spec.CreateArgs).To(ContainElement("--endpoint-access=PublicAndPrivate"), "variant %s", spec.Variant)
+			case "deterministic-lb":
+				g.Expect(spec.CreateArgs).NotTo(ContainElement("--public-only"), "variant %s", spec.Variant)
+				g.Expect(spec.CreateArgs).To(ContainElement("--endpoint-access=PublicAndPrivate"), "variant %s", spec.Variant)
+				g.Expect(spec.CreateArgs).To(ContainElement("--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations=eipalloc-test"), "variant %s", spec.Variant)
+				g.Expect(spec.CreateArgs).To(ContainElement("--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets=subnet-test"), "variant %s", spec.Variant)
 			default:
 				t.Fatalf("unexpected AWS variant %q", spec.Variant)
 			}
@@ -107,6 +114,30 @@ func TestAWSPlatformConfigImageMirroringClusterSpecs(t *testing.T) {
 		if !reflect.DeepEqual(*mirroring, want) {
 			t.Fatalf("got %+v, want %+v", *mirroring, want)
 		}
+	})
+}
+
+func TestDeterministicLBTestPlan(t *testing.T) {
+	t.Run("When the dedicated deterministic-lb plan is loaded, it should validate against the AWS variant and select the lifecycle lane", func(t *testing.T) {
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_EIP", "eipalloc-test")
+		t.Setenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET", "subnet-test")
+		g := NewWithT(t)
+
+		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
+		plan, err := ReadTestPlan(filepath.Join("plans", "deterministic-lb.yaml"))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(plan.Validate(cfg.ClusterSpecs(t.Context(), "current", "previous"))).To(Succeed())
+
+		specs := plan.FilterClusterSpecs(cfg.ClusterSpecs(t.Context(), "current", "previous"))
+		g.Expect(specs).To(HaveLen(1))
+		g.Expect(specs[0].Variant).To(Equal("deterministic-lb"))
+		g.Expect(specs[0].CreateArgs).To(ContainElement("--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations=eipalloc-test"))
+		g.Expect(specs[0].CreateArgs).To(ContainElement("--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets=subnet-test"))
+
+		g.Expect(plan.TestMatrix.Sequential).To(HaveLen(1))
+		g.Expect(plan.TestMatrix.Sequential[0].Steps).To(HaveLen(1))
+		g.Expect(plan.TestMatrix.Sequential[0].Steps[0].Variant).To(Equal("deterministic-lb"))
+		g.Expect(plan.TestMatrix.Sequential[0].Steps[0].LabelFilter).To(Equal("deterministic-lb-ip"))
 	})
 }
 

@@ -236,4 +236,19 @@ func init() {
 		"Comma-separated list of test users in user:password format for External OIDC testing. Written by the lifecycle PostCreate.",
 		false,
 	)
+	RegisterEnvVar(
+		"E2E_EXPECTED_DETERMINISTIC_LB_IP",
+		"Expected IPv4 address for the deterministic KAS LoadBalancer when the provider annotation carries an allocation ID instead of an IP.",
+		false,
+	)
+	RegisterEnvVar(
+		"HYPERSHIFT_DETERMINISTIC_LB_EIP",
+		"AWS EIP allocation ID used by the deterministic LoadBalancer IP lifecycle variant.",
+		false,
+	)
+	RegisterEnvVar(
+		"HYPERSHIFT_DETERMINISTIC_LB_SUBNET",
+		"Management cluster public subnet ID used by the deterministic LoadBalancer IP lifecycle variant.",
+		false,
+	)
 }
