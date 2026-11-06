@@ -82,6 +82,7 @@ func TestAWSPlatformConfigClusterSpecs(t *testing.T) {
 	})
 
 	t.Run("When HYPERSHIFT_ETCD_KMS_KEY_ARN is not set, kms-reencryption CreateArgs should not include --kms-key-arn", func(t *testing.T) {
+		t.Setenv("HYPERSHIFT_ETCD_KMS_KEY_ARN", "")
 		specs := (&AWSPlatformConfig{}).ClusterSpecs(t.Context(), "release-image", "n1-image")
 		for _, s := range specs {
 			if s.Variant == "kms-reencryption" {
@@ -147,6 +148,39 @@ func TestAWSPlatformConfigTestMatrix(t *testing.T) {
 			t.Fatalf("default AWS plan is invalid when HYPERSHIFT_ETCD_KMS_KEY_ARN is set: %v", err)
 		}
 	})
+
+	t.Run("When the default AWS plan is built, it should validate and run the image-mirroring tests as a sequential lane ending with the removal", func(t *testing.T) {
+		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
+		plan := cfg.DefaultTestPlan()
+		if err := plan.Validate(cfg.ClusterSpecs(t.Context(), "current", "previous")); err != nil {
+			t.Fatalf("default AWS plan is invalid: %v", err)
+		}
+		for _, group := range plan.TestMatrix.Parallel {
+			if group.Variant == "image-mirroring" {
+				t.Fatalf("image-mirroring variant must not run in a parallel group: %+v", group)
+			}
+		}
+		var lanes []SequentialGroup
+		for _, group := range plan.TestMatrix.Sequential {
+			if slices.ContainsFunc(group.Steps, func(step TestGroup) bool { return step.Variant == "image-mirroring" }) {
+				lanes = append(lanes, group)
+			}
+		}
+		if len(lanes) != 1 {
+			t.Fatalf("expected exactly one sequential group using the image-mirroring variant, got %+v", lanes)
+		}
+		want := SequentialGroup{
+			Name: "image-mirroring",
+			Steps: []TestGroup{
+				{Name: "image-mirroring", Variant: "image-mirroring", LabelFilter: "image-mirroring"},
+				// The removal mutates the HC without restoring it, so it must be last.
+				{Name: "image-mirroring-removal", Variant: "image-mirroring", LabelFilter: "image-mirroring-removal"},
+			},
+		}
+		if !reflect.DeepEqual(lanes[0], want) {
+			t.Fatalf("got %+v, want %+v", lanes[0], want)
+		}
+	})
 }
 
 // testCLIImage is a digest-pinned openshift/cli image reference used in lookup and setup tests.
@@ -200,41 +234,6 @@ func TestAWSPlatformConfigImageMirroringClusterSpecs(t *testing.T) {
 		}
 		if !reflect.DeepEqual(*mirroring, want) {
 			t.Fatalf("got %+v, want %+v", *mirroring, want)
-		}
-	})
-}
-
-func TestAWSPlatformConfigTestMatrix(t *testing.T) {
-	t.Run("When the default AWS plan is built, it should validate and run the image-mirroring tests as a sequential lane ending with the removal", func(t *testing.T) {
-		cfg := NewAWSPlatformConfig(AWSPlatformOptions{}, t.TempDir())
-		plan := cfg.DefaultTestPlan()
-		if err := plan.Validate(cfg.ClusterSpecs(t.Context(), "current", "previous")); err != nil {
-			t.Fatalf("default AWS plan is invalid: %v", err)
-		}
-		for _, group := range plan.TestMatrix.Parallel {
-			if group.Variant == "image-mirroring" {
-				t.Fatalf("image-mirroring variant must not run in a parallel group: %+v", group)
-			}
-		}
-		var lanes []SequentialGroup
-		for _, group := range plan.TestMatrix.Sequential {
-			if slices.ContainsFunc(group.Steps, func(step TestGroup) bool { return step.Variant == "image-mirroring" }) {
-				lanes = append(lanes, group)
-			}
-		}
-		if len(lanes) != 1 {
-			t.Fatalf("expected exactly one sequential group using the image-mirroring variant, got %+v", lanes)
-		}
-		want := SequentialGroup{
-			Name: "image-mirroring",
-			Steps: []TestGroup{
-				{Name: "image-mirroring", Variant: "image-mirroring", LabelFilter: "image-mirroring"},
-				// The removal mutates the HC without restoring it, so it must be last.
-				{Name: "image-mirroring-removal", Variant: "image-mirroring", LabelFilter: "image-mirroring-removal"},
-			},
-		}
-		if !reflect.DeepEqual(lanes[0], want) {
-			t.Fatalf("got %+v, want %+v", lanes[0], want)
 		}
 	})
 }
