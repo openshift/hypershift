@@ -1,0 +1,157 @@
+# HyperShift CI daily health — single source of truth for every tunable.
+#
+# Tweak a threshold, window, criterion, URL, or limit HERE; a change is a one-file PR.
+# Read at startup by ../hypershift-ci-daily-health.py (stdlib `tomllib`, or a tiny built-in reader on Python < 3.11).
+# Knobs are split by owner: the deterministic script reads [sources], [scope],
+# [presubmit], [periodic], [trend], [job_health].slo_pass_rate_percent, and [limits].
+# The [incident] knobs, [job_health].fix_or_retire_horizon_days, and [jira] are
+# chaibot's — read from here by the prompt, not by the Jira-blind script.
+# The HTML report/chart templates live in ./assets/; longer-form docs in ./references/.
+
+schema_version = 2
+repository = "openshift/hypershift"
+
+[sources]
+# Sippy is the health source of truth. The companion queries Sippy directly to compute the 1w
+# health window (replicating what the dashboard precomputes for its
+# /_dashboard/health/windows/1w endpoint). The CI Health dashboard is used only for the static
+# job inventory (/api/job-registry) — names, roles, required flags, release-controller
+# participations, prow/sippy URLs. The release controller is used only for live payload phase.
+dashboard_base = "https://hypershift-ci-health.apps.rosa.hypershift-ci-2.1xls.p3.openshiftapps.com"
+release_controller_base = "https://amd64.ocp.releases.ci.openshift.org"
+multi_release_controller_base = "https://multi.ocp.releases.ci.openshift.org"
+amd64_release_status_base = "https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com"
+# Sippy API base (health: /api/jobs/analysis, /api/jobs, /api/tests/recent_failures) and the
+# runs URL used only to validate human-clickable Sippy links.
+sippy_base = "https://sippy.dptools.openshift.org"
+sippy_runs_url = "https://sippy.dptools.openshift.org/api/jobs/runs"
+prow_host = "prow.ci.openshift.org"
+public_results_bucket = "test-platform-results-public"
+# Extra hostnames allowed for retrieval beyond those derived from the URLs above.
+extra_allowed_hosts = ["storage.googleapis.com"]
+
+[scope]
+# Supported releases = N (the dev release) plus this many predecessors (N-4 => 4). The window is
+# computed deterministically by releaseRank around N; N is derived from the max main-branch
+# presubmit target in the registry unless pinned below.
+supported_predecessors = 4
+# Optional pin for the dev release (N). Empty => derive from the registry's main-branch presubmits.
+development_release = ""
+# Releases excluded from the window. 4.23 shares a releaseRank with 5.0 (it was renamed to 5.0).
+excluded_releases = ["4.23"]
+
+[health]
+# The companion computes the 1w health window from Sippy itself; these mirror the dashboard's
+# WindowConfigs["1w"] so the result matches what its /windows/1w endpoint would precompute.
+current_days = 7            # rate/prev are each this many days (current 7d vs previous 7d)
+spark_slot_hours = 6        # sparkline slot width
+spark_slots = 28            # sparkline slot count (28 x 6h = 7 days)
+analysis_window_days = 15   # Sippy by_period span fetched (current 7d + previous 7d + 1d margin)
+
+[presubmit]
+# Merge-queue classification (Axis A, v2 elimination funnel) — the deterministic script reads these.
+# Per required presubmit, from the ordered Prow history (SUCCESS/FAILURE; ERROR/ABORTED neutral), over
+# the job's ORGANIC runs (probe runs are handled separately). f = distinct failing PRs since the last pass.
+#   G0 last testable run older than stale_business_days (or none)   -> under-observed
+#   G1 last run SUCCESS, or a SUCCESS within green_recency_hours    -> eliminated
+#   G2 f <= 1 (a single bad PR, not a branch break)                 -> eliminated
+#   G3 f >= min_failing_prs AND red span since last pass >= D       -> PERMAFAILING (merge-queue blocker)
+#   G4 throughput low -> candidate; high + overwhelming share -> candidate; high + sparse -> eliminated
+permafail_duration_hours = 48          # D — sustained-permafail red span since the last pass
+min_failing_prs = 3                    # T — distinct failing PRs to auto-confirm (also derives the HI cutoff)
+stale_business_days = 2                # last testable run older than this many business days -> under-observed
+green_recency_hours = 24               # a SUCCESS within this many hours -> eliminated (flowing)
+overwhelm_rate = 0.5                   # high-throughput: failing-PR share at/above this -> candidate, not eliminate
+report_interval_business_days = 1      # report cadence; HI (high-throughput cutoff) = min_failing_prs / this
+throughput_window_business_days = 10   # fixed window for the per-branch distinct-PR throughput measurement
+
+[presubmit.probe]
+# No-op "health probe" PRs: a run whose PR matches this marker is attribution-clean by construction (no
+# real code), so one probe red classifies an otherwise under-observed low-traffic job. Read by the script.
+title_marker = "[health-probe]"        # PR-title substring that marks a probe PR ("" disables marker match)
+authors = []                           # optional allow-list of probe PR authors (e.g. a bot account)
+
+[periodic]
+# Periodic permafail (Design B, Axis A) — binary, from the ordered run list, decoupled
+# from payload/release-blocker status. Lower cadence than presubmits; no PR-head ambiguity,
+# so no candidate stage and no separate veto knob.
+#   failures since the last pass >= permafail_volume AND streak span >= permafail_duration_hours
+#     -> PERMAFAILING; anything below the volume is simply not permafailing.
+permafail_duration_hours = 48    # D
+permafail_volume = 4             # V_periodic — failures since the last pass
+
+[trend]
+# Week-over-week trend from the dashboard (rate vs prev), Axis B. Confidence-aware:
+# call improving/degrading only when the two weekly Wilson intervals are disjoint
+# AND |trend| exceeds the change threshold; otherwise stable/insufficient.
+min_window_runs = 8              # N_min — below this per window => insufficient (no arrow)
+change_threshold_points = 10.0   # Δ — percentage points
+
+[job_health]
+# Axis B. Every job (blocking or not) must keep pass rate >= the SLO; below it is always
+# tracked (fix-or-retire). rate = passes / total runs (infra counted) — one number, also
+# the scoreboard "healthy" threshold. The script reads slo_pass_rate_percent and
+# payload_below_category_percent.
+slo_pass_rate_percent = 80.0
+# Phase-3's single tracked category = payload-blocking periodics below this pass rate (0-100).
+# The script reads it and emits that category in data.json.
+payload_below_category_percent = 50.0
+# chaibot's knob (read from here by the prompt; the Jira-blind script does not read it):
+# a job below SLO past this many days with no progress => fix-or-retire decision.
+fix_or_retire_horizon_days = 21
+# chaibot's knob (read from here by the prompt, not the script): a below-SLO job's tracking
+# sub-task counts as making "progress" if it has an active status or a human comment/worklog/
+# status-change within this many days. Used by Phase 3's deteriorating/fix-or-retire buckets.
+progress_window_days = 3
+
+[incident]
+# chaibot's knobs (read from here by the prompt; the Jira-blind script does not read them).
+# One umbrella jobs-incident that chaibot recommends when it finds incident-worthy blockers.
+# A branch (>=1 required presubmit permafailing) or release (>=1 permafailing payload-
+# blocking OR component-readiness periodic) blocked continuously > blocked_days => incident.
+# Duration = now - the unresolved per-branch/per-release story's creation time (Jira is the
+# state store). <= threshold => each blocking job must have an active major/critical bug +
+# assigned in-progress task, else chaibot surfaces it.
+blocked_days_threshold = 2
+
+[jira]
+# chaibot's knobs (read from here by the prompt; the script does not read them).
+label = "rits-work"
+component = "Hosted Control Planes"
+# Strategic anchor: the per-release OCPSTRAT Feature the CI-daily-health epic lives under.
+# Found by release_tracker_label scoped to release_tracker_project; if the current dev release
+# has none, chaibot presumes it absent and creates one (create-template in
+# jira-model.md, seeded from OCPSTRAT-3645). The epic is found/created by epic_title_prefix.
+release_tracker_project = "OCPSTRAT"
+release_tracker_label = "hcp-ci-release-tracker"
+release_tracker_issue_type = "Feature"
+epic_title_prefix = "HyperShift CI Daily Health"
+# The tracking spine lives in CNTRLPLANE (stories/sub-tasks); linked defect records live in OCPBUGS.
+story_project = "CNTRLPLANE"
+defect_project = "OCPBUGS"
+# Label chaibot adds when escalating a below-SLO job to a fix-or-retire decision (Phase 4).
+fix_or_retire_label = "fix-or-retire"
+
+[limits]
+# Retrieval and output safety bounds.
+max_http_bytes = 8388608                 # 8 MiB
+max_history_pages = 6
+max_throughput_pages = 12                # pages for the 10-business-day per-branch throughput count
+max_candidates = 100
+max_sample_runs = 6
+max_source_failures = 100
+max_workers = 8
+# Headroom for the live Sippy fan-out (per-job analysis across the in-scope releases, membership,
+# recent failures) on top of the existing Prow/release-controller reads. This is a once-a-day
+# local run; concurrency keeps it to ~1-2 minutes.
+max_collection_requests = 2000
+collection_deadline_seconds = 300.0
+# Transient-failure retry for live HTTP (Sippy/Prow/release controller) on 408/429/5xx and network
+# errors, mirroring the dashboard's Sippy client. Backoff doubles each retry.
+http_retry_attempts = 4
+http_retry_backoff_seconds = 1.0
+max_source_jobs = 5000
+max_source_string = 2000
+max_candidate_document_bytes = 524288    # 512 KiB
+max_prow_duration_ns = 604800000000000   # 7 days
+max_metric_count = 1000000000
