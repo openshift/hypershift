@@ -3,6 +3,7 @@ package azureutil
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -52,15 +53,15 @@ func ParseRetryAfterDuration(err error) (time.Duration, bool) {
 	}
 
 	// Try parsing as seconds first (most common for Azure)
-	if seconds, parseErr := strconv.ParseInt(retryAfter, 10, 64); parseErr == nil && seconds > 0 {
+	if seconds, parseErr := strconv.ParseInt(retryAfter, 10, 64); parseErr == nil && seconds > 0 && seconds <= math.MaxInt64/int64(time.Second) {
 		return time.Duration(seconds) * time.Second, true
 	}
 
 	// Try parsing as HTTP-date (RFC 7231 section 7.1.1.1)
 	if t, parseErr := http.ParseTime(retryAfter); parseErr == nil {
-		d := time.Until(t)
-		if d > 0 {
-			return d, true
+		now := time.Now()
+		if t.After(now) && !t.After(now.Add(time.Duration(math.MaxInt64))) {
+			return t.Sub(now), true
 		}
 		return 0, false
 	}
