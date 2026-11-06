@@ -116,14 +116,14 @@ require (
 	k8s.io/kubectl v0.36.3
 	k8s.io/pod-security-admission v0.36.3
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
-	kubevirt.io/api v1.8.4
+	kubevirt.io/api v1.9.0
 	kubevirt.io/containerized-data-importer-api v1.65.0
 	sigs.k8s.io/cluster-api v1.13.4
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.13.0
 	sigs.k8s.io/cluster-api-provider-azure v1.26.0
 	sigs.k8s.io/cluster-api-provider-gcp v1.13.0
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.13.1
-	sigs.k8s.io/cluster-api-provider-kubevirt v0.11.2
+	sigs.k8s.io/cluster-api-provider-kubevirt v0.0.0-20261014190453-39d5a24d9f4a
 	sigs.k8s.io/cluster-api-provider-openstack v0.14.6
 	sigs.k8s.io/controller-runtime v0.24.1
 	sigs.k8s.io/karpenter v1.13.0
@@ -316,3 +316,5 @@ replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter 
 
 // Temporary: NTO main requires kube-openapi v0.35.1 (fake tag that only resolves via NTO's own replace)
 replace k8s.io/kube-openapi v0.35.1 => k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288
+
+replace sigs.k8s.io/cluster-api-provider-kubevirt => github.com/openshift/cluster-api-provider-kubevirt v0.0.0-20261014190453-39d5a24d9f4a

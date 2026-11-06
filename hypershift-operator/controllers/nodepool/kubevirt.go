@@ -134,7 +134,7 @@ func (r *NodePoolReconciler) setAllMachinesLMCondition(ctx context.Context, node
 	var mapReason, mapMessage string
 	for _, kubevirtmachine := range kubevirtMachines.Items {
 		for _, cond := range kubevirtmachine.Status.Conditions {
-			if cond.Type == capikubevirt.VMLiveMigratableCondition && cond.Status == corev1.ConditionFalse {
+			if cond.Type == capikubevirt.VMLiveMigratableCondition && cond.Status == metav1.ConditionFalse {
 				mapReason = cond.Reason
 				mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", kubevirtmachine.Name, cond.Reason, cond.Message)
 				numNotLiveMigratable++
