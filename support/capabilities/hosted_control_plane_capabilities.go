@@ -77,14 +77,19 @@ func SupportsCompatibilityRequirements(featureSet configv1.FeatureSet, releaseVe
 }
 
 // CalculateEnabledCapabilities returns the net enabled capabilities, by
-// using the default set of capabilities (minus baremetal and ClusterAPI
-// capabilities) and the explicitly enabled and disabled capabilities, in
-// alphabetical order.
+// using the default set of capabilities (minus baremetal, ClusterAPI and
+// MachineAPI capabilities) and the explicitly enabled and disabled
+// capabilities, in alphabetical order.
+//
+// MachineAPI is removed from the default set because HyperShift manages
+// guest cluster machines via its own CAPI-based NodePools and the guest
+// CVO rejects MachineAPI without ClusterAPI (openshift/api#3145).
 func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities, featureSet configv1.FeatureSet, releaseVersion semver.Version) []configv1.ClusterVersionCapability {
 	vCurrent := configv1.ClusterVersionCapabilitySets[configv1.ClusterVersionCapabilitySetCurrent]
 	netCaps := sets.New[configv1.ClusterVersionCapability](vCurrent...)
 	netCaps.Delete(configv1.ClusterVersionCapabilityBaremetal)
 	netCaps.Delete(configv1.ClusterVersionCapabilityClusterAPI)
+	netCaps.Delete(configv1.ClusterVersionCapabilityMachineAPI)
 	if !SupportsCompatibilityRequirements(featureSet, releaseVersion) {
 		netCaps.Delete(configv1.ClusterVersionCapabilityCompatibilityRequirements)
 	}
