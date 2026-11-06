@@ -47,6 +47,41 @@ func Replace(image string, overrides map[string]string) string {
 	return bestTarget + image[len(bestSource):]
 }
 
+// HasMirroredPrefix reports whether image may already be the result of applying
+// overrides, in which case passing it through Replace again would rewrite it twice.
+//
+// Only an override that rewrites a registry into a location under its own source
+// can produce that ambiguity: with "quay.io=quay.io/cache", the result
+// "quay.io/cache/repo" still matches the source "quay.io" and a second Replace
+// yields "quay.io/cache/cache/repo". Every other override is already safe, because
+// Replace leaves its own output alone, so only the self-overlapping ones are
+// considered here and matching is done with the same rules Replace uses.
+//
+// Restricting the check this way keeps unrelated overrides from suppressing a
+// legitimate rewrite. An identity entry such as "quay.io=quay.io", or an entry that
+// happens to mirror some other registry into "quay.io", must not make every image
+// under quay.io look mirrored and bypass a more specific override.
+func HasMirroredPrefix(image string, overrides map[string]string) bool {
+	if image == "" || len(overrides) == 0 {
+		return false
+	}
+
+	for source, target := range overrides {
+		if source == "" || target == "" || source == target {
+			continue
+		}
+		// Overrides that point somewhere else cannot have produced this image in a
+		// way Replace would re-match, so they are not evidence of a prior rewrite.
+		if !matchesPrefix(target, source) {
+			continue
+		}
+		if matchesPrefix(image, target) {
+			return true
+		}
+	}
+	return false
+}
+
 // matchesPrefix reports whether image is exactly source, or source is a prefix
 // of image followed by a valid separator. Valid separators are "/" (path) and
 // "@" (digest), always. ":" is accepted only when source contains a "/" (i.e.
