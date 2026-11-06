@@ -74,7 +74,10 @@ func newReconciler(objs ...client.Object) *HCPEtcdBackupReconciler {
 		Build()
 
 	return &HCPEtcdBackupReconciler{
-		Client:                  fakeClient,
+		Client: fakeClient,
+		// The fake client plays both the cached client and the API server, so
+		// point the quorum reader at it to exercise the non-cache read paths.
+		APIReader:               fakeClient,
 		OperatorNamespace:       testHONamespace,
 		ReleaseProvider:         &fakeReleaseProvider{},
 		HypershiftOperatorImage: "quay.io/hypershift/hypershift:latest",
@@ -532,6 +535,141 @@ func TestReconcile(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(result).To(Equal(ctrl.Result{}))
 	})
+
+	// Formerly the top-level TestReconcileConcurrentBackupSerialization.
+	newOtherBackupJob := func(name, backupName string, conditions ...batchv1.JobCondition) *batchv1.Job {
+		return &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: testHONamespace,
+				Labels: map[string]string{
+					LabelApp:          LabelName,
+					LabelHCPNamespace: testHCPNamespace,
+					LabelBackupName:   backupName,
+				},
+			},
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers:    []corev1.Container{{Name: "test", Image: "test:latest"}},
+						RestartPolicy: corev1.RestartPolicyNever,
+					},
+				},
+			},
+			Status: batchv1.JobStatus{
+				Conditions: conditions,
+			},
+		}
+	}
+
+	t.Run("When another backup's fresh Job is invisible to the cache it should reject", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+
+		// The cache client (what the reconciler's cached Client sees) has no
+		// Jobs at all; the API reader sees a Job for another backup that was
+		// just created and has no status yet (Active == 0, no conditions).
+		r := newReconciler(backup, hcp, sts)
+		r.APIReader = fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithObjects(newOtherBackupJob("etcd-backup-first", "first-backup")).
+			Build()
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.Reason).To(Equal(hyperv1.BackupRejectedReason))
+		g.Expect(cond.Message).To(ContainSubstring("etcd-backup-first"))
+		g.Expect(isTerminal(updated)).To(BeTrue(), "a rejected backup must be terminal so retention can clean it up")
+
+		// No Job may have been created for the rejected backup.
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(BeEmpty())
+	})
+
+	t.Run("When another backup's Job already completed it should proceed", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: pullSecretName, Namespace: testHCPNamespace},
+			Data:       map[string][]byte{corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`)},
+		}
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "aws-creds", Namespace: testHONamespace},
+			Data:       map[string][]byte{"credentials": []byte("fake-creds")},
+		}
+
+		// A completed Job for a prior backup is visible only via the API
+		// reader; it must not block a new backup.
+		r := newReconciler(backup, hcp, sts, pullSecret, credSecret)
+		r.APIReader = fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithObjects(newOtherBackupJob("etcd-backup-prior", "prior-backup",
+				batchv1.JobCondition{Type: batchv1.JobComplete, Status: corev1.ConditionTrue})).
+			Build()
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
+
+		updated := &hyperv1.HCPEtcdBackup{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace}, updated)).To(Succeed())
+		cond := meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.BackupCompleted))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Reason).To(Equal(hyperv1.BackupInProgressReason))
+
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(HaveLen(1))
+	})
+
+	t.Run("When its own Job is invisible to the cache it should not create a duplicate", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		sts := newEtcdStatefulSet(3, 3)
+
+		// The backup's own Job exists on the API server but is not yet in the
+		// cache. findJobForBackup performs a quorum read, so the reconciler
+		// must adopt the existing Job rather than create a duplicate.
+		ownJob := newOtherBackupJob("etcd-backup-own", backup.Name)
+		ownJob.Labels[LabelBackupName] = backup.Name
+		r := newReconciler(backup, hcp, sts)
+		r.APIReader = fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithObjects(ownJob).
+			Build()
+		ctx := context.Background()
+
+		result, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: testBackupName, Namespace: testHCPNamespace},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+		// Job is neither Complete nor Failed: the reconciler monitors it and requeues.
+		g.Expect(result.RequeueAfter).To(Equal(requeueInterval))
+
+		// No duplicate Job was created through the cached client.
+		jobList := &batchv1.JobList{}
+		g.Expect(r.List(ctx, jobList, client.InNamespace(testHONamespace))).To(Succeed())
+		g.Expect(jobList.Items).To(BeEmpty())
+	})
 }
 
 func TestIsTerminal(t *testing.T) {
@@ -639,19 +777,49 @@ func TestEnsureNetworkPolicy(t *testing.T) {
 	t.Run("When ensureNetworkPolicy is called it should create NetworkPolicy in HCP namespace", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		backup := newHCPEtcdBackup()
-		r := newReconciler(backup)
+		hcp := newHostedControlPlane()
+		r := newReconciler(backup, hcp)
 		ctx := context.Background()
 
-		err := r.ensureNetworkPolicy(ctx, backup)
+		err := r.ensureNetworkPolicy(ctx, backup, hcp)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		np := &networkingv1.NetworkPolicy{}
 		g.Expect(r.Get(ctx, types.NamespacedName{Name: NetworkPolicyName, Namespace: testHCPNamespace}, np)).To(Succeed())
-		g.Expect(np.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue("app", "etcd"))
+		g.Expect(np.Spec.PodSelector.MatchExpressions).To(HaveLen(1))
+		g.Expect(np.Spec.PodSelector.MatchExpressions[0].Key).To(Equal("app"))
+		g.Expect(np.Spec.PodSelector.MatchExpressions[0].Operator).To(Equal(metav1.LabelSelectorOpIn))
+		g.Expect(np.Spec.PodSelector.MatchExpressions[0].Values).To(ContainElement("etcd"))
 		g.Expect(np.Spec.Ingress).To(HaveLen(1))
 		g.Expect(np.Spec.Ingress[0].From[0].NamespaceSelector.MatchLabels).To(HaveKeyWithValue("kubernetes.io/metadata.name", testHONamespace))
 		g.Expect(np.Spec.Ingress[0].Ports[0].Port.IntValue()).To(Equal(2379))
 		g.Expect(np.Spec.PolicyTypes).To(ContainElement(networkingv1.PolicyTypeIngress))
+	})
+
+	// Formerly the top-level TestEnsureNetworkPolicyMultiShard.
+	t.Run("When shards are configured the NetworkPolicy should include shard app labels", func(t *testing.T) {
+		g := NewWithT(t)
+		backup := newHCPEtcdBackup()
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		r := newReconciler(backup, hcp)
+		ctx := context.Background()
+
+		err := r.ensureNetworkPolicy(ctx, backup, hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		np := &networkingv1.NetworkPolicy{}
+		g.Expect(r.Get(ctx, types.NamespacedName{Name: NetworkPolicyName, Namespace: testHCPNamespace}, np)).To(Succeed())
+		g.Expect(np.Spec.PodSelector.MatchExpressions).To(HaveLen(1))
+		values := np.Spec.PodSelector.MatchExpressions[0].Values
+		g.Expect(values).To(ContainElement("etcd"))
+		g.Expect(values).To(ContainElement("etcd-events"))
 	})
 }
 
@@ -1091,12 +1259,39 @@ func TestBuildUploadArgs(t *testing.T) {
 		},
 	}
 
+	// Default single shard for backward-compat tests
+	singleShard := []etcdShardInfo{{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"}}
+
+	// Verify single-shard uses --snapshot-path for backward compat
+	t.Run("When single shard it should use --snapshot-path for backward compatibility", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		args, err := r.buildUploadArgs(newHCPEtcdBackup(), singleShard, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(args).To(ContainElement("--snapshot-path"))
+		g.Expect(args).ToNot(ContainElement("--snapshot-dir"))
+	})
+
+	// Verify multi-shard uses --snapshot-dir
+	t.Run("When multiple shards it should use --snapshot-dir", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		multiShards := []etcdShardInfo{
+			{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"},
+			{name: "etcd-events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
+		}
+		args, err := r.buildUploadArgs(newHCPEtcdBackup(), multiShards, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(args).To(ContainElement("--snapshot-dir"))
+		g.Expect(args).ToNot(ContainElement("--snapshot-path"))
+	})
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			r := newReconciler()
 
-			args, err := r.buildUploadArgs(tt.backup, tt.creds)
+			args, err := r.buildUploadArgs(tt.backup, singleShard, tt.creds)
 			if tt.wantErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tt.wantErr))
@@ -1111,6 +1306,15 @@ func TestBuildUploadArgs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildUploadContainer(t *testing.T) {
+	t.Run("When building upload container, it should set FallbackToLogsOnError termination message policy", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		container := r.buildUploadContainer("cpo:latest", []string{"control-plane-operator", "etcd-upload"}, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "creds"})
+		g.Expect(container.TerminationMessagePolicy).To(Equal(corev1.TerminationMessageFallbackToLogsOnError))
+	})
 }
 
 func TestEnforceRetention(t *testing.T) {
@@ -1207,9 +1411,10 @@ func TestCheckEtcdHealth(t *testing.T) {
 	t.Run("When etcd StatefulSet is fully ready it should return healthy", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		sts := newEtcdStatefulSet(3, 3)
-		r := newReconciler(sts)
+		hcp := newHostedControlPlane()
+		r := newReconciler(sts, hcp)
 
-		healthy, msg, err := r.checkEtcdHealth(context.Background(), testHCPNamespace)
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(healthy).To(BeTrue())
 		g.Expect(msg).To(BeEmpty())
@@ -1218,34 +1423,154 @@ func TestCheckEtcdHealth(t *testing.T) {
 	t.Run("When etcd StatefulSet has fewer ready replicas it should return unhealthy", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 		sts := newEtcdStatefulSet(2, 3)
-		r := newReconciler(sts)
+		hcp := newHostedControlPlane()
+		r := newReconciler(sts, hcp)
 
-		healthy, msg, err := r.checkEtcdHealth(context.Background(), testHCPNamespace)
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(healthy).To(BeFalse())
 		g.Expect(msg).To(ContainSubstring("2/3"))
 	})
+
+	// Formerly the top-level TestCheckEtcdHealthMultiShard.
+	t.Run("When all shard StatefulSets are ready it should return healthy", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		shardSTS := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
+			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(int32(3))},
+			Status:     appsv1.StatefulSetStatus{ReadyReplicas: 3},
+		}
+		r := newReconciler(hcp, defaultSTS, shardSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeTrue())
+		g.Expect(msg).To(BeEmpty())
+	})
+
+	t.Run("When a shard StatefulSet is not ready it should return unhealthy", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		shardSTS := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
+			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(int32(3))},
+			Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
+		}
+		r := newReconciler(hcp, defaultSTS, shardSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeFalse())
+		g.Expect(msg).To(ContainSubstring("etcd-events"))
+		g.Expect(msg).To(ContainSubstring("1/3"))
+	})
+
+	// Scaled-to-zero must not be reported as healthy: desired == 0 makes the
+	// ready-replica comparison trivially true, but the snapshot init container
+	// would target pods that do not exist and the backup Job would fail.
+	t.Run("When a shard StatefulSet is scaled to zero it should return unhealthy", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		shardSTS := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
+			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(int32(0))},
+			Status:     appsv1.StatefulSetStatus{ReadyReplicas: 0},
+		}
+		r := newReconciler(hcp, defaultSTS, shardSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeFalse())
+		g.Expect(msg).To(ContainSubstring("etcd-events"))
+		g.Expect(msg).To(ContainSubstring("scaled to zero"))
+	})
+
+	// A nil Replicas pointer defaults to 1, so it must never be treated as
+	// scaled-to-zero.
+	t.Run("When a shard StatefulSet has no replicas set it should use the default of one", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		shardSTS := &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "etcd-events", Namespace: testHCPNamespace},
+			// Replicas deliberately left nil.
+			Status: appsv1.StatefulSetStatus{ReadyReplicas: 0},
+		}
+		r := newReconciler(hcp, defaultSTS, shardSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeFalse())
+		g.Expect(msg).To(ContainSubstring("etcd-events"))
+		g.Expect(msg).To(ContainSubstring("0/1"))
+	})
+
+	t.Run("When a shard StatefulSet is not found it should return unhealthy", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{{
+				Name:     "events",
+				Replicas: 3,
+				Storage:  hyperv1.ManagedEtcdShardStorageSpec{Type: hyperv1.PersistentVolumeEtcdShardStorage},
+			}},
+		}
+		defaultSTS := newEtcdStatefulSet(3, 3)
+		// No shard StatefulSet
+		r := newReconciler(hcp, defaultSTS)
+
+		healthy, msg, err := r.checkEtcdHealth(context.Background(), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(healthy).To(BeFalse())
+		g.Expect(msg).To(ContainSubstring("etcd-events"))
+		g.Expect(msg).To(ContainSubstring("not found"))
+	})
 }
 
 func TestFindActiveJob(t *testing.T) {
-	t.Run("When no active jobs exist it should return nil", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		r := newReconciler()
+	backup := newHCPEtcdBackup()
 
-		job, err := r.findActiveJob(context.Background(), testHCPNamespace)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(job).To(BeNil())
-	})
-
-	t.Run("When active job exists it should return it", func(t *testing.T) {
-		g := NewGomegaWithT(t)
-		activeJob := &batchv1.Job{
+	newJob := func(name, backupName string, conditions ...batchv1.JobCondition) *batchv1.Job {
+		return &batchv1.Job{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "etcd-backup-active",
+				Name:      name,
 				Namespace: testHONamespace,
 				Labels: map[string]string{
 					LabelApp:          LabelName,
 					LabelHCPNamespace: testHCPNamespace,
+					LabelBackupName:   backupName,
 				},
 			},
 			Spec: batchv1.JobSpec{
@@ -1257,15 +1582,90 @@ func TestFindActiveJob(t *testing.T) {
 				},
 			},
 			Status: batchv1.JobStatus{
-				Active: 1,
+				Conditions: conditions,
 			},
 		}
+	}
+
+	t.Run("When no active jobs exist it should return nil", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(job).To(BeNil())
+	})
+
+	t.Run("When active job exists it should return it", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		activeJob := newJob("etcd-backup-active", "other-backup")
+		activeJob.Status.Active = 1
 		r := newReconciler(activeJob)
 
-		job, err := r.findActiveJob(context.Background(), testHCPNamespace)
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(job).ToNot(BeNil())
 		g.Expect(job.Name).To(Equal("etcd-backup-active"))
+	})
+
+	t.Run("When a job was just created and has no status yet it should return it", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		// Simulates the window between Job creation and the job controller
+		// setting status.active: no conditions, Active == 0. The serialization
+		// guard must still treat this Job as active.
+		freshJob := newJob("etcd-backup-fresh", "other-backup")
+		r := newReconciler(freshJob)
+
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(job).ToNot(BeNil())
+		g.Expect(job.Name).To(Equal("etcd-backup-fresh"))
+	})
+
+	t.Run("When the only job belongs to this backup it should return nil", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		ownJob := newJob("etcd-backup-own", backup.Name)
+		ownJob.Status.Active = 1
+		r := newReconciler(ownJob)
+
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(job).To(BeNil())
+	})
+
+	t.Run("When terminated jobs exist they should not count as active", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		completed := newJob("etcd-backup-completed", "other-backup",
+			batchv1.JobCondition{Type: batchv1.JobComplete, Status: corev1.ConditionTrue})
+		failed := newJob("etcd-backup-failed", "another-backup",
+			batchv1.JobCondition{Type: batchv1.JobFailed, Status: corev1.ConditionTrue})
+		r := newReconciler(completed, failed)
+
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(job).To(BeNil())
+	})
+
+	t.Run("When a job is only visible to the API reader it should return it", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		// Simulates informer cache lag: the Job was created against the API
+		// server but is not yet in the cache the reconciler's Client reads from.
+		cacheClient := fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithStatusSubresource(&hyperv1.HCPEtcdBackup{}, &hyperv1.HostedControlPlane{}, &hyperv1.HostedCluster{}).
+			Build()
+		apiClient := fake.NewClientBuilder().
+			WithScheme(newScheme()).
+			WithObjects(newJob("etcd-backup-lagging", "other-backup")).
+			Build()
+		r := newReconciler()
+		r.Client = cacheClient
+		r.APIReader = apiClient
+
+		job, err := r.findActiveJob(context.Background(), backup, testHCPNamespace)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(job).ToNot(BeNil())
+		g.Expect(job.Name).To(Equal("etcd-backup-lagging"))
 	})
 }
 
@@ -1341,7 +1741,7 @@ func TestCreateBackupJob(t *testing.T) {
 		g.Expect(fetchCerts.Command).To(ContainElements("fetch-etcd-certs", "--hcp-namespace", testHCPNamespace))
 
 		snapshot := podSpec.InitContainers[1]
-		g.Expect(snapshot.Name).To(Equal("snapshot"))
+		g.Expect(snapshot.Name).To(Equal("snapshot-etcd"))
 		g.Expect(snapshot.Image).To(Equal(testEtcdImage))
 		g.Expect(snapshot.Command).To(ContainElement("/usr/bin/etcdctl"))
 		g.Expect(snapshot.Command).To(ContainElement("snapshot"))
@@ -2804,15 +3204,48 @@ func TestEnforceRetentionDeleteRace(t *testing.T) {
 	})
 }
 
-func TestGetSnapshotURLFromPod(t *testing.T) {
+func TestGetShardSnapshotsFromPod(t *testing.T) {
 	tests := []struct {
 		name     string
 		pods     []client.Object
 		jobName  string
-		expected string
+		expected []hyperv1.HCPEtcdShardSnapshot
 	}{
 		{
-			name: "When upload container has termination message, it should return the URL",
+			name: "When upload container has JSON termination message, it should return shard snapshots",
+			pods: []client.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "backup-pod",
+						Namespace: testHONamespace,
+						Labels:    map[string]string{"batch.kubernetes.io/job-name": "my-job"},
+					},
+					Spec: corev1.PodSpec{
+						Containers:    []corev1.Container{{Name: "upload", Image: "test:latest"}},
+						RestartPolicy: corev1.RestartPolicyNever,
+					},
+					Status: corev1.PodStatus{
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name: "upload",
+								State: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{
+										Message: `[{"name":"etcd","url":"s3://bucket/path/etcd.db"},{"name":"etcd-events","url":"s3://bucket/path/etcd-events.db"}]`,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			jobName: "my-job",
+			expected: []hyperv1.HCPEtcdShardSnapshot{
+				{Name: "etcd", SnapshotURL: "s3://bucket/path/etcd.db"},
+				{Name: "etcd-events", SnapshotURL: "s3://bucket/path/etcd-events.db"},
+			},
+		},
+		{
+			name: "When upload container has plain URL, it should return backward-compat single snapshot",
 			pods: []client.Object{
 				&corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2838,17 +3271,19 @@ func TestGetSnapshotURLFromPod(t *testing.T) {
 					},
 				},
 			},
-			jobName:  "my-job",
-			expected: "s3://bucket/path/snapshot.db",
+			jobName: "my-job",
+			expected: []hyperv1.HCPEtcdShardSnapshot{
+				{Name: "etcd", SnapshotURL: "s3://bucket/path/snapshot.db"},
+			},
 		},
 		{
-			name:     "When no pods exist for the job, it should return empty string",
+			name:     "When no pods exist for the job, it should return nil",
 			pods:     []client.Object{},
 			jobName:  "my-job",
-			expected: "",
+			expected: nil,
 		},
 		{
-			name: "When upload container has no termination message, it should return empty string",
+			name: "When upload container has no termination message, it should return nil",
 			pods: []client.Object{
 				&corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2875,7 +3310,7 @@ func TestGetSnapshotURLFromPod(t *testing.T) {
 				},
 			},
 			jobName:  "my-job",
-			expected: "",
+			expected: nil,
 		},
 	}
 
@@ -2891,9 +3326,13 @@ func TestGetSnapshotURLFromPod(t *testing.T) {
 				},
 			}
 
-			url, err := r.getSnapshotURLFromPod(t.Context(), job)
+			snapshots, err := r.getShardSnapshotsFromPod(t.Context(), job)
 			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(url).To(Equal(tt.expected))
+			if tt.expected == nil {
+				g.Expect(snapshots).To(BeNil())
+			} else {
+				g.Expect(snapshots).To(Equal(tt.expected))
+			}
 		})
 	}
 }
@@ -2970,5 +3409,169 @@ func TestUpdateHCPBackupCondition(t *testing.T) {
 			"both the existing condition and the new backup condition should be present")
 		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.ClusterVersionAvailable))).ToNot(BeNil())
 		g.Expect(meta.FindStatusCondition(updated.Status.Conditions, string(hyperv1.EtcdBackupSucceeded))).ToNot(BeNil())
+	})
+}
+
+func TestEtcdShards(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When no shards are configured it should return only the default shard", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		shards := etcdShards(hcp)
+		g.Expect(shards).To(HaveLen(1))
+		g.Expect(shards[0].name).To(Equal("etcd"))
+		g.Expect(shards[0].endpoint).To(ContainSubstring("etcd-client."))
+	})
+
+	t.Run("When PV-backed shards are configured it should include them", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{
+				{
+					Name:     "events",
+					Replicas: 3,
+					Storage: hyperv1.ManagedEtcdShardStorageSpec{
+						Type: hyperv1.PersistentVolumeEtcdShardStorage,
+					},
+				},
+			},
+		}
+		shards := etcdShards(hcp)
+		g.Expect(shards).To(HaveLen(2))
+		g.Expect(shards[0].name).To(Equal("etcd"))
+		g.Expect(shards[1].name).To(Equal("etcd-events"))
+		g.Expect(shards[1].endpoint).To(ContainSubstring("etcd-client-events."))
+	})
+
+	t.Run("When EmptyDir shards are configured it should skip them", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		hcp := newHostedControlPlane()
+		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{
+			Shards: []hyperv1.ManagedEtcdShardSpec{
+				{
+					Name:     "events",
+					Replicas: 1,
+					Storage: hyperv1.ManagedEtcdShardStorageSpec{
+						Type: hyperv1.EmptyDirEtcdShardStorage,
+					},
+				},
+				{
+					Name:     "leases",
+					Replicas: 3,
+					Storage: hyperv1.ManagedEtcdShardStorageSpec{
+						Type: hyperv1.PersistentVolumeEtcdShardStorage,
+					},
+				},
+			},
+		}
+		shards := etcdShards(hcp)
+		g.Expect(shards).To(HaveLen(2))
+		g.Expect(shards[0].name).To(Equal("etcd"))
+		g.Expect(shards[1].name).To(Equal("etcd-leases"))
+	})
+}
+
+func TestBuildSnapshotInitContainers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When single shard it should create fetch-certs + 1 snapshot container", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		r := newReconciler()
+		shards := []etcdShardInfo{{
+			name:     "etcd",
+			endpoint: "https://etcd-client.test-ns.svc:2379",
+		}}
+
+		containers := r.buildSnapshotInitContainers("cpo:latest", "etcd:latest", "test-ns", shards)
+		g.Expect(containers).To(HaveLen(2))
+		g.Expect(containers[0].Name).To(Equal("fetch-certs"))
+		g.Expect(containers[1].Name).To(Equal("snapshot-etcd"))
+		g.Expect(containers[1].Command).To(ContainElement(ContainSubstring("etcd-client.test-ns.svc")))
+		g.Expect(containers[1].Command).To(ContainElement(ContainSubstring("/etcd.db")))
+	})
+
+	t.Run("When multiple shards it should create fetch-certs + N snapshot containers", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		r := newReconciler()
+		shards := []etcdShardInfo{
+			{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"},
+			{name: "etcd-events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
+		}
+
+		containers := r.buildSnapshotInitContainers("cpo:latest", "etcd:latest", "test-ns", shards)
+		g.Expect(containers).To(HaveLen(3))
+		g.Expect(containers[0].Name).To(Equal("fetch-certs"))
+		g.Expect(containers[1].Name).To(Equal("snapshot-etcd"))
+		g.Expect(containers[2].Name).To(Equal("snapshot-etcd-events"))
+		g.Expect(containers[2].Command).To(ContainElement(ContainSubstring("etcd-client-events.test-ns.svc")))
+		g.Expect(containers[2].Command).To(ContainElement(ContainSubstring("/etcd-events.db")))
+	})
+}
+
+func TestParseShardSnapshots(t *testing.T) {
+	t.Parallel()
+
+	t.Run("When JSON array is provided it should parse all shard snapshots", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		msg := `[{"name":"etcd","url":"s3://b/etcd.db"},{"name":"etcd-events","url":"s3://b/etcd-events.db"}]`
+		snapshots, err := parseShardSnapshots(msg)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(HaveLen(2))
+		g.Expect(snapshots[0].Name).To(Equal("etcd"))
+		g.Expect(snapshots[0].SnapshotURL).To(Equal("s3://b/etcd.db"))
+		g.Expect(snapshots[1].Name).To(Equal("etcd-events"))
+		g.Expect(snapshots[1].SnapshotURL).To(Equal("s3://b/etcd-events.db"))
+	})
+
+	t.Run("When plain URL is provided it should return single default shard", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		snapshots, err := parseShardSnapshots("s3://b/snapshot.db")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(HaveLen(1))
+		g.Expect(snapshots[0].Name).To(Equal("etcd"))
+		g.Expect(snapshots[0].SnapshotURL).To(Equal("s3://b/snapshot.db"))
+	})
+
+	t.Run("When empty string is provided it should return nil", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		snapshots, err := parseShardSnapshots("")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(BeNil())
+	})
+
+	t.Run("When invalid JSON is provided it should return an error", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		_, err := parseShardSnapshots("[invalid")
+		g.Expect(err).To(HaveOccurred())
+	})
+
+	t.Run("When JSON entries have invalid URLs they should be skipped", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		msg := `[{"name":"etcd","url":"s3://b/etcd.db"},{"name":"etcd-events","url":"ftp://b/etcd-events.db"},{"name":"etcd-logs","url":"not-a-url"},{"name":"","url":"s3://b/unnamed.db"}]`
+		snapshots, err := parseShardSnapshots(msg)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(HaveLen(1))
+		g.Expect(snapshots[0].Name).To(Equal("etcd"))
+		g.Expect(snapshots[0].SnapshotURL).To(Equal("s3://b/etcd.db"))
+	})
+
+	t.Run("When plain URL has an unsupported scheme it should return nil", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+		snapshots, err := parseShardSnapshots("some stray log line from the upload container")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(snapshots).To(BeNil())
 	})
 }

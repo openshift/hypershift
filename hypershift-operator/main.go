@@ -999,7 +999,11 @@ func setupSupportControllers(ctx context.Context, mgr ctrl.Manager, opts *StartO
 
 	if featuregate.Gate().Enabled(featuregate.HCPEtcdBackup) {
 		etcdBackupReconciler := &etcdbackup.HCPEtcdBackupReconciler{
-			Client:                  mgr.GetClient(),
+			Client: mgr.GetClient(),
+			// Quorum reader for the backup serialization guard: bypasses the
+			// informer cache so concurrently submitted backups can't both pass
+			// the active-Job check before the first Job is visible in the cache.
+			APIReader:               mgr.GetAPIReader(),
 			OperatorNamespace:       opts.Namespace,
 			ReleaseProvider:         registryProvider.ReleaseProvider,
 			HypershiftOperatorImage: operatorImage,
