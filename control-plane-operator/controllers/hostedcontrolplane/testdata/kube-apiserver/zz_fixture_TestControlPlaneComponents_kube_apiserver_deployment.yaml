@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d59c9285e1312694bd818563fd17fe7e23f500ebe57e25746d9d311e3835407b
+    hypershift.openshift.io/desired-state-hash: 82db762ed521a84b3e2d0ba42f7b9bf596e21b24f9d87aa8ffc03252b179f3e1
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -30,7 +30,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e360eec75741638a5741638a5741638a5741638a5794dc8cc8b110e88a2a4098ca2a4098ce7e69167
+        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e360eec754795efcb741638a5741638a5741638a5741638a58b110e88a2a4098ca2a4098ce7e69167
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: kube-apiserver
