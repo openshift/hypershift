@@ -10,6 +10,13 @@ const (
 	redhatOperatorsCatalogComponentName    = "redhat-operators-catalog"
 	communityOperatorsCatalogComponentName = "community-operators-catalog"
 	certifiedOperatorsCatalogComponentName = "certified-operators-catalog"
+
+	// extractContentContainerName is the init container that copies the catalog
+	// and its pre-built cache out of the catalog image. copy-content reads the
+	// cache from --cache.from=/tmp/cache, so it must not get the writable /tmp
+	// mount, which would hide the image-provided cache. It only writes into the
+	// catalog-content emptyDir, so it does not need a writable /tmp.
+	extractContentContainerName = "extract-content"
 )
 
 var _ component.ComponentOptions = &catalogOptions{}
@@ -48,16 +55,19 @@ func NewCatalogComponents(capabilityImageStream bool) []component.ControlPlaneCo
 				component.WithPredicate(catalog.imageStreamPredicate),
 			).
 			WithDependencies(oapiv2.ComponentName).
+			WithoutTmpDirMount(extractContentContainerName).
 			Build(),
 		component.NewDeploymentComponent(communityOperatorsCatalogComponentName, catalog).
 			WithAdaptFunction(catalog.adaptCatalogDeployment).
 			WithPredicate(catalogsPredicate).
 			WithDependencies(oapiv2.ComponentName).
+			WithoutTmpDirMount(extractContentContainerName).
 			Build(),
 		component.NewDeploymentComponent(certifiedOperatorsCatalogComponentName, catalog).
 			WithAdaptFunction(catalog.adaptCatalogDeployment).
 			WithPredicate(catalogsPredicate).
 			WithDependencies(oapiv2.ComponentName).
+			WithoutTmpDirMount(extractContentContainerName).
 			Build(),
 	}
 }

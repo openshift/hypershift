@@ -99,6 +99,9 @@ const (
 	// image in the release image.
 	AvailabilityProberImageName = "availability-prober"
 
+	// AvailabilityProberContainerName is the name of the init container injected by AvailabilityProber.
+	AvailabilityProberContainerName = "availability-prober"
+
 	// PodTmpDirMountName is a name for a volume created in each pod by the CPO that gives the pods containers a place to mount and write temporary files to.
 	PodTmpDirMountName = "tmp-dir"
 	// PodTmpDirMountPath is the path that each container created by the CPO will mount the volume PodTmpDirMountName at.
@@ -111,7 +114,7 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 		opt(&opts)
 	}
 	availabilityProberContainer := corev1.Container{
-		Name:            "availability-prober",
+		Name:            AvailabilityProberContainerName,
 		Image:           image,
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command: []string{
@@ -140,7 +143,7 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 	if opts.WaitForClusterRolebinding != "" {
 		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-cluster-rolebinding=%s", opts.WaitForClusterRolebinding))
 	}
-	if len(spec.InitContainers) == 0 || spec.InitContainers[0].Name != "availability-prober" {
+	if len(spec.InitContainers) == 0 || spec.InitContainers[0].Name != AvailabilityProberContainerName {
 		spec.InitContainers = append([]corev1.Container{{}}, spec.InitContainers...)
 	}
 	if !reflect.DeepEqual(spec.InitContainers[0], availabilityProberContainer) {

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 2331d58beab48f4e8d60b7f171a0249119be60ba665c0606e8719fb9adefdf60
+    hypershift.openshift.io/desired-state-hash: 2e2cd865bdd8f3bd84b4298947906fcd5f23e742dfd563788b0f04d8fb980904
   labels:
     app: karpenter-operator
     hypershift.openshift.io/managed-by: control-plane-operator
@@ -137,7 +137,13 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: availability-prober
       priorityClassName: hypershift-control-plane
       serviceAccountName: karpenter-operator
       terminationGracePeriodSeconds: 10

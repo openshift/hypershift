@@ -24282,6 +24282,9 @@ The `etcd-init` container runs the `etcd-init.sh` script, which executes the fol
    └─ If no: proceed with restore
 
 2. Download snapshot from RESTORE_URL_ETCD via curl
+   └─ An EXIT trap removes the downloaded snapshot on every exit path
+      (success, error, or mid-restore failure) so a multi-GB snapshot is
+      not left in the pod-scoped tmp-dir emptyDir
 
 3. Validate the downloaded file
    └─ Check first 5 bytes for "<?xml" prefix
@@ -24306,6 +24309,7 @@ The `etcd-init` container runs the `etcd-init.sh` script, which executes the fol
 
 - **Idempotency**: If `/var/lib/data` is already populated (e.g. pod restarted after successful restore), the script skips the restore entirely.
 - **Staging directory**: Restoring to `/var/lib/restore` first and then moving prevents data corruption if the restore fails mid-write.
+- **Snapshot cleanup**: The snapshot is downloaded to the pod's `tmp-dir` emptyDir (`/tmp`), which is pod-scoped. An EXIT trap removes it on every exit path — success, the S3 XML error, a failed restore, or a download that dies mid-transfer — so the snapshot (routinely multiple gigabytes) is not pinned on management-cluster node ephemeral storage for the lifetime of the pod.
 - **XML error detection**: S3 returns XML error responses for missing objects, expired presigned URLs, or access denied. The script detects these and fails with a clear error instead of corrupting etcd with XML data.
 - **Version detection**: Automatically selects `etcdutl` (etcd 3.6+) or `etcdctl` (etcd 3.5.x) based on the available binaries.
 

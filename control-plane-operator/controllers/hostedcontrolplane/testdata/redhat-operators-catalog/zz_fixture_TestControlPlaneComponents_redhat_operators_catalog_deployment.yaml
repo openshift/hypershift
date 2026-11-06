@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: fcf515750e3d29a828e33bf8744d2cd7d19e602bccbfd8be7894923164174d56
+    hypershift.openshift.io/desired-state-hash: 21edcd65b2eafb60c42a1be4fc160c900b6a94458e6d5ffce46b58f657d59c37
     image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
   labels:
@@ -126,13 +126,19 @@ spec:
         command:
         - cp
         image: operator-lifecycle-manager
+        imagePullPolicy: IfNotPresent
         name: extract-utilities
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /utilities
           name: utilities
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: extract-utilities
       - args:
         - --catalog.from=/configs
         - --catalog.to=/extracted-catalog/catalog
@@ -141,8 +147,11 @@ spec:
         command:
         - /utilities/copy-content
         image: from:imagestream
+        imagePullPolicy: IfNotPresent
         name: extract-content
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 8a21c2f77541fb3e8e03240960cc53b21aeaa6b16c96d7e4c204fcca3fd15284
+    hypershift.openshift.io/desired-state-hash: ec10e63332188bfd510b626d670e3a90e1a94ae7e181e230ab764a3a3c8c994c
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: azure-cloud-controller-manager
@@ -116,6 +116,8 @@ spec:
             cpu: 10m
             memory: 30Mi
         restartPolicy: Always
+        securityContext:
+          readOnlyRootFilesystem: true
         startupProbe:
           exec:
             command:
@@ -130,6 +132,9 @@ spec:
           name: cloud-token
         - mountPath: /etc/kubernetes
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: cloud-token-minter
       priorityClassName: hypershift-control-plane
       serviceAccountName: azure-cloud-controller-manager
       tolerations:

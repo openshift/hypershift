@@ -47,7 +47,7 @@ func (c *catalogOptions) adaptCatalogDeployment(cpContext component.WorkloadCont
 		podspec.UpdateContainer("registry", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 			c.Image = image
 		})
-		podspec.UpdateContainer("extract-content", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+		podspec.UpdateContainer(extractContentContainerName, deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 			c.Image = image
 		})
 	}
