@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 )
 
@@ -49,9 +50,21 @@ func main() {
 	}
 	os.Setenv("EVENTUALLY_VERBOSE", eventuallyVerbose)
 
-	if v := os.Getenv("RELEASE_IMAGE_LATEST"); v != "" {
-		os.Setenv("E2E_LATEST_RELEASE_IMAGE", v)
-	}
+	// EXPERIMENT (main-CPO-on-4.20): hard-pin the guest release env vars the test binary
+	// consumes, overriding whatever CI passed. The upstream behavior here injected
+	// E2E_LATEST_RELEASE_IMAGE from RELEASE_IMAGE_LATEST (the CI-passed OCP payload) —
+	// that would upgrade guests to the passed payload, which this experiment must never do.
+	// All values are DERIVED from the base HC (4.20.42); see pinned_guest_cpo.go for the
+	// skew math. Upgrade target == base (4.20.42) so NodePool/HC upgrades never exceed the
+	// HostedCluster version; create-from is a lower z-stream (4.20.41); N-1/N-2 are the
+	// prev-minor nodepool releases (4.19 / 4.18, within the n-3 supported skew window).
+	os.Setenv("E2E_LATEST_RELEASE_IMAGE", e2eutil.PinnedGuestUpgradeReleaseImage)
+	os.Setenv("E2E_PREVIOUS_RELEASE_IMAGE", e2eutil.PinnedGuestPreviousReleaseImage)
+	os.Setenv("E2E_N1_RELEASE_IMAGE", e2eutil.PinnedGuestN1ReleaseImage)
+	os.Setenv("E2E_N2_RELEASE_IMAGE", e2eutil.PinnedGuestN2ReleaseImage)
+	log.Printf("EXPERIMENT main-CPO-on-4.20 [v2 run-tests]: pinned guest release env vars -> "+
+		"E2E_LATEST_RELEASE_IMAGE(upgrade target)=%s, E2E_PREVIOUS_RELEASE_IMAGE=%s, E2E_N1_RELEASE_IMAGE=%s, E2E_N2_RELEASE_IMAGE=%s (CI RELEASE_IMAGE_LATEST=%q ignored for guest release)",
+		e2eutil.PinnedGuestUpgradeReleaseImage, e2eutil.PinnedGuestPreviousReleaseImage, e2eutil.PinnedGuestN1ReleaseImage, e2eutil.PinnedGuestN2ReleaseImage, os.Getenv("RELEASE_IMAGE_LATEST"))
 
 	manifest, err := lifecycle.ReadManifest(sharedDir)
 	if err != nil {

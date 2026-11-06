@@ -6,6 +6,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/podspec"
 
+	"github.com/blang/semver"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -18,15 +19,34 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router"),
 		})
-		podspec.UpsertEnvVar(c, corev1.EnvVar{
-			Name: "HAPROXY_32_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router-haproxy32"),
-		})
-		podspec.UpsertEnvVar(c, corev1.EnvVar{
-			Name: "DEFAULT_HAPROXY_VERSION", Value: "3.2",
-		})
-		podspec.UpsertEnvVar(c, corev1.EnvVar{
-			Name: "DEPRECATED_HAPROXY_VERSION", Value: "",
-		})
+
+		// HACK (main-CPO-on-4.20 experiment): the per-HAProxy-version router images
+		// (haproxy-router-haproxy32, ...) and the DEFAULT_HAPROXY_VERSION selection were
+		// introduced in >= 5.0 payloads (openshift/hypershift#9040). Older payloads (e.g. 4.20)
+		// do NOT ship those image-stream tags. A main-era CPO must demand the catalog that the
+		// payload it is driving actually contains: on a < 5.0 payload it uses the single
+		// haproxy-router image and does not request the versioned tags. Requesting an absent
+		// tag via GetImage() records it on the release provider's missing-images list, which
+		// flips the IgnitionServerValidReleaseInfo condition to False (MissingReleaseImages).
+		payloadAtLeast500 := false
+		if v, err := semver.Parse(cpContext.UserReleaseImageProvider.Version()); err == nil {
+			// Strip pre-release so genuine pre-GA 5.0 payloads (5.0.0-0.nightly, -ec, -rc)
+			// are treated as >= 5.0; semver ranks any pre-release below the release version.
+			v.Pre = nil
+			payloadAtLeast500 = v.GTE(config.Version500)
+		}
+		if payloadAtLeast500 {
+			podspec.UpsertEnvVar(c, corev1.EnvVar{
+				Name: "HAPROXY_32_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("haproxy-router-haproxy32"),
+			})
+			podspec.UpsertEnvVar(c, corev1.EnvVar{
+				Name: "DEFAULT_HAPROXY_VERSION", Value: "3.2",
+			})
+			podspec.UpsertEnvVar(c, corev1.EnvVar{
+				Name: "DEPRECATED_HAPROXY_VERSION", Value: "",
+			})
+		}
+
 		podspec.UpsertEnvVar(c, corev1.EnvVar{
 			Name: "CANARY_IMAGE", Value: cpContext.UserReleaseImageProvider.GetImage("cluster-ingress-operator"),
 		})

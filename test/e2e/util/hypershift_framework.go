@@ -385,6 +385,12 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 	err := h.client.Create(h.ctx, namespace)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create namespace")
 
+	// EXPERIMENT (main-CPO-on-4.20): log per-HC evidence that this cluster is pinned to an
+	// old guest release while running the PR's CPO (resolved from the passed payload in
+	// options.Complete and carried on opts.ControlPlaneOperatorImage).
+	h.Logf("EXPERIMENT main-CPO-on-4.20 [v1 createHostedCluster %s]: HC release=%s, CPO override=%s (annotation hypershift.openshift.io/control-plane-operator-image)",
+		name, opts.ReleaseImage, opts.ControlPlaneOperatorImage)
+
 	if platform == hyperv1.AWSPlatform {
 		originalBeforeApply := opts.BeforeApply
 		opts.BeforeApply = func(o crclient.Object) {

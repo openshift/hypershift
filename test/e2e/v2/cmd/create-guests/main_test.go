@@ -5,8 +5,11 @@ package main
 import (
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/lifecycle"
 )
 
@@ -68,5 +71,50 @@ func TestBuildCreateArgs(t *testing.T) {
 			}
 			t.Errorf("create args %v do not contain %q", args, want)
 		})
+	}
+}
+
+// TestBuildCreateArgsPinsGuestAndOverridesCPO verifies the main-CPO-on-4.20 experiment
+// wiring: buildCreateArgs always uses the pinned base release (never a per-spec
+// ReleaseImage), and emits the control-plane-operator-image override annotation.
+func TestBuildCreateArgsPinsGuestAndOverridesCPO(t *testing.T) {
+	t.Parallel()
+
+	const cpoImage = "quay.io/example/hypershift:pr-build"
+	cfg := envConfig{
+		baseDomain:       "example.com",
+		nodeCount:        3,
+		namespace:        "clusters",
+		releaseImage:     e2eutil.PinnedGuestReleaseImage, // already pinned in loadEnvConfig
+		pullSecret:       "/tmp/pull-secret",
+		cpoOverrideImage: cpoImage,
+		platform:         lifecycle.NewAzurePlatformConfig(""),
+	}
+
+	// Even when a spec carries its own ReleaseImage (as the "upgrade" variant does),
+	// buildCreateArgs must NOT let it leak a non-pinned guest at create time.
+	ns := namedSpec{
+		ClusterSpec: lifecycle.ClusterSpec{
+			Variant:      "upgrade",
+			ReleaseImage: "quay.io/example/ocp-release:4.99.0-should-not-leak",
+		},
+		name: "upgrade-test",
+	}
+
+	args := buildCreateArgs(cfg, ns)
+
+	wantRelease := "--release-image=" + e2eutil.PinnedGuestReleaseImage
+	if !slices.Contains(args, wantRelease) {
+		t.Errorf("create args %v do not contain pinned %q", args, wantRelease)
+	}
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--release-image=") && arg != wantRelease {
+			t.Errorf("per-spec ReleaseImage leaked into create args: %q", arg)
+		}
+	}
+
+	wantAnnotation := "--annotations=" + hyperv1.ControlPlaneOperatorImageAnnotation + "=" + cpoImage
+	if !slices.Contains(args, wantAnnotation) {
+		t.Errorf("create args %v do not contain CPO override annotation %q", args, wantAnnotation)
 	}
 }
