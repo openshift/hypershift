@@ -11,8 +11,11 @@ RUNTIME ?= $(shell sh hack/utils.sh get_container_engine)
 
 ARTIFACT_DIR ?= /tmp/artifacts
 # Writable Go caches for verify/update in CI (test pods cannot write /go/pkg/mod or /go/pkg/sumdb).
-override GOMODCACHE := $(abspath $(ARTIFACT_DIR)/gomodcache)
-override GOPATH := $(abspath $(ARTIFACT_DIR)/gopath)
+# Keep defaults outside ARTIFACT_DIR: Prow/ci-operator gather ARTIFACT_DIR for uploads; a full
+# module cache there can slow or time out the job. Honor GOMODCACHE/GOPATH from the environment
+# (e.g. GHA verify-reusable sets GOMODCACHE) — do not use override.
+GOMODCACHE ?= $(abspath /tmp/hypershift-gomodcache)
+GOPATH ?= $(abspath /tmp/hypershift-gopath)
 export GOMODCACHE
 export GOPATH
 TOOLS_DIR=./hack/tools
