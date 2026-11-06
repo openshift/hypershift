@@ -415,6 +415,7 @@ nav:
     - "Azure (ARO HCP)": reference/infrastructure/azure-aro-hcp.md
     - "Agent": reference/infrastructure/agent.md
   - reference/index.md
+  - 'IPv6 and Dual-Stack Support': reference/ipv6-dual-stack-support.md
   - reference/konnectivity.md
   - 'Manifests':
     - reference/manifests/index.md
