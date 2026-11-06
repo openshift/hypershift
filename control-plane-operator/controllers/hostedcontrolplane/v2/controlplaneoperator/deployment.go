@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/diagnostics"
 	"github.com/openshift/hypershift/support/imageregistry"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/k8sutil"
@@ -163,6 +164,15 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 				corev1.EnvVar{
 					Name:  managedServiceEnvVar,
 					Value: managedServiceType,
+				},
+			)
+		}
+
+		if v := os.Getenv(diagnostics.EnvDisableDiagnosticEnrichment); v != "" {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  diagnostics.EnvDisableDiagnosticEnrichment,
+					Value: v,
 				},
 			)
 		}
