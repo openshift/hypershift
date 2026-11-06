@@ -288,7 +288,7 @@ func testARM64Provisioning(ctx context.Context, guestClient crclient.Client, hos
 		g.Expect(guestClient.Create(ctx, armNodeClass)).To(Succeed())
 		t.Logf("Created ARM64 OpenshiftEC2NodeClass")
 
-		armNodePool := baseNodePool("arm-nodepool", armNodeClass.Name)
+		armNodePool := baseNodePool("arm-nodepool", armNodeClass.Name, hostedCluster.Spec.Platform.Type)
 		armNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
 			{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"m6g.xlarge"}},
 			{Key: "kubernetes.io/arch", Operator: corev1.NodeSelectorOpIn, Values: []string{"arm64"}},
@@ -363,7 +363,7 @@ func testInstanceProfileAnnotation(ctx context.Context, mgtClient, guestClient c
 		// Now provision actual nodes to verify EC2 instances get the instance profile
 		t.Logf("Creating Karpenter NodePool and workloads to provision nodes")
 
-		testNodePool := baseNodePool("instance-profile-test", "default")
+		testNodePool := baseNodePool("instance-profile-test", "default", hostedCluster.Spec.Platform.Type)
 		testWorkLoads := testWorkload("instance-profile-web-app", 1, map[string]string{
 			karpenterv1.NodePoolLabelKey: testNodePool.Name,
 		})
@@ -593,7 +593,7 @@ func testNodeClassVersionField(ctx context.Context, mgtClient, guestClient crcli
 		t.Logf("Expected kubelet version for %s: v%s", nodeClassVersion, expectedKubeletVersion)
 
 		// Create a Karpenter NodePool that references the custom EC2NodeClass
-		testNodePool := baseNodePool("version-test", nc.Name)
+		testNodePool := baseNodePool("version-test", nc.Name, hostedCluster.Spec.Platform.Type)
 
 		testWorkLoads := testWorkload("version-test-app", 1, map[string]string{
 			karpenterv1.NodePoolLabelKey: testNodePool.Name,
@@ -853,7 +853,7 @@ func testCapacityReservation(ctx context.Context, mgtClient, guestClient crclien
 
 		// Create a dedicated NodePool that targets the capacity-reservation-test NodeClass and requires
 		// capacity-type=reserved so karpenter launches the instance into the reservation (not alongside it).
-		crNodePool := baseNodePool("capacity-reservation-test", "capacity-reservation-test")
+		crNodePool := baseNodePool("capacity-reservation-test", "capacity-reservation-test", hostedCluster.Spec.Platform.Type)
 		crNodePool.Spec.Template.Spec.Requirements = []karpenterv1.NodeSelectorRequirementWithMinValues{
 			{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}},
 			{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeReserved}},
@@ -1132,7 +1132,7 @@ func testArbitrarySubnet(ctx context.Context, mgtClient, guestClient crclient.Cl
 		t.Logf("All AWSEndpointServices have AWSEndpointAvailable=True")
 
 		// Launch a node in the custom subnet to verify it's functional.
-		testNodePool := baseNodePool("arbitrary-subnet-test", customNodeClass.Name)
+		testNodePool := baseNodePool("arbitrary-subnet-test", customNodeClass.Name, hostedCluster.Spec.Platform.Type)
 
 		testWorkLoads := testWorkload("arbitrary-subnet-web-app", 1, map[string]string{
 			karpenterv1.NodePoolLabelKey: testNodePool.Name,
@@ -1291,7 +1291,7 @@ func testKubeletPropagation(ctx context.Context, mgtClient, guestClient crclient
 		t.Logf("OpenshiftEC2NodeClass %q is Ready", nc.Name)
 
 		// Create Karpenter NodePool pointing at the custom nodeclass and workloads to provision nodes.
-		testNodePool := baseNodePool("kubelet-config-test", nc.Name)
+		testNodePool := baseNodePool("kubelet-config-test", nc.Name, hostedCluster.Spec.Platform.Type)
 		testWorkLoads := testWorkload("kubelet-config-web-app", 1, map[string]string{
 			karpenterv1.NodePoolLabelKey: testNodePool.Name,
 		})
@@ -1458,7 +1458,7 @@ func testBillingConsolidationAndPDB(ctx context.Context, mgtClient, guestClient 
 		g.Expect(found).To(BeTrue(), "billing metric should exist before Karpenter nodes are provisioned")
 		t.Logf("Baseline billing metric vCPUs from native NodePools: %d", baseline)
 
-		karpenterNodePool := baseNodePool("on-demand", "default")
+		karpenterNodePool := baseNodePool("on-demand", "default", hostedCluster.Spec.Platform.Type)
 		workLoads := testWorkload("web-app", 2, map[string]string{
 			karpenterv1.NodePoolLabelKey: karpenterNodePool.Name,
 		})
@@ -1566,12 +1566,12 @@ func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclien
 	return pods.Items
 }
 
-func waitForReadyNodeClaims(t *testing.T, ctx context.Context, client crclient.Client, n int) *karpenterv1.NodeClaimList {
+func waitForReadyNodeClaims(t *testing.T, ctx context.Context, client crclient.Client, n int, opts ...crclient.ListOption) *karpenterv1.NodeClaimList {
 	nodeClaims := &karpenterv1.NodeClaimList{}
 	waitTimeout := 5 * time.Minute
 	e2eutil.EventuallyObjects(t, ctx, "NodeClaims to be ready",
 		func(ctx context.Context) ([]*karpenterv1.NodeClaim, error) {
-			err := client.List(ctx, nodeClaims)
+			err := client.List(ctx, nodeClaims, opts...)
 			if err != nil {
 				return nil, err
 			}
@@ -1803,7 +1803,15 @@ func getVCPUsMetric(t *testing.T, ctx context.Context, mgtClient crclient.Client
 	return 0, false
 }
 
-func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
+func baseNodePool(name, nodeClassName string, platform hyperv1.PlatformType) *karpenterv1.NodePool {
+	instanceType := "t3.xlarge"
+	nodeClassGroup := "karpenter.k8s.aws"
+	nodeClassKind := "EC2NodeClass"
+	if platform == hyperv1.AzurePlatform {
+		instanceType = "Standard_D4s_v5"
+		nodeClassGroup = "karpenter.azure.com"
+		nodeClassKind = "AKSNodeClass"
+	}
 	return &karpenterv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: karpenterv1.NodePoolSpec{
@@ -1816,12 +1824,12 @@ func baseNodePool(name, nodeClassName string) *karpenterv1.NodePool {
 			Template: karpenterv1.NodeClaimTemplate{
 				Spec: karpenterv1.NodeClaimTemplateSpec{
 					Requirements: []karpenterv1.NodeSelectorRequirementWithMinValues{
-						{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"t3.xlarge"}},
+						{Key: "node.kubernetes.io/instance-type", Operator: corev1.NodeSelectorOpIn, Values: []string{instanceType}},
 						{Key: karpenterv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpenterv1.CapacityTypeOnDemand}},
 					},
 					NodeClassRef: &karpenterv1.NodeClassReference{
-						Group: "karpenter.k8s.aws",
-						Kind:  "EC2NodeClass",
+						Group: nodeClassGroup,
+						Kind:  nodeClassKind,
 						Name:  nodeClassName,
 					},
 				},
