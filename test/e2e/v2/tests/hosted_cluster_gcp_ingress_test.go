@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -214,6 +215,25 @@ func GCPIngressTests(getTestCtx internal.TestContextGetter) {
 			})
 
 			route := buildGCPIngressWorkloadRoute(ns)
+			// Routes are served by the aggregated openshift-apiserver, which can
+			// still be starting when the test group runs right after the cluster
+			// reports Available; creating the route then fails with a 503 from
+			// the aggregator. Wait for the APIService to be Available first.
+			By("Waiting for the guest openshift-apiserver to serve routes")
+			Eventually(func(g Gomega) {
+				apiService := &apiregistrationv1.APIService{}
+				g.Expect(hcClient.Get(tc.Context, types.NamespacedName{Name: "v1.route.openshift.io"}, apiService)).To(Succeed())
+				var available *apiregistrationv1.APIServiceCondition
+				for i := range apiService.Status.Conditions {
+					if apiService.Status.Conditions[i].Type == apiregistrationv1.Available {
+						available = &apiService.Status.Conditions[i]
+						break
+					}
+				}
+				g.Expect(available).NotTo(BeNil(), "the v1.route.openshift.io APIService should report an Available condition")
+				g.Expect(available.Status).To(Equal(apiregistrationv1.ConditionTrue),
+					"the guest openshift-apiserver should serve routes, got %s (%s: %s)", available.Status, available.Reason, available.Message)
+			}, 10*time.Minute, 15*time.Second).Should(Succeed())
 			Expect(hcClient.Create(tc.Context, route)).To(Succeed(), "failed to create workload route")
 			DeferCleanup(func() {
 				if err := hcClient.Delete(tc.Context, route); err != nil && !apierrors.IsNotFound(err) {
