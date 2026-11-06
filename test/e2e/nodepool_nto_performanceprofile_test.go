@@ -6,11 +6,13 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/openshift/hypershift/support/netutil"
 
 	"github.com/google/go-cmp/cmp"
 	npconst "github.com/openshift/hypershift/pkg/nodepool"
+	"github.com/openshift/hypershift/test/e2e/ntostatus"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -158,15 +160,7 @@ func (mc *NTOPerformanceProfileTest) Run(t *testing.T, nodePool hyperv1.NodePool
 	}
 	e2eutil.EventuallyObjects(t, ctx, "performance profile status ConfigMap to exist",
 		func(ctx context.Context) ([]*corev1.ConfigMap, error) {
-			list := &corev1.ConfigMapList{}
-			err := mc.managementClient.List(ctx, list, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels(map[string]string{
-				npconst.NodeTuningGeneratedPerformanceProfileStatusLabel: "true",
-			}))
-			configMaps := make([]*corev1.ConfigMap, len(list.Items))
-			for i := range list.Items {
-				configMaps[i] = &list.Items[i]
-			}
-			return configMaps, err
+			return ntostatus.ListPerformanceProfileConfigMaps(ctx, mc.managementClient, controlPlaneNamespace, 20*time.Second, t.Logf)
 		},
 		[]e2eutil.Predicate[[]*corev1.ConfigMap]{
 			func(configMaps []*corev1.ConfigMap) (done bool, reasons string, err error) {
