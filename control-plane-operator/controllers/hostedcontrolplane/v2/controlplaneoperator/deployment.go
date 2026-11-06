@@ -140,6 +140,15 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 			)
 		}
 
+		if envImage := os.Getenv(images.SharedIngressHAProxyEnvVar); len(envImage) > 0 {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  images.SharedIngressHAProxyEnvVar,
+					Value: envImage,
+				},
+			)
+		}
+
 		if os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1" {
 			c.Env = append(c.Env,
 				corev1.EnvVar{
