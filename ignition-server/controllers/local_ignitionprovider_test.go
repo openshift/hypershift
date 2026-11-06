@@ -1156,7 +1156,7 @@ func TestFetchAndValidateMCSConfig(t *testing.T) {
 				Namespace: "test-ns",
 			}
 
-			result, err := provider.fetchAndValidateMCSConfig(t.Context(), tt.hcConfigurationHash)
+			result, err := provider.fetchAndValidateMCSConfig(t.Context(), tt.hcConfigurationHash, "")
 			if tt.expectError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tt.expectError))
