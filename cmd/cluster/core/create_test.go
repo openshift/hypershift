@@ -1491,6 +1491,99 @@ func TestApplyFeatureSet(t *testing.T) {
 	}
 }
 
+func newCreateOptionsForTest(raw *RawCreateOptions) *CreateOptions {
+	return &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: &ValidatedCreateOptions{
+				validatedCreateOptions: &validatedCreateOptions{
+					RawCreateOptions: raw,
+				},
+			},
+		},
+	}
+}
+
+func TestApplyDeterministicLBIP(t *testing.T) {
+	apiServerService := func(strategy hyperv1.ServicePublishingStrategy) hyperv1.ServicePublishingStrategyMapping {
+		return hyperv1.ServicePublishingStrategyMapping{
+			Service:                   hyperv1.APIServer,
+			ServicePublishingStrategy: strategy,
+		}
+	}
+	loadBalancerService := func(class string) hyperv1.ServicePublishingStrategyMapping {
+		return apiServerService(hyperv1.ServicePublishingStrategy{
+			Type:         hyperv1.LoadBalancer,
+			LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{LoadBalancerClass: class},
+		})
+	}
+
+	tests := []struct {
+		name                string
+		services            []hyperv1.ServicePublishingStrategyMapping
+		annotations         []string
+		class               string
+		expectError         string
+		expectedAnnotations map[string]string
+		expectedClass       string
+	}{
+		{
+			name:     "When no flags are set, it should leave the services unchanged",
+			services: []hyperv1.ServicePublishingStrategyMapping{loadBalancerService("")},
+		},
+		{
+			name:                "When annotations and class are set, it should apply them to the APIServer LoadBalancer strategy",
+			services:            []hyperv1.ServicePublishingStrategyMapping{loadBalancerService(""), {Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route, Route: &hyperv1.RoutePublishingStrategy{}}}},
+			annotations:         []string{"metallb.io/loadBalancerIPs=10.1.1.100", "metallb.io/address-pool=production"},
+			class:               "metallb.io/metallb",
+			expectedAnnotations: map[string]string{"metallb.io/loadBalancerIPs": "10.1.1.100", "metallb.io/address-pool": "production"},
+			expectedClass:       "metallb.io/metallb",
+		},
+		{
+			name:        "When the APIServer strategy is not LoadBalancer, it should return an error",
+			services:    []hyperv1.ServicePublishingStrategyMapping{apiServerService(hyperv1.ServicePublishingStrategy{Type: hyperv1.Route, Route: &hyperv1.RoutePublishingStrategy{}})},
+			annotations: []string{"metallb.io/loadBalancerIPs=10.1.1.100"},
+			expectError: "require the APIServer service publishing strategy to be LoadBalancer",
+		},
+		{
+			name:        "When there is no APIServer service, it should return an error",
+			services:    []hyperv1.ServicePublishingStrategyMapping{{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route, Route: &hyperv1.RoutePublishingStrategy{}}}},
+			annotations: []string{"metallb.io/loadBalancerIPs=10.1.1.100"},
+			expectError: "APIServer service publishing strategy not found",
+		},
+		{
+			name:        "When an annotation is malformed, it should return an error",
+			services:    []hyperv1.ServicePublishingStrategyMapping{loadBalancerService("")},
+			annotations: []string{"not-a-key-value"},
+			expectError: "invalid KAS service annotation",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cluster := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{Services: tc.services},
+			}
+			opts := newCreateOptionsForTest(&RawCreateOptions{
+				KASServiceAnnotations: tc.annotations,
+				KASLoadBalancerClass:  tc.class,
+			})
+
+			err := applyDeterministicLBIP(cluster, opts)
+			if tc.expectError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectError))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+
+			apiServer := cluster.Spec.Services[0].ServicePublishingStrategy
+			g.Expect(apiServer.LoadBalancer.ServiceAnnotations).To(Equal(tc.expectedAnnotations))
+			g.Expect(apiServer.LoadBalancer.LoadBalancerClass).To(Equal(tc.expectedClass))
+		})
+	}
+}
+
 func TestApplyNetworkConfig(t *testing.T) {
 	tests := []struct {
 		name           string

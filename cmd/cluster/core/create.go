@@ -168,6 +168,8 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal,Console,NodeTuning,Ingress.")
 	flags.StringSliceVar(&opts.EnableClusterCapabilities, "enable-cluster-capabilities", nil, "Optional cluster capabilities to enable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal,Console,NodeTuning,Ingress.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
+	flags.StringArrayVar(&opts.KASServiceAnnotations, "kas-service-annotations", opts.KASServiceAnnotations, "Annotations to apply to the kube-apiserver LoadBalancer Service (key=value). Can be specified multiple times. Requires the APIServer service publishing strategy to be LoadBalancer.")
+	flags.StringVar(&opts.KASLoadBalancerClass, "kas-load-balancer-class", opts.KASLoadBalancerClass, "loadBalancerClass to set on the kube-apiserver LoadBalancer Service. Requires the APIServer service publishing strategy to be LoadBalancer.")
 	flags.BoolVar(&opts.DisableMultiNetwork, "disable-multi-network", opts.DisableMultiNetwork, "Disables the Multus CNI plugin and related components in the hosted cluster")
 	flags.Int32Var(&opts.OVNKubernetesMTU, "ovn-kubernetes-mtu", opts.OVNKubernetesMTU, "The MTU to use for the OVN-Kubernetes tunnel interface. Must be 100 bytes smaller than the uplink MTU. Only valid when network-type is OVNKubernetes. When unset, the cluster-network-operator auto-detects the MTU.")
 	flags.BoolVar(&opts.VersionCheck, "version-check", opts.VersionCheck, "Checks version of CLI and Hypershift operator and blocks create if mismatched")
@@ -235,6 +237,8 @@ type RawCreateOptions struct {
 	EnableClusterCapabilities        []string
 	DisableClusterCapabilities       []string
 	KubeAPIServerDNSName             string
+	KASServiceAnnotations            []string
+	KASLoadBalancerClass             string
 	DisableMultiNetwork              bool
 	OVNKubernetesMTU                 int32
 	VersionCheck                     bool
@@ -680,6 +684,44 @@ func applyFeatureSet(cluster *hyperv1.HostedCluster, opts *CreateOptions) {
 	}
 }
 
+// applyDeterministicLBIP wires the deterministic LoadBalancer IP flags into
+// the APIServer service publishing strategy. Both fields are immutable on the
+// HostedCluster once created, so they must be set before the object is applied.
+func applyDeterministicLBIP(cluster *hyperv1.HostedCluster, opts *CreateOptions) error {
+	if len(opts.KASServiceAnnotations) == 0 && opts.KASLoadBalancerClass == "" {
+		return nil
+	}
+
+	annotations, err := parseKeyValuePairs(opts.KASServiceAnnotations, "KAS service annotation")
+	if err != nil {
+		return err
+	}
+
+	for i := range cluster.Spec.Services {
+		if cluster.Spec.Services[i].Service != hyperv1.APIServer {
+			continue
+		}
+
+		strategy := &cluster.Spec.Services[i].ServicePublishingStrategy
+		if strategy.Type != hyperv1.LoadBalancer {
+			return fmt.Errorf("--kas-service-annotations and --kas-load-balancer-class require the APIServer service publishing strategy to be LoadBalancer, got %q", strategy.Type)
+		}
+
+		if strategy.LoadBalancer == nil {
+			strategy.LoadBalancer = &hyperv1.LoadBalancerPublishingStrategy{}
+		}
+		if len(annotations) > 0 {
+			strategy.LoadBalancer.ServiceAnnotations = annotations
+		}
+		if opts.KASLoadBalancerClass != "" {
+			strategy.LoadBalancer.LoadBalancerClass = opts.KASLoadBalancerClass
+		}
+		return nil
+	}
+
+	return errors.New("APIServer service publishing strategy not found")
+}
+
 func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, client crclient.Client, mutate func(crclient.Object)) error {
 	if mutate != nil {
 		for _, object := range objects {
@@ -1071,6 +1113,9 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 
 	if err := platform.ApplyPlatformSpecifics(resources.Cluster); err != nil {
 		return fmt.Errorf("failed to apply platform specifics: %w", err)
+	}
+	if err := applyDeterministicLBIP(resources.Cluster, opts); err != nil {
+		return err
 	}
 
 	if opts.NodePoolReplicas > -1 {
