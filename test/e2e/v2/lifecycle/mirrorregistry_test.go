@@ -157,3 +157,39 @@ func TestWriteMirrorRegistryResult(t *testing.T) {
 		})
 	}
 }
+
+func TestSetupRegistryOverridesTestEnv(t *testing.T) {
+	const certEnv, keyEnv = "E2E_REGISTRY_OVERRIDES_CA_CERT_FILE", "E2E_REGISTRY_OVERRIDES_CA_KEY_FILE"
+	for _, tt := range []struct {
+		name     string
+		files    []string
+		wantCert bool
+		wantKey  bool
+	}{
+		{name: "When both CA files exist, it should set both variables", files: []string{"mirror-registry-ho-ca.crt", "mirror-registry-ho-ca.key"}, wantCert: true, wantKey: true},
+		{name: "When only the certificate exists, it should set only the certificate variable", files: []string{"mirror-registry-ho-ca.crt"}, wantCert: true},
+		{name: "When no CA file exists, it should leave both variables unset"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, name := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte("pem"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// t.Setenv restores the previous values after the test.
+			t.Setenv(certEnv, "")
+			t.Setenv(keyEnv, "")
+			setupRegistryOverridesTestEnv(dir)
+			for env, want := range map[string]bool{certEnv: tt.wantCert, keyEnv: tt.wantKey} {
+				got := os.Getenv(env)
+				if want && !strings.HasPrefix(got, dir+string(filepath.Separator)) {
+					t.Errorf("%s = %q, want a path under %s", env, got, dir)
+				}
+				if !want && got != "" {
+					t.Errorf("%s = %q, want unset", env, got)
+				}
+			}
+		})
+	}
+}

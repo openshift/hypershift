@@ -421,6 +421,7 @@ func (a *AWSPlatformConfig) TestMatrix() TestMatrix {
 
 func (a *AWSPlatformConfig) SetupTestEnv(sharedDir string) {
 	setupExternalOIDCTestEnv(sharedDir)
+	setupRegistryOverridesTestEnv(sharedDir)
 }
 
 // resolveKMSKeyARN resolves a KMS key alias (e.g. "alias/hypershift-ci") to its
