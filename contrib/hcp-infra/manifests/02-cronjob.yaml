@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hcp-infra-clean
+  namespace: hypershift
+spec:
+  schedule: "0 0 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hcp-infra
+            image: quay.io/hypershift/hcp-infra:latest
+            args:
+            - clean
+            - --all
+            - --older-than=48h
+            - --yes
+            env:
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: AWS_ROLE_ARN
+              value: "arn:aws:iam::820196288204:role/hypershift-ci-2-hcp-infra"
+            - name: AWS_WEB_IDENTITY_TOKEN_FILE
+              value: "/var/run/secrets/openshift/token"
+            imagePullPolicy: Always
+            volumeMounts:
+            - name: token
+              mountPath: /var/run/secrets/openshift
+              readOnly: true
+          restartPolicy: Never
+          serviceAccountName: hcp-infra
+          volumes:
+          - name: token
+            projected:
+              sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: openshift
