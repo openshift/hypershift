@@ -457,6 +457,21 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 
 			alternateVersion := internal.GetEnvVarValue("E2E_AZURE_KMS_KEY_VERSION_ALTERNATE")
 
+			// Guard: if alternate == original both rotateAndWait calls produce an empty
+			// patch and return immediately, letting stale history satisfy all assertions
+			// without a rotation occurring.
+			Expect(alternateVersion).NotTo(Equal(originalVersion),
+				"E2E_AZURE_KMS_KEY_VERSION_ALTERNATE must differ from the current active key version")
+
+			// Re-fetch after the steady-state wait and capture the most-recent
+			// CompletionTime so we can prove each rotation added a genuinely new entry
+			// (history length alone cannot prove freshness once the buffer is full).
+			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
+			var preRotation1Time metav1.Time
+			if len(hc.Status.SecretEncryption.History) > 0 {
+				preRotation1Time = hc.Status.SecretEncryption.History[0].CompletionTime
+			}
+
 			By("Performing first key rotation: original -> alternate")
 			kas1Baseline := captureKASRestartCounts(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
 			rotateAndWait(Default, ctx, tc, hcKey, func(hc *hyperv1.HostedCluster) {
@@ -464,15 +479,19 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			})
 
 			Expect(tc.MgmtClient.Get(ctx, hcKey, hc)).To(Succeed())
+			verifyReEncryptionStatus(Default, hc, hyperv1.SecretEncryptionProviderAzure)
 			Expect(hc.Status.SecretEncryption.ActiveKey.Azure.KeyVersion).To(Equal(alternateVersion),
 				"activeKey should be the alternate version after first rotation")
-			Expect(hc.Status.SecretEncryption.History).NotTo(BeEmpty(),
-				"history should have at least one entry after first rotation")
+			Expect(hc.Status.SecretEncryption.History[0].CompletionTime.After(preRotation1Time.Time)).To(BeTrue(),
+				"first rotation must produce a new history entry with a later CompletionTime than the pre-rotation baseline")
 
 			verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas1Baseline)
 			Eventually(func(g Gomega) {
 				verifyConditionBubbleUp(g, ctx, tc.MgmtClient, hcKey, tc.ControlPlaneNamespace)
 			}, 2*time.Minute, 10*time.Second).Should(Succeed())
+
+			// Capture CompletionTime of the entry just written as the baseline for the second rotation.
+			preRotation2Time := hc.Status.SecretEncryption.History[0].CompletionTime
 
 			By("Performing second key rotation: alternate -> original")
 			kas2Baseline := captureKASRestartCounts(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace)
@@ -484,12 +503,8 @@ func AzureKMSConsecutiveKeyRotationTest(getTestCtx internal.TestContextGetter) {
 			verifyReEncryptionStatus(Default, hc, hyperv1.SecretEncryptionProviderAzure)
 			Expect(hc.Status.SecretEncryption.ActiveKey.Azure.KeyVersion).To(Equal(originalVersion),
 				"activeKey should be back to the original version after second rotation")
-			Expect(len(hc.Status.SecretEncryption.History)).To(BeNumerically(">=", 2),
-				"history should have at least two entries after consecutive rotations")
-			Expect(hc.Status.SecretEncryption.History[0].State).To(Equal(hyperv1.EncryptionMigrationStateCompleted),
-				"most recent history entry should be Completed")
-			Expect(hc.Status.SecretEncryption.History[1].State).To(Equal(hyperv1.EncryptionMigrationStateCompleted),
-				"second history entry should also be Completed")
+			Expect(hc.Status.SecretEncryption.History[0].CompletionTime.After(preRotation2Time.Time)).To(BeTrue(),
+				"second rotation must produce a new history entry with a later CompletionTime than the first rotation's entry")
 
 			verifyKASHealth(Default, ctx, tc.MgmtClient, tc.ControlPlaneNamespace, kas2Baseline)
 			mgmtKubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
