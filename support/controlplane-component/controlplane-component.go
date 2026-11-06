@@ -21,6 +21,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -177,6 +178,8 @@ type controlPlaneWorkload[T client.Object] struct {
 	// serviceAccountKubeConfigOpts will cause the generation of a secret with a kubeconfig using certificates for the given named service account
 	// and the volume mounts for that secret within the given mountPath.
 	serviceAccountKubeConfigOpts *ServiceAccountKubeConfigOpts
+	// names of containers that are excluded from the writable /tmp mount added alongside readOnlyRootFilesystem.
+	skipTmpDirMountContainers sets.Set[string]
 
 	customOperandsRolloutCheck   func(cpContext WorkloadContext) (bool, error)
 	monitorOperandsRolloutStatus bool

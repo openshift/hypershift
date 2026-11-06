@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: c589e9f0bdda1422dad7b7a717f00a2822d2b7933740326065f9b50fd25a8776
+    hypershift.openshift.io/desired-state-hash: a6f0ef471cabe0340267ac60df1e79d5a641644b29b272733fd6242ba1b15f88
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-scheduler
@@ -240,7 +240,13 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: availability-prober
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
