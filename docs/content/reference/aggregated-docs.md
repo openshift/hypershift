@@ -26813,6 +26813,18 @@ spec:
           value: engineering
 ```
 
+#### HyperShift system labels
+
+On GCPCluster and NodePool machine resources, HyperShift sets the following labels
+after merging user-supplied labels:
+
+- `hypershift-openshift-io-cluster`: the HostedCluster name.
+- `hypershift-openshift-io-infra-id`: the infrastructure ID, when available.
+
+HyperShift's values take precedence over user-supplied values for these keys.
+For other keys, NodePool labels take precedence over HostedCluster labels on
+NodePool machine resources.
+
 #### LoadBalancer Service label ownership
 
 For legacy GCP LoadBalancer Services, HyperShift reconciles
@@ -27436,6 +27448,7 @@ hypershift create cluster gcp \
 | `--machine-type` | No | GCP machine type (default: `n2-standard-4`) |
 | `--zone` | Conditional | GCP zone for nodes. Required when `--node-pool-replicas >= 0` (default). Optional when `--node-pool-replicas=-1` (no NodePool created). |
 | `--boot-image` | No | Override RHCOS boot image from release payload |
+| `--resource-labels` | No | GCP resource labels as comma-separated `key=value` pairs; can be specified multiple times |
 
 ## Monitor Cluster Creation
 
@@ -51715,7 +51728,10 @@ If not specified, uses the default compute service account for the project.</p>
 <p>resourceLabels is an optional list of additional labels to apply to GCP node
 instances and their associated resources (disks, etc.).
 Labels will be merged with cluster-level resource labels, with NodePool labels
-taking precedence in case of conflicts.</p>
+taking precedence in case of conflicts.
+HyperShift overrides user values for hypershift-openshift-io-cluster with the
+HostedCluster name and, when an infrastructure ID is available,
+hypershift-openshift-io-infra-id with that ID.</p>
 <p>Keys and values must conform to GCP labeling requirements:
 - Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9<em>-]
 - Values: empty or 1–63 chars; allowed [a-z0-9</em>-]
@@ -51947,6 +51963,10 @@ Allowed values: &ldquo;Private&rdquo;, &ldquo;PublicAndPrivate&rdquo;. Defaults 
 Labels are key-value pairs used for organizing and managing GCP resources.
 Changes to this field will be propagated in-place to GCP resources where supported.
 GCP supports a maximum of 64 labels per resource. HyperShift reserves approximately 4 labels for system use.
+HyperShift sets hypershift-openshift-io-cluster to the HostedCluster name and,
+when an infrastructure ID is available, hypershift-openshift-io-infra-id to that ID.
+These system values override user-supplied values for those keys on GCPCluster
+and NodePool machine resources.
 For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a></p>
 </td>
 </tr>
