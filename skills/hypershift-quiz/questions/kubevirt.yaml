@@ -1,0 +1,325 @@
+# KubeVirt platform questions. Schema and conventions: skills/hypershift-quiz/SKILL.md
+- id: kv-what-runs-where
+  topic: kubevirt
+  depth: 1
+  format: mcq
+  question: |
+    On the KubeVirt platform, what physically is a hosted cluster's worker
+    node?
+  options:
+    - text: A virtual machine running as a pod (via virt-launcher) on an OpenShift cluster with KubeVirt
+      correct: true
+    - text: An EC2-like instance in a cloud account
+      correct: false
+    - text: A bare-metal host booted via the Agent platform
+      correct: false
+    - text: A plain container — KubeVirt skips virtualization for workers
+      correct: false
+  source: docs/content/getting-started/onboarding/platforms.md
+  why: |
+    KubeVirt is nested virtualization: guest cluster pods run inside VMs
+    that run inside pods on the infrastructure cluster. That nesting is the
+    root of most KubeVirt-specific behavior — networking, storage, and
+    scheduling all have an extra layer.
+
+- id: kv-shared-infra
+  topic: kubevirt
+  depth: 1
+  format: explain
+  question: |
+    By default on KubeVirt: which cluster hosts the control plane pods, and
+    which hosts the worker VMs? What can be split apart, and how?
+  rubric:
+    must_cover:
+      - By default the management cluster hosts both — control plane pods and KubeVirt worker VMs share the same underlying cluster
+      - The external infrastructure feature can place the worker VMs on a separate infrastructure cluster
+      - It is requested with --infra-kubeconfig-file and --infra-namespace on the hcp CLI
+  source: docs/content/how-to/kubevirt/external-infrastructure.md
+  why: |
+    The management cluster / infrastructure cluster distinction only exists
+    as separate things on KubeVirt — on cloud platforms the "infrastructure"
+    is a cloud account. Defaulting both to one cluster is what makes
+    KubeVirt the lab-friendly platform.
+
+- id: kv-no-credentials
+  topic: kubevirt
+  depth: 1
+  format: mcq
+  question: |
+    What platform credentials does a KubeVirt HostedCluster require?
+  options:
+    - text: None — the infrastructure cluster itself is the infrastructure; its access is what matters
+      correct: true
+    - text: AWS access keys, like every other platform
+      correct: false
+    - text: An Azure service principal
+      correct: false
+    - text: A per-VM kubevirt.io API token
+      correct: false
+  source: docs/content/getting-started/onboarding/platforms.md
+  why: |
+    "No cloud credentials — the infrastructure cluster already has
+    everything needed" is one of KubeVirt's key differences from cloud
+    platforms, and it aligns with the design invariant that HyperShift
+    components never own user platform credentials.
+
+- id: kv-lab-cluster
+  topic: kubevirt
+  depth: 1
+  format: scenario
+  question: |
+    A team has an OpenShift lab cluster with KubeVirt installed and asks
+    whether they can run hosted clusters on it, and what cloud account
+    setup they would need. What do you tell them?
+  rubric:
+    must_cover:
+      - Yes — the KubeVirt platform runs guest workers as VMs on an existing OpenShift cluster with KubeVirt
+      - No cloud account or platform credentials are needed — the infra cluster is the infrastructure
+      - Worker VMs are scheduled onto the infra cluster like pods, subject to its capacity
+  source: docs/content/getting-started/onboarding/platforms.md
+  why: |
+    KubeVirt is HyperShift's zero-cloud platform: nested virtualization on
+    what you already run. The main planning items are capacity (VMs consume
+    real memory/CPU on the infra cluster) and network CIDR separation.
+
+- id: kv-vmi-template-code
+  topic: kubevirt
+  depth: 1
+  format: code
+  question: |
+    Open hypershift-operator/controllers/nodepool/kubevirt/kubevirt.go and
+    find virtualMachineTemplateBase. What does the NodePool controller
+    build here for KubeVirt machines, and where do the VM's CPU and memory
+    come from?
+  rubric:
+    must_cover:
+      - It builds the VM template (a capikubevirt VirtualMachineTemplateSpec wrapping a KubeVirt VirtualMachineInstanceSpec) — the machine template for the NodePool
+      - CPU model and guest memory come from the NodePool's kubevirt platform configuration
+      - The VM is set to always run (RunStrategyAlways) with external eviction (EvictionStrategyExternal)
+  source: hypershift-operator/controllers/nodepool/kubevirt/kubevirt.go
+  why: |
+    Same builder pattern as every platform (aws.go, azure.go, ...) — the
+    NodePool renders a platform machine template; for KubeVirt the
+    "machine" is a VM spec. This file is also the proof that KubeVirt uses
+    CAPI, whatever the platforms comparison table says.
+
+- id: kv-capi-still
+  topic: kubevirt
+  depth: 2
+  format: mcq
+  question: |
+    Which statement about CAPI on the KubeVirt platform is correct?
+  options:
+    - text: KubeVirt uses CAPI like other platforms — the NodePool results in a MachineDeployment with a KubeVirt machine template, and the platform reconciles a KubevirtCluster infra CR
+      correct: true
+    - text: KubeVirt bypasses CAPI entirely — the CPO creates VirtualMachines directly
+      correct: false
+    - text: KubeVirt reuses the AWS provider with EC2-backed VMs
+      correct: false
+    - text: CAPI is only used on the Agent platform
+      correct: false
+  source: hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt/kubevirt.go
+  why: |
+    The code is the truth: ReconcileCAPIInfraCR reconciles a
+    capikubevirt.KubevirtCluster, and nodepool/kubevirt/kubevirt.go builds
+    KubeVirt machine templates for MachineDeployments. The platforms
+    onboarding doc's "No CAPI provider" bullet is stale — a doc PR waiting
+    to happen.
+
+- id: kv-two-interfaces
+  topic: kubevirt
+  depth: 2
+  format: explain
+  question: |
+    A KubeVirt worker VM has two network interfaces. Name them, explain the
+    difference, and say which one the guest cluster's router NodePort
+    listens on.
+  rubric:
+    must_cover:
+      - The pod network interface — the virt-launcher pod's network on the infra/management cluster
+      - The machineNetwork interface — the VM's own network, often on a secondary bridge
+      - The guest router's NodePort listens on the machineNetwork IPs, not the pod network IPs
+      - This duality is why Services targeting VMs must not use pod selectors
+  source: docs/content/how-to/kubevirt/ingress-and-dns.md
+  why: |
+    The dual-interface model is THE mental model for KubeVirt HCP
+    networking — most "connection refused" ingress pain traces back to
+    confusing the pod network with the machineNetwork.
+
+- id: kv-baseDomainPassthrough
+  topic: kubevirt
+  depth: 2
+  format: mcq
+  question: |
+    A KubeVirt HostedCluster is created without a baseDomain. What does
+    HyperShift automatically set up for guest ingress?
+  options:
+    - text: A wildcard passthrough Route, a selector-less ClusterIP Service targeting the guest router's HTTPS NodePort, and EndpointSlices (managed by the Machine controller) pointing at VM machineNetwork IPs
+      correct: true
+    - text: Nothing — ingress must always be configured manually with a LoadBalancer and DNS
+      correct: false
+    - text: A cloud load balancer, as on AWS
+      correct: false
+    - text: MetalLB with an address pool
+      correct: false
+  source: docs/content/how-to/kubevirt/ingress-and-dns.md
+  why: |
+    baseDomainPassthrough is the zero-config default: guest apps land under
+    *.apps.<guest>.<mgmt-apps-domain>, HTTPS-only (plain HTTP is rejected),
+    and immutable after creation. Create with an explicit baseDomain
+    instead and you own the LoadBalancer, EndpointSlice and DNS yourself —
+    and the HostedCluster stays Partial until you do.
+
+- id: kv-nad-namespace
+  topic: kubevirt
+  depth: 2
+  format: scenario
+  question: |
+    A user attaches an additional network to their KubeVirt NodePool via a
+    Multus NetworkAttachmentDefinition placed in the HostedCluster's
+    namespace. VM creation fails at pod sandbox setup. What is wrong, and
+    where should the NAD live?
+  rubric:
+    must_cover:
+      - With Multus namespace isolation (the OpenShift default), pods can only reference NADs in their own namespace or the default namespace
+      - The virt-launcher pods run in the HCP namespace (clusters-<ns>-<name>), not the HostedCluster namespace
+      - The NAD must live in the HCP namespace (or the external infrastructure namespace for external-infra setups)
+  source: docs/content/how-to/kubevirt/configuring-network.md
+  why: |
+    A classic KubeVirt-HCP footgun: the CR that feels like it belongs next
+    to the HostedCluster actually belongs next to the virt-launcher pods.
+    While networking, also remember CIDR separation — guest and hosting
+    cluster networks must not share a subnet (HCP default 10.132.0.0/14,
+    overridable with --cluster-cidr).
+
+- id: kv-cidr-collision
+  topic: kubevirt
+  depth: 2
+  format: mcq
+  question: |
+    A KubeVirt guest cluster deploys with mysterious DNS failures. The
+    hosting and guest clusters turn out to use the same cluster network
+    CIDR. What should have been done?
+  options:
+    - text: Pick a non-overlapping CIDR for the guest at creation time (--cluster-cidr) — HCP's default (10.132.0.0/14) is offset from typical OCP ranges but must be checked against the hosting cluster's network
+      correct: true
+    - text: Nothing — CIDR overlap is harmless because VMs are isolated
+      correct: false
+    - text: Recreate the VMs with different MAC addresses
+      correct: false
+    - text: Attach the VMs to the pod network only
+      correct: false
+  source: docs/content/how-to/kubevirt/configuring-network.md
+  why: |
+    Nested networking means both clusters' pod and service networks
+    coexist in the same fabric — check the hosting cluster's clusterNetwork
+    (oc get network cluster) before creating the guest, then choose the
+    guest CIDR accordingly.
+
+- id: kv-secondary-default
+  topic: kubevirt
+  depth: 2
+  format: scenario
+  question: |
+    A team wants their KubeVirt guest VMs on a network they fully control —
+    their own DHCP, routing, and external connectivity — instead of the
+    infra cluster's pod network. How do they set that up?
+  rubric:
+    must_cover:
+      - Create a NetworkAttachmentDefinition for their network (in the HCP namespace, per the Multus namespace rule)
+      - Attach it to the NodePool as an additional network (--additional-network)
+      - Disable the default pod network attachment with --attach-default-network=false, making the additional network the VMs' primary network
+  source: docs/content/how-to/kubevirt/configuring-network.md
+  why: |
+    By default KubeVirt VMs attach to the infra cluster's pod network;
+    flipping to a self-managed secondary network as primary is how teams
+    get routable, controlled VM networking. The additional networks
+    themselves are Multus NetworkAttachmentDefinitions — the same NAD
+    namespace rules apply.
+
+- id: kv-ipv6-multus-code
+  topic: kubevirt
+  depth: 3
+  format: code
+  question: |
+    Open hypershift-operator/controllers/nodepool/kubevirt/network.go and
+    read GenerateNetworkOverrideMachineConfig and its doc comment. What
+    problem does it solve, and why is it deliberately skipped for IPv4-only
+    clusters?
+  rubric:
+    must_cover:
+      - The MCO renders nmstate configuration that disables IPv6 autoconf and routes IPv6 through KubeVirt's ARP proxy gateway (fe80::1) — correct only for the default pod network, where OVN-Kubernetes assigns IPv6 via DHCPv6
+      - With multus as the primary network (AttachDefaultNetwork=false) the network behaves as a standard L2 segment, and that configuration breaks SLAAC — nodes cannot get IPv6 addresses
+      - The override replaces those nmstate files with no-ops, and is generated only when multus is primary AND the cluster networking includes IPv6
+      - IPv4-only clusters are skipped on purpose — keeping the MachineConfig out of their NodePool config hash avoids a fleet-wide node rollout when the HyperShift operator is upgraded
+  source: hypershift-operator/controllers/nodepool/kubevirt/network.go
+  why: |
+    One function, three lessons: the MCO assumes the pod network, multus
+    turns the VM network into plain L2, and the guard conditions exist to
+    protect the NodePool config hash. That last part is the repo's
+    "what happens to existing clusters when this operator deploys" review
+    question, answered in code — compare it with the config-hash questions
+    in data-plane.
+
+- id: kv-pod-selector-gotcha
+  topic: kubevirt
+  depth: 3
+  format: scenario
+  question: |
+    With a custom baseDomain, a user creates the LoadBalancer Service for
+    *.apps traffic with a pod selector (kubevirt.io: virt-launcher).
+    Clients get "connection refused" or "http: server gave HTTP response
+    to HTTPS client". Explain why, and describe the correct setup.
+  rubric:
+    must_cover:
+      - A pod selector makes the Service target virt-launcher pod network IPs
+      - The guest router's NodePort listens only on the VM machineNetwork IPs — pod IPs are the wrong network
+      - The correct setup is a selector-less Service plus a manually managed EndpointSlice listing the VM machineNetwork IPs (with the guest router NodePorts as target ports)
+      - The EndpointSlice must be maintained on scale up/down and live migration, since machineNetwork IPs change
+  source: docs/content/how-to/kubevirt/ingress-and-dns.md
+  why: |
+    The single most common KubeVirt HCP ingress failure, straight from the
+    doc's warning box. The fix pattern — selector-less Service plus
+    hand-managed EndpointSlice — is exactly what HyperShift automates in
+    baseDomainPassthrough mode.
+
+- id: kv-external-infra
+  topic: kubevirt
+  depth: 3
+  format: explain
+  question: |
+    Explain the external infrastructure setup for KubeVirt: what is split,
+    how it is requested, and the shape of the RBAC needed on the
+    infrastructure cluster — including the one cluster-scoped permission
+    and what happens without it.
+  rubric:
+    must_cover:
+      - Worker VMs run on a separate infrastructure cluster from the management cluster's control plane pods, requested with --infra-kubeconfig-file and --infra-namespace
+      - Namespace-scoped permissions over VMs/VMIs, datavolumes, services, endpointslices, routes, networkpolicies and friends — cluster-admin is not needed
+      - The one cluster-scoped need — reading networks.config.openshift.io, used to build the virt-launcher NetworkPolicy that blocks egress to the infra cluster's internal pod/service networks
+      - Without it the NetworkPolicy is still created but without CIDR-based egress blocking, and the HostedCluster gets ValidKubeVirtInfraNetworkPolicyRBAC=False plus a warning event
+  source: docs/content/how-to/kubevirt/external-infrastructure.md
+  why: |
+    External infra is how KubeVirt HCP scales beyond one cluster — and the
+    RBAC shape shows the security model: namespace-scoped by default, with
+    the network read as the single deliberate exception.
+
+- id: kv-canary-failures
+  topic: kubevirt
+  depth: 3
+  format: scenario
+  question: |
+    With a custom baseDomain, the guest's ingress operator reports Degraded
+    with CanaryChecksRepetitiveFailures ("server gave HTTP response to
+    HTTPS client"). Walk the diagnostic path.
+  rubric:
+    must_cover:
+      - The canary check runs from inside the guest cluster — first verify DNS resolves correctly from inside the guest VMs and compare against the LoadBalancer VIP
+      - Verify the EndpointSlice targets VM machineNetwork IPs, not virt-launcher pod IPs
+      - Test VIP reachability from inside a guest VM — if it works from outside but not inside, the problem is VIP return-path (asymmetric) routing
+      - The fix for the hairpin case — split-horizon DNS so guest VMs resolve *.apps directly to their own machineNetwork IPs
+  source: docs/content/how-to/kubevirt/ingress-and-dns.md
+  why: |
+    An ordered diagnostic ladder for the most-reported KubeVirt symptom:
+    DNS-from-inside, then endpoints, then return path. Each step isolates
+    one layer of the nested network instead of guessing.

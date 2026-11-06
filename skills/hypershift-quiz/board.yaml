@@ -1,0 +1,36 @@
+# HyperShift Quest board: 24 tiles on a serpentine path
+# (row 1 left-to-right 1-6, row 2 right-to-left 7-12, row 3 left-to-right
+# 13-18, row 4 right-to-left 19-24).
+#
+# Tile fields:
+#   n: tile number (1-24)
+#   type: start | finish | wild   (mutually exclusive with category/format)
+#   category: architecture | networking | data-plane | control-plane | lifecycle | kubevirt
+#   format: mcq | explain | code | scenario
+#   special: challenge  (double points, question one depth deeper)
+name: HyperShift Quest
+tiles:
+  - { n: 1,  type: start }
+  - { n: 2,  category: architecture,  format: mcq }
+  - { n: 3,  category: networking,    format: mcq }
+  - { n: 4,  category: control-plane, format: explain }
+  - { n: 5,  category: data-plane,    format: mcq }
+  - { n: 6,  category: lifecycle,     format: mcq }
+  - { n: 7,  type: wild }
+  - { n: 8,  category: architecture,  format: code }
+  - { n: 9,  category: networking,    format: explain }
+  - { n: 10, category: kubevirt, format: mcq }
+  - { n: 11, category: control-plane, format: mcq }
+  - { n: 12, category: lifecycle,     format: explain }
+  - { n: 13, category: architecture,  format: mcq, special: challenge }
+  - { n: 14, category: kubevirt, format: code }
+  - { n: 15, category: control-plane, format: mcq }
+  - { n: 16, category: data-plane,    format: explain }
+  - { n: 17, category: lifecycle,     format: code }
+  - { n: 18, category: kubevirt, format: explain }
+  - { n: 19, category: networking,    format: scenario }
+  - { n: 20, category: data-plane,    format: scenario }
+  - { n: 21, category: control-plane, format: explain, special: challenge }
+  - { n: 22, category: lifecycle,     format: mcq }
+  - { n: 23, category: kubevirt, format: scenario }
+  - { n: 24, type: finish }

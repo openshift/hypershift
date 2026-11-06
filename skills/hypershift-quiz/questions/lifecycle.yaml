@@ -1,0 +1,463 @@
+# Lifecycle questions (create, steady state, upgrade, delete). Schema: skills/hypershift-quiz/SKILL.md
+- id: life-creation-order
+  topic: lifecycle
+  depth: 1
+  format: mcq
+  question: |
+    After a user creates a HostedCluster CR, which sequence does the
+    HyperShift Operator follow?
+  options:
+    - text: Create the control plane namespace, copy secrets (pull secret, SSH, encryption), create the HostedControlPlane CR, deploy the CPO, deploy the CAPI manager and provider, configure NetworkPolicies
+      correct: true
+    - text: Deploy the CPO first, then let it create the namespace and the HostedControlPlane
+      correct: false
+    - text: Create the HostedControlPlane and CAPI first; the CPO creates its own namespace
+      correct: false
+    - text: Provision worker nodes first so the control plane has somewhere to schedule
+      correct: false
+  source: docs/content/getting-started/onboarding/lifecycle.md
+  why: |
+    The order matters: the namespace and secrets must exist before the HCP
+    CR and the CPO Deployment, and NetworkPolicies fence the namespace
+    before any of it serves traffic. Follow it in
+    hostedcluster_controller.go: Reconcile → reconcileHostedControlPlane →
+    reconcileControlPlaneOperator → reconcileCAPIManager.
+
+- id: life-decoupled-upgrades
+  topic: lifecycle
+  depth: 2
+  format: explain
+  question: |
+    Explain how control plane and data plane upgrades are decoupled in
+    HyperShift: which specs drive each side, what is the resulting rollout
+    on each side, and what is `controlPlaneRelease` for?
+  rubric:
+    must_cover:
+      - Control plane side — changing HC.spec.release makes the HO update the HCP, and the CPO deploys new versions of the control plane components
+      - Data plane side — changing NP.spec.release produces a new config hash, new token/userdata Secrets, and a CAPI rolling update of the MachineDeployment
+      - The two sides are independent — a CP-only change does not touch the data plane
+      - controlPlaneRelease allows patching management-side components without touching the data plane (no node rollout)
+      - NodePool releases can be updated independently within the supported version skew (N-3 y-stream)
+  source: docs/content/getting-started/onboarding/lifecycle.md
+  why: |
+    Decoupled upgrades are a headline HyperShift feature: control planes
+    patch in seconds with no node disruption, and node rollouts happen only
+    when the release that feeds the ignition/config hash actually changes.
+
+- id: life-deletion-order
+  topic: lifecycle
+  depth: 3
+  format: scenario
+  question: |
+    A HostedCluster deletion has been stuck for an hour. Describe the
+    deletion chain the HyperShift Operator drives, and name two places
+    where a deletion could legitimately be waiting.
+  rubric:
+    must_cover:
+      - The HO requests NodePool deletion, then CAPI Cluster deletion
+      - CAPI waits for its worker descendants (machines/instances) before deleting the referenced HCP
+      - The CPO handles HCP cleanup, coordinating with the HCCO when guest cloud-resource cleanup is enabled
+      - The HO waits for the CAPI Cluster to disappear before removing the control plane namespace
+      - Legitimate wait points — CAPI waiting on machine/infra deletion, or HCCO-driven guest cloud cleanup still in progress
+  source: docs/content/getting-started/onboarding/lifecycle.md
+  why: |
+    Deletion is a chain of owners each waiting on their descendants —
+    "stuck" usually means "still waiting on real infrastructure
+    somewhere". The AWS teardown roadmap
+    (docs/content/reference/cluster-teardown-roadmap.md) maps every gate,
+    controller, and finalizer-recovery path.
+
+- id: life-kubeconfig
+  topic: lifecycle
+  depth: 2
+  format: mcq
+  question: |
+    Once a new hosted cluster becomes available, how does the user obtain a
+    kubeconfig for it?
+  options:
+    - text: The HO copies the kubeconfig into a Secret in the user's namespace, next to the HostedCluster
+      correct: true
+    - text: The kubeconfig is only stored in the control plane namespace; users must authenticate via OAuth instead
+      correct: false
+    - text: The ignition server generates a per-user kubeconfig on demand
+      correct: false
+    - text: A management cluster admin must generate and hand out kubeconfigs manually
+      correct: false
+  source: docs/content/getting-started/onboarding/lifecycle.md
+  why: |
+    After the control plane reports available, the HO copies the admin
+    kubeconfig Secret into the user's namespace. The CLI (`hcp create
+    kubeconfig`) extracts and refreshes credentials from that Secret — the
+    user never needs access to the control plane namespace.
+
+- id: life-status-patching
+  topic: lifecycle
+  depth: 2
+  format: mcq
+  question: |
+    You are writing a change in the control-plane-operator that updates
+    HostedControlPlane status. Which approach is required?
+  options:
+    - text: Patch via the support/statuspatching helpers; Status().Update() and unguarded client.MergeFrom() are forbidden and actively enforced by the hcpstatuspatch check
+      correct: true
+    - text: Use c.Status().Update() with a freshly fetched copy of the object
+      correct: false
+    - text: Use client.MergeFrom() without any options
+      correct: false
+    - text: Write the status through the HostedCluster instead
+      correct: false
+  source: control-plane-operator/AGENTS.md
+  why: |
+    HC/HCP status is concurrently written by many controllers; unguarded
+    updates lose conditions. Use statuspatching.PatchStatus or
+    PatchStatusCondition, which re-fetch, apply the mutation, and patch with
+    optimistic locking. The repo actively enforces this — see
+    control-plane-operator/AGENTS.md.
+
+- id: life-delete-code
+  topic: lifecycle
+  depth: 3
+  format: code
+  question: |
+    Open hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go
+    and find the HostedCluster deletion entry point (the reconciler's
+    delete method). What teardown steps does it drive, and in what order?
+  rubric:
+    must_cover:
+      - It requests NodePool deletion first, then CAPI Cluster deletion
+      - It waits for the CAPI Cluster (and its worker descendants) to disappear before removing the control plane namespace
+      - HCP cleanup itself is handled by the CPO, coordinating with the HCCO when guest cloud-resource cleanup is enabled
+  source: hypershift-operator/controllers/hostedcluster/hostedcluster_controller.go
+  why: |
+    Reading the actual delete flow shows why teardown takes time: every
+    layer waits for the layer below it. When a deletion hangs, this method
+    plus the teardown roadmap tell you exactly which gate is holding it.
+
+- id: life-steady-state
+  topic: lifecycle
+  depth: 1
+  format: explain
+  question: |
+    With nothing being changed by users, what are the main controllers of a
+    hosted cluster still doing in steady state?
+  rubric:
+    must_cover:
+      - The CPO continuously reconciles all components against the HCP spec
+      - The PKI operator rotates certificates automatically
+      - The NodePool controller keeps managing auto-repair and scaling
+      - Status flows continuously from CPO to HCP status to HC status (via the HO)
+  source: docs/content/getting-started/onboarding/lifecycle.md
+  why: |
+    Steady state is not idle: reconciliation, cert rotation, health
+    checking and status propagation never stop. That is what makes
+    self-healing work — drift is constantly corrected rather than
+    periodically audited.
+
+- id: life-hc-conditions
+  topic: lifecycle
+  depth: 1
+  format: code
+  question: |
+    Open api/hypershift/v1beta1/hostedcluster_conditions.go. Which three
+    top-level conditions does a user watch on a HostedCluster, and what
+    does each mean?
+  rubric:
+    must_cover:
+      - Available — the hosted cluster has a healthy control plane and is usable
+      - Progressing — the cluster is actively working on a change (creating or upgrading)
+      - Degraded — the cluster is encountering errors and is not fully healthy
+  source: api/hypershift/v1beta1/hostedcluster_conditions.go
+  why: |
+    These three conditions are the user-facing summary of everything
+    beneath them — component conditions roll up into HCP conditions, which
+    the HO aggregates into these. A quick `oc get hostedcluster` is often
+    all you need for a first triage.
+
+- id: life-startup-waiting
+  topic: lifecycle
+  depth: 1
+  format: scenario
+  question: |
+    A user created a HostedCluster ten minutes ago and it is still
+    Progressing. Reassure them — what is normally still happening, and
+    where can they watch it?
+  rubric:
+    must_cover:
+      - The HO has created the namespace, secrets, HCP, CPO and CAPI, and the CPO is bringing up components in dependency order (etcd first, then kube-apiserver, then the rest)
+      - Watch the HC status conditions, the HCP conditions (EtcdAvailable, KubeAPIServerAvailable), and the ControlPlaneComponent CRs
+      - The kubeconfig Secret appears in the user's namespace once the control plane is available
+  source: docs/content/getting-started/onboarding/lifecycle.md
+  why: |
+    First boot takes minutes because roughly 40 components come up in
+    dependency order. Knowing the ladder (etcd, then KAS, then dependents)
+    turns an anxious wait into a readable progress bar. The cluster startup
+    roadmap doc maps every phase.
+
+- id: life-namespace-wait
+  topic: lifecycle
+  depth: 1
+  format: mcq
+  question: |
+    When a HostedCluster is deleted, what does the HyperShift Operator wait
+    for before removing the control plane namespace?
+  options:
+    - text: The CAPI Cluster object to disappear (after its worker descendants are gone)
+      correct: true
+    - text: All control plane pods to terminate gracefully
+      correct: false
+    - text: The kubeconfig Secret to be deleted by the user
+      correct: false
+    - text: Nothing — the namespace is removed immediately with the HostedCluster
+      correct: false
+  source: docs/content/getting-started/onboarding/lifecycle.md
+  why: |
+    The namespace is the last thing to go, and only after the CAPI Cluster
+    (and the machines/infrastructure beneath it) is fully deleted. This is
+    why a namespace stuck terminating during teardown usually means real
+    cloud infrastructure is still being cleaned up underneath.
+
+- id: life-token-code
+  topic: lifecycle
+  depth: 2
+  format: code
+  question: |
+    Open hypershift-operator/controllers/nodepool/token.go and look at the
+    Token type (NewToken, reconcileTokenSecret, reconcileUserDataSecret).
+    What are the two Secrets it manages, and what goes into each?
+  rubric:
+    must_cover:
+      - The token Secret in the control plane namespace — carries the token UUID, release, and config for the ignition payload
+      - The userdata Secret — the ignition stub handed to instances, containing the ignition server URL and the token
+      - The pair is keyed by the config hash — a new hash means a new token/userdata pair (and a new DataSecretName)
+  source: hypershift-operator/controllers/nodepool/token.go
+  why: |
+    token.go is the hinge between "config changed" and "nodes rolled":
+    the hash-keyed token pair is exactly what links ConfigGenerator.Hash()
+    to the MachineDeployment bootstrap data. Reading it end to end makes
+    the rollout chain concrete.
+
+- id: life-nodes-not-upgraded
+  topic: lifecycle
+  depth: 2
+  format: scenario
+  question: |
+    An operator bumped the HostedCluster release, watched the control plane
+    upgrade complete, and now worries something is broken because the
+    nodes are still on the old version. Is it broken? What actually drives
+    node upgrades, and within what limits?
+  rubric:
+    must_cover:
+      - Not broken — control plane and data plane upgrades are decoupled by design
+      - Node upgrades are driven by changing NP.spec.release, which changes the config hash and triggers the CAPI rolling update
+      - NodePool releases can lag the control plane within the supported skew (N-3 y-streams)
+      - controlPlaneRelease exists to patch management-side components without touching the data plane at all
+  source: docs/content/getting-started/onboarding/lifecycle.md
+  why: |
+    "CP upgraded, nodes didn't" is HyperShift working as designed, not a
+    failure. The operator picks the moment to roll nodes by bumping the
+    NodePool release — that independence is the feature.
+
+- id: life-cvo-role
+  topic: lifecycle
+  depth: 2
+  format: mcq
+  question: |
+    What is the CVO's role in a hosted cluster upgrade?
+  options:
+    - text: The CPO rolls out the new CVO version along with the other control plane components, and the CVO then applies the payload's OCP components (CNO, ingress operator, machine approver, autoscaler, and the rest) into the hosted cluster
+      correct: true
+    - text: The CVO is the sole source of truth for upgrades, as in standalone OCP — it deploys all control plane components
+      correct: false
+    - text: The CVO is not deployed in hosted clusters; the CPO replaces it entirely
+      correct: false
+    - text: The CVO only reports version status; it applies no manifests
+      correct: false
+  source: docs/content/how-to/upgrades.md
+  why: |
+    In standalone OCP the CVO owns the whole upgrade. In HyperShift the CPO
+    deploys the control plane (including the CVO itself) from the release
+    payload, and the CVO carries the payload's guest-side components into
+    the hosted cluster. Knowing which side of that split a component lives
+    on tells you which operator to debug.
+
+- id: life-available-upgrades
+  topic: lifecycle
+  depth: 2
+  format: mcq
+  question: |
+    Where does the available-upgrades information in HostedCluster.Status
+    come from, and what is its authority?
+  options:
+    - text: It is bubbled up from the ClusterVersion resource inside the hosted cluster — purely informational; actual upgradability is dictated by .spec.release
+      correct: true
+    - text: It is computed by the HyperShift Operator from the release payload graph and is authoritative
+      correct: false
+    - text: It is bubbled up from ClusterVersion, and applying it from HC.Status triggers the upgrade
+      correct: false
+    - text: It comes from the CVO's allowed-upgrade-paths guardrail, which HyperShift enforces
+      correct: false
+  source: docs/content/how-to/upgrades.md
+  why: |
+    Reading available upgrades in HC.Status and assuming it is a lever is
+    the classic standalone reflex. It is a mirror of the guest's
+    ClusterVersion status; the only real input is .spec.release — and
+    because the CVO's guardrails don't drive anything here, consumers must
+    do their own upgrade-path diligence.
+
+- id: life-no-downgrades
+  topic: lifecycle
+  depth: 2
+  format: mcq
+  question: |
+    A control plane upgrade is going badly and an operator proposes
+    reverting HC.spec.release to the previous version to roll back. What do
+    you tell them?
+  options:
+    - text: Control plane downgrades are not supported — once a HostedCluster has been upgraded, the change cannot be reversed
+      correct: true
+    - text: It works, but only within the same y-stream
+      correct: false
+    - text: It works as long as the CVO has not yet completed the rollout
+      correct: false
+    - text: It works with the skip-release-image-validation annotation
+      correct: false
+  source: docs/content/how-to/upgrades.md
+  why: |
+    Rollback is not an escape hatch — .spec.release is forward-only for
+    the control plane. The mitigation for a bad upgrade is a fix-forward
+    release, which is one reason control plane upgrade gates (like
+    e2e-aws-upgrade-hypershift-operator) matter so much in this repo.
+
+- id: life-cvo-split
+  topic: lifecycle
+  depth: 3
+  format: explain
+  question: |
+    In standalone OCP the CVO has been the sole source of truth for
+    upgrades. In HyperShift the responsibility is split between CPO and
+    CVO. Explain what each side owns during an upgrade, why the split
+    exists, and one consequence.
+  rubric:
+    must_cover:
+      - The CPO owns deploying and rolling the control plane components in the control plane namespace (including the CVO itself) from the release payload
+      - The CVO owns applying the payload's OCP components into the hosted cluster's data plane (CNO, ingress operator, machine approver, autoscaler, etc.)
+      - The split exists for flexibility and speed — the CPO must customize manifests for the management/guest topology in ways that would otherwise require segregating them in the payload
+      - A consequence — the CVO builtin guardrails (recommendations, allowed upgrade paths, risks) no longer drive upgradability; upgrade info in HC.Status is informational only
+  source: docs/content/how-to/upgrades.md
+  why: |
+    The split is the single most important thing to understand about
+    HyperShift upgrades: two operators, two halves of the payload, one
+    input (.spec.release). Every "who do I debug" question during an
+    upgrade resolves against this line.
+
+- id: life-oc-adm-upgrade
+  topic: lifecycle
+  depth: 3
+  format: scenario
+  question: |
+    An engineer used to standalone OpenShift runs `oc adm upgrade` inside a
+    hosted cluster, sees an available update, and asks why nothing happened
+    to the HostedCluster afterwards. What do you tell them, and what should
+    they do instead?
+  rubric:
+    must_cover:
+      - In a hosted cluster, upgradability is dictated by HC.spec.release — the ClusterVersion path inside the guest is not the upgrade lever
+      - The available-updates info in HC.Status is bubbled up from the guest's ClusterVersion and is purely informational
+      - The real action is changing .spec.release on the HostedCluster, on the management cluster side
+      - Because CVO guardrails (allowed upgrade paths, recommendations, risks) don't drive upgradability, upgrade path diligence falls on the operator or consumer
+  source: docs/content/how-to/upgrades.md
+  why: |
+    This is the standalone-OCP instinct that HyperShift deliberately
+    breaks: the guest's ClusterVersion is a status mirror, not a control
+    surface. The control surface lives on the management cluster.
+
+- id: life-etcd-snapshot-dr
+  topic: lifecycle
+  depth: 3
+  format: scenario
+  question: |
+    A customer's Hosted Control Plane backups are large and tied to their
+    storage provider. They ask about alternatives to the default
+    volume-snapshot approach for etcd. What do you present, and how does
+    it work?
+  rubric:
+    must_cover:
+      - The etcd snapshot method (Tech Preview, HCPEtcdBackup feature gate plus OADP plugin etcdBackupMethod=etcdSnapshot) — etcdutl snapshot save produces a single logical database snapshot uploaded to object storage, much smaller than the default's per-replica PVC snapshots (typically 3)
+      - It is storage-agnostic — cross-cluster restore is supported for AWS, Azure and Agent, not yet validated for KubeVirt
+      - Backup flow — the OADP plugin creates an HCPEtcdBackup CR in the HCP namespace; the HyperShift Operator's etcd backup controller watches it and runs the backup Job; the snapshot URL is persisted to HostedCluster.Status.LastSuccessfulEtcdBackupURL
+      - Restore flow — the URL is injected into the RestoreSnapshotURL spec field and the CPO's etcd controller restores via an init container
+  source: docs/content/how-to/disaster-recovery/methods/etcd-snapshot/index.md
+  why: |
+    Two layers worth knowing apart: the OADP HyperShift plugin orchestrates
+    (inside Velero), while HyperShift controllers execute (HO runs the
+    backup Job, CPO runs the restore init container). The doc's comparison
+    table against the volume-snapshot default is the decision aid.
+
+- id: life-dr-greenfield
+  topic: lifecycle
+  depth: 2
+  format: mcq
+  question: |
+    A team backs up a HostedCluster and wants to test the restore alongside
+    the original cluster before decommissioning it. What does the DR model
+    say?
+  options:
+    - text: Restore is green-field — the backed-up HostedCluster must be destroyed before restoration can start, and data-plane workloads need their own backup because nodes are reprovisioned
+      correct: true
+    - text: Restore runs side-by-side with the original cluster, then the old one is deleted
+      correct: false
+    - text: Restore only works on the same management cluster, so testing requires a second hosted cluster
+      correct: false
+    - text: Nodes are reused from the original cluster, so only the control plane is restored
+      correct: false
+  source: docs/content/how-to/disaster-recovery/prerequisites.md
+  why: |
+    The restore model is deliberately simple and destructive: back up,
+    destroy, restore. Node reprovisioning is part of the deal — which is
+    why the prerequisites page insists on backing up data-plane workloads
+    separately before deleting the HostedCluster.
+
+- id: life-dr-cli
+  topic: lifecycle
+  depth: 2
+  format: mcq
+  question: |
+    Which HyperShift CLI command creates an OADP backup of a hosted
+    cluster, and what must already exist?
+  options:
+    - text: hypershift create oadp-backup with --hc-name and --hc-namespace; the OADP operator must be installed with a ready DataProtectionApplication and a backup storage location
+      correct: true
+    - text: oc adm backup hostedcluster, with no prerequisites beyond cluster-admin access
+      correct: false
+    - text: velero backup create with a label selector for the control plane namespace
+      correct: false
+    - text: hcp create etcd-snapshot, which wraps OADP internally
+      correct: false
+  source: docs/content/how-to/disaster-recovery/dr-cli.md
+  why: |
+    The DR CLI wraps OADP rather than reimplementing backup — the DPA and
+    storage location are still OADP concepts. Knowing the wrapper exists
+    saves assembling Velero invocations by hand.
+
+- id: life-paused-until
+  topic: lifecycle
+  depth: 2
+  format: mcq
+  question: |
+    During an etcd restore, an administrator needs HyperShift to stop
+    reconciling a HostedCluster. What do they set?
+  options:
+    - text: spec.pausedUntil on the HostedCluster — either an RFC3339 timestamp (pause until that date) or true (pause until the field is removed); the HostedControlPlane inherits it automatically
+      correct: true
+    - text: Scale the HyperShift Operator deployment to zero temporarily
+      correct: false
+    - text: spec.pausedUntil on the NodePool, which cascades up to the HostedCluster
+      correct: false
+    - text: Annotate the HostedCluster with paused=true
+      correct: false
+  source: docs/content/how-to/pause-reconciliation.md
+  why: |
+    The two accepted formats are the detail people get wrong — a boolean
+    pauses indefinitely until removed, a timestamp self-resumes. Pausing
+    is the standard tool for etcd backup/restore windows and for debugging
+    a controller fight without deleting anything.

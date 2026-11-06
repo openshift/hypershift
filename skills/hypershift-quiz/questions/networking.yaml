@@ -1,0 +1,417 @@
+# Networking questions. Schema and conventions: skills/hypershift-quiz/SKILL.md
+- id: net-konnectivity-tunnel
+  topic: networking
+  depth: 1
+  format: mcq
+  question: |
+    How does the hosted control plane (for example the kube-apiserver) reach
+    worker nodes running in the guest cluster's infrastructure?
+  options:
+    - text: Through a Konnectivity reverse tunnel — worker nodes dial out to the Konnectivity server, and the control plane uses those pre-established tunnels
+      correct: true
+    - text: The control plane connects directly to worker node IPs over the network
+      correct: false
+    - text: Via a site-to-site VPN between management and guest infrastructure
+      correct: false
+    - text: Worker nodes poll the API server through a shared load balancer
+      correct: false
+  source: docs/content/how-to/common/hcp-networking-requirements.md
+  why: |
+    Konnectivity inverts the connection: nodes initiate outbound connections
+    to the Konnectivity server (port 8091 for NodePort/LoadBalancer
+    publishing, or 443 via Route), and the control plane rides those tunnels
+    back into the data plane. No inbound path to nodes is needed.
+
+- id: net-kas-ports
+  topic: networking
+  depth: 2
+  format: mcq
+  question: |
+    Which ports does the kube-apiserver service use on Azure and on IBM
+    Cloud, instead of the common 6443?
+  options:
+    - text: Azure 7443, IBM Cloud 2040
+      correct: true
+    - text: Azure 6443, IBM Cloud 2040
+      correct: false
+    - text: Azure 7443, IBM Cloud 6443
+      correct: false
+    - text: 6443 on every platform
+      correct: false
+  source: docs/content/how-to/common/hcp-networking-requirements.md
+  why: |
+    Both exceptions are collision workarounds: Azure hardcodes 7443
+    (KASSVCLBAzurePort) because 6443 collides with a public LB rule on the
+    management cluster, and IBM Cloud uses 2040 (KASSVCIBMCloudPort). All
+    three constants live in support/config/constants.go.
+
+- id: net-reverse-tunnel-why
+  topic: networking
+  depth: 2
+  format: explain
+  question: |
+    Explain the Konnectivity reverse-tunnel pattern: who initiates the
+    connection, on which port, and what problem the pattern solves.
+  rubric:
+    must_cover:
+      - Worker nodes initiate outbound connections to the Konnectivity server
+      - The Konnectivity server listens on port 8091 (for NodePort/LoadBalancer publishing; via the router on 443 when using Routes)
+      - The control plane uses the pre-established tunnels to reach back into the data plane
+      - This eliminates the need for worker nodes to have directly reachable IPs — no inbound firewall path from the control plane to nodes is required
+    common_mistakes:
+      - mistake: Saying the control plane opens the tunnels to the worker nodes
+        correction: The nodes open the tunnels outward; that is the whole point. The control plane only ever uses connections the nodes established.
+  source: docs/content/how-to/common/hcp-networking-requirements.md
+  why: |
+    The reverse tunnel is why hosted worker nodes can live in a completely
+    separate network/VPC from the control plane: the only requirement is
+    that nodes can reach the published Konnectivity endpoint.
+
+- id: net-service-publishing-ports
+  topic: networking
+  depth: 3
+  format: scenario
+  question: |
+    Your HostedCluster on the None platform uses NodePort service
+    publishing. A firewall admin asks which inbound ports must be reachable
+    from the worker node subnets. What do you tell them, and what would
+    change if the cluster used Route publishing instead?
+  rubric:
+    must_cover:
+      - With NodePort publishing, Konnectivity on 8091 and the Ignition Proxy on 8443 must be reachable, plus the API server on 6443
+      - Those NodePort/LoadBalancer ports (8091, 8443) should be restricted to worker node subnet ranges only
+      - With Route publishing (the default on an OpenShift management cluster), Ignition and Konnectivity traffic flows through the router on 443 — no extra ports beyond standard HTTPS
+      - The ignition endpoints serve sensitive data (certs, kubeconfigs), so restricting them matters
+  source: docs/content/how-to/common/hcp-networking-requirements.md
+  why: |
+    Service publishing strategy is the single biggest driver of HCP firewall
+    requirements. Route publishing piggybacks on the management cluster
+    router; NodePort and LoadBalancer publishing expose Konnectivity (8091)
+    and — for NodePort on Agent/None — the Ignition Proxy (8443) directly.
+
+- id: net-cp-vs-dp-ingress
+  topic: networking
+  depth: 2
+  format: explain
+  question: |
+    A customer asks whether the HyperShift private router can also serve
+    their guest cluster's `*.apps` application traffic. Explain why control
+    plane ingress and data plane ingress are orthogonal, and untangle the
+    two `*.apps` wildcards involved.
+  rubric:
+    must_cover:
+      - CP ingress is handled by HyperShift — a private router (HAProxy) on the management cluster, exposed to the guest network via a cloud Private Link, using SNI-based routing to CP services (KAS, OAuth, Konnectivity, Ignition)
+      - Guest cluster application ingress under `*.apps.<cluster>.<basedomain>` is handled by the ingress operator running inside the guest cluster
+      - The `*.apps.<cluster-name>.hypershift.local` wildcard (the synthetic zone) resolves CP-resident services exposed as routes, not guest application traffic
+      - The CP private router cannot resolve guest cluster workloads — the two systems are separate implementations and must not be conflated
+  source: docs/content/reference/goals-and-design-invariants.md
+  why: |
+    This is the most common private-cluster confusion: two wildcard zones
+    that both look like `*.apps` but belong to different worlds. The
+    `.hypershift.local` zone is HyperShift-internal and non-configurable;
+    the guest apps domain is ordinary OpenShift ingress inside the data
+    plane.
+
+- id: net-ports-constants
+  topic: networking
+  depth: 3
+  format: code
+  question: |
+    Open support/config/constants.go. Which constants define the kube-apiserver
+    service port, the Azure load balancer port, and the IBM Cloud port? Give
+    their names and values — and, from the comment next to the Azure one,
+    why Azure needs a different port at all.
+  rubric:
+    must_cover:
+      - KASSVCPort = 6443
+      - KASSVCLBAzurePort = 7443
+      - KASSVCIBMCloudPort = 2040
+      - Azure needs 7443 because 6443 collides with a public load balancer rule on the management cluster
+  source: support/config/constants.go
+  why: |
+    These constants are the reason "is 6443 open?" has three different right
+    answers depending on platform. When debugging API-server reachability,
+    the platform port table in the HCP networking requirements doc and this
+    file are the source of truth.
+
+- id: net-worker-egress
+  topic: networking
+  depth: 1
+  format: explain
+  question: |
+    Which endpoints must worker nodes be able to reach over the network for
+    a hosted cluster to work, and what is each one for?
+  rubric:
+    must_cover:
+      - The kube-apiserver endpoint (port 6443, or the platform variant) for cluster API traffic
+      - The ignition endpoint during bootstrap (Route on 443, or the Ignition Proxy on 8443 under NodePort publishing)
+      - The Konnectivity server (8091 for NodePort/LoadBalancer publishing, 443 via Route) to establish the reverse tunnel
+      - DNS (port 53) and general HTTPS (443, registries)
+  source: docs/content/how-to/common/hcp-networking-requirements.md
+  why: |
+    The worker node egress table is the checklist for every "node won't
+    join" network issue: API server to talk, ignition to bootstrap,
+    Konnectivity to be manageable, DNS to find any of them.
+
+- id: net-network-policies
+  topic: networking
+  depth: 1
+  format: code
+  question: |
+    Open hypershift-operator/controllers/hostedcluster/network_policies.go.
+    In broad terms, what do the NetworkPolicies the HO creates for a control
+    plane namespace accomplish, and which design invariant do they enforce?
+  rubric:
+    must_cover:
+      - They fence the control plane namespace, restricting which traffic can reach the control plane pods
+      - They enforce the invariant that management-to-hosted communication is only allowed from within the control plane namespace
+      - They open only the specific published ports needed (KAS, Konnectivity, Ignition, router traffic)
+  source: hypershift-operator/controllers/hostedcluster/network_policies.go
+  why: |
+    NetworkPolicies are the enforcement mechanism behind the "control plane
+    namespace is the only door" invariant — declarations in the goals doc
+    become deny-by-default rules here. When traffic is mysteriously blocked,
+    this file (or the policies it generated) is a first stop.
+
+- id: net-route-bootstrap
+  topic: networking
+  depth: 1
+  format: scenario
+  question: |
+    Worker nodes on a HostedCluster using Route publishing fail to
+    bootstrap. A teammate proposes opening port 8091 from the worker subnet
+    to the control plane. Is that the right fix? What actually carries
+    ignition and Konnectivity traffic under Route publishing?
+  rubric:
+    must_cover:
+      - No — port 8091 is the Konnectivity server port for NodePort/LoadBalancer publishing, not needed for Routes
+      - Under Route publishing, ignition and Konnectivity traffic flows through the OpenShift router on port 443
+      - Debug 443 reachability to the router, DNS resolution of the routes, and the router itself instead
+  source: docs/content/how-to/common/hcp-networking-requirements.md
+  why: |
+    Publishing strategy determines the firewall story. Route = ride the
+    router on 443; NodePort/LoadBalancer = expose 8091 (and 8443 for
+    NodePort ignition) directly. Debugging the wrong publishing mode wastes
+    whole afternoons.
+
+- id: net-konn-agent-cp
+  topic: networking
+  depth: 2
+  format: code
+  question: |
+    Open control-plane-operator/controllers/hostedcontrolplane/v2/konnectivity_agent/
+    and look at how the deployment sets --agent-identifiers. There is a
+    konnectivity agent running in the control plane namespace — not just on
+    worker nodes. What is it for, and how is it made to only handle certain
+    traffic?
+  rubric:
+    must_cover:
+      - The KAS egress selector sends all cluster (service-destined) traffic through Konnectivity — including traffic to aggregated API servers that live in the control plane namespace
+      - Aggregated APIServices require a Service in the guest cluster (selector-less, with Endpoints pointing at the control plane), so that traffic comes back through the tunnel
+      - The CP-side konnectivity agent is configured with agent identifiers so only traffic destined for the control plane APIServices is routed to it
+      - Without it, the konnectivity server would send CP-bound service traffic to the data plane, where those services do not exist
+  source: control-plane-operator/controllers/hostedcontrolplane/v2/konnectivity_agent
+  why: |
+    One of the subtlest wiring details in HyperShift: the guest cluster has
+    selector-less Services whose Endpoints point at control plane pods, and
+    a CP-resident agent claims that traffic inside the tunnel. See the
+    "Konnectivity and Control Plane Aggregated API Servers" section of the
+    Konnectivity reference doc.
+
+- id: net-logs-failing
+  topic: networking
+  depth: 2
+  format: scenario
+  question: |
+    On a hosted cluster, kubectl commands work fine, but `oc logs` and
+    `oc exec` into pods fail. What kind of traffic is failing, and where do
+    you look first?
+  rubric:
+    must_cover:
+      - kubectl working means node-to-API-server traffic is fine — the failing direction is API-server-to-node, which rides the Konnectivity tunnel
+      - logs/exec/port-forward require the kube-apiserver to reach kubelets, tunneled through the konnectivity server (KAS sidecar) to konnectivity agents on nodes
+      - Check the konnectivity-agent Daemonset in the guest's kube-system namespace and whether agents have established connections to the konnectivity server cluster endpoint (8091 / Route)
+      - Getting logs of a pod is itself the quick functional test — if it works, Konnectivity works
+  source: docs/content/reference/konnectivity.md
+  why: |
+    "API works but logs/exec don't" is the signature of a broken tunnel,
+    not a broken API. The Konnectivity doc's troubleshooting section
+    (including a curl-through-the-proxy recipe using the
+    konnectivity-client certs) is the debugging playbook.
+
+- id: net-konn-ha
+  topic: networking
+  depth: 3
+  format: explain
+  question: |
+    A hosted control plane runs in HA mode with three kube-apiserver
+    replicas. Explain how Konnectivity HA works in that setup — how many
+    server instances exist, and how do agents end up connected to all of
+    them?
+  rubric:
+    must_cover:
+      - Each kube-apiserver pod runs a konnectivity-server sidecar, so there are three server instances
+      - Each server generates a unique ID at startup, and the total number of servers is passed to agents as a command line argument
+      - When an agent dials the cluster endpoint, the server's response includes its own ID and the total number of servers the agent can expect
+      - The agent keeps dialing the konnectivity server endpoint until it has established connections with that many unique servers
+  source: docs/content/reference/konnectivity.md
+  why: |
+    HA here is agent-driven rendezvous rather than load-balancer fan-out:
+    every agent keeps dialing until it holds a connection to every unique
+    server ID. When debugging tunnel issues in HA clusters, remember there
+    are three separate server instances to check — one per KAS pod.
+
+- id: net-konn-sidecar-why
+  topic: networking
+  depth: 3
+  format: mcq
+  question: |
+    Why does the konnectivity server run as a sidecar of the
+    kube-apiserver instead of in its own deployment?
+  options:
+    - text: Communication with the KAS happens over the loopback interface, and the KAS can use the server as soon as it comes up
+      correct: true
+    - text: Because it must share the kube-apiserver's serving certificates
+      correct: false
+    - text: Because a separate deployment could not be exposed via a Route
+      correct: false
+    - text: Because NetworkPolicies would block it from the KAS otherwise
+      correct: false
+  source: docs/content/reference/konnectivity.md
+  why: |
+    Two design answers from the Konnectivity Q&A — loopback speed and
+    immediate availability to the KAS. Note the knock-on effect for HA:
+    the server count tracks the KAS replica count, which is exactly what
+    makes the agent rendezvous logic necessary.
+
+- id: net-clusternetworking-code
+  topic: networking
+  depth: 2
+  format: code
+  question: |
+    Open api/hypershift/v1beta1/hostedcluster_types.go and find the
+    ClusterNetworking spec (machineNetwork, clusterNetwork, serviceNetwork).
+    What does each list declare, what two properties does the API
+    validation enforce, and can the CIDRs be IPv6?
+  rubric:
+    must_cover:
+      - machineNetwork declares the IP address pools for machines (nodes), clusterNetwork the pod network, serviceNetwork the service network
+      - machineNetwork is immutable — it cannot be modified once set, making the address plan a day-1 decision
+      - CIDR ranges across machineNetwork, clusterNetwork and serviceNetwork must be unique and non-overlapping
+      - The CIDRs may be IPv4 or IPv6 — the API validation accepts both notations
+  source: api/hypershift/v1beta1/hostedcluster_types.go
+  why: |
+    These three lists are the guest cluster's entire address plan, declared
+    on the HostedCluster and (for machineNetwork) immutable after creation —
+    which is why CIDR planning, including overlap with the hosting cluster
+    on KubeVirt, is a day-1 concern. The API accepts IPv6 CIDRs; what
+    varies is how far each platform's networking actually carries them —
+    see the KubeVirt multus/SLAAC override for one concrete example.
+
+- id: net-dr-fixed-hostname
+  topic: networking
+  depth: 3
+  format: scenario
+  question: |
+    A HostedCluster backed up on one management cluster is restored onto a
+    different one. The control plane comes up, but worker nodes never
+    rejoin. Explain why, and what configuration would have prevented it.
+  rubric:
+    must_cover:
+      - Infrastructure endpoints (load balancer addresses, Route URLs) are ephemeral and tied to the original management cluster — they change on restore
+      - Nodes store the kube-apiserver address in their kubelet configuration, so after restore they keep pointing at the old address
+      - TLS certificate SANs would not match the new ephemeral endpoints, causing validation failures even if the address were reachable
+      - The prevention — a fixed hostname in servicePublishingStrategy (at minimum for the APIServer service, ideally all services), with DNS repointed to the new management cluster's endpoint
+  source: docs/content/how-to/disaster-recovery/prerequisites.md
+  why: |
+    DR and service publishing meet here: the fixed-hostname requirement
+    exists precisely so a DNS record, not an ephemeral endpoint, is the
+    contract nodes hold. It applies to all platforms when restoring to a
+    different management cluster.
+
+- id: net-endpoint-access-modes
+  topic: networking
+  depth: 2
+  format: mcq
+  question: |
+    On AWS, a HostedCluster is created with EndpointAccess
+    PublicAndPrivate. What exists?
+  options:
+    - text: A public NLB, a private NLB, and a VPC Endpoint with PrivateLink connectivity to the control plane
+      correct: true
+    - text: Only a public NLB — PrivateLink requires the Private mode
+      correct: false
+    - text: Only PrivateLink, with no load balancers
+      correct: false
+    - text: A VPC peering connection between the management and guest VPCs
+      correct: false
+  source: docs/content/reference/architecture/aws/privatelink.md
+  why: |
+    Three modes — Public (public NLB only), PublicAndPrivate (both NLBs
+    plus VPC Endpoint and PrivateLink), Private (no public NLB). The mode
+    table is the AWS private-cluster contract.
+
+- id: net-privatelink-flow
+  topic: networking
+  depth: 3
+  format: explain
+  question: |
+    Walk the AWS PrivateLink setup flow: which operator creates what, in
+    what order?
+  rubric:
+    must_cover:
+      - The CPO creates the private-router LoadBalancer Service (and its NLB), and its PrivateServiceObserver creates the AWSEndpointService CR carrying the NLB name
+      - The HO collects SubnetIDs from all NodePools into AWSEndpointService.Spec, creates the VPC Endpoint Service attached to the NLB, and writes EndpointServiceName to status
+      - The CPO creates the VPC Endpoint in the guest VPC (using the endpoint service name and subnet IDs) with a security group allowing 6443/443
+      - The CPO creates Route53 private hosted zone records — api.<cluster>.hypershift.local and the CP services wildcard — pointing at the VPC Endpoint DNS name
+  source: docs/content/reference/architecture/aws/privatelink.md
+  why: |
+    A two-operator dance: the CPO owns the guest side and DNS, the HO owns
+    the endpoint service and subnets, and the AWSEndpointService CR is the
+    contract between them. The kube-apiserver-private NLB path exists but
+    is non-standard and discouraged — private-router is the ROSA HCP path.
+
+- id: net-private-connectivity-platforms
+  topic: networking
+  depth: 2
+  format: mcq
+  question: |
+    How do the three cloud platforms provide private connectivity and DNS
+    for private hosted clusters?
+  options:
+    - text: AWS uses PrivateLink (VPC Endpoint Service) with Route53 private zones and CNAME records; GCP uses Private Service Connect with Cloud DNS A records to the PSC endpoint IP; Azure uses Private Link Service with Private DNS zones and A records to the Private Endpoint IP
+      correct: true
+    - text: All three use PrivateLink with platform-specific DNS providers
+      correct: false
+    - text: GCP uses VPC peering, because PSC is not supported
+      correct: false
+    - text: Azure uses a site-to-site VPN to the management cluster VNet
+      correct: false
+  source: docs/content/reference/architecture/private-topology-dns.md
+  why: |
+    Same high-level pattern — the CPO creates a private endpoint in the
+    guest network routing through a cloud-specific private link to the
+    control plane — with three different DNS record shapes: CNAME to the
+    VPCE DNS name, A record to the PSC IP, A record to the Private
+    Endpoint IP.
+
+- id: net-externalname-pattern
+  topic: networking
+  depth: 3
+  format: explain
+  question: |
+    Private hosted clusters still need public DNS records for some
+    endpoints (for example for DNS-authenticated certificates). Explain
+    the ExternalName pattern that bridges this.
+  rubric:
+    must_cover:
+      - The platform's private link controller creates ExternalName Services in the HCP namespace, annotated with hypershift.openshift.io/external-dns-hostname
+      - The spec.externalName field points at the private endpoint's DNS name (AWS) or IP address (GCP and Azure)
+      - external-dns watches the annotated services and creates records in the configured public DNS zone
+      - This enables DNS-authenticated certificate workflows such as the Let's Encrypt DNS challenges used by ROSA
+  source: docs/content/reference/architecture/private-topology-dns.md
+  why: |
+    The trick that lets a private endpoint be publicly resolvable — an
+    ExternalName Service as the bridge object, external-dns as the
+    publisher — applied uniformly across AWS, GCP and Azure with
+    different targets.

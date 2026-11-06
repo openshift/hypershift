@@ -1,0 +1,460 @@
+# Architecture questions. Schema and conventions: skills/hypershift-quiz/SKILL.md
+- id: arch-where-cp-runs
+  topic: architecture
+  depth: 1
+  format: mcq
+  question: |
+    Where do the control plane components of a hosted cluster (etcd,
+    kube-apiserver, kube-controller-manager, ...) run?
+  options:
+    - text: As pods in a dedicated namespace on the management cluster
+      correct: true
+    - text: As pods in the clusters namespace, next to the HostedCluster CR
+      correct: false
+    - text: Directly on the hosted cluster's worker nodes, alongside user workloads
+      correct: false
+    - text: As virtual machines in the hosted cluster's infrastructure
+      correct: false
+  source: docs/content/getting-started/onboarding/key-concepts.md
+  why: |
+    HyperShift decouples the control plane from the data plane: the control
+    plane runs as pods in a dedicated namespace on the management cluster,
+    while worker nodes run only user workloads in separate infrastructure.
+    This is what makes hosted control planes cheap to host at scale and
+    portable across clouds.
+
+- id: arch-hc-vs-hcp
+  topic: architecture
+  depth: 1
+  format: mcq
+  question: |
+    Which statement about the HostedCluster (HC) and HostedControlPlane (HCP)
+    resources is correct?
+  options:
+    - text: HC is the user-facing CR in the user's namespace; HCP is created by the HC controller and lives in the control plane namespace
+      correct: true
+    - text: Both live in the control plane namespace; HC is created by the CPO
+      correct: false
+    - text: HCP is the user-facing CR; HC is internal to the control plane
+      correct: false
+    - text: HC lives in the hypershift namespace next to the HyperShift Operator
+      correct: false
+  source: docs/content/getting-started/onboarding/key-concepts.md
+  why: |
+    HC is the API users declare intent with; the HyperShift Operator
+    translates it into an HCP in the control plane namespace, and the CPO
+    reads the HCP to know what to deploy. HCP is internal — users never
+    touch it directly.
+
+- id: arch-namespace-layout
+  topic: architecture
+  depth: 1
+  format: mcq
+  question: |
+    A user creates HostedCluster `api.example` in namespace `teams`. What is
+    the exact name of the control plane namespace the HyperShift Operator
+    creates for it?
+  options:
+    - text: teams-api-example
+      correct: true
+    - text: teams-api.example
+      correct: false
+    - text: clusters-api-example
+      correct: false
+    - text: api-example
+      correct: false
+  source: docs/content/getting-started/onboarding/architecture.md
+  why: |
+    The control plane namespace is `{hc-namespace}-{hc-name}` with dots in
+    the hosted cluster name replaced by dashes, because dots are not valid
+    in namespace names. The helper lives in
+    hypershift-operator/controllers/manifests/manifests.go.
+
+- id: arch-unidirectional
+  topic: architecture
+  depth: 2
+  format: explain
+  question: |
+    Explain the design invariant "communication between the management
+    cluster and a hosted cluster is unidirectional". What is allowed, from
+    where, and what does it imply about what a hosted cluster can know and
+    do?
+  rubric:
+    must_cover:
+      - Communication is only allowed from within each particular control plane namespace (not from the management cluster at large)
+      - The hosted/guest cluster has no awareness of the management cluster
+      - Worker nodes run nothing beyond user workloads, and the guest cluster exposes no CRDs, CRs, or pods that let users manipulate HyperShift-owned features
+      - The invariant enables persona separation (service provider vs consumer), security, and cost efficiency
+    common_mistakes:
+      - mistake: Interpreting the invariant as a statement about network packet direction, e.g. claiming worker nodes never send traffic towards the control plane
+        correction: Worker nodes do dial the Konnectivity server and the API server endpoint. The invariant is about awareness and control relationships — the guest cluster never addresses or authenticates against the management cluster's API.
+  source: docs/content/reference/goals-and-design-invariants.md
+  why: |
+    Unidirectionality is the security backbone of HyperShift: a compromised
+    guest cluster cannot reach back into the management cluster because it
+    does not know it exists, and management-to-hosted traffic is confined to
+    the control plane namespace, enforceable with NetworkPolicies.
+
+- id: arch-namespace-func
+  topic: architecture
+  depth: 2
+  format: code
+  question: |
+    Open hypershift-operator/controllers/manifests/manifests.go and find the
+    namespace helper (the onboarding docs call it HostedControlPlaneNamespace;
+    find the actual function). What is the control plane namespace for
+    HostedCluster `api.example` in namespace `teams`, and what does the
+    function do to the name?
+  rubric:
+    must_cover:
+      - The namespace is teams-api-example
+      - The format is {hc-namespace}-{hc-name}
+      - Dots in the hosted cluster name are replaced with dashes
+  source: hypershift-operator/controllers/manifests/manifests.go
+  why: |
+    Naming helpers in manifests.go are used everywhere in the codebase;
+    knowing them makes logs and namespaces instantly decodable. Note the
+    doc name and the code name have drifted (HostedControlPlaneNamespace
+    vs HostedControlPlaneNamespaceObject) — a small live example of why
+    this quiz cites symbols, not line numbers.
+
+- id: arch-no-guest-crds
+  topic: architecture
+  depth: 3
+  format: scenario
+  question: |
+    A user with cluster-admin on their hosted cluster wants to scale up their
+    NodePool and asks you where to find the NodePool CR "in their cluster".
+    What do you tell them, and why is it designed this way?
+  rubric:
+    must_cover:
+      - The NodePool lives in the management cluster (in the user's namespace there), not inside the guest cluster
+      - The guest cluster deliberately exposes no HyperShift CRDs, CRs, or pods that would let users manipulate HyperShift-owned features
+      - Worker nodes run only user workloads; HyperShift resources belong to whoever operates the management cluster
+      - This separates the personas — the consumer owns workload capacity usage, the service provider owns the hosting machinery
+  source: docs/content/reference/goals-and-design-invariants.md
+  why: |
+    This trips up nearly everyone coming from standalone OpenShift. The
+    guest cluster's API is for user workloads only; cluster lifecycle is
+    expressed on the management cluster via HostedCluster and NodePool CRs.
+
+- id: arch-three-resources
+  topic: architecture
+  depth: 1
+  format: explain
+  question: |
+    Name the three custom resources at the heart of every hosted cluster and
+    give a one-line role for each.
+  rubric:
+    must_cover:
+      - HostedCluster (HC) — the user-facing CR declaring the intent to create a cluster, living in the user's namespace
+      - HostedControlPlane (HCP) — internal CR created by the HC controller in the control plane namespace; the CPO reads it to know what to deploy
+      - NodePool (NP) — user-facing CR defining a scalable set of worker nodes that references a HostedCluster
+  source: docs/content/getting-started/onboarding/key-concepts.md
+  why: |
+    HC, HCP, and NodePool are the nouns of every HyperShift conversation.
+    Knowing who creates each one and which namespace it lives in decodes
+    most logs and status output you will ever read.
+
+- id: arch-release-field
+  topic: architecture
+  depth: 1
+  format: code
+  question: |
+    Open api/hypershift/v1beta1/hostedcluster_types.go and find the spec
+    field that points at the release image. What does it reference, and in
+    one sentence, what happens when you change it?
+  rubric:
+    must_cover:
+      - spec.release.image — the OCP release image (payload) the hosted cluster's control plane runs
+      - Changing it upgrades the control plane — the HO updates the HCP and the CPO rolls out new component versions
+  source: api/hypershift/v1beta1/hostedcluster_types.go
+  why: |
+    spec.release.image is the control plane's source of truth for versions.
+    The HO copies it into the HCP's releaseImage (see
+    hostedcluster_controller.go), and the CPO resolves component images from
+    that payload. NodePool releases are separate — that is the decoupling.
+
+- id: arch-two-clusters
+  topic: architecture
+  depth: 1
+  format: scenario
+  question: |
+    A teammate wants to create a hosted cluster for their team and asks:
+    which OpenShift cluster do I create it on, and which one will the team
+    point kubectl at? What do you tell them?
+  rubric:
+    must_cover:
+      - The HostedCluster (and NodePool) CRs are created on the management cluster
+      - The team points kubectl at the hosted cluster's own API endpoint, not the management cluster
+      - Users get a kubeconfig that the HO copies into their namespace once the control plane is available
+  source: docs/content/getting-started/onboarding/key-concepts.md
+  why: |
+    Two clusters, two audiences: the management cluster is where hosting is
+    declared, the hosted cluster is what consumers use. The kubeconfig
+    Secret appearing in the user's namespace is the bridge between them.
+
+- id: arch-resources-vs-pods
+  topic: architecture
+  depth: 2
+  format: mcq
+  question: |
+    HostedCluster `my.cluster` exists in namespace `teams`. Where do its
+    NodePool CRs live, and where does its kube-apiserver pod run?
+  options:
+    - text: NodePool CRs in teams; kube-apiserver pod in teams-my-cluster
+      correct: true
+    - text: NodePool CRs in teams-my-cluster; kube-apiserver pod in teams
+      correct: false
+    - text: Both in the hypershift namespace
+      correct: false
+    - text: NodePool CRs in the guest cluster; kube-apiserver pod in teams-my-cluster
+      correct: false
+  source: docs/content/getting-started/onboarding/architecture.md
+  why: |
+    User-facing CRs (HC, NP) stay in the user's namespace; everything the
+    CPO runs lives in the control plane namespace {hc-ns}-{hc-name} with
+    dots replaced by dashes. Mixed-up namespaces are the number one
+    first-week confusion.
+
+- id: arch-tenant-isolation
+  topic: architecture
+  depth: 2
+  format: scenario
+  question: |
+    Two hosted clusters share one management cluster. A new engineer asks
+    what keeps cluster A's control plane from talking to cluster B's, and
+    whether a compromised cluster A control plane could reach the
+    management cluster at large. What do you tell them?
+  rubric:
+    must_cover:
+      - Each hosted cluster gets its own control plane namespace, and communication is only allowed from within each particular control plane namespace
+      - NetworkPolicies fence each control plane namespace (deny by default, only the needed published ports opened)
+      - A control plane pod cannot freely reach the management cluster's API or other namespaces
+      - The hosted clusters remain unaware of each other — no cross-tenant path exists through the guest clusters either
+  source: docs/content/reference/goals-and-design-invariants.md
+  why: |
+    Namespace-per-cluster plus NetworkPolicies is the multi-tenant blast
+    radius control on the management cluster. The invariant "only from
+    within each control plane namespace" is enforced by the policies
+    generated in hypershift-operator/controllers/hostedcluster/network_policies.go.
+
+- id: arch-invariant-mcq
+  topic: architecture
+  depth: 3
+  format: mcq
+  question: |
+    Which of these is a stated HyperShift design invariant?
+  options:
+    - text: HyperShift components should not own or manage user infrastructure platform credentials
+      correct: true
+    - text: Worker nodes must run a HyperShift agent for manageability
+      correct: false
+    - text: The hosted cluster must be able to reach the management cluster API for upgrades
+      correct: false
+    - text: Control plane components must run in the hypershift namespace for isolation
+      correct: false
+  source: docs/content/reference/goals-and-design-invariants.md
+  why: |
+    The real invariants: unidirectional management-to-hosted communication
+    (the guest has no awareness of the management cluster), communication
+    only from within each control plane namespace, workers run only user
+    workloads, and no ownership of user platform credentials. Each
+    distractor inverts or fabricates one of them.
+
+- id: arch-pullsecret-name-vs-content
+  topic: architecture
+  depth: 2
+  format: mcq
+  question: |
+    A team rotates registry credentials. Which change to the pull secret
+    configuration triggers a NodePool rollout?
+  options:
+    - text: Changing the name of the Secret referenced by HostedCluster.spec.pullSecret (or additionalTrustBundle) triggers a rollout across all NodePools; changing only the Secret's content does not
+      correct: true
+    - text: Any change to the Secret's content triggers a rollout
+      correct: false
+    - text: Neither triggers a rollout — pull secrets are never part of node configuration
+      correct: false
+    - text: Only NodePool-owned fields can trigger rollouts, never HostedCluster fields
+      correct: false
+  source: docs/content/reference/nodepool-rollouts.md
+  why: |
+    The config hash tracks the referenced Secret's name, not its bytes —
+    content rotation propagates through HCCO paths without replacing
+    nodes. To force a rollout, point spec.pullSecret at a newly named
+    Secret.
+
+- id: arch-pullsecret-rotation
+  topic: architecture
+  depth: 3
+  format: scenario
+  question: |
+    A security team rotates registry credentials by editing the bytes of
+    the Secret referenced by HostedCluster.spec.pullSecret, keeping the
+    same Secret object. Walk what happens across the system.
+  rubric:
+    must_cover:
+      - No NodePool rollout — the config hash tracks the referenced Secret name, not its content
+      - HCCO continuously reconciles the new content into kube-system/original-pull-secret in the guest, and the global-pull-secret-syncer DaemonSet updates /var/lib/kubelet/config.json on eligible nodes, restarting kubelet via DBus
+      - HCCO updates combined-pull-secret in the HCP namespace, which control plane components such as the OpenShift API Server mount for ImageStream imports
+      - Nodes not eligible for the DaemonSet (InPlace NodePools, most platforms beyond AWS/Azure Replace) keep their ignition-provided kubelet credentials until a spec-driven rollout
+      - To force fleet-wide pickup, point spec.pullSecret at a newly named Secret, which triggers a rollout across all NodePools
+  source: docs/content/how-to/common/global-pull-secret.md
+  why: |
+    The repo's own guidance frames this as one system — spec.pullSecret,
+    the management-cluster Secret, HCCO reconciliation and the Global Pull
+    Secret DaemonSet — with content rotation and node rollouts
+    deliberately decoupled.
+
+- id: arch-globalps-merge
+  topic: architecture
+  depth: 2
+  format: mcq
+  question: |
+    A hosted cluster admin wants their nodes to pull from a private
+    registry without management cluster admin help. What do they do, and
+    how do registry conflicts resolve?
+  options:
+    - text: Create additional-pull-secret in the guest's kube-system; HCCO merges it with the HostedCluster pull secret into global-pull-secret — the original wins on conflicting registry entries, so use namespace-specific entries like quay.io/mycompany
+      correct: true
+    - text: Ask the management cluster admin to edit HostedCluster.spec.pullSecret — it is the only merge point
+      correct: false
+    - text: Create additional-pull-secret in the guest's openshift-config namespace, where it replaces the pull secret
+      correct: false
+    - text: Patch the DaemonSet directly with the new credentials
+      correct: false
+  source: docs/content/how-to/common/global-pull-secret.md
+  why: |
+    Guest-admin autonomy is the whole point of the feature. Original takes
+    precedence on conflicts, so namespace-specific registry entries are
+    the recommended way to layer credentials; deleting
+    additional-pull-secret reverts to original-only.
+
+- id: arch-globalps-eligibility
+  topic: architecture
+  depth: 2
+  format: mcq
+  question: |
+    On which nodes does the global-pull-secret-syncer DaemonSet actually
+    run?
+  options:
+    - text: AWS and Azure Replace NodePool workers (labeled hypershift.openshift.io/nodepool-globalps-enabled=true) and Karpenter nodes (karpenter.sh/nodepool) — not InPlace (Machine Config Daemon conflict) and not other platforms by default
+      correct: true
+    - text: All worker nodes on every platform
+      correct: false
+    - text: Only Karpenter nodes; Replace NodePools use a different mechanism
+      correct: false
+    - text: All nodes except bare metal
+      correct: false
+  source: docs/content/how-to/common/global-pull-secret.md
+  why: |
+    Eligibility is positive selection via node affinity. InPlace is
+    excluded so the syncer never fights the Machine Config Daemon over
+    /var/lib/kubelet/config.json. The DaemonSet object exists on every
+    platform — the pods just do not schedule without the label.
+
+- id: arch-combined-pull-secret
+  topic: architecture
+  depth: 3
+  format: explain
+  question: |
+    Explain combined-pull-secret in the HostedControlPlane namespace: who
+    creates it, who owns it over time, and what consumes it.
+  rubric:
+    must_cover:
+      - The CPO seeds it from pull-secret before CPOv2 components reconcile, so control plane components can start before HCCO runs
+      - HCCO takes ownership for ongoing updates — merged content when additional-pull-secret exists, otherwise a copy of the original
+      - Control plane components mount it; the OpenShift API Server uses it for ImageStream imports that need customer registry credentials
+      - Without it, ImageStream imports requiring customer-provided credentials would fail because the OAPI would only have the original pull secret
+  source: docs/content/how-to/common/global-pull-secret.md
+  why: |
+    A small Secret with a subtle lifecycle — bootstrap ownership by the
+    CPO, steady-state ownership by HCCO — and a user-visible symptom
+    (failing ImageStream imports) when the flow is misunderstood.
+
+- id: arch-capabilities-vs-gates
+  topic: architecture
+  depth: 2
+  format: explain
+  question: |
+    HyperShift has both capabilities (spec.capabilities) and feature
+    gates. Explain the difference: what does each control, and where does
+    each live?
+  rubric:
+    must_cover:
+      - Capabilities enable or disable optional OpenShift components in the guest cluster, per HostedCluster, building on OpenShift's ClusterVersionCapability types (for example Console, ImageRegistry, NodeTuning)
+      - Feature gates come in two independent systems — management cluster gates (set by hypershift install --tech-preview-no-upgrade, governing CRD schemas, the HyperShift Operator and the CPO) and hosted cluster gates (spec.configuration.featureGate.featureSet, governing the OCP release payload for that cluster)
+      - The two gate systems are independent — enabling one does not enable the other
+      - Hosted cluster gates are rendered by the featuregate-generator job into a feature-gate ConfigMap that OCP components consume
+  source: docs/content/how-to/feature-gates.md
+  why: |
+    Capabilities choose which optional components exist in the guest;
+    feature gates enable in-development behaviors — and the gates
+    themselves are split across two independent systems. Mixing these up
+    sends you editing the wrong spec.
+
+- id: arch-gates-tlsadherence
+  topic: architecture
+  depth: 2
+  format: mcq
+  question: |
+    An OCP component team wants to test the TLSAdherence feature gate
+    inside their hosted cluster. What do they set?
+  options:
+    - text: Set spec.configuration.featureGate.featureSet to TechPreviewNoUpgrade on the HostedCluster — the hosted cluster gate system — and verify via the feature-gate ConfigMap in the HCP namespace
+      correct: true
+    - text: Reinstall the HyperShift Operator with --tech-preview-no-upgrade
+      correct: false
+    - text: An entry in spec.capabilities on the HostedCluster
+      correct: false
+    - text: A featureGate entry on the NodePool
+      correct: false
+  source: docs/content/how-to/feature-gates.md
+  why: |
+    The doc's explicit call-out: component teams testing OCP gates need
+    the HostedCluster-level feature set, not the management cluster
+    install flag. Note that TechPreviewNoUpgrade on a hosted cluster is
+    irreversible and blocks minor-version upgrades — test clusters only.
+
+- id: arch-capabilities-supported
+  topic: architecture
+  depth: 2
+  format: mcq
+  question: |
+    Which statement about OpenShift capabilities in HyperShift is correct?
+  options:
+    - text: Console, ImageRegistry and NodeTuning are supported; MachineAPI and OperatorLifecycleManager are not
+      correct: true
+    - text: All OpenShift capabilities are supported, because the guest is a full OpenShift cluster
+      correct: false
+    - text: No capabilities are supported — HyperShift strips them all
+      correct: false
+    - text: Capabilities are set at management cluster install time, not per HostedCluster
+      correct: false
+  source: docs/content/contribute/add-a-capability.md
+  why: |
+    Capabilities are per-HostedCluster opt-ins of optional guest
+    components. The unsupported list is as interesting as the supported
+    one — OLM and MachineAPI do not apply in a hosted topology the way
+    they do standalone.
+
+- id: arch-hcco-role
+  topic: architecture
+  depth: 2
+  format: explain
+  question: |
+    What is the Hosted Cluster Config Operator (HCCO): where does it run,
+    how is it versioned, and what is it responsible for?
+  rubric:
+    must_cover:
+      - It is a control plane component that is a peer to etcd and the apiserver, managed by the CPO like any other component
+      - It is versioned in lockstep with a specific OCP version, decoupled from the management cluster's version
+      - It reconciles resources that live in the hosted (guest) cluster — global configuration managed via the HostedCluster API, the pull secret, the konnectivity agent, control plane PKI pieces, and OLM/APIServer resources
+      - It clears user changes to the guest's ClusterVersion (all updates are driven via the HostedCluster API) and maintains ClusterOperator stubs for control plane components that run outside the guest
+  source: docs/content/reference/controller-architecture.md
+  why: |
+    HCCO is the control plane's ambassador to the guest cluster — the
+    pull-secret questions show its credential work, and the CVO questions
+    explain why it guards ClusterVersion. Its OCP-lockstep versioning is
+    also why it can understand each release's expected guest-side state.
