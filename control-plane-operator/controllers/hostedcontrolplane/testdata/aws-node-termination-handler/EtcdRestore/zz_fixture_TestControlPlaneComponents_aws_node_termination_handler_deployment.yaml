@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 28d5d8356ca611874a3171e5b05301ac16f37bc54da20f4788bf943a7ecac62e
+    hypershift.openshift.io/desired-state-hash: c93169acafce4cf1a4d45030747dda2bb67f89889dc4698981d0fc4e8995b44c
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: aws-node-termination-handler
@@ -185,6 +185,8 @@ spec:
             cpu: 10m
             memory: 30Mi
         restartPolicy: Always
+        securityContext:
+          readOnlyRootFilesystem: true
         startupProbe:
           exec:
             command:
@@ -199,6 +201,9 @@ spec:
           name: cloud-token
         - mountPath: /etc/kubernetes
           name: svc-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: cloud-token-minter
       nodeSelector:
         kubernetes.io/os: linux
       priorityClassName: hypershift-control-plane

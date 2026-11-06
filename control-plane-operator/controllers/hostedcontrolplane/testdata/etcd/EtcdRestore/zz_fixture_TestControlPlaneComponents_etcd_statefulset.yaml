@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 0e1dfadb63c9771e253019b8a4801e3b3e3b1d0a01c8553769537ac2cd08a861
+    hypershift.openshift.io/desired-state-hash: 4fc337352511ac558a3254a6d9c8c46692c0ef4bf3d9c002879ba5d2f0ffb3fd
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd
@@ -302,7 +302,13 @@ spec:
         imagePullPolicy: IfNotPresent
         name: ensure-dns
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: ensure-dns
       - command:
         - /bin/sh
         - -ce
@@ -371,10 +377,15 @@ spec:
         imagePullPolicy: IfNotPresent
         name: etcd-init
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib
           name: data
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: etcd-init
       - args:
         - -c
         - |
@@ -429,6 +440,8 @@ spec:
         imagePullPolicy: IfNotPresent
         name: reset-member
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib
@@ -439,6 +452,9 @@ spec:
           name: etcd-ca
         - mountPath: /etc/etcd/clusterstate
           name: cluster-state
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: reset-member
       priorityClassName: hypershift-etcd
       restartPolicy: Always
       schedulerName: default-scheduler

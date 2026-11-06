@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 57954eeed41f6bebe808addf12d97088914a242c48ccb511193771ad92d52c42
+    hypershift.openshift.io/desired-state-hash: f72b53dc5d04d597df6fd928e6e5dd34c3ac641e24a5db509c9b7833c838d773
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: ignition-server
@@ -168,7 +168,7 @@ spec:
           #!/bin/bash
           set -e
           cd /tmp
-          mkdir input output manifests
+          mkdir -p input output manifests
 
           touch /tmp/manifests/99_feature-gate.yaml
           cat <<EOF >/tmp/manifests/99_feature-gate.yaml
@@ -191,6 +191,7 @@ spec:
             status:
               featureGates: null
         image: cluster-config-api
+        imagePullPolicy: IfNotPresent
         name: fetch-feature-gate
         resources:
           requests:
@@ -201,11 +202,15 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /shared
           name: shared
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: fetch-feature-gate
       priorityClassName: hypershift-control-plane
       serviceAccount: ignition-server
       serviceAccountName: ignition-server

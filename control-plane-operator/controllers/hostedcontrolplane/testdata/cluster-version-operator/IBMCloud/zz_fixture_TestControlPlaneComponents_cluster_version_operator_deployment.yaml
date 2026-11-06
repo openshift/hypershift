@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: d4cff7f0806650e02440b273bf15e970b4ed9ce31fdcdaf54b0a8ce1ed2ad31f
+    hypershift.openshift.io/desired-state-hash: 2cea9be588f5a9b23138b5590d8c28dc0e0ab0a4bcd885c370221d458e2b33c8
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-version-operator
@@ -130,10 +130,15 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: availability-prober
       - args:
         - -c
         - |-
@@ -246,10 +251,15 @@ spec:
           requests:
             cpu: 10m
             memory: 20Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/payload
           name: payload
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: prepare-payload
       - args:
         - -c
         - |
@@ -284,12 +294,17 @@ spec:
           requests:
             cpu: 10m
             memory: 10Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: kubeconfig
         - mountPath: /var/payload
           name: payload
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: bootstrap
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

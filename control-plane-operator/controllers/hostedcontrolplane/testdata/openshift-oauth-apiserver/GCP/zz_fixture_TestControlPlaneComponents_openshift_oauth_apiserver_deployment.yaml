@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 1babe038bd737593b4e6b84c0bfbd931a96cce7d4703072b4e46c44362d77aed
+    hypershift.openshift.io/desired-state-hash: 2317f1f46234775ffffc237d523eac8f377b311b310774650e50ef9464b662f9
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-oauth-apiserver
@@ -250,6 +250,7 @@ spec:
         - name: KUBECONFIG
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
+        imagePullPolicy: IfNotPresent
         name: konnectivity-proxy-socks5
         resources:
           requests:
@@ -287,8 +288,13 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           runAsNonRoot: true
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: availability-prober
       - args:
         - -c
         - |
@@ -362,6 +368,9 @@ spec:
           name: etcd-client-ca
         - mountPath: /etc/kubernetes/certs/etcd-client
           name: etcd-client-cert
+        - mountPath: /tmp
+          name: tmp-dir
+          subPath: wait-for-etcd
       priorityClassName: hypershift-api-critical
       terminationGracePeriodSeconds: 120
       tolerations:

@@ -329,6 +329,31 @@ the cluster-storage-operator gates on `ConfigOperatorReconciliationSucceeded` so
 HCCO creates the `ClusterCSIDriver` before the CSO creates the default StorageClass,
 with a gate that enforces this only on the initial rollout.
 
+### Read-only root filesystem and /tmp
+
+The framework sets `readOnlyRootFilesystem: true` on every container and init
+container, and mounts a writable `tmp-dir` emptyDir at `/tmp` so containers still
+have a place for scratch files. Init containers get a container-specific `subPath`,
+so sequentially-run init containers do not share scratch output. Containers that
+already declare a `/tmp` mount keep it unchanged.
+
+The `/tmp` mount hides anything the container image ships under `/tmp`. If a
+container reads image-provided content from `/tmp` and does not need to write
+there, exclude it from the mount. It keeps the read-only root filesystem:
+
+```go hl_lines="5"
+// control-plane-operator/controllers/hostedcontrolplane/v2/mycomponent/component.go
+
+func NewComponent() component.ControlPlaneComponent {
+	return component.NewDeploymentComponent(ComponentName, &MyComponent{}).
+		WithoutTmpDirMount("my-init-container").
+		Build()
+}
+```
+
+For example, the default OLM catalogs exclude the `extract-content` init container,
+which copies the catalog image's pre-built cache from `/tmp/cache`.
+
 ### Tokens
 
 If your component requires access to the cloud or kube-apiserver. It requires a serviceAccount token in the guest cluster. This can be provided by the token-minter sidecar container which you can automatically inject into your deployment as follows:
