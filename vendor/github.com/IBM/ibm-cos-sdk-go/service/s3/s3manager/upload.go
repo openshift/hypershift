@@ -363,6 +363,35 @@ func (u Uploader) UploadWithIterator(ctx aws.Context, iter BatchUploadIterator, 
 	return nil
 }
 
+// UploadWithPipe uploads data from a named pipe to S3, intelligently buffering
+// large files into smaller chunks and sending them in parallel across multiple
+// goroutines. This method is optimized for streaming from named pipes (FIFOs).
+//
+// The method leverages all existing Uploader configuration including PartSize,
+// Concurrency, BufferProvider, RequestOptions, etc.
+//
+// Additional functional options can be provided to configure the individual
+// upload. These options are copies of the Uploader instance UploadWithPipe is
+// called from. Modifying the options will not impact the original Uploader instance.
+//
+// Example:
+//
+//	sess := session.Must(session.NewSession())
+//	uploader := s3manager.NewUploader(sess)
+//
+//	result, err := uploader.UploadWithPipe(aws.BackgroundContext(), &s3manager.UploadPipeInput{
+//	    Bucket:   aws.String("my-bucket"),
+//	    Key:      aws.String("backup.tar.gz"),
+//	    PipePath: aws.String("/tmp/backup.pipe"),
+//	    UploadInput: &s3manager.UploadInput{
+//	        // All standard UploadInput fields supported
+//	        Metadata: map[string]*string{"source": aws.String("backup")},
+//	    },
+//	})
+func (u *Uploader) UploadWithPipe(ctx aws.Context, input *UploadPipeInput, options ...func(*Uploader)) (*UploadOutput, error) {
+	return uploadWithPipe(ctx, u, input, options...)
+}
+
 // internal structure to manage an upload to S3.
 type uploader struct {
 	ctx aws.Context
