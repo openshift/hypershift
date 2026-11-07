@@ -357,6 +357,10 @@ func (o *CreateInfraOptions) existingInternetGateway(ctx context.Context, client
 }
 
 func (o *CreateInfraOptions) CreateNATGateway(ctx context.Context, l logr.Logger, client awsapi.EC2API, publicSubnetID, availabilityZone string) (string, error) {
+	return o.createNATGatewayWithTimeout(ctx, l, client, publicSubnetID, availabilityZone, 10*time.Second)
+}
+
+func (o *CreateInfraOptions) createNATGatewayWithTimeout(ctx context.Context, l logr.Logger, client awsapi.EC2API, publicSubnetID, availabilityZone string, cleanupTimeout time.Duration) (string, error) {
 	natGatewayName := fmt.Sprintf("%s-nat-%s", o.InfraID, availabilityZone)
 	natGateway, err := o.existingNATGateway(ctx, client, natGatewayName)
 	if err != nil {
@@ -385,13 +389,16 @@ func (o *CreateInfraOptions) CreateNATGateway(ctx context.Context, l logr.Logger
 		}
 		return false
 	}
+	allAttemptsRejected := true
 	err = retry.OnError(retryBackoff, isNATGatewayRetriable, func() error {
+		observer := &natGatewayAttemptObserver{}
 		gatewayResult, err := client.CreateNatGateway(ctx, &ec2.CreateNatGatewayInput{
 			AllocationId:      aws.String(allocationID),
 			SubnetId:          aws.String(publicSubnetID),
 			TagSpecifications: o.ec2TagSpecifications("natgateway", natGatewayName),
-		})
+		}, observer.apiOption)
 		if err != nil {
+			allAttemptsRejected = allAttemptsRejected && observer.observed && observer.rejected && isNATGatewayRejection(err)
 			return err
 		}
 		natGateway = gatewayResult.NatGateway
@@ -399,6 +406,11 @@ func (o *CreateInfraOptions) CreateNATGateway(ctx context.Context, l logr.Logger
 		return nil
 	})
 	if err != nil {
+		if allAttemptsRejected {
+			releaseNATGatewayEIP(ctx, l, client, allocationID, cleanupTimeout)
+		} else {
+			l.Info("Retaining elastic IP after inconclusive NAT gateway creation", "allocationID", allocationID, "error", err)
+		}
 		return "", fmt.Errorf("cannot create NAT gateway: %w", err)
 	}
 
