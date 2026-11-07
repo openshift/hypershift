@@ -66,14 +66,69 @@ func (o *DestroyInfraOptions) Validate() error {
 	return nil
 }
 
+// ValidateNetwork checks VPC provenance and child references; a missing VPC returns false, nil.
+func (o *DestroyInfraOptions) ValidateNetwork(ctx context.Context, logger logr.Logger) (bool, error) {
+	manager, err := NewNetworkManager(ctx, o.ProjectID, o.InfraID, o.Region, logger)
+	if err != nil {
+		return false, err
+	}
+	return manager.validateNetwork(ctx)
+}
+
+func (n *NetworkManager) validateNetwork(ctx context.Context) (bool, error) {
+	network, err := n.getNetwork(ctx, n.formatNetworkName())
+	if isNotFoundError(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to inspect GCP network: %w", err)
+	}
+	if network.Description != "HyperShift VPC for cluster "+n.infraID {
+		return false, fmt.Errorf("network %s is not recognized as CLI-created", network.Name)
+	}
+	if network.SelfLink == "" {
+		return false, fmt.Errorf("network %s has no self link", network.Name)
+	}
+	// Router validation also covers its NAT configuration.
+	router, err := n.getRouter(ctx, n.formatRouterName())
+	if err != nil && !isNotFoundError(err) {
+		return false, fmt.Errorf("failed to inspect GCP router: %w", err)
+	}
+	if err == nil && router.Network != network.SelfLink {
+		return false, fmt.Errorf("router %s does not belong to network %s", router.Name, network.Name)
+	}
+	subnet, err := n.getSubnet(ctx, n.formatSubnetName())
+	if err != nil && !isNotFoundError(err) {
+		return false, fmt.Errorf("failed to inspect GCP subnet: %w", err)
+	}
+	if err == nil && subnet.Network != network.SelfLink {
+		return false, fmt.Errorf("subnet %s does not belong to network %s", subnet.Name, network.Name)
+	}
+	firewall, err := n.computeService.Firewalls.Get(n.projectID, n.infraID+"-allow-kubelet").Context(ctx).Do()
+	if err != nil && !isNotFoundError(err) {
+		return false, fmt.Errorf("failed to inspect GCP firewall rule: %w", err)
+	}
+	if err == nil && firewall.Network != network.SelfLink {
+		return false, fmt.Errorf("firewall rule %s does not belong to network %s", firewall.Name, network.Name)
+	}
+	return true, nil
+}
+
 // Run executes the infrastructure destruction
 func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error {
 	logger.Info("Destroying GCP infrastructure", "projectID", o.ProjectID, "region", o.Region, "infraID", o.InfraID)
 
-	// Initialize network manager
 	networkManager, err := NewNetworkManager(ctx, o.ProjectID, o.InfraID, o.Region, logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize network manager: %w", err)
+	}
+	exists, err := networkManager.validateNetwork(ctx)
+	if err != nil {
+		return fmt.Errorf("cannot validate GCP networking: %w", err)
+	}
+	if !exists {
+		logger.Info("GCP VPC already absent, skipping networking cleanup")
+		return nil
 	}
 
 	// Delete resources in reverse order of creation (dependencies first)
