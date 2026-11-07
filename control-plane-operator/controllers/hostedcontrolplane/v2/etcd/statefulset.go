@@ -90,15 +90,10 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 			})
 		}
 
+		// The peer and client listen URLs are derived from the runtime POD_IP by the
+		// container command in the shared asset, because the management cluster pod IP
+		// family can differ from the hosted cluster network family.
 		if !ipv4 {
-			podspec.UpsertEnvVar(c, corev1.EnvVar{
-				Name:  "ETCD_LISTEN_PEER_URLS",
-				Value: "https://[$(POD_IP)]:2380",
-			})
-			podspec.UpsertEnvVar(c, corev1.EnvVar{
-				Name:  "ETCD_LISTEN_CLIENT_URLS",
-				Value: "https://[$(POD_IP)]:2379,https://localhost:2379",
-			})
 			podspec.UpsertEnvVar(c, corev1.EnvVar{
 				Name:  "ETCD_LISTEN_METRICS_URLS",
 				Value: "https://[::]:2382",

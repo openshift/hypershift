@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: 2d905f13d75d245f3d41bb5a3b3b3f473381589a4b8ba60dfe93c50bf58d3271
+    hypershift.openshift.io/desired-state-hash: 9b901b4d84ebce854e9c1f78a90058a749a345326b9142e0c30523b0df509aef
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd
@@ -84,7 +84,19 @@ spec:
       - command:
         - /bin/sh
         - -c
-        - ETCD_INITIAL_CLUSTER_STATE=$(cat /etc/etcd/clusterstate/state) /usr/bin/etcd
+        - |
+          # POD_IP is the management cluster pod IP, whose address family can
+          # differ from the hosted cluster network. Bracket it only when it is
+          # an IPv6 literal so the listen URLs are valid for either family.
+          case "${POD_IP}" in
+            *:*) listen_host="[${POD_IP}]" ;;
+            *) listen_host="${POD_IP}" ;;
+          esac
+          export ETCD_LISTEN_PEER_URLS="https://${listen_host}:2380"
+          export ETCD_LISTEN_CLIENT_URLS="https://${listen_host}:2379,https://localhost:2379"
+          ETCD_INITIAL_CLUSTER_STATE=$(cat /etc/etcd/clusterstate/state)
+          export ETCD_INITIAL_CLUSTER_STATE
+          exec /usr/bin/etcd
         env:
         - name: POD_IP
           valueFrom:
@@ -106,10 +118,6 @@ spec:
           value: /var/lib/data
         - name: ETCD_INITIAL_ADVERTISE_PEER_URLS
           value: https://$(HOSTNAME).etcd-discovery.$(NAMESPACE).svc:2380
-        - name: ETCD_LISTEN_PEER_URLS
-          value: https://$(POD_IP):2380
-        - name: ETCD_LISTEN_CLIENT_URLS
-          value: https://$(POD_IP):2379,https://localhost:2379
         - name: ETCD_ADVERTISE_CLIENT_URLS
           value: https://$(HOSTNAME).etcd-discovery.$(NAMESPACE).svc:2379
         - name: ETCD_LISTEN_METRICS_URLS
