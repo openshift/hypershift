@@ -1,18 +1,22 @@
 package etcd
 
 import (
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestEtcdShardInterface(t *testing.T) {
@@ -418,6 +422,29 @@ func TestAdaptStatefulSetForShard(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestResetMemberScript(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	sts, err := assets.LoadStatefulSetManifestTemplated(ComponentName, etcdTemplateData(ComponentName))
+	g.Expect(err).ToNot(HaveOccurred(), "failed to load the etcd statefulset asset")
+
+	var baseScript string
+	for _, container := range sts.Spec.Template.Spec.InitContainers {
+		if container.Name == "reset-member" {
+			g.Expect(container.Args).To(HaveLen(2), "unexpected reset-member arguments")
+			baseScript = container.Args[1]
+		}
+	}
+	g.Expect(baseScript).ToNot(BeEmpty(), "the etcd statefulset asset has no reset-member script")
+
+	// The shard renderer replaces only the service names in the same script. Comparing
+	// the complete text keeps the default and sharded reset-member logic from drifting.
+	expectedScript := strings.ReplaceAll(baseScript, "etcd-client", "etcd-client-events")
+	expectedScript = strings.ReplaceAll(expectedScript, "etcd-discovery", "etcd-discovery-events")
+	g.Expect(resetMemberScript("etcd-client-events", "etcd-discovery-events")).To(Equal(expectedScript), "shard reset-member script drifted from the etcd asset:\n%s", cmp.Diff(expectedScript, resetMemberScript("etcd-client-events", "etcd-discovery-events")))
 }
 
 func TestAdaptStatefulSetForShard_IPv6WithDefrag(t *testing.T) {
