@@ -93,6 +93,32 @@ func EnsureVeleroPodRunning(testCtx *internal.TestContext) error {
 		DefaultOADPNamespace, len(podList.Items), podStates)
 }
 
+// GetReadyHypershiftPluginImage returns the HyperShift plugin image from a running,
+// ready Velero pod. It returns an error if no ready Velero pod has the plugin init
+// container, including when Velero is running without the HyperShift plugin.
+func GetReadyHypershiftPluginImage(testCtx *internal.TestContext) (string, error) {
+	podList := &corev1.PodList{}
+	labels := crclient.MatchingLabels{"deploy": "velero", "component": "velero"}
+	if err := testCtx.MgmtClient.List(testCtx.Context, podList, crclient.InNamespace(DefaultOADPNamespace), labels); err != nil {
+		return "", fmt.Errorf("failed to list Velero pods: %w", err)
+	}
+
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if pod.DeletionTimestamp != nil || pod.Status.Phase != corev1.PodRunning || !isPodReady(pod) {
+			continue
+		}
+		for _, container := range pod.Spec.InitContainers {
+			// OADP names the init container after the custom plugin. The Velero
+			// CLI prefixes its generated name with the image repository path.
+			if (container.Name == "hypershift-oadp-plugin" || strings.HasSuffix(container.Name, "-hypershift-oadp-plugin")) && container.Image != "" {
+				return container.Image, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no running and ready Velero pod in namespace %s has the HyperShift plugin init container", DefaultOADPNamespace)
+}
+
 // isPodReady checks if a pod has the Ready condition set to True.
 func isPodReady(pod *corev1.Pod) bool {
 	for _, condition := range pod.Status.Conditions {
