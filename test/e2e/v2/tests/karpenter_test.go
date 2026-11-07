@@ -1512,6 +1512,8 @@ func KarpenterCPUOptionsNestedVirtualization(getTestCtx internal.TestContextGett
 			if !karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
 				Skip("AutoNode not configured on hosted cluster")
 			}
+
+			tc.SkipIfVersionBelow(v2util.Version51)
 		})
 
 		It("should provision EC2 instance with nested virtualization enabled", func() {
