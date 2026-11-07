@@ -44,6 +44,15 @@ func TestHandleIdentitiesAndRBAC(t *testing.T) {
 		"23456789-1234-1234-1234-123456789012": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 		"34567890-1234-1234-1234-123456789012": "cccccccc-cccc-cccc-cccc-cccccccccccc",
 	}
+	// managedWithRegistrySecret mirrors a realistic managed-identities file where the control-plane
+	// image registry identity carries its Key Vault secret name. AssignControlPlaneRoles requires the
+	// registry identity's credentialsSecretName when the ImageRegistry capability is enabled.
+	managedWithRegistrySecret := strings.Replace(
+		componentIdentities,
+		`"imageRegistry":{"clientID":"`+clientID+`"}`,
+		`"imageRegistry":{"clientID":"`+clientID+`","objectEncoding":"utf-8","credentialsSecretName":"image-registry-credentials"}`,
+		1,
+	)
 	tests := map[string]struct {
 		managed                   string // JSON/YAML contents of --managed-identities-file, not a file path.
 		workload                  string // JSON contents of --workload-identities-file, not a file path.
@@ -111,7 +120,7 @@ func TestHandleIdentitiesAndRBAC(t *testing.T) {
 
 		// Role assignment to the selected identity.
 		"When role assignment is enabled with managed identities, it should grant roles to the explicit identity": {
-			managed:                   strings.ReplaceAll(componentIdentities, clientID, "23456789-1234-1234-1234-123456789012"),
+			managed:                   strings.ReplaceAll(managedWithRegistrySecret, clientID, "23456789-1234-1234-1234-123456789012"),
 			karpenterClientID:         clientID,
 			wantKarpenterClientID:     clientID,
 			wantKMSClientID:           "",
@@ -234,6 +243,15 @@ func TestValidate(t *testing.T) {
 			},
 			expectedError: false,
 			description:   "Should pass when base domain is provided",
+		},
+		"When a disabled capability is misspelled it should return an error": {
+			opts: CreateInfraOptions{
+				BaseDomain:                 "example.com",
+				DisableClusterCapabilities: []string{"ImageRegstry"},
+			},
+			expectedError: true,
+			errorContains: "unknown disabled capability: ImageRegstry",
+			description:   "Should reject misspelled disabled capabilities before Azure mutations",
 		},
 		"When base domain is missing it should return an error": {
 			opts:          CreateInfraOptions{},

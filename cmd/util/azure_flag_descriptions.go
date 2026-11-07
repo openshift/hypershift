@@ -82,7 +82,7 @@ const (
 
 	// Infrastructure command specific flags
 	AssignIdentityRolesDescription          = "Automatically assign required Azure RBAC roles to workload identities. This grants the identities permissions to manage Azure resources."
-	DisableClusterCapabilitiesDescription   = "Comma-separated list of cluster capabilities to disable (e.g. ImageRegistry). Disabled capabilities will not have corresponding workload identities created."
+	DisableClusterCapabilitiesDescription   = "Comma-separated list of cluster capabilities to disable (e.g. ImageRegistry). Only the ImageRegistry capability affects Azure identity creation here: disabling it skips its workload identity and federated credentials. Other capabilities are accepted but do not change which identities are created."
 	InfraIDDescription                      = "Unique identifier used to name and tag Azure resources. This ID will be incorporated into resource names and Azure tags."
 	BaseDomainInfraDescription              = "Base DNS domain for the cluster (e.g. example.com). A public DNS zone for this domain must exist in your Azure subscription."
 	InfraOutputFileDescription              = "Path to file where the infrastructure output will be saved in YAML format. Contains resource IDs and other information needed for cluster creation."
