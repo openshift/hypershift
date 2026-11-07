@@ -380,6 +380,185 @@ func TestCipherSuites(t *testing.T) {
 	}
 }
 
+func TestTLSGroups(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		profile     *configv1.TLSSecurityProfile
+		expected    []configv1.TLSGroup
+		expectError bool
+	}{
+		{
+			name:    "When profile is nil, it should default to Intermediate groups",
+			profile: nil,
+			expected: []configv1.TLSGroup{
+				configv1.TLSGroupX25519MLKEM768,
+				configv1.TLSGroupX25519,
+				configv1.TLSGroupSecP256r1,
+				configv1.TLSGroupSecP384r1,
+			},
+		},
+		{
+			name: "When using Custom profile without groups, it should return nil",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+					},
+				},
+			},
+			expected: nil,
+		},
+		{
+			name: "When using Custom profile with groups, it should return configured groups",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+						Groups: []configv1.TLSGroup{
+							configv1.TLSGroupX25519,
+							configv1.TLSGroupSecP256r1,
+						},
+					},
+				},
+			},
+			expected: []configv1.TLSGroup{
+				configv1.TLSGroupX25519,
+				configv1.TLSGroupSecP256r1,
+			},
+		},
+		{
+			name: "When using Custom profile with nil Custom field, it should return error",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+
+			result, err := TLSGroups(tc.profile)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestSetCurvePreferencesUsingAPIServer(t *testing.T) {
+	tests := []struct {
+		name              string
+		apiServer         *configv1.APIServer
+		expectError       bool
+		expectUnchanged   bool
+		expectedCurvePref []tls.CurveID
+	}{
+		{
+			name: "When using intermediate profile, it should set curve preferences from the profile",
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileIntermediateType,
+					},
+				},
+			},
+			expectedCurvePref: []tls.CurveID{
+				tls.X25519MLKEM768,
+				tls.X25519,
+				tls.CurveP256,
+				tls.CurveP384,
+			},
+		},
+		{
+			name: "When using custom profile without groups, it should not change curve preferences",
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+						Custom: &configv1.CustomTLSProfile{
+							TLSProfileSpec: configv1.TLSProfileSpec{
+								MinTLSVersion: configv1.VersionTLS12,
+								Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+							},
+						},
+					},
+				},
+			},
+			expectUnchanged: true,
+		},
+		{
+			name: "When using custom profile with groups, it should set configured curves",
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+						Custom: &configv1.CustomTLSProfile{
+							TLSProfileSpec: configv1.TLSProfileSpec{
+								MinTLSVersion: configv1.VersionTLS12,
+								Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+								Groups: []configv1.TLSGroup{
+									configv1.TLSGroupX25519,
+									configv1.TLSGroupSecP256r1,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCurvePref: []tls.CurveID{tls.X25519, tls.CurveP256},
+		},
+		{
+			name: "When using custom profile with nil Custom field, it should return error",
+			apiServer: &configv1.APIServer{
+				Spec: configv1.APIServerSpec{
+					TLSSecurityProfile: &configv1.TLSSecurityProfile{
+						Type: configv1.TLSProfileCustomType,
+					},
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			setter, err := SetCurvePreferencesUsingAPIServer(test.apiServer)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(setter).To(BeNil())
+				return
+			}
+
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(setter).ToNot(BeNil())
+
+			tlsConfig := &tls.Config{CurvePreferences: []tls.CurveID{tls.CurveP521}}
+			setter(tlsConfig)
+
+			if test.expectUnchanged {
+				g.Expect(tlsConfig.CurvePreferences).To(Equal([]tls.CurveID{tls.CurveP521}))
+				return
+			}
+
+			g.Expect(tlsConfig.CurvePreferences).To(Equal(test.expectedCurvePref))
+		})
+	}
+}
+
 func TestSupportedEtcdCipherSuites(t *testing.T) {
 	t.Parallel()
 

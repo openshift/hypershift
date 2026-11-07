@@ -530,7 +530,12 @@ func configureWebhookOptions(ctx context.Context, restConfig *rest.Config, mgmtC
 		return webhookOptions, fmt.Errorf("unable to configure webhook server cipher suites: %w", err)
 	}
 
-	webhookOptions.TLSOpts = []func(*tls.Config){minTLSVersionSetter, cipherSuitesSetter}
+	curvePreferencesSetter, err := config.SetCurvePreferencesUsingAPIServer(apiServerConfig)
+	if err != nil {
+		return webhookOptions, fmt.Errorf("unable to configure webhook server tls curve preferences: %w", err)
+	}
+
+	webhookOptions.TLSOpts = []func(*tls.Config){minTLSVersionSetter, cipherSuitesSetter, curvePreferencesSetter}
 	return webhookOptions, nil
 }
 
