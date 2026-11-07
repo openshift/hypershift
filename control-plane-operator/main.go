@@ -525,6 +525,7 @@ func NewStartCommand() *cobra.Command {
 
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                                  mgr.GetClient(),
+			Recorder:                                mgr.GetEventRecorderFor(hostedcontrolplane.ControllerName),
 			GVKAccessChecker:                        component.NewGVKAccessCache(mgr.GetAPIReader()),
 			ManagementClusterCapabilities:           mgmtClusterCaps,
 			ReleaseProvider:                         cpReleaseProvider,
