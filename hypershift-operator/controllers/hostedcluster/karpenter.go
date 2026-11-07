@@ -20,6 +20,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	karpenterv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
+	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/pkg/manifests"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
@@ -90,12 +91,14 @@ func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlpl
 }
 
 // resolveKarpenterFinalizer removes the karpenter finalizer from the HCP
-// when the karpenter-operator cannot do so itself. This covers two scenarios:
+// when the karpenter-operator cannot do so itself. This covers three scenarios:
 //
 //  1. The guest KAS is down during HostedCluster deletion, so the karpenter-operator
 //     cannot reach its guest-side watches to process the finalizer.
 //  2. AutoNode was disabled before the HostedCluster was deleted, so the karpenter-operator
 //     deployment was removed and cannot process the finalizer at all.
+//  3. AWS credentials are explicitly invalid, so Karpenter cannot clean up cloud resources
+//     even if the guest KAS is still available.
 //
 // Without this fallback the HCP would be stuck in terminating with the karpenter finalizer
 // blocking deletion indefinitely.
@@ -113,11 +116,11 @@ func (r *HostedClusterReconciler) resolveKarpenterFinalizer(ctx context.Context,
 	}
 
 	// When AutoNode is still enabled, defer to the karpenter-operator for graceful
-	// cleanup — only force-remove the finalizer once the guest KAS is down and the
-	// operator can no longer reach its watches.
+	// cleanup unless AWS credentials are explicitly invalid or the guest KAS is down.
 	// When AutoNode is disabled, the karpenter-operator deployment is already gone,
 	// so there is no controller to process the finalizer and we must remove it immediately.
-	if karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
+	invalidAWSCredentials := hc.Spec.Platform.Type == hyperv1.AWSPlatform && platformaws.GetCredentialStatus(hc) == platformaws.CredentialStatusInvalid
+	if karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) && !invalidAWSCredentials {
 		kasAvailable, err := isKASAvailable(ctx, hcp.Namespace, r.Client)
 		if err != nil {
 			return fmt.Errorf("failed to check KAS availability: %w", err)
