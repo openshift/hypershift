@@ -231,6 +231,20 @@ func (a *AWSPlatformConfig) ClusterSpecs(ctx context.Context, releaseImage, n1Im
 				"--image-content-sources="+filepath.Join(a.sharedDir, "mirror-registry-ics.yaml"),
 			),
 		},
+		{
+			// Dedicated cluster for the deterministic LoadBalancer IP test.
+			// The EIP and public subnet belong to the management cluster and
+			// are reserved by the CI pre-step before create-guests runs.
+			Variant:                 "deterministic-lb",
+			DestroyArgs:             destroyArgs,
+			InitialNodePoolReplicas: &oneInitialReplica,
+			CreateArgs: clusterArgs(
+				"--endpoint-access=PublicAndPrivate",
+				"--feature-set=TechPreviewNoUpgrade",
+				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-eip-allocations="+os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_EIP"),
+				"--kas-service-annotations=service.beta.kubernetes.io/aws-load-balancer-subnets="+os.Getenv("HYPERSHIFT_DETERMINISTIC_LB_SUBNET"),
+			),
+		},
 	}
 }
 
