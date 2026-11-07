@@ -55,7 +55,8 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
-	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/powervs/v1beta2"
+	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/vpc/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiopenstackv1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
@@ -1117,10 +1118,10 @@ func platformSpecificResources(platformType hyperv1.PlatformType) []client.Objec
 			&capiibm.IBMVPCMachineTemplate{},
 		}},
 		{hyperv1.PowerVSPlatform, []client.Object{
-			&capiibm.IBMPowerVSCluster{},
-			&capiibm.IBMPowerVSImage{},
-			&capiibm.IBMPowerVSMachine{},
-			&capiibm.IBMPowerVSMachineTemplate{},
+			&capipowervs.IBMPowerVSCluster{},
+			&capipowervs.IBMPowerVSImage{},
+			&capipowervs.IBMPowerVSMachine{},
+			&capipowervs.IBMPowerVSMachineTemplate{},
 		}},
 		{hyperv1.OpenStackPlatform, []client.Object{
 			&capiopenstackv1alpha1.OpenStackServer{},

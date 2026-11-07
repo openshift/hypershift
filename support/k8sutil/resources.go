@@ -11,7 +11,7 @@ import (
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/vpc/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"

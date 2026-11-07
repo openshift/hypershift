@@ -14,7 +14,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/vpc/v1beta2"
 	ibmcapicore "sigs.k8s.io/cluster-api-provider-ibmcloud/capicore/api/core/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"

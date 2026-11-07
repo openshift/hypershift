@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -44,6 +45,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/yaml"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/stretchr/testify/assert"
@@ -660,7 +662,61 @@ func TestCRDIncludeFilter(t *testing.T) {
 	}
 }
 
+func testIBMCRDCompatibility(t *testing.T) {
+	t.Helper()
+	for _, disableMigration := range []bool{false, true} {
+		for _, disableConversion := range []bool{false, true} {
+			objects, err := setupCRDs(t.Context(), nil, Options{PlatformsToInstall: []string{"IBMCloud"}, DisableCAPIMigration: disableMigration, DisableCAPIConversionWebhook: disableConversion}, &corev1.Namespace{}, &corev1.Service{})
+			if err != nil {
+				t.Fatalf("DisableCAPIMigration=%t DisableCAPIConversionWebhook=%t: %v", disableMigration, disableConversion, err)
+			}
+			count := 0
+			for _, object := range objects {
+				if !strings.HasPrefix(object.GetName(), "ibm") {
+					continue
+				}
+				count++
+				actual := object.(*apiextensionsv1.CustomResourceDefinition)
+				plural := strings.SplitN(actual.Name, ".", 2)[0]
+				data, err := os.ReadFile(filepath.Join("../../hack/tools/capi-crd-compat/testdata", "infrastructure.cluster.x-k8s.io_"+plural+".yaml"))
+				if err != nil {
+					t.Fatalf("DisableCAPIMigration=%t DisableCAPIConversionWebhook=%t: %v", disableMigration, disableConversion, err)
+				}
+				var expected apiextensionsv1.CustomResourceDefinition
+				if err := yaml.Unmarshal(data, &expected); err != nil {
+					t.Fatalf("DisableCAPIMigration=%t DisableCAPIConversionWebhook=%t: %v", disableMigration, disableConversion, err)
+				}
+				if len(actual.Spec.Versions) != len(expected.Spec.Versions) {
+					t.Fatalf("changed version inventory: %s; DisableCAPIMigration=%t DisableCAPIConversionWebhook=%t", actual.Name, disableMigration, disableConversion)
+				}
+				for index := range expected.Spec.Versions {
+					actualVersion := actual.Spec.Versions[index]
+					expectedVersion := expected.Spec.Versions[index]
+					if actualVersion.Name != expectedVersion.Name || actualVersion.Served != expectedVersion.Served || actualVersion.Storage != expectedVersion.Storage || actualVersion.Deprecated != expectedVersion.Deprecated {
+						t.Errorf("changed version policy: %s; DisableCAPIMigration=%t DisableCAPIConversionWebhook=%t", actual.Name, disableMigration, disableConversion)
+					}
+				}
+				if !reflect.DeepEqual(actual.Spec.Conversion, expected.Spec.Conversion) {
+					t.Errorf("changed conversion: %s; DisableCAPIMigration=%t DisableCAPIConversionWebhook=%t", actual.Name, disableMigration, disableConversion)
+				}
+				expectedLabel := ""
+				switch plural {
+				case "ibmpowervsclusters", "ibmpowervsimages", "ibmpowervsmachines", "ibmpowervsmachinetemplates", "ibmvpcclusters":
+					expectedLabel = "v1beta2"
+				}
+				if actual.Labels["cluster.x-k8s.io/v1beta1"] != expectedLabel || actual.Labels["cluster.x-k8s.io/v1beta2"] != "" {
+					t.Errorf("changed provider labels: %s: %v; DisableCAPIMigration=%t DisableCAPIConversionWebhook=%t", actual.Name, actual.Labels, disableMigration, disableConversion)
+				}
+			}
+			if count != 9 {
+				t.Fatalf("expected nine IBM CRDs, got %d; DisableCAPIMigration=%t DisableCAPIConversionWebhook=%t", count, disableMigration, disableConversion)
+			}
+		}
+	}
+}
+
 func TestSetupCRDs(t *testing.T) {
+	t.Run("When IBMCloud is selected with either migration policy, it should retain provider schemas and labels", testIBMCRDCompatibility)
 	tests := []struct {
 		name         string
 		inputOptions Options
