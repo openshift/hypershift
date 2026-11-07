@@ -1,6 +1,8 @@
 package podspec
 
 import (
+	"regexp"
+	"strconv"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -741,4 +743,67 @@ func TestEnforceRestrictedSecurityContextToContainers_InvalidCapabilities(t *tes
 			}
 		})
 	}
+}
+
+func TestKASReadinessCheckContainer(t *testing.T) {
+	t.Parallel()
+
+	const kasLivezURL = "https://kube-apiserver:6443/livez"
+	container := KASReadinessCheckContainer(kasLivezURL)
+
+	t.Run("When the container is built, it should run a PID 1 that reaps orphaned children", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		// The exec probe spawns curl, which is reparented to PID 1 when the probe is
+		// killed on timeout. PID 1 must call wait(), or those orphans accumulate as
+		// zombies, each pinning a seccomp BPF filter until the node's memlock limit
+		// is exhausted.
+		g.Expect(container.Command).To(HaveLen(3))
+		g.Expect(container.Command[:2]).To(Equal([]string{"/bin/bash", "-c"}))
+		g.Expect(container.Command[2]).To(ContainSubstring("wait"))
+		g.Expect(container.Command[2]).ToNot(ContainSubstring("sleep infinity"))
+	})
+
+	t.Run("When the container is built, it should trap SIGTERM so it exits before the grace period", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		g.Expect(container.Command).To(HaveLen(3))
+		g.Expect(container.Command[2]).To(MatchRegexp(`trap\s+'[^']*'\s+TERM`))
+	})
+
+	t.Run("When the container is built, it should bound the probe command below the probe timeout", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		g.Expect(container.ReadinessProbe).ToNot(BeNil())
+		g.Expect(container.ReadinessProbe.Exec).ToNot(BeNil())
+
+		probeCommand := container.ReadinessProbe.Exec.Command
+		g.Expect(probeCommand).To(HaveLen(3))
+		g.Expect(probeCommand[:2]).To(Equal([]string{"/bin/bash", "-c"}))
+		g.Expect(probeCommand[2]).To(ContainSubstring(kasLivezURL))
+
+		// An unbounded curl outlives the probe, gets orphaned onto PID 1 and leaks.
+		match := regexp.MustCompile(`--max-time\s+(\d+)`).FindStringSubmatch(probeCommand[2])
+		g.Expect(match).To(HaveLen(2), "probe command must bound curl with --max-time, got %q", probeCommand[2])
+
+		maxTime, err := strconv.Atoi(match[1])
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(int32(maxTime)).To(BeNumerically("<", container.ReadinessProbe.TimeoutSeconds),
+			"curl --max-time must be shorter than the probe TimeoutSeconds so curl cannot outlive the probe")
+	})
+
+	t.Run("When the container is built, it should keep the expected identity and probe cadence", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		g.Expect(container.Name).To(Equal("kas-readiness-check"))
+		g.Expect(container.Image).To(Equal("cli"))
+		g.Expect(container.ReadinessProbe).ToNot(BeNil())
+		g.Expect(container.ReadinessProbe.FailureThreshold).To(Equal(int32(3)))
+		g.Expect(container.ReadinessProbe.PeriodSeconds).To(Equal(int32(10)))
+		g.Expect(container.ReadinessProbe.TimeoutSeconds).To(Equal(int32(5)))
+	})
 }
