@@ -4,9 +4,10 @@ package ram
 
 import (
 	"context"
+	"github.com/aws/aws-sdk-go-v2/service/ram/schemas"
 	"github.com/aws/aws-sdk-go-v2/service/ram/types"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // Updates all resource shares that use a managed permission to a different
@@ -82,6 +83,27 @@ type ReplacePermissionAssociationsInput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ReplacePermissionAssociationsInput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ReplacePermissionAssociationsRequest)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ReplacePermissionAssociationsInput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientToken != nil {
+		s.WriteString(schemas.ReplacePermissionAssociationsRequest_clientToken, *v.ClientToken)
+	}
+	if v.FromPermissionArn != nil {
+		s.WriteString(schemas.ReplacePermissionAssociationsRequest_fromPermissionArn, *v.FromPermissionArn)
+	}
+	if v.FromPermissionVersion != nil {
+		s.WriteInt32(schemas.ReplacePermissionAssociationsRequest_fromPermissionVersion, *v.FromPermissionVersion)
+	}
+	if v.ToPermissionArn != nil {
+		s.WriteString(schemas.ReplacePermissionAssociationsRequest_toPermissionArn, *v.ToPermissionArn)
+	}
+}
+
 type ReplacePermissionAssociationsOutput struct {
 
 	// The idempotency identifier associated with this request. If you want to repeat
@@ -101,22 +123,43 @@ type ReplacePermissionAssociationsOutput struct {
 	noSmithyDocumentSerde
 }
 
+func (v *ReplacePermissionAssociationsOutput) Serialize(s smithy.ShapeSerializer) {
+	s.WriteStruct(schemas.ReplacePermissionAssociationsResponse)
+	v.SerializeMembers(s)
+	s.CloseStruct()
+}
+
+func (v *ReplacePermissionAssociationsOutput) SerializeMembers(s smithy.ShapeSerializer) {
+	if v.ClientToken != nil {
+		s.WriteString(schemas.ReplacePermissionAssociationsResponse_clientToken, *v.ClientToken)
+	}
+	if v.ReplacePermissionAssociationsWork != nil {
+		s.WriteStruct(schemas.ReplacePermissionAssociationsResponse_replacePermissionAssociationsWork)
+		v.ReplacePermissionAssociationsWork.SerializeMembers(s)
+		s.CloseStruct()
+	}
+}
+func (v *ReplacePermissionAssociationsOutput) Deserialize(d smithy.ShapeDeserializer) error {
+	return smithy.ReadStruct(d, schemas.ReplacePermissionAssociationsResponse, func(s *smithy.Schema) error {
+		switch s {
+		case schemas.ReplacePermissionAssociationsResponse_clientToken:
+			v.ClientToken = new(string)
+			return d.ReadString(schemas.ReplacePermissionAssociationsResponse_clientToken, v.ClientToken)
+		case schemas.ReplacePermissionAssociationsResponse_replacePermissionAssociationsWork:
+			v.ReplacePermissionAssociationsWork = &types.ReplacePermissionAssociationsWork{}
+			return v.ReplacePermissionAssociationsWork.Deserialize(d)
+		}
+		return nil
+	})
+}
 func (c *Client) addOperationReplacePermissionAssociationsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpReplacePermissionAssociations{}, middleware.After)
-	if err != nil {
+	if err := stack.Serialize.Add(&serializeRequestMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ReplacePermissionAssociations, schemas.ReplacePermissionAssociationsRequest, schemas.ReplacePermissionAssociationsResponse)}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpReplacePermissionAssociations{}, middleware.After)
-	if err != nil {
+	if err := stack.Deserialize.Add(&deserializeResponseMiddleware{options: &options, operationSchema: smithy.NewOperationSchema(schemas.ReplacePermissionAssociations, schemas.ReplacePermissionAssociationsRequest, schemas.ReplacePermissionAssociationsResponse), output: &ReplacePermissionAssociationsOutput{}}, middleware.After); err != nil {
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -126,19 +169,10 @@ func (c *Client) addOperationReplacePermissionAssociationsMiddlewares(stack *mid
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpReplacePermissionAssociationsValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "ReplacePermissionAssociations"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {

@@ -52,6 +52,40 @@ Custom Validation functions can be added. Example:
 	// NOTES: using the same tag name as an existing function
 	//        will overwrite the existing one
 
+# Valuer Interface
+
+Custom types can implement the Valuer interface to return the value that should
+be validated. This is useful when a type wraps another value and you want
+validation to run against the unwrapped value.
+
+	type Nullable[T any] struct {
+		Data T
+	}
+
+	func (n Nullable[T]) ValidatorValue() any {
+		return n.Data
+	}
+
+	type Config struct {
+		Name string `validate:"required"`
+	}
+
+	type Record struct {
+		Config Nullable[Config] `validate:"required"`
+	}
+
+	r := Record{
+		Config: Nullable[Config]{
+			Data: Config{Name: "validator"},
+		},
+	}
+
+	err := validate.Struct(r)
+
+The library also supports types like sql/driver.Valuer using
+RegisterCustomTypeFunc. See _examples/valuer/main.go and
+_examples/custom/main.go for both approaches.
+
 # Cross-Field Validation
 
 Cross-Field Validation can be done via the following tags:
@@ -104,7 +138,7 @@ used "eqcsfield" it could be multiple levels down. Example:
 	//       into the function
 	//       when calling validate.VarWithValue(val, field, tag) val will be
 	//       whatever you pass, struct, field...
-	//       when calling validate.Field(field, tag) val will be nil
+	//       when calling validate.Var(field, tag) val will be the field itself
 
 # Multiple Validators
 
@@ -149,6 +183,12 @@ so the above will become excludesall=0x7C
 		Field `validate:"excludesall=|"`    // BAD! Do not include a pipe!
 		Field `validate:"excludesall=0x7C"` // GOOD! Use the UTF-8 hex representation.
 	}
+
+# Build tags
+
+The library provides a build tag for build size optimizations. If you are not using
+`validateFn` you can add the `validator_novalidatefn` build tag to enabled better dead
+code elimination. With this build tag, any usage of `validateFn` tags will panic.
 
 # Baked In Validators and Tags
 
@@ -200,6 +240,15 @@ Allows to skip the validation if the value is nil (same as omitempty, but
 only for the nil-values).
 
 	Usage: omitnil
+
+# Omit Zero
+
+Allows to skip the validation if the value is a zero value.
+For pointers, it checks if the pointer is nil or the underlying value is a zero value.
+For slices and maps, it checks if the value is nil or empty.
+Otherwise, behaves the same as omitempty.
+
+	Usage: omitzero
 
 # Dive
 
@@ -503,6 +552,23 @@ Works the same as oneof but is case insensitive and therefore only accepts strin
 	Usage: oneofci=red green
 	       oneofci='red green' 'blue yellow'
 
+# None Of
+
+For strings, ints, and uints, noneof will ensure that the value is not one of
+the values in the parameter. The parameter should be a list of values separated by whitespace.
+Values may be strings or numbers. To inversely match strings with spaces in them, include the target string between single quotes.
+Kind of like an 'enum'.
+
+	Usage: noneof=red green
+	       noneof='red green' 'blue yellow'
+		   noneof=5 7 9
+
+# None Of Case Insensitive
+Works the same as noneof but is case insensitive and therefore only accepts strings.
+
+	Usage: noneofci=red green
+	       noneofci='red green' 'blue yellow'
+
 # Greater Than
 
 For numbers, this will ensure that the value is greater than the
@@ -734,15 +800,16 @@ This does the same as contains except for struct fields. It should only be used
 with string types. See the behavior of reflect.Value.String() for behavior on
 other types.
 
-	Usage: containsfield=InnerStructField.Field
+	Usage: fieldcontains=InnerStructField.Field
 
-# Field Excludes Another Field
+# Field Excludes Another Field's Value
 
-This does the same as excludes except for struct fields. It should only be used
-with string types. See the behavior of reflect.Value.String() for behavior on
-other types.
+This validates that the current field's string value does not contain the
+string value of the field named by the parameter. It should only be used with
+string types. If the referenced field cannot be resolved, validation succeeds.
+See the behavior of reflect.Value.String() for behavior on other types.
 
-	Usage: excludesfield=InnerStructField.Field
+	Usage: fieldexcludes=InnerStructField.Field
 
 # Unique
 
@@ -788,6 +855,12 @@ This validates that a string value contains ASCII alpha characters and spaces on
 This validates that a string value contains ASCII alphanumeric characters only
 
 	Usage: alphanum
+
+# Alphanumeric Space
+
+This validates that a string value contains ASCII alphanumeric characters and spaces only
+
+	Usage: alphanumspace
 
 # Alpha Unicode
 
@@ -871,6 +944,12 @@ This validates that a string value contains a valid hsla color
 
 	Usage: hsla
 
+# CMYK String
+
+This validates that a string value contains a valid cmyk color
+
+	Usage: cmyk
+
 # E.164 Phone Number String
 
 This validates that a string value contains a valid E.164 Phone number
@@ -914,6 +993,16 @@ This is done using os.Stat and github.com/gabriel-vasile/mimetype
 
 	Usage: image
 
+# MIME type path
+
+This validates that a string value contains a valid file path and that
+the file exists on the machine and matches the provided MIME type in the
+form type/subtype or type/*.
+This is done using os.Stat and github.com/gabriel-vasile/mimetype
+
+	Usage: mimetype=image/png
+	Usage: mimetype=image/*
+
 # File Path
 
 This validates that a string value contains a valid file path but does not
@@ -936,6 +1025,13 @@ This validates that a string value contains a valid uri
 This will accept any uri the golang request uri accepts
 
 	Usage: uri
+
+# Urn RFC 8141 String
+
+This validataes that a string value contains a valid URN
+according to the RFC 8141 spec.
+
+	Usage: urn_rfc8141
 
 # Urn RFC 2141 String
 
@@ -1087,7 +1183,7 @@ This validates that a string value contains a valid isbn13 value.
 
 # Universally Unique Identifier UUID
 
-This validates that a string value contains a valid UUID. Uppercase UUID values will not pass - use `uuid_rfc4122` instead.
+This validates that a string value contains a valid UUID. Both lowercase and uppercase hex digits are accepted.
 
 	Usage: uuid
 
@@ -1108,6 +1204,12 @@ This validates that a string value contains a valid version 4 UUID.  Uppercase U
 This validates that a string value contains a valid version 5 UUID.  Uppercase UUID values will not pass - use `uuid5_rfc4122` instead.
 
 	Usage: uuid5
+
+# Universally Unique Identifier UUID v7
+
+This validates that a string value contains a valid version 7 UUID (RFC 9562). Uppercase UUID values will not pass.
+
+	Usage: uuid7
 
 # Universally Unique Lexicographically Sortable Identifier ULID
 
@@ -1155,7 +1257,7 @@ This validates that a string value contains a valid longitude.
 
 	Usage: longitude
 
-# Employeer Identification Number EIN
+# Employer Identification Number EIN
 
 This validates that a string value contains a valid U.S. Employer Identification Number.
 
@@ -1263,6 +1365,15 @@ This validates that a string value contains a valid Unix Address.
 
 	Usage: unix_addr
 
+# Unix Domain Socket Exists
+
+This validates that a Unix domain socket file exists at the specified path.
+It checks both filesystem-based sockets and Linux abstract sockets (prefixed with @).
+For filesystem sockets, it verifies the path exists and is a socket file.
+For abstract sockets on Linux, it checks /proc/net/unix.
+
+	Usage: uds_exists
+
 # Media Access Control Address MAC
 
 This validates that a string value contains a valid MAC Address.
@@ -1284,6 +1395,13 @@ This validates that a string value is a valid Hostname according to RFC 952 http
 This validates that a string value is a valid Hostname according to RFC 1123 https://tools.ietf.org/html/rfc1123
 
 	Usage: hostname_rfc1123 or if you want to continue to use 'hostname' in your tags, create an alias.
+
+# Hostname Label
+
+This validates that a string value is a valid hostname label (The 'label' in 'label.domain.name') according to
+RFC 1123 https://tools.ietf.org/rfc1123.
+
+	Usage: hostname_label
 
 Full Qualified Domain Name (FQDN)
 
@@ -1322,11 +1440,13 @@ This is done using os.Stat, which is a platform independent function.
 
 # Directory Path
 
-This validates that a string value contains a valid directory but does
-not validate the existence of that directory.
-This is done using os.Stat, which is a platform independent function.
-It is safest to suffix the string with os.PathSeparator if the directory
-may not exist at the time of validation.
+This validates that a string value contains a valid directory path without
+requiring the directory to exist. An existing directory is accepted with or
+without a trailing separator, as determined by os.Stat.
+If the directory does not exist, the path must end with os.PathSeparator;
+otherwise it is rejected because it cannot be distinguished from a file path.
+For example, filepath.Join("parent", "new-directory") + string(os.PathSeparator)
+can be used to validate a directory path before creating it.
 
 	Usage: dirpath
 
@@ -1339,7 +1459,7 @@ can be used to validate fields typically passed to sockets and connections.
 
 # Port
 
-This validates that the value falls within the valid port number range of 1 to 65,535.
+This validates that an integer value (signed or unsigned) falls within the valid port range of 1-65,535.
 
 	Usage: port
 
@@ -1349,6 +1469,14 @@ This validates that a string value is a valid datetime based on the supplied dat
 Supplied format must match the official Go time format layout as documented in https://golang.org/pkg/time/
 
 	Usage: datetime=2006-01-02
+
+# Duration
+
+This validates that a string value is a valid duration as accepted by time.ParseDuration,
+such as "300ms", "-1.5h" or "2h45m". Non-string fields, including time.Duration, fail validation.
+see: https://pkg.go.dev/time#ParseDuration
+
+	Usage: duration
 
 # Iso3166-1 alpha-2
 
@@ -1378,12 +1506,28 @@ More information on https://pkg.go.dev/golang.org/x/text/language
 
 	Usage: bcp47_language_tag
 
-BIC (SWIFT code)
+# BCP 47 Strict Language Tag
 
-This validates that a string value is a valid Business Identifier Code (SWIFT code), defined in ISO 9362.
-More information on https://www.iso.org/standard/60390.html
+This validates that a string value is a valid BCP 47 language tag strictly following RFC 5646 rules,
+unlike language.Parse which also accepts Unicode extensions.
+Variant subtags cannot be repeated within the same tag (case-insensitively).
+see https://www.rfc-editor.org/rfc/bcp/bcp47.txt
+
+	Usage: bcp47_strict_language_tag
+
+BIC (SWIFT code - 2022 standard)
+
+This validates that a string value is a valid Business Identifier Code (SWIFT code), defined in ISO 9362:2022.
+More information on https://www.iso.org/standard/84108.html
 
 	Usage: bic
+
+BIC (SWIFT code - 2014 standard)
+
+This validates that a string value is a valid Business Identifier Code (SWIFT code), defined in ISO 9362:2014.
+More information on https://www.iso.org/standard/60390.html
+
+	Usage: bic_iso_9362_2014
 
 # RFC 1035 label
 
@@ -1463,9 +1607,11 @@ case will be the actual tag within the alias that failed.
 Here is a list of the current built in alias tags:
 
 	"iscolor"
-		alias is "hexcolor|rgb|rgba|hsl|hsla" (Usage: iscolor)
+		alias is "hexcolor|rgb|rgba|hsl|hsla|cmyk" (Usage: iscolor)
 	"country_code"
 		alias is "iso3166_1_alpha2|iso3166_1_alpha3|iso3166_1_alpha_numeric" (Usage: country_code)
+	"eu_country_code"
+		alias is "iso3166_1_alpha2_eu|iso3166_1_alpha3_eu|iso3166_1_alpha_numeric_eu" (Usage: eu_country_code)
 
 Validator notes:
 
@@ -1498,7 +1644,7 @@ Example of registration and use:
 	}
 
 	t := &Test{
-		TestField: "Test"
+		TestField: "Test",
 	}
 
 	validate := validator.New()
@@ -1519,11 +1665,11 @@ This package panics when bad input is provided, this is by design, bad code like
 that should not make it to production.
 
 	type Test struct {
-		TestField string `validate:"nonexistantfunction=1"`
+		TestField string `validate:"nonexistentfunction=1"`
 	}
 
 	t := &Test{
-		TestField: "Test"
+		TestField: "Test",
 	}
 
 	validate.Struct(t) // this will panic

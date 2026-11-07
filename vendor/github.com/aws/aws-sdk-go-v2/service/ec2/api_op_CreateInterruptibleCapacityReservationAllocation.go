@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 //	Creates an interruptible Capacity Reservation by specifying the number of
@@ -56,6 +55,14 @@ type CreateInterruptibleCapacityReservationAllocationInput struct {
 	//  The tags to apply to the interruptible Capacity Reservation during creation.
 	TagSpecifications []types.TagSpecification
 
+	//  Specifies the behavior for the interruptible Capacity Reservation when you
+	// reduce its allocation to zero instances. Specify retain to keep the
+	// interruptible Capacity Reservation active at zero capacity so that you can
+	// allocate instances to it again later. Specify default to cancel the
+	// interruptible Capacity Reservation and return the capacity to your source
+	// Capacity Reservation. The default value is default .
+	ZeroSizePreference types.ZeroSizePreference
+
 	noSmithyDocumentSerde
 }
 
@@ -90,12 +97,6 @@ func (c *Client) addOperationCreateInterruptibleCapacityReservationAllocationMid
 		return err
 	}
 
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
-		return err
-	}
-	if err = addComputeContentLength(stack); err != nil {
-		return err
-	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
@@ -105,12 +106,6 @@ func (c *Client) addOperationCreateInterruptibleCapacityReservationAllocationMid
 	if err = addRecordResponseTiming(stack, options); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
-	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
@@ -118,9 +113,6 @@ func (c *Client) addOperationCreateInterruptibleCapacityReservationAllocationMid
 		return err
 	}
 	if err = addOpCreateInterruptibleCapacityReservationAllocationValidationMiddleware(stack); err != nil {
-		return err
-	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware(options.Region, "CreateInterruptibleCapacityReservationAllocation"), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
