@@ -1295,6 +1295,9 @@ spec:
                           instances and their associated resources (disks, etc.).
                           Labels will be merged with cluster-level resource labels, with NodePool labels
                           taking precedence in case of conflicts.
+                          HyperShift overrides user values for hypershift-openshift-io-cluster with the
+                          HostedCluster name and, when an infrastructure ID is available,
+                          hypershift-openshift-io-infra-id with that ID.
 
                           Keys and values must conform to GCP labeling requirements:
                             - Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9_-]

@@ -198,6 +198,10 @@ type GCPPlatformSpec struct {
 	// Labels are key-value pairs used for organizing and managing GCP resources.
 	// Changes to this field will be propagated in-place to GCP resources where supported.
 	// GCP supports a maximum of 64 labels per resource. HyperShift reserves approximately 4 labels for system use.
+	// HyperShift sets hypershift-openshift-io-cluster to the HostedCluster name and,
+	// when an infrastructure ID is available, hypershift-openshift-io-infra-id to that ID.
+	// These system values override user-supplied values for those keys on GCPCluster
+	// and NodePool machine resources.
 	// For GCP labeling guidance, see https://cloud.google.com/compute/docs/labeling-resources
 	//
 	// +optional
@@ -540,6 +544,9 @@ type GCPNodePoolPlatform struct {
 	// instances and their associated resources (disks, etc.).
 	// Labels will be merged with cluster-level resource labels, with NodePool labels
 	// taking precedence in case of conflicts.
+	// HyperShift overrides user values for hypershift-openshift-io-cluster with the
+	// HostedCluster name and, when an infrastructure ID is available,
+	// hypershift-openshift-io-infra-id with that ID.
 	//
 	// Keys and values must conform to GCP labeling requirements:
 	//   - Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9_-]
