@@ -289,6 +289,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 func (r *HostedClusterReconciler) managedResources() []client.Object {
 	managedResources := []client.Object{
 		&hyperv1.HostedControlPlane{},
+		&hyperv1.ControlPlaneComponent{},
 		&appsv1.Deployment{},
 		&prometheusoperatorv1.PodMonitor{},
 		&networkingv1.NetworkPolicy{},
@@ -950,6 +951,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Copy the control plane version status from the hostedcontrolplane
 	propagateControlPlaneVersion(hcluster, hcp)
+	reconcileInstallationStage(ctx, r.Client, hcluster, hcp, controlPlaneNamespace.Name)
 
 	// Set the AutoNodeEnabled condition reflecting both spec intent and actual component rollout progress.
 	autoNodeCondition, autoNodeProgressing := r.reconcileAutoNodeEnabledCondition(ctx, hcluster, controlPlaneNamespace.Name)
@@ -1038,6 +1040,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 	}
+
+	// Set ManagementClusterResourcePressure condition based on pod scheduling failures.
+	reconcileManagementClusterResourcePressure(ctx, r.Client, hcluster, controlPlaneNamespace.Name)
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -4398,18 +4403,9 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 			if typedObj.Name != "etcd" {
 				return []reconcile.Request{}
 			}
-			hcpList := &hyperv1.HostedControlPlaneList{}
-			if err := c.List(ctx, hcpList, client.InNamespace(typedObj.Namespace)); err != nil {
-				log.Error(err, "failed to list hcp")
-				return []reconcile.Request{}
-			}
-			if len(hcpList.Items) == 1 {
-				hcAnnotation := hcpList.Items[0].Annotations[k8sutil.HostedClusterAnnotation]
-				if hcAnnotation != "" {
-					return []reconcile.Request{{NamespacedName: hyperutil.ParseNamespacedName(hcAnnotation)}}
-				}
-			}
-			return []reconcile.Request{}
+			return hostedClusterRequestFromHCPNamespace(ctx, c, typedObj.Namespace)
+		case *hyperv1.ControlPlaneComponent:
+			return hostedClusterRequestFromHCPNamespace(ctx, c, typedObj.Namespace)
 		case *batchv1.Job:
 			if typedObj.Name != pkgetcdrecovery.EtcdRecoveryJob("").Name {
 				return []reconcile.Request{}
@@ -4451,6 +4447,24 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 			return handleDefault(typedObj)
 		}
 	}
+}
+
+// hostedClusterRequestFromHCPNamespace resolves the HostedCluster reconcile request
+// for a resource in a hosted control plane namespace by looking up the single HCP's
+// HostedCluster annotation.
+func hostedClusterRequestFromHCPNamespace(ctx context.Context, c client.Client, namespace string) []reconcile.Request {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := c.List(ctx, hcpList, client.InNamespace(namespace)); err != nil {
+		ctrllog.Log.Error(err, "failed to list hcp")
+		return []reconcile.Request{}
+	}
+	if len(hcpList.Items) == 1 {
+		hcAnnotation := hcpList.Items[0].Annotations[k8sutil.HostedClusterAnnotation]
+		if hcAnnotation != "" {
+			return []reconcile.Request{{NamespacedName: hyperutil.ParseNamespacedName(hcAnnotation)}}
+		}
+	}
+	return []reconcile.Request{}
 }
 
 func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, namespace string) error {
