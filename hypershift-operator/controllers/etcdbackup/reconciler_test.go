@@ -1113,6 +1113,60 @@ func TestBuildUploadArgs(t *testing.T) {
 	}
 }
 
+func TestBuildUploadContainer(t *testing.T) {
+	const roleARN = "arn:aws:iam::123456789012:role/hcp-etcd-backup"
+
+	awsRoleEnv := corev1.EnvVar{Name: "AWS_ROLE_ARN", Value: roleARN}
+	awsTokenEnv := corev1.EnvVar{Name: "AWS_WEB_IDENTITY_TOKEN_FILE", Value: mountPathAWSIAMToken + "/token"}
+	azureCloudEnv := corev1.EnvVar{Name: "AZURE_CLOUD_NAME", Value: "AzureUSGovernmentCloud"}
+
+	tests := []struct {
+		name       string
+		creds      resolvedCredentials
+		azureCloud string
+		wantEnv    []corev1.EnvVar
+	}{
+		{
+			name:    "When credentials need a projected token, it should set only the AWS identity env vars",
+			creds:   resolvedCredentials{Mode: credentialModeAWSSTS, SecretName: "aws-creds", RoleARN: roleARN},
+			wantEnv: []corev1.EnvVar{awsRoleEnv, awsTokenEnv},
+		},
+		{
+			name:       "When an Azure cloud is set, it should set only AZURE_CLOUD_NAME",
+			creds:      resolvedCredentials{Mode: credentialModeAzureClientSecret, SecretName: "azure-creds", CredentialsKey: secretKeyCloud},
+			azureCloud: "AzureUSGovernmentCloud",
+			wantEnv:    []corev1.EnvVar{azureCloudEnv},
+		},
+		{
+			// The production call path never produces this pair, because the
+			// Azure cloud is only read for AzureBlob storage while a projected
+			// token is only used for S3 storage. The case pins the additive
+			// contract of the env wiring regardless: each block must append to
+			// container.Env rather than assign it, or the earlier vars are lost.
+			name:       "When credentials need a projected token and an Azure cloud is set, it should set all env vars",
+			creds:      resolvedCredentials{Mode: credentialModeAWSSTS, SecretName: "aws-creds", RoleARN: roleARN},
+			azureCloud: "AzureUSGovernmentCloud",
+			wantEnv:    []corev1.EnvVar{awsRoleEnv, awsTokenEnv, azureCloudEnv},
+		},
+		{
+			name:    "When no Azure cloud is set, it should not set AZURE_CLOUD_NAME",
+			creds:   resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"},
+			wantEnv: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			r := newReconciler()
+
+			container := r.buildUploadContainer(testCPOImage, []string{"control-plane-operator", "etcd-upload"}, tt.creds, tt.azureCloud)
+
+			g.Expect(container.Env).To(ConsistOf(tt.wantEnv))
+		})
+	}
+}
+
 func TestEnforceRetention(t *testing.T) {
 	t.Run("When completed backup count exceeds max it should delete oldest", func(t *testing.T) {
 		g := NewGomegaWithT(t)
@@ -1407,6 +1461,12 @@ func TestCreateBackupJob(t *testing.T) {
 			},
 		}
 		hcp := newHostedControlPlane()
+		hcp.Spec.Platform = hyperv1.PlatformSpec{
+			Type: hyperv1.AzurePlatform,
+			Azure: &hyperv1.AzurePlatformSpec{
+				Cloud: "AzureUSGovernmentCloud",
+			},
+		}
 		pullSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      pullSecretName,
@@ -1437,6 +1497,7 @@ func TestCreateBackupJob(t *testing.T) {
 		g.Expect(upload.Command).To(ContainElements("etcd-upload", "--storage-type", "AzureBlob"))
 		g.Expect(upload.Command).To(ContainElements("--azure-container", "my-container"))
 		g.Expect(upload.Command).To(ContainElements("--azure-storage-account", "mystorageaccount"))
+		g.Expect(upload.Env).To(ContainElement(corev1.EnvVar{Name: "AZURE_CLOUD_NAME", Value: "AzureUSGovernmentCloud"}))
 
 		// Verify credential volume uses Azure secret
 		credVolume := jobList.Items[0].Spec.Template.Spec.Volumes[2]

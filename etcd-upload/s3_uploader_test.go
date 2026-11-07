@@ -115,3 +115,29 @@ func TestS3Uploader(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 	})
 }
+
+func TestNewS3Uploader(t *testing.T) {
+	t.Run("When required options are provided it should return a configured uploader", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		uploader, err := NewS3Uploader(context.Background(), "my-bucket", "us-east-1", "", "")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(uploader).ToNot(BeNil())
+		g.Expect(uploader.bucket).To(Equal("my-bucket"))
+		g.Expect(uploader.region).To(Equal("us-east-1"))
+		g.Expect(uploader.client).ToNot(BeNil())
+	})
+
+	t.Run("When bucket is empty it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		_, err := NewS3Uploader(context.Background(), "", "us-east-1", "", "")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("--bucket is required"))
+	})
+
+	t.Run("When region is empty it should return an error", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		_, err := NewS3Uploader(context.Background(), "my-bucket", "", "", "")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("--region is required"))
+	})
+}

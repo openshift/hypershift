@@ -407,6 +407,27 @@ func GetServicePrincipalScopes(subscriptionID, managedResourceGroupName, nsgReso
 	return role, scopes
 }
 
+// GetAzureBlobDNSSuffix returns the cloud-specific DNS suffix for Azure Blob Storage.
+// Cloud names are matched exactly against the HostedCluster API enum, mirroring
+// GetAzureCloudConfiguration: both are called with the same cloud name, so accepting
+// a wider set here would only produce names the caller has already rejected.
+func GetAzureBlobDNSSuffix(cloudName string) (string, error) {
+	switch cloudName {
+	case config.DefaultAzureCloud, "":
+		return azurePublicBlobDNSSuffix, nil
+	case "AzureUSGovernmentCloud":
+		return azureGovernmentBlobDNSSuffix, nil
+	case "AzureChinaCloud":
+		return azureChinaBlobDNSSuffix, nil
+	case "AzureGermanCloud":
+		return azureGermanBlobDNSSuffix, nil
+	case "AzureBleuCloud":
+		return azureBleuBlobDNSSuffix, nil
+	default:
+		return "", fmt.Errorf("unknown Azure cloud: %s", cloudName)
+	}
+}
+
 // GetKeyVaultDNSSuffix returns the cloud-specific DNS suffix for Azure Key Vault or Managed HSM.
 // An empty keyVaultType is treated as KeyVault for compatibility with existing API objects.
 // Supporting another cloud requires adding its suffix here, allowing it in GetAzureEncryptionKeyInfo,
