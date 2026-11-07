@@ -59,7 +59,7 @@ once, then multiple specs verify different aspects of the restore). Without `Ord
 
 | Label | Effect |
 |-------|--------|
-| **`lifecycle`** | Marks tests that mutate cluster state (upgrades, nodepool scaling, etcd chaos, global pull secret, OS image stream, autoscaling, platform-specific lifecycle). The simple [`hypershift-e2e-v2` CI chain][e2e-v2-chain] filters these out with `--ginkgo.label-filter='!lifecycle'` so that read-only compliance runs don't trigger mutations. The `run-tests` orchestrator runs lifecycle tests on dedicated clusters via specific label filters. |
+| **`lifecycle`** | Marks tests that mutate cluster state (upgrades, nodepool scaling, etcd chaos, global pull secret, OS image stream, autoscaling, platform-specific lifecycle). The `run-tests` orchestrator filters these out of read-only compliance runs and generally runs lifecycle tests on dedicated clusters via specific label filters; a platform may opt a specific lifecycle spec into its default group instead (for example, GCP includes `gcp-worker-firewall` in its default group). |
 | **`Informing`** | The custom [`InformingAwareFailHandler`][fail-handler] converts failures on specs with this label into skips. The test appears as "skipped" in JUnit XML rather than "failed", so it doesn't block the CI job. Used for tests validating optional or in-progress features (e.g., metrics forwarding, custom labels/tolerations). |
 | **Feature/platform labels** (e.g., `self-managed-azure-public`, `nodepool-autoscaling`, `control-plane-upgrade`) | Control which specs run in which `test-e2e-v2` process. The [`run-tests` orchestrator][run-tests] passes `--ginkgo.label-filter` expressions from the [`TestMatrix`][azure-platform]. The default Azure plan intentionally reuses `hosted-cluster-health` and `control-plane-workloads` in the post-upgrade health step, so those specs run again after upgrade. |
 
@@ -159,7 +159,7 @@ sequenceDiagram
     CG->>MC: Watch for version rollout completion<br/>(VersionState=Completed on all history entries)
     MC-->>CG: All 6 clusters rolled out
 
-    CG->>CG: Write cluster names and<br/>platform-specific config to SHARED_DIR
+    CG->>CG: Write cluster manifest to SHARED_DIR<br/>(plus platform config on AWS/Azure)
     deactivate CG
 
     Note over Prow,MC: Phase 3: Test Execution (run-tests binary)
@@ -167,7 +167,7 @@ sequenceDiagram
     CIO->>RT: Run run-e2e-v2-selfmanaged step<br/>(KUBECONFIG=management_cluster_kubeconfig)
 
     activate RT
-    Note over RT: Reads HYPERSHIFT_PLATFORM → resolves the default TestPlan or TEST_PLAN<br/>Reads cluster names and platform config from SHARED_DIR
+    Note over RT: Reads HYPERSHIFT_PLATFORM → resolves the default TestPlan or TEST_PLAN<br/>Reads the cluster manifest and platform config from SHARED_DIR
 
     RT->>RT: PlatformConfig.SetupTestEnv()<br/>(set env vars from SHARED_DIR files)
 
@@ -282,7 +282,7 @@ sequenceDiagram
 |---------|--------|-----------|---------------|
 | **ci-operator** | CI infrastructure | Manages the entire [job][ci-job-config] | Runs [workflow steps][workflow] as pods |
 | **Step shell** | bash | One per CI step | Sets KUBECONFIG, runs Go binaries ([create][create-guests-sh], [run][run-tests-chain], [destroy][destroy-guests-chain]) |
-| **[create-guests][]** | `/hypershift/bin/create-guests` | Runs once in pre step | Forks `hypershift` CLI via `exec.Command`, writes cluster names and platform-specific config to `SHARED_DIR` |
+| **[create-guests][]** | `/hypershift/bin/create-guests` | Runs once in pre step | Forks `hypershift` CLI via `exec.Command`, writes the cluster manifest, plus platform-specific config on AWS and Azure, to `SHARED_DIR` |
 | **[run-tests][]** | `/hypershift/bin/run-tests` | Runs once in test step | Forks one `test-e2e-v2` process per test group via `exec.Command`. Env vars pass cluster name + config. Collects exit codes. |
 | **test-e2e-v2** | `/hypershift/bin/test-e2e-v2` | One process per test group; sequential lanes run one group at a time | Reads env vars for cluster identity. Talks to management + hosted cluster APIs via kubeconfig. Writes JUnit XML to `ARTIFACT_DIR`. Entry point: [`suite_test.go`][suite-test]. |
 | **[destroy-guests][]** | `/hypershift/bin/destroy-guests` | Runs once in post step | Forks `hypershift` CLI via `exec.Command` for each cluster (parallel goroutines). |
@@ -376,37 +376,43 @@ flowchart TD
 ```mermaid
 flowchart LR
     subgraph "SHARED_DIR (filesystem)"
-        F1["cluster-name-{variant}<br/>(one per cluster)"]
-        F2["management_cluster_kubeconfig"]
+        F1["cluster-manifests.json<br/>(one entry per cluster)"]
+        F2["management cluster kubeconfig"]
         F3["platform-specific config<br/>(OIDC bundles, subnet IDs, etc.)"]
     end
 
     CG["create-guests"] -->|"writes"| F1
-    CG -->|"writes"| F3
+    CG -->|"writes (AWS, Azure)"| F3
+    PS["CI provisioning steps"] -->|"writes (GCP)"| F3
 
     RT["run-tests"] -->|"reads"| F1
     RT -->|"reads"| F3
     RT -->|"env vars"| TB["test-e2e-v2<br/>(subprocess)"]
     TB -->|"JUnit XML"| AD["ARTIFACT_DIR"]
 
-    DG["destroy-guests"] -->|"derives names from<br/>PROW_JOB_ID + sha256"| MC["Management Cluster"]
+    DG["destroy-guests"] -->|"reads"| F1
+    DG -->|"destroys"| HC["Hosted Clusters"]
 
 ```
 
 - **SHARED_DIR**: Filesystem directory shared across all CI steps within a job.
-  [`create-guests`][create-guests] writes cluster names and platform-specific
-  config; [`run-tests`][run-tests] reads them. This is the primary IPC mechanism
-  between CI steps.
+  [`create-guests`][create-guests] writes the cluster manifest
+  (`cluster-manifests.json`). On AWS and Azure it also writes platform-specific
+  config (mirror-registry and external-OIDC files); on GCP the CI provisioning
+  steps write the infrastructure files and `GCPPlatformConfig` reads them.
+  [`run-tests`][run-tests] and [`destroy-guests`][destroy-guests] read this
+  directory. This is the primary IPC mechanism between CI steps.
 - **Environment variables**: `run-tests` passes cluster identity to each `test-e2e-v2`
   subprocess via `E2E_HOSTED_CLUSTER_NAME` and `E2E_HOSTED_CLUSTER_NAMESPACE` env vars.
-- **PROW_JOB_ID + SHA256**: [`destroy-guests`][destroy-guests] does not read
-  SHARED_DIR cluster names. Instead, it re-derives cluster names deterministically
-  from `PROW_JOB_ID` using the same [`DeriveClusterName()`][platform] function as
-  `create-guests`. This makes teardown idempotent and independent of whether creation
-  succeeded.
-- **KUBECONFIG**: All processes authenticate to the management cluster via the
-  kubeconfig file at `${SHARED_DIR}/management_cluster_kubeconfig`, set up by the
-  nested management cluster provisioning step.
+- **Cluster manifest**: `create-guests` derives each cluster name deterministically
+  from `PROW_JOB_ID` using [`DeriveClusterName()`][platform] and writes it, together
+  with the per-cluster destroy arguments, to `${SHARED_DIR}/cluster-manifests.json`
+  before any infrastructure is provisioned. Both `run-tests` and `destroy-guests`
+  read that manifest, so teardown does not depend on whether creation succeeded.
+- **KUBECONFIG**: All processes authenticate to the management cluster via a
+  kubeconfig in `${SHARED_DIR}` (`management_cluster_kubeconfig` for the AWS and
+  Azure self-managed workflows, `kubeconfig` for the GCP workflow), set up by the
+  management cluster provisioning step.
 - **Exit codes**: `run-tests` collects exit codes from all `test-e2e-v2` subprocesses
   and exits non-zero if any group failed.
 - **JUnit XML**: Each `test-e2e-v2` process writes a separate JUnit report to
@@ -437,4 +443,3 @@ flowchart LR
 [create-guests-sh]: https://github.com/openshift/release/blob/main/ci-operator/step-registry/hypershift/azure/create-selfmanaged-guests/hypershift-azure-create-selfmanaged-guests-commands.sh
 [run-tests-chain]: https://github.com/openshift/release/blob/main/ci-operator/step-registry/hypershift/azure/run-e2e-v2-selfmanaged/hypershift-azure-run-e2e-v2-selfmanaged-chain.yaml
 [destroy-guests-chain]: https://github.com/openshift/release/blob/main/ci-operator/step-registry/hypershift/azure/destroy-selfmanaged-guests/hypershift-azure-destroy-selfmanaged-guests-chain.yaml
-[e2e-v2-chain]: https://github.com/openshift/release/blob/main/ci-operator/step-registry/hypershift/e2e-v2/hypershift-e2e-v2-chain.yaml
