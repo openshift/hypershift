@@ -1,6 +1,7 @@
 package controlplanecomponent
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -325,7 +326,8 @@ func TestReconcileComponentStatus(t *testing.T) {
 
 			var hcpGeneration int64 = 5
 			cpContext := ControlPlaneContext{
-				Client: client,
+				Context: context.Background(),
+				Client:  client,
 				HCP: &hyperv1.HostedControlPlane{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:  namespace,
@@ -371,6 +373,91 @@ func TestReconcileComponentStatus(t *testing.T) {
 			g.Expect(componentStatus.Status.ObservedGeneration).To(Equal(hcpGeneration))
 		})
 	}
+
+	t.Run("should set RolloutComplete with PodSchedulingFailed when a pod is unschedulable", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName,
+				Namespace: namespace,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: ptr.To[int32](3),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": componentName},
+				},
+			},
+			Status: appsv1.DeploymentStatus{
+				AvailableReplicas: 2,
+				ReadyReplicas:     2,
+				Replicas:          3,
+				UpdatedReplicas:   3,
+				Conditions: []appsv1.DeploymentCondition{
+					{
+						Type:   appsv1.DeploymentAvailable,
+						Status: corev1.ConditionTrue,
+					},
+				},
+			},
+		}
+
+		unschedulablePod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName + "-abc",
+				Namespace: namespace,
+				Labels:    map[string]string{"app": componentName},
+			},
+			Status: corev1.PodStatus{
+				Conditions: []corev1.PodCondition{
+					{
+						Type:    corev1.PodScheduled,
+						Status:  corev1.ConditionFalse,
+						Reason:  "Unschedulable",
+						Message: "0/3 nodes are available: 3 Insufficient cpu.",
+					},
+				},
+			},
+		}
+
+		c := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(deployment, unschedulablePod).
+			Build()
+
+		cpContext := ControlPlaneContext{
+			Context: context.Background(),
+			Client:  c,
+			HCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:  namespace,
+					Generation: 5,
+				},
+			},
+			ReleaseImageProvider: testutil.FakeImageProvider(),
+		}
+
+		component := NewDeploymentComponent(componentName, nil)
+		workload := component.Build().(*controlPlaneWorkload[*appsv1.Deployment])
+
+		componentStatus := &hyperv1.ControlPlaneComponent{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName,
+				Namespace: namespace,
+			},
+		}
+
+		err := workload.reconcileComponentStatus(cpContext, componentStatus, nil, nil, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		rollout := meta.FindStatusCondition(componentStatus.Status.Conditions, string(hyperv1.ControlPlaneComponentRolloutComplete))
+		g.Expect(rollout).NotTo(BeNil())
+		g.Expect(rollout.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(rollout.Reason).To(Equal(hyperv1.ReasonPodSchedulingFailed))
+		g.Expect(rollout.Message).To(ContainSubstring("Insufficient cpu"))
+		// Must not leak management cluster details.
+		g.Expect(rollout.Message).NotTo(ContainSubstring("nodes are available"))
+	})
 }
 
 func createMockControlPlaneComponent(name string, available, rolloutComplete bool, version string) hyperv1.ControlPlaneComponent {

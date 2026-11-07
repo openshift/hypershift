@@ -115,6 +115,8 @@ func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
 					hcmetrics.SilenceAlertsMetricName,
 					hcmetrics.LimitedSupportEnabledMetricName,
 					hcmetrics.ProxyMetricName,
+					hcmetrics.InstallationStageMetricName,
+					hcmetrics.InstallationFailureReasonMetricName,
 				} {
 					expectMetricHasLabel(g, metrics, metricName, "name", hcName)
 				}

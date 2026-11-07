@@ -746,7 +746,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	r.reconcileInfrastructureStatusCondition(ctx, hostedControlPlane)
 	r.reconcileExternalDNSStatusCondition(ctx, hostedControlPlane)
-	r.reconcileAvailabilityAndReadyStatus(ctx, hostedControlPlane)
+
+	// Compute CPC availability once for availability status reporting.
+	componentsMsg, componentsErr := r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
+	r.reconcileAvailabilityAndReadyStatus(ctx, hostedControlPlane, componentsMsg, componentsErr)
 
 	// Admin Kubeconfig
 	kubeconfig := manifests.KASAdminKubeconfigSecret(hostedControlPlane.Namespace, hostedControlPlane.Spec.KubeConfig)
@@ -869,10 +872,21 @@ func (r *HostedControlPlaneReconciler) reconcileInfrastructureStatusCondition(ct
 		if len(infraStatus.Message) > 0 {
 			message = infraStatus.Message
 		}
+		reason := hyperv1.WaitingOnInfrastructureReadyReason
+		if infraStatus.RouteNotAdmitted {
+			reason = hyperv1.ReasonRouteNotAdmitted
+			if infraStatus.RouteNotAdmittedMsg != "" {
+				if len(message) > 0 {
+					message = message + "; " + infraStatus.RouteNotAdmittedMsg
+				} else {
+					message = infraStatus.RouteNotAdmittedMsg
+				}
+			}
+		}
 		newCondition = metav1.Condition{
 			Type:    string(hyperv1.InfrastructureReady),
 			Status:  metav1.ConditionFalse,
-			Reason:  hyperv1.WaitingOnInfrastructureReadyReason,
+			Reason:  reason,
 			Message: message,
 		}
 		r.Log.Info("Infrastructure is not yet ready")
@@ -913,15 +927,18 @@ func (r *HostedControlPlaneReconciler) reconcileExternalDNSStatusCondition(ctx c
 	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 }
 
-func (r *HostedControlPlaneReconciler) reconcileAvailabilityAndReadyStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) {
+func (r *HostedControlPlaneReconciler) reconcileAvailabilityAndReadyStatus(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, componentsMsg string, componentsErr error) {
 	healthCheckErr := r.healthCheckKASLoadBalancers(ctx, hostedControlPlane)
 
-	var componentsNotAvailableMsg string
-	var componentsErr error
+	componentsNotAvailableMsg := componentsMsg
+	effectiveComponentsErr := componentsErr
 	availableCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
 	alreadyAvailable := availableCondition != nil && availableCondition.Status == metav1.ConditionTrue
-	if !alreadyAvailable || healthCheckErr != nil {
-		componentsNotAvailableMsg, componentsErr = r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
+	if alreadyAvailable && healthCheckErr == nil {
+		// When already available and health check passes, skip component check
+		// to avoid unnecessary status churn.
+		componentsNotAvailableMsg = ""
+		effectiveComponentsErr = nil
 	}
 
 	ready, condition := reconcileAvailabilityStatus(
@@ -929,7 +946,7 @@ func (r *HostedControlPlaneReconciler) reconcileAvailabilityAndReadyStatus(ctx c
 		hostedControlPlane.Status.KubeConfig != nil,
 		healthCheckErr,
 		componentsNotAvailableMsg,
-		componentsErr,
+		effectiveComponentsErr,
 		hostedControlPlane.Generation,
 	)
 	hostedControlPlane.Status.Ready = ready
@@ -1201,15 +1218,38 @@ func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx conte
 	}
 
 	var notAvailable []string
+	var firstFailureName, firstFailureReason, firstFailureMessage string
+	sort.Slice(componentsList.Items, func(i, j int) bool {
+		return componentsList.Items[i].Name < componentsList.Items[j].Name
+	})
 	for _, component := range componentsList.Items {
 		availableCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
 		if availableCondition == nil || availableCondition.Status != metav1.ConditionTrue {
 			notAvailable = append(notAvailable, component.Name)
+			if firstFailureName == "" && availableCondition != nil {
+				firstFailureName = component.Name
+				firstFailureReason = availableCondition.Reason
+				firstFailureMessage = availableCondition.Message
+			}
 		}
 	}
 
 	if len(notAvailable) > 0 {
-		return fmt.Sprintf("Waiting for components to be available: %s", strings.Join(notAvailable, ", ")), nil
+		noun := "components"
+		if len(notAvailable) == 1 {
+			noun = "component"
+		}
+		msg := fmt.Sprintf("%d %s unavailable", len(notAvailable), noun)
+		if firstFailureName != "" {
+			detail := firstFailureReason
+			if firstFailureMessage != "" {
+				detail += ": " + firstFailureMessage
+			}
+			msg += fmt.Sprintf(". First failure: %s — %s", firstFailureName, detail)
+		} else {
+			msg += fmt.Sprintf(": %s", strings.Join(notAvailable, ", "))
+		}
+		return msg, nil
 	}
 
 	return "", nil
