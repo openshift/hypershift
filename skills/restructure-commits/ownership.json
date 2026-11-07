@@ -122,7 +122,7 @@
     {"pattern": "konnectivity-https-proxy/**", "group": "CPO", "why": "imported only by CPO binaries"},
     {"pattern": "konnectivity-socks5-proxy/**", "group": "CPO", "why": "imported only by CPO binaries"},
     {"pattern": "kubernetes-default-proxy/**", "group": "CPO", "why": "imported only by CPO binaries"},
-    {"pattern": "kubevirtexternalinfra/**", "group": "HO", "why": "shared by CLI, CPO, HO binaries"},
+    {"pattern": "kubevirtexternalinfra/**", "group": "HO", "why": "shared by CLI, HO binaries"},
     {"pattern": "main.go", "group": "CLI", "why": "source of the binary built from the repository root"},
     {"pattern": "pkg/**", "group": "HO", "why": "shared by CLI, CPO, HO binaries"},
     {"pattern": "product-cli/**", "group": "CLI", "why": "package of make product-cli"},

@@ -65,6 +65,14 @@ type HostedControlPlaneListerExpansion interface{}
 // HostedControlPlaneNamespaceLister.
 type HostedControlPlaneNamespaceListerExpansion interface{}
 
+// IgnitionPayloadListerExpansion allows custom methods to be added to
+// IgnitionPayloadLister.
+type IgnitionPayloadListerExpansion interface{}
+
+// IgnitionPayloadNamespaceListerExpansion allows custom methods to be added to
+// IgnitionPayloadNamespaceLister.
+type IgnitionPayloadNamespaceListerExpansion interface{}
+
 // NodePoolListerExpansion allows custom methods to be added to
 // NodePoolLister.
 type NodePoolListerExpansion interface{}
