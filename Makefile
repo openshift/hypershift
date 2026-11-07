@@ -97,7 +97,7 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator kar
 CAPI_PROVIDERS := agent aws azure gcp ibmcloud kubevirt openstack
 
 .PHONY: update
-update: api-deps workspace-sync capi-sync deps api api-docs clients docs-aggregate
+update: api-deps workspace-sync capi-sync gmp-sync deps api api-docs clients docs-aggregate
 	$(MAKE) ownership-rules
 
 GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
@@ -131,7 +131,7 @@ precommit-api-lint-fix: $(GOLANGCI_LINT)
 	cd api && $(GOLANGCI_LINT) fmt --config ./.golangci.yml --enable gci $(patsubst api/%,%,$(FILES))
 
 .PHONY: lint
-lint: generate verify-capi-sync $(HYPERSHIFTLINTER_PLUGIN)
+lint: generate verify-capi-sync verify-gmp-sync $(HYPERSHIFTLINTER_PLUGIN)
 	$(MAKE) api-lint; api_rc=$$?; \
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v; main_rc=$$?; \
 	exit $$(( api_rc > main_rc ? api_rc : main_rc ))
@@ -261,8 +261,16 @@ $(CRD_SCHEMA_CHECK): $(TOOLS_DIR)/go.mod # Build crd-schema-check tool
 	cd $(TOOLS_DIR); $(GO) build -o $(BIN_DIR)/crd-schema-check ./crd-schema-check
 
 .PHONY: generate
-generate: $(MOCKGEN)
+generate: $(MOCKGEN) $(CONTROLLER_GEN)
 	$(GO) generate ./...
+
+.PHONY: gmp-sync
+gmp-sync: $(CONTROLLER_GEN)
+	CONTROLLER_GEN=$(CONTROLLER_GEN) ./hack/update-gmp-api.sh --sync
+
+.PHONY: verify-gmp-sync
+verify-gmp-sync: generate $(CONTROLLER_GEN)
+	CONTROLLER_GEN=$(CONTROLLER_GEN) ./hack/update-gmp-api.sh --verify
 
 # Compile all tests
 .PHONY: tests
@@ -827,7 +835,7 @@ test-commit-layout: $(PYTHON_VENV_STAMP) ## Test the restructure-commits layout 
 
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*,./pkg/capi/*,./hack/capi-vendor/*"
+	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./support/gmpmonitoring/testdata/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./api/go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*,./pkg/capi/*,./hack/capi-vendor/*"
 
 .PHONY: verify-api-deps
 verify-api-deps: $(VERIFY_API_DEPS) ## Verify API dependency allowlist and shared requirements/replacements.
