@@ -86,6 +86,10 @@ func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *
 	if !ok {
 		return false, "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
+	// TODO(OCPSTRAT-3877): registry overrides are not applied to the CPO image here;
+	// metadata lookups may reach the original registry in mirrored environments.
+	// Note this image also lands in the HAProxy ignition config, so changing it shifts
+	// the NodePool config hash and re-rolls every worker.
 	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)

@@ -27,46 +27,76 @@ func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {
 	return hcp.Spec.ReleaseImage
 }
 
+// CPOImageSource identifies which of the GetControlPlaneOperatorImage precedence
+// rules produced an image. Callers need this to tell whether the image has already
+// had the release provider's registry overrides applied to it: the release payload
+// image is mirrored as a side effect of the provider rewriting the image stream tags
+// it resolves, while the other sources are returned verbatim.
+type CPOImageSource string
+
+const (
+	// CPOImageSourceAnnotation is the ControlPlaneOperatorImageAnnotation on the
+	// HostedCluster. Returned verbatim.
+	CPOImageSourceAnnotation CPOImageSource = "Annotation"
+	// CPOImageSourceOverrideTable is the embedded CPO override table, consulted only
+	// when CPO overrides are enabled. Returned verbatim.
+	CPOImageSourceOverrideTable CPOImageSource = "OverrideTable"
+	// CPOImageSourcePayload is the hypershift component image from the release payload.
+	// Already mirrored by releaseinfo.RegistryMirrorProviderDecorator.
+	CPOImageSourcePayload CPOImageSource = "Payload"
+	// CPOImageSourceOperator is the hypershift operator's own image, used as a fallback
+	// for release payloads that ship no hypershift component image.
+	CPOImageSourceOperator CPOImageSource = "HypershiftOperator"
+)
+
 // GetControlPlaneOperatorImage resolves the appropriate control plane operator
-// image based on the following order of precedence (from most to least
-// preferred):
+// image. See GetControlPlaneOperatorImageWithSource for the order of precedence.
+func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
+	image, _, err := GetControlPlaneOperatorImageWithSource(ctx, hc, releaseProvider, hypershiftOperatorImage, pullSecret)
+	return image, err
+}
+
+// GetControlPlaneOperatorImageWithSource resolves the appropriate control plane
+// operator image based on the following order of precedence (from most to least
+// preferred), and reports which rule produced it:
 //
 //  1. The image specified by the ControlPlaneOperatorImageAnnotation on the
-//     HostedCluster resource itself
-//  2. The hypershift image specified in the release payload indicated by the
-//     HostedCluster's release field
-//  3. The hypershift-operator's own image for release versions 4.9 and 4.10
-//  4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
-//     version 4.8
+//     HostedCluster resource itself (CPOImageSourceAnnotation)
+//  2. The image specified by the CPO override table, when CPO overrides are
+//     enabled (CPOImageSourceOverrideTable)
+//  3. The hypershift image specified in the release payload indicated by the
+//     HostedCluster's release field (CPOImageSourcePayload)
+//  4. The hypershift-operator's own image for release versions 4.9 and 4.10
+//     (CPOImageSourceOperator)
 //
 // If no image can be found according to these rules, an error is returned.
-func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
+func GetControlPlaneOperatorImageWithSource(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, CPOImageSource, error) {
 	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
-		return val, nil
+		return val, CPOImageSourceAnnotation, nil
 	}
 	releaseInfo, err := releaseProvider.Lookup(ctx, HCControlPlaneReleaseImage(hc), pullSecret)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	version, err := semver.Parse(releaseInfo.Version())
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if controlplaneoperatoroverrides.IsOverridesEnabled() {
 		overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), version.String())
 		if overrideImage != "" {
-			return overrideImage, nil
+			return overrideImage, CPOImageSourceOverrideTable, nil
 		}
 	}
 
 	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
-		return hypershiftImage, nil
+		return hypershiftImage, CPOImageSourcePayload, nil
 	}
 
 	if version.Minor < 9 {
-		return "", fmt.Errorf("unsupported release image with version %s", version.String())
+		return "", "", fmt.Errorf("unsupported release image with version %s", version.String())
 	}
-	return hypershiftOperatorImage, nil
+	return hypershiftOperatorImage, CPOImageSourceOperator, nil
 }
 
 // GetControlPlaneOperatorImageLabels resolves the appropriate control plane

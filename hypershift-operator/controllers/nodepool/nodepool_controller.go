@@ -1304,6 +1304,8 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 	if err != nil {
 		return nil, err
 	}
+	// TODO(OCPSTRAT-3877): registry overrides are not applied to the CPO image here;
+	// metadata lookups may reach the original registry in mirrored environments.
 	controlPlaneOperatorImage, err := imageregistry.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
