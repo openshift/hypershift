@@ -1608,7 +1608,6 @@ func KarpenterCustomDHCPDomainTest(getTestCtx internal.TestContextGetter) {
 		It("should register a node named after the custom DHCP domain of the VPC", func() {
 			tc := getTestCtx()
 			ctx := tc.Context
-			t := GinkgoTB()
 			hc, err := tc.GetHostedCluster()
 			Expect(err).NotTo(HaveOccurred())
 			hcClient, err := tc.GetHostedClusterClient(hc)
@@ -1658,7 +1657,7 @@ func KarpenterCustomDHCPDomainTest(getTestCtx internal.TestContextGetter) {
 			v2util.CreateKarpenterNodePoolAndWorkload(Default, ctx, hcClient, hc.Spec.Platform.Type, testNodePool, testWorkloads, testNodeLabels, false)
 
 			// The node only becomes ready if the Karpenter machine approver approved its CSRs.
-			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
+			nodes := v2util.WaitForReadyNodesByLabels(Default, ctx, hcClient, hc.Spec.Platform.Type, 1, testNodeLabels)
 			instance, _ := v2util.DescribeEC2Instance(Default, ctx, ec2client, nodes[0])
 			hostLabel, _, _ := strings.Cut(aws.ToString(instance.PrivateDnsName), ".")
 			Expect(nodes[0].Name).To(Equal(hostLabel+"."+domain), "node name should use the custom DHCP domain")
