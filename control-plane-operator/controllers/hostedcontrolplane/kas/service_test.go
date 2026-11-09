@@ -1,19 +1,27 @@
 package kas
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/upsert"
 
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func TestReconcileService(t *testing.T) {
@@ -1110,6 +1118,201 @@ func TestKonnectivityServiceReconcile(t *testing.T) {
 			} else {
 				g.Expect(tc.err.Error()).To(Equal(err.Error()))
 			}
+		})
+	}
+
+	ipFamilyPolicyTestCases := []struct {
+		name             string
+		platform         hyperv1.PlatformType
+		strategy         hyperv1.ServicePublishingStrategy
+		existingType     corev1.ServiceType
+		expectedType     corev1.ServiceType
+		expectedNodePort int32
+	}{
+		{
+			name:         "When the strategy is LoadBalancer on AWS, it should prefer dual-stack on a LoadBalancer service",
+			platform:     hyperv1.AWSPlatform,
+			strategy:     hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
+			expectedType: corev1.ServiceTypeLoadBalancer,
+		},
+		{
+			name:             "When the strategy is NodePort with a port on Agent, it should prefer dual-stack and use the strategy port",
+			platform:         hyperv1.AgentPlatform,
+			strategy:         hyperv1.ServicePublishingStrategy{Type: hyperv1.NodePort, NodePort: &hyperv1.NodePortPublishingStrategy{Port: 30091}},
+			expectedType:     corev1.ServiceTypeNodePort,
+			expectedNodePort: 30091,
+		},
+		{
+			name:         "When the strategy is NodePort without a port on None, it should prefer dual-stack and leave the port unallocated",
+			platform:     hyperv1.NonePlatform,
+			strategy:     hyperv1.ServicePublishingStrategy{Type: hyperv1.NodePort},
+			expectedType: corev1.ServiceTypeNodePort,
+		},
+		{
+			name:         "When the strategy is Route on AWS, it should prefer dual-stack on a ClusterIP service",
+			platform:     hyperv1.AWSPlatform,
+			strategy:     hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
+			expectedType: corev1.ServiceTypeClusterIP,
+		},
+		{
+			name:         "When the strategy is Route on Agent, it should prefer dual-stack on a ClusterIP service",
+			platform:     hyperv1.AgentPlatform,
+			strategy:     hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
+			expectedType: corev1.ServiceTypeClusterIP,
+		},
+		{
+			name:         "When the strategy is Route on IBM Cloud with an existing NodePort service, it should prefer dual-stack and keep the NodePort type",
+			platform:     hyperv1.IBMCloudPlatform,
+			strategy:     hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
+			existingType: corev1.ServiceTypeNodePort,
+			expectedType: corev1.ServiceTypeNodePort,
+		},
+	}
+	for _, tc := range ipFamilyPolicyTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			hcp := &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{Type: tc.platform}}}
+			svc := &corev1.Service{Spec: corev1.ServiceSpec{Type: tc.existingType}}
+
+			g.Expect(ReconcileKonnectivityServerService(svc, config.OwnerRef{}, &tc.strategy, hcp)).To(Succeed())
+
+			g.Expect(svc.Spec.IPFamilyPolicy).To(Equal(ptr.To(corev1.IPFamilyPolicyPreferDualStack)))
+			g.Expect(svc.Spec.Type).To(Equal(tc.expectedType))
+			g.Expect(svc.Spec.Ports).To(HaveLen(1))
+			g.Expect(svc.Spec.Ports[0].Port).To(Equal(int32(KonnectivityServerPort)))
+			g.Expect(svc.Spec.Ports[0].NodePort).To(Equal(tc.expectedNodePort))
+		})
+	}
+
+	// Existing services are reconciled through the upsert provider, which passes the
+	// fetched object to ReconcileKonnectivityServerService. The fake client does not
+	// allocate addresses; these cases only check what the reconciler sends and keeps.
+	existingServiceTestCases := []struct {
+		name                string
+		platform            hyperv1.PlatformType
+		strategy            hyperv1.ServicePublishingStrategy
+		existingAnnotations map[string]string
+		existing            corev1.ServiceSpec
+	}{
+		{
+			name:     "When an existing single-stack LoadBalancer service is reconciled, it should prefer dual-stack and keep its allocated addresses, port and annotations",
+			platform: hyperv1.AWSPlatform,
+			strategy: hyperv1.ServicePublishingStrategy{
+				Type:         hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{Hostname: "konnectivity.clusters-example.example.com"},
+			},
+			existingAnnotations: map[string]string{hyperv1.ExternalDNSHostnameAnnotation: "konnectivity.clusters-example.example.com"},
+			existing: corev1.ServiceSpec{
+				Type:           corev1.ServiceTypeLoadBalancer,
+				ClusterIP:      "172.30.45.66",
+				ClusterIPs:     []string{"172.30.45.66"},
+				IPFamilies:     []corev1.IPFamily{corev1.IPv4Protocol},
+				IPFamilyPolicy: ptr.To(corev1.IPFamilyPolicySingleStack),
+				Ports: []corev1.ServicePort{{
+					Protocol:   corev1.ProtocolTCP,
+					Port:       KonnectivityServerPort,
+					TargetPort: intstr.FromInt(KonnectivityServerPort),
+					NodePort:   31091,
+				}},
+				Selector: kasLabels(),
+			},
+		},
+		{
+			name:     "When an existing single-stack NodePort service is reconciled, it should prefer dual-stack and keep its allocated addresses and port",
+			platform: hyperv1.AgentPlatform,
+			strategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.NodePort},
+			existing: corev1.ServiceSpec{
+				Type:           corev1.ServiceTypeNodePort,
+				ClusterIP:      "172.30.45.67",
+				ClusterIPs:     []string{"172.30.45.67"},
+				IPFamilies:     []corev1.IPFamily{corev1.IPv4Protocol},
+				IPFamilyPolicy: ptr.To(corev1.IPFamilyPolicySingleStack),
+				Ports: []corev1.ServicePort{{
+					Protocol:   corev1.ProtocolTCP,
+					Port:       KonnectivityServerPort,
+					TargetPort: intstr.FromInt(KonnectivityServerPort),
+					NodePort:   30091,
+				}},
+				Selector: kasLabels(),
+			},
+		},
+		{
+			name:     "When an existing single-stack ClusterIP service is reconciled for Route, it should prefer dual-stack and keep its allocated addresses",
+			platform: hyperv1.AWSPlatform,
+			strategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route},
+			existing: corev1.ServiceSpec{
+				Type:           corev1.ServiceTypeClusterIP,
+				ClusterIP:      "172.30.45.68",
+				ClusterIPs:     []string{"172.30.45.68"},
+				IPFamilies:     []corev1.IPFamily{corev1.IPv4Protocol},
+				IPFamilyPolicy: ptr.To(corev1.IPFamilyPolicySingleStack),
+				Ports: []corev1.ServicePort{{
+					Protocol:   corev1.ProtocolTCP,
+					Port:       KonnectivityServerPort,
+					TargetPort: intstr.FromInt(KonnectivityServerPort),
+				}},
+				Selector: kasLabels(),
+			},
+		},
+	}
+	for _, tc := range existingServiceTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			const namespace = "clusters-example"
+			hcp := &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{Type: tc.platform}}}
+			existing := manifests.KonnectivityServerService(namespace)
+			existing.Annotations = tc.existingAnnotations
+			existing.Spec = *tc.existing.DeepCopy()
+
+			updates := 0
+			c := fake.NewClientBuilder().
+				WithObjects(existing).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+						updates++
+						return c.Update(ctx, obj, opts...)
+					},
+				}).
+				Build()
+			reconcile := func() controllerutil.OperationResult {
+				svc := manifests.KonnectivityServerService(namespace)
+				result, err := upsert.New(false).CreateOrUpdate(t.Context(), c, svc, func() error {
+					return ReconcileKonnectivityServerService(svc, config.OwnerRef{}, &tc.strategy, hcp)
+				})
+				g.Expect(err).ToNot(HaveOccurred())
+				return result
+			}
+
+			g.Expect(reconcile()).To(Equal(controllerutil.OperationResultUpdated))
+			g.Expect(updates).To(Equal(1))
+
+			stored := manifests.KonnectivityServerService(namespace)
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(stored), stored)).To(Succeed())
+			g.Expect(stored.Spec.IPFamilyPolicy).To(Equal(ptr.To(corev1.IPFamilyPolicyPreferDualStack)))
+			g.Expect(stored.Spec.Type).To(Equal(tc.existing.Type))
+			g.Expect(stored.Spec.ClusterIP).To(Equal(tc.existing.ClusterIP))
+			g.Expect(stored.Spec.ClusterIPs).To(Equal(tc.existing.ClusterIPs))
+			g.Expect(stored.Spec.IPFamilies).To(Equal(tc.existing.IPFamilies))
+			g.Expect(stored.Spec.Ports).To(Equal(tc.existing.Ports))
+			g.Expect(stored.Annotations).To(Equal(tc.existingAnnotations))
+
+			// Emulate the API server's dual-stack result: keep the primary ClusterIP and
+			// append an IPv6 one. The next reconcile must neither update nor remove it.
+			stored.Spec.ClusterIPs = append(stored.Spec.ClusterIPs, "fd02::45:67")
+			stored.Spec.IPFamilies = []corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}
+			g.Expect(c.Update(t.Context(), stored)).To(Succeed())
+			updates = 0
+
+			g.Expect(reconcile()).To(Equal(controllerutil.OperationResultNone))
+			g.Expect(updates).To(BeZero())
+
+			dualStack := manifests.KonnectivityServerService(namespace)
+			g.Expect(c.Get(t.Context(), client.ObjectKeyFromObject(dualStack), dualStack)).To(Succeed())
+			g.Expect(dualStack.Spec.IPFamilyPolicy).To(Equal(ptr.To(corev1.IPFamilyPolicyPreferDualStack)))
+			g.Expect(dualStack.Spec.ClusterIPs).To(Equal([]string{tc.existing.ClusterIP, "fd02::45:67"}))
+			g.Expect(dualStack.Spec.IPFamilies).To(Equal([]corev1.IPFamily{corev1.IPv4Protocol, corev1.IPv6Protocol}))
 		})
 	}
 }

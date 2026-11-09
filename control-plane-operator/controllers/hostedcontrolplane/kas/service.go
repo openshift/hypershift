@@ -365,6 +365,9 @@ func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.Own
 	} else {
 		svc.Spec.Ports = []corev1.ServicePort{portSpec}
 	}
+	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
+	svc.Spec.IPFamilyPolicy = ptr.To(corev1.IPFamilyPolicyPreferDualStack)
+
 	portSpec.Port = int32(KonnectivityServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(KonnectivityServerPort)
