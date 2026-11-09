@@ -227,6 +227,23 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
 
+	// The CVO CRDs (clusterversions, clusteroperators, clusterversionoperators)
+	// used to be shipped in the CVO image's /manifests directory, which the
+	// payload assembler mirrors into the release image's /manifests directory.
+	// Payloads built after openshift/api#3155 ship them from the openshift/api
+	// image via /release-manifests only (cluster-version-operator#1507 removes
+	// the CVO image copies), and hypershift's bootstrap container applies CRDs
+	// from the manifests directory only. Copy them over when they are missing
+	// so both payload layouts work; the feature-set filter below then prunes
+	// the clusterversions variants exactly like it does for older payloads.
+	// The existence guards keep this a no-op for older payloads and tolerate
+	// payloads that ship the CRDs in neither directory.
+	stmts = append(stmts, fmt.Sprintf(`for crd in %s/release-manifests/0000_00_cluster-version-operator_01_*.crd.yaml; do
+    if [[ -f "$crd" ]] && [[ ! -f "%s/manifests/${crd##*/}" ]]; then
+        cp "$crd" %s/manifests/
+    fi
+done`, payloadDir, payloadDir, payloadDir))
+
 	// NOTE: We would need to leverage part of the manifest.Include logic (https://github.com/openshift/library-go/blob/0064ad7bd060b9fd52f7840972c1d3e72186d0f0/pkg/manifest/manifest.go#L190-L196)
 	// to properly evaluate which CVO manifests to select based on featureset.
 	// We only have access to bash, so we must filter based on the feature-set annotation in the manifests manually.

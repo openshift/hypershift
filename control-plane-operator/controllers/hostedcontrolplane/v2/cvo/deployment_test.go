@@ -138,6 +138,46 @@ func TestPreparePayloadScript(t *testing.T) {
 				g.Expect(script).To(ContainSubstring("rm -f /var/payload/release-manifests/0000_50_olm_00-packageserver.pdb.yaml"))
 			},
 		},
+		{
+			// Payloads built after openshift/api#3155 ship the CVO CRDs
+			// (clusterversions, clusteroperators, clusterversionoperators) from the
+			// openshift/api image via /release-manifests only, while
+			// cluster-version-operator#1507 removes them from the CVO image and
+			// therefore from /manifests. The bootstrap init container applies CRDs
+			// from /var/payload/manifests only, so they must be copied over. The
+			// guards keep this a no-op for older payloads that already ship the
+			// CRDs in /manifests, and tolerate payloads that ship them in neither
+			// directory.
+			name:         "When CVO CRDs are missing from manifests, it should copy them from release-manifests",
+			platformType: hyperv1.AWSPlatform,
+			oauthEnabled: true,
+			featureSet:   configv1.Default,
+			assertions: func(g Gomega, script string) {
+				g.Expect(script).To(ContainSubstring("for crd in /var/payload/release-manifests/0000_00_cluster-version-operator_01_*.crd.yaml; do"))
+				g.Expect(script).To(ContainSubstring(`if [[ -f "$crd" ]] && [[ ! -f "/var/payload/manifests/${crd##*/}" ]]; then`))
+				g.Expect(script).To(ContainSubstring(`cp "$crd" /var/payload/manifests/`))
+			},
+		},
+		{
+			// The copy must happen after /release-manifests is staged into
+			// /var/payload and before the feature-set filter, so the filter prunes
+			// the copied clusterversions CRD variants (keeping the one matching the
+			// requested feature set) exactly like it does for older payloads.
+			name:         "When called, the CRD copy should run after staging release-manifests and before the feature-set filter",
+			platformType: hyperv1.AWSPlatform,
+			oauthEnabled: true,
+			featureSet:   configv1.Default,
+			assertions: func(g Gomega, script string) {
+				crdCopyIdx := strings.Index(script, "for crd in /var/payload/release-manifests/0000_00_cluster-version-operator_01_*.crd.yaml")
+				releaseStagingIdx := strings.Index(script, "cp -R /release-manifests /var/payload/")
+				filterIdx := strings.Index(script, "for file in $(find /var/payload/manifests/")
+				g.Expect(releaseStagingIdx).To(BeNumerically(">=", 0))
+				g.Expect(crdCopyIdx).To(BeNumerically(">=", 0))
+				g.Expect(filterIdx).To(BeNumerically(">=", 0))
+				g.Expect(crdCopyIdx).To(BeNumerically(">", releaseStagingIdx))
+				g.Expect(crdCopyIdx).To(BeNumerically("<", filterIdx))
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -149,6 +189,37 @@ func TestPreparePayloadScript(t *testing.T) {
 			tt.assertions(g, script)
 		})
 	}
+}
+
+func TestBootstrapScriptAppliesClusterVersionCRDBeforeClusterVersion(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	deployment, err := assets.LoadDeploymentManifest(ComponentName)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	bootstrap := podspec.FindContainer("bootstrap", deployment.Spec.Template.Spec.InitContainers)
+	g.Expect(bootstrap).ToNot(BeNil())
+	g.Expect(bootstrap.Args).To(HaveLen(2))
+	script := bootstrap.Args[1]
+
+	// The ClusterVersion CRD must be applied before the ClusterVersion object is
+	// created. The prepare-payload init container copies the CVO CRDs into
+	// /var/payload/manifests regardless of whether the payload ships them in
+	// /manifests (older payloads) or only in /release-manifests (payloads built
+	// after openshift/api#3155 and cluster-version-operator#1507).
+	g.Expect(script).To(ContainSubstring("clusterversion_crds=(/var/payload/manifests/0000_00_cluster-version-operator_01_clusterversions*)"))
+	crdApplyIdx := strings.Index(script, `oc apply -f "${clusterversion_crds[@]}"`)
+	clusterVersionApplyIdx := strings.Index(script, "oc apply -f /tmp/clusterversion.json")
+	g.Expect(crdApplyIdx).To(BeNumerically(">=", 0))
+	g.Expect(clusterVersionApplyIdx).To(BeNumerically(">=", 0))
+	g.Expect(crdApplyIdx).To(BeNumerically("<", clusterVersionApplyIdx))
+
+	// An unexpectedly missing CRD must not crash the bootstrap container on an
+	// unexpanded glob (a crashlooping init container is a total control plane
+	// outage); the clusterversion apply below surfaces a clear error instead.
+	g.Expect(script).To(ContainSubstring("shopt -s nullglob"))
+	g.Expect(script).To(ContainSubstring("if [[ ${#clusterversion_crds[@]} -gt 0 ]]; then"))
 }
 
 func TestResourcesToRemove(t *testing.T) {
