@@ -1,15 +1,39 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+)
+
+// hyperShiftRepo identifies HyperShift refs by repository name so that
+// private mirrors of the repository in other organizations are recognized.
+const hyperShiftRepo = "hypershift"
+
+// periodicJobType is the Prow job type that declares no primary refs.
+const periodicJobType = "periodic"
+
+// Verification modes report which declared refs selected the revisions.
+const (
+	modeLocal           = "local"
+	modePrimary         = "primary"
+	modePrimaryBatch    = "primary-batch"
+	modeExtraRefNoPulls = "extra-ref-no-pulls"
+	modeExtraRefPulls   = "extra-ref-pulls"
+)
+
+// Make $(origin) values that change override precedence.
+const (
+	originUndefined   = "undefined"
+	originCommandLine = "command line"
 )
 
 type inputs struct {
@@ -52,7 +76,7 @@ func run(ctx context.Context, args []string, output io.Writer, input inputs) err
 		return err
 	}
 	if flags.NArg() != 0 {
-		return fmt.Errorf("unexpected positional arguments")
+		return fmt.Errorf("unexpected positional arguments: %q", flags.Args())
 	}
 	resolved, err := resolveContext(ctx, input)
 	if err != nil {
@@ -74,23 +98,23 @@ func resolveContext(ctx context.Context, input inputs) (verificationContext, err
 	if err != nil {
 		return result, err
 	}
-	if !foreign || input.baseOrigin == "command line" {
-		if input.baseOrigin != "undefined" {
-			if input.base == "" && result.mode != "local" {
+	if !foreign || input.baseOrigin == originCommandLine {
+		if input.baseOrigin != originUndefined {
+			if input.base == "" && result.mode != modeLocal {
 				return result, fmt.Errorf("explicit base is empty in %s context", result.mode)
 			}
 			result.base = input.base
 		}
 	}
-	if !foreign || input.headOrigin == "command line" {
-		if input.headOrigin != "undefined" {
+	if !foreign || input.headOrigin == originCommandLine {
+		if input.headOrigin != originUndefined {
 			if input.head == "" {
-				return result, fmt.Errorf("explicit head is empty")
+				return result, errors.New("explicit head is empty")
 			}
 			result.head = input.head
 		}
 	}
-	if result.base == "" && input.baseOrigin == "undefined" {
+	if result.base == "" && input.baseOrigin == originUndefined {
 		result.base = "main"
 		if input.upstream != "" {
 			result.base = input.upstream + "/main"
@@ -110,7 +134,7 @@ func resolveContext(ctx context.Context, input inputs) (verificationContext, err
 		return result, fmt.Errorf("commit head: %w", err)
 	}
 	result.commitBase = result.base
-	if result.mode == "local" && result.base == "" {
+	if result.mode == modeLocal && result.base == "" {
 		for _, candidate := range []string{"origin/HEAD", "origin/main", "origin/master"} {
 			base, gitErr := git(ctx, input.root, "merge-base", result.head, candidate)
 			if gitErr == nil {
@@ -123,7 +147,7 @@ func resolveContext(ctx context.Context, input inputs) (verificationContext, err
 }
 
 func resolveDeclaredContext(ctx context.Context, input inputs) (verificationContext, bool, error) {
-	result := verificationContext{mode: "local"}
+	result := verificationContext{mode: modeLocal}
 	selected, foreign, err := selectRefs(input)
 	if err != nil {
 		return result, foreign, err
@@ -135,21 +159,25 @@ func resolveDeclaredContext(ctx context.Context, input inputs) (verificationCont
 	if selected == nil {
 		return result, foreign, nil
 	}
-	result.mode = "primary"
-	if foreign {
-		result.mode = "extra-ref-no-pulls"
-		if len(selected.Pulls) != 0 {
-			result.mode = "extra-ref-pulls"
-		}
-	}
-	if !foreign && len(selected.Pulls) == 0 {
-		return result, foreign, fmt.Errorf("primary context requires one declared pull head")
-	}
-	if len(selected.Pulls) > 1 {
-		return result, foreign, fmt.Errorf("%s has ambiguous multiple pull heads", result.mode)
+	pulls := len(selected.Pulls)
+	switch {
+	case !foreign && pulls == 0:
+		return result, foreign, errors.New("primary context requires a declared pull head")
+	case !foreign && pulls == 1:
+		result.mode = modePrimary
+	case !foreign:
+		// Tide batches merge every declared pull into the checkout, so the
+		// merged checkout snapshot is the head of the tested change.
+		result.mode = modePrimaryBatch
+	case pulls == 0:
+		result.mode = modeExtraRefNoPulls
+	case pulls == 1:
+		result.mode = modeExtraRefPulls
+	default:
+		return result, foreign, fmt.Errorf("%s has ambiguous multiple pull heads", modeExtraRefPulls)
 	}
 	if selected.BaseSHA == "" {
-		if !foreign || len(selected.Pulls) != 0 {
+		if pulls != 0 {
 			return result, foreign, fmt.Errorf("%s requires an exact base_sha", result.mode)
 		}
 		result.base = result.checkout
@@ -159,19 +187,25 @@ func resolveDeclaredContext(ctx context.Context, input inputs) (verificationCont
 			return result, foreign, fmt.Errorf("%s base_sha: %w", result.mode, err)
 		}
 	}
-	if len(selected.Pulls) == 1 {
-		result.head, err = resolveDeclaredCommit(ctx, input.root, selected.Pulls[0].SHA)
-		if err != nil {
+	var head string
+	for _, pull := range selected.Pulls {
+		if head, err = resolveDeclaredCommit(ctx, input.root, pull.SHA); err != nil {
 			return result, foreign, fmt.Errorf("%s pull head: %w", result.mode, err)
 		}
+	}
+	if pulls == 1 {
+		result.head = head
 	}
 	return result, foreign, nil
 }
 
+// selectRefs returns the declared refs that describe the HyperShift checkout,
+// and whether they are a workdir extra_ref of another primary repository.
+// It returns nil refs when the job declares no pull request context.
 func selectRefs(input inputs) (*refs, bool, error) {
 	if input.jobSpec == "" {
-		if (input.owner != "" || input.repo != "") && (input.owner != "openshift" || input.repo != "hypershift") {
-			return nil, false, fmt.Errorf("foreign primary repository requires JOB_SPEC workdir context")
+		if (input.owner != "" || input.repo != "") && input.repo != hyperShiftRepo {
+			return nil, false, errors.New("foreign primary repository requires JOB_SPEC workdir context")
 		}
 		return nil, false, nil
 	}
@@ -179,46 +213,52 @@ func selectRefs(input inputs) (*refs, bool, error) {
 		return nil, false, fmt.Errorf("malformed JOB_SPEC: %w", err)
 	}
 	var job struct {
+		Type      string `json:"type"`
 		Refs      *refs  `json:"refs"`
 		ExtraRefs []refs `json:"extra_refs"`
 	}
 	if err := json.Unmarshal([]byte(input.jobSpec), &job); err != nil {
 		return nil, false, fmt.Errorf("malformed JOB_SPEC fields: %w", err)
 	}
+	if job.Refs == nil && job.Type == periodicJobType && input.owner == "" && input.repo == "" {
+		// Periodic jobs declare no primary refs, and Prow sets no REPO_* or
+		// PULL_* variables for them, so local defaults and explicit overrides
+		// apply exactly as they do without JOB_SPEC.
+		return nil, false, nil
+	}
 	if job.Refs == nil || job.Refs.Org == "" || job.Refs.Repo == "" {
-		return nil, false, fmt.Errorf("JOB_SPEC requires primary repository identity")
+		return nil, false, errors.New("JOB_SPEC requires primary repository identity")
 	}
 	if (input.owner != "" && input.owner != job.Refs.Org) || (input.repo != "" && input.repo != job.Refs.Repo) {
-		return nil, false, fmt.Errorf("JOB_SPEC and primary repository environment disagree")
+		return nil, false, errors.New("JOB_SPEC and primary repository environment disagree")
 	}
-	primaryMatches := job.Refs.Org == "openshift" && job.Refs.Repo == "hypershift"
-	if !primaryMatches && job.Refs.Workdir {
-		return nil, true, fmt.Errorf("conflicting primary workdir repository context")
-	}
-	var selected *refs
+	var workdir *refs
 	for index := range job.ExtraRefs {
 		extra := &job.ExtraRefs[index]
 		if extra.Org == "" || extra.Repo == "" {
-			return nil, !primaryMatches, fmt.Errorf("extra_ref requires repository identity")
+			return nil, false, errors.New("extra_ref requires repository identity")
 		}
-		matches := extra.Org == "openshift" && extra.Repo == "hypershift"
-		if extra.Workdir && (!matches || primaryMatches) {
-			return nil, false, fmt.Errorf("conflicting workdir repository context")
-		}
-		if matches {
-			if selected != nil {
-				return nil, false, fmt.Errorf("ambiguous HyperShift extra_refs")
+		if extra.Workdir {
+			if workdir != nil {
+				return nil, false, errors.New("ambiguous workdir extra_refs")
 			}
-			selected = extra
+			workdir = extra
 		}
 	}
-	if primaryMatches {
+	primaryIsHyperShift := job.Refs.Repo == hyperShiftRepo
+	if workdir == nil {
+		if !primaryIsHyperShift {
+			return nil, true, errors.New("foreign primary requires a unique HyperShift workdir extra_ref")
+		}
 		return job.Refs, false, nil
 	}
-	if selected == nil || !selected.Workdir {
-		return nil, true, fmt.Errorf("foreign primary requires a unique HyperShift workdir extra_ref")
+	if job.Refs.Workdir {
+		return nil, true, errors.New("conflicting primary workdir repository context")
 	}
-	return selected, true, nil
+	if primaryIsHyperShift || workdir.Repo != hyperShiftRepo {
+		return nil, false, errors.New("conflicting workdir repository context")
+	}
+	return workdir, true, nil
 }
 
 func validateJSON(decoder *json.Decoder) error {
@@ -229,7 +269,7 @@ func validateJSON(decoder *json.Decoder) error {
 			return err
 		}
 		if token == nil && required {
-			return fmt.Errorf("null metadata is not supported")
+			return errors.New("null metadata is not supported")
 		}
 		delimiter, isDelimiter := token.(json.Delim)
 		if !isDelimiter {
@@ -249,7 +289,7 @@ func validateJSON(decoder *json.Decoder) error {
 				}
 				seen[name] = true
 				switch strings.ToLower(name) {
-				case "refs", "extra_refs", "org", "repo", "base_sha", "workdir", "pulls", "sha":
+				case "type", "refs", "extra_refs", "org", "repo", "base_sha", "workdir", "pulls", "sha":
 					if name != strings.ToLower(name) {
 						return fmt.Errorf("noncanonical context field %q", name)
 					}
@@ -267,7 +307,7 @@ func validateJSON(decoder *json.Decoder) error {
 		return err
 	}
 	if _, err := decoder.Token(); err != io.EOF {
-		return fmt.Errorf("expected one JSON object")
+		return errors.New("expected one JSON object")
 	}
 	return nil
 }
@@ -275,23 +315,31 @@ func validateJSON(decoder *json.Decoder) error {
 func resolveDeclaredCommit(ctx context.Context, root, revision string) (string, error) {
 	decoded, err := hex.DecodeString(revision)
 	if err != nil || len(decoded) != 20 {
-		return "", fmt.Errorf("expected a full commit SHA")
+		return "", errors.New("expected a full commit SHA")
 	}
 	return resolveCommit(ctx, root, revision)
 }
 
 func resolveCommit(ctx context.Context, root, revision string) (string, error) {
 	if revision == "" {
-		return "", fmt.Errorf("missing revision")
+		return "", errors.New("missing revision")
 	}
 	return git(ctx, root, "rev-parse", "--verify", "--end-of-options", revision+"^{commit}")
 }
 
+// git returns standard output only, so warnings that git prints to standard
+// error on success cannot be mistaken for revisions. Those warnings are
+// forwarded to standard error, which Make's $(shell) leaves visible.
 func git(ctx context.Context, root string, args ...string) (string, error) {
+	var stderr bytes.Buffer
 	command := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
-	output, err := command.CombinedOutput()
+	command.Stderr = &stderr
+	output, err := command.Output()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+	}
+	if stderr.Len() != 0 {
+		_, _ = os.Stderr.Write(stderr.Bytes())
 	}
 	return strings.TrimSpace(string(output)), nil
 }
