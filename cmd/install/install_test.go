@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -1922,9 +1923,10 @@ func TestValidateExternalDNSConfig(t *testing.T) {
 
 func TestValidateMonitoringConfig(t *testing.T) {
 	tests := []struct {
-		name        string
-		opts        Options
-		expectError bool
+		name          string
+		opts          Options
+		expectError   bool
+		errorContains string
 	}{
 		{
 			name:        "When no monitoring options are set, it should pass",
@@ -1954,13 +1956,59 @@ func TestValidateMonitoringConfig(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			name:        "When GMP monitoring is enabled alone, it should pass",
+			opts:        Options{EnableGMPMonitoring: true},
+			expectError: false,
+		},
+		{
+			name:          "When GMP monitoring is enabled with the RHOBS flag, it should fail",
+			opts:          Options{EnableGMPMonitoring: true, RHOBSMonitoring: true},
+			expectError:   true,
+			errorContains: "--enable-gmp-monitoring",
+		},
+		{
+			name:          "When GMP monitoring is enabled with RHOBS via additional operator env vars, it should fail",
+			opts:          Options{EnableGMPMonitoring: true, AdditionalOperatorEnvVars: map[string]string{" " + rhobsmonitoring.EnvironmentVariable + " ": " 1 "}},
+			expectError:   true,
+			errorContains: "--enable-gmp-monitoring",
+		},
+		{
+			name:        "When GMP monitoring is enabled with RHOBS disabled via additional operator env vars, it should pass",
+			opts:        Options{EnableGMPMonitoring: true, AdditionalOperatorEnvVars: map[string]string{rhobsmonitoring.EnvironmentVariable: "0"}},
+			expectError: false,
+		},
+		{
+			name:          "When GMP monitoring is enabled with the RHOBS flag and RHOBS disabled via additional operator env vars, it should fail",
+			opts:          Options{EnableGMPMonitoring: true, RHOBSMonitoring: true, AdditionalOperatorEnvVars: map[string]string{rhobsmonitoring.EnvironmentVariable: "0"}},
+			expectError:   true,
+			errorContains: "--enable-gmp-monitoring",
+		},
+		{
+			name:        "When GMP monitoring is enabled with a blank RHOBS additional operator env var, it should pass",
+			opts:        Options{EnableGMPMonitoring: true, AdditionalOperatorEnvVars: map[string]string{rhobsmonitoring.EnvironmentVariable: "  "}},
+			expectError: false,
+		},
+		{
+			name:        "When GMP monitoring is enabled with a non-1 RHOBS additional operator env var, it should pass",
+			opts:        Options{EnableGMPMonitoring: true, AdditionalOperatorEnvVars: map[string]string{rhobsmonitoring.EnvironmentVariable: "true"}},
+			expectError: false,
+		},
+		{
+			name:          "When GMP monitoring is enabled with duplicate RHOBS additional operator env vars after trimming, it should fail",
+			opts:          Options{EnableGMPMonitoring: true, AdditionalOperatorEnvVars: map[string]string{rhobsmonitoring.EnvironmentVariable: "0", " " + rhobsmonitoring.EnvironmentVariable: "1"}},
+			expectError:   true,
+			errorContains: "--enable-gmp-monitoring",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			errs := tc.opts.validateMonitoringConfig()
-			if tc.expectError {
+			if tc.errorContains != "" {
+				g.Expect(errs).To(ContainElement(MatchError(ContainSubstring(tc.errorContains))))
+			} else if tc.expectError {
 				g.Expect(errs).NotTo(BeEmpty())
 			} else {
 				g.Expect(errs).To(BeEmpty())
@@ -2545,6 +2593,7 @@ func TestHyperShiftOperatorManifests_WebhookFlags(t *testing.T) {
 		expectCertDirArg        bool
 		expectValidatingArg     bool
 		expectCAPICRDConversion bool
+		expectGMPArg            bool
 	}{
 		{
 			name: "When no webhook flags are set but CAPI conversion is enabled by default, it should add webhook resources and CRD conversion",
@@ -2555,6 +2604,29 @@ func TestHyperShiftOperatorManifests_WebhookFlags(t *testing.T) {
 			expectCertDirArg:        true,
 			expectValidatingArg:     false,
 			expectCAPICRDConversion: true,
+		},
+		{
+			name: "When EnableGMPMonitoring is true, it should pass the flag to the operator deployment",
+			opts: Options{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				EnableGMPMonitoring: true,
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: true,
+			expectGMPArg:            true,
+		},
+		{
+			name: "When EnableGMPMonitoring is false, it should not pass the flag to the operator deployment",
+			opts: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+			},
+			expectWebhookVolume:     true,
+			expectCertDirArg:        true,
+			expectValidatingArg:     false,
+			expectCAPICRDConversion: true,
+			expectGMPArg:            false,
 		},
 		{
 			name: "When DisableCAPIConversionWebhook is true and no other webhooks, it should not add webhook resources or CRD conversion",
@@ -2685,6 +2757,7 @@ func TestHyperShiftOperatorManifests_WebhookFlags(t *testing.T) {
 
 			hasCertDirArg := false
 			hasValidatingArg := false
+			hasGMPArg := false
 			for _, arg := range container.Args {
 				if arg == "--cert-dir=/var/run/secrets/serving-cert" {
 					hasCertDirArg = true
@@ -2692,12 +2765,16 @@ func TestHyperShiftOperatorManifests_WebhookFlags(t *testing.T) {
 				if arg == "--enable-validating-webhook=true" {
 					hasValidatingArg = true
 				}
+				if arg == "--enable-gmp-monitoring" {
+					hasGMPArg = true
+				}
 			}
 
 			g.Expect(hasServingCertVolume).To(Equal(tc.expectWebhookVolume), "serving-cert volume")
 			g.Expect(hasServingCertMount).To(Equal(tc.expectWebhookVolume), "serving-cert volume mount")
 			g.Expect(hasCertDirArg).To(Equal(tc.expectCertDirArg), "--cert-dir arg")
 			g.Expect(hasValidatingArg).To(Equal(tc.expectValidatingArg), "--enable-validating-webhook arg")
+			g.Expect(hasGMPArg).To(Equal(tc.expectGMPArg), "--enable-gmp-monitoring arg")
 
 			// Validate CAPI CRD conversion webhook configuration
 			for _, obj := range crds {

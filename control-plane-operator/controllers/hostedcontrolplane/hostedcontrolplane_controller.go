@@ -201,6 +201,7 @@ type HostedControlPlaneReconciler struct {
 	OperateOnReleaseImage                   string
 	DefaultIngressDomain                    string
 	MetricsSet                              metrics.MetricsSet
+	EnableGMPMonitoring                     bool
 	KASHealthMetrics                        *kas.KASHealthMetrics
 	SREConfigHash                           string
 	ec2Client                               awsapi.EC2API
@@ -1438,6 +1439,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		SetDefaultSecurityContext:      r.SetDefaultSecurityContext,
 		DefaultSecurityContextUID:      r.DefaultSecurityContextUID,
 		MetricsSet:                     r.MetricsSet,
+		EnableGMPMonitoring:            r.EnableGMPMonitoring,
 		EnableCIDebugOutput:            r.EnableCIDebugOutput,
 		ImageMetadataProvider:          r.ImageMetadataProvider,
 		NativeSidecarContainersEnabled: r.ManagementClusterCapabilities.Has(capabilities.CapabilityNativeSidecarContainers),
