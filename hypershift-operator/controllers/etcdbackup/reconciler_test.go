@@ -1286,6 +1286,48 @@ func TestBuildUploadArgs(t *testing.T) {
 		g.Expect(args).ToNot(ContainElement("--snapshot-path"))
 	})
 
+	// Verify multi-shard passes the pod-level effective termination message
+	// limit: min(4096, 12288/(len(shards)+2)). With 11 shards the Job runs 13
+	// containers (fetch-certs + 11 snapshot init containers + upload), so the
+	// upload container's message is truncated by kubelet at 945 bytes.
+	t.Run("When 11 shards it should pass the pod-level effective termination message limit", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		shards := []etcdShardInfo{{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"}}
+		for i := 0; i < 10; i++ {
+			shards = append(shards, etcdShardInfo{
+				name:     fmt.Sprintf("etcd-shard-%d", i),
+				endpoint: fmt.Sprintf("https://etcd-client-shard-%d.test-ns.svc:2379", i),
+			})
+		}
+		args, err := r.buildUploadArgs(newHCPEtcdBackup(), shards, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(args).To(ContainElements("--termination-message-limit", "945"))
+	})
+
+	t.Run("When 2 shards it should pass a 3072-byte termination message limit", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		shards := []etcdShardInfo{
+			{name: "etcd", endpoint: "https://etcd-client.test-ns.svc:2379"},
+			{name: "etcd-events", endpoint: "https://etcd-client-events.test-ns.svc:2379"},
+		}
+		args, err := r.buildUploadArgs(newHCPEtcdBackup(), shards, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(args).To(ContainElements("--termination-message-limit", "3072"))
+	})
+
+	// Single-shard Jobs keep the legacy --snapshot-path arg surface and must
+	// not receive --termination-message-limit, so older CPO images that only
+	// know --snapshot-path are unaffected.
+	t.Run("When single shard it should not pass --termination-message-limit", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		r := newReconciler()
+		args, err := r.buildUploadArgs(newHCPEtcdBackup(), singleShard, resolvedCredentials{Mode: credentialModeAWSStatic, SecretName: "aws-creds"})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(args).ToNot(ContainElement("--termination-message-limit"))
+	})
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)

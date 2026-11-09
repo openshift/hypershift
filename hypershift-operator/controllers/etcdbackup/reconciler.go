@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1305,6 +1306,19 @@ func (r *HCPEtcdBackupReconciler) buildUploadArgs(backup *hyperv1.HCPEtcdBackup,
 		args = append(args, "--snapshot-path", fmt.Sprintf("%s/%s.db", mountPathEtcdBackup, shards[0].name))
 	} else {
 		args = append(args, "--snapshot-dir", mountPathEtcdBackup)
+		// Kubelet divides a pod-level 12288-byte termination-message budget
+		// across every container of the pod (init and main), in addition to the
+		// per-container 4096-byte limit. The backup Job runs one fetch-certs
+		// init container, one snapshot init container per shard, and one upload
+		// container, so the upload container's effective limit is
+		// min(4096, 12288/(len(shards)+2)). Pass it to etcd-upload so the
+		// encoded payload is rejected before the kubelet can truncate it.
+		containerCount := len(shards) + 2
+		limit := 4096
+		if podBudget := (12 * 1024) / containerCount; podBudget < limit {
+			limit = podBudget
+		}
+		args = append(args, "--termination-message-limit", strconv.Itoa(limit))
 	}
 
 	switch backup.Spec.Storage.StorageType {

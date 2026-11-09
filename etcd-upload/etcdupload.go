@@ -29,6 +29,13 @@ type options struct {
 	storageAccount  string
 	encryptionScope string
 	authType        string
+
+	// terminationMessageLimit is the maximum encoded size of the JSON
+	// payload written to /dev/termination-log. Kubelet truncates each
+	// container's termination message at 4096 bytes, and additionally at
+	// floor(12288/containerCount) bytes across all containers of the pod,
+	// so the Job builder passes the effective limit for its container count.
+	terminationMessageLimit int
 }
 
 func NewStartCommand() *cobra.Command {
@@ -64,6 +71,10 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.encryptionScope, "azure-encryption-scope", "", "[Azure] encryption scope for server-side encryption (optional)")
 	cmd.Flags().StringVar(&opts.authType, "azure-auth-type", "client-secret", "[Azure] authentication type: client-secret (default) or managed-identity (ARO HCP)")
 
+	// The Job builder sets this to the effective kubelet truncation limit
+	// for the pod's container count: min(4096, floor(12288/containerCount)).
+	cmd.Flags().IntVar(&opts.terminationMessageLimit, "termination-message-limit", 4096, "maximum encoded size in bytes of the JSON payload written to the termination log")
+
 	_ = cmd.MarkFlagRequired("storage-type")
 	_ = cmd.MarkFlagRequired("key-prefix")
 	cmd.MarkFlagsMutuallyExclusive("snapshot-path", "snapshot-dir")
@@ -87,6 +98,9 @@ func run(ctx context.Context, opts options) error {
 	}
 	if opts.snapshotPath != "" && opts.snapshotDir != "" {
 		return fmt.Errorf("--snapshot-path and --snapshot-dir are mutually exclusive")
+	}
+	if opts.terminationMessageLimit <= 0 {
+		opts.terminationMessageLimit = 4096
 	}
 
 	opts.keyPrefix = strings.TrimSuffix(opts.keyPrefix, "/")
@@ -173,11 +187,17 @@ func runDir(ctx context.Context, opts options, uploader Uploader) error {
 		return fmt.Errorf("failed to marshal shard snapshots: %w", err)
 	}
 
-	// Kubernetes truncates container termination messages at 4096 bytes.
-	// Fail loudly rather than write a truncated (unparsable) payload the
-	// controller would then silently drop.
-	if len(jsonBytes) > 4096 {
-		return fmt.Errorf("shard snapshot result (%d bytes) exceeds the 4096-byte termination message limit; reduce the number of shards or the key prefix length", len(jsonBytes))
+	// Kubernetes truncates container termination messages at 4096 bytes per
+	// container and, at the pod level, divides a 12288-byte budget across all
+	// containers of the pod; the Job builder passes the resulting effective
+	// limit via --termination-message-limit. Fail loudly rather than write a
+	// truncated (unparsable) payload the controller would then silently drop.
+	limit := opts.terminationMessageLimit
+	if limit <= 0 {
+		limit = 4096
+	}
+	if len(jsonBytes) > limit {
+		return fmt.Errorf("shard snapshot result (%d bytes) exceeds the %d-byte termination message limit; reduce the number of shards or the key prefix length", len(jsonBytes), limit)
 	}
 
 	if err := os.WriteFile("/dev/termination-log", jsonBytes, 0644); err != nil {

@@ -55,16 +55,24 @@ Add per-shard snapshot tracking to `HCPEtcdBackupStatus`:
 // shardSnapshots contains the snapshot URLs for each etcd shard that was
 // backed up. When etcd sharding is not enabled, this list contains a single
 // entry for the default shard. Each entry maps a shard name to its snapshot URL.
-// The controller receives this list through the upload container's termination
-// message, which Kubernetes truncates at 4096 bytes; etcd-upload fails the Job
-// rather than emit a truncated payload, so the serialized list (names plus
-// URLs) must stay under that limit.
+// It contains between 1 and 11 entries (1 default shard plus up to 10 named
+// shards). When omitted, no backup has completed yet: the field is only
+// populated by the backup controller after a successful upload.
 // +optional
 // +listType=map
 // +listMapKey=name
 // +kubebuilder:validation:MaxItems=11
 ShardSnapshots []HCPEtcdShardSnapshot `json:"shardSnapshots,omitempty"`
 ```
+
+The controller receives this list through the upload container's termination
+message. Kubernetes truncates that message at 4096 bytes per container and also
+divides a 12288-byte pod-level budget across every container of the pod, so the
+effective limit for the upload container is
+`min(4096, 12288 / (shard count + 2))` (the Job runs one fetch-certs init
+container, one snapshot init container per shard, and the upload container).
+The Job builder passes this effective limit to `etcd-upload`, which fails the
+Job rather than emit a payload the kubelet would truncate.
 
 ```go
 type HCPEtcdShardSnapshot struct {

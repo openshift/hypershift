@@ -171,6 +171,27 @@ func TestRunDir(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("4096"))
 	})
+
+	t.Run("When the serialized shard results exceed a pod-level effective limit it should return an error naming that limit", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		dir := t.TempDir()
+		g.Expect(writeTestFile(dir, "etcd.db")).To(Succeed())
+
+		uploader := &fakeUploader{}
+		// An 11-shard backup Job runs 13 containers, so kubelet truncates
+		// each termination message at floor(12288/13) = 945 bytes; the Job
+		// builder passes that limit via --termination-message-limit.
+		opts := options{
+			snapshotDir:             dir,
+			keyPrefix:               "test",
+			terminationMessageLimit: 945,
+		}
+		// A URL of ~950 bytes keeps the payload below 4096 but above 945.
+		uploader.url = "s3://bucket/" + strings.Repeat("a", 940)
+		err := runDir(context.Background(), opts, uploader)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("945"))
+	})
 }
 
 type uploadRecord struct {
@@ -180,11 +201,16 @@ type uploadRecord struct {
 
 type fakeUploader struct {
 	uploads []uploadRecord
+	url     string
 }
 
 func (f *fakeUploader) Upload(_ context.Context, snapshotPath string, key string) (*UploadResult, error) {
 	f.uploads = append(f.uploads, uploadRecord{path: snapshotPath, key: key})
-	return &UploadResult{URL: "s3://bucket/" + key}, nil
+	url := f.url
+	if url == "" {
+		url = "s3://bucket/" + key
+	}
+	return &UploadResult{URL: url}, nil
 }
 
 func writeTestFile(dir, name string) error {
