@@ -20,5 +20,4 @@ jobs:
           if [ -n "${{ github.base_ref }}" ]; then
             git fetch origin "${{ github.base_ref }}:${{ github.base_ref }}"
           fi
-      - name: Verify including verification context selection and Make consumers
-        run: make verify-ci
+      - run: make verify-ci
