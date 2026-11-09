@@ -184,8 +184,10 @@ func TestMakeSchemaControls(t *testing.T) {
 			metadata := jobJSON(t, pullRefs(base, base))
 			environment := []string{"JOB_SPEC=" + metadata}
 			if scenario.foreign {
-				metadata = `{"refs":{"org":"openshift","repo":"release","base_ref":"main","base_sha":"ed02ba89fd6a2b10fa1c5c2b465d026129bc288f","pulls":[{"number":88146,"sha":"dd22c8e1f7d0e0a7773199b69e8e1ed9e677f7b9"}]},"extra_refs":[{"org":"openshift","repo":"hypershift","base_ref":"main","workdir":true,"sparse_checkout_files":[".ci-operator.yaml","Dockerfile","Dockerfile.control-plane","Dockerfile.e2e"]}]}`
-				environment = []string{"JOB_SPEC=" + metadata, "REPO_OWNER=openshift", "REPO_NAME=release", "PULL_BASE_SHA=ed02ba89fd6a2b10fa1c5c2b465d026129bc288f", "PULL_PULL_SHA=dd22c8e1f7d0e0a7773199b69e8e1ed9e677f7b9"}
+				// Synthetic rehearsal: release-repository revisions that do not exist in this checkout.
+				foreignBase, foreignHead := strings.Repeat("e", 40), strings.Repeat("d", 40)
+				metadata = `{"type":"presubmit","refs":{"org":"openshift","repo":"release","base_ref":"main","base_sha":"` + foreignBase + `","pulls":[{"number":1,"sha":"` + foreignHead + `"}]},"extra_refs":[{"org":"openshift","repo":"hypershift","base_ref":"main","workdir":true}]}`
+				environment = []string{"JOB_SPEC=" + metadata, "REPO_OWNER=openshift", "REPO_NAME=release", "PULL_BASE_SHA=" + foreignBase, "PULL_PULL_SHA=" + foreignHead}
 			}
 			output, err := makeCommand(t, repo, environment, "verify-crd-schema", "run-gitlint")
 			g.Expect(output).To(ContainSubstring("--comparison-base=" + base))
@@ -212,12 +214,96 @@ func TestMakeInvalidContext(t *testing.T) {
 			repo := makeFixture(t)
 			output, err := makeCommand(t, repo, nil, target, "PULL_BASE_SHA=missing")
 			NewWithT(t).Expect(err).To(HaveOccurred())
-			NewWithT(t).Expect(output).To(ContainSubstring("verification context"))
+			NewWithT(t).Expect(output).To(ContainSubstring("verification context: comparison base"))
 			NewWithT(t).Expect(output).NotTo(ContainSubstring("No Go files changed"))
 			_, err = os.Stat(filepath.Join(repo.root, "arguments"))
 			NewWithT(t).Expect(os.IsNotExist(err)).To(BeTrue())
 		})
 	}
+}
+
+// writeResolver writes a stand-in for $(GO) that records the environment of
+// the parse-time resolver invocation and emulates its output and exit status.
+func writeResolver(t *testing.T, repo repositoryFixture, output string, status int) string {
+	t.Helper()
+	path := filepath.Join(repo.root, "capture-go")
+	writeFile(t, repo.root, "capture-go", fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$HOME\" >> '%s'\nprintf '%%s' '%s'\nexit %d\n", filepath.Join(repo.root, "resolver-home"), output, status))
+	NewWithT(t).Expect(os.Chmod(path, 0755)).To(Succeed())
+	return path
+}
+
+// makeSupportsShellStatus reports whether the GNU Make in use sets
+// .SHELLSTATUS, which was added in GNU Make 4.2.
+func makeSupportsShellStatus(t *testing.T) bool {
+	t.Helper()
+	command := exec.CommandContext(t.Context(), "make", "--no-print-directory", "-f", "-")
+	command.Stdin = strings.NewReader("status := $(shell exit 3)\n$(info status=$(.SHELLSTATUS))\nall: ;@:\n")
+	output, err := command.CombinedOutput()
+	NewWithT(t).Expect(err).NotTo(HaveOccurred(), "%s", output)
+	return strings.Contains(string(output), "status=3")
+}
+
+func TestMakeResolverInvocation(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []struct {
+		name, diagnostic, absent string
+		emptyOutput              bool
+		status                   int
+		requiresShellStatus      bool
+	}{
+		{name: "When HOME is the unwritable root, it should resolve with the Makefile's writable HOME"},
+		{name: "When the resolver exits successfully without context, it should fail closed on its output", emptyOutput: true, diagnostic: "verification context resolution failed or produced invalid output"},
+		{name: "When the resolver fails without output, it should fail before invoking consumers", emptyOutput: true, status: 1, diagnostic: "verification context resolution failed"},
+		{name: "When the resolver fails after printing a context, it should stop on its exit status", status: 1, diagnostic: "verification context resolution failed", absent: "or produced invalid output", requiresShellStatus: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			t.Parallel()
+			if scenario.requiresShellStatus && !makeSupportsShellStatus(t) {
+				t.Skip("GNU Make before 4.2 has no .SHELLSTATUS; the output check covers it")
+			}
+			g := NewWithT(t)
+			repo := makeFixture(t)
+			resolved := ""
+			if !scenario.emptyOutput {
+				resolved = strings.Join([]string{repo.base, repo.head, "local", repo.head, repo.base}, " ") + "\n"
+			}
+			resolver := writeResolver(t, repo, resolved, scenario.status)
+			// HOME=/ matches CI runners; GNU Make before 4.4 does not pass the
+			// Makefile's rewritten HOME to $(shell) unless it is set explicitly.
+			output, err := makeCommand(t, repo, []string{"HOME=/"}, "api-lint", "GO="+resolver)
+			home, readErr := os.ReadFile(filepath.Join(repo.root, "resolver-home"))
+			g.Expect(readErr).NotTo(HaveOccurred())
+			g.Expect(string(home)).To(Equal("/tmp\n"))
+			arguments, argumentsErr := os.ReadFile(filepath.Join(repo.root, "arguments"))
+			if scenario.diagnostic != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(output).To(ContainSubstring(scenario.diagnostic))
+				if scenario.absent != "" {
+					g.Expect(output).NotTo(ContainSubstring(scenario.absent))
+				}
+				g.Expect(os.IsNotExist(argumentsErr)).To(BeTrue())
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred(), "%s", output)
+			g.Expect(argumentsErr).NotTo(HaveOccurred())
+			g.Expect(string(arguments)).To(ContainSubstring("--new-from-rev=" + repo.base))
+		})
+	}
+}
+
+func TestMakeUnlistedConsumer(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	repo := makeFixture(t)
+	makefile, err := os.ReadFile(filepath.Join(repo.root, "Makefile"))
+	g.Expect(err).NotTo(HaveOccurred())
+	// A goal missing from VERIFICATION_GOALS does not resolve a context, so a
+	// consumer it reaches must fail instead of skipping with an empty base.
+	writeFile(t, repo.root, "Makefile", string(makefile)+"\n.PHONY: unlisted-tests\nunlisted-tests: test-changed\n")
+	output, err := makeCommand(t, repo, nil, "unlisted-tests")
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(output).To(ContainSubstring("verification context: no comparison base for test-changed"))
+	g.Expect(output).NotTo(ContainSubstring("No Go files changed"))
 }
 
 func TestMakeDeclaredContexts(t *testing.T) {
