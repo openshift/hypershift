@@ -68,13 +68,35 @@ func jobJSON(t *testing.T, primary refs, extra ...refs) string {
 }
 
 func pullRefs(base, head string) refs {
+	if head == "" {
+		return batchRefs(base)
+	}
+	return batchRefs(base, head)
+}
+
+func batchRefs(base string, heads ...string) refs {
 	result := refs{Org: "openshift", Repo: "hypershift", BaseSHA: base}
-	if head != "" {
+	for _, head := range heads {
 		result.Pulls = append(result.Pulls, struct {
 			SHA string `json:"sha"`
 		}{head})
 	}
 	return result
+}
+
+// mirrorOrg is a synthetic organization standing in for a private mirror.
+const mirrorOrg = "example-private-mirror"
+
+// periodicJobSpec is a minimal synthetic periodic job: Prow declares only
+// extra_refs, without primary refs, revisions, or pulls.
+const periodicJobSpec = `{"type":"periodic","extra_refs":[{"org":"openshift","repo":"hypershift","base_ref":"main"}]}`
+
+// mergeBatch merges main into the topic checkout as Tide batch cloning does,
+// and returns the merged checkout snapshot.
+func mergeBatch(t *testing.T, repo repositoryFixture) string {
+	t.Helper()
+	fixtureGit(t, repo.root, "merge", "-q", "--no-ff", "-m", "ci(verify): merge batch fixture", repo.main)
+	return fixtureGit(t, repo.root, "rev-parse", "HEAD")
 }
 
 func TestResolveContext(t *testing.T) {
@@ -157,11 +179,11 @@ func TestResolveContext(t *testing.T) {
 		{name: "When a primary PR omits pulls, it should reject missing declared head", modify: func(t *testing.T, repo repositoryFixture, input *inputs) {
 			input.jobSpec = jobJSON(t, pullRefs(repo.base, ""))
 			input.checkout = repo.main
-		}, err: "requires one declared pull head"},
+		}, err: "requires a declared pull head"},
 		{name: "When primary pulls are empty, it should reject even a head override", modify: func(t *testing.T, repo repositoryFixture, input *inputs) {
 			input.jobSpec = `{"refs":{"org":"openshift","repo":"hypershift","base_sha":"` + repo.base + `","pulls":[]}}`
 			input.head, input.headOrigin = repo.head, "command line"
-		}, err: "requires one declared pull head"},
+		}, err: "requires a declared pull head"},
 		{name: "When a supplied extra-ref base is malformed, it should fail", modify: func(t *testing.T, _ repositoryFixture, input *inputs) {
 			input.jobSpec = jobJSON(t, refs{Org: "openshift", Repo: "release"}, refs{Org: "openshift", Repo: "hypershift", Workdir: true, BaseSHA: "invalid"})
 		}, err: "base_sha"},
@@ -219,11 +241,44 @@ func TestResolveContext(t *testing.T) {
 			input.jobSpec = jobJSON(t, refs{Org: "openshift", Repo: "release"}, extra)
 			input.base, input.baseOrigin = repo.base, "command line"
 		}, err: "requires an exact base_sha"},
-		{name: "When multiple pull heads are declared, it should fail as ambiguous", modify: func(t *testing.T, repo repositoryFixture, input *inputs) {
-			primary := pullRefs(repo.base, repo.head)
-			primary.Pulls = append(primary.Pulls, primary.Pulls[0])
-			input.jobSpec = jobJSON(t, primary)
+		{name: "When a Tide batch declares multiple pulls, it should compare the exact base with the merged checkout", modify: func(t *testing.T, repo repositoryFixture, input *inputs) {
+			input.jobSpec = jobJSON(t, batchRefs(repo.base, repo.head, repo.main))
+			input.checkout = mergeBatch(t, repo)
+		}, base: "base", head: "checkout", mode: "primary-batch"},
+		{name: "When a Tide batch supplies its base through the environment, it should keep the merged checkout head", modify: func(t *testing.T, repo repositoryFixture, input *inputs) {
+			input.jobSpec = jobJSON(t, batchRefs(repo.base, repo.head, repo.main))
+			input.checkout = mergeBatch(t, repo)
+			input.base, input.baseOrigin = repo.base, "environment"
+		}, base: "base", head: "checkout", mode: "primary-batch"},
+		{name: "When a Tide batch omits its base, it should reject rather than use main", modify: func(t *testing.T, repo repositoryFixture, input *inputs) {
+			input.jobSpec = jobJSON(t, batchRefs("", repo.head, repo.main))
+		}, err: "primary-batch requires an exact base_sha"},
+		{name: "When a Tide batch declares a malformed pull head, it should fail", modify: func(t *testing.T, repo repositoryFixture, input *inputs) {
+			input.jobSpec = jobJSON(t, batchRefs(repo.base, repo.head, "invalid"))
+		}, err: "primary-batch pull head"},
+		{name: "When a workdir extra-ref declares multiple pulls, it should fail as ambiguous", modify: func(t *testing.T, repo repositoryFixture, input *inputs) {
+			extra := batchRefs(repo.base, repo.head, repo.main)
+			extra.Workdir = true
+			input.jobSpec = jobJSON(t, refs{Org: "openshift", Repo: "release"}, extra)
 		}, err: "ambiguous"},
+		{name: "When a private mirror organization hosts the PR, it should retain exact base and pull head", modify: func(t *testing.T, repo repositoryFixture, input *inputs) {
+			primary := pullRefs(repo.base, repo.head)
+			primary.Org = mirrorOrg
+			input.jobSpec = jobJSON(t, primary)
+			input.owner, input.repo = mirrorOrg, "hypershift"
+			input.checkout = repo.main
+		}, base: "base", head: "head", mode: "primary"},
+		{name: "When a rehearsal selects a private mirror workdir, it should use the checkout snapshot", modify: func(t *testing.T, _ repositoryFixture, input *inputs) {
+			input.jobSpec = jobJSON(t, refs{Org: "openshift", Repo: "release"}, refs{Org: mirrorOrg, Repo: "hypershift", Workdir: true})
+			input.base, input.head = strings.Repeat("a", 40), strings.Repeat("b", 40)
+			input.baseOrigin, input.headOrigin = "environment", "environment"
+		}, base: "head", head: "head", mode: "extra-ref-no-pulls"},
+		{name: "When a periodic job declares no primary refs, it should use local defaults", modify: func(_ *testing.T, _ repositoryFixture, input *inputs) {
+			input.jobSpec = periodicJobSpec
+		}, base: "main", head: "head", mode: "local"},
+		{name: "When a non-periodic job declares no primary refs, it should fail", modify: func(_ *testing.T, _ repositoryFixture, input *inputs) {
+			input.jobSpec = strings.Replace(periodicJobSpec, `"periodic"`, `"presubmit"`, 1)
+		}, err: "requires primary repository identity"},
 		{name: "When an existing tree is supplied as a base, it should reject the non-commit object", modify: func(t *testing.T, _ repositoryFixture, input *inputs) {
 			input.base, input.baseOrigin = fixtureGit(t, input.root, "rev-parse", "HEAD^{tree}"), "command line"
 		}, err: "comparison base"},
@@ -245,7 +300,7 @@ func TestResolveContext(t *testing.T) {
 				return
 			}
 			g.Expect(err).NotTo(HaveOccurred())
-			revisions := map[string]string{"": "", "base": repo.base, "head": repo.head, "main": repo.main}
+			revisions := map[string]string{"": "", "base": repo.base, "head": repo.head, "main": repo.main, "checkout": fixtureGit(t, repo.root, "rev-parse", input.checkout)}
 			g.Expect(result.base).To(Equal(revisions[scenario.base]))
 			g.Expect(result.head).To(Equal(revisions[scenario.head]))
 			g.Expect(result.mode).To(Equal(scenario.mode))
@@ -268,6 +323,9 @@ func TestSelectRefs(t *testing.T) {
 	t.Parallel()
 	for _, scenario := range []struct {
 		name, metadata, owner, repo, err string
+		// selected is the organization of the selected refs; empty means local inputs.
+		selected string
+		foreign  bool
 	}{
 		{name: "When JSON is malformed, it should fail", metadata: `{`, err: "malformed"},
 		{name: "When primary refs are absent, it should fail", metadata: `{}`, err: "identity"},
@@ -286,15 +344,31 @@ func TestSelectRefs(t *testing.T) {
 		{name: "When primary and extra-ref both claim workdir, it should fail", metadata: `{"refs":{"org":"openshift","repo":"release","workdir":true},"extra_refs":[{"org":"openshift","repo":"hypershift","workdir":true}]}`, err: "conflicting primary workdir"},
 		{name: "When extra-ref identity is missing, it should fail", metadata: `{"refs":{"org":"openshift","repo":"release"},"extra_refs":[{}]}`, err: "identity"},
 		{name: "When normal environment lacks JOB_SPEC, it should allow local inputs", owner: "openshift", repo: "hypershift"},
+		{name: "When a private mirror environment lacks JOB_SPEC, it should allow local inputs", owner: mirrorOrg, repo: "hypershift"},
+		{name: "When a private mirror is the primary repository, it should select it", metadata: `{"refs":{"org":"` + mirrorOrg + `","repo":"hypershift"}}`, owner: mirrorOrg, repo: "hypershift", selected: mirrorOrg},
+		{name: "When a foreign primary has a private mirror workdir, it should select it", metadata: `{"refs":{"org":"openshift","repo":"release"},"extra_refs":[{"org":"` + mirrorOrg + `","repo":"hypershift","workdir":true}]}`, selected: mirrorOrg, foreign: true},
+		{name: "When a HyperShift primary has a non-workdir HyperShift extra-ref, it should select the primary", metadata: `{"refs":{"org":"openshift","repo":"hypershift"},"extra_refs":[{"org":"` + mirrorOrg + `","repo":"hypershift"}]}`, selected: "openshift"},
+		{name: "When a HyperShift primary has a HyperShift workdir extra-ref, it should reject the contradiction", metadata: `{"refs":{"org":"openshift","repo":"hypershift"},"extra_refs":[{"org":"` + mirrorOrg + `","repo":"hypershift","workdir":true}]}`, err: "conflicting workdir"},
+		{name: "When a periodic job declares no primary refs, it should allow local inputs", metadata: periodicJobSpec},
+		{name: "When a periodic job carries primary repository environment, it should fail", metadata: periodicJobSpec, owner: "openshift", repo: "release", err: "identity"},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			t.Parallel()
-			_, _, err := selectRefs(inputs{jobSpec: scenario.metadata, owner: scenario.owner, repo: scenario.repo})
+			g := NewWithT(t)
+			selected, foreign, err := selectRefs(inputs{jobSpec: scenario.metadata, owner: scenario.owner, repo: scenario.repo})
 			if scenario.err != "" {
-				NewWithT(t).Expect(err).To(MatchError(ContainSubstring(scenario.err)))
-			} else {
-				NewWithT(t).Expect(err).NotTo(HaveOccurred())
+				g.Expect(err).To(MatchError(ContainSubstring(scenario.err)))
+				return
 			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(foreign).To(Equal(scenario.foreign))
+			if scenario.selected == "" {
+				g.Expect(selected).To(BeNil())
+				return
+			}
+			g.Expect(selected).NotTo(BeNil())
+			g.Expect(selected.Org).To(Equal(scenario.selected))
+			g.Expect(selected.Repo).To(Equal("hypershift"))
 		})
 	}
 }
@@ -313,6 +387,7 @@ func TestValidateJSON(t *testing.T) {
 		{name: "When repository identity has a case alias, it should fail", value: `{"refs":{"repo":"release","Repo":"hypershift"}}`},
 		{name: "When base revision has a case alias, it should fail", value: `{"refs":{"base_sha":"a","Base_Sha":"b"}}`},
 		{name: "When pull revision has a case alias, it should fail", value: `{"refs":{"pulls":[{"sha":"a","SHA":"b"}]}}`},
+		{name: "When job type has a case alias, it should fail", value: `{"type":"periodic","Type":"presubmit"}`},
 		{name: "When unrelated fields contain null, it should preserve Prow compatibility", value: `{"decoration_config":null}`, valid: true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
@@ -347,7 +422,7 @@ func TestResolveDeclaredContext(t *testing.T) {
 			}
 			result, foreign, err := resolveDeclaredContext(t.Context(), inputs{root: repo.root, checkout: repo.main, jobSpec: metadata})
 			if scenario.missingHead {
-				NewWithT(t).Expect(err).To(MatchError(ContainSubstring("requires one declared pull head")))
+				NewWithT(t).Expect(err).To(MatchError(ContainSubstring("requires a declared pull head")))
 				return
 			}
 			NewWithT(t).Expect(err).NotTo(HaveOccurred())
@@ -398,12 +473,31 @@ func TestResolveCommit(t *testing.T) {
 
 func TestGit(t *testing.T) {
 	t.Parallel()
-	repo := newRepository(t)
-	result, err := git(t.Context(), repo.root, "rev-parse", "HEAD")
-	NewWithT(t).Expect(err).NotTo(HaveOccurred())
-	NewWithT(t).Expect(result).To(Equal(repo.head))
-	_, err = git(t.Context(), repo.root, "not-a-git-command")
-	NewWithT(t).Expect(err).To(HaveOccurred())
+	for _, scenario := range []struct {
+		name string
+		args []string
+		err  string
+	}{
+		{name: "When git succeeds, it should return its output", args: []string{"rev-parse", "HEAD"}},
+		{name: "When git warns on success, it should return only standard output", args: []string{"rev-parse", "--verify", "upstream/main"}},
+		{name: "When git fails, it should report its standard error", args: []string{"not-a-git-command"}, err: "not a git command"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			repo := newRepository(t)
+			// A local branch named like the remote-tracking ref makes git warn
+			// that the refname is ambiguous while still succeeding.
+			fixtureGit(t, repo.root, "branch", "upstream/main", repo.head)
+			result, err := git(t.Context(), repo.root, scenario.args...)
+			if scenario.err != "" {
+				g.Expect(err).To(MatchError(ContainSubstring(scenario.err)))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(result).To(Equal(repo.head))
+		})
+	}
 }
 
 func TestEmptyToken(t *testing.T) {

@@ -220,6 +220,58 @@ func TestMakeInvalidContext(t *testing.T) {
 	}
 }
 
+func TestMakeDeclaredContexts(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []struct {
+		name         string
+		batch        bool
+		environment  func(*testing.T, repositoryFixture) []string
+		base, commit func(repo repositoryFixture, checkout string) string
+	}{
+		{
+			name:  "When a Tide batch declares multiple pulls, it should lint against the exact base and merged checkout",
+			batch: true,
+			environment: func(t *testing.T, repo repositoryFixture) []string {
+				return []string{"JOB_SPEC=" + jobJSON(t, batchRefs(repo.base, repo.head, repo.main)), "REPO_OWNER=openshift", "REPO_NAME=hypershift", "PULL_BASE_SHA=" + repo.base}
+			},
+			base:   func(repo repositoryFixture, _ string) string { return repo.base },
+			commit: func(repo repositoryFixture, checkout string) string { return repo.base + ".." + checkout },
+		},
+		{
+			name: "When a private mirror hosts the PR, it should lint against its declared revisions",
+			environment: func(t *testing.T, repo repositoryFixture) []string {
+				primary := pullRefs(repo.base, repo.head)
+				primary.Org = mirrorOrg
+				return []string{"JOB_SPEC=" + jobJSON(t, primary), "REPO_OWNER=" + mirrorOrg, "REPO_NAME=hypershift", "PULL_BASE_SHA=" + repo.base, "PULL_PULL_SHA=" + repo.head}
+			},
+			base:   func(repo repositoryFixture, _ string) string { return repo.base },
+			commit: func(repo repositoryFixture, _ string) string { return repo.base + ".." + repo.head },
+		},
+		{
+			name:        "When a periodic job declares no primary refs, it should lint against upstream main",
+			environment: func(*testing.T, repositoryFixture) []string { return []string{"JOB_SPEC=" + periodicJobSpec} },
+			base:        func(repo repositoryFixture, _ string) string { return repo.main },
+			commit:      func(repo repositoryFixture, checkout string) string { return repo.main + ".." + checkout },
+		},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			repo := makeFixture(t)
+			checkout := repo.head
+			if scenario.batch {
+				checkout = mergeBatch(t, repo)
+			}
+			output, err := makeCommand(t, repo, scenario.environment(t, repo), "api-lint", "run-gitlint")
+			g.Expect(err).NotTo(HaveOccurred(), "%s", output)
+			arguments, err := os.ReadFile(filepath.Join(repo.root, "arguments"))
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(string(arguments)).To(ContainSubstring("--new-from-rev=" + scenario.base(repo, checkout)))
+			g.Expect(string(arguments)).To(ContainSubstring("--commits " + scenario.commit(repo, checkout)))
+		})
+	}
+}
+
 func TestMakeCommitRange(t *testing.T) {
 	t.Parallel()
 	for _, scenario := range []struct {
@@ -371,7 +423,7 @@ func TestMakeMalformedContext(t *testing.T) {
 	for _, scenario := range []struct {
 		name, metadata, diagnostic string
 	}{
-		{name: "When primary pulls are missing, it should fail before consumers", metadata: `{"refs":{"org":"openshift","repo":"hypershift","base_sha":"@BASE@"}}`, diagnostic: "requires one declared pull head"},
+		{name: "When primary pulls are missing, it should fail before consumers", metadata: `{"refs":{"org":"openshift","repo":"hypershift","base_sha":"@BASE@"}}`, diagnostic: "requires a declared pull head"},
 		{name: "When refs has a case alias, it should fail before selecting primary context", metadata: `{"refs":{"org":"openshift","repo":"release"},"Refs":{"org":"openshift","repo":"hypershift","base_sha":"@BASE@","pulls":[{"sha":"@HEAD@"}]}}`, diagnostic: "noncanonical context field"},
 		{name: "When repository identity has a case alias, it should reject the ambiguity", metadata: `{"refs":{"org":"openshift","repo":"release","Repo":"hypershift","base_sha":"@BASE@","pulls":[{"sha":"@HEAD@"}]}}`, diagnostic: "noncanonical context field"},
 		{name: "When primary and extra-ref workdirs conflict, it should reject the contradiction", metadata: `{"refs":{"org":"openshift","repo":"release","workdir":true},"extra_refs":[{"org":"openshift","repo":"hypershift","workdir":true}]}`, diagnostic: "conflicting primary workdir"},
