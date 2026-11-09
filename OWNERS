@@ -1,5 +1,7 @@
 filters:
   ".*":
+    advisory_approvers:
+    - hypershift-advisory-approvers
     approvers:
     - core-approvers
     reviewers:
