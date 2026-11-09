@@ -113,6 +113,13 @@ HYPERSHIFTLINTER_SRC := $(shell find $(TOOLS_DIR)/hypershiftlinter -name '*.go' 
 $(HYPERSHIFTLINTER_PLUGIN): $(TOOLS_DIR)/go.mod $(HYPERSHIFTLINTER_SRC) # Build hypershiftlinter as Go plugin
 	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -a -buildmode=plugin -ldflags '-s -w' -o $(HYPERSHIFTLINTER_PLUGIN) ./hypershiftlinter/cmd/plugin
 
+# Verification targets compare against revisions resolved once per top-level
+# make by hack/tools/verification-context. The checkout is captured before any
+# target runs, and nested $(MAKE) calls in this checkout reuse the exported
+# context. HOME is passed explicitly because GNU Make before 4.4 does not pass
+# the rewritten HOME above to $(shell). The resolver prints nothing on failure,
+# so the five-word check also fails closed on GNU Make without .SHELLSTATUS.
+verification_quote = '$(subst ','"'"',$(1))'
 UPSTREAM_REMOTE ?= $(shell git remote -v 2>/dev/null | grep 'openshift/hypershift.*fetch' | head -1 | cut -f1)
 ifeq ($(and $(filter-out 0,$(MAKELEVEL)),$(filter $(DIR),$(VERIFICATION_ROOT))),)
 override VERIFICATION_CHECKOUT_SHA := $(shell git rev-parse --verify HEAD 2>/dev/null)
@@ -124,13 +131,13 @@ VERIFICATION_BASE_GOALS := pre-commit verify verify-ci verify-parallel-targets a
 VERIFICATION_GOALS := $(VERIFICATION_BASE_GOALS) main-lint-fix run-gitlint
 ifneq ($(filter $(VERIFICATION_GOALS),$(MAKECMDGOALS)),)
 ifeq ($(VERIFICATION_CONTEXT),)
-override VERIFICATION_CONTEXT := $(shell cd $(TOOLS_DIR) && $(GO) run ./verification-context --repo-root='$(subst ','"'"',$(DIR))' --checkout-head='$(subst ','"'"',$(VERIFICATION_CHECKOUT_SHA))' --base-origin='$(origin PULL_BASE_SHA)' --head-origin='$(origin PULL_PULL_SHA)' --base='$(subst ','"'"',$(PULL_BASE_SHA))' --head='$(subst ','"'"',$(PULL_PULL_SHA))' --upstream-remote='$(subst ','"'"',$(UPSTREAM_REMOTE))')
-ifneq ($(.SHELLSTATUS),0)
+override VERIFICATION_CONTEXT := $(shell cd $(TOOLS_DIR) && $(if $(HOME),HOME=$(call verification_quote,$(HOME))) $(GO) run ./verification-context --repo-root=$(call verification_quote,$(DIR)) --checkout-head=$(call verification_quote,$(VERIFICATION_CHECKOUT_SHA)) --base-origin='$(origin PULL_BASE_SHA)' --head-origin='$(origin PULL_PULL_SHA)' --base=$(call verification_quote,$(PULL_BASE_SHA)) --head=$(call verification_quote,$(PULL_PULL_SHA)) --upstream-remote=$(call verification_quote,$(UPSTREAM_REMOTE)))
+ifneq ($(filter-out 0,$(.SHELLSTATUS)),)
 $(error verification context resolution failed)
 endif
 endif
 ifneq ($(words $(VERIFICATION_CONTEXT)),5)
-$(error invalid verification context output)
+$(error verification context resolution failed or produced invalid output)
 endif
 override VERIFICATION_BASE_SHA := $(filter-out -,$(word 1,$(VERIFICATION_CONTEXT)))
 override VERIFICATION_HEAD_SHA := $(word 2,$(VERIFICATION_CONTEXT))
@@ -486,7 +493,7 @@ test-e2ev2-unit:
 	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m ./test/e2e/v2/internal ./test/e2e/v2/cmd/run-tests
 	$(GO) test $(GO_TEST_FLAGS) -tags=e2ev2 -count=1 -timeout=10m -run '^(TestComponentSupportsTLSConfig|TestVerifyIntermediateTLSConnectivityAfterDowngrade|TestImageMirroring.*)$$' ./test/e2e/v2/tests
 
-# Run tests only for Go packages with changes relative to PULL_BASE_SHA.
+# Run tests only for Go packages with changes relative to the resolved verification base.
 # Skips entirely if no .go files changed. No generate dependency (verify-quick handles it).
 #
 # pkg/capi/ and hack/capi-vendor/ are separate Go modules; go test from the root
@@ -494,6 +501,7 @@ test-e2ev2-unit:
 # types is verified by go build ./... on the root module.
 .PHONY: test-changed
 test-changed:
+	@test -n "$(VERIFICATION_BASE_SHA)" || { echo "verification context: no comparison base for test-changed" >&2; exit 1; }
 	@CHANGED_FILES=$$(git diff --name-only $(VERIFICATION_BASE_SHA)...$(VERIFICATION_HEAD_SHA) -- '*.go') || exit $$?; \
 	CHANGED_DIRS=$$(printf '%s\n' "$$CHANGED_FILES" | sed '/^$$/d' | \
 		while IFS= read -r file; do dirname "$$file"; done | \
@@ -872,7 +880,7 @@ run-gitlint: $(GITLINT)
 
 .PHONY: test-verification-context
 test-verification-context: $(GITLINT) $(CRD_SCHEMA_CHECK)
-	cd $(TOOLS_DIR) && $(GO) test -race ./verification-context -count=1
+	cd $(TOOLS_DIR) && $(GO) test ./verification-context -count=1
 
 .PHONY: run-gitlint-commit-msg
 run-gitlint-commit-msg: $(GITLINT)
