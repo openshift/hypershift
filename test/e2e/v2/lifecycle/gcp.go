@@ -126,9 +126,8 @@ func (g *GCPPlatformConfig) DefaultBaseDomain() string {
 // ClusterSpecs returns the GCP cluster variants to create, expressing the
 // complete "create cluster gcp" command line per variant. Currently only
 // the "default" variant (Console + Ingress disabled,
-// TechPreviewNoUpgrade), reproducing today's single-cluster e2e-v2-gke
-// behavior. Additional variants are appended here and require no change
-// outside this file.
+// TechPreviewNoUpgrade). Additional variants are appended here and require
+// no change outside this file.
 func (g *GCPPlatformConfig) ClusterSpecs(_ context.Context, releaseImage, n1Image string) []ClusterSpec {
 	commonArgs := []string{
 		"--project=" + g.project,
@@ -189,8 +188,8 @@ func (g *GCPPlatformConfig) PreCreate(ctx context.Context, cl crclient.WithWatch
 // private DNS zones named exactly after the HostedCluster base domain, so
 // a shared base domain would collide across clusters and the per-cluster
 // private zone would shadow resolution of the shared external-dns records.
-// Deriving the domain from the cluster name mirrors the
-// in.<cluster-name>.<domain> scheme of the single-cluster CI chain.
+// Deriving the domain from the cluster name keeps each cluster's public and
+// private zones unique.
 func (g *GCPPlatformConfig) variantBaseDomain(variant string) string {
 	return "in." + DeriveClusterName(g.prowJobID, variant) + "." + g.DefaultBaseDomain()
 }
@@ -297,8 +296,8 @@ func (g *GCPPlatformConfig) DefaultTestPlan() TestPlan {
 	}
 }
 
-// TestMatrix runs the GCP suite with today's exact label filter: all
-// non-lifecycle specs plus the one GCP-specific lifecycle spec.
+// TestMatrix runs the GCP suite as a single default group: all
+// non-lifecycle specs plus the GCP worker firewall lifecycle spec.
 func (g *GCPPlatformConfig) TestMatrix() TestMatrix {
 	return TestMatrix{
 		Parallel: []TestGroup{
