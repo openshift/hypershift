@@ -141,6 +141,18 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	if err != nil {
 		return err
 	}
+	err = enforceImagePullPolicy(podTemplateSpec.Spec.InitContainers)
+	if err != nil {
+		return err
+	}
+	originalContainerNames := sets.New[string]()
+	for _, container := range podTemplateSpec.Spec.Containers {
+		originalContainerNames.Insert(container.Name)
+	}
+	originalInitContainerNames := sets.New[string]()
+	for _, container := range podTemplateSpec.Spec.InitContainers {
+		originalInitContainerNames.Insert(container.Name)
+	}
 
 	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, hcp, podTemplateSpec.Spec.Containers); err != nil {
 		return err
@@ -171,11 +183,20 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 			kas.InClusterKASReadyURL(hcp.Spec.Platform.Type), availabilityProberImage,
 			&podTemplateSpec.Spec,
 			podspec.WithOptions(c.availabilityProberOpts))
+		// AvailabilityProber overwrites an existing availability-prober init container
+		// in place with the resolved prober image, so treat it as injected.
+		originalInitContainerNames.Delete(podspec.AvailabilityProberContainerName)
 	}
 
+	if err := enforceInjectedImagePullPolicy(podTemplateSpec.Spec.InitContainers, originalInitContainerNames); err != nil {
+		return err
+	}
+	if err := enforceInjectedImagePullPolicy(podTemplateSpec.Spec.Containers, originalContainerNames); err != nil {
+		return err
+	}
 	enforceTerminationMessagePolicy(podTemplateSpec.Spec.InitContainers)
 	enforceTerminationMessagePolicy(podTemplateSpec.Spec.Containers)
-	enforceReadOnlyRootFilesystem(&podTemplateSpec.Spec)
+	enforceReadOnlyRootFilesystem(&podTemplateSpec.Spec, c.skipTmpDirMountContainers)
 
 	if _, exist := podTemplateSpec.Annotations[config.NeedMetricsServerAccessLabel]; exist || c.NeedsManagementKASAccess() ||
 		c.Name() == "packageserver" { // TODO: investigate why packageserver needs AutomountServiceAccountToken or set NeedsManagementKASAccess to true.
@@ -662,41 +683,77 @@ func enforceVolumesDefaultMode(podSpec *corev1.PodSpec) {
 
 func enforceImagePullPolicy(containers []corev1.Container) error {
 	for i := range containers {
-		if containers[i].Image == "" {
-			return fmt.Errorf("container %s has no image key specified", containers[i].Name)
-		}
-		// Use Always for :latest tag to ensure we get the most recent image
-		if strings.HasSuffix(containers[i].Image, ":latest") {
-			containers[i].ImagePullPolicy = corev1.PullAlways
-		} else {
-			containers[i].ImagePullPolicy = corev1.PullIfNotPresent
+		if err := enforceContainerImagePullPolicy(&containers[i]); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func enforceReadOnlyRootFilesystem(podSpec *corev1.PodSpec) {
+// enforceInjectedImagePullPolicy enforces the image pull policy only on containers
+// whose names are not in original. Containers are matched by name rather than by
+// position because some injectors (e.g. the availability prober) prepend.
+func enforceInjectedImagePullPolicy(containers []corev1.Container, original sets.Set[string]) error {
+	for i := range containers {
+		if original.Has(containers[i].Name) {
+			continue
+		}
+		if err := enforceContainerImagePullPolicy(&containers[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func enforceContainerImagePullPolicy(container *corev1.Container) error {
+	if container.Image == "" {
+		return fmt.Errorf("container %s has no image key specified", container.Name)
+	}
+	// Use Always for :latest tag to ensure we get the most recent image
+	if strings.HasSuffix(container.Image, ":latest") {
+		container.ImagePullPolicy = corev1.PullAlways
+	} else {
+		container.ImagePullPolicy = corev1.PullIfNotPresent
+	}
+	return nil
+}
+
+// enforceReadOnlyRootFilesystem sets a read-only root filesystem on all containers
+// and mounts a writable tmp-dir emptyDir at /tmp, except for containers listed in
+// skipTmpDirMount, which only get the read-only root filesystem.
+func enforceReadOnlyRootFilesystem(podSpec *corev1.PodSpec, skipTmpDirMount sets.Set[string]) {
 	podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
 		Name: podspec.PodTmpDirMountName,
 		VolumeSource: corev1.VolumeSource{
 			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		},
 	})
-	enforceReadOnlyRootFilesystemContainers(podSpec.Containers)
+	// Init containers get a container-specific subPath so sequentially-run init
+	// containers cannot observe each other's scratch output (e.g. the
+	// kube-apiserver bootstrap renderers). Before init containers were covered
+	// by these defaults, each had a private, container-local /tmp. The kubelet
+	// creates subPath directories within the emptyDir with the volume root's
+	// mode (0777), so they remain writable by non-root containers.
+	enforceReadOnlyRootFilesystemContainers(podSpec.InitContainers, true, skipTmpDirMount)
+	enforceReadOnlyRootFilesystemContainers(podSpec.Containers, false, skipTmpDirMount)
 }
 
-func enforceReadOnlyRootFilesystemContainers(containers []corev1.Container) {
+func enforceReadOnlyRootFilesystemContainers(containers []corev1.Container, containerSpecificSubPath bool, skipTmpDirMount sets.Set[string]) {
 	for i := range containers {
 		if containers[i].SecurityContext == nil {
 			containers[i].SecurityContext = &corev1.SecurityContext{}
 		}
-		if !slices.ContainsFunc(containers[i].VolumeMounts, func(vm corev1.VolumeMount) bool {
+		if !skipTmpDirMount.Has(containers[i].Name) && !slices.ContainsFunc(containers[i].VolumeMounts, func(vm corev1.VolumeMount) bool {
 			return vm.MountPath == podspec.PodTmpDirMountPath
 		}) {
-			containers[i].VolumeMounts = append(containers[i].VolumeMounts, corev1.VolumeMount{
+			mount := corev1.VolumeMount{
 				Name:      podspec.PodTmpDirMountName,
 				MountPath: podspec.PodTmpDirMountPath,
-			})
+			}
+			if containerSpecificSubPath {
+				mount.SubPath = containers[i].Name
+			}
+			containers[i].VolumeMounts = append(containers[i].VolumeMounts, mount)
 		}
 		containers[i].SecurityContext.ReadOnlyRootFilesystem = ptr.To(true)
 	}

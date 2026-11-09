@@ -6,6 +6,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -116,6 +117,18 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectTokenMinterContainer(opts TokenMi
 // and the volume mounts for that secret within the given mountPath.
 func (b *controlPlaneWorkloadBuilder[T]) InjectServiceAccountKubeConfig(opts ServiceAccountKubeConfigOpts) *controlPlaneWorkloadBuilder[T] {
 	b.workload.serviceAccountKubeConfigOpts = &opts
+	return b
+}
+
+// WithoutTmpDirMount excludes the named containers from the writable /tmp emptyDir
+// mount that is added alongside readOnlyRootFilesystem. The containers still get a
+// read-only root filesystem. Use this for containers that read image-provided
+// content under /tmp, which the mount would otherwise hide.
+func (b *controlPlaneWorkloadBuilder[T]) WithoutTmpDirMount(containerNames ...string) *controlPlaneWorkloadBuilder[T] {
+	if b.workload.skipTmpDirMountContainers == nil {
+		b.workload.skipTmpDirMountContainers = sets.New[string]()
+	}
+	b.workload.skipTmpDirMountContainers.Insert(containerNames...)
 	return b
 }
 

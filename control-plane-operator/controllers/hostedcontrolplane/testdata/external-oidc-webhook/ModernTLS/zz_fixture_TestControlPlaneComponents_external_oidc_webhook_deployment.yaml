@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    hypershift.openshift.io/desired-state-hash: af13b0faee0e44d88c27e14da623f2c7ddd16228fe417ae28f4bd22e8d64432d
+    hypershift.openshift.io/desired-state-hash: 7cdb93ca7308cd69252539f2596d08dd713e3e7a26e162e88c9229eb30d1ca00
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: external-oidc-webhook
@@ -126,6 +126,7 @@ spec:
         - name: KUBECONFIG
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
+        imagePullPolicy: IfNotPresent
         name: konnectivity-proxy-https
         resources:
           requests:
@@ -154,6 +155,7 @@ spec:
         - name: KUBECONFIG
           value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
         image: controlplane-operator
+        imagePullPolicy: IfNotPresent
         name: konnectivity-proxy-socks5
         resources:
           requests:
