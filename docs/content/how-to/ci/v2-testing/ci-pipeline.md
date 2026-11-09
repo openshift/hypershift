@@ -2,7 +2,7 @@
 
 Use this page when adding or changing CI jobs. For test authoring and selection
 in existing jobs, follow [Writing V2 Tests](writing-tests.md). For execution and
-process boundaries, see [Test Flow](test-flow.md).
+process boundaries, see the [execution model](index.md#execution-model).
 
 ## Repository ownership
 
@@ -19,12 +19,23 @@ Use the current source for implementation details:
 - [Platform configuration](https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/platform.go)
   and [test plans](https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/testplan.go):
   supported interfaces and plan validation.
+- [Platform implementations](https://github.com/openshift/hypershift/tree/main/test/e2e/v2/lifecycle):
+  current variants and coverage allocation.
 - [HyperShift step registry](https://github.com/openshift/release/tree/master/ci-operator/step-registry/hypershift)
   and [job configurations](https://github.com/openshift/release/tree/master/ci-operator/config/openshift/hypershift):
   workflows, credentials, images, timeouts, and job selection.
 
 For registry conventions and workflow, chain, and ref definitions, follow the
 [OpenShift CI step registry documentation](https://docs.ci.openshift.org/docs/architecture/step-registry/).
+
+## Lifecycle handoff
+
+Creation records cluster identities and teardown inputs in a
+[shared manifest](https://github.com/openshift/hypershift/blob/main/test/e2e/v2/lifecycle/manifest.go)
+before provisioning. Execution, collection, and teardown consume that manifest,
+allowing cleanup after partial provisioning. Preserve this handoff when changing
+orchestration, and ensure the CI workflow schedules diagnostic collection and
+teardown after failures.
 
 ## Add or change a job
 

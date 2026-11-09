@@ -302,5 +302,4 @@ Post in [#forum-ocp-hypershift](https://redhat.enterprise.slack.com/archives/C04
 - [Verify and debug](../v2-testing/writing-tests.md#verify-and-debug) — Reading test results, Ginkgo output, and cluster dumps
 - [V2 E2E Testing Guides](../v2-testing/index.md) — Authoring, migration, execution flow, and CI configuration
 - [CI Pipeline Configuration](../v2-testing/ci-pipeline.md) — How presubmit jobs are configured
-- [Test Flow](../v2-testing/test-flow.md) — End-to-end CI sequence, process boundaries, and inter-process communication
 - [Daily CI Health](daily-health.md) — Monitoring periodic and presubmit job health
