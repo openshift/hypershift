@@ -128,6 +128,6 @@ oc annotate hostedcluster my-cluster -n clusters \
 
 ## See also
 
-- [Develop in cluster](develop_in_cluster.md) — for rapid in-cluster iteration using `ko`
+- [Develop in cluster](develop_in_cluster.md) — for running custom images in debug pods
 - [Run HyperShift operator locally](run-hypershift-operator-locally.md) — for running the operator outside the cluster
 - [CPO Overrides](cpo-overrides.md) — for production CPO image overrides by version and platform
