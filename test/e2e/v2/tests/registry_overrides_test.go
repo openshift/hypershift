@@ -16,11 +16,17 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -37,17 +43,22 @@ const (
 	// registryOverridesSetupTimeout bounds the full payload copy (~22 GiB)
 	// plus the HyperShift operator rollout, within the budget. It leaves at
 	// least 30 minutes of the budget for the control plane rollout.
+	// The worker rollout for the trust bundle runs during the copy, so it
+	// adds to this only when it outlasts the copy.
 	registryOverridesSetupTimeout = 105 * time.Minute
 	// registryOverridesRolloutTimeout bounds each control plane rollout wait,
 	// within the budget.
 	registryOverridesRolloutTimeout = 30 * time.Minute
+	// registryOverridesFollowUpTimeout bounds each check that runs after the
+	// control plane rollout, within the budget.
+	registryOverridesFollowUpTimeout = 15 * time.Minute
 )
 
-// registryOverridesEnsure mirrors the release of every HostedCluster into a
-// dedicated mirror signed by the job CA, points the HyperShift operator at it
-// with --registry-overrides and waits for the operator rollout. It is
-// idempotent: when the operator already points at the mirror Route, it only
-// reads the state back. It returns the overrides read from the operator
+// registryOverridesEnsure makes the workers of hc trust the job CA, mirrors the
+// release of every HostedCluster into a dedicated mirror signed by the job CA,
+// points the HyperShift operator at it with --registry-overrides and waits for
+// the operator rollout. It is idempotent: when the operator already points at
+// the mirror Route, it only reads the state back. It returns the overrides read from the operator
 // Deployment, which are the oracle of the specs, and the operator image.
 // budgetCtx carries the deadline of the whole Ordered container.
 func registryOverridesEnsure(g Gomega, budgetCtx context.Context, tc *internal.TestContext, hc *hyperv1.HostedCluster, ca *mirrorregistry.KeyPair) (map[string]string, string) {
@@ -68,14 +79,53 @@ func registryOverridesEnsure(g Gomega, budgetCtx context.Context, tc *internal.T
 		return deployment, overrides
 	}
 
+	// The workers pull the HCCO image from the mirror (the HCCO runs the
+	// global pull secret syncer DaemonSet with it), so they must trust the job
+	// CA. The trust bundle is in the NodePool config hash, so the patch
+	// replaces the workers. It is applied first, so the rollout runs while the
+	// payload is copied, and the operator is patched only after the rollout,
+	// so the new workers boot from an unchanged ignition-server. No restore,
+	// for the same reason as the operator patch below.
+	By("making the workers trust the job CA through the HostedCluster additionalTrustBundle")
+	var workersBaseline map[string]string
+	needsPatch, err := registryOverridesNeedsTrustBundlePatch(hc, registryOverridesTrustBundleName)
+	g.Expect(err).NotTo(HaveOccurred(), "HC %s/%s trust bundle", hc.Namespace, hc.Name)
+	trustBundle := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: hc.Namespace, Name: registryOverridesTrustBundleName}}
+	_, err = controllerutil.CreateOrUpdate(ctx, tc.MgmtClient, trustBundle, func() error {
+		trustBundle.Data = map[string]string{registryOverridesTrustBundleKey: string(ca.CertPEM)}
+		return nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "write ConfigMap %s/%s", trustBundle.Namespace, trustBundle.Name)
+	if needsPatch {
+		nodePools := &hyperv1.NodePoolList{}
+		g.Expect(tc.MgmtClient.List(ctx, nodePools, crclient.InNamespace(hc.Namespace))).To(Succeed(), "list NodePools in %s", hc.Namespace)
+		workersBaseline = registryOverridesNodePoolConfigs(nodePools.Items, hc.Name)
+		fresh := &hyperv1.HostedCluster{}
+		g.Expect(tc.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), fresh)).To(Succeed(), "read HC %s/%s", hc.Namespace, hc.Name)
+		original := fresh.DeepCopy()
+		fresh.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: registryOverridesTrustBundleName}
+		g.Expect(tc.MgmtClient.Patch(ctx, fresh, crclient.MergeFrom(original))).To(Succeed(), "set additionalTrustBundle on HC %s/%s", hc.Namespace, hc.Name)
+	}
+	waitForWorkers := func() {
+		By("waiting for the worker rollout that applies the trust bundle")
+		g.Eventually(func(g Gomega, ctx context.Context) {
+			nodePools := &hyperv1.NodePoolList{}
+			g.Expect(tc.MgmtClient.List(ctx, nodePools, crclient.InNamespace(hc.Namespace))).To(Succeed(), "list NodePools in %s", hc.Namespace)
+			done, reason := registryOverridesCheckNodePoolsRolledOut(nodePools.Items, hc.Name, workersBaseline)
+			g.Expect(done).To(BeTrue(), reason)
+		}).WithContext(ctx).WithTimeout(registryOverridesRolloutTimeout).WithPolling(15*time.Second).Should(Succeed(),
+			"HC %s/%s NodePools must complete the trust bundle rollout", hc.Namespace, hc.Name)
+	}
+
 	route := &routev1.Route{}
 	routeKey := crclient.ObjectKey{Namespace: registryOverridesNamespace, Name: mirrorregistry.DefaultName}
-	err := tc.MgmtClient.Get(ctx, routeKey, route)
+	err = tc.MgmtClient.Get(ctx, routeKey, route)
 	if err != nil && !apierrors.IsNotFound(err) {
 		g.Expect(err).NotTo(HaveOccurred(), "read mirror Route %s", routeKey)
 	}
 	if _, current := readHO(g); err == nil && registryOverridesApplied(current, route.Spec.Host) {
 		By("reusing the mirror and the HyperShift operator overrides from a previous run")
+		waitForWorkers()
 	} else {
 		By("mirroring the release payload of every HostedCluster")
 		hcs := &hyperv1.HostedClusterList{}
@@ -97,6 +147,8 @@ func registryOverridesEnsure(g Gomega, budgetCtx context.Context, tc *internal.T
 		g.Expect(err).NotTo(HaveOccurred(), "mirror releases %v into %s", releases, registryOverridesNamespace)
 		desired, err := registryOverridesFromResult(result)
 		g.Expect(err).NotTo(HaveOccurred(), "registry overrides from the mirror in %s", registryOverridesNamespace)
+
+		waitForWorkers()
 
 		// No restore: the overrides are global to the operator, so this runs
 		// in a dedicated job whose management cluster is destroyed with the
@@ -179,7 +231,7 @@ func RegisterRegistryOverridesTests(getTestCtx internal.TestContextGetter) {
 		Eventually(func(g Gomega, ctx context.Context) {
 			deployment := &appsv1.Deployment{}
 			g.Expect(tc.MgmtClient.Get(ctx, key, deployment)).To(Succeed(), "read Deployment %s", key)
-			done, reason, err := registryOverridesCheckImages([]appsv1.Deployment{*deployment}, nil, overrides, hoImage, []string{key.Name})
+			done, reason, err := registryOverridesCheckImages([]appsv1.Deployment{*deployment}, nil, nil, overrides, hoImage, []string{key.Name})
 			if err != nil {
 				StopTrying("check Deployment " + key.String()).Wrap(err).Now()
 			}
@@ -215,13 +267,86 @@ func RegisterRegistryOverridesTests(getTestCtx internal.TestContextGetter) {
 			g.Expect(tc.MgmtClient.List(ctx, deployments, crclient.InNamespace(tc.ControlPlaneNamespace))).To(Succeed(), "list Deployments in %s", tc.ControlPlaneNamespace)
 			statefulSets := &appsv1.StatefulSetList{}
 			g.Expect(tc.MgmtClient.List(ctx, statefulSets, crclient.InNamespace(tc.ControlPlaneNamespace))).To(Succeed(), "list StatefulSets in %s", tc.ControlPlaneNamespace)
-			done, reason, err := registryOverridesCheckImages(deployments.Items, statefulSets.Items, overrides, hoImage, registryOverridesMandatoryWorkloads)
+			cronJobs := &batchv1.CronJobList{}
+			g.Expect(tc.MgmtClient.List(ctx, cronJobs, crclient.InNamespace(tc.ControlPlaneNamespace))).To(Succeed(), "list CronJobs in %s", tc.ControlPlaneNamespace)
+			done, reason, err := registryOverridesCheckImages(deployments.Items, statefulSets.Items, cronJobs.Items, overrides, hoImage, registryOverridesMandatoryWorkloads)
 			if err != nil {
 				StopTrying("check control plane workloads in " + tc.ControlPlaneNamespace).Wrap(err).Now()
 			}
 			g.Expect(done).To(BeTrue(), reason)
 		}).WithContext(budgetCtx).WithTimeout(registryOverridesRolloutTimeout).WithPolling(15*time.Second).Should(Succeed(),
 			"HC %s/%s control plane workloads in %s must run mirror images and be rolled out", hc.Namespace, hc.Name, tc.ControlPlaneNamespace)
+	})
+
+	// A restarted ignition-server starts with an empty payload cache and
+	// regenerates the payload of every live token secret, resolving the release
+	// through the overrides. Each pod has its own cache (no leader election), so
+	// every current pod must have logged a generated payload.
+	It("should regenerate the ignition payloads through the overrides after the ignition-server rollout", func() {
+		budgetCtx, cancel := budgetContext()
+		defer cancel()
+		kubeClient, err := kubernetes.NewForConfig(tc.MgmtRESTConfig)
+		Expect(err).NotTo(HaveOccurred(), "management cluster clientset")
+		key := crclient.ObjectKey{Namespace: tc.ControlPlaneNamespace, Name: registryOverridesIgnitionServerName}
+		Eventually(func(g Gomega, ctx context.Context) {
+			deployment := &appsv1.Deployment{}
+			g.Expect(tc.MgmtClient.Get(ctx, key, deployment)).To(Succeed(), "read Deployment %s", key)
+			done, reason := registryOverridesCheckDeploymentRolledOut(deployment)
+			g.Expect(done).To(BeTrue(), reason)
+
+			pods := &corev1.PodList{}
+			g.Expect(tc.MgmtClient.List(ctx, pods, crclient.InNamespace(key.Namespace), crclient.MatchingLabels{"app": registryOverridesIgnitionServerName})).To(Succeed(), "list %s pods", key)
+			current, err := registryOverridesCurrentPods(pods.Items, registryOverridesIgnitionServerName, overrides)
+			if err != nil {
+				StopTrying("check " + key.String() + " pods").Wrap(err).Now()
+			}
+			g.Expect(current).To(HaveLen(int(ptr.Deref(deployment.Spec.Replicas, 1))), "%s pods running with the operator %s", key, registryOverridesFlag)
+			for _, name := range current {
+				stream, err := kubeClient.CoreV1().Pods(key.Namespace).GetLogs(name, &corev1.PodLogOptions{Container: registryOverridesIgnitionServerName}).Stream(ctx)
+				g.Expect(err).NotTo(HaveOccurred(), "stream log of pod %s/%s", key.Namespace, name)
+				found, err := registryOverridesLogHasLine(stream, registryOverridesPayloadGeneratedLine)
+				_ = stream.Close()
+				g.Expect(err).NotTo(HaveOccurred(), "read log of pod %s/%s", key.Namespace, name)
+				g.Expect(found).To(BeTrue(), "pod %s/%s must log %q", key.Namespace, name, registryOverridesPayloadGeneratedLine)
+			}
+
+			nodePools := &hyperv1.NodePoolList{}
+			g.Expect(tc.MgmtClient.List(ctx, nodePools, crclient.InNamespace(hc.Namespace))).To(Succeed(), "list NodePools in %s", hc.Namespace)
+			done, reason = registryOverridesCheckPayloadsGenerated(nodePools.Items, hc.Name)
+			g.Expect(done).To(BeTrue(), reason)
+		}).WithContext(budgetCtx).WithTimeout(registryOverridesFollowUpTimeout).WithPolling(15*time.Second).Should(Succeed(),
+			"HC %s/%s ignition-server must regenerate the payloads with the operator %s", hc.Namespace, hc.Name, registryOverridesFlag)
+	})
+
+	// The HCCO image reaches the hosted cluster: the HCCO runs the global pull
+	// secret syncer DaemonSet on the workers with it, so the workers pull it
+	// from the mirror, trusting it through the HostedCluster
+	// additionalTrustBundle set in the setup. Runs after the control plane
+	// rollout, so the hosted cluster API server is stable.
+	It("should roll out the global pull secret syncer on the workers with the HCCO image from the mirror", func() {
+		budgetCtx, cancel := budgetContext()
+		defer cancel()
+		hostedClient, err := tc.GetHostedClusterClient(hc)
+		Expect(err).NotTo(HaveOccurred(), "HC %s/%s client", hc.Namespace, hc.Name)
+		cpoKey := crclient.ObjectKey{Namespace: tc.ControlPlaneNamespace, Name: "control-plane-operator"}
+		dsKey := crclient.ObjectKey{Namespace: registryOverridesSyncerNamespace, Name: registryOverridesSyncerName}
+		Eventually(func(g Gomega, ctx context.Context) {
+			// The HO sets HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE to the CPO image.
+			cpo := &appsv1.Deployment{}
+			g.Expect(tc.MgmtClient.Get(ctx, cpoKey, cpo)).To(Succeed(), "read Deployment %s", cpoKey)
+			container, err := registryOverridesPrimaryContainer(cpo)
+			if err != nil {
+				StopTrying("check Deployment " + cpoKey.String()).Wrap(err).Now()
+			}
+			daemonSet := &appsv1.DaemonSet{}
+			g.Expect(hostedClient.Get(ctx, dsKey, daemonSet)).To(Succeed(), "read hosted cluster DaemonSet %s", dsKey)
+			done, reason, err := registryOverridesCheckDaemonSet(daemonSet, container.Image, overrides)
+			if err != nil {
+				StopTrying("check hosted cluster DaemonSet " + dsKey.String()).Wrap(err).Now()
+			}
+			g.Expect(done).To(BeTrue(), reason)
+		}).WithContext(budgetCtx).WithTimeout(registryOverridesFollowUpTimeout).WithPolling(15*time.Second).Should(Succeed(),
+			"HC %s/%s DaemonSet %s must run the HCCO image from the mirror on every eligible worker", hc.Namespace, hc.Name, dsKey)
 	})
 }
 
